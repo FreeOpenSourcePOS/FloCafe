@@ -33,6 +33,27 @@ function getStaticDir(): string | null {
   return null;
 }
 
+/**
+ * Helper to rewrite dotted Next.js static segment file requests to nested paths on Windows.
+ * E.g., /products/__next.!KGRhc2hib2FyZCk.products.__PAGE__.txt -> /products/__next.!KGRhc2hib2FyZCk/products/__PAGE__.txt
+ */
+function rewriteNextExportPath(reqPath: string): string {
+  const nextIndex = reqPath.indexOf('__next.');
+  if (nextIndex === -1) return reqPath;
+
+  const prefix = reqPath.substring(0, nextIndex + '__next.'.length);
+  const rest = reqPath.substring(nextIndex + '__next.'.length);
+
+  const lastDotIndex = rest.lastIndexOf('.');
+  if (lastDotIndex === -1) return reqPath;
+
+  const namePart = rest.substring(0, lastDotIndex);
+  const extPart = rest.substring(lastDotIndex);
+
+  const rewrittenName = namePart.replace(/\./g, '/');
+  return prefix + rewrittenName + extPart;
+}
+
 export function startKdsServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     const app: Express = express();
@@ -171,6 +192,22 @@ export function startKdsServer(): Promise<void> {
     const staticDir = getStaticDir();
     if (staticDir) {
       console.log(`[KDS Server] Serving static files from: ${staticDir}`);
+
+      // Middleware to patch Windows-specific Next.js static export path nesting
+      app.use((req: Request, res: Response, next: NextFunction) => {
+        if (req.path.includes('__next.')) {
+          const originalPath = req.path;
+          const rewritten = rewriteNextExportPath(originalPath);
+          if (rewritten !== originalPath) {
+            const fullPath = path.join(staticDir, rewritten);
+            if (fs.existsSync(fullPath)) {
+              req.url = rewritten;
+            }
+          }
+        }
+        next();
+      });
+
       app.use(express.static(staticDir, { index: false }));
 
       // Redirect root to standalone KDS

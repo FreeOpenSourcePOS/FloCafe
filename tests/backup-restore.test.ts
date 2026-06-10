@@ -14,7 +14,7 @@ function cleanup() {
   fs.mkdirSync(testDir, { recursive: true });
 }
 
-function createTestDb(version: number = 8): Database {
+function createTestDb(version: number = 8): void {
   const dbPath = path.join(testDir, `test-v${version}.db`);
   if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
   if (fs.existsSync(dbPath + '-wal')) fs.unlinkSync(dbPath + '-wal');
@@ -48,8 +48,6 @@ function createTestDb(version: number = 8): Database {
   db.exec(`INSERT INTO products VALUES ('p1', 'Test Product', 100.00, 'old value', datetime('now'))`);
   db.exec(`INSERT INTO categories VALUES ('c1', 'Test Category', datetime('now'))`);
   db.close();
-
-  return new DatabaseSync(dbPath);
 }
 
 function createCurrentSchemaDb(): Database {
@@ -257,4 +255,6 @@ console.log('   • Data-only restore imports common columns only');
 console.log('   • New columns = NULL, old columns = ignored');
 console.log('   • Version mismatch is detected and handled gracefully');
 
+currentDb.close();
 cleanup();
+

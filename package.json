@@ -7,7 +7,7 @@
   },
   "main": "dist/index.js",
   "scripts": {
-    "clean": "npx kill-port 3001 3002",
+    "clean": "node kill-ports.js 3001 3002",
     "predev": "git submodule update --init",
     "dev": "npm run clean && npm run build:frontend && npm run build && electron .",
     "dev:frontend": "cd frontend && npm run dev",
@@ -50,7 +50,6 @@
     "@types/ws": "^8.5.10",
     "electron": "^31.7.7",
     "electron-builder": "^26.8.1",
-    "kill-port": "^2.0.1",
     "typescript": "^5.4.5"
   },
   "dependencies": {

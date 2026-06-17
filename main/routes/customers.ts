@@ -11,7 +11,8 @@ function parseCustomer(c: any): any {
 
 const router = Router();
 
-function getWalletBalance(customerId: string | number): number {
+function getWalletBalance(customerId: string | number | null): number {
+  if (!customerId) return 0;
   const db = getDatabase();
   const credits = db.prepare(`
     SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger
@@ -40,7 +41,14 @@ router.delete('/admin/cleanup', (req: Request, res: Response) => {
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    let query = 'SELECT c.*, COALESCE((SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id), 0) as visits_count, COALESCE((SELECT SUM(total) FROM orders o WHERE o.customer_id = c.id), 0) as total_spent FROM customers c WHERE 1=1';
+    let query = `SELECT c.*,
+      COALESCE((SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id), 0) as visits_count,
+      COALESCE((SELECT SUM(total) FROM orders o WHERE o.customer_id = c.id), 0) as total_spent,
+      MAX(0,
+        COALESCE((SELECT SUM(ll.amount) FROM loyalty_ledger ll WHERE ll.customer_id = c.id AND ll.type = 'credit' AND (ll.expires_at IS NULL OR ll.expires_at > datetime('now'))), 0) -
+        COALESCE((SELECT SUM(ll.amount) FROM loyalty_ledger ll WHERE ll.customer_id = c.id AND ll.type = 'debit'), 0)
+      ) as wallet_balance
+      FROM customers c WHERE 1=1`;
     const params: any[] = [];
 
     if (req.query.search) {
@@ -111,7 +119,7 @@ router.get('/:id', (req: Request, res: Response) => {
 router.get('/:id/wallet', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const customerId = parseInt(req.params.id);
+    const customerId = req.params.id;
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });
@@ -119,10 +127,14 @@ router.get('/:id/wallet', (req: Request, res: Response) => {
 
     const balance = getWalletBalance(customerId);
     const transactions = db.prepare(`
-      SELECT * FROM loyalty_ledger WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50
-    `).all(req.params.id);
+      SELECT * FROM loyalty_ledger WHERE customer_id = ? ORDER BY created_at DESC LIMIT 100
+    `).all(customerId);
+    const nextExpiryRow = db.prepare(`
+      SELECT MIN(expires_at) as next_expiry FROM loyalty_ledger
+      WHERE customer_id = ? AND type = 'credit' AND expires_at IS NOT NULL AND expires_at > datetime('now')
+    `).get(customerId) as { next_expiry: string | null };
 
-    res.json({ balance, transactions });
+    res.json({ balance, transactions, next_expiry: nextExpiryRow?.next_expiry || null });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

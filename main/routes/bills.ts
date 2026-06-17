@@ -105,7 +105,7 @@ router.post('/generate', (req: Request, res: Response) => {
 
 router.post('/:id/payment', (req: Request, res: Response) => {
   try {
-    const { method, amount, transaction_id, notes } = req.body;
+    const { method, amount, transaction_id, notes, customer_id: bodyCustomerId } = req.body;
 
     if (!method) {
       return res.status(400).json({ error: 'Payment method is required' });
@@ -158,6 +158,43 @@ router.post('/:id/payment', (req: Request, res: Response) => {
     })();
     existingPayments.push({ method, amount: paidAmount, transaction_id, notes, timestamp: now() });
 
+    const effectiveCustomerId = bill.customer_id || (bodyCustomerId ? String(bodyCustomerId) : null);
+
+    // Pre-compute per-item cashback (only when this payment will fully settle the bill)
+    let loyaltyCashbackToCredit = 0;
+    let loyaltyExpiresAt: string | null = null;
+    if (paymentStatus === 'paid' && effectiveCustomerId) {
+      const loyaltySetting = (db.prepare(
+        `SELECT value FROM settings WHERE key = 'loyalty_enabled'`
+      ).get() as any)?.value;
+      if (loyaltySetting === 'true') {
+        const expiryRow = (db.prepare(
+          `SELECT value FROM settings WHERE key = 'loyalty_expiry_days'`
+        ).get() as any)?.value;
+        const expiryDays = parseInt(expiryRow || '365');
+        const expires = new Date();
+        expires.setDate(expires.getDate() + expiryDays);
+        loyaltyExpiresAt = expires.toISOString().slice(0, 19).replace('T', ' ');
+
+        const items = db.prepare(`
+          SELECT oi.subtotal, p.cb_percent
+          FROM order_items oi
+          JOIN products p ON p.id = oi.product_id
+          WHERE oi.order_id = ? AND p.cb_percent > 0
+        `).all(bill.order_id) as { subtotal: number; cb_percent: number }[];
+        for (const item of items) {
+          loyaltyCashbackToCredit += Math.floor(item.subtotal * item.cb_percent / 100);
+        }
+      }
+    }
+
+    // Update bill's customer_id if it was missing and one was provided
+    if (!bill.customer_id && effectiveCustomerId) {
+      db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?')
+        .run(effectiveCustomerId, now(), req.params.id);
+      bill.customer_id = effectiveCustomerId;
+    }
+
     const result = withTxn(() => {
       let walletDebited = false;
 
@@ -186,16 +223,32 @@ router.post('/:id/payment', (req: Request, res: Response) => {
         db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?")
           .run(now(), now(), bill.order_id);
 
-
         const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(bill.order_id) as any;
         if (order && order.table_id) {
           db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
             .run(now(), order.table_id);
         }
+
+        // Credit per-item cashback (idempotent — skip if already credited for this bill)
+        if (loyaltyCashbackToCredit > 0 && effectiveCustomerId) {
+          const alreadyCredited = db.prepare(
+            `SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`
+          ).get(bill.id);
+          if (!alreadyCredited) {
+            db.prepare(`
+              INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, expires_at, created_at, updated_at)
+              VALUES (?, ?, 'credit', ?, ?, ?, ?, ?)
+            `).run(
+              effectiveCustomerId, bill.id, loyaltyCashbackToCredit,
+              `Cashback on bill ${bill.bill_number}`,
+              loyaltyExpiresAt, now(), now()
+            );
+          }
+        }
       }
 
       const updatedBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id);
-      return { bill: updatedBill, walletDebited };
+      return { bill: updatedBill, walletDebited, loyaltyPointsEarned: loyaltyCashbackToCredit };
     });
 
     if (paymentStatus === 'paid') notifyKdsUpdate();

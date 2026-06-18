@@ -1,7 +1,7 @@
 [submodule "frontend"]
 	path = frontend
 	url = https://github.com/FreeOpenSourcePOS/FloUI.git
-[submodule "flo-specs"]
-	path = flo-specs
+[submodule "specs"]
+	path = specs
 	url = https://github.com/FreeOpenSourcePOS/specs.git
 	update = none

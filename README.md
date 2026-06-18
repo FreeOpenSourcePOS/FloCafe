@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/github/contributors/FreeOpenSourcePOS/FloCafe" alt="Contributors">
 </p>
 
-FloCafe is a **free, open-source, offline-first Point of Sale (POS) system** built specifically for cafes, restaurants, cloud kitchens, and food businesses. Runs entirely on your own computer with no internet required - perfect for small food businesses in India and Southeast Asia.
+FloCafe is a **free, open-source, offline-first Point of Sale (POS) system** built specifically for cafes, restaurants, cloud kitchens, and food businesses worldwide. Runs entirely on your own computer with no internet required.
 
 ## 🌟 Why FloCafe?
 
@@ -19,15 +19,29 @@ FloCafe is a **free, open-source, offline-first Point of Sale (POS) system** bui
 
 ## 📦 Downloads
 
+<p>
+  <a href="https://apps.apple.com/in/app/flo-cafe/id6763136018">
+    <img src="https://img.shields.io/badge/Mac_App_Store-Download-black?logo=apple&style=for-the-badge" alt="Download on the Mac App Store">
+  </a>
+  &nbsp;
+  <a href="https://apps.microsoft.com/detail/9n1md6585p4q">
+    <img src="https://img.shields.io/badge/Microsoft_Store-Download-0078D4?logo=microsoft&style=for-the-badge" alt="Download on Microsoft Store">
+  </a>
+</p>
+
+Or grab the latest release directly:
+
 | Platform | File | Description |
 |----------|------|-------------|
-| **macOS (Intel)** | `Flo-1.6.1.dmg` | For Intel Macs |
-| **macOS (Apple Silicon)** | `Flo-1.6.1-arm64.dmg` | For M1/M2/M3 Macs |
-| **Windows** | `Flo Setup 1.6.1.exe` | Windows installer |
-| **Linux (AppImage)** | `Flo-1.6.1.AppImage` | Portable Linux binary |
-| **Linux (Debian)** | `flo-desktop_1.6.1_amd64.deb` | Debian/Ubuntu package |
+| **macOS** | [Mac App Store](https://apps.apple.com/in/app/flo-cafe/id6763136018) | Recommended — auto-updates |
+| **macOS (Intel DMG)** | `Flo-1.7.0.dmg` | Direct download for Intel Macs |
+| **macOS (Apple Silicon DMG)** | `Flo-1.7.0-arm64.dmg` | Direct download for M1/M2/M3/M4 |
+| **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9n1md6585p4q) | Recommended — auto-updates |
+| **Windows (EXE)** | `Flo Setup 1.7.0.exe` | Direct download installer |
+| **Linux (AppImage)** | `Flo-1.7.0.AppImage` | Portable Linux binary |
+| **Linux (Debian)** | `flo-desktop_1.7.0_amd64.deb` | Debian/Ubuntu package |
 
-**Latest Version:** v1.6.1
+**Latest Version:** v1.7.0
 
 ## 🚀 Features
 

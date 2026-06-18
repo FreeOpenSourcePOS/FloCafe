@@ -3,4 +3,5 @@
 	url = https://github.com/FreeOpenSourcePOS/FloUI.git
 [submodule "flo-specs"]
 	path = flo-specs
-	url = https://github.com/codify-apps/flo-specs.git
+	url = https://github.com/FreeOpenSourcePOS/specs.git
+	update = none

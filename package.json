@@ -70,6 +70,7 @@
   "build": {
     "appId": "com.flo.desktop",
     "productName": "Flo Cafe",
+    "icon": "assets/icon-512.png",
     "asar": true,
     "asarUnpack": "**/node_modules/better-sqlite3/**/*",
     "directories": {

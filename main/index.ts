@@ -1,6 +1,7 @@
 import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
 import { initDatabase, closeDatabase } from './db';
 import { startServer, stopServer, getLocalIP, isServerRunning } from './server';
@@ -118,6 +119,12 @@ function setupAutoUpdater(): void {
 }
 
 function checkForUpdates(): void {
+  // Linux: auto-updater is not supported.
+  // AppImage requires the APPIMAGE env var (not always set) and the deb
+  // package is managed by apt — electron-updater cannot update either.
+  // Skip silently so no error is logged and no error status is sent to the UI.
+  if (process.platform === 'linux') return;
+
   if (isStoreBuild) {
     log.debug('[Update] Store build — updates handled by the platform store');
     mainWindow?.webContents.send('update-status', { status: 'store' });
@@ -140,6 +147,69 @@ let isQuitting = false;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '3001', 10);
+
+let ownsLinuxLock = false;
+let gotSingleInstanceLock = false;
+
+// ── Single-instance lock ──────────────────────────────────────────────────────
+// Prevent multiple instances of the app from running simultaneously.
+// This is especially important on Linux where the AppImage can be launched
+// multiple times without the OS preventing it.
+if (process.platform === 'linux') {
+  // Explicitly set app name and userData path to prevent Electron from
+  // resolving them inside temporary mount paths (e.g. /tmp/.mount_FloXXXXXX)
+  app.name = 'flo-desktop';
+  app.setPath('userData', path.join(os.homedir(), '.config', 'flo-desktop'));
+
+  const lockFilePath = path.join(app.getPath('userData'), 'singleton.lock');
+  let isRunning = false;
+  if (fs.existsSync(lockFilePath)) {
+    try {
+      const lockContent = fs.readFileSync(lockFilePath, 'utf8').trim();
+      const lockPid = parseInt(lockContent, 10);
+      if (!isNaN(lockPid) && fs.existsSync(`/proc/${lockPid}`)) {
+        isRunning = true;
+      }
+    } catch (err) {
+      console.error('[Lock] Failed to read existing lock file:', err);
+    }
+  }
+
+  if (isRunning) {
+    console.log('[Lock] Another instance is already running on Linux. Quitting.');
+    app.quit();
+    process.exit(0);
+  } else {
+    try {
+      // Ensure the directory exists
+      const userDataPath = app.getPath('userData');
+      if (!fs.existsSync(userDataPath)) {
+        fs.mkdirSync(userDataPath, { recursive: true });
+      }
+      fs.writeFileSync(lockFilePath, process.pid.toString(), 'utf8');
+      gotSingleInstanceLock = true;
+      ownsLinuxLock = true;
+    } catch (err) {
+      console.error('[Lock] Failed to write lock file:', err);
+    }
+  }
+} else {
+  gotSingleInstanceLock = app.requestSingleInstanceLock();
+  if (!gotSingleInstanceLock) {
+    app.quit();
+  }
+}
+
+if (gotSingleInstanceLock) {
+  // Focus the existing window if a second launch is attempted.
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -203,7 +273,11 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();
-      mainWindow?.hide();
+      if (process.platform === 'linux') {
+        mainWindow?.minimize();
+      } else {
+        mainWindow?.hide();
+      }
     }
   });
 
@@ -245,6 +319,61 @@ function createWindow(): void {
 }
 
 function createTray(): void {
+  if (process.platform === 'linux') {
+    // ── Linux system tray ────────────────────────────────────────────────────
+    // On Linux the window close button hides the window (same as other
+    // platforms), but there is no native macOS-style dock or Windows taskbar
+    // integration to bring it back. A system-tray icon gives Linux users a
+    // persistent, discoverable way to show the window or fully quit the app
+    // (which triggers the existing quit handler that tears down DB, servers,
+    // mDNS, etc.).
+    const linuxIconPath = isDev
+      ? path.join(__dirname, '../../assets/icon-512.png')
+      : path.join(process.resourcesPath, 'assets/icon-512.png');
+
+    try {
+      const linuxIcon = nativeImage.createFromPath(linuxIconPath);
+      tray = new Tray(linuxIcon.resize({ width: 22, height: 22 }));
+
+      const linuxMenu = Menu.buildFromTemplate([
+        {
+          label: 'Show',
+          click: () => {
+            if (mainWindow) {
+              if (mainWindow.isMinimized()) mainWindow.restore();
+              mainWindow.show();
+              mainWindow.focus();
+            }
+          },
+        },
+        {
+          label: 'Quit',
+          click: () => {
+            isQuitting = true;
+            app.quit();
+          },
+        },
+      ]);
+
+      tray.setToolTip('Flo Cafe');
+      tray.setContextMenu(linuxMenu);
+      // Single-click also shows the window on Linux (no double-click standard).
+      tray.on('click', () => {
+        if (mainWindow) {
+          if (mainWindow.isMinimized()) mainWindow.restore();
+          mainWindow.show();
+          mainWindow.focus();
+        }
+      });
+
+      console.log('[Tray] Linux tray created');
+    } catch {
+      console.log('[Tray] Linux icon not found, skipping tray');
+    }
+    return;
+  }
+
+  // ── macOS / Windows tray ─────────────────────────────────────────────────
   const iconPath = isDev
     ? path.join(__dirname, '../../assets/icon.png')
     : path.join(process.resourcesPath, 'assets/icon.png');
@@ -336,6 +465,8 @@ function createMenu(): void {
         { label: 'Flo Cafe', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
         { type: 'separator' },
         { role: 'minimize' },
+        // TODO(linux): 'zoom' and 'front' are macOS-only roles and are no-ops
+        // on Linux and Windows. Wrap in a platform check when cleaning up menus.
         { role: 'zoom' },
         { type: 'separator' },
         { role: 'front' },
@@ -442,7 +573,9 @@ async function initialize(): Promise<void> {
     createWindow();
     createTray();
     createMenu();
-    if (!isStoreBuild) {
+    // Auto-updater: not supported on Linux (AppImage needs APPIMAGE env var;
+    // deb is managed by apt). Skip entirely on Linux to avoid error noise.
+    if (!isStoreBuild && process.platform !== 'linux') {
       setupAutoUpdater();
       setTimeout(() => checkForUpdates(), 5000);
     }
@@ -452,6 +585,7 @@ async function initialize(): Promise<void> {
     console.error('[Flo] Initialization error:', error);
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
     app.quit();
+    process.exit(1);
   }
 }
 
@@ -477,6 +611,16 @@ app.on('before-quit', () => {
 
 app.on('quit', () => {
   console.log('[Flo] Shutting down...');
+  if (process.platform === 'linux' && ownsLinuxLock) {
+    try {
+      const lockFilePath = path.join(app.getPath('userData'), 'singleton.lock');
+      if (fs.existsSync(lockFilePath)) {
+        fs.unlinkSync(lockFilePath);
+      }
+    } catch (err) {
+      console.error('[Lock] Failed to remove lock file on quit:', err);
+    }
+  }
   cloudSync.stop();
   stopMdns();
   stopKdsServer();

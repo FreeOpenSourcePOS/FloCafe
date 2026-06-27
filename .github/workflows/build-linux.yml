@@ -1,0 +1,127 @@
+﻿# ---------------------------------------------------------------
+# FloCafe — Linux Build (Manual Only)
+#
+# Trigger: "Run workflow" button in the Actions tab.
+# No automatic triggers (no push, pull_request, release, or tag).
+#
+# Output: Uploads AppImage + .deb as workflow artifacts.
+# Nothing is published to GitHub Releases or any remote store.
+# ---------------------------------------------------------------
+
+name: Build Linux
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ----------------------------------------------------------
+      # 1. Check out the repo and all submodules recursively.
+      #    The `frontend` submodule (FloUI) is required by
+      #    build:frontend. The `specs` submodule has update=none
+      #    so git will skip it automatically.
+      # ----------------------------------------------------------
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ----------------------------------------------------------
+      # 2. Set up Node.js 22 (matches package.json "engines":
+      #    "node": ">=22.0.0").
+      #    Cache is keyed on package-lock.json so subsequent runs
+      #    skip re-downloading the root node_modules.
+      # ----------------------------------------------------------
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # ----------------------------------------------------------
+      # 3. Install Linux packaging tools needed by electron-builder
+      #    for the deb target. fakeroot + dpkg are required to
+      #    produce a valid .deb file. appimagetool is auto-
+      #    downloaded by electron-builder; no manual install needed.
+      # ----------------------------------------------------------
+      - name: Install Linux packaging tools (fakeroot, dpkg)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fakeroot dpkg
+
+      # ----------------------------------------------------------
+      # 4. Install Node dependencies.
+      #    `npm ci` respects the lockfile exactly, then runs the
+      #    postinstall script defined in package.json:
+      #      - git submodule update --init frontend  (idempotent)
+      #      - npx @electron/rebuild -f -w better-sqlite3
+      #    This compiles better-sqlite3 against the Linux Electron
+      #    headers - the correct binary for the target platform.
+      # ----------------------------------------------------------
+      - name: Install dependencies (triggers postinstall / better-sqlite3 rebuild)
+        run: npm ci
+
+      # ----------------------------------------------------------
+      # 5a. Cache frontend/node_modules.
+      #     Keyed on the frontend's own lockfile so the cache is
+      #     invalidated whenever frontend dependencies change.
+      #     Falls back to any prior frontend cache on a partial miss.
+      # ----------------------------------------------------------
+      - name: Cache frontend node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-frontend-
+
+      # ----------------------------------------------------------
+      # 5b. Build the Next.js frontend (NEXT_BUILD_MODE=desktop).
+      #     This is the same step build:linux runs internally;
+      #     doing it separately surfaces frontend errors clearly.
+      #     NEXT_TELEMETRY_DISABLED suppresses outbound telemetry
+      #     calls during the build (faster, no network noise in logs).
+      # ----------------------------------------------------------
+      - name: Build frontend (Next.js static export)
+        run: npm run build:frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      # ----------------------------------------------------------
+      # 5c. Compile TypeScript main process.
+      # ----------------------------------------------------------
+      - name: Build main process (tsc)
+        run: npm run build
+
+      # ----------------------------------------------------------
+      # 5d. Package with electron-builder.
+      #     We call electron-builder directly (not via the
+      #     build:linux npm script) so we can pass --publish never,
+      #     preventing any accidental upload to GitHub Releases even
+      #     though the package.json "publish.provider" is "github".
+      #     No GH_TOKEN is set in this workflow by design.
+      # ----------------------------------------------------------
+      - name: Package Linux (AppImage + deb)
+        run: npx electron-builder --linux --publish never
+
+      # ----------------------------------------------------------
+      # 6. Upload artifacts.
+      #    Output directory is "release/" (set via
+      #    build.directories.output in package.json).
+      #    Only the final AppImage and .deb are uploaded - not
+      #    intermediate builder files (builder-debug.yml, etc.).
+      #    if-no-files-found: error ensures a failed build that
+      #    produces no output is caught immediately, not silently.
+      # ----------------------------------------------------------
+      - name: Upload AppImage and deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: flo-cafe-linux-${{ github.run_number }}
+          path: |
+            release/*.AppImage
+            release/*.deb
+          if-no-files-found: error
+          retention-days: 30

@@ -94,6 +94,9 @@ Window close hides the app — use the tray to get it back or quit.
 - **Window menu zoom/front** — macOS-only roles, no-ops on Linux. Cosmetic. See `TODO(linux)` in `main/index.ts`.
 - **Printer make/model** — `detectLinuxPrinters()` always returns Generic. Needs `lpoptions`/`lsusb` integration. Medium effort. See `main/printers/thermal.ts`.
 - **Auto-updater** — manual re-download for now. Future: apt repo, Flatpak, or [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate).
-- **Single-instance locking on AppImage (Custom PID File Lock)** — The default Electron `app.requestSingleInstanceLock()` checks process executable paths in the temporary mounts (e.g. `/tmp/.mount_FloXXXXXX/`), causing it to fail. To resolve this, a custom lock file containing the running process PID is written to `~/.config/flo-desktop/singleton.lock` (the user data path is explicitly set to `~/.config/flo-desktop` at startup on Linux). Startup checks `/proc/<pid>` to verify if the locking process is active.
+- **Single-instance locking on AppImage (Custom PID File Lock)** — Resolved by implementing a custom lock file containing the running process PID written to a persistent user data path (`~/.config/flo-desktop/singleton.lock`), checking process existence via `/proc/<pid>`.
+- **System Tray "Quit" menu item** — The "Quit" context menu item on the tray does not fully close the app in some environments, requiring investigation of `isQuitting` state lifecycle, event order, and DB/server tear-down sequence.
+- **Debian Package (`.deb`) App Store Metadata** — The built `.deb` lacks standard AppStream metadata (no screenshots, description, or age rating, showing "potentially unsafe" warnings in software centers). Requires adding an AppStream `.metainfo.xml` file and configuring the `desktop` file fields in the packaging configuration.
+
 
 

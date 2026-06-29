@@ -33,13 +33,22 @@ jobs:
         env:
           npm_config_build_from_source: true
 
-      - name: Build and publish AppImage + deb + rpm to GitHub
-        run: npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm --publish always
+      - name: Build AppImage + deb + rpm
+        run: npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm --publish never
+
+      - name: Upload Linux assets to GitHub release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release upload "v${VERSION}" \
+            release/*.AppImage \
+            release/*.deb \
+            release/*.rpm \
+            --repo FreeOpenSourcePOS/FloCafe --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Build snap
-        run: npx electron-builder --linux snap
+        run: npx electron-builder --linux snap --publish never
         env:
           SNAPCRAFT_BUILD_ENVIRONMENT: host
         continue-on-error: true
@@ -80,13 +89,21 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build and publish macOS to GitHub
-        run: npm run release:mac
+      - name: Build macOS
+        run: npm run build:frontend && npm run build && npx electron-builder --mac --publish never
         env:
-          GH_TOKEN: ${{ github.token }}
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           APPLE_TEAM_ID: BKDY677XJA
+
+      - name: Upload macOS assets to GitHub release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release upload "v${VERSION}" \
+            release/*.dmg \
+            --repo FreeOpenSourcePOS/FloCafe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
 
   release-windows:
     runs-on: windows-latest
@@ -102,7 +119,12 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build and publish Windows to GitHub
-        run: npm run release:win
+      - name: Build Windows
+        run: npm run build:frontend && npm run build && npx electron-builder --win --publish never
+
+      - name: Upload Windows assets to GitHub release
+        run: |
+          $VERSION = node -p "require('./package.json').version"
+          gh release upload "v$VERSION" (Get-ChildItem release\*.exe | Select-Object -ExpandProperty FullName) --repo FreeOpenSourcePOS/FloCafe --clobber
         env:
           GH_TOKEN: ${{ github.token }}

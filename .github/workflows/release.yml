@@ -36,7 +36,7 @@ jobs:
       - name: Build and publish AppImage + deb + rpm to GitHub
         run: npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm --publish always
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
 
       - name: Build snap
         run: npx electron-builder --linux snap
@@ -52,7 +52,7 @@ jobs:
             gh release upload "v${VERSION}" "$SNAP_FILE" --repo FreeOpenSourcePOS/FloCafe --clobber
           fi
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         continue-on-error: true
 
       - name: Publish snap to Snap Store
@@ -83,7 +83,7 @@ jobs:
       - name: Build and publish macOS to GitHub
         run: npm run release:mac
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
           APPLE_TEAM_ID: BKDY677XJA
@@ -105,4 +105,4 @@ jobs:
       - name: Build and publish Windows to GitHub
         run: npm run release:win
         env:
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ github.token }}

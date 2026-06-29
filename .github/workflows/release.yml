@@ -34,12 +34,12 @@ jobs:
           npm_config_build_from_source: true
 
       - name: Build and publish AppImage + deb + rpm to GitHub
-        run: npm run build:frontend && npm run build && electron-builder --linux AppImage deb rpm --publish always
+        run: npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm --publish always
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
 
       - name: Build snap
-        run: electron-builder --linux snap
+        run: npx electron-builder --linux snap
         env:
           SNAPCRAFT_BUILD_ENVIRONMENT: host
         continue-on-error: true

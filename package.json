@@ -21,6 +21,9 @@
     "build:mas": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac mas --universal",
     "build:mas-dev": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac masDev",
     "build:linux": "npm run build:frontend && npm run build && electron-builder --linux",
+    "release:linux": "npm run build:frontend && npm run build && electron-builder --linux --publish always",
+    "release:mac": "npm run build:frontend && npm run build && electron-builder --mac --publish always",
+    "release:win": "npm run build:frontend && npm run build && electron-builder --win --publish always",
     "pack": "electron-builder --dir",
     "start": "electron .",
     "rebuild": "HOME=~/.electron-gyp node-gyp rebuild --target=$(node -p \"require('./node_modules/electron/package.json').version\") --arch=$(node -p \"process.arch\") --dist-url=https://electronjs.org/headers --runtime=electron --directory node_modules/better-sqlite3",
@@ -71,6 +74,7 @@
     "appId": "com.flo.desktop",
     "productName": "Flo Cafe",
     "icon": "assets/icon-512.png",
+    "afterPack": "scripts/afterPack.js",
     "asar": true,
     "asarUnpack": "**/node_modules/better-sqlite3/**/*",
     "directories": {
@@ -173,10 +177,23 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "snap",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets",
       "category": "Office"
+    },
+    "snap": {
+      "confinement": "strict",
+      "plugs": ["cups-control", "avahi-observe", "avahi-control", "raw-usb", "removable-media"],
+      "environment": {
+        "TMPDIR": "$XDG_RUNTIME_DIR"
+      }
     },
     "nsis": {
       "oneClick": false,

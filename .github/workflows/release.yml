@@ -1,0 +1,108 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev rpm
+
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+        continue-on-error: true
+
+      - name: Install npm dependencies
+        run: npm ci
+        env:
+          npm_config_build_from_source: true
+
+      - name: Build and publish AppImage + deb + rpm to GitHub
+        run: npm run build:frontend && npm run build && electron-builder --linux AppImage deb rpm --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Build snap
+        run: electron-builder --linux snap
+        env:
+          SNAPCRAFT_BUILD_ENVIRONMENT: host
+        continue-on-error: true
+
+      - name: Upload snap to GitHub release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          SNAP_FILE=$(ls release/*.snap 2>/dev/null | head -1)
+          if [ -n "$SNAP_FILE" ]; then
+            gh release upload "v${VERSION}" "$SNAP_FILE" --repo FreeOpenSourcePOS/FloCafe --clobber
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        continue-on-error: true
+
+      - name: Publish snap to Snap Store
+        if: ${{ env.SNAPCRAFT_STORE_CREDENTIALS != '' }}
+        run: |
+          SNAP_FILE=$(ls release/*.snap 2>/dev/null | head -1)
+          if [ -n "$SNAP_FILE" ]; then
+            snapcraft upload "$SNAP_FILE" --release stable
+          fi
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        continue-on-error: true
+
+  release-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build and publish macOS to GitHub
+        run: npm run release:mac
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_TEAM_ID: BKDY677XJA
+
+  release-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build and publish Windows to GitHub
+        run: npm run release:win
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}

@@ -4,6 +4,7 @@
 # Trigger: Push to main, pull requests to main.
 # Runs: Tests, type checks, frontend lint, and build validation
 # on all 3 platforms (Linux, macOS, Windows).
+# Uploads build artifacts for manual testing (7-day retention).
 #
 # Cost: $0 — GitHub Actions is unlimited for public repos.
 # ---------------------------------------------------------------
@@ -60,7 +61,7 @@ jobs:
         run: npx tsc --noEmit
 
   # ── Job 3: Frontend lint + build ────────────────────────────
-  frontend-check:
+  frontend-lint:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository and submodules
@@ -151,3 +152,10 @@ jobs:
         run: npx electron-builder ${{ matrix.target }} --dir --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: flo-${{ matrix.os }}-${{ github.run_number }}
+          path: release/
+          retention-days: 7

@@ -1,77 +1,124 @@
-# FloDesktop Development Guidelines
+# AGENTS.md — FloCafe
 
-## Non-Negotiable Rules
+**Role:** You are a senior full-stack engineer specializing in Electron desktop apps with embedded Express backends and Next.js frontends.
 
-### 1. Database Migrations - NEVER DESTRUCTIVE
+## Tech Stack
 
-When modifying the database schema:
-- **ALWAYS use incremental migrations** - Add new tables/columns, never drop existing ones
-- **Use `CREATE TABLE IF NOT EXISTS`** and **`ALTER TABLE ADD COLUMN`** for new features
-- **Never use `DROP TABLE` or `DROP COLUMN`** in migrations
-- **Test migrations on existing data** - Always verify that existing data survives upgrades
-- **Version bump migrations** - Each schema change gets its own version increment
+| Layer | Technology |
+|-------|-----------|
+| Runtime | Electron 31 (Chromium) |
+| Backend | Express.js + TypeScript (main/ → dist/) |
+| Frontend | Next.js 16 + React 19 (static export) |
+| Database | SQLite via better-sqlite3 (WAL mode) |
+| State | Zustand |
+| Styling | Tailwind CSS v4 + shadcn/ui |
+| Realtime | WebSocket (KDS on port 3002) |
+| Printing | ESC/POS (node-thermal-printer) |
 
-**Example of CORRECT migration:**
+## Architecture
+
+```
+┌─────────────────────────────────────────┐
+│ Electron Main Process                    │
+│  main/index.ts → orchestrator            │
+│  main/server.ts → Express :3001 (API)    │
+│  main/kds-server.ts → Express :3002 (KDS)│
+│  main/db.ts → SQLite (WAL, PRAGMA)       │
+└──────────────┬──────────────────────────┘
+               │ HTTP + WebSocket
+┌──────────────▼──────────────────────────┐
+│ Renderer (Next.js static export)         │
+│  frontend/src/app/ → pages               │
+│  frontend/src/store/ → Zustand           │
+└─────────────────────────────────────────┘
+```
+
+Two independent Express servers: **:3001** (main API + frontend), **:3002** (KDS standalone).
+
+## Commands
+
+```bash
+npm run dev              # Full app (Electron + backend + frontend)
+node dev-server.js       # Backend-only (mocks Electron, faster iteration)
+npm run build            # Compile main/ → dist/
+npm run build:frontend   # Static export via Next.js
+
+# Platform builds
+npm run build:mac        # macOS DMG
+npm run build:win        # Windows NSIS
+npm run build:linux      # Linux AppImage + deb
+
+# Tests
+npm test                 # All tests (backup-restore, printer, db-audit)
+npm run test:backup      # Single test file
+npm run test:printer
+npm run test:db-audit
+
+# Frontend
+cd frontend && npm run lint
+cd frontend && npm run dev  # Frontend dev server only
+```
+
+**Requirements:** Node >= 22.0.0 (enforced via .npmrc engine-strict).
+
+## Database
+
+SQLite via better-sqlite3, WAL mode. Schema version via `PRAGMA user_version` (not settings table).
+
+**ID convention:** Master/config tables use `id TEXT PRIMARY KEY`. Transaction tables (`orders`, `order_items`, `bills`, `loyalty_ledger`) use `INTEGER PRIMARY KEY AUTOINCREMENT`.
+
+### Migrations — NEVER Destructive
+
+- `CREATE TABLE IF NOT EXISTS` and `ALTER TABLE ADD COLUMN` only
+- Never `DROP TABLE` or `DROP COLUMN`
+- Each change gets its own version increment
+
 ```typescript
-// Good - Add printer table without destroying data
+// Good
 if (!columnExists('printers')) {
   db.exec(`CREATE TABLE IF NOT EXISTS printers (...)`);
 }
-db.exec(`ALTER TABLE orders ADD COLUMN printer_id TEXT`);
+
+// Bad — destroys data
+dropAllTables();
 ```
 
-**Example of WRONG migration (NEVER DO THIS):**
-```typescript
-// BAD - Drops all tables and recreates!
-if (version < NEW_VERSION) {
-  dropAllTables();  // NEVER DO THIS
-  createSchema();
-  seedData();
-}
-```
+## Key Tables
 
-### 2. Test Import/Export Before Major Releases
+`settings`, `products`, `categories`, `orders`, `order_items`, `bills`, `customers`, `printers`, `users`, `addon_groups`, `addons`, `kitchen_stations`, `tables`, `loyalty_ledger`
 
-Before building release packages:
-- **Test database export** creates valid backup
-- **Test database import** restores data correctly
-- **Test on existing database** with sample data
-- **Verify all tables** are included in backup
+## Git Conventions
 
-### 3. Version Control
+- Branch: `feature/<name>`, `fix/<name>`
+- Commit: imperative mood, scope optional (`fix(printer): handle USB disconnect`)
+- Bump version in package.json before release
+- Tags: `git tag -a v1.x.x -m "message"`
 
-- Bump version in `package.json` before building releases
-- Create git tags for releases: `git tag -a v1.x.x -m "message"`
-- Push tags: `git push origin --tags`
-- Update GitHub Releases with build artifacts
+## Non-Negotiable Boundaries
+
+### Do NOT Touch
+- `frontend/` submodule — changes go to FreeOpenSourcePOS/FloUI repo
+- `specs/` submodule — read-only reference
+- Database migrations — never destructive, always test with existing data
+- Credentials, API keys, internal URLs — never commit
+
+### Always Verify
+- Test import/export before major releases
+- Run `npm test` before committing
+- Build all platforms before tagging a release
 
 ## Release Checklist
 
-- [ ] Non-destructive database migration tested
-- [ ] Import/Export feature tested
-- [ ] All platforms built (macOS, Windows, Linux)
-- [ ] Git tag created and pushed
-- [ ] GitHub Release published with assets
-- [ ] README and docs updated if needed
+- [ ] Migration tested on existing data
+- [ ] Import/export verified
+- [ ] All platforms built
+- [ ] Version bumped in package.json
+- [ ] Git tag pushed
+- [ ] GitHub Release published
 
-## Architecture Notes
+## Submodules
 
-### Database
-- SQLite with better-sqlite3
-- Schema version tracked in `settings` table
-- All tables use `id TEXT PRIMARY KEY` (string IDs for cross-platform compatibility)
-
-### Key Tables
-- `settings` - Key-value business configuration
-- `products` - Product catalog
-- `categories` - Product categories
-- `orders`, `order_items` - Order management
-- `bills` - Billing and payments
-- `customers` - Customer database
-- `printers` - Printer configurations
-- `users` - Authentication
-
-### Printers
-- Thermal printing via ESC/POS protocol
-- Support for USB and Network printers
-- Configurable paper widths (58mm/80mm)
+| Submodule | URL | Policy |
+|-----------|-----|--------|
+| frontend | FreeOpenSourcePOS/FloUI | Auto-sync |
+| specs | FreeOpenSourcePOS/specs | Manual (update=none) |

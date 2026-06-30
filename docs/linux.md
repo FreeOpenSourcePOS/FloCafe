@@ -91,12 +91,16 @@ Window close hides the app — use the tray to get it back or quit.
 
 ## Known Issues / TODO
 
-- **Window menu zoom/front** — macOS-only roles, no-ops on Linux. Cosmetic. See `TODO(linux)` in `main/index.ts`.
-- **Printer make/model** — `detectLinuxPrinters()` always returns Generic. Needs `lpoptions`/`lsusb` integration. Medium effort. See `main/printers/thermal.ts`.
-- **Auto-updater** — manual re-download for now. Future: apt repo, Flatpak, or [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate).
-- **Single-instance locking on AppImage (Custom PID File Lock)** — Resolved by implementing a custom lock file containing the running process PID written to a persistent user data path (`~/.config/flo-desktop/singleton.lock`), checking process existence via `/proc/<pid>`.
-- **System Tray "Quit" menu item** — The "Quit" context menu item on the tray does not fully close the app in some environments, requiring investigation of `isQuitting` state lifecycle, event order, and DB/server tear-down sequence.
-- **Debian Package (`.deb`) App Store Metadata** — The built `.deb` lacks standard AppStream metadata (no screenshots, description, or age rating, showing "potentially unsafe" warnings in software centers). Requires adding an AppStream `.metainfo.xml` file and configuring the `desktop` file fields in the packaging configuration.
+_(None currently open — all items resolved as of 2025-06.)_
+
+## Resolved
+
+- **System Tray "Quit"** — Extracted cleanup to idempotent `runCleanup()` with try/catch per service. Added `tray.destroy()` to prevent ghost icons on X11. Added `SIGTERM`/`SIGINT` handlers. Moved cleanup to `will-quit` with retry fallback. See `main/index.ts`.
+- **Printer make/model** — `detectLinuxPrinters()` now parses CUPS Device URI (`usb://Make/Model`) and falls back to sysfs vendor ID lookup with a known thermal printer vendor table. See `main/printers/thermal.ts`.
+- **Debian `.deb` metadata** — Added `assets/com.flo.desktop.metainfo.xml` with AppStream metadata and desktop file fields in `package.json`. The `.deb` now shows proper description in GNOME Software.
+- **Window menu zoom/front** — Wrapped `{ role: 'zoom' }` and `{ role: 'front' }` in `process.platform === 'darwin'` check. No longer a no-op on Linux/Windows.
+- **Single-instance locking on AppImage** — Custom PID file lock implemented at `~/.config/flo-desktop/singleton.lock` with `/proc/<pid>` existence check.
+- **Auto-updater** — Disabled on Linux at source level. No error noise. Manual re-download from [GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases) for now.
 
 
 

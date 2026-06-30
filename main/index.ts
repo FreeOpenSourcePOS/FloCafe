@@ -144,6 +144,7 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let bonjour: Bonjour | null = null;
 let isQuitting = false;
+let hasCleanedUp = false;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -465,11 +466,11 @@ function createMenu(): void {
         { label: 'Flo Cafe', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
         { type: 'separator' },
         { role: 'minimize' },
-        // TODO(linux): 'zoom' and 'front' are macOS-only roles and are no-ops
-        // on Linux and Windows. Wrap in a platform check when cleaning up menus.
-        { role: 'zoom' },
-        { type: 'separator' },
-        { role: 'front' },
+        ...(process.platform === 'darwin' ? [
+          { role: 'zoom' as const },
+          { type: 'separator' as const },
+          { role: 'front' as const },
+        ] : []),
       ],
     },
     {
@@ -605,28 +606,77 @@ app.on('activate', () => {
   }
 });
 
-app.on('before-quit', () => {
-  isQuitting = true;
-});
+// --- Cleanup function (idempotent — safe to call from multiple places) ---
+function runCleanup(): void {
+  if (hasCleanedUp) return;
+  hasCleanedUp = true;
+  console.log('[Flo] Running cleanup...');
 
-app.on('quit', () => {
-  console.log('[Flo] Shutting down...');
+  // Remove Linux singleton lock
   if (process.platform === 'linux' && ownsLinuxLock) {
     try {
       const lockFilePath = path.join(app.getPath('userData'), 'singleton.lock');
-      if (fs.existsSync(lockFilePath)) {
-        fs.unlinkSync(lockFilePath);
-      }
-    } catch (err) {
-      console.error('[Lock] Failed to remove lock file on quit:', err);
+      if (fs.existsSync(lockFilePath)) fs.unlinkSync(lockFilePath);
+    } catch (e) { console.error('[Flo] Lock removal error:', e); }
+  }
+
+  // Destroy tray to prevent ghost icons on X11/GNOME/KDE
+  if (tray) {
+    try { tray.destroy(); } catch (e) { console.error('[Flo] tray.destroy error:', e); }
+    tray = null;
+  }
+
+  // Tear down services — each wrapped so one failure doesn't block others
+  try { cloudSync.stop(); } catch (e) { console.error('[Flo] cloudSync.stop error:', e); }
+  try { stopMdns(); } catch (e) { console.error('[Flo] stopMdns error:', e); }
+  try { stopKdsServer(); } catch (e) { console.error('[Flo] stopKdsServer error:', e); }
+  try { stopServer(); } catch (e) { console.error('[Flo] stopServer error:', e); }
+  try { closeDatabase(); } catch (e) { console.error('[Flo] closeDatabase error:', e); }
+
+  console.log('[Flo] Goodbye!');
+}
+
+app.on('before-quit', () => {
+  if (isQuitting) return; // guard against re-entry
+  isQuitting = true;
+});
+
+app.on('will-quit', (event) => {
+  // Run cleanup if it hasn't run yet
+  if (!hasCleanedUp) {
+    try {
+      runCleanup();
+    } catch (e) {
+      console.error('[Flo] Cleanup failed, retrying:', e);
+      event.preventDefault(); // delay quit to retry
+      setTimeout(() => {
+        runCleanup();
+        app.exit(0); // force exit after retry
+      }, 500);
+      return;
     }
   }
-  cloudSync.stop();
-  stopMdns();
-  stopKdsServer();
-  stopServer();
-  closeDatabase();
-  console.log('[Flo] Goodbye!');
+  // Force-destroy window to prevent Linux compositor stall
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.destroy();
+  }
+});
+
+app.on('quit', () => {
+  runCleanup(); // fallback — defense in depth
+});
+
+// --- SIGTERM/SIGINT handlers (Linux/Unix — clean shutdown on external signals) ---
+process.on('SIGTERM', () => {
+  console.log('[Flo] SIGTERM received, cleaning up...');
+  runCleanup();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('[Flo] SIGINT received, cleaning up...');
+  runCleanup();
+  process.exit(0);
 });
 
 process.on('uncaughtException', (error) => {

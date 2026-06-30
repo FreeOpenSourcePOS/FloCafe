@@ -1,6 +1,6 @@
 import * as net from 'net';
 import * as fs from 'fs';
-import { execSync, exec } from 'child_process';
+import { execSync, exec, execFileSync } from 'child_process';
 import { getDatabase } from '../db';
 
 const isMasBuild =
@@ -984,15 +984,13 @@ async function printViaUSBMacOS(data: Buffer, printerName?: string): Promise<boo
     console.log('[Printer] Data written to:', tmpFile, 'size:', data.length, 'bytes');
     console.log('[Printer] First 50 bytes:', Array.from(data.slice(0, 50)).map(b => b.toString(16)).join(' '));
 
-    let cmd: string;
+    const args = ['-o', 'raw', tmpFile];
     if (printerName) {
-      cmd = `lp -d "${printerName}" -o raw "${tmpFile}"`;
-    } else {
-      cmd = `lp -o raw "${tmpFile}"`;
+      args.splice(0, 0, '-d', printerName);
     }
 
-    console.log('[Printer] Executing:', cmd);
-    const result = execSync(cmd, { encoding: 'utf8' });
+    console.log('[Printer] Executing: lp', args.join(' '));
+    const result = execFileSync('lp', args, { encoding: 'utf8' });
     console.log('[Printer] Print sent successfully, result:', result);
     return true;
   } catch (err: any) {
@@ -1042,9 +1040,9 @@ async function printViaWindowsRaw(data: Buffer, printerName?: string): Promise<b
     fs.writeFileSync(tmpFile, data);
 
     const name = printerName || 'Microsoft Print to PDF';
-    const cmd = `powershell -Command "Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name}' -Wait"`;
+    const psCommand = `Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name}' -Wait`;
 
-    execSync(cmd, { encoding: 'utf8' });
+    execFileSync('powershell', ['-Command', psCommand], { encoding: 'utf8', shell: true });
     fs.unlinkSync(tmpFile);
     return true;
   } catch (err: any) {
@@ -1060,11 +1058,9 @@ async function printViaUSBLinux(data: Buffer, printerName?: string): Promise<boo
     fs.writeFileSync(tmpFile, data);
 
     if (printerName) {
-      const cmd = `lp -d "${printerName}" -o raw "${tmpFile}"`;
-      execSync(cmd, { encoding: 'utf8' });
+      execFileSync('lp', ['-d', printerName, '-o', 'raw', tmpFile], { encoding: 'utf8' });
     } else {
-      const cmd = `lp -o raw "${tmpFile}"`;
-      execSync(cmd, { encoding: 'utf8' });
+      execFileSync('lp', ['-o', 'raw', tmpFile], { encoding: 'utf8' });
     }
 
     return true;

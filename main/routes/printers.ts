@@ -5,6 +5,9 @@ import { printViaNetwork, printViaUSB, buildTestPage, printReceipt, printKOT, de
 
 const router = Router();
 
+// Printer name must contain only safe characters (no shell metacharacters)
+const PRINTER_NAME_REGEX = /^[a-zA-Z0-9 _\-\.]+$/;
+
 // GET /api/printers — list all
 router.get('/', (_req: Request, res: Response) => {
   try {
@@ -46,6 +49,9 @@ router.post('/', (req: Request, res: Response) => {
     const { name, connection_type, ip_address, port, usb_device_path, paper_width, is_default } = req.body;
 
     if (!name) return res.status(400).json({ error: 'name is required' });
+    if (!PRINTER_NAME_REGEX.test(name)) {
+      return res.status(400).json({ error: 'name contains invalid characters. Only letters, numbers, spaces, hyphens, underscores, and dots are allowed.' });
+    }
     if (!connection_type) return res.status(400).json({ error: 'connection_type is required' });
     if (!['network', 'usb', 'webusb'].includes(connection_type)) {
       return res.status(400).json({ error: 'connection_type must be network | usb | webusb' });
@@ -94,6 +100,10 @@ router.put('/:id', (req: Request, res: Response) => {
     if (!existing) return res.status(404).json({ error: 'Printer not found' });
 
     const { name, connection_type, ip_address, port, usb_device_path, paper_width, is_default } = req.body;
+
+    if (name && !PRINTER_NAME_REGEX.test(name)) {
+      return res.status(400).json({ error: 'name contains invalid characters. Only letters, numbers, spaces, hyphens, underscores, and dots are allowed.' });
+    }
 
     if (is_default) {
       db.prepare('UPDATE printers SET is_default = 0').run();

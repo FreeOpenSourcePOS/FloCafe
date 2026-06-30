@@ -107,13 +107,11 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build macOS (unsigned)
-        if: ${{ secrets.MAC_CERTS == '' || secrets.MAC_CERTS == null }}
-        run: npm run build:frontend && npm run build && npx electron-builder --mac --publish never
-
-      - name: Build macOS (signed)
-        if: ${{ secrets.MAC_CERTS != '' && secrets.MAC_CERTS != null }}
-        run: npm run build:frontend && npm run build && npx electron-builder --mac --publish never
+      - name: Build macOS
+        run: |
+          # Unset cert vars if secret is not configured — empty CSC_LINK crashes electron-builder
+          [ -z "$CSC_LINK" ] && unset CSC_LINK && unset CSC_KEY_PASSWORD
+          npm run build:frontend && npm run build && npx electron-builder --mac --publish never
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}

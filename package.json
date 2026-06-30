@@ -187,7 +187,15 @@
         }
       ],
       "icon": "assets",
-      "category": "Office"
+      "category": "Office",
+      "desktop": {
+        "Name": "Flo Cafe",
+        "Comment": "Free, open-source POS for cafes and restaurants",
+        "GenericName": "Point of Sale",
+        "Keywords": "pos;point of sale;restaurant;cafe;billing;invoice;",
+        "StartupWMClass": "flo-desktop"
+      },
+      "metainfo": "assets/com.flo.desktop.metainfo.xml"
     },
     "snap": {
       "confinement": "strict",

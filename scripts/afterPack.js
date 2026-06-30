@@ -6,6 +6,19 @@ const fs = require('fs');
 module.exports = async function afterPack(context) {
   const { appOutDir, packager, arch } = context;
 
+  // ── Linux: copy AppStream metainfo to standard system path ────
+  if (packager.platform.name === 'linux') {
+    const metainfoSrc = path.join(packager.projectDir, 'assets/com.flo.desktop.metainfo.xml');
+    const metainfoDest = path.join(appOutDir, 'share/metainfo/com.flo.desktop.metainfo.xml');
+    if (fs.existsSync(metainfoSrc)) {
+      fs.mkdirSync(path.dirname(metainfoDest), { recursive: true });
+      fs.copyFileSync(metainfoSrc, metainfoDest);
+      console.log(`→ afterPack: ✓ copied AppStream metainfo.xml`);
+    }
+    return;
+  }
+
+  // ── Mac: rebuild better-sqlite3 for arm64 ─────────────────────
   if (packager.platform.name !== 'mac') return;
   if (arch === 4) return; // skip the universal merge step
   if (arch !== 1 && arch !== 3) return; // only x64 and arm64

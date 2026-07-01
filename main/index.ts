@@ -18,6 +18,12 @@ import { autoUpdater } from 'electron-updater';
 // required DLLs (outdated drivers, missing Vulkan, etc.).  Disabling the GPU
 // sandbox lets the renderer fall back to software/Skia rendering which is
 // slower but reliable.  This is a no-op on macOS/Linux.
+//
+// Trade-off: this removes Chromium's GPU isolation for ALL Windows users,
+// not just those with the DLL crash.  For a local desktop POS app the attack
+// surface is already large (server binds 0.0.0.0), so the practical risk is
+// low.  A conditional approach (detect crash, store flag, re-launch with
+// sandbox disabled) adds complexity for minimal security gain here.
 if (process.platform === 'win32') {
   app.commandLine.appendSwitch('disable-gpu-sandbox');
 }

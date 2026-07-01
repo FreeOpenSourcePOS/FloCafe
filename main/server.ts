@@ -5,7 +5,9 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
+import { JWT_SECRET } from './routes/auth';
 import { getDbHealth } from './db';
 import { setupKdsWebSocket } from './services/kds';
 
@@ -14,6 +16,30 @@ let app: Express;
 let wss: WebSocketServer;
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
+
+/**
+ * JWT verification middleware. Skips health check and auth routes (those
+ * verify tokens individually). Protects all resource routes from unauthenticated
+ * LAN access.
+ */
+function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  // Health check — unauthenticated
+  if (req.path === '/api/health') { next(); return; }
+  // Auth routes handle their own token verification
+  if (req.path.startsWith('/api/auth')) { next(); return; }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+  try {
+    jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
 
 export function isServerRunning(): boolean {
   return server !== null;
@@ -68,6 +94,9 @@ export function startServer(): Promise<void> {
 
     app.use(cors());
     app.use(express.json());
+
+    // ── Auth middleware (skips /api/health and /api/auth) ─────────────
+    app.use(requireAuth);
 
     // ── API health check ───────────────────────────────────────────────
     app.get('/api/health', (_req: Request, res: Response) => {

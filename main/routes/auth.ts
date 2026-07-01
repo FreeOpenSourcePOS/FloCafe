@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, now } from '../db';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
+export const JWT_SECRET = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
 const JWT_EXPIRES_IN = '24h';
 
 /**

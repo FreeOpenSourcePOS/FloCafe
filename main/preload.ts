@@ -27,7 +27,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   onUpdateStatus: (callback: (status: any) => void) => {
-    ipcRenderer.on('update-status', (_event: any, status: any) => callback(status));
+    const handler = (_event: any, status: any) => callback(status);
+    ipcRenderer.on('update-status', handler);
+    return () => { ipcRenderer.removeListener('update-status', handler); };
   },
 
   onMenuAction: (callback: (channel: string) => void) => {

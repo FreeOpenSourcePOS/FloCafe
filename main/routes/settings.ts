@@ -135,7 +135,40 @@ router.put('/loyalty', (req: Request, res: Response) => {
   }
 });
 
-// ── Generic key-value routes ───────────────────────────────────────────────
+// ─── Cloud Sync settings (must come BEFORE /:key wildcard) ──────────────────
+
+router.get('/cloud', (req: Request, res: Response) => {
+  try {
+    const s = getAllSettings(getDatabase());
+    res.json({
+      cloud_api_key: s.cloud_api_key || null,
+      cloud_store_id: s.cloud_store_id || null,
+      cloud_sync_enabled: s.cloud_sync_enabled === '1',
+      cloud_orders_enabled: s.cloud_orders_enabled === '1',
+      cloud_last_sync: s.cloud_last_sync || null,
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/cloud', (req: Request, res: Response) => {
+  try {
+    const { cloud_api_key, cloud_store_id, cloud_sync_enabled, cloud_orders_enabled } = req.body;
+    const db = getDatabase();
+    upsertSettings(db, {
+      cloud_api_key: cloud_api_key || null,
+      cloud_store_id: cloud_store_id || null,
+      cloud_sync_enabled: cloud_sync_enabled ? '1' : '0',
+      cloud_orders_enabled: cloud_orders_enabled ? '1' : '0',
+    });
+    res.json({ ok: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Generic key-value routes (wildcard — must be last) ─────────────────────
 
 router.get('/', (req: Request, res: Response) => {
   try {
@@ -173,39 +206,6 @@ router.put('/:key', (req: Request, res: Response) => {
 
     const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
     res.json({ setting });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ─── Cloud Sync settings ────────────────────────────────────────────────────
-
-router.get('/cloud', (req: Request, res: Response) => {
-  try {
-    const s = getAllSettings(getDatabase());
-    res.json({
-      cloud_api_key: s.cloud_api_key || null,
-      cloud_store_id: s.cloud_store_id || null,
-      cloud_sync_enabled: s.cloud_sync_enabled === '1',
-      cloud_orders_enabled: s.cloud_orders_enabled === '1',
-      cloud_last_sync: s.cloud_last_sync || null,
-    });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.put('/cloud', (req: Request, res: Response) => {
-  try {
-    const { cloud_api_key, cloud_store_id, cloud_sync_enabled, cloud_orders_enabled } = req.body;
-    const db = getDatabase();
-    upsertSettings(db, {
-      cloud_api_key: cloud_api_key || null,
-      cloud_store_id: cloud_store_id || null,
-      cloud_sync_enabled: cloud_sync_enabled ? '1' : '0',
-      cloud_orders_enabled: cloud_orders_enabled ? '1' : '0',
-    });
-    res.json({ ok: true });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

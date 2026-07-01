@@ -12,6 +12,16 @@ import { registerIpcHandlers } from './ipc';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 
+// ── GPU compatibility ────────────────────────────────────────────────────────
+// On Windows, some systems hit "GPU process exited unexpectedly" (exit code
+// 0xC0000135 = STATUS_DLL_NOT_FOUND) because the GPU sandbox can't find
+// required DLLs (outdated drivers, missing Vulkan, etc.).  Disabling the GPU
+// sandbox lets the renderer fall back to software/Skia rendering which is
+// slower but reliable.  This is a no-op on macOS/Linux.
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-gpu-sandbox');
+}
+
 // Mac App Store builds: Electron sets process.mas = true inside the MAS sandbox.
 // MAS_BUILD=1 is the build-time fallback (dev/CI).
 const isMasBuild =
@@ -547,9 +557,10 @@ async function initialize(): Promise<void> {
     registerIpcHandlers();
 
     ipcMain.handle('get-update-status', () => ({
-      updateAvailable,
-      updateDownloaded,
-      version: app.getVersion(),
+      status: updateDownloaded ? 'ready-to-install' as const
+        : updateAvailable ? 'available' as const
+        : 'up-to-date' as const,
+      info: { version: app.getVersion() },
     }));
 
     ipcMain.handle('check-for-updates', () => {

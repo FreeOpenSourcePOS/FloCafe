@@ -1,0 +1,50 @@
+id,sku,name,category,price,description,cost,tax_type,tax_rate,cashback_percent,tags,is_active
+,,Cappuccino,Coffee & Hot Drinks,180,"Rich espresso with steamed milk, served hot",60,inclusive,5,0,"veg,bestseller,hot",yes
+,,Double Espresso,Coffee & Hot Drinks,120,,40,inclusive,5,0,veg,yes
+,,Hazelnut Latte,Coffee & Hot Drinks,220,"Espresso with hazelnut syrup, steamed milk and foam",75,inclusive,5,2,"veg,new_arrival",yes
+,,Flat White,Coffee & Hot Drinks,160,"Double ristretto with velvety microfoam milk",55,inclusive,5,0,veg,yes
+,SKU001,French Vanilla Coffee,Coffee & Hot Drinks,229,"Espresso blended with vanilla, topped with cream",80,inclusive,5,1,"veg,popular",yes
+,,Cold Brew,Cold Beverages,160,"Slow-steeped cold coffee, served over ice",55,inclusive,5,0,"veg,iced",yes
+,SKU002,"Iced Caramel Macchiato",Cold Beverages,240,"Espresso, vanilla syrup and caramel drizzle over ice",80,inclusive,5,0,"veg,bestseller,iced",yes
+,,Blue Lagoon Mocktail,Cold Beverages,179,"Blue curacao syrup with lemon soda, mint and ice",50,none,0,0,"veg,mocktail",yes
+,,Jamun Mint Cooler,Cold Beverages,199,"Fresh jamun, mint, black salt and chilled water",60,none,0,0,"veg,seasonal",yes
+,,"Mango Smoothie",Cold Beverages,219,"Fresh alphonso mango, yoghurt, honey, blended smooth",70,none,0,0,"veg,new_arrival",yes
+,,Classic Fries,"Snacks, Bites & Sides",120,"Crispy golden fries, lightly salted",35,exclusive,5,0,"veg,popular",yes
+,,Loaded Cheese Fries,"Snacks, Bites & Sides",249,"Golden fries loaded with cheddar sauce, jalapeños and herbs",90,exclusive,5,0,"veg,bestseller",yes
+,,"Chicken Popcorn (20pcs)","Snacks, Bites & Sides",279,Crispy bite-sized seasoned chicken pieces,100,exclusive,5,0,"non_veg,spicy",yes
+,SKU003,"Paneer Tikka Skewers","Snacks, Bites & Sides",249,"Marinated cottage cheese skewers with mint chutney",85,exclusive,5,0,"veg,popular",yes
+,,"Spring Rolls (6pcs)","Snacks, Bites & Sides",179,"Crispy vegetable spring rolls served with sweet chilli",55,exclusive,5,0,veg,yes
+,,Classic Veg Burger,"Burgers, Wraps & Rolls",149,"Aloo tikki patty, lettuce, tomato and house mayo",45,exclusive,5,0,"veg,popular",yes
+,,Crispy Chicken Burger,"Burgers, Wraps & Rolls",229,"Fried chicken fillet, coleslaw, pickles and secret sauce",80,exclusive,5,1,"non_veg,bestseller",yes
+,,"Paneer Tikka Wrap","Burgers, Wraps & Rolls",249,"Tandoori paneer, onions, capsicum in a whole wheat wrap",85,exclusive,5,0,"veg,new_arrival",yes
+,,"BBQ Pulled Chicken Roll","Burgers, Wraps & Rolls",279,"Shredded BBQ chicken, red onions, cheese in a grilled wrap",95,exclusive,5,1,"non_veg,spicy",yes
+,,Egg Roll,"Burgers, Wraps & Rolls",179,"Fluffy omelette wrap with onions and green chutney",50,exclusive,5,0,"non_veg,popular",yes
+,,Margherita,Pizzas,349,"Tomato sauce, fresh mozzarella, basil leaves",120,exclusive,5,0,"veg,popular",yes
+,SKU004,"Farm House",Pizzas,499,"Mozzarella, capsicum, mushroom, onion, tomato, broccoli, jalapeños",175,exclusive,5,0,veg,yes
+,,"BBQ Chicken",Pizzas,549,"BBQ sauce, mozzarella, chicken tikka, onions, capsicum, red paprika",195,exclusive,5,1,"non_veg,bestseller",yes
+,,"Shred Farmer Special",Pizzas,599,"Chipotle sauce, mozzarella, chicken tikka, keema, kebab, black olives",220,exclusive,5,2,"non_veg,signature",yes
+,,Chocolate Brownie,"Desserts & Sweets",199,"Warm fudge brownie with vanilla ice cream, chocolate drizzle",70,none,0,0,"veg,bestseller",yes
+,,Belgian Waffle,"Desserts & Sweets",229,"Crispy waffle with fresh strawberries, cream and maple syrup",75,none,0,0,"veg,popular",yes
+,,"Classic Affogato","Desserts & Sweets",179,"Single espresso shot poured over vanilla ice cream",55,none,0,0,"veg,new_arrival",yes
+,,"Nutella Banana Shake","Shakes & Smoothies",279,"Nutella, banana, full-cream milk and ice cream blended thick",95,none,0,0,"veg,bestseller",yes
+,,"Strawberry Shake","Shakes & Smoothies",199,Fresh strawberries blended with milk and vanilla ice cream,65,none,0,0,"veg,popular",yes
+,,"Kitkat Shake","Shakes & Smoothies",299,"Kitkat, milk, ice cream and chocolate sauce",100,none,0,0,"veg,indulgent",yes
+,,Tomato Basil Pasta,Pasta,249,"Penne in fresh tomato, basil and garlic sauce",80,exclusive,5,0,"veg,popular",yes
+,,"Chicken Arrabiata",Pasta,299,"Penne with spicy tomato sauce, chicken and fresh herbs",100,exclusive,5,0,non_veg,yes
+,,"Creamy Alfredo",Pasta,349,"Fettuccine in rich parmesan and cream sauce",110,exclusive,5,0,"veg,rich",yes
+,,"Paneer Seekh Kebab","Grills & Kebabs",329,"Minced cottage cheese and herb skewers, grilled on charcoal",110,exclusive,5,0,"veg,signature",yes
+,,"Chicken Seekh Kebab","Grills & Kebabs",349,"Minced chicken and herb skewers, served with mint chutney",120,exclusive,5,1,"non_veg,bestseller",yes
+,,"Veg Combo Meal","Combos & Meal Deals",399,"Classic Veg Burger + Classic Fries + Cold Brew",130,exclusive,5,3,"veg,value",yes
+,,"Chicken Combo Meal","Combos & Meal Deals",499,"Crispy Chicken Burger + Loaded Cheese Fries + Iced Caramel Macchiato",170,exclusive,5,3,"non_veg,value,bestseller",yes
+,,"Family Pizza Deal","Combos & Meal Deals",999,"Farm House + BBQ Chicken + 4 Cold Brews",350,exclusive,5,5,"value,party",yes
+,,Cappuccino,Coffee & Hot Drinks,180,DUPLICATE same name+category — should be skipped,60,inclusive,5,0,veg,yes
+,,Mystery Burger,NonExistentCategory,299,BAD CATEGORY — should produce error,100,none,0,0,,yes
+,,Bad Price Item,Cold Beverages,not-a-price,INVALID PRICE — should produce error,50,none,0,0,,yes
+,,,Pizzas,249,MISSING NAME — should produce error,80,none,0,0,,yes
+,,  Whitespace Name  ,Pizzas, ₹349 ,"Price has rupee symbol and spaces, name has whitespace",120,exclusive,5,0,"  veg , popular  ",yes
+,,Cheap Item,Coffee & Hot Drinks,0,Zero price is valid — should be created,5,none,0,0,veg,yes
+,,Free Item,"Snacks, Bites & Sides",0,Another zero price item,0,none,0,0,veg,no
+,,Tax Edge Case,Pasta,199,exclusive tax with 12 percent,70,exclusive,12,0,veg,yes
+,,No Tags,Cold Beverages,99,Product with empty tags field,30,none,0,0,,yes
+,,Inactive Product,Pizzas,450,is_active set to no — should import as inactive,150,exclusive,5,0,veg,no
+,,Another Inactive,"Shakes & Smoothies",350,is_active set to false,110,none,0,0,veg,FALSE

@@ -1,0 +1,16 @@
+name,description,color,icon,sort_order
+"Coffee & Hot Drinks",Hot espresso-based and brewed drinks,brown,☕,1
+Cold Beverages,Iced and chilled drinks for warm days,blue,🧊,2
+"Snacks, Bites & Sides","Quick bites, appetizers and side dishes",yellow,🍟,3
+"Burgers, Wraps & Rolls","Hearty burgers, wraps and kathi rolls",red,🍔,4
+Pizzas,Stone-baked pizzas with fresh toppings,orange,🍕,5
+"Desserts & Sweets","Ice creams, cakes, waffles and sweet treats",pink,🍰,6
+"Combos & Meal Deals",Value meal deals and combo offers,purple,🎁,7
+"Shakes & Smoothies","Thick shakes, fruit smoothies and blends",teal,🥤,8
+Pasta,Freshly tossed pasta in creamy and tangy sauces,green,🍝,9
+"Grills & Kebabs",Charcoal-grilled meats and paneer skewers,amber,🔥,10
+Coffee & Hot Drinks,THIS IS A DUPLICATE — should be skipped silently,brown,☕,11
+,Missing name — this row should be skipped,,🚫,12
+"   Trimmed Spaces   ","  Description with leading spaces  ",blue,,13
+No Color Or Icon,Category without color or icon field,,  ,14
+Sort Zero,Category with zero sort order,gray,⭐,0

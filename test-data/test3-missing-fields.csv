@@ -1,0 +1,5 @@
+id,sku,name,category,price,description,cost,tax_type,tax_rate,cashback_percent,tags,is_active
+,,Butter Naan,Food,40,,10,none,0,0,veg,yes
+,,,Food,80,,20,none,0,0,veg,yes
+,,Garlic Bread,UnknownCat,120,,30,none,0,0,veg,yes
+,,Brownie,,abc,,15,none,0,0,veg,yes

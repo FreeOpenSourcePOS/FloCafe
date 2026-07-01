@@ -8,7 +8,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('backup-database', async () => {
     try {
       console.log('[IPC] backup-database: Starting...');
-      
+
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
       const result = await dialog.showSaveDialog({
         defaultPath: path.join(app.getPath('documents'), `flo-backup-${timestamp}.db`),
@@ -20,10 +20,10 @@ export function registerIpcHandlers(): void {
       }
 
       const { path: backupPath, schemaVersion } = await createBackup(result.filePath);
-      
+
       console.log('[IPC] backup-database: Complete:', backupPath);
-      return { 
-        success: true, 
+      return {
+        success: true,
         path: backupPath,
         schemaVersion,
         message: `Backup saved (Schema v${schemaVersion})`
@@ -47,16 +47,16 @@ export function registerIpcHandlers(): void {
 
       const backupPath = result.filePaths[0];
       const backupVersion = getSchemaVersionFromBackup(backupPath);
-      
+
       if (backupVersion === 0) {
-        return { 
-          success: false, 
+        return {
+          success: false,
           error: 'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of FloDesktop.'
         };
       }
-      
+
       const versionMismatch = backupVersion !== getCurrentSchemaVersion();
-      
+
       if (versionMismatch) {
         const confirmResult = await dialog.showMessageBox({
           type: 'warning',
@@ -66,11 +66,11 @@ export function registerIpcHandlers(): void {
           message: `Backup was created with Schema v${backupVersion}`,
           detail: `Current database uses Schema v${getCurrentSchemaVersion()}.\n\nRestoring will import data only (common fields) to preserve new database structure.\n\nDo you want to continue?`
         });
-        
+
         if (confirmResult.response !== 0) {
           return { success: false, error: 'Cancelled' };
         }
-        
+
         const restoreResult = restoreBackup(backupPath, false);
         return {
           success: restoreResult.success,
@@ -78,13 +78,13 @@ export function registerIpcHandlers(): void {
           backupVersion,
           currentVersion: getCurrentSchemaVersion(),
           tablesRestored: restoreResult.tablesRestored,
-          message: restoreResult.success 
+          message: restoreResult.success
             ? `Restored ${restoreResult.tablesRestored} tables (data-only mode due to version mismatch)`
             : `Restore failed: ${restoreResult.error}`,
           error: restoreResult.error
         };
       }
-      
+
       const restoreResult = restoreBackup(backupPath, true);
       return {
         success: restoreResult.success,
@@ -249,12 +249,13 @@ export function registerIpcHandlers(): void {
     try {
       const bcrypt = require('bcryptjs');
       const hashedPassword = bcrypt.hashSync(userData.password, 10);
+      const hashedPin = userData.pin ? bcrypt.hashSync(userData.pin.toString(), 10) : null;
 
       const db = getDatabase();
       const result = db.prepare(`
-        INSERT INTO users (name, email, password, pin, role, is_active, created_at, updated_at)
+        INSERT INTO users (name, email, password, pin_hash, role, is_active, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-      `).run(userData.name, userData.email, hashedPassword, userData.pin || null,
+      `).run(userData.name, userData.email, hashedPassword, hashedPin,
         userData.role || 'cashier', now(), now());
 
       return { success: true, id: result.lastInsertRowid };
@@ -271,7 +272,11 @@ export function registerIpcHandlers(): void {
 
       if (userData.name) { updates.push('name = ?'); params.push(userData.name); }
       if (userData.email) { updates.push('email = ?'); params.push(userData.email); }
-      if (userData.pin !== undefined) { updates.push('pin = ?'); params.push(userData.pin); }
+      if (userData.pin !== undefined) {
+        updates.push('pin_hash = ?');
+        const bcrypt = require('bcryptjs');
+        params.push(userData.pin ? bcrypt.hashSync(userData.pin.toString(), 10) : null);
+      }
       if (userData.role) { updates.push('role = ?'); params.push(userData.role); }
       if (userData.is_active !== undefined) { updates.push('is_active = ?'); params.push(userData.is_active ? 1 : 0); }
 

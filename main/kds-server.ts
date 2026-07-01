@@ -1,5 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import jwt from 'jsonwebtoken';
 import { WebSocketServer, WebSocket } from 'ws';
 import * as http from 'http';
 import * as os from 'os';
@@ -7,6 +8,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, parseItemJson } from './db';
 import { setupKdsWebSocket } from './services/kds';
+import { getJWTSecret } from './routes/auth';
+import { rateLimit } from './middleware/security';
 
 let kdsServer: http.Server | null = null;
 
@@ -58,11 +61,40 @@ export function startKdsServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     const app: Express = express();
 
-    app.use(cors());
+    app.use(cors({
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true);
+        if (/^https?:\/\/localhost(:[0-9]+)?$/.test(origin) ||
+          /^https?:\/\/(127\.0\.0\.1|192\.168\.|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(origin)) {
+          return callback(null, true);
+        }
+        callback(new Error('Not allowed by CORS'));
+      }
+    }));
     app.use(express.json());
 
+    // ── Global API rate limiting ──────────────────────────────────────────
+    app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 100 }));
+
+    // ── KDS Auth Middleware ───────────────────────────────────────────────
+    const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+      const authHeader = req.headers.authorization;
+      if (!authHeader?.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'No token provided' });
+      }
+
+      const token = authHeader.split(' ')[1];
+      try {
+        const decoded = jwt.verify(token, getJWTSecret());
+        (req as any).user = decoded;
+        next();
+      } catch (error) {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
+    };
+
     // ── KDS API endpoints (same database, minimal routes) ─────────────
-    
+
     // Health check
     app.get('/api/health', (_req: Request, res: Response) => {
       res.json({
@@ -83,7 +115,7 @@ export function startKdsServer(): Promise<void> {
 
         const db = getDatabase();
         const bcrypt = require('bcryptjs');
-        
+
         const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
         if (!user || !bcrypt.compareSync(password, user.password)) {
           return res.status(401).json({ error: 'Invalid credentials' });
@@ -94,7 +126,14 @@ export function startKdsServer(): Promise<void> {
           return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
         }
 
+        const token = jwt.sign(
+          { userId: user.id, email: user.email, role: user.role },
+          getJWTSecret(),
+          { expiresIn: '24h' }
+        );
+
         res.json({
+          access_token: token,
           user: {
             id: user.id,
             name: user.name,
@@ -109,11 +148,11 @@ export function startKdsServer(): Promise<void> {
     });
 
     // Get orders for KDS (pending, preparing, ready)
-    app.get('/api/kds/orders', (req: Request, res: Response) => {
+    app.get('/api/kds/orders', requireAuth, (req: Request, res: Response) => {
       try {
         const db = getDatabase();
         const categoryIds = req.query.category_ids ? String(req.query.category_ids).split(',') : null;
-        
+
         let query = `
           SELECT DISTINCT o.*, t.number as table_number
           FROM orders o
@@ -123,21 +162,21 @@ export function startKdsServer(): Promise<void> {
           AND o.created_at >= datetime('now', '-24 hours')
           ORDER BY o.created_at ASC
         `;
-        
+
         const orders = db.prepare(query).all();
-        
+
         const ordersWithItems = orders.map((order: any) => {
           let items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
-          
+
           // Filter by category if provided
           if (categoryIds && categoryIds.length > 0 && categoryIds[0] !== '') {
             const productIds = db.prepare(`
               SELECT id FROM products WHERE category_id IN (${categoryIds.map(() => '?').join(',')})
             `).all(...categoryIds).map((p: any) => p.id);
-            
+
             items = items.filter((item: any) => productIds.includes(item.product_id));
           }
-          
+
           return {
             ...order,
             table: order.table_number ? { name: order.table_number } : null,
@@ -152,7 +191,7 @@ export function startKdsServer(): Promise<void> {
     });
 
     // Update order item status
-    app.patch('/api/kds/items/:id/status', (req: Request, res: Response) => {
+    app.patch('/api/kds/items/:id/status', requireAuth, (req: Request, res: Response) => {
       try {
         const { status } = req.body;
         const validStatuses = ['pending', 'preparing', 'ready', 'served'];
@@ -178,7 +217,7 @@ export function startKdsServer(): Promise<void> {
     });
 
     // Get categories for filtering
-    app.get('/api/categories', (_req: Request, res: Response) => {
+    app.get('/api/categories', requireAuth, (_req: Request, res: Response) => {
       try {
         const db = getDatabase();
         const categories = db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();

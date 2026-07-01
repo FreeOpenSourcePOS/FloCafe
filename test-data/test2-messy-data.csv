@@ -1,0 +1,4 @@
+id,sku,name,category,price,description,cost,tax_type,tax_rate,cashback_percent,tags,is_active
+,,  Masala Chai  ,Beverages, ₹60 ,,20,inclusive,5,0,veg,TRUE
+,,Cold Coffee,Beverages,₹130,,40,none,0,0,veg,FALSE
+,,  Samosa  ,Food,₹30,,10,none,0,0,veg,1

@@ -16,7 +16,7 @@ const router = Router();
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    let query = 'SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE 1=1';
+    let query = 'SELECT id, name, email, role, pin_hash, is_active, created_at, updated_at FROM users WHERE 1=1';
     const params: any[] = [];
 
     if (req.query.role) {
@@ -45,7 +45,7 @@ router.get('/:id', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare(
-      'SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE id = ?'
+      'SELECT id, name, email, role, pin_hash, is_active, created_at, updated_at FROM users WHERE id = ?'
     ).get(req.params.id) as any;
 
     if (!member) {
@@ -91,13 +91,15 @@ router.post('/', (req: Request, res: Response) => {
     const id = uuidv4();
     const hashedPassword = bcrypt.hashSync(password, 10);
 
+    const hashedPin = pin ? bcrypt.hashSync(String(pin), 10) : null;
+
     db.prepare(`
-      INSERT INTO users (id, name, email, password, role, pin, is_active, created_at, updated_at)
+      INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
-    `).run(id, name, email || null, hashedPassword, role, pin || null, now(), now());
+    `).run(id, name, email || null, hashedPassword, role, hashedPin, now(), now());
 
     const member = db.prepare(
-      'SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE id = ?'
+      'SELECT id, name, email, role, pin_hash, is_active, created_at, updated_at FROM users WHERE id = ?'
     ).get(id);
 
     res.status(201).json({ staff: member });
@@ -133,6 +135,9 @@ router.put('/:id', (req: Request, res: Response) => {
     }
 
     const hashedPassword = password ? bcrypt.hashSync(password, 10) : member.password;
+    const hashedPin = pin !== undefined
+      ? (pin ? bcrypt.hashSync(String(pin), 10) : null)
+      : member.pin_hash;
 
     db.prepare(`
       UPDATE users SET
@@ -140,19 +145,19 @@ router.put('/:id', (req: Request, res: Response) => {
         email      = COALESCE(?, email),
         password   = ?,
         role       = COALESCE(?, role),
-        pin        = COALESCE(?, pin),
+        pin_hash   = ?,
         is_active  = COALESCE(?, is_active),
         updated_at = ?
       WHERE id = ?
     `).run(
       name || null, email || null, hashedPassword,
-      role || null, pin || null,
+      role || null, hashedPin,
       is_active !== undefined ? (is_active ? 1 : 0) : null,
       now(), req.params.id
     );
 
     const updated = db.prepare(
-      'SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE id = ?'
+      'SELECT id, name, email, role, pin_hash, is_active, created_at, updated_at FROM users WHERE id = ?'
     ).get(req.params.id);
 
     res.json({ staff: updated });
@@ -197,7 +202,7 @@ router.post('/:id/deactivate', (req: Request, res: Response) => {
 
     db.prepare('UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     const updated = db.prepare(
-      'SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE id = ?'
+      'SELECT id, name, email, role, pin_hash, is_active, created_at, updated_at FROM users WHERE id = ?'
     ).get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {
@@ -214,7 +219,7 @@ router.post('/:id/reactivate', (req: Request, res: Response) => {
 
     db.prepare('UPDATE users SET is_active = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     const updated = db.prepare(
-      'SELECT id, name, email, role, pin, is_active, created_at, updated_at FROM users WHERE id = ?'
+      'SELECT id, name, email, role, pin_hash, is_active, created_at, updated_at FROM users WHERE id = ?'
     ).get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {

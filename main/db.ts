@@ -99,7 +99,7 @@ function autoRepairPaymentDetails(): void {
     const toFix: { id: number; value: string }[] = [];
 
     for (const row of rows) {
-      try { JSON.parse(row.payment_details); continue; } catch {}
+      try { JSON.parse(row.payment_details); continue; } catch { }
 
       const wrapped = '[' + String(row.payment_details).replace(/\}\s*,\s*\{/g, '},{') + ']';
       let parsed: any[];
@@ -116,7 +116,7 @@ function autoRepairPaymentDetails(): void {
       const dedupedSum = deduped.reduce((s, p) => s + (Number(p.amount) || 0), 0);
       const rawSum = parsed.reduce((s, p) => s + (Number(p.amount) || 0), 0);
       const chosen = Math.abs(dedupedSum - row.paid_amount) <= 0.02 ? deduped
-                    : Math.abs(rawSum - row.paid_amount) <= 0.02 ? parsed : null;
+        : Math.abs(rawSum - row.paid_amount) <= 0.02 ? parsed : null;
       if (!chosen) continue;
 
       toFix.push({ id: row.id, value: JSON.stringify(chosen) });
@@ -230,9 +230,9 @@ export interface RestoreResult {
 
 export function restoreBackup(backupPath: string, forceDirect: boolean = false): RestoreResult {
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
-  
+
   const backupDb = new Database(backupPath, { readonly: true });
-  
+
   const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
   const backupSchemaVersion = metaRow ? parseInt(metaRow.value, 10) : 0;
   backupDb.close();
@@ -241,14 +241,14 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   const currentVersion = getCurrentSchemaVersion();
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, Current: ${currentVersion}`);
-  
+
   if (forceDirect || backupSchemaVersion === currentVersion) {
     console.log('[DB] restoreBackup: Direct restore (same schema version)');
     closeDatabase();
     const dbPath = getDbPath();
     fs.copyFileSync(backupPath, dbPath);
     initDatabase();
-    
+
     return {
       success: true,
       mode: 'direct',
@@ -257,45 +257,69 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       tablesRestored: getTables(currentDb).length
     };
   }
-  
+
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
   return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion);
+}
+
+/** Return true only if the string is a safe SQL identifier (letters, digits, underscore). */
+function isSafeIdentifier(name: string): boolean {
+  return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
 }
 
 function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersion: number): RestoreResult {
   const backupDb = new Database(backupPath, { readonly: true });
   const currentDb = getDatabase();
-  
+
   const backupTables = getTables(backupDb);
   const currentTables = getTables(currentDb);
-  
+
   const commonTables = backupTables.filter(t => currentTables.includes(t));
   let tablesRestored = 0;
-  
+
+  // Escape single-quotes in the path so the ATTACH string literal is safe
+  // (e.g. macOS paths containing apostrophes like /Users/O'Brien/backup.db)
+  const safeBackupPath = backupPath.replace(/'/g, "''");
+
   currentDb.exec('BEGIN IMMEDIATE');
-  
+
   try {
+    // ATTACH once outside the loop — avoids repeated injection attempts and is faster
+    currentDb.exec(`ATTACH DATABASE '${safeBackupPath}' AS _restore_src`);
+
     for (const tableName of commonTables) {
+      // ── Guard: skip tables whose name isn't a plain SQL identifier ──────────
+      if (!isSafeIdentifier(tableName)) {
+        console.warn(`[DB] dataOnlyRestore: skipping table with unsafe name: ${JSON.stringify(tableName)}`);
+        continue;
+      }
+
       const backupCols = getColumns(backupDb, tableName);
       const currentCols = getColumns(currentDb, tableName);
-      const commonCols = backupCols.filter(c => currentCols.includes(c));
-      
+
+      // ── Guard: skip columns whose name isn't a plain SQL identifier ─────────
+      const commonCols = backupCols
+        .filter(c => currentCols.includes(c))
+        .filter(c => {
+          if (isSafeIdentifier(c)) return true;
+          console.warn(`[DB] dataOnlyRestore: skipping unsafe column: ${JSON.stringify(c)} in ${tableName}`);
+          return false;
+        });
+
       if (commonCols.length === 0) continue;
-      
-      currentDb.exec(`DELETE FROM ${tableName}`);
-      
+
       const colList = commonCols.join(', ');
-      currentDb.exec(`
-        ATTACH DATABASE '${backupPath}' AS backup;
-        INSERT INTO ${tableName} (${colList}) SELECT ${colList} FROM backup.${tableName}
-      `);
-      
+
+      currentDb.exec(`DELETE FROM ${tableName}`);
+      currentDb.exec(`INSERT INTO ${tableName} (${colList}) SELECT ${colList} FROM _restore_src.${tableName}`);
+
       tablesRestored++;
       console.log(`[DB] Restored ${tableName}: ${commonCols.length} columns`);
     }
-    
+
+    currentDb.exec('DETACH DATABASE _restore_src');
     currentDb.exec('COMMIT');
-    
+
     return {
       success: true,
       mode: 'data_only',
@@ -318,6 +342,7 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
     backupDb.close();
   }
 }
+
 
 export function getSchemaVersionFromBackup(backupPath: string): number {
   try {
@@ -347,8 +372,25 @@ const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       seedData();
     },
   },
-  // Example future migration:
-  // { version: 2, name: 'add_loyalty_tiers', up: () => { db.exec(`ALTER TABLE ...`) } },
+  {
+    version: 2,
+    name: 'hash_plaintext_pins',
+    up: () => {
+      // Migrate from plaintext PINs to hashed PINs.
+      // New installs going forward store only pin_hash.
+      db.exec(`ALTER TABLE users ADD COLUMN pin_hash TEXT`);
+
+      const usersWithPin = db.prepare('SELECT id, pin FROM users WHERE pin IS NOT NULL').all() as { id: string; pin: string }[];
+      for (const user of usersWithPin) {
+        const pin = String(user.pin || '');
+        if (!pin) continue;
+        // Already a bcrypt hash?
+        if (pin.startsWith('$2')) continue;
+        db.prepare('UPDATE users SET pin_hash = ?, pin = NULL WHERE id = ?')
+          .run(bcrypt.hashSync(pin, 10), user.id);
+      }
+    },
+  },
 ];
 
 function runMigrations(): void {
@@ -504,6 +546,7 @@ function createSchema(): void {
       role TEXT NOT NULL DEFAULT 'cashier'
         CHECK (role IN ('owner', 'manager', 'cashier', 'waiter', 'chef')),
       pin TEXT,
+      pin_hash TEXT,
       category_ids TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -652,22 +695,22 @@ function seedData(): void {
   const insert = (key: string, value: string) =>
     db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)').run(key, value);
 
-  insert('business_name',       'Shop');
-  insert('country',             'IN');
-  insert('currency',            'INR');
-  insert('currency_symbol',     '₹');
-  insert('timezone',            'Asia/Kolkata');
-  insert('address',             '');
-  insert('phone',               '');
-  insert('email',               '');
-  insert('tax_registered',      'false');
-  insert('gstin',               '');
-  insert('state_code',          '');
-  insert('tax_scheme',          'regular');
-  insert('billing_type',        'postpaid');
+  insert('business_name', 'Shop');
+  insert('country', 'IN');
+  insert('currency', 'INR');
+  insert('currency_symbol', '₹');
+  insert('timezone', 'Asia/Kolkata');
+  insert('address', '');
+  insert('phone', '');
+  insert('email', '');
+  insert('tax_registered', 'false');
+  insert('gstin', '');
+  insert('state_code', '');
+  insert('tax_scheme', 'regular');
+  insert('billing_type', 'postpaid');
   insert('loyalty_expiry_days', '365');
-  insert('cloud_server_url',    '');
-  insert('cloud_connected',     'false');
+  insert('cloud_server_url', '');
+  insert('cloud_connected', 'false');
 
   // Default owner account
   const hashedPassword = bcrypt.hashSync('admin123', 10);
@@ -696,9 +739,9 @@ function seedData(): void {
 
   // Sample categories
   const cats = [
-    ['cat-1', 'Food',      '#FF6B6B', '🍔', 1],
+    ['cat-1', 'Food', '#FF6B6B', '🍔', 1],
     ['cat-2', 'Beverages', '#4ECDC4', '🥤', 2],
-    ['cat-3', 'Desserts',  '#FFE66D', '🍰', 3],
+    ['cat-3', 'Desserts', '#FFE66D', '🍰', 3],
   ];
   for (const [id, name, color, icon, sort] of cats) {
     db.prepare(`
@@ -709,16 +752,16 @@ function seedData(): void {
 
   // Sample products
   const products = [
-    ['prod-1', 'cat-1', 'Cheeseburger',     250.00, 1],
-    ['prod-2', 'cat-1', 'Veggie Wrap',       180.00, 2],
-    ['prod-3', 'cat-1', 'Chicken Sandwich',  220.00, 3],
-    ['prod-4', 'cat-1', 'French Fries',       80.00, 4],
-    ['prod-5', 'cat-2', 'Cola',               60.00, 1],
-    ['prod-6', 'cat-2', 'Fresh Lime Soda',    70.00, 2],
-    ['prod-7', 'cat-2', 'Mango Lassi',        90.00, 3],
-    ['prod-8', 'cat-2', 'Mineral Water',      30.00, 4],
+    ['prod-1', 'cat-1', 'Cheeseburger', 250.00, 1],
+    ['prod-2', 'cat-1', 'Veggie Wrap', 180.00, 2],
+    ['prod-3', 'cat-1', 'Chicken Sandwich', 220.00, 3],
+    ['prod-4', 'cat-1', 'French Fries', 80.00, 4],
+    ['prod-5', 'cat-2', 'Cola', 60.00, 1],
+    ['prod-6', 'cat-2', 'Fresh Lime Soda', 70.00, 2],
+    ['prod-7', 'cat-2', 'Mango Lassi', 90.00, 3],
+    ['prod-8', 'cat-2', 'Mineral Water', 30.00, 4],
     ['prod-9', 'cat-3', 'Chocolate Brownie', 120.00, 1],
-    ['prod-10','cat-3', 'Ice Cream Scoop',    80.00, 2],
+    ['prod-10', 'cat-3', 'Ice Cream Scoop', 80.00, 2],
   ];
   for (const [id, catId, name, price, sort] of products) {
     db.prepare(`
@@ -729,8 +772,8 @@ function seedData(): void {
 
   // Sample tables
   const tables = [
-    ['tbl-1', 'T1', 4], ['tbl-2', 'T2', 4],  ['tbl-3', 'T3', 6],
-    ['tbl-4', 'T4', 2], ['tbl-5', 'T5', 4],  ['tbl-6', 'T6', 8],
+    ['tbl-1', 'T1', 4], ['tbl-2', 'T2', 4], ['tbl-3', 'T3', 6],
+    ['tbl-4', 'T4', 2], ['tbl-5', 'T5', 4], ['tbl-6', 'T6', 8],
   ];
   for (const [id, number, capacity] of tables) {
     db.prepare(`
@@ -771,6 +814,12 @@ export function generateBillNumber(): string {
 
 export function now(): string {
   return new Date().toISOString();
+}
+
+/** Verify a user PIN against the stored pin_hash. */
+export function verifyPin(storedHash: string | null | undefined, inputPin: string | number): boolean {
+  if (!storedHash || !inputPin) return false;
+  return bcrypt.compareSync(String(inputPin), storedHash);
 }
 
 /** Parse JSON string fields on order_item rows returned from SQLite.

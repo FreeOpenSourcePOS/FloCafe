@@ -1,0 +1,6 @@
+id,sku,name,category,price,description,cost,tax_type,tax_rate,cashback_percent,tags,is_active
+,,Chicken Tikka,Food,350,,100,inclusive,5,0,Non-Veg,yes
+,,Paneer Butter Masala,Food,280,,80,inclusive,5,0,VEG,yes
+,,Fish Curry,Food,320,,90,inclusive,5,0,non veg,yes
+,,Dal Makhani,Food,220,,60,none,0,0,Vegetarian,yes
+,,Egg Biryani,Food,300,,85,inclusive,5,0,Egg,yes

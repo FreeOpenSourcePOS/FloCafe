@@ -2,10 +2,24 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import crypto from 'crypto';
 import { getDatabase, now } from '../db';
 
 const router = Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
+export function getJWTSecret(): string {
+  const db = getDatabase();
+  const secretRow = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
+  if (secretRow?.value) return secretRow.value;
+
+  if (process.env.JWT_SECRET && process.env.JWT_SECRET !== 'flo-local-secret-change-in-production') {
+    return process.env.JWT_SECRET;
+  }
+
+  const newSecret = crypto.randomBytes(32).toString('hex');
+  db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('jwt_secret', ?, ?)").run(newSecret, now());
+  return newSecret;
+}
+
 const JWT_EXPIRES_IN = '24h';
 
 /**
@@ -19,24 +33,67 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
 
   return {
     id: 1,
-    business_name:  s.business_name  || 'Shop',
-    slug:           'local',
-    database_name:  'local',
-    business_type:  s.business_type  || 'restaurant',
-    country:        s.country        || 'IN',
-    currency:       s.currency       || 'INR',
+    business_name: s.business_name || 'Shop',
+    slug: 'local',
+    database_name: 'local',
+    business_type: s.business_type || 'restaurant',
+    country: s.country || 'IN',
+    currency: s.currency || 'INR',
     currency_symbol: s.currency_symbol || '₹',
-    timezone:       s.timezone       || 'Asia/Kolkata',
-    plan:           'desktop',
-    status:         'active',
-    role:           userRole,  // user's role — AuthGuard uses this for routing
+    timezone: s.timezone || 'Asia/Kolkata',
+    plan: 'desktop',
+    status: 'active',
+    role: userRole,  // user's role — AuthGuard uses this for routing
   };
 }
+
+// ── Rate Limiting (In-Memory for local offline apps) ──────────────────────────
+const loginAttempts = new Map<string, { count: number; lockedUntil: number }>();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MINUTES = 15;
+
+function checkRateLimit(ip: string): { allowed: boolean; waitMinutes?: number } {
+  const nowMs = Date.now();
+  let record = loginAttempts.get(ip);
+
+  if (record) {
+    if (record.lockedUntil > nowMs) {
+      const waitMinutes = Math.ceil((record.lockedUntil - nowMs) / 60000);
+      return { allowed: false, waitMinutes };
+    }
+    // If lock expired, reset
+    if (record.lockedUntil > 0 && record.lockedUntil <= nowMs) {
+      record = { count: 0, lockedUntil: 0 };
+      loginAttempts.set(ip, record);
+    }
+  }
+  return { allowed: true };
+}
+
+function incrementFailedLogin(ip: string) {
+  const record = loginAttempts.get(ip) || { count: 0, lockedUntil: 0 };
+  record.count += 1;
+  if (record.count >= MAX_ATTEMPTS) {
+    record.lockedUntil = Date.now() + LOCKOUT_MINUTES * 60000;
+  }
+  loginAttempts.set(ip, record);
+}
+
+function resetSuccessfulLogin(ip: string) {
+  loginAttempts.delete(ip);
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
 router.post('/login', (req: Request, res: Response) => {
   try {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const rateLimit = checkRateLimit(ip);
+    if (!rateLimit.allowed) {
+      return res.status(429).json({ error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.` });
+    }
+
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -47,12 +104,15 @@ router.post('/login', (req: Request, res: Response) => {
     const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
 
     if (!user || !bcrypt.compareSync(password, user.password)) {
+      incrementFailedLogin(ip);
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    resetSuccessfulLogin(ip);
+
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -89,7 +149,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
     const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -100,7 +160,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const newToken = jwt.sign(
       { userId: user.id, email: user.email, role: user.role, tenantId: 1 },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -130,10 +190,10 @@ router.post('/refresh', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
     const newToken = jwt.sign(
       { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -157,7 +217,7 @@ router.get('/me', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
     const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -186,7 +246,7 @@ router.post('/password/change', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -263,7 +323,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { userId, email, role: 'owner' },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -307,6 +367,13 @@ router.post('/setup/seed', (req: Request, res: Response) => {
     }
 
     const db = getDatabase();
+
+    // ── Security: only allowed during first-run (no users exist yet) ──────────
+    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+    if (userCount.count > 0) {
+      return res.status(403).json({ error: 'Setup already complete. This endpoint is disabled.' });
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     if (business_name) {
       db.prepare(`INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_name', ?, ?)`).run(business_name, now());

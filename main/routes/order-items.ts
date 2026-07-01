@@ -1,8 +1,23 @@
 import { Router, Request, Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { getDatabase, now, parseItemJson, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 
 const router = Router();
+
+const JWT_SECRET = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
+
+/** Decode the Bearer token and return the role, or null if missing/invalid. */
+function getRoleFromToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  try {
+    const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as { role?: string };
+    return decoded.role ?? null;
+  } catch {
+    return null;
+  }
+}
 
 // PATCH /api/order-items/:id/status — update a single item's kitchen status
 router.patch('/:id/status', (req: Request, res: Response) => {
@@ -43,7 +58,7 @@ router.patch('/:id/status', (req: Request, res: Response) => {
 router.patch('/:orderId/items/:itemId/cancel', (req: Request, res: Response) => {
   try {
     const { orderId, itemId } = req.params;
-    const userRole = req.headers['x-user-role'] as string;
+    const userRole = getRoleFromToken(req);
 
     if (!userRole || !['owner', 'manager'].includes(userRole.toLowerCase())) {
       return res.status(403).json({ error: 'Only owner or manager can cancel items' });
@@ -96,7 +111,7 @@ router.patch('/:orderId/items/:itemId/cancel', (req: Request, res: Response) => 
 router.patch('/:orderId/items/:itemId/restore', (req: Request, res: Response) => {
   try {
     const { orderId, itemId } = req.params;
-    const userRole = req.headers['x-user-role'] as string;
+    const userRole = getRoleFromToken(req);
 
     if (!userRole || !['owner', 'manager'].includes(userRole.toLowerCase())) {
       return res.status(403).json({ error: 'Only owner or manager can restore items' });

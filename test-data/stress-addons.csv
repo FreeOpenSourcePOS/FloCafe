@@ -1,0 +1,51 @@
+group_name,addon_name,price,group_required,group_min_select,group_max_select
+Size,Small (250ml),0,yes,1,1
+Size,Regular (350ml),30,yes,1,1
+Size,Large (500ml),60,yes,1,1
+Size,Extra Large (600ml),90,yes,1,1
+"Milk Type","Full Cream Milk",0,no,0,1
+"Milk Type","Oat Milk",30,no,0,1
+"Milk Type","Almond Milk",40,no,0,1
+"Milk Type","Soy Milk",35,no,0,1
+"Milk Type","Skimmed Milk",0,no,0,1
+Extras,Extra Espresso Shot,30,no,0,3
+Extras,Extra Sugar,0,no,0,3
+Extras,Whipped Cream,20,no,0,2
+Extras,Vanilla Syrup,20,no,0,2
+Extras,Caramel Syrup,20,no,0,2
+Extras,Hazelnut Syrup,20,no,0,2
+"Toppings & Drizzles","Chocolate Drizzle",15,no,0,2
+"Toppings & Drizzles","Caramel Drizzle",15,no,0,2
+"Toppings & Drizzles","Strawberry Sauce",15,no,0,2
+"Toppings & Drizzles",Crushed Oreo,25,no,0,2
+"Toppings & Drizzles","Chopped Nuts",20,no,0,2
+Temperature,Hot,0,yes,1,1
+Temperature,"Cold (Iced)",0,yes,1,1
+"Crust Type",Classic Hand Tossed,0,yes,1,1
+"Crust Type",Thin Crust,0,yes,1,1
+"Crust Type","Cheese Burst",80,yes,1,1
+"Crust Type","Wheat Flour Base",50,yes,1,1
+"Spice Level",Mild,0,no,0,1
+"Spice Level",Medium,0,no,0,1
+"Spice Level",Hot,0,no,0,1
+"Spice Level","Extra Hot",0,no,0,1
+"Cooking Preference","Well Done",0,no,0,1
+"Cooking Preference","Light Grill",0,no,0,1
+"Cooking Preference","Extra Crispy",0,no,0,1
+"Sauce on Side","Mint Chutney",0,no,0,3
+"Sauce on Side","Tamarind Chutney",0,no,0,3
+"Sauce on Side","Chipotle Mayo",10,no,0,3
+"Sauce on Side","Sriracha",10,no,0,3
+"Sauce on Side","Cheese Dip",20,no,0,3
+"Extra Protein","Extra Chicken",50,no,0,2
+"Extra Protein","Extra Paneer",40,no,0,2
+"Extra Protein","Extra Egg",30,no,0,2
+"Add-on Slice","Cheese Slice",30,no,0,3
+"Add-on Slice","Processed Cheese",25,no,0,3
+"Add-on Slice","Smoked Cheese",35,no,0,3
+Size,Small (250ml),0,yes,1,1
+Extras,Extra Espresso Shot,30,no,0,3
+"Milk Type","Full Cream Milk",0,no,0,1
+,Missing group name — should error,20,no,0,1
+"Valid Group",,15,no,0,1
+"Bad Price Group","Item with bad price",not-a-number,no,0,1

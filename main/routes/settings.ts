@@ -24,31 +24,31 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
 
 function businessShape(s: Record<string, string>) {
   return {
-    business_name:   s.business_name   || '',
-    timezone:        s.timezone        || 'Asia/Kolkata',
-    currency:        s.currency        || 'INR',
-    country:         s.country         || 'IN',
-    gstin:           s.gstin           || '',
-    state_code:      s.state_code      || '',
+    business_name: s.business_name || '',
+    timezone: s.timezone || 'Asia/Kolkata',
+    currency: s.currency || 'INR',
+    country: s.country || 'IN',
+    gstin: s.gstin || '',
+    state_code: s.state_code || '',
     business_address: s.business_address || '',
-    business_phone:  s.business_phone  || '',
-    billing_type:    s.billing_type    || 'postpaid',
-    bill_show_name:    s.bill_show_name    !== 'false',
+    business_phone: s.business_phone || '',
+    billing_type: s.billing_type || 'postpaid',
+    bill_show_name: s.bill_show_name !== 'false',
     bill_show_address: s.bill_show_address !== 'false',
-    bill_show_phone:   s.bill_show_phone   !== 'false',
-    bill_show_gstn:    s.bill_show_gstn    === 'true',
+    bill_show_phone: s.bill_show_phone !== 'false',
+    bill_show_gstn: s.bill_show_gstn === 'true',
   };
 }
 
 function taxShape(s: Record<string, string>) {
   return {
-    tax_registered:       s.tax_registered === 'true',
-    gstin:                s.gstin           || '',
-    state_code:           s.state_code      || '',
-    tax_scheme:           s.tax_scheme      || 'regular',
-    country:              s.country         || 'IN',
-    loyalty_enabled:      s.loyalty_enabled === 'true',
-    loyalty_expiry_days:  parseInt(s.loyalty_expiry_days  || '365'),
+    tax_registered: s.tax_registered === 'true',
+    gstin: s.gstin || '',
+    state_code: s.state_code || '',
+    tax_scheme: s.tax_scheme || 'regular',
+    country: s.country || 'IN',
+    loyalty_enabled: s.loyalty_enabled === 'true',
+    loyalty_expiry_days: parseInt(s.loyalty_expiry_days || '365'),
     loyalty_points_per_rs: parseFloat(s.loyalty_points_per_rs || '1'),
     loyalty_redeem_value: parseFloat(s.loyalty_redeem_value || '0.25'),
   };
@@ -108,10 +108,10 @@ router.get('/loyalty', (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json({
-      loyalty_enabled:       s.loyalty_enabled === 'true',
-      loyalty_expiry_days:   parseInt(s.loyalty_expiry_days  || '365'),
+      loyalty_enabled: s.loyalty_enabled === 'true',
+      loyalty_expiry_days: parseInt(s.loyalty_expiry_days || '365'),
       loyalty_points_per_rs: parseFloat(s.loyalty_points_per_rs || '1'),
-      loyalty_redeem_value:  parseFloat(s.loyalty_redeem_value || '0.25'),
+      loyalty_redeem_value: parseFloat(s.loyalty_redeem_value || '0.25'),
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -125,10 +125,10 @@ router.put('/loyalty', (req: Request, res: Response) => {
     upsertSettings(db, { loyalty_enabled, loyalty_expiry_days, loyalty_points_per_rs, loyalty_redeem_value });
     const s = getAllSettings(db);
     res.json({
-      loyalty_enabled:       s.loyalty_enabled === 'true',
-      loyalty_expiry_days:   parseInt(s.loyalty_expiry_days  || '365'),
+      loyalty_enabled: s.loyalty_enabled === 'true',
+      loyalty_expiry_days: parseInt(s.loyalty_expiry_days || '365'),
       loyalty_points_per_rs: parseFloat(s.loyalty_points_per_rs || '1'),
-      loyalty_redeem_value:  parseFloat(s.loyalty_redeem_value || '0.25'),
+      loyalty_redeem_value: parseFloat(s.loyalty_redeem_value || '0.25'),
     });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -137,9 +137,23 @@ router.put('/loyalty', (req: Request, res: Response) => {
 
 // ── Generic key-value routes ───────────────────────────────────────────────
 
+const SENSITIVE_KEYS = ['cloud_api_key', 'jwt_secret', 'pin', 'password', 'token', 'secret', 'key'];
+
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEYS.some(sensitive => key.toLowerCase().includes(sensitive));
+}
+
 router.get('/', (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
+
+    // Remove sensitive keys from the dump
+    for (const key of Object.keys(s)) {
+      if (isSensitiveKey(key)) {
+        delete s[key];
+      }
+    }
+
     res.json({ settings: s });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -148,8 +162,14 @@ router.get('/', (req: Request, res: Response) => {
 
 router.get('/:key', (req: Request, res: Response) => {
   try {
+    const key = req.params.key;
+
+    if (isSensitiveKey(key)) {
+      return res.status(403).json({ error: 'Access denied to sensitive setting' });
+    }
+
     const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
+    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
     if (!setting) {
       return res.status(404).json({ error: 'Setting not found' });
     }

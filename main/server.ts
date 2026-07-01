@@ -7,7 +7,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
-import { JWT_SECRET } from './routes/auth';
+import { getJWTSecret } from './routes/auth';
 import { getDbHealth } from './db';
 import { setupKdsWebSocket } from './services/kds';
 
@@ -34,7 +34,7 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   try {
-    jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+    jwt.verify(authHeader.split(' ')[1], getJWTSecret());
     next();
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });

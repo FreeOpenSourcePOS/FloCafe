@@ -2,11 +2,50 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
+import { randomBytes } from 'crypto';
 import { getDatabase, now } from '../db';
 
 const router = Router();
-export const JWT_SECRET = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
 const JWT_EXPIRES_IN = '24h';
+
+/**
+ * Lazy-loaded JWT secret. On first access, reads from the settings table.
+ * If no secret exists (first launch), generates a random 32-byte hex string
+ * and persists it. This ensures every install gets a unique secret without
+ * requiring manual configuration.
+ */
+let _jwtSecret: string | null = null;
+
+export function getJWTSecret(): string {
+  if (_jwtSecret) return _jwtSecret;
+
+  // Environment variable always wins (for CI/testing)
+  if (process.env.JWT_SECRET) {
+    _jwtSecret = process.env.JWT_SECRET;
+    return _jwtSecret;
+  }
+
+  try {
+    const db = getDatabase();
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
+
+    if (row?.value) {
+      _jwtSecret = row.value;
+    } else {
+      // First launch: generate and persist a random secret
+      _jwtSecret = randomBytes(32).toString('hex');
+      db.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('jwt_secret', ?, ?)")
+        .run(_jwtSecret, now());
+      console.log('[Auth] Generated new JWT secret for this install');
+    }
+  } catch {
+    // Database not ready yet (e.g., during setup). Fall back to env or default.
+    _jwtSecret = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
+    console.warn('[Auth] Using fallback JWT secret — database not ready');
+  }
+
+  return _jwtSecret;
+}
 
 /**
  * Build a synthetic "tenant" object from local settings.
@@ -52,7 +91,7 @@ router.post('/login', (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { userId: user.id, email: user.email, role: user.role },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -89,7 +128,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
     const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -100,7 +139,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const newToken = jwt.sign(
       { userId: user.id, email: user.email, role: user.role, tenantId: 1 },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -130,10 +169,10 @@ router.post('/refresh', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
     const newToken = jwt.sign(
       { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 
@@ -157,7 +196,7 @@ router.get('/me', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
     const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -186,7 +225,7 @@ router.post('/password/change', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any;
@@ -263,7 +302,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
     const token = jwt.sign(
       { userId, email, role: 'owner' },
-      JWT_SECRET,
+      getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );
 

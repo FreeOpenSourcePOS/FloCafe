@@ -38,9 +38,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       'view-orders', 'report-daily', 'report-sales', 'report-x', 'report-z',
       'settings-business', 'settings-tax', 'settings-printer', 'settings-kitchen',
     ];
+    const handlers: (() => void)[] = [];
     channels.forEach((channel) => {
-      ipcRenderer.on(channel, () => callback(channel));
+      const handler = () => callback(channel);
+      ipcRenderer.on(channel, handler);
+      handlers.push(() => ipcRenderer.removeListener(channel, handler));
     });
+    return () => { handlers.forEach((remove) => remove()); };
   },
 
   platform: process.platform,

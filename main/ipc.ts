@@ -108,7 +108,12 @@ export function registerIpcHandlers(): void {
       const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
       const settings: Record<string, string> = {};
       rows.forEach((row) => {
-        settings[row.key] = row.value;
+        // Mask cloud API key — same as HTTP GET /api/settings/cloud
+        if (row.key === 'cloud_api_key' && row.value) {
+          settings[row.key] = `****${row.value.slice(-4)}`;
+        } else {
+          settings[row.key] = row.value;
+        }
       });
       return settings;
     } catch (error: any) {

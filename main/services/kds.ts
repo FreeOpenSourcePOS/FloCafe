@@ -1,8 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDatabase, now } from '../db';
 import * as jwt from 'jsonwebtoken';
-
-const JWT_SECRET = process.env.JWT_SECRET || 'flo-local-secret-change-in-production';
+import { getJWTSecret } from '../routes/auth';
 
 interface KdsClient {
   ws: WebSocket;
@@ -141,7 +140,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
   // Validate JWT token
   if (token) {
     try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      const decoded = jwt.verify(token, getJWTSecret()) as any;
       const db = getDatabase();
       const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
 

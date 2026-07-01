@@ -1040,9 +1040,10 @@ async function printViaWindowsRaw(data: Buffer, printerName?: string): Promise<b
     fs.writeFileSync(tmpFile, data);
 
     const name = printerName || 'Microsoft Print to PDF';
-    const psCommand = `Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name}' -Wait`;
+    // Use -EncodedCommand or direct args — never interpolate into a shell string
+    const psCommand = `Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name.replace(/'/g, "''")}' -Wait`;
 
-    execFileSync('powershell', ['-Command', psCommand], { encoding: 'utf8', shell: true });
+    execFileSync('powershell', ['-Command', psCommand], { encoding: 'utf8' });
     fs.unlinkSync(tmpFile);
     return true;
   } catch (err: any) {

@@ -23,6 +23,8 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
  * LAN access.
  */
 function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  // Only protect API routes — static files and SPA fallback must pass through
+  if (!req.path.startsWith('/api')) { next(); return; }
   // Health check — unauthenticated
   if (req.path === '/api/health') { next(); return; }
   // Auth routes handle their own token verification
@@ -94,6 +96,22 @@ export function startServer(): Promise<void> {
 
     app.use(cors());
     app.use(express.json());
+
+    // ── Content Security Policy ────────────────────────────────────────
+    // Blocks eval() and remote code. 'unsafe-inline' is required for
+    // Next.js RSC hydration scripts and Tailwind-generated style tags.
+    app.use((_req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('Content-Security-Policy',
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data:; " +
+        "font-src 'self' data:; " +
+        "connect-src 'self' http://localhost:* ws://localhost:*; " +
+        "frame-ancestors 'none'"
+      );
+      next();
+    });
 
     // ── Auth middleware (skips /api/health and /api/auth) ─────────────
     app.use(requireAuth);

@@ -40,10 +40,11 @@ for (const p of candidatePaths) {
 }
 
 if (targets.length === 0) {
-  console.log('\n❌ No non-empty flo.db file found.');
+  console.log('\n⚠️  No non-empty flo.db file found — skipping audit.');
   console.log('   Checked:');
   for (const p of candidatePaths) console.log('     - ' + p);
-  process.exit(1);
+  console.log('\n   This is expected in CI or fresh installs.');
+  process.exit(0); // Not a failure — just nothing to audit
 }
 
 let totalIssues = 0;

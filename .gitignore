@@ -18,3 +18,4 @@ build/flo.provisionprofile
 *.certSigningRequest
 *.provisionprofile
 *.mobileprovision
+.gstack/

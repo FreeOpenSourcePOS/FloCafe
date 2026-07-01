@@ -5,7 +5,9 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
+import { getJWTSecret } from './routes/auth';
 import { getDbHealth } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import { rateLimit } from './middleware/security';
@@ -15,6 +17,32 @@ let app: Express;
 let wss: WebSocketServer;
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
+
+/**
+ * JWT verification middleware. Skips health check and auth routes (those
+ * verify tokens individually). Protects all resource routes from unauthenticated
+ * LAN access.
+ */
+function requireAuth(req: Request, res: Response, next: NextFunction): void {
+  // Only protect API routes — static files and SPA fallback must pass through
+  if (!req.path.startsWith('/api')) { next(); return; }
+  // Health check — unauthenticated
+  if (req.path === '/api/health') { next(); return; }
+  // Auth routes handle their own token verification
+  if (req.path.startsWith('/api/auth')) { next(); return; }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+  try {
+    jwt.verify(authHeader.split(' ')[1], getJWTSecret());
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+}
 
 export function isServerRunning(): boolean {
   return server !== null;
@@ -86,6 +114,25 @@ export function startServer(): Promise<void> {
     // ── Global API rate limiting ───────────────────────────────────────
     app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 100 }));
 
+    // ── Content Security Policy ────────────────────────────────────────
+    // Blocks eval() and remote code. 'unsafe-inline' is required for
+    // Next.js RSC hydration scripts and Tailwind-generated style tags.
+    app.use((_req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('Content-Security-Policy',
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline'; " +
+        "style-src 'self' 'unsafe-inline'; " +
+        "img-src 'self' data:; " +
+        "font-src 'self' data:; " +
+        "connect-src 'self' http://localhost:* ws://localhost:*; " +
+        "frame-ancestors 'none'"
+      );
+      next();
+    });
+
+    // ── Auth middleware (skips /api/health and /api/auth) ─────────────
+    app.use(requireAuth);
+
     // ── API health check ───────────────────────────────────────────────
     app.get('/api/health', (_req: Request, res: Response) => {
       const db = getDbHealth();
@@ -107,20 +154,25 @@ export function startServer(): Promise<void> {
     if (frontendDir) {
       console.log(`[Server] Serving frontend from: ${frontendDir}`);
 
-      // Middleware to patch Windows-specific Next.js static export path nesting
-      app.use((req: Request, res: Response, next: NextFunction) => {
-        if (req.path.includes('__next.')) {
-          const originalPath = req.path;
-          const rewritten = rewriteNextExportPath(originalPath);
-          if (rewritten !== originalPath) {
-            const fullPath = path.join(frontendDir, rewritten);
-            if (fs.existsSync(fullPath)) {
-              req.url = rewritten;
+      // Middleware to patch Windows-specific Next.js static export path nesting.
+      // On Windows, the Next.js static export uses dotted segments (e.g.
+      // __next.!KGRhc2hib2FyZCk.products.__PAGE__.txt) instead of nested
+      // directories. This rewrite is only needed when the app runs on Windows.
+      if (process.platform === 'win32') {
+        app.use((req: Request, res: Response, next: NextFunction) => {
+          if (req.path.includes('__next.')) {
+            const originalPath = req.path;
+            const rewritten = rewriteNextExportPath(originalPath);
+            if (rewritten !== originalPath) {
+              const fullPath = path.join(frontendDir, rewritten);
+              if (fs.existsSync(fullPath)) {
+                req.url = rewritten;
+              }
             }
           }
-        }
-        next();
-      });
+          next();
+        });
+      }
 
       app.use(express.static(frontendDir));
 
@@ -147,13 +199,16 @@ export function startServer(): Promise<void> {
       res.status(500).json({ error: err.message || 'Internal server error' });
     });
 
-    server = app.listen(PORT, '0.0.0.0', () => {
-      console.log(`[Server] HTTP server running on http://localhost:${PORT}`);
+    let currentPort = PORT;
+    let attempts = 0;
+
+    server = app.listen(currentPort, '0.0.0.0', () => {
+      console.log(`[Server] HTTP server running on http://localhost:${currentPort}`);
 
       if (server) {
         wss = new WebSocketServer({ server, path: '/kds' });
         setupKdsWebSocket(wss);
-        console.log(`[Server] KDS WebSocket running on ws://localhost:${PORT}/kds`);
+        console.log(`[Server] KDS WebSocket running on ws://localhost:${currentPort}/kds`);
       }
 
       resolve();
@@ -161,8 +216,16 @@ export function startServer(): Promise<void> {
 
     server?.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
-        console.log(`[Server] Port ${PORT} in use, trying ${PORT + 1}`);
-        server?.listen(PORT + 1, '0.0.0.0');
+        attempts++;
+        if (attempts >= 10) {
+          const errorMsg = `[Server] Failed to bind to any port after 10 attempts starting from ${PORT}`;
+          console.error(errorMsg);
+          reject(new Error(errorMsg));
+          return;
+        }
+        currentPort++;
+        console.log(`[Server] Port ${currentPort - 1} in use, trying ${currentPort}`);
+        server?.listen(currentPort, '0.0.0.0');
       } else {
         reject(err);
       }

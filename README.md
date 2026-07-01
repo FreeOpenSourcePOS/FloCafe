@@ -1,187 +1,280 @@
-# FloCafe - Free Open-Source POS for Cafes & Restaurants
-
 <p align="center">
-  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License">
-  <img src="https://img.shields.io/github/stars/FreeOpenSourcePOS/FloCafe" alt="Stars">
-  <img src="https://img.shields.io/github/contributors/FreeOpenSourcePOS/FloCafe" alt="Contributors">
+  <img src="logo/logo-white.png" alt="FloCafe" width="200">
 </p>
 
-FloCafe is a **free, open-source, offline-first Point of Sale (POS) system** built specifically for cafes, restaurants, cloud kitchens, and food businesses. Runs entirely on your own computer with no internet required - perfect for small food businesses in India and Southeast Asia.
+<h1 align="center">FloCafe</h1>
 
-## 🌟 Why FloCafe?
+<p align="center">
+  <strong>Free, open-source, offline-first Point of Sale for cafes, restaurants, and food businesses.</strong>
+</p>
 
-- **💰 Completely Free** - No subscriptions, no licenses, no hidden costs
-- **📴 Works Offline** - Full functionality without internet connection
-- **🔒 Your Data, Your Server** - Self-hosted on your own machine
-- **🍽️ Restaurant Ready** - Table management, KDS, thermal printing
-- **☕ Cafe Ready** - Fast counter billing, takeaway, delivery orders
-- **🖥️ Cross-Platform** - Windows, macOS, Linux
+<p align="center">
+  <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases"><img src="https://img.shields.io/github/v/release/FreeOpenSourcePOS/FloCafe" alt="GitHub release"></a>
+  <a href="https://github.com/FreeOpenSourcePOS/FloCafe/blob/main/license_instructions.md"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platform">
+  <img src="https://img.shields.io/badge/Node-%3E%3D22.0.0-brightgreen" alt="Node.js">
+</p>
 
-## 📦 Downloads
+---
 
-| Platform | File | Description |
-|----------|------|-------------|
-| **macOS (Intel)** | `Flo-1.6.1.dmg` | For Intel Macs |
-| **macOS (Apple Silicon)** | `Flo-1.6.1-arm64.dmg` | For M1/M2/M3 Macs |
-| **Windows** | `Flo Setup 1.6.1.exe` | Windows installer |
-| **Linux (AppImage)** | `Flo-1.6.1.AppImage` | Portable Linux binary |
-| **Linux (Debian)** | `flo-desktop_1.6.1_amd64.deb` | Debian/Ubuntu package |
+FloCafe runs entirely on your own machine — no internet, no subscriptions, no cloud dependency. Your data stays local, your business stays private.
 
-**Latest Version:** v1.6.1
+## Table of Contents
 
-## 🚀 Features
+- [Why FloCafe](#why-flocafe)
+- [Downloads](#downloads)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Prerequisites](#prerequisites)
+- [Quick Start](#quick-start)
+- [Development Setup](#development-setup)
+- [Architecture](#architecture)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
+
+## Why FloCafe
+
+| | |
+|---|---|
+| **Completely Free** | No subscriptions, no licenses, no hidden costs |
+| **Works Offline** | Full functionality without internet |
+| **Your Data** | Self-hosted on your own machine |
+| **Restaurant Ready** | Table management, KDS, thermal printing |
+| **Cafe Ready** | Fast counter billing, takeaway, delivery orders |
+| **Cross-Platform** | Windows, macOS, Linux |
+
+## Downloads
+
+<p>
+  <a href="https://apps.apple.com/in/app/flo-cafe/id6763136018">
+    <img src="https://img.shields.io/badge/Mac_App_Store-Download-black?logo=apple&style=for-the-badge" alt="Download on the Mac App Store">
+  </a>
+  &nbsp;
+  <a href="https://apps.microsoft.com/detail/9n1md6585p4q">
+    <img src="https://img.shields.io/badge/Microsoft_Store-Download-0078D4?logo=microsoft&style=for-the-badge" alt="Download on Microsoft Store">
+  </a>
+</p>
+
+Or download directly from [Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases):
+
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `Flo-1.7.1-arm64.dmg` |
+| macOS (Intel) | `Flo-1.7.1.dmg` |
+| Windows | `Flo Setup 1.7.1.exe` |
+| Linux (AppImage) | `Flo-1.7.1.AppImage` |
+| Linux (Debian) | `flo-desktop_1.7.1_amd64.deb` |
+
+## Features
 
 ### Core POS
-- [x] Fast order entry with product search
-- [x] Multiple order types (Dine-in, Takeaway, Delivery)
-- [x] Table management with real-time status
-- [x] Cart with modifiers and addons
-- [x] Billing with multiple payment methods (Cash, UPI, Card)
-- [x] GST-compliant invoice generation
+- Fast order entry with product search
+- Multiple order types: Dine-in, Takeaway, Delivery
+- Cart with modifiers and addons
+- Multiple payment methods (Cash, UPI, Card)
+- GST-compliant invoice generation
 
-### Restaurant & Cafe Features
-- [x] Kitchen Display System (KDS)
-- [x] Kitchen Order Tickets (KOT) printing
-- [x] Table tracking and management
-- [x] Multi-station kitchen support
-- [x] Real-time order updates
-- [x] Counter/quick-service billing for cafes
+### Restaurant & Cafe
+- Kitchen Display System (KDS) with real-time updates
+- Kitchen Order Tickets (KOT) printing
+- Table management with status tracking
+- Multi-station kitchen support
+- Addon groups for modifiers (extras, toppings, variants)
 
 ### Thermal Printing
-- [x] ESC/POS thermal receipt printing
-- [x] USB printer support
-- [x] Network/Bluetooth printer support
-- [x] Auto-detect printers (Epson, Xprinter, Star, etc.)
-- [x] Multiple bill templates (Classic, Compact, Detailed)
-- [x] Configurable character widths (58mm/80mm paper)
+- ESC/POS protocol (USB, Network, Bluetooth)
+- Auto-detect printers (Epson, Xprinter, Star, etc.)
+- Multiple bill templates (Classic, Compact, Detailed)
+- Configurable paper widths (58mm/80mm)
 
 ### Business Management
-- [x] Menu catalog with categories
-- [x] Addon groups for modifiers (extras, variants, toppings)
-- [x] Staff management with roles
-- [x] Customer database
-- [x] Low stock alerts
+- Menu catalog with categories
+- Staff management with roles
+- Customer database
+- Sales reports
 
-### Integrations
-- [x] WhatsApp bill sharing
-- [x] Thermal printer support
-- [x] Network printing
+## Tech Stack
 
-## 🖥️ Tech Stack
+| Layer | Technology |
+|-------|-----------|
+| Runtime | Electron 31 |
+| Backend | Express.js + TypeScript |
+| Frontend | Next.js 16 + React 19 |
+| Database | SQLite (better-sqlite3, WAL mode) |
+| State | Zustand |
+| Styling | Tailwind CSS v4 + shadcn/ui |
+| Realtime | WebSocket (KDS) |
+| Printing | ESC/POS (node-thermal-printer) |
 
-- **Runtime:** Electron 31
-- **Backend:** Express.js + TypeScript
-- **Frontend:** Next.js 16 (React 19, TypeScript)
-- **Database:** SQLite (better-sqlite3)
-- **Styling:** Tailwind CSS + shadcn/ui
-- **Real-time:** WebSocket for KDS updates
+## Prerequisites
 
-## 💾 Requirements
+- **Node.js** >= 22.0.0
+- **npm** (comes with Node)
+- **Git** (for cloning)
 
-### Minimum System Requirements
-- **OS:** Windows 10+, macOS 11+, Ubuntu 20.04+
-- **RAM:** 4GB
-- **Disk:** 500MB
-- **Node.js:** 20+ (for development only)
+Optional:
+- Thermal printer (ESC/POS compatible)
 
-### Hardware (Optional)
-- **Thermal Printer:** ESC/POS compatible (Epson TM series, Xprinter, Star, etc.)
-- **USB:** For USB-connected printers
+### System Requirements
 
-## 🚀 Quick Start
+| Requirement | Minimum |
+|-------------|---------|
+| OS | Windows 10+, macOS 11+, Ubuntu 20.04+ |
+| RAM | 4 GB |
+| Disk | 500 MB free |
+| Node.js | >= 22.0.0 (development only) |
+
+> **Note:** OS and RAM requirements are based on Electron 31 defaults. The app itself is lightweight.
+
+## Quick Start
 
 ### 1. Download & Install
 
-Download the appropriate installer from the [Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases) page.
+Download the installer for your platform from [Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases) or the app stores above.
 
 ### 2. First Launch
 
-On first run, the app will:
-1. Initialize the SQLite database
-2. Load demo data (optional)
+On first run, the app initializes the SQLite database. Optionally load demo data.
 
 ### 3. Login
 
-Default credentials:
-
 | Role | Email | Password |
 |------|-------|----------|
-| **Admin/Owner** | `admin@flo.local` | `admin123` |
-| **Kitchen (KDS)** | `chef@flo.local` | `chef123` |
+| Admin/Owner | `admin@flo.local` | `admin123` |
+| Kitchen (KDS) | `chef@flo.local` | `chef123` |
 
-### 4. Configure Printer
+### 4. Configure Printer (Optional)
 
 1. Go to **Settings** → **Printers**
 2. Click **Detect Printers**
 3. Select your thermal printer
 4. Test the connection
 
-## 🔧 Development Setup
+## Development Setup
 
 ```bash
-# Clone the repository
+# Clone the repo
 git clone https://github.com/FreeOpenSourcePOS/FloCafe.git
 cd FloCafe
 
-# Install dependencies
+# Install dependencies (also inits frontend submodule)
 npm install
 
-# Start development server
+# Start development
 npm run dev
-
-# Build for production
-npm run build:mac            # macOS
-npm run build:win            # Windows
-npm run build:linux          # Linux
-npm run build:all-platforms  # All platforms
 ```
+
+### Available Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Full app (Electron + backend + frontend) |
+| `node dev-server.js` | Backend-only (mocks Electron, faster iteration) |
+| `npm run build` | Compile TypeScript (main/ → dist/) |
+| `npm run build:frontend` | Static export via Next.js |
+| `npm run build:mac` | macOS DMG |
+| `npm run build:win` | Windows NSIS installer |
+| `npm run build:linux` | Linux AppImage + deb |
+| `npm test` | Run all tests |
+| `npm run clean` | Kill dev servers on ports 3001/3002 |
 
 ### Environment Variables
 
-Create a `.env` file for production:
+Create a `.env` file in the project root for custom configuration:
 
 ```env
-JWT_SECRET=your-secure-secret-key-here
-PORT=3088
+# Server
+PORT=3001                    # API server port (default: 3001)
+KDS_PORT=3002                # KDS server port (default: 3002)
+
+# Authentication
+JWT_SECRET=your-secret-key   # JWT signing secret (default: built-in dev secret)
+ADMIN_PASSWORD=admin123      # Initial admin password (standalone server.js only)
 ```
 
-## 📱 Screenshots
+> **Security:** Never commit `.env` files. The default JWT secret is for development only — change it in production.
 
-*(Coming soon)*
+## Architecture
 
-## 🏗️ Architecture
+```
+┌─────────────────────────────────────────┐
+│ Electron Main Process                    │
+│  main/index.ts → orchestrator            │
+│  main/server.ts → Express :3001 (API)    │
+│  main/kds-server.ts → Express :3002 (KDS)│
+│  main/db.ts → SQLite (WAL mode)          │
+└──────────────┬──────────────────────────┘
+               │ HTTP + WebSocket
+┌──────────────▼──────────────────────────┐
+│ Renderer (Next.js static export)         │
+│  frontend/src/app/ → pages               │
+│  frontend/src/store/ → Zustand           │
+└─────────────────────────────────────────┘
+```
+
+### Project Structure
 
 ```
 FloCafe/
-├── main/                    # Electron main process
-│   ├── db.ts              # SQLite database setup
-│   ├── routes/            # API routes
-│   ├── printers/          # Thermal printing logic
-│   └── services/          # Business logic
-├── frontend/               # Next.js frontend (submodule)
+├── main/                    # Electron main process (TypeScript)
+│   ├── index.ts            # Entry point, orchestrates everything
+│   ├── server.ts           # Express API server (:3001)
+│   ├── kds-server.ts       # KDS server (:3002)
+│   ├── db.ts               # SQLite database & migrations
+│   ├── ipc.ts              # Electron IPC handlers
+│   ├── preload.ts          # Context bridge
+│   ├── routes/             # 20 API route modules
+│   ├── services/           # Business logic (cloud-sync, KDS, tax)
+│   └── printers/           # ESC/POS thermal printing
+├── frontend/               # Next.js frontend (git submodule)
 │   └── src/
-│       ├── app/           # Next.js App Router
-│       ├── components/    # React components
-│       ├── hooks/         # Custom React hooks
-│       └── lib/           # Utilities
-└── release/               # Built applications
+│       ├── app/            # App Router pages
+│       ├── components/     # React components
+│       ├── store/          # Zustand stores
+│       ├── lib/            # Utilities & printer encoders
+│       └── hooks/          # Custom React hooks
+├── tests/                  # Integration tests
+├── dev-server.js           # Headless backend for dev
+└── server.js               # Standalone Express server
 ```
 
-### Database
+### Default Credentials
 
-FloCafe uses **SQLite** for local storage:
-- `business` - Business profile
-- `products` - Menu/product catalog
-- `categories` - Menu categories
-- `tables` - Restaurant tables
-- `orders` - Order records
-- `bills` - Billing/payments
-- `printers` - Printer configurations
-- `staff` - Employee records
-- `customers` - Customer database
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | `admin@flo.local` | `admin123` |
+| Kitchen | `chef@flo.local` | `chef123` |
 
+## Troubleshooting
 
-## 🤝 Contributing
+### Printer not detected
+
+- Ensure the printer is powered on and connected (USB or network)
+- For USB: try a different port or cable
+- For network printers: confirm they're on the same subnet
+- On macOS, check **System Preferences → Printers & Scanners**
+- On Windows, check **Device Manager** for USB printer entries
+- On Linux, ensure your user is in the `lp` group: `sudo usermod -aG lp $USER`
+
+### App crashes on startup
+
+- The SQLite database may be corrupted. Check logs in:
+  - macOS: `~/Library/Logs/Flo Cafe/`
+  - Windows: `%APPDATA%/Flo Cafe/logs/`
+  - Linux: `~/.config/Flo Cafe/logs/`
+- Delete the database file to reset (data will be lost)
+- Run `npm run clean` to kill any stuck processes on ports 3001/3002
+
+### Printing issues
+
+- Verify the printer supports **ESC/POS** protocol
+- Test with **Settings → Printers → Test Print**
+- For network printers: check the IP address and port in printer settings
+- Ensure paper is loaded and the thermal head is clean
+- Check printer status via the **Printer Status** indicator in the POS topbar
+
+## Contributing
 
 Contributions are welcome!
 
@@ -192,43 +285,15 @@ Contributions are welcome!
 5. **Push** to the branch: `git push origin feature/amazing-feature`
 6. **Open** a Pull Request
 
-## 🐛 Troubleshooting
+See [AGENTS.md](AGENTS.md) for development guidelines and architecture details.
 
-### Printer not detected?
-- Ensure the printer is connected and powered on
-- Check USB connection
-- For network printers, ensure they're on the same network
+## License
 
-### App crashes on startup?
-- Delete the database file and restart (data will be lost)
-- Check logs in the application directory
-
-### Printing issues?
-- Verify printer supports ESC/POS protocol
-- Test with the built-in print test page
-- Check paper and ribbon/thermal head
-
-## 📄 License
-
-This project is open source under the **MIT License**.
-
-## 🙏 Acknowledgments
-
-Built with ❤️ using:
-- Electron
-- Next.js
-- SQLite
-- Tailwind CSS
-- shadcn/ui
-
-## 📞 Support
-
-- **GitHub Issues:** https://github.com/FreeOpenSourcePOS/FloCafe/issues
-- **Community:** [Discord](https://discord.gg/flopos) | [Telegram](https://t.me/flopos)
+This project is open source under the [MIT License](license_instructions.md).
 
 ---
 
 <p align="center">
-  <strong>Bringing professional POS software to every cafe and restaurant!</strong><br>
-  ⭐ Star us on GitHub | 🐛 Report bugs | 💡 Suggest features | 📢 Share with others
+  <strong>Bringing professional POS software to every cafe and restaurant.</strong><br>
+  <sub>⭐ Star us on GitHub if you find this useful!</sub>
 </p>

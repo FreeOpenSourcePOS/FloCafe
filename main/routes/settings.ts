@@ -135,76 +135,15 @@ router.put('/loyalty', (req: Request, res: Response) => {
   }
 });
 
-// ── Generic key-value routes ───────────────────────────────────────────────
-
-const SENSITIVE_KEYS = ['cloud_api_key', 'jwt_secret', 'pin', 'password', 'token', 'secret', 'key'];
-
-function isSensitiveKey(key: string): boolean {
-  return SENSITIVE_KEYS.some(sensitive => key.toLowerCase().includes(sensitive));
-}
-
-router.get('/', (req: Request, res: Response) => {
-  try {
-    const s = getAllSettings(getDatabase());
-
-    // Remove sensitive keys from the dump
-    for (const key of Object.keys(s)) {
-      if (isSensitiveKey(key)) {
-        delete s[key];
-      }
-    }
-
-    res.json({ settings: s });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/:key', (req: Request, res: Response) => {
-  try {
-    const key = req.params.key;
-
-    if (isSensitiveKey(key)) {
-      return res.status(403).json({ error: 'Access denied to sensitive setting' });
-    }
-
-    const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
-    if (!setting) {
-      return res.status(404).json({ error: 'Setting not found' });
-    }
-    res.json({ setting });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.put('/:key', (req: Request, res: Response) => {
-  try {
-    const { value } = req.body;
-    if (value === undefined) {
-      return res.status(400).json({ error: 'Value is required' });
-    }
-    const db = getDatabase();
-    db.prepare(`
-      INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
-      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `).run(req.params.key, value, now());
-
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
-    res.json({ setting });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// ─── Cloud Sync settings ────────────────────────────────────────────────────
+// ─── Cloud Sync settings (must come BEFORE /:key wildcard) ──────────────────
 
 router.get('/cloud', (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
+    // Mask the API key — only last 4 chars visible. Full key accepted via PUT.
+    const rawKey = s.cloud_api_key || '';
     res.json({
-      cloud_api_key: s.cloud_api_key || null,
+      cloud_api_key: rawKey ? `****${rawKey.slice(-4)}` : null,
       cloud_store_id: s.cloud_store_id || null,
       cloud_sync_enabled: s.cloud_sync_enabled === '1',
       cloud_orders_enabled: s.cloud_orders_enabled === '1',
@@ -226,6 +165,64 @@ router.put('/cloud', (req: Request, res: Response) => {
       cloud_orders_enabled: cloud_orders_enabled ? '1' : '0',
     });
     res.json({ ok: true });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── Generic key-value routes (wildcard — must be last) ─────────────────────
+
+// Only non-sensitive keys may be updated via the wildcard route.
+// Sensitive keys (cloud_*, gstin, etc.) must use their explicit routes above.
+const ALLOWED_WILDCARD_KEYS = new Set([
+  'business_name', 'timezone', 'currency', 'country',
+  'state_code', 'business_address', 'business_phone',
+  'billing_type', 'bill_show_name', 'bill_show_address',
+  'bill_show_phone', 'bill_show_gstn',
+  'tax_scheme',
+  'loyalty_expiry_days', 'loyalty_points_per_rs', 'loyalty_redeem_value',
+  'printer_method', 'paper_size', 'bill_template',
+]);
+
+router.get('/', (req: Request, res: Response) => {
+  try {
+    const s = getAllSettings(getDatabase());
+    res.json({ settings: s });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/:key', (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
+    if (!setting) {
+      return res.status(404).json({ error: 'Setting not found' });
+    }
+    res.json({ setting });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.put('/:key', (req: Request, res: Response) => {
+  try {
+    if (!ALLOWED_WILDCARD_KEYS.has(req.params.key)) {
+      return res.status(403).json({ error: 'This setting cannot be updated via wildcard route' });
+    }
+    const { value } = req.body;
+    if (value === undefined) {
+      return res.status(400).json({ error: 'Value is required' });
+    }
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(req.params.key, value, now());
+
+    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
+    res.json({ setting });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

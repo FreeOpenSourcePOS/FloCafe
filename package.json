@@ -1,26 +1,29 @@
 {
   "name": "flo-desktop",
-  "version": "1.6.7",
+  "version": "1.7.2",
   "description": "Flo - Self-hosted Point of Sale System",
   "engines": {
     "node": ">=22.0.0"
   },
   "main": "dist/index.js",
   "scripts": {
-    "clean": "npx kill-port 3001 3002",
-    "predev": "git submodule update --init",
+    "clean": "node kill-ports.js 3001 3002",
+    "predev": "git submodule update --init frontend",
     "dev": "npm run clean && npm run build:frontend && npm run build && electron .",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "tsc",
     "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop NEXT_PUBLIC_API_URL=http://localhost:3001/api npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
-    "postinstall": "git submodule update --init --recursive && npx @electron/rebuild -f -w better-sqlite3",
+    "postinstall": "git submodule update --init frontend && npx @electron/rebuild -f -w better-sqlite3",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
     "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",
     "build:mas": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac mas --universal",
     "build:mas-dev": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac masDev",
     "build:linux": "npm run build:frontend && npm run build && electron-builder --linux",
+    "release:linux": "npm run build:frontend && npm run build && electron-builder --linux --publish always",
+    "release:mac": "npm run build:frontend && npm run build && electron-builder --mac --publish always",
+    "release:win": "npm run build:frontend && npm run build && electron-builder --win --publish always",
     "pack": "electron-builder --dir",
     "start": "electron .",
     "rebuild": "HOME=~/.electron-gyp node-gyp rebuild --target=$(node -p \"require('./node_modules/electron/package.json').version\") --arch=$(node -p \"process.arch\") --dist-url=https://electronjs.org/headers --runtime=electron --directory node_modules/better-sqlite3",
@@ -50,7 +53,6 @@
     "@types/ws": "^8.5.10",
     "electron": "^31.7.7",
     "electron-builder": "^26.8.1",
-    "kill-port": "^2.0.1",
     "typescript": "^5.4.5"
   },
   "dependencies": {
@@ -71,6 +73,8 @@
   "build": {
     "appId": "com.flo.desktop",
     "productName": "Flo Cafe",
+    "icon": "assets/icon-512.png",
+    "afterPack": "scripts/afterPack.js",
     "asar": true,
     "asarUnpack": "**/node_modules/better-sqlite3/**/*",
     "directories": {
@@ -84,7 +88,8 @@
     "publish": {
       "provider": "github",
       "owner": "FreeOpenSourcePOS",
-      "repo": "FloCafe"
+      "repo": "FloCafe",
+      "releaseType": "release"
     },
     "extraResources": [
       {
@@ -173,10 +178,32 @@
           "arch": [
             "x64"
           ]
+        },
+        {
+          "target": "snap",
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "assets",
-      "category": "Office"
+      "category": "Office",
+      "desktop": {
+        "entry": {
+          "Name": "Flo Cafe",
+          "Comment": "Free, open-source POS for cafes and restaurants",
+          "GenericName": "Point of Sale",
+          "Keywords": "pos;point of sale;restaurant;cafe;billing;invoice;",
+          "StartupWMClass": "flo-desktop"
+        }
+      }
+    },
+    "snap": {
+      "confinement": "strict",
+      "plugs": ["cups-control", "avahi-observe", "avahi-control", "raw-usb", "removable-media"],
+      "environment": {
+        "TMPDIR": "$XDG_RUNTIME_DIR"
+      }
     },
     "nsis": {
       "oneClick": false,

@@ -12,8 +12,8 @@ import { getJWTSecret } from './routes/auth';
 import { rateLimit } from './middleware/security';
 
 let kdsServer: http.Server | null = null;
-
 const KDS_PORT = parseInt(process.env.KDS_PORT || '3002', 10);
+let activeKdsPort = KDS_PORT;
 
 export function isKdsServerRunning(): boolean {
   return kdsServer !== null;
@@ -232,20 +232,25 @@ export function startKdsServer(): Promise<void> {
     if (staticDir) {
       console.log(`[KDS Server] Serving static files from: ${staticDir}`);
 
-      // Middleware to patch Windows-specific Next.js static export path nesting
-      app.use((req: Request, res: Response, next: NextFunction) => {
-        if (req.path.includes('__next.')) {
-          const originalPath = req.path;
-          const rewritten = rewriteNextExportPath(originalPath);
-          if (rewritten !== originalPath) {
-            const fullPath = path.join(staticDir, rewritten);
-            if (fs.existsSync(fullPath)) {
-              req.url = rewritten;
+      // Middleware to patch Windows-specific Next.js static export path nesting.
+      // On Windows, the Next.js static export uses dotted segments (e.g.
+      // __next.!KGRhc2hib2FyZCk.products.__PAGE__.txt) instead of nested
+      // directories. This rewrite is only needed when the app runs on Windows.
+      if (process.platform === 'win32') {
+        app.use((req: Request, res: Response, next: NextFunction) => {
+          if (req.path.includes('__next.')) {
+            const originalPath = req.path;
+            const rewritten = rewriteNextExportPath(originalPath);
+            if (rewritten !== originalPath) {
+              const fullPath = path.join(staticDir, rewritten);
+              if (fs.existsSync(fullPath)) {
+                req.url = rewritten;
+              }
             }
           }
-        }
-        next();
-      });
+          next();
+        });
+      }
 
       app.use(express.static(staticDir, { index: false }));
 
@@ -282,13 +287,17 @@ export function startKdsServer(): Promise<void> {
       res.status(500).json({ error: err.message || 'Internal server error' });
     });
 
-    kdsServer = app.listen(KDS_PORT, '0.0.0.0', () => {
-      console.log(`[KDS Server] HTTP server running on http://localhost:${KDS_PORT}`);
+    let currentKdsPort = KDS_PORT;
+    let attempts = 0;
+
+    kdsServer = app.listen(currentKdsPort, '0.0.0.0', () => {
+      activeKdsPort = currentKdsPort;
+      console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
 
       if (kdsServer) {
         const wss = new WebSocketServer({ server: kdsServer, path: '/kds' });
         setupKdsWebSocket(wss);
-        console.log(`[KDS Server] WebSocket running on ws://localhost:${KDS_PORT}/kds`);
+        console.log(`[KDS Server] WebSocket running on ws://localhost:${activeKdsPort}/kds`);
       }
 
       resolve();
@@ -296,8 +305,16 @@ export function startKdsServer(): Promise<void> {
 
     kdsServer?.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
-        console.log(`[KDS Server] Port ${KDS_PORT} in use, trying ${KDS_PORT + 1}`);
-        kdsServer?.listen(KDS_PORT + 1, '0.0.0.0');
+        attempts++;
+        if (attempts >= 10) {
+          const errorMsg = `[KDS Server] Failed to bind to any port after 10 attempts starting from ${KDS_PORT}`;
+          console.error(errorMsg);
+          reject(new Error(errorMsg));
+          return;
+        }
+        currentKdsPort++;
+        console.log(`[KDS Server] Port ${currentKdsPort - 1} in use, trying ${currentKdsPort}`);
+        kdsServer?.listen(currentKdsPort, '0.0.0.0');
       } else {
         reject(err);
       }
@@ -314,5 +331,5 @@ export function stopKdsServer(): void {
 }
 
 export function getKdsPort(): number {
-  return KDS_PORT;
+  return activeKdsPort;
 }

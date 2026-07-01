@@ -1,6 +1,6 @@
 import * as net from 'net';
 import * as fs from 'fs';
-import { execSync, exec } from 'child_process';
+import { execSync, exec, execFileSync } from 'child_process';
 import { getDatabase } from '../db';
 
 const isMasBuild =
@@ -272,10 +272,86 @@ function detectWindowsMakeModel(name: string, driver: string): { make: string; m
   return { make, model };
 }
 
+// USB vendor ID lookup for common thermal printer brands
+const THERMAL_PRINTER_VENDORS: Record<string, string> = {
+  '04b8': 'Epson',
+  '0456': 'Xprinter',
+  '0519': 'Star Micronics',
+  '0525': 'Star Micronics',
+  '0416': 'Zjiang',
+  '0419': 'Bixolon',
+  '1d90': 'Citizen',
+  '04f9': 'Brother',
+};
+
+// Bridge chip vendor IDs (not printer brands — these identify the USB-to-serial chip)
+const BRIDGE_CHIP_VENDORS = new Set(['1a86', '10c4', '0403']);
+
+function parseCupsDeviceUri(uri: string): { make: string; model: string } | null {
+  // USB URIs look like: usb://Epson/TM-T88V?serial=ABC123
+  const usbMatch = uri.match(/usb:\/\/([^/?]+)\/([^?]+)/);
+  if (usbMatch) {
+    return { make: decodeURIComponent(usbMatch[1]), model: decodeURIComponent(usbMatch[2]) };
+  }
+  // Network URIs look like: socket://192.168.1.100:9100
+  return null;
+}
+
+function getMakeModelFromLpstat(): Map<string, { make: string; model: string }> {
+  const result = new Map<string, { make: string; model: string }>();
+  try {
+    const output = execSync('lpstat -l -p 2>/dev/null', { encoding: 'utf8' });
+    let currentName = '';
+    for (const line of output.split('\n')) {
+      const nameMatch = line.match(/^printer (\S+) is/);
+      if (nameMatch) currentName = nameMatch[1];
+      const uriMatch = line.match(/Device URI:\s*(.+)/);
+      if (uriMatch && currentName) {
+        const parsed = parseCupsDeviceUri(uriMatch[1].trim());
+        if (parsed) result.set(currentName, parsed);
+      }
+    }
+  } catch { /* CUPS not available */ }
+  return result;
+}
+
+function getUsbPrinterVendorIds(): Map<string, { vendorId: string; manufacturer: string | null; product: string | null }> {
+  const result = new Map<string, { vendorId: string; manufacturer: string | null; product: string | null }>();
+  const devicesDir = '/sys/bus/usb/devices';
+  try {
+    const entries = fs.readdirSync(devicesDir);
+    for (const entry of entries) {
+      if (entry.includes(':')) continue; // skip interfaces
+      const devPath = `${devicesDir}/${entry}`;
+      try {
+        const devClass = fs.readFileSync(`${devPath}/bDeviceClass`, 'utf8').trim();
+        if (devClass !== '07') continue; // 07 = USB printer class
+        const vendorId = fs.readFileSync(`${devPath}/idVendor`, 'utf8').trim();
+        const manufacturer = readSysfsSafe(`${devPath}/manufacturer`);
+        const product = readSysfsSafe(`${devPath}/product`);
+        result.set(entry, { vendorId, manufacturer, product });
+      } catch { /* skip device */ }
+    }
+  } catch { /* sysfs not available */ }
+  return result;
+}
+
+function readSysfsSafe(filePath: string): string | null {
+  try { return fs.readFileSync(filePath, 'utf8').trim(); }
+  catch { return null; }
+}
+
 function detectLinuxPrinters(): PrinterInfo[] {
   const printers: PrinterInfo[] = [];
 
   try {
+    // Layer 1: Get make/model from CUPS Device URI (most reliable)
+    const cupsMakeModel = getMakeModelFromLpstat();
+
+    // Layer 2: Get USB vendor IDs from sysfs (works without CUPS)
+    const usbVendors = getUsbPrinterVendorIds();
+
+    // Get printer list from CUPS
     const output = execSync('lpstat -v 2>/dev/null', { encoding: 'utf8' });
     const lines = output.split('\n');
 
@@ -287,17 +363,43 @@ function detectLinuxPrinters(): PrinterInfo[] {
         const isNetwork = /^(socket|ipp|ipps|http|https|lpd):\/\//i.test(uri);
         const { ip, port } = isNetwork ? parseDeviceUri(uri) : {};
 
+        // Try CUPS Device URI first, then fall back to Generic
+        const cupsInfo = cupsMakeModel.get(name);
+        let make = cupsInfo?.make || 'Generic';
+        let model = cupsInfo?.model || 'Thermal Printer';
+
+        // For USB printers without CUPS info, try sysfs vendor ID lookup
+        if (!cupsInfo && !isNetwork) {
+          for (const [, vendorInfo] of usbVendors) {
+            // Skip bridge chips — they identify the serial adapter, not the printer
+            if (BRIDGE_CHIP_VENDORS.has(vendorInfo.vendorId.toLowerCase())) {
+              // But if sysfs has manufacturer/product strings, use those
+              if (vendorInfo.manufacturer && vendorInfo.product) {
+                make = vendorInfo.manufacturer;
+                model = vendorInfo.product;
+              }
+              continue;
+            }
+            const vendorMake = THERMAL_PRINTER_VENDORS[vendorInfo.vendorId.toLowerCase()];
+            if (vendorMake) {
+              make = vendorMake;
+              model = vendorInfo.product || 'Thermal Printer';
+              break;
+            }
+          }
+        }
+
         printers.push({
           name,
-          make: 'Generic',
-          model: 'Thermal Printer',
+          make,
+          model,
           connectionType: isNetwork ? 'network' : 'usb',
           deviceUri: uri,
           status: 'idle',
           isDefault: false,
           ipAddress: ip,
           port: port || (isNetwork ? 9100 : undefined),
-          paperWidth: guessPaperWidth(name, 'Thermal Printer'),
+          paperWidth: guessPaperWidth(name, model),
         });
       }
     }
@@ -882,15 +984,13 @@ async function printViaUSBMacOS(data: Buffer, printerName?: string): Promise<boo
     console.log('[Printer] Data written to:', tmpFile, 'size:', data.length, 'bytes');
     console.log('[Printer] First 50 bytes:', Array.from(data.slice(0, 50)).map(b => b.toString(16)).join(' '));
 
-    let cmd: string;
+    const args = ['-o', 'raw', tmpFile];
     if (printerName) {
-      cmd = `lp -d "${printerName}" -o raw "${tmpFile}"`;
-    } else {
-      cmd = `lp -o raw "${tmpFile}"`;
+      args.splice(0, 0, '-d', printerName);
     }
 
-    console.log('[Printer] Executing:', cmd);
-    const result = execSync(cmd, { encoding: 'utf8' });
+    console.log('[Printer] Executing: lp', args.join(' '));
+    const result = execFileSync('lp', args, { encoding: 'utf8' });
     console.log('[Printer] Print sent successfully, result:', result);
     return true;
   } catch (err: any) {
@@ -940,9 +1040,10 @@ async function printViaWindowsRaw(data: Buffer, printerName?: string): Promise<b
     fs.writeFileSync(tmpFile, data);
 
     const name = printerName || 'Microsoft Print to PDF';
-    const cmd = `powershell -Command "Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name}' -Wait"`;
+    // Use -EncodedCommand or direct args — never interpolate into a shell string
+    const psCommand = `Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name.replace(/'/g, "''")}' -Wait`;
 
-    execSync(cmd, { encoding: 'utf8' });
+    execFileSync('powershell', ['-Command', psCommand], { encoding: 'utf8' });
     fs.unlinkSync(tmpFile);
     return true;
   } catch (err: any) {
@@ -958,11 +1059,9 @@ async function printViaUSBLinux(data: Buffer, printerName?: string): Promise<boo
     fs.writeFileSync(tmpFile, data);
 
     if (printerName) {
-      const cmd = `lp -d "${printerName}" -o raw "${tmpFile}"`;
-      execSync(cmd, { encoding: 'utf8' });
+      execFileSync('lp', ['-d', printerName, '-o', 'raw', tmpFile], { encoding: 'utf8' });
     } else {
-      const cmd = `lp -o raw "${tmpFile}"`;
-      execSync(cmd, { encoding: 'utf8' });
+      execFileSync('lp', ['-o', 'raw', tmpFile], { encoding: 'utf8' });
     }
 
     return true;

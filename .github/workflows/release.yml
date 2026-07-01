@@ -1,0 +1,152 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub release (if not exists)
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release view "v${VERSION}" --repo FreeOpenSourcePOS/FloCafe 2>/dev/null || \
+          gh release create "v${VERSION}" \
+            --repo FreeOpenSourcePOS/FloCafe \
+            --title "v${VERSION}" \
+            --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  release-linux:
+    runs-on: ubuntu-latest
+    needs: create-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y build-essential libssl-dev rpm
+
+      - name: Install snapcraft
+        run: sudo snap install snapcraft --classic
+        continue-on-error: true
+
+      - name: Install npm dependencies
+        run: npm ci
+        env:
+          npm_config_build_from_source: true
+
+      - name: Build AppImage + deb + rpm
+        run: npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm --publish never
+
+      - name: Upload Linux assets to GitHub release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release upload "v${VERSION}" \
+            release/*.AppImage \
+            release/*.deb \
+            release/*.rpm \
+            --repo FreeOpenSourcePOS/FloCafe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Build snap
+        run: npx electron-builder --linux snap --publish never
+        env:
+          SNAPCRAFT_BUILD_ENVIRONMENT: host
+        continue-on-error: true
+
+      - name: Upload snap to GitHub release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          SNAP_FILE=$(ls release/*.snap 2>/dev/null | head -1)
+          if [ -n "$SNAP_FILE" ]; then
+            gh release upload "v${VERSION}" "$SNAP_FILE" --repo FreeOpenSourcePOS/FloCafe --clobber
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
+        continue-on-error: true
+
+      - name: Publish snap to Snap Store
+        if: ${{ env.SNAPCRAFT_STORE_CREDENTIALS != '' }}
+        run: |
+          SNAP_FILE=$(ls release/*.snap 2>/dev/null | head -1)
+          if [ -n "$SNAP_FILE" ]; then
+            snapcraft upload "$SNAP_FILE" --release stable
+          fi
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        continue-on-error: true
+
+  release-mac:
+    runs-on: macos-latest
+    needs: create-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build macOS
+        run: |
+          # Unset cert vars if secret is not configured — empty CSC_LINK crashes electron-builder
+          [ -z "$CSC_LINK" ] && unset CSC_LINK && unset CSC_KEY_PASSWORD
+          npm run build:frontend && npm run build && npx electron-builder --mac --publish never
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_TEAM_ID: BKDY677XJA
+
+      - name: Upload macOS assets to GitHub release
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          gh release upload "v${VERSION}" \
+            release/*.dmg \
+            --repo FreeOpenSourcePOS/FloCafe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  release-windows:
+    runs-on: windows-latest
+    needs: create-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Windows
+        run: npm run build:frontend && npm run build && npx electron-builder --win --publish never
+
+      - name: Upload Windows assets to GitHub release
+        run: |
+          $VERSION = node -p "require('./package.json').version"
+          gh release upload "v$VERSION" (Get-ChildItem release\*.exe | Select-Object -ExpandProperty FullName) --repo FreeOpenSourcePOS/FloCafe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

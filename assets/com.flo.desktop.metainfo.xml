@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.flo.desktop</id>
+  <name>Flo Cafe</name>
+  <summary>Free, open-source POS for cafes and restaurants</summary>
+  <developer id="com.flo">
+    <name>FreeOpenSourcePOS</name>
+  </developer>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <description>
+    <p>
+      Flo Cafe is a free, open-source, offline-first Point of Sale system built
+      for cafes, restaurants, cloud kitchens, and food businesses. It runs
+      entirely on your own machine with no internet required.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>Fast order entry with multiple order types (dine-in, takeaway, delivery)</li>
+      <li>Kitchen Display System (KDS) with real-time updates</li>
+      <li>Thermal receipt printing via ESC/POS (USB and network)</li>
+      <li>Table management and staff roles</li>
+      <li>GST-compliant invoicing and sales reports</li>
+      <li>Works offline — no subscriptions or cloud dependency</li>
+    </ul>
+  </description>
+
+  <launchable type="desktop-id">com.flo.desktop.desktop</launchable>
+
+  <url type="homepage">https://github.com/FreeOpenSourcePOS/FloCafe</url>
+  <url type="bugtracker">https://github.com/FreeOpenSourcePOS/FloCafe/issues</url>
+
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/FreeOpenSourcePOS/FloCafe/main/screenshot.png</image>
+      <caption>Point of Sale interface</caption>
+    </screenshot>
+  </screenshots>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="1.7.1" date="2025-01-01">
+      <description>
+        <p>Latest release with Linux improvements and bug fixes.</p>
+      </description>
+    </release>
+  </releases>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <keywords>
+    <keyword>pos</keyword>
+    <keyword>point of sale</keyword>
+    <keyword>restaurant</keyword>
+    <keyword>cafe</keyword>
+    <keyword>billing</keyword>
+    <keyword>invoice</keyword>
+    <keyword>thermal printer</keyword>
+    <keyword>kitchen display</keyword>
+  </keywords>
+</component>

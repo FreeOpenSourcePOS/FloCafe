@@ -1,0 +1,161 @@
+# ---------------------------------------------------------------
+# FloCafe — CI Validation
+#
+# Trigger: Push to main, pull requests to main.
+# Runs: Tests, type checks, frontend lint, and build validation
+# on all 3 platforms (Linux, macOS, Windows).
+# Uploads build artifacts for manual testing (7-day retention).
+#
+# Cost: $0 — GitHub Actions is unlimited for public repos.
+# ---------------------------------------------------------------
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Job 1: Unit Tests (Linux only, fast) ──────────────────────
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  # ── Job 2: TypeScript compilation check ──────────────────────
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile TypeScript
+        run: npx tsc --noEmit
+
+  # ── Job 3: Frontend lint + build ────────────────────────────
+  frontend-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Cache frontend node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-frontend-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint frontend
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Build frontend (validates types + compilation)
+        run: npm run build:frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+  # ── Job 4: Build validation on all 3 platforms ───────────────
+  build:
+    needs: [test, typecheck]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: --linux
+            extra-deps: sudo apt-get update -qq && sudo apt-get install -y fakeroot dpkg
+          - os: macos-latest
+            target: --mac
+            extra-deps: echo "No extra deps needed"
+          - os: windows-latest
+            target: --win
+            extra-deps: echo "No extra deps needed"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository and submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install platform dependencies
+        run: ${{ matrix.extra-deps }}
+
+      - name: Install npm dependencies
+        run: npm ci
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Cache frontend node_modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-frontend-
+
+      - name: Build frontend
+        run: npm run build:frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Compile main process
+        run: npm run build
+
+      - name: Package (unpacked directory, no installer)
+        run: npx electron-builder ${{ matrix.target }} --dir --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: flo-${{ matrix.os }}-${{ github.run_number }}
+          path: release/
+          retention-days: 7

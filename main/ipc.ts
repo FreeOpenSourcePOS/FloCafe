@@ -3,6 +3,19 @@ import * as path from 'path';
 import { getDatabase, createBackup, restoreBackup, restoreBackup as restoreFn, now, getDbPath, getCurrentSchemaVersion, getSchemaVersionFromBackup } from './db';
 import { getLocalIP } from './server';
 
+// Settings keys the renderer is allowed to write via IPC.
+// Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
+// Sensitive keys (jwt_secret, cloud_api_key, cloud_*, gstin, etc.) are excluded.
+const ALLOWED_IPC_KEYS = new Set([
+  'business_name', 'timezone', 'currency', 'country',
+  'state_code', 'business_address', 'business_phone',
+  'billing_type', 'bill_show_name', 'bill_show_address',
+  'bill_show_phone', 'bill_show_gstn',
+  'tax_scheme',
+  'loyalty_expiry_days', 'loyalty_points_per_rs', 'loyalty_redeem_value',
+  'printer_method', 'paper_size', 'bill_template',
+]);
+
 export function registerIpcHandlers(): void {
   // Database backup/restore
   ipcMain.handle('backup-database', async () => {
@@ -108,7 +121,12 @@ export function registerIpcHandlers(): void {
       const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
       const settings: Record<string, string> = {};
       rows.forEach((row) => {
-        settings[row.key] = row.value;
+        // Mask cloud API key — same as HTTP GET /api/settings/cloud
+        if (row.key === 'cloud_api_key' && row.value) {
+          settings[row.key] = `****${row.value.slice(-4)}`;
+        } else {
+          settings[row.key] = row.value;
+        }
       });
       return settings;
     } catch (error: any) {
@@ -118,6 +136,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('set-setting', async (event, key: string, value: string) => {
     try {
+      if (!ALLOWED_IPC_KEYS.has(key)) {
+        return { success: false, error: 'Setting not allowed via IPC' };
+      }
       const db = getDatabase();
       db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
         .run(key, value, now());
@@ -179,6 +200,11 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('save-printer', async (event, printer: any) => {
     try {
+      // Validate printer name — reject names with shell metacharacters (command injection defense)
+      const PRINTER_NAME_REGEX = /^[a-zA-Z0-9\s\-_.()]+$/;
+      if (printer.name && !PRINTER_NAME_REGEX.test(printer.name)) {
+        return { success: false, error: 'Printer name contains invalid characters' };
+      }
       const db = getDatabase();
       if (printer.id) {
         db.prepare(`

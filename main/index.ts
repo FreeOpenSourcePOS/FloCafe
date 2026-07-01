@@ -117,9 +117,13 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on('error', (err) => {
     // 404 means no release artifacts published yet — treat as "up to date", not an error.
-    const is404 = err.message?.includes('404') || err.message?.includes('Cannot find latest');
-    if (is404) {
-      log.debug('[Update] No release artifacts found (404) — skipping update');
+    // ENOENT means app-update.yml is missing (e.g. running from unpacked dir) — also not an error.
+    const isNonError =
+      err.message?.includes('404') ||
+      err.message?.includes('Cannot find latest') ||
+      err.message?.includes('ENOENT');
+    if (isNonError) {
+      log.debug('[Update] Skipping update — no config or release artifacts:', err.message);
       mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
     } else {
       log.error('[Update] Error:', err);
@@ -140,6 +144,17 @@ function checkForUpdates(): void {
     mainWindow?.webContents.send('update-status', { status: 'store' });
     return;
   }
+
+  // Unpacked dev builds (electron-builder --dir) don't ship app-update.yml.
+  // app.isPackaged can still be true for unpacked builds, so check for the
+  // file directly — if it's missing, skip the update check gracefully.
+  const configPath = path.join(process.resourcesPath, 'app-update.yml');
+  if (!fs.existsSync(configPath)) {
+    log.debug('[Update] app-update.yml not found at', configPath, '— skipping (unpacked build)');
+    mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
+    return;
+  }
+
   if (!isDev) {
     autoUpdater.checkForUpdates().catch((err) => {
       console.error('[Update] Check failed:', err);

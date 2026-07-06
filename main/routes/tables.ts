@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now } from '../db';
+import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
 
 const router = Router();
@@ -69,15 +70,16 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     }
 
     const db = getDatabase();
+    const tableId = `tbl-${randomUUID().slice(0, 8)}`;
     const result = db.prepare(`
-      INSERT INTO tables (number, capacity, floor, section, position_x, position_y, kitchen_station_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tables (id, number, capacity, floor, section, position_x, position_y, kitchen_station_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
-      tableNumber, capacity || 4, floor || null, section || null,
+      tableId, tableNumber, capacity || 4, floor || null, section || null,
       position_x || null, position_y || null, kitchen_station_id || null, now(), now()
     );
 
-    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(result.lastInsertRowid);
+    const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId);
     res.status(201).json({ table });
   } catch (error: any) {
     res.status(500).json({ error: error.message });

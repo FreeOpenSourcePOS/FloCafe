@@ -658,6 +658,22 @@ const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.exec(`UPDATE tables SET id = 'tbl-' || id WHERE typeof(id) = 'integer'`);
     },
   },
+  {
+    version: 13,
+    name: 'fix_order_table_id_references',
+    up: () => {
+      // Fix orders that reference old integer table IDs.
+      // After v12 converted table IDs from integers to 'tbl-{n}' strings,
+      // existing orders still have the old integer format in table_id.
+      //
+      // Step 1: Handle orders where table_id is an integer type
+      db.exec(`UPDATE orders SET table_id = 'tbl-' || table_id WHERE typeof(table_id) = 'integer'`);
+
+      // Step 2: Handle orders where table_id is a numeric string (e.g., '1' stored as TEXT)
+      // SQLite typeof() returns 'text' for string numbers, so we catch those too
+      db.exec(`UPDATE orders SET table_id = 'tbl-' || table_id WHERE typeof(table_id) = 'text' AND table_id NOT LIKE 'tbl-%' AND CAST(table_id AS INTEGER) > 0`);
+    },
+  },
 ];
 
 function runMigrations(): void {

@@ -276,11 +276,11 @@ export default function POSPage() {
       toast.error('Cart is empty');
       return;
     }
+    const tableName = tables.find((t) => t.id === tableId)?.name || tableId;
     heldOrders.holdOrder(tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
-    cart.setTableId(tableId);
-    cart.setOrderType('dine_in');
-    toast.success('Table held — order saved');
+    cart.clearCart();
     setShowTablePicker(false);
+    toast.success(`Order held for ${tableName}`);
   };
 
   const handleAddItemsToOrder = (table: Table, order: Order) => {

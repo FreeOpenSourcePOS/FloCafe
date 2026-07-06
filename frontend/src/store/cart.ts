@@ -4,7 +4,7 @@ import type { Customer, Product, Addon, CartItem } from '@/lib/types';
 interface CartState {
   items: CartItem[];
   orderType: 'dine_in' | 'takeaway' | 'delivery';
-  tableId: number | null;
+  tableId: string | null;
   customerId: number | string | null;
   customer: Customer | null;
   guestCount: number;
@@ -15,9 +15,9 @@ interface CartState {
   removeItem: (cartItemId: string) => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
   clearCart: () => void;
-  loadItems: (items: CartItem[], tableId: number | null, customerId: number | string | null, guestCount: number, orderNotes?: string) => void;
+  loadItems: (items: CartItem[], tableId: string | null, customerId: number | string | null, guestCount: number, orderNotes?: string) => void;
   setOrderType: (type: CartState['orderType']) => void;
-  setTableId: (id: number | null) => void;
+  setTableId: (id: string | null) => void;
   setCustomerId: (id: number | string | null) => void;
   setCustomer: (customer: Customer | null) => void;
   setGuestCount: (count: number) => void;

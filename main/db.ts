@@ -660,18 +660,16 @@ const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   },
   {
     version: 13,
-    name: 'fix_order_table_id_references',
+    name: 'fix_null_table_ids',
     up: () => {
-      // Fix orders that reference old integer table IDs.
-      // After v12 converted table IDs from integers to 'tbl-{n}' strings,
-      // existing orders still have the old integer format in table_id.
+      // Fix tables with NULL ids caused by old INSERT without id column.
+      // SQLite stored NULL instead of generating an id.
       //
-      // Step 1: Handle orders where table_id is an integer type
-      db.exec(`UPDATE orders SET table_id = 'tbl-' || table_id WHERE typeof(table_id) = 'integer'`);
+      // Generate string IDs using rowid for existing tables with NULL ids
+      db.exec(`UPDATE tables SET id = 'tbl-' || rowid WHERE id IS NULL`);
 
-      // Step 2: Handle orders where table_id is a numeric string (e.g., '1' stored as TEXT)
-      // SQLite typeof() returns 'text' for string numbers, so we catch those too
-      db.exec(`UPDATE orders SET table_id = 'tbl-' || table_id WHERE typeof(table_id) = 'text' AND table_id NOT LIKE 'tbl-%' AND CAST(table_id AS INTEGER) > 0`);
+      // Also catch any integer ids that slipped through v12
+      db.exec(`UPDATE tables SET id = 'tbl-' || id WHERE typeof(id) = 'integer'`);
     },
   },
 ];

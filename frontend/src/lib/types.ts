@@ -126,7 +126,7 @@ export interface Customer {
 export interface Order {
   id: number;
   order_number: string;
-  table_id: number | null;
+  table_id: string | null;
   customer_id: number | string | null;
   type: 'dine_in' | 'takeaway' | 'delivery' | 'online';
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'completed' | 'cancelled';

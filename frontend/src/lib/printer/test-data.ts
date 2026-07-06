@@ -44,7 +44,7 @@ export function createTestBill(overrides?: Partial<Bill>): Bill {
  */
 export function createTestOrder(overrides?: Partial<Order>): Order {
   const testTable: Table = {
-    id: 1,
+    id: '1',
     name: 'Table 5',
     capacity: 4,
     status: 'occupied',

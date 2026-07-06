@@ -55,6 +55,24 @@ export const useHeldOrdersStore = create<HeldOrdersState>()(
 
       getHeldOrder: (tableId) => get().orders[tableId],
     }),
-    { name: 'held-orders' }
+    {
+      name: 'held-orders',
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        const migrated: Record<string, HeldOrder> = {};
+        let changed = false;
+        for (const [key, value] of Object.entries(state.orders)) {
+          if (typeof key === 'string' && /^\d+$/.test(key)) {
+            migrated[String(Number(key))] = { ...value, tableId: String(Number(key)) };
+            changed = true;
+          } else {
+            migrated[key] = value;
+          }
+        }
+        if (changed) {
+          useHeldOrdersStore.setState({ orders: migrated });
+        }
+      },
+    }
   )
 );

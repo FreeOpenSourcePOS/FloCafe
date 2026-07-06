@@ -12,7 +12,7 @@ const statusColors: Record<string, string> = {
   available: 'bg-green-500',
   occupied: 'bg-red-500',
   reserved: 'bg-yellow-500',
-  maintenance: 'bg-gray-500',
+  cleaning: 'bg-gray-500',
 };
 
 interface ReserveModalProps {
@@ -227,13 +227,14 @@ export default function TablesPage() {
   }, [showDetails]);
 
   // Group active orders by table_id
-  const ordersByTable = new Map<number, Order[]>();
+  const ordersByTable = new Map<string, Order[]>();
   if (showDetails) {
     for (const order of orders) {
       if (!order.table_id) continue;
-      const existing = ordersByTable.get(order.table_id);
+      const tableKey = String(order.table_id);
+      const existing = ordersByTable.get(tableKey);
       if (existing) existing.push(order);
-      else ordersByTable.set(order.table_id, [order]);
+      else ordersByTable.set(tableKey, [order]);
     }
   }
 
@@ -250,7 +251,7 @@ export default function TablesPage() {
     }
   };
 
-  const updateStatus = async (id: number, status: string) => {
+  const updateStatus = async (id: string, status: string) => {
     try {
       await api.patch(`/tables/${id}/status`, { status });
       fetchTables();

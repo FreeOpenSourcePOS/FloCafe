@@ -6,10 +6,12 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 
 interface Props {
   tables: Table[];
-  selectedTableId: number | null;
-  onSelectAvailable: (tableId: number, customer?: { id: number; name: string; phone: string } | null) => void;
+  selectedTableId: string | null;
+  onSelectAvailable: (tableId: string, customer?: { id: number; name: string; phone: string } | null) => void;
   onSelectOccupied: (table: Table) => void;
-  onSelectHeld: (tableId: number) => void;
+  onSelectHeld: (tableId: string) => void;
+  onPlaceOrder: () => void;
+  onHoldTable: (tableId: string) => void;
   onClose: () => void;
 }
 
@@ -17,11 +19,11 @@ const statusStyles: Record<string, { border: string; badge: string; badgeText: s
   available: { border: 'border-gray-200 hover:border-brand/40', badge: '', badgeText: '' },
   occupied: { border: 'border-orange-300 bg-orange-50', badge: 'bg-orange-500', badgeText: 'Occupied' },
   reserved: { border: 'border-yellow-300 bg-yellow-50', badge: 'bg-yellow-500', badgeText: 'Reserved' },
-  maintenance: { border: 'border-gray-300 bg-gray-50', badge: 'bg-gray-500', badgeText: 'Maintenance' },
+  cleaning: { border: 'border-gray-300 bg-gray-50', badge: 'bg-gray-500', badgeText: 'Cleaning' },
 };
 
 export default function TablePickerModal({
-  tables, selectedTableId, onSelectAvailable, onSelectOccupied, onSelectHeld, onClose,
+  tables, selectedTableId, onSelectAvailable, onSelectOccupied, onSelectHeld, onPlaceOrder, onHoldTable, onClose,
 }: Props) {
   const heldOrders = useHeldOrdersStore();
 
@@ -58,7 +60,7 @@ export default function TablePickerModal({
             const isHeld = heldOrders.hasHeldOrder(table.id);
             const isSelected = selectedTableId === table.id;
             const style = statusStyles[table.status] || statusStyles.available;
-            const isDisabled = table.status === 'maintenance';
+            const isDisabled = table.status === 'cleaning';
 
             return (
               <button
@@ -97,6 +99,26 @@ export default function TablePickerModal({
 
         {tables.length === 0 && (
           <p className="text-center text-gray-500 py-8">No tables found</p>
+        )}
+
+        {selectedTableId && (
+          <div className="flex gap-3 mt-4 pt-4 border-t border-gray-100">
+            <button
+              onClick={() => onHoldTable(selectedTableId)}
+              className="flex-1 px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+            >
+              Hold Table
+            </button>
+            <button
+              onClick={() => {
+                onPlaceOrder();
+                onClose();
+              }}
+              className="flex-1 px-4 py-3 rounded-xl bg-brand text-white font-medium hover:bg-brand/90 transition-colors"
+            >
+              Place Order
+            </button>
+          </div>
         )}
       </div>
     </div>

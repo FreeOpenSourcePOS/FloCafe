@@ -249,7 +249,7 @@ export default function POSPage() {
   };
 
 
-  const handleSelectAvailableTable = (tableId: number, customer?: { id: number; name: string; phone: string } | null) => {
+  const handleSelectAvailableTable = (tableId: string, customer?: { id: number; name: string; phone: string } | null) => {
     cart.setTableId(tableId);
     if (customer) {
       cart.setCustomer({ ...customer, email: null, visits_count: 0, total_spent: 0, last_visit_at: null, country_code: '' });
@@ -262,12 +262,24 @@ export default function POSPage() {
     setCheckoutTable(table);
   };
 
-  const handleSelectHeldTable = (tableId: number) => {
+  const handleSelectHeldTable = (tableId: string) => {
     const held = heldOrders.restoreOrder(tableId);
     if (held) {
       cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes);
       cart.setOrderType('dine_in');
     }
+    setShowTablePicker(false);
+  };
+
+  const handleHoldTable = (tableId: string) => {
+    if (cart.items.length === 0) {
+      toast.error('Cart is empty');
+      return;
+    }
+    heldOrders.holdOrder(tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
+    cart.setTableId(tableId);
+    cart.setOrderType('dine_in');
+    toast.success('Table held — order saved');
     setShowTablePicker(false);
   };
 
@@ -391,6 +403,8 @@ export default function POSPage() {
           onSelectAvailable={handleSelectAvailableTable}
           onSelectOccupied={handleSelectOccupiedTable}
           onSelectHeld={handleSelectHeldTable}
+          onPlaceOrder={handlePlaceOrder}
+          onHoldTable={handleHoldTable}
           onClose={() => setShowTablePicker(false)}
         />
       )}

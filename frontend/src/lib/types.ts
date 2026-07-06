@@ -93,10 +93,10 @@ export interface Addon {
 }
 
 export interface Table {
-  id: number;
+  id: string;
   name: string;
   capacity: number;
-  status: 'available' | 'occupied' | 'reserved' | 'maintenance';
+  status: 'available' | 'occupied' | 'reserved' | 'cleaning';
   kitchen_station_id: number | null;
   floor: string | null;
   section: string | null;

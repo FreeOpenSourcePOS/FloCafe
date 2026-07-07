@@ -96,7 +96,7 @@ jobs:
           cache: 'npm'
 
       - name: Cache frontend node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: frontend/node_modules
           key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}
@@ -170,7 +170,7 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Cache frontend node_modules
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: frontend/node_modules
           key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}

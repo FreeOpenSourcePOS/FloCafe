@@ -62,7 +62,7 @@
   "license": "MIT",
   "devDependencies": {
     "@electron/rebuild": "^4.0.3",
-    "@types/bcryptjs": "^2.4.6",
+    "@types/bcryptjs": "^3.0.0",
     "@types/better-sqlite3": "^7.6.11",
     "@types/bonjour": "^3.5.13",
     "@types/cors": "^2.8.19",
@@ -83,7 +83,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
+    "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.10.0",
     "bonjour-service": "^1.2.1",
     "cors": "^2.8.5",

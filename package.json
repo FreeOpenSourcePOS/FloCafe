@@ -74,7 +74,7 @@
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.5.10",
     "@typescript-eslint/eslint-plugin": "^8.62.1",
-    "@typescript-eslint/parser": "^8.62.1",
+    "@typescript-eslint/parser": "^8.63.0",
     "electron": "^31.7.7",
     "electron-builder": "^26.8.1",
     "eslint": "^9.39.4",

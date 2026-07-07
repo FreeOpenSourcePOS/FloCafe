@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@point-of-sale/receipt-printer-encoder": "^3.0.3",
-    "axios": "^1.18.0",
+    "axios": "^1.18.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.563.0",

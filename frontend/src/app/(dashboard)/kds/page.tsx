@@ -76,6 +76,13 @@ export default function KdsPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const stopRestPolling = useCallback(() => {
+    if (restIntervalRef.current) {
+      clearInterval(restIntervalRef.current);
+      restIntervalRef.current = null;
+    }
+  }, []);
+
   const fetchOrdersRest = useCallback(async () => {
     try {
       const { data } = await api.get(`/kitchen/orders?status=pending,preparing,ready,served`);
@@ -88,18 +95,12 @@ export default function KdsPage() {
   }, []);
 
   const startRestPolling = useCallback(() => {
+    stopRestPolling();
     setConnectionMode('rest');
     setConnected(true);
     fetchOrdersRest();
     restIntervalRef.current = setInterval(fetchOrdersRest, 5000);
-  }, [fetchOrdersRest]);
-
-  const stopRestPolling = useCallback(() => {
-    if (restIntervalRef.current) {
-      clearInterval(restIntervalRef.current);
-      restIntervalRef.current = null;
-    }
-  }, []);
+  }, [fetchOrdersRest, stopRestPolling]);
 
   const updateItemStatus = useCallback(async (itemId: number, status: KitchenStatus) => {
     setUpdating(itemId);
@@ -232,10 +233,10 @@ export default function KdsPage() {
     connectionTimeout = setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
         ws.close();
-        startRestPolling();
+        setConnectionMode('rest');
       }
     }, 5000);
-  }, [startRestPolling]);
+  }, []);
 
   useEffect(() => {
     const savedUser = localStorage.getItem('kds_user');
@@ -266,7 +267,7 @@ export default function KdsPage() {
       startRestPolling();
     }
     return () => stopRestPolling();
-  }, [connectionMode, user, startRestPolling]);
+  }, [connectionMode, user, startRestPolling, stopRestPolling]);
 
   const filteredOrders = orders
     .map((order) => ({

@@ -125,6 +125,13 @@ export default function KdsStandalonePage() {
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const stopRestPolling = useCallback(() => {
+    if (restIntervalRef.current) {
+      clearInterval(restIntervalRef.current);
+      restIntervalRef.current = null;
+    }
+  }, []);
+
   const fetchOrdersRest = useCallback(async () => {
     try {
       const { data } = await api.get('/api/kds/orders');
@@ -149,21 +156,15 @@ export default function KdsStandalonePage() {
       }
       setConnected(false);
     }
-  }, []);
+  }, [stopRestPolling]);
 
   const startRestPolling = useCallback(() => {
+    stopRestPolling();
     setConnectionMode('rest');
     setConnected(true);
     fetchOrdersRest();
     restIntervalRef.current = setInterval(fetchOrdersRest, 5000);
-  }, [fetchOrdersRest]);
-
-  const stopRestPolling = useCallback(() => {
-    if (restIntervalRef.current) {
-      clearInterval(restIntervalRef.current);
-      restIntervalRef.current = null;
-    }
-  }, []);
+  }, [fetchOrdersRest, stopRestPolling]);
 
   const updateItemStatus = useCallback(async (itemId: number, status: KitchenStatus) => {
     setUpdating(itemId);

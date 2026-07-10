@@ -7,7 +7,10 @@ release/
 .env
 .env.local
 .DS_Store
-.claude/
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
+!.claude/hooks/check-gstack.sh
 docs/superpowers/
 .superpowers
 .gstack

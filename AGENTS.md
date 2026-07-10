@@ -97,7 +97,6 @@ dropAllTables();
 ## Non-Negotiable Boundaries
 
 ### Do NOT Touch
-- `frontend/` submodule — changes go to FreeOpenSourcePOS/FloUI repo
 - Private `specs` repo is external documentation only and must not be wired into this public repo as a submodule, build dependency, CI dependency, or runtime dependency
 - Database migrations — never destructive, always test with existing data
 - Credentials, API keys, internal URLs — never commit
@@ -116,8 +115,6 @@ dropAllTables();
 - [ ] Git tag pushed
 - [ ] GitHub Release published
 
-## Submodules
+## Frontend
 
-| Submodule | URL | Policy |
-|-----------|-----|--------|
-| frontend | FreeOpenSourcePOS/FloUI | Auto-sync |
+`frontend/` is part of this repository. It is not a git submodule.

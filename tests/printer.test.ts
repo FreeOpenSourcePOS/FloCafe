@@ -16,6 +16,7 @@ import {
   printViaUSB,
   printViaNetwork,
 } from '../main/printers/thermal';
+import { matchSupportedPrinterProfile } from '../main/printers/profiles';
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -222,7 +223,7 @@ console.log('\n✅ Test 4: Classic receipt template');
 
 console.log('\n✅ Test 5: Detailed GST invoice template');
 {
-  const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'detailed', 48, true);
+  const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Detailed (GST)', 48, true);
   const text = buf.toString('utf8');
 
   assert('renders TAX INVOICE header', text.includes('TAX INVOICE'));
@@ -234,6 +235,17 @@ console.log('\n✅ Test 5: Detailed GST invoice template');
 
   console.log('\n   — Rendered detailed —');
   console.log(visiblePreview(buf, 48));
+}
+
+console.log('\n✅ Test 5b: Template labels normalize to backend templates');
+{
+  const classic = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Classic', 48, true).toString('utf8');
+  const compact = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Compact', 48, true).toString('utf8');
+  const detailed = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Detailed (GST)', 48, true).toString('utf8');
+
+  assert('Classic label renders classic template', classic.includes('Invoice #:'));
+  assert('Compact label renders compact template', compact.includes('Bill #:'));
+  assert('Detailed (GST) label renders detailed template', detailed.includes('TAX INVOICE'));
 }
 
 console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
@@ -259,11 +271,13 @@ console.log('\n✅ Test 7: Test page builder');
 {
   const buf80 = buildTestPage('80mm');
   const buf58 = buildTestPage('58mm');
+  const xprinter = buildTestPage('80mm', 'partial');
   assert('80mm test page renders title', buf80.toString('utf8').includes('Flo Printer Test'));
   assert('58mm test page renders title', buf58.toString('utf8').includes('Flo Printer Test'));
   assert('80mm test page reports correct paper width', buf80.toString('utf8').includes('80mm'));
   assert('58mm test page reports correct paper width', buf58.toString('utf8').includes('58mm'));
   assert('test page has cut byte', bytesContain(buf80, [GS, 0x56, 0x00]));
+  assert('partial cut profile emits GS V B 0', bytesContain(xprinter, [GS, 0x56, 0x42, 0x00]));
 }
 
 console.log('\n✅ Test 8: Edge cases');
@@ -293,7 +307,15 @@ console.log('\n✅ Test 8: Edge cases');
   assert('malformed payment_details does not crash formatter', buf3.length > 0);
 }
 
-console.log('\n✅ Test 9: Detect connected printers (hardware discovery)');
+console.log('\n✅ Test 9: Supported printer profile matching');
+{
+  const xprinter = matchSupportedPrinterProfile('Counter XP-V320M', 'Xprinter', 'XP-V320M');
+  const genericXprinter = matchSupportedPrinterProfile('Xprinter Unknown Model', 'Xprinter', 'Thermal Printer');
+  assert('matches Xprinter XP-V320M profile', xprinter?.id === 'xprinter-xp-v320m-v330m');
+  assert('does not match unknown Xprinter to XP-V320M profile', genericXprinter === null);
+}
+
+console.log('\n✅ Test 10: Detect connected printers (hardware discovery)');
 (async () => {
   try {
     const printers = await detectConnectedPrinters();

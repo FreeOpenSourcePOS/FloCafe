@@ -1,9 +1,27 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, parseRowJson, withTxn } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
+import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
+import { cloudSync } from '../services/cloud-sync';
 
 const router = Router();
+
+const ACTIVE_ORDER_STATUS_SQL = "status NOT IN ('completed', 'cancelled')";
+
+function activeOrderForTable(db: ReturnType<typeof getDatabase>, tableId: string, orderId?: number | string) {
+  const whereOrder = orderId ? ' AND id = ?' : '';
+  const params = orderId ? [tableId, orderId] : [tableId];
+  return parseRowJson(db.prepare(`
+    SELECT * FROM orders
+    WHERE table_id = ? AND ${ACTIVE_ORDER_STATUS_SQL}${whereOrder}
+    ORDER BY created_at DESC LIMIT 1
+  `).get(...params) as any);
+}
+
+function tableShape(table: any, activeOrder?: any) {
+  return { ...table, name: table.number, activeOrder: activeOrder || null };
+}
 
 router.get('/', (req: Request, res: Response) => {
   try {
@@ -32,7 +50,7 @@ router.get('/', (req: Request, res: Response) => {
 
     const rows = db.prepare(query).all(...params);
     // Normalize: frontend expects `name`, schema column is `number`
-    const tables = rows.map((t: any) => ({ ...t, name: t.number }));
+    const tables = rows.map((t: any) => tableShape(t, activeOrderForTable(db, t.id)));
     res.json({ tables });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -47,13 +65,10 @@ router.get('/:id', (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Table not found' });
     }
 
-    const activeOrder = db.prepare(`
-      SELECT * FROM orders WHERE table_id = ? AND status NOT IN ('completed', 'cancelled')
-      ORDER BY created_at DESC LIMIT 1
-    `).get(req.params.id);
+    const activeOrder = activeOrderForTable(db, req.params.id);
 
     // Normalize: frontend expects `name`, schema column is `number`
-    res.json({ table: { ...(table as any), name: (table as any).number, activeOrder } });
+    res.json({ table: tableShape(table as any, activeOrder) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -136,6 +151,86 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
     res.json({ message: 'Table deleted' });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+  try {
+    const sourceTableId = req.params.id;
+    const { target_table_id, order_id } = req.body;
+
+    if (!target_table_id) {
+      return res.status(400).json({ error: 'target_table_id is required' });
+    }
+    if (target_table_id === sourceTableId) {
+      return res.status(400).json({ error: 'Order is already on this table' });
+    }
+
+    const db = getDatabase();
+    const moved = withTxn(() => {
+      const sourceTable = db.prepare('SELECT * FROM tables WHERE id = ?').get(sourceTableId) as any;
+      if (!sourceTable) {
+        const error: any = new Error('Source table not found');
+        error.status = 404;
+        throw error;
+      }
+
+      const targetTable = db.prepare('SELECT * FROM tables WHERE id = ?').get(target_table_id) as any;
+      if (!targetTable) {
+        const error: any = new Error('Target table not found');
+        error.status = 404;
+        throw error;
+      }
+
+      const order = activeOrderForTable(db, sourceTableId, order_id) as any;
+      if (!order) {
+        const error: any = new Error(order_id ? 'Active order not found on source table' : 'Source table has no active order');
+        error.status = 404;
+        throw error;
+      }
+
+      const targetActiveOrder = activeOrderForTable(db, target_table_id) as any;
+      if (targetActiveOrder) {
+        const error: any = new Error('Target table already has an active order');
+        error.status = 409;
+        throw error;
+      }
+
+      const nowStr = now();
+      db.prepare('UPDATE orders SET table_id = ?, type = ?, updated_at = ? WHERE id = ?')
+        .run(target_table_id, 'dine_in', nowStr, order.id);
+      db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
+        .run(nowStr, sourceTableId);
+      db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?")
+        .run(nowStr, target_table_id);
+
+      const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id) as any);
+      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
+      const updatedSource = db.prepare('SELECT * FROM tables WHERE id = ?').get(sourceTableId) as any;
+      const updatedTarget = db.prepare('SELECT * FROM tables WHERE id = ?').get(target_table_id) as any;
+
+      return {
+        order: {
+          ...updatedOrder,
+          items,
+          table: { ...updatedTarget, name: updatedTarget.number },
+        },
+        sourceTable: tableShape(updatedSource, activeOrderForTable(db, sourceTableId)),
+        targetTable: tableShape(updatedTarget, activeOrderForTable(db, target_table_id)),
+      };
+    });
+
+    cloudSync.recordOrderChanged(moved.order.id, 'order.table_moved');
+    notifyKdsUpdate();
+    notifyOrderUpdated();
+
+    res.json({
+      order: moved.order,
+      sourceTable: moved.sourceTable,
+      targetTable: moved.targetTable,
+    });
+  } catch (error: any) {
+    res.status(error.status || 500).json({ error: error.message });
   }
 });
 

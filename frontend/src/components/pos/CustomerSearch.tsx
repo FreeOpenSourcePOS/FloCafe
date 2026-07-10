@@ -34,6 +34,16 @@ function tagColor(tag: string) {
   return TAG_COLORS[tag.toLowerCase()] ?? 'bg-gray-100 text-gray-600';
 }
 
+function digitsOnly(value: string | null | undefined): string {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function phoneMatchesInput(customerPhone: string | null | undefined, inputDigits: string): boolean {
+  const customerDigits = digitsOnly(customerPhone);
+  if (!customerDigits || !inputDigits) return false;
+  return customerDigits === inputDigits || customerDigits.endsWith(inputDigits) || inputDigits.endsWith(customerDigits);
+}
+
 function TagBadges({ counts }: { counts: Record<string, number> }) {
   const entries = Object.entries(counts).filter(([, n]) => n > 0);
   if (entries.length === 0) return null;
@@ -81,10 +91,19 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       try {
         const { data } = await api.get(`/customers-search?q=${encodeURIComponent(p)}`);
         const results = Array.isArray(data) ? data : (data.customers || []);
-        const found: Customer | null = results[0] || null;
+        const exactMatch = results.find((result: Customer) => phoneMatchesInput(result.phone, p)) || null;
+        const found: Customer | null = exactMatch || results[0] || null;
         setMatched(found);
         setName(found ? found.name : '');
         setSearched(true);
+        if (exactMatch) {
+          cart.setCustomer(exactMatch);
+          setPhone('');
+          setName('');
+          setMatched(null);
+          setSearched(false);
+          onSelected?.();
+        }
       } catch {
         setMatched(null);
         setName('');
@@ -117,7 +136,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       : cleaned.startsWith('+')
         ? cleaned.replace(/^\+\d{1,4}/, '')
         : cleaned;
-    searchByPhone(localPart);
+    searchByPhone(digitsOnly(localPart));
   };
 
   const handlePhoneFocus = () => {
@@ -209,7 +228,9 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             value={name}
             onChange={matched ? undefined : (e) => setName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') matched ? handleSelectMatched() : handleCreate();
+              if (e.key !== 'Enter') return;
+              if (matched) handleSelectMatched();
+              else handleCreate();
             }}
             readOnly={!!matched}
             placeholder={searched ? (matched ? '' : 'Enter name') : 'Name auto-fills'}
@@ -255,14 +276,14 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   // ── Default variant (stacked, used in modal) ───────────────────────────────
   return (
     <div className="space-y-2">
-      <div className="flex gap-2">
+      <div className="grid grid-cols-1 gap-2">
         <input
           type="tel"
           inputMode="numeric"
           value={phone}
           onChange={handlePhoneChange}
           placeholder="Phone"
-          className={`${baseInput} flex-1 py-2`}
+          className={`${baseInput} w-full py-2`}
         />
         <input
           ref={nameRef}
@@ -270,11 +291,13 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           value={name}
           onChange={matched ? undefined : (e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') matched ? handleSelectMatched() : handleCreate();
+            if (e.key !== 'Enter') return;
+            if (matched) handleSelectMatched();
+            else handleCreate();
           }}
           readOnly={!!matched}
           placeholder={searched ? (matched ? '' : 'Enter name') : 'Name auto-fills'}
-          className={`${baseInput} flex-1 py-2 ${matched ? 'bg-gray-50 cursor-pointer' : ''}`}
+          className={`${baseInput} w-full py-2 ${matched ? 'bg-gray-50 cursor-pointer' : ''}`}
           onClick={matched ? handleSelectMatched : undefined}
         />
       </div>

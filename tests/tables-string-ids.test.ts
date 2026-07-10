@@ -25,12 +25,13 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser,
+  seedOwnerUser, seedCategory, seedProduct, seedTable,
   api, assert, assertEqual, assertIncludes,
   closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
 
 const { tableRoutes } = require('../main/routes/tables');
+const { orderRoutes } = require('../main/routes/orders');
 
 async function main() {
   console.log('Integration Test: Tables String IDs');
@@ -41,6 +42,7 @@ async function main() {
 
   const app = createApp({
     '/api/tables': tableRoutes,
+    '/api/orders': orderRoutes,
   });
   const { baseUrl, server } = await startServer(app);
 
@@ -101,9 +103,58 @@ async function main() {
     console.log(`   ✓ All ${allTables.length} tables have string IDs`);
 
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario D: Migration handles NULL IDs
+    // Scenario D: Tables expose active orders and move order between tables
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── Scenario D: Migration handles NULL IDs ───');
+    console.log('\n─── Scenario D: Move active order between tables ───');
+
+    seedCategory(db, 'cat-table-move', 'Table Move Menu');
+    seedProduct(db, 'prod-table-move', 'cat-table-move', 'Dosa', 120);
+    seedTable(db, 'tbl-move-source', 91, 4);
+    seedTable(db, 'tbl-move-target', 92, 4);
+
+    const orderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        type: 'dine_in',
+        table_id: 'tbl-move-source',
+        items: [{ product_id: 'prod-table-move', quantity: 1 }],
+      },
+    });
+    assertEqual(orderRes.status, 201, 'dine-in order created on source table');
+    const orderId = orderRes.data.order.id;
+
+    const liveTables = await api(baseUrl, '/api/tables', { headers: authHeader });
+    const liveSource = liveTables.data.tables.find((t: any) => t.id === 'tbl-move-source');
+    assertEqual(liveSource.activeOrder.id, orderId, 'GET /tables includes active order for occupied table');
+
+    const moveRes = await api(baseUrl, '/api/tables/tbl-move-source/move-order', {
+      method: 'POST',
+      headers: authHeader,
+      body: { target_table_id: 'tbl-move-target' },
+    });
+    assertEqual(moveRes.status, 200, 'move order returns 200');
+    assertEqual(moveRes.data.order.id, orderId, 'same order is returned');
+    assertEqual(moveRes.data.order.table_id, 'tbl-move-target', 'order table_id moves to target');
+    assertEqual(Number(moveRes.data.order.table.name), 92, 'response includes new table for KOT/KDS consumers');
+    assertEqual(moveRes.data.sourceTable.status, 'available', 'source table is freed');
+    assertEqual(moveRes.data.targetTable.status, 'occupied', 'target table is occupied');
+    assertEqual(moveRes.data.targetTable.activeOrder.id, orderId, 'target table now exposes active order');
+
+    const movedOrder = await api(baseUrl, `/api/orders/${orderId}`, { headers: authHeader });
+    assertEqual(Number(movedOrder.data.order.table.name), 92, 'order detail resolves the new table immediately');
+
+    const occupiedMove = await api(baseUrl, '/api/tables/tbl-move-target/move-order', {
+      method: 'POST',
+      headers: authHeader,
+      body: { target_table_id: tableId },
+    });
+    assertEqual(occupiedMove.status, 200, 'order can be moved again to a free table');
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Scenario E: Migration handles NULL IDs
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario E: Migration handles NULL IDs ───');
 
     // Simulate old table with NULL ID (from pre-fix INSERT)
     db.prepare(`INSERT INTO tables (number, capacity, status) VALUES (?, ?, ?)`).run('T-NULL-TEST', 4, 'available');

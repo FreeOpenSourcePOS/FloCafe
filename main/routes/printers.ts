@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now } from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceipt, printKOT, detectConnectedPrinters } from '../printers/thermal';
+import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 
 const router = Router();
@@ -9,11 +10,21 @@ const router = Router();
 // Printer name must contain only safe characters (no shell metacharacters)
 const PRINTER_NAME_REGEX = /^[a-zA-Z0-9 _\-\.]+$/;
 
+function printerShape(printer: any) {
+  if (!printer) return printer;
+  const profile = resolvePrinterProfile(printer);
+  return {
+    ...printer,
+    profile_id: profile.id,
+    profile_name: `${profile.make} ${profile.model}`,
+  };
+}
+
 // GET /api/printers — list all
 router.get('/', (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all();
+    const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all().map(printerShape);
     res.json({ printers });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
@@ -32,13 +43,18 @@ router.get('/detect', async (_req: Request, res: Response) => {
   }
 });
 
+// GET /api/printers/supported — list known printer profiles
+router.get('/supported', (_req: Request, res: Response) => {
+  res.json({ printers: getSupportedPrinterProfiles() });
+});
+
 // GET /api/printers/:id
 router.get('/:id', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
-    res.json({ printer });
+    res.json({ printer: printerShape(printer) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -87,7 +103,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     );
 
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
-    res.status(201).json({ printer });
+    res.status(201).json({ printer: printerShape(printer) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -133,7 +149,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     );
 
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
-    res.json({ printer });
+    res.json({ printer: printerShape(printer) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -176,7 +192,8 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
-    const testData = buildTestPage(printer.paper_width);
+    const profile = resolvePrinterProfile(printer);
+    const testData = buildTestPage(printer.paper_width || profile.defaultPaperWidth, profile.cutMode);
     let success = false;
 
     switch (printer.connection_type) {
@@ -303,11 +320,11 @@ router.post('/print-bill', requireRole('owner', 'manager'), async (req: Request,
       points_balance: pointsBalance,
     };
     const billTemplate = settings.bill_template;
-    console.log('[Print Bill] Business:', business.name, 'Template:', billTemplate || 'compact');
+    console.log('[Print Bill] Business:', business.name, 'Template:', billTemplate || 'classic');
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
-    const success = await printReceipt(order, bill, business, billTemplate || 'compact', useUnicode, isReprint);
+    const success = await printReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint);
     console.log('[Print Bill] Print result:', success);
 
     if (success) {

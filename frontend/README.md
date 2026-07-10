@@ -129,11 +129,9 @@ Uses Zustand for global state:
 
 ## Integration with FloCafe
 
-FloUI is included in the FloCafe repo as a git submodule:
+FloUI is included directly in the FloCafe repo:
 
 ```bash
-# In FloCafe repo
-git submodule update --init --recursive
 npm run build:frontend  # Builds static export to frontend/out/
 ```
 

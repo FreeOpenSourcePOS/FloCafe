@@ -2,6 +2,7 @@ import * as net from 'net';
 import * as fs from 'fs';
 import { execSync, exec, execFileSync } from 'child_process';
 import { getDatabase } from '../db';
+import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 
 const isMasBuild =
   process.env.MAS_BUILD === '1' ||
@@ -21,12 +22,20 @@ export interface PrinterInfo {
   ipAddress?: string;
   port?: number;
   paperWidth?: string;
+  profileId?: string;
 }
 
 function guessPaperWidth(name: string, model: string): string {
+  const profile = matchSupportedPrinterProfile(name, model);
+  if (profile) return profile.defaultPaperWidth;
   const s = (name + ' ' + model).toLowerCase();
   if (s.includes('58')) return '58mm';
   return '80mm';
+}
+
+function annotateProfile(info: Omit<PrinterInfo, 'profileId'>): PrinterInfo {
+  const profile = matchSupportedPrinterProfile(info.name, info.make, info.model);
+  return profile ? { ...info, profileId: profile.id, paperWidth: info.paperWidth || profile.defaultPaperWidth } : info;
 }
 
 function parseDeviceUri(uri: string): { ip?: string; port?: number } {
@@ -84,7 +93,7 @@ async function detectMacOSPrinters(): Promise<PrinterInfo[]> {
           const isNetwork = /^(socket|ipp|ipps|http|https|lpd):\/\//i.test(uri);
           const { ip, port } = isNetwork ? parseDeviceUri(uri) : {};
 
-          printers.push({
+          printers.push(annotateProfile({
             name,
             make: makeModel.make,
             model: makeModel.model,
@@ -95,7 +104,7 @@ async function detectMacOSPrinters(): Promise<PrinterInfo[]> {
             ipAddress: ip,
             port: port || (isNetwork ? 9100 : undefined),
             paperWidth: guessPaperWidth(name, makeModel.model),
-          });
+          }));
         }
       }
     }
@@ -214,7 +223,7 @@ function detectWindowsPrinters(): PrinterInfo[] {
 
         const makeModel = detectWindowsMakeModel(name, driver);
 
-        printers.push({
+        printers.push(annotateProfile({
           name,
           make: makeModel.make,
           model: makeModel.model,
@@ -224,7 +233,7 @@ function detectWindowsPrinters(): PrinterInfo[] {
           status: status === 'ok' || status === 'idle' ? 'idle' : 'offline',
           isDefault,
           paperWidth: guessPaperWidth(name, makeModel.model),
-        });
+        }));
       }
     }
   } catch (err) {
@@ -389,7 +398,7 @@ function detectLinuxPrinters(): PrinterInfo[] {
           }
         }
 
-        printers.push({
+        printers.push(annotateProfile({
           name,
           make,
           model,
@@ -400,7 +409,7 @@ function detectLinuxPrinters(): PrinterInfo[] {
           ipAddress: ip,
           port: port || (isNetwork ? 9100 : undefined),
           paperWidth: guessPaperWidth(name, model),
-        });
+        }));
       }
     }
   } catch {
@@ -434,12 +443,12 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
     }
     console.log('[Printer] Using printer:', printer.name, printer.connection_type);
 
-    const paperWidth = printer.paper_width || '80mm';
-    const cols = paperWidth === '58mm' ? 42 : 48;
+    const profile = resolvePrinterProfile(printer);
+    const cols = getColumnsForPrinter(printer, profile);
 
     let data: Buffer;
     try {
-      data = formatReceipt(order, bill, business, template, cols, useUnicode, isReprint);
+      data = formatReceipt(order, bill, business, template, cols, useUnicode, isReprint, profile.cutMode);
       console.log('[Printer] Receipt data length:', data.length, 'bytes');
       console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
     } catch (err) {
@@ -464,16 +473,22 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     }
     console.log('[Printer] Using printer:', printer.name, printer.connection_type);
 
-    const paperWidth = printer.paper_width || '80mm';
-    const cols = paperWidth === '58mm' ? 42 : 48;
+    const profile = resolvePrinterProfile(printer);
+    const cols = getColumnsForPrinter(printer, profile);
 
-    const data = formatKOT(order, items, stationName, cols, useUnicode);
+    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode);
     console.log('[Printer] KOT data length:', data.length, 'bytes');
     return await dispatchPrint(printer, data);
   } catch (error: any) {
     console.error('[Printer] KOT print error:', error);
     return false;
   }
+}
+
+function getColumnsForPrinter(printer: any, profile: SupportedPrinterProfile): number {
+  const paperWidth = printer.paper_width || profile.defaultPaperWidth || '80mm';
+  if (paperWidth === '58mm') return 42;
+  return profile.fontAColumns || 48;
 }
 
 async function dispatchPrint(printer: any, data: Buffer): Promise<boolean> {
@@ -501,22 +516,22 @@ function getPrinterConfig(): any {
   return db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
 }
 
-export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false): Buffer {
+export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
   console.log('[Printer] formatReceipt - template:', template);
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
 
-  const tpl = template || 'compact';
+  const tpl = normalizeReceiptTemplate(template);
   const biz = business || { name: 'Store', address: '', phone: '', gstin: '' };
 
   try {
     switch (tpl) {
       case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint);
+        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode);
       case 'detailed':
-        return formatDetailedReceipt(order, bill, biz, cols, useUnicode, isReprint);
+        return formatDetailedReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode);
       default:
-        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint);
+        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode);
     }
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
@@ -524,7 +539,14 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   }
 }
 
-function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false): Buffer {
+function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' | 'detailed' {
+  const normalized = String(template || 'classic').toLowerCase().replace(/[^a-z]/g, '');
+  if (normalized.includes('compact') || normalized.includes('minimal')) return 'compact';
+  if (normalized.includes('detailed') || normalized.includes('gst') || normalized.includes('tax')) return 'detailed';
+  return 'classic';
+}
+
+function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
   const lines: string[] = [];
   const date = new Date(order.created_at);
 
@@ -588,10 +610,10 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push('{CENTER}Thank you!{/CENTER}');
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode);
+  return buildEscPos(lines, useUnicode, { cutMode });
 }
 
-function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false): Buffer {
+function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
   const lines: string[] = [];
   const date = new Date(order.created_at);
 
@@ -681,10 +703,10 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode);
+  return buildEscPos(lines, useUnicode, { cutMode });
 }
 
-function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false): Buffer {
+function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
   const lines: string[] = [];
   const date = new Date(order.created_at);
 
@@ -768,7 +790,7 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   lines.push('{CENTER}Thank you for your business!{/CENTER}');
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode);
+  return buildEscPos(lines, useUnicode, { cutMode });
 }
 
 // Item row layout: [ name (nameLen) ][ qty (4) ][ tax (5) ][ amount right-aligned (amtLen) ]
@@ -839,7 +861,7 @@ function truncate(text: string, length: number): string {
   return text.length > length ? text.substring(0, length - 2) + '..' : text;
 }
 
-export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false): Buffer {
+export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
   const lines: string[] = [];
   const bar = '='.repeat(cols);
 
@@ -866,10 +888,10 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   lines.push(bar);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode);
+  return buildEscPos(lines, useUnicode, { cutMode });
 }
 
-export function buildTestPage(paperWidth: string = '80mm'): Buffer {
+export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full'): Buffer {
   const width = paperWidth === '58mm' ? 42 : 48;
   const bar = '='.repeat(width);
   const lines = [
@@ -888,7 +910,7 @@ export function buildTestPage(paperWidth: string = '80mm'): Buffer {
     bar,
     '{CUT}',
   ];
-  return buildEscPos(lines);
+  return buildEscPos(lines, false, { cutMode });
 }
 
 // Every ASCII fallback is exactly 2 characters, so the currency slot on a
@@ -913,7 +935,7 @@ function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
   return prefix.length >= 2 ? prefix : ' '.repeat(2 - prefix.length) + prefix;
 }
 
-export function buildEscPos(lines: string[], useUnicode: boolean = false): Buffer {
+export function buildEscPos(lines: string[], useUnicode: boolean = false, options: { cutMode?: PrinterCutMode } = {}): Buffer {
   const buf: number[] = [];
 
   const resetAllStyles = () => {
@@ -936,7 +958,11 @@ export function buildEscPos(lines: string[], useUnicode: boolean = false): Buffe
 
     if (line.includes('{CUT}')) {
       buf.push(0x1B, 0x64, 0x05);
-      buf.push(0x1D, 0x56, 0x00);
+      if (options.cutMode === 'partial') {
+        buf.push(0x1D, 0x56, 0x42, 0x00);
+      } else {
+        buf.push(0x1D, 0x56, 0x00);
+      }
       continue;
     }
 

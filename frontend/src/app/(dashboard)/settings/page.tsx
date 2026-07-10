@@ -177,7 +177,7 @@ export default function SettingsPage() {
   type HwPrinter = {
     id: string; name: string; connection_type: 'network' | 'usb' | 'webusb';
     ip_address?: string; port?: number; usb_device_path?: string;
-    paper_width: string; is_default: number;
+    paper_width: string; is_default: number; profile_id?: string; profile_name?: string;
   };
 
   type PrinterForm = {
@@ -194,7 +194,7 @@ export default function SettingsPage() {
     name: string; make: string; model: string;
     connectionType: 'usb' | 'network' | 'bluetooth';
     deviceUri: string; status: 'idle' | 'printing' | 'offline';
-    isDefault: boolean; ipAddress?: string; port?: number; paperWidth?: string;
+    isDefault: boolean; ipAddress?: string; port?: number; paperWidth?: string; profileId?: string;
   };
 
   const [hwPrinters, setHwPrinters] = useState<HwPrinter[]>([]);
@@ -1146,6 +1146,7 @@ export default function SettingsPage() {
                                 {p.make !== 'Unknown' ? `${p.make} ${p.model}` : p.model}
                                 {p.connectionType === 'network' && p.ipAddress ? ` · ${p.ipAddress}${p.port ? ':' + p.port : ''}` : ''}
                                 {p.paperWidth ? ` · ${p.paperWidth}` : ''}
+                                {p.profileId ? ' · Supported profile' : ''}
                               </p>
                             </div>
                             {alreadyAdded ? (
@@ -1197,6 +1198,7 @@ export default function SettingsPage() {
                          p.connection_type === 'usb' ? (p.usb_device_path || '/dev/usb/lp0') :
                          'Browser WebUSB'}
                         {' · '}{p.paper_width}
+                        {p.profile_name ? ` · ${p.profile_name}` : ''}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">

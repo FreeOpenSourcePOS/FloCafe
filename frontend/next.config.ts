@@ -19,10 +19,10 @@ const nextConfig: NextConfig = {
     unoptimized: isDesktop,
   },
 
-  // Silence "outside workspace root" warning when the project is used as a
-  // git submodule or inside a monorepo and turbopack can't auto-detect root.
+  // Silence "outside workspace root" warning when Turbopack cannot
+  // auto-detect the intended frontend root.
   turbopack: {
-    root: '.',
+    root: process.cwd(),
   },
 };
 

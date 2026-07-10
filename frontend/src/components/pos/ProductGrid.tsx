@@ -109,7 +109,9 @@ export default function ProductGrid({
             : 'grid-cols-5'
         }`}>
           {filtered.map((product) => {
-            const inCart = cart.items.find((i) => i.product.id === product.id);
+            const inCartQty = cart.items
+              .filter((i) => i.product.id === product.id)
+              .reduce((sum, i) => sum + i.quantity, 0);
             const bgColor = firstTagBg(product.tags);
 
             return (
@@ -118,9 +120,9 @@ export default function ProductGrid({
                 onClick={() => onProductClick(product)}
                 className="bg-white rounded-xl p-2.5 border border-gray-100 hover:border-brand/40 hover:shadow-md transition-all text-left relative group cursor-pointer overflow-hidden"
               >
-                {inCart && (
+                {inCartQty > 0 && (
                   <span className="absolute top-0 right-0 bg-brand text-white text-xs w-6 h-6 rounded-bl-lg flex items-center justify-center font-bold z-10">
-                    {inCart.quantity}
+                    {inCartQty}
                   </span>
                 )}
 

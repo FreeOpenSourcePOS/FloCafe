@@ -305,11 +305,7 @@ function createWindow(): void {
   mainWindow.on('close', (event) => {
     if (!isQuitting) {
       event.preventDefault();
-      if (process.platform === 'linux') {
-        mainWindow?.minimize();
-      } else {
-        mainWindow?.hide();
-      }
+      mainWindow?.hide();
     }
   });
 
@@ -382,7 +378,24 @@ function createTray(): void {
           label: 'Quit',
           click: () => {
             isQuitting = true;
-            app.quit();
+            // On Debian/AppIndicator, quitting while the context menu is open
+            // can cause a deadlock. Defer the teardown so the menu can close.
+            setTimeout(() => {
+              if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.destroy();
+              }
+              // Explicitly destroy tray to release the AppIndicator lock
+              if (tray) {
+                tray.destroy();
+                tray = null;
+              }
+              app.quit();
+              // Fallback: force exit if will-quit does not fire in time
+              setTimeout(() => {
+                console.log('[Tray] app.quit() hung, forcing exit');
+                app.exit(0);
+              }, 1000);
+            }, 100);
           },
         },
       ]);

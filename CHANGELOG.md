@@ -2,6 +2,22 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.8.3] - 2026-07-12
+
+### Added
+- Zero-touch cloud registration on the POS side (register → pending → claim flow against FloAdmin).
+- Reference/demo dashboard pages for a masonry-style KDS board and a settled-order history grid, for layout comparison against the live pages.
+
+### Fixed
+- KDS order cards no longer stretch to match the tallest card in their grid row — a 1-item ticket now sizes to its own content instead of a 6-item neighbor's height.
+- `GET /tables` no longer queries the nonexistent `is_active` column; added back an `active` query param for frontend API compatibility.
+- Category deletion now warns and offers reassign-or-bulk-delete when a category still has active products, instead of orphaning them.
+- Table checkout modal edge case that could leave bad data in place if no matching branch applied.
+- Table list now refreshes after holding or restoring an order in POS.
+
+### Known issues
+- **Orders page grid layout (WIP):** re-restored the 2-3 column grid on the Orders and Held Orders tabs after it was reverted to a vertical list with no explanation. Not yet re-verified visually as working correctly — treat as work in progress.
+
 ## [1.8.2] - 2026-07-11
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "1.8.2",
+  "version": "1.8.3",
   "description": "Flo - Self-hosted Point of Sale System",
   "engines": {
     "node": ">=22.0.0"

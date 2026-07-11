@@ -304,6 +304,7 @@ export default function POSPage() {
       cart.setOrderType('dine_in');
     }
     setShowTablePicker(false);
+    await refreshTables();
   };
 
   const handleHoldTable = async (tableId: string) => {
@@ -317,6 +318,7 @@ export default function POSPage() {
       cart.clearCart();
       setShowTablePicker(false);
       toast.success(`Order held for ${tableName}`);
+      await refreshTables();
     } catch (err: unknown) {
       const e = err as Error;
       toast.error(e.message || 'Failed to hold order');

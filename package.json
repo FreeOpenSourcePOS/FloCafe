@@ -64,7 +64,7 @@
   "homepage": "https://flo.local",
   "license": "MIT",
   "devDependencies": {
-    "@electron/rebuild": "^4.0.3",
+    "@electron/rebuild": "^4.2.0",
     "@types/bcryptjs": "^3.0.0",
     "@types/better-sqlite3": "^7.6.11",
     "@types/bonjour": "^3.5.13",

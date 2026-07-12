@@ -39,12 +39,23 @@ function validateImageUrl(imageUrl: any): { valid: boolean; error?: string } {
  * Uses batch queries instead of N+1 — loads all categories and addon groups
  * in 3 queries regardless of product count.
  */
-function loadProductRelationsBatch(db: any, productIds: string[]) {
-  if (productIds.length === 0) return new Map();
+function loadProductRelationsBatch(db: any, products: any[]) {
+  if (products.length === 0) return new Map();
 
-  // 1. Load all categories referenced by these products
-  const categoryRows = db.prepare('SELECT * FROM categories').all() as any[];
-  const categoryMap = new Map(categoryRows.map((c: any) => [c.id, c]));
+  const productIds = products.map((p: any) => p.id);
+  const categoryIds = [...new Set(products.map((p: any) => p.category_id).filter(Boolean))];
+
+  // 1. Load ONLY referenced categories
+  const categoryMap = new Map<string, any>();
+  if (categoryIds.length > 0) {
+    const catPlaceholders = categoryIds.map(() => '?').join(',');
+    const categoryRows = db.prepare(
+      `SELECT * FROM categories WHERE id IN (${catPlaceholders})`
+    ).all(...categoryIds) as any[];
+    for (const c of categoryRows) {
+      categoryMap.set(c.id, c);
+    }
+  }
 
   // 2. Load all addon_group ↔ product mappings for these products
   const placeholders = productIds.map(() => '?').join(',');
@@ -89,11 +100,10 @@ function loadProductRelationsBatch(db: any, productIds: string[]) {
 
   // 5. Assemble results
   const result = new Map<string, { category: any; addon_groups: any[] }>();
-  for (const pid of productIds) {
-    const product = db.prepare('SELECT category_id FROM products WHERE id = ?').get(pid) as any;
-    const category = product ? categoryMap.get(product.category_id) || null : null;
+  for (const p of products) {
+    const category = p.category_id ? categoryMap.get(p.category_id) || null : null;
 
-    const agIds = addonGroupIdsByProduct.get(pid) || [];
+    const agIds = addonGroupIdsByProduct.get(p.id) || [];
     const addon_groups = agIds
       .map((agId: string) => {
         const ag = addonGroupMap.get(agId);
@@ -102,7 +112,7 @@ function loadProductRelationsBatch(db: any, productIds: string[]) {
       })
       .filter(Boolean);
 
-    result.set(pid, { category, addon_groups });
+    result.set(p.id, { category, addon_groups });
   }
 
   return result;
@@ -151,9 +161,8 @@ router.get('/', (req: Request, res: Response) => {
 
     const products = db.prepare(query).all(...params);
 
-    // Batch-load relations (3 queries total, regardless of product count)
-    const productIds = (products as any[]).map((p: any) => p.id);
-    const relations = loadProductRelationsBatch(db, productIds);
+    // Batch-load relations
+    const relations = loadProductRelationsBatch(db, products as any[]);
 
     const productsWithRelations = (products as any[]).map((product: any) => {
       const rel = relations.get(product.id) || { category: null, addon_groups: [] };
@@ -243,7 +252,7 @@ router.get('/:id', (req: Request, res: Response) => {
     }
 
     // Single-product query — still batch-style for consistency
-    const relations = loadProductRelationsBatch(db, [(product as any).id]);
+    const relations = loadProductRelationsBatch(db, [product as any]);
     const rel = relations.get((product as any).id) || { category: null, addon_groups: [] };
 
     res.json({ product: { ...(product as any), tags: parseTags((product as any).tags), category: rel.category, addonGroups: rel.addon_groups } });
@@ -416,45 +425,39 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     // so we can distinguish "don't touch image_url" from "clear image_url"
     const hasImageUrl = 'image_url' in req.body;
 
-    // ⚠️ PARAMETER ORDERING WARNING ⚠️
-    // The SQL below has 19 parameters (image_url uses CASE WHEN = 2 slots).
-    // The .run() array MUST match this exact order. If any parameter shifts,
-    // you silently corrupt product data (wrong price, wrong category, etc).
-    //
-    // Parameter slots:
-    //  1: category_id       2: name              3: sku
-    //  4: description       5: price             6: cost_price
-    //  7: tax_type          8: tax_rate          9: track_inventory
-    // 10: stock_quantity   11: low_stock_threshold 12: is_active
-    // 13: image_url flag   14: image_url value  15: sort_order
-    // 16: cb_percent       17: tags             18: updated_at
-    // 19: id (WHERE)
     db.prepare(`
-      UPDATE products SET category_id = COALESCE(?, category_id), name = COALESCE(?, name),
-        sku = COALESCE(?, sku), description = COALESCE(?, description), price = COALESCE(?, price),
-        cost = COALESCE(?, cost),
-        tax_type = COALESCE(?, tax_type), tax_rate = COALESCE(?, tax_rate),
-        track_inventory = COALESCE(?, track_inventory),
-        stock_quantity = COALESCE(?, stock_quantity), low_stock_threshold = COALESCE(?, low_stock_threshold),
-        is_active = COALESCE(?, is_active),
-        image_url = CASE WHEN ? THEN ? ELSE image_url END,
-        sort_order = COALESCE(?, sort_order),
-        cb_percent = COALESCE(?, cb_percent),
-        tags = COALESCE(?, tags),
-        updated_at = ?
-      WHERE id = ?
-    `).run(
-      category_id, name, sku, description, price, cost_price,       // slots 1-6
-      tax_type, tax_rate,                                            // slots 7-8
-      track_inventory ? 1 : track_inventory === 0 ? 0 : null,       // slot 9
-      stock_quantity, low_stock_threshold,                           // slots 10-11
-      is_active !== undefined ? (is_active ? 1 : 0) : null,         // slot 12
-      hasImageUrl ? 1 : 0, hasImageUrl ? image_url : null,          // slots 13-14 (CASE WHEN)
-      sort_order, cb_percent,                                        // slots 15-16
-      tags ? JSON.stringify(tags) : null,                            // slot 17
-      now(),                                                         // slot 18
-      req.params.id                                                  // slot 19 (WHERE)
-    );
+      UPDATE products SET 
+        category_id = COALESCE(@category_id, category_id), 
+        name = COALESCE(@name, name),
+        sku = COALESCE(@sku, sku), 
+        description = COALESCE(@description, description), 
+        price = COALESCE(@price, price),
+        cost = COALESCE(@cost, cost),
+        tax_type = COALESCE(@tax_type, tax_type), 
+        tax_rate = COALESCE(@tax_rate, tax_rate),
+        track_inventory = COALESCE(@track_inventory, track_inventory),
+        stock_quantity = COALESCE(@stock_quantity, stock_quantity), 
+        low_stock_threshold = COALESCE(@low_stock_threshold, low_stock_threshold),
+        is_active = COALESCE(@is_active, is_active),
+        image_url = CASE WHEN @has_image_url = 1 THEN @image_url ELSE image_url END,
+        sort_order = COALESCE(@sort_order, sort_order),
+        cb_percent = COALESCE(@cb_percent, cb_percent),
+        tags = COALESCE(@tags, tags),
+        updated_at = @updated_at
+      WHERE id = @id
+    `).run({
+      category_id, name, sku, description, price, cost: cost_price,
+      tax_type, tax_rate,
+      track_inventory: track_inventory ? 1 : track_inventory === 0 ? 0 : null,
+      stock_quantity, low_stock_threshold,
+      is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,
+      has_image_url: hasImageUrl ? 1 : 0, 
+      image_url: hasImageUrl ? image_url : null,
+      sort_order, cb_percent,
+      tags: tags ? JSON.stringify(tags) : null,
+      updated_at: now(),
+      id: req.params.id
+    });
 
     // Update addon group links — wrapped in transaction for atomicity
     if (addon_group_ids !== undefined) {

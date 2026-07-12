@@ -11,6 +11,7 @@ import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import ImageUploader from '@/components/products/ImageUploader';
 import { getCurrencySymbol } from '@/lib/countries';
 import { useConfirm } from '@/hooks/use-confirm';
+import { nameToColor } from '@/lib/image-utils';
 
 const PRESET_TAGS = [
   { key: 'veg', label: 'Veg' },
@@ -179,7 +180,7 @@ export default function ProductsPage() {
       tags: product.tags || [],
       customTag: '',
       addon_group_ids: product.addon_groups?.map((g) => g.id) || [],
-      image_url: null, // Will be loaded from /api/products/:id/image if needed
+      image_url: product.has_image ? 'EXISTING' : null,
     });
     setShowForm(true);
   };
@@ -413,14 +414,36 @@ export default function ProductsPage() {
               return (
               <tr key={product.id} className="hover:bg-gray-50">
                 <td className="p-4 max-w-[220px]">
-                  <p className="font-medium text-gray-900">{product.name}</p>
-                  <p className="text-[10px] text-gray-400 font-mono mt-0.5 break-all">{product.id}</p>
-                  {product.sku && <p className="text-xs text-gray-400">SKU: {product.sku}</p>}
-                  {product.tags && product.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-1.5">
-                      {product.tags.map((tag: string) => <TagBadge key={tag} tag={tag} />)}
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 relative flex items-center justify-center">
+                      <div
+                        className="absolute inset-0 flex items-center justify-center"
+                        style={{ backgroundColor: nameToColor(product.name) }}
+                      >
+                        <span className="text-sm font-bold text-white/80">
+                          {product.name.substring(0, 2).toUpperCase()}
+                        </span>
+                      </div>
+                      {product.has_image && (
+                        <img 
+                          src={`${api.defaults.baseURL}/products/${product.id}/image?t=${new Date(product.updated_at || Date.now()).getTime()}`}
+                          alt="" 
+                          className="absolute inset-0 w-full h-full object-cover"
+                          onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                        />
+                      )}
                     </div>
-                  )}
+                    <div>
+                      <p className="font-medium text-gray-900">{product.name}</p>
+                      <p className="text-[10px] text-gray-400 font-mono mt-0.5 break-all">{product.id}</p>
+                      {product.sku && <p className="text-xs text-gray-400">SKU: {product.sku}</p>}
+                      {product.tags && product.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {product.tags.map((tag: string) => <TagBadge key={tag} tag={tag} />)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </td>
                 <td className="p-4 text-sm text-gray-600">{product.category?.name || '—'}</td>
                 <td className="p-4 text-right">

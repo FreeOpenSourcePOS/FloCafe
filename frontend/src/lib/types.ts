@@ -64,6 +64,7 @@ export interface Product {
   is_active: boolean;
   available_online: boolean;
   has_image: boolean;
+  updated_at: string;
   tags: string[] | null;
   variants: Record<string, unknown>[] | null;
   modifiers: Record<string, unknown>[] | null;

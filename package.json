@@ -55,7 +55,8 @@
     "test:integration-loyalty-redemption": "node tests/run-electron-node-test.cjs tests/integration-loyalty-redemption.test.ts",
     "test:issue-24": "node tests/run-electron-node-test.cjs tests/issue-24-cancel-item-checkout.test.ts",
     "test:tables-string-ids": "node tests/run-electron-node-test.cjs tests/tables-string-ids.test.ts",
-    "test:held-orders": "node tests/run-electron-node-test.cjs tests/held-orders.test.ts"
+    "test:held-orders": "node tests/run-electron-node-test.cjs tests/held-orders.test.ts",
+    "test:product-images": "node tests/run-electron-node-test.cjs tests/product-images.test.ts"
   },
   "author": {
     "name": "Flo",

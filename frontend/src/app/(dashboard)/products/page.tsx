@@ -8,6 +8,7 @@ import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
+import ImageUploader from '@/components/products/ImageUploader';
 import { getCurrencySymbol } from '@/lib/countries';
 import { useConfirm } from '@/hooks/use-confirm';
 
@@ -74,7 +75,9 @@ export default function ProductsPage() {
     tags: [] as string[],
     customTag: '',
     addon_group_ids: [] as number[],
+    image_url: null as string | null,
   });
+  const [imageTouched, setImageTouched] = useState(false);
 
   const [showCsvModal, setShowCsvModal] = useState(false);
   const [csvType, setCsvType] = useState<'categories' | 'products' | 'addons'>('categories');
@@ -151,8 +154,9 @@ export default function ProductsPage() {
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '',
       tax_type: 'inclusive', tax_rate: '5', description: '',
       track_inventory: false, stock_quantity: '0', is_active: true,
-      tags: [], customTag: '', addon_group_ids: [],
+      tags: [], customTag: '', addon_group_ids: [], image_url: null,
     });
+    setImageTouched(false);
     setEditingProduct(null);
     setShowForm(false);
   };
@@ -175,6 +179,7 @@ export default function ProductsPage() {
       tags: product.tags || [],
       customTag: '',
       addon_group_ids: product.addon_groups?.map((g) => g.id) || [],
+      image_url: null, // Will be loaded from /api/products/:id/image if needed
     });
     setShowForm(true);
   };
@@ -182,7 +187,7 @@ export default function ProductsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: form.name,
         category_id: form.category_id || null,
         price: Number(form.price),
@@ -198,6 +203,13 @@ export default function ProductsPage() {
         tags: form.tags.length > 0 ? form.tags : null,
         addon_group_ids: form.addon_group_ids,
       };
+
+      // Only include image_url when the user actually touched the image field
+      // (avoids sending 50KB payloads when the image wasn't changed)
+      if (imageTouched) {
+        payload.image_url = form.image_url; // Can be a data URI or null (to clear)
+      }
+
       if (editingProduct) {
         await api.put(`/products/${editingProduct.id}`, payload);
         toast.success('Product updated');
@@ -469,6 +481,17 @@ export default function ProductsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Product Image</label>
+                <ImageUploader
+                  value={form.image_url}
+                  onChange={(val) => {
+                    setForm({ ...form, image_url: val });
+                    setImageTouched(true);
+                  }}
+                  productId={editingProduct?.id ? String(editingProduct.id) : undefined}
+                />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

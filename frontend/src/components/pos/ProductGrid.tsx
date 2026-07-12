@@ -4,6 +4,7 @@ import { Search, SlidersHorizontal } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import { nameToColor } from '@/lib/image-utils';
 import TagBadge, { firstTagBg } from './DietaryBadge';
 
 const CATEGORY_COLORS: Record<string, { bg: string; text: string; border: string; activeBg: string; activeText: string }> = {
@@ -127,16 +128,31 @@ export default function ProductGrid({
                 )}
 
                 {showProductImages && (
-                  <div className={`w-full aspect-square ${bgColor} rounded-lg mb-3 flex items-center justify-center text-3xl relative`}>
-                    {product.image_url ? (
-                      <img src={product.image_url} alt={product.name} className="w-full h-full object-cover rounded-lg" />
-                    ) : (
-                      <span className="text-2xl font-bold text-gray-300">
-                        {product.name.charAt(0)}
+                  <div className="w-full aspect-square rounded-lg mb-3 relative overflow-hidden">
+                    {/* Always-visible background tile — no flash when image loads */}
+                    <div
+                      className="absolute inset-0 flex items-center justify-center"
+                      style={{ backgroundColor: nameToColor(product.name) }}
+                    >
+                      <span className="text-2xl font-bold text-white/80">
+                        {product.name.substring(0, 2).toUpperCase()}
                       </span>
+                    </div>
+
+                    {/* Image overlays the tile when available */}
+                    {product.has_image && (
+                      <img
+                        src={`/api/products/${product.id}/image`}
+                        alt={product.name}
+                        className="absolute inset-0 w-full h-full object-cover rounded-lg"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = 'none';
+                        }}
+                      />
                     )}
+
                     {product.tags && product.tags.length > 0 && (
-                      <span className="absolute bottom-1.5 right-1.5">
+                      <span className="absolute bottom-1.5 right-1.5 z-10">
                         <TagBadge tag={product.tags[0]} />
                       </span>
                     )}

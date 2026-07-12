@@ -18,6 +18,8 @@
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-dropzone": "^15.0.0",
+    "react-easy-crop": "^6.2.2",
     "react-hot-toast": "^2.6.0",
     "tailwind-merge": "^3.6.0",
     "vaul": "^1.1.2",

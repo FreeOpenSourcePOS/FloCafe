@@ -28,7 +28,7 @@ const MOCK_HISTORY: HistoryOrder[] = [
     type: 'dine_in', status: 'completed', subtotal: 890, tax_amount: 44.5,
     discount_amount: 0, delivery_charge: 0, total: 934.5, guest_count: 3,
     special_instructions: null, created_by: 1, created_at: hoursAgo(2),
-    table: { id: 'tbl-04', number: '4', name: '4' } as any,
+    table: { id: 'tbl-04', name: '4', capacity: 4, status: 'occupied', kitchen_station_id: null, floor: null, section: null, is_active: true },
     items: [
       { id: 1, order_id: 981, product_id: 1, product_name: 'Margherita Pizza', product_sku: null, unit_price: 350, quantity: 2, subtotal: 700, tax_amount: 35, total: 735, addons: null, special_instructions: null, status: 'served' },
       { id: 2, order_id: 981, product_id: 2, product_name: 'Garlic Bread', product_sku: null, unit_price: 150, quantity: 1, subtotal: 150, tax_amount: 7.5, total: 157.5, addons: null, special_instructions: null, status: 'served' },
@@ -63,7 +63,7 @@ const MOCK_HISTORY: HistoryOrder[] = [
     type: 'dine_in', status: 'completed', subtotal: 1240, tax_amount: 62,
     discount_amount: 100, delivery_charge: 0, total: 1202, guest_count: 5,
     special_instructions: null, created_by: 1, created_at: hoursAgo(9),
-    table: { id: 'tbl-09', number: '9', name: '9' } as any,
+    table: { id: 'tbl-09', name: '9', capacity: 6, status: 'occupied', kitchen_station_id: null, floor: null, section: null, is_active: true },
     items: [
       { id: 8, order_id: 970, product_id: 8, product_name: 'Paneer Tikka', product_sku: null, unit_price: 240, quantity: 2, subtotal: 480, tax_amount: 24, total: 504, addons: null, special_instructions: null, status: 'served' },
       { id: 9, order_id: 970, product_id: 9, product_name: 'Dal Makhani', product_sku: null, unit_price: 220, quantity: 2, subtotal: 440, tax_amount: 22, total: 462, addons: null, special_instructions: null, status: 'served' },

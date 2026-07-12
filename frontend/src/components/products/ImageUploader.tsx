@@ -2,7 +2,7 @@
 
 import { useCallback, useState, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import Cropper from 'react-easy-crop';
+import Cropper, { type Area } from 'react-easy-crop';
 import { Camera, Link, Upload, X, Check } from 'lucide-react';
 import { compressImage, MAX_RAW_FILE_SIZE, MAX_IMAGE_LENGTH } from '@/lib/image-utils';
 import api from '@/lib/api';
@@ -52,7 +52,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
     reader.readAsDataURL(file);
   }, []);
 
-  const handleCropComplete = useCallback((_croppedArea: any, croppedAreaPixels: any) => {
+  const handleCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
     cropAreaRef.current = {
       x: croppedAreaPixels.x,
       y: croppedAreaPixels.y,
@@ -134,8 +134,9 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       setCrop({ x: 0, y: 0 });
       setZoom(1);
       setUrlInput('');
-    } catch (err: any) {
-      const msg = err.response?.data?.error || 'Failed to fetch image';
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      const msg = axiosErr.response?.data?.error || 'Failed to fetch image';
       toast.error(msg);
     } finally {
       setFetching(false);

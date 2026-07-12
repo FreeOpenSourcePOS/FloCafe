@@ -26,7 +26,7 @@ const MOCK_ORDERS: Order[] = [
     subtotal: 0, tax_amount: 0, discount_amount: 0, delivery_charge: 0,
     total: 0, guest_count: 4, special_instructions: null,
     created_by: 1, created_at: minutesAgo(2),
-    table: { id: 'tbl-07', number: '7', name: '7' } as any,
+    table: { id: 'tbl-07', name: '7', capacity: 4, status: 'occupied', kitchen_station_id: null, floor: null, section: null, is_active: true },
     items: [
       { id: 1, order_id: 1042, product_id: 1, product_name: 'Margherita Pizza', product_sku: null, unit_price: 350, quantity: 2, subtotal: 700, tax_amount: 0, total: 700, addons: null, special_instructions: null, status: 'pending' },
       { id: 2, order_id: 1042, product_id: 2, product_name: 'Garlic Bread', product_sku: null, unit_price: 150, quantity: 1, subtotal: 150, tax_amount: 0, total: 150, addons: null, special_instructions: 'No Onions', status: 'pending' },
@@ -58,7 +58,7 @@ const MOCK_ORDERS: Order[] = [
     subtotal: 0, tax_amount: 0, discount_amount: 0, delivery_charge: 0,
     total: 0, guest_count: 2, special_instructions: null,
     created_by: 1, created_at: minutesAgo(11),
-    table: { id: 'tbl-12', number: '12', name: '12' } as any,
+    table: { id: 'tbl-12', name: '12', capacity: 4, status: 'occupied', kitchen_station_id: null, floor: null, section: null, is_active: true },
     items: [
       { id: 6, order_id: 1035, product_id: 6, product_name: 'Paneer Tikka', product_sku: null, unit_price: 240, quantity: 1, subtotal: 240, tax_amount: 0, total: 240, addons: null, special_instructions: 'No Bell Peppers', status: 'ready' },
       { id: 7, order_id: 1035, product_id: 7, product_name: 'Butter Naan', product_sku: null, unit_price: 45, quantity: 4, subtotal: 180, tax_amount: 0, total: 180, addons: null, special_instructions: null, status: 'preparing' },
@@ -88,7 +88,7 @@ const MOCK_ORDERS: Order[] = [
     subtotal: 0, tax_amount: 0, discount_amount: 0, delivery_charge: 0,
     total: 0, guest_count: 6, special_instructions: null,
     created_by: 1, created_at: minutesAgo(14),
-    table: { id: 'tbl-03', number: '3', name: '3' } as any,
+    table: { id: 'tbl-03', name: '3', capacity: 6, status: 'occupied', kitchen_station_id: null, floor: null, section: null, is_active: true },
     items: [
       { id: 9, order_id: 1030, product_id: 9, product_name: 'Tandoori Roti', product_sku: null, unit_price: 30, quantity: 6, subtotal: 180, tax_amount: 0, total: 180, addons: null, special_instructions: null, status: 'preparing' },
       { id: 10, order_id: 1030, product_id: 10, product_name: 'Dal Makhani', product_sku: null, unit_price: 220, quantity: 2, subtotal: 440, tax_amount: 0, total: 440, addons: null, special_instructions: null, status: 'preparing' },
@@ -106,7 +106,7 @@ const MOCK_ORDERS: Order[] = [
     subtotal: 0, tax_amount: 0, discount_amount: 0, delivery_charge: 0,
     total: 0, guest_count: 2, special_instructions: null,
     created_by: 1, created_at: minutesAgo(0),
-    table: { id: 'tbl-01', number: '1', name: '1' } as any,
+    table: { id: 'tbl-01', name: '1', capacity: 2, status: 'occupied', kitchen_station_id: null, floor: null, section: null, is_active: true },
     items: [
       { id: 13, order_id: 1046, product_id: 13, product_name: 'Cold Coffee', product_sku: null, unit_price: 120, quantity: 2, subtotal: 240, tax_amount: 0, total: 240, addons: null, special_instructions: null, status: 'pending' },
     ],

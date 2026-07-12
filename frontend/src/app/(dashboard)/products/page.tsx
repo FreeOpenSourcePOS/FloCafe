@@ -426,7 +426,7 @@ export default function ProductsPage() {
                       </div>
                       {product.has_image && (
                         <img 
-                          src={`${api.defaults.baseURL}/products/${product.id}/image?t=${new Date(product.updated_at || Date.now()).getTime()}`}
+                          src={`${api.defaults.baseURL}/products/${product.id}/image?t=${product.updated_at ? new Date(product.updated_at).getTime() : 0}`}
                           alt="" 
                           className="absolute inset-0 w-full h-full object-cover"
                           onError={(e) => { e.currentTarget.style.display = 'none'; }}

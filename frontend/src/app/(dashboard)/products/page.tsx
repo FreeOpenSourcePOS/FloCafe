@@ -435,8 +435,7 @@ export default function ProductsPage() {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900">{product.name}</p>
-                      <p className="text-[10px] text-gray-400 font-mono mt-0.5 break-all">{product.id}</p>
-                      {product.sku && <p className="text-xs text-gray-400">SKU: {product.sku}</p>}
+                      {product.sku && <p className="text-xs text-gray-400 mt-0.5">SKU: {product.sku}</p>}
                       {product.tags && product.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {product.tags.map((tag: string) => <TagBadge key={tag} tag={tag} />)}

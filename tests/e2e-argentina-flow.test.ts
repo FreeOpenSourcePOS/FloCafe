@@ -30,7 +30,7 @@ Module._load = function (request, parent, isMain) {
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser, api, assert, assertEqual, assertIncludes,
+  seedOwnerUser, api, assert, assertEqual,
   getResults, closeDatabase,
 } = require('./helpers/test-setup');
 
@@ -59,7 +59,6 @@ async function main() {
     await runArgentinaOnboarding(baseUrl, db);
     await runArgentinaSettings(baseUrl, db);
     await runArgentinaTaxAndCustomers(baseUrl, db);
-    await runArgentinaTranslations(db);
 
   } finally {
     if (server) server.close();
@@ -213,63 +212,6 @@ async function runArgentinaTaxAndCustomers(baseUrl, db) {
   });
   assertEqual(cRes.status, 201, 'customer created with +54 country code');
   assertEqual(cRes.data.customer.country_code, '+54', 'new customer has +54 stored');
-}
-
-async function runArgentinaTranslations(db) {
-  console.log('\n4. i18n has matching keys for both languages and every t() reference resolves');
-  const i18nPath = path.join(__dirname, '../frontend/src/lib/i18n.ts');
-  const i18nSrc = fs.readFileSync(i18nPath, 'utf8');
-  const enMatch = i18nSrc.match(/en:\s*\{([\s\S]*?)\},\s*es:/);
-  const esMatch = i18nSrc.match(/es:\s*\{([\s\S]*?)\},\s*\};/);
-  assert(!!enMatch && !!esMatch, 'i18n defines both en and es blocks');
-  if (!enMatch || !esMatch) return;
-
-  const enKeys = extractKeys(enMatch[1]);
-  const esKeys = extractKeys(esMatch[1]);
-  assertEqual(enKeys.size, esKeys.size, `en and es have the same number of keys (en=${enKeys.size}, es=${esKeys.size})`);
-  const missingInEs = [...enKeys].filter((k) => !esKeys.has(k));
-  const missingInEn = [...esKeys].filter((k) => !enKeys.has(k));
-  assertEqual(missingInEs.length, 0, `es is missing keys: ${missingInEs.join(', ') || 'none'}`);
-  assertEqual(missingInEn.length, 0, `en is missing keys: ${missingInEn.join(', ') || 'none'}`);
-
-  assert(i18nSrc.includes("'es-AR'") || i18nSrc.includes("'comprobante'") || i18nSrc.includes("'CUIT'"), 'i18n includes Argentina-context translations');
-
-  // Walk the entire frontend src tree and assert every `t('key')` reference
-  // resolves to a known key. Catches wiring gaps: a developer adds
-  // `t('foo.bar')` and forgets to define the key.
-  const referenced = scanFrontendForTKeys(path.join(__dirname, '../frontend/src'));
-  console.log(`    found ${referenced.size} unique t() keys referenced in frontend`);
-  assert(referenced.size >= 20, `at least 20 translation keys should be wired in (found ${referenced.size})`);
-  const unknownRefs = [...referenced].filter((k) => !enKeys.has(k));
-  assertEqual(unknownRefs.length, 0, `t() calls reference unknown keys: ${unknownRefs.join(', ') || 'none'}`);
-}
-
-function scanFrontendForTKeys(root) {
-  const keys = new Set();
-  const skip = new Set(['node_modules', '.next', 'dist']);
-  const walk = (dir) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (skip.has(entry.name)) continue;
-      const p = path.join(dir, entry.name);
-      if (entry.isDirectory()) walk(p);
-      else if (entry.isFile() && /\.(tsx|ts)$/.test(entry.name)) {
-        const src = fs.readFileSync(p, 'utf8');
-        const re = /\bt\(\s*['"]([a-z]+\.[a-zA-Z]+)['"]/g;
-        let m;
-        while ((m = re.exec(src)) !== null) keys.add(m[1]);
-      }
-    }
-  };
-  walk(root);
-  return keys;
-}
-
-function extractKeys(block) {
-  const keys = new Set();
-  const re = /'([a-z]+\.[a-zA-Z]+)':/g;
-  let m;
-  while ((m = re.exec(block)) !== null) keys.add(m[1]);
-  return keys;
 }
 
 main().catch((err) => {

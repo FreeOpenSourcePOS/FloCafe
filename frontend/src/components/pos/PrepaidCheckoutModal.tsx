@@ -33,9 +33,9 @@ interface Props {
 }
 
 const methods = [
-  { key: 'cash', label: 'Cash', icon: Banknote },
-  { key: 'card', label: 'Card', icon: CreditCard },
-  { key: 'upi', label: 'UPI', icon: Smartphone },
+  { key: 'cash', icon: Banknote },
+  { key: 'card', icon: CreditCard },
+  { key: 'upi', icon: Smartphone },
 ] as const;
 
 // Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
@@ -404,7 +404,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                       }`}
                     >
                       <Icon size={14} />
-                      {m.label}
+                      {t(`pos.method${m.key[0].toUpperCase()}${m.key.slice(1)}`)}
                     </button>
                   );
                 })}
@@ -516,7 +516,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"
           >
-            {taxLoading ? 'Calculating tax...' : processing ? 'Processing...' : `Confirm Payment · ${currency}${fmt(remaining)}`}
+            {taxLoading ? t('pos.calculatingTax') : processing ? t('pos.processing') : t('pos.confirmPayment', { amount: `${currency}${fmt(remaining)}` })}
           </Button>
         </div>
       </div>

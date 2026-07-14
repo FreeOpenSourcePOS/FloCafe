@@ -5,12 +5,6 @@ export type PaperSize = 'thermal58' | 'thermal80' | 'a4' | 'a5';
 export type PrinterPrintMode = 'escpos' | 'browser';
 export type BillTemplate = 'classic' | 'compact' | 'detailed';
 
-function detectInitialLanguage(): 'en' | 'es' {
-  if (typeof navigator === 'undefined') return 'en';
-  const tag = navigator.language?.toLowerCase() ?? '';
-  return tag.startsWith('es') ? 'es' : 'en';
-}
-
 export interface PosSettingsState {
   showProductImages: boolean;
   customerMandatory: boolean;
@@ -80,7 +74,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       phoneDigits: 10,
       billingType: 'postpaid',
       tablesRequired: true,
-      language: detectInitialLanguage(),
+      language: 'en',
       // Printer defaults
       printerPaperSize: 'thermal58',
       printerEnabled: false,

@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [1.9.1] - 2026-07-14
+
+### Fixed
+- Windows: Fix `better_sqlite3.node is not a valid Win32 application` error by ensuring native dependencies are correctly built for the Electron target runtime using `electron-builder install-app-deps`.
+
 ## [1.8.7] - 2026-07-12
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Flo - Self-hosted Point of Sale System",
   "engines": {
     "node": ">=22.0.0"
@@ -16,7 +16,7 @@
     "lint": "npm run lint:backend && cd frontend && npm run lint",
     "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop NEXT_PUBLIC_API_URL=http://localhost:3001/api npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
-    "postinstall": "npx @electron/rebuild -f -w better-sqlite3",
+    "postinstall": "electron-builder install-app-deps",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
     "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",

@@ -81,10 +81,10 @@ export default function AppSidebar() {
               <Link href={homeHref}>
                 <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-md bg-sidebar overflow-hidden">
                   { }
-                  <img src="/logo.png" alt="Flo Cafe" className="w-6 h-6 object-contain" />
+                  <img src="/logo.png" alt={t('common.logoAlt')} className="w-6 h-6 object-contain" />
                 </div>
                 <div className="flex flex-col gap-0.5 min-w-0 leading-none">
-                  <span className="font-semibold truncate">Flo Cafe</span>
+                  <span className="font-semibold truncate">{currentTenant?.business_name || t('common.brandName')}</span>
                   {currentTenant && (
                     <span className="text-xs text-muted-foreground truncate">
                       {currentTenant.business_name}
@@ -122,15 +122,15 @@ export default function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={toggleSidebar} tooltip="Toggle sidebar">
+            <SidebarMenuButton onClick={toggleSidebar} tooltip={t('nav.toggleSidebar')}>
               <PanelLeft />
-              <span>Collapse</span>
+              <span>{t('nav.collapse')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={logout} tooltip="Logout">
+            <SidebarMenuButton onClick={logout} tooltip={t('nav.logoutTooltip')}>
               <LogOut />
-              <span>Logout</span>
+              <span>{t('nav.logout')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

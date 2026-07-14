@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Server, HardDrive, Clock, AlertCircle, CheckCircle } from 'lucide-react';
+import { useI18n } from '@/hooks/useI18n';
 
 interface StatusInfo {
   server: string;
@@ -11,6 +12,7 @@ interface StatusInfo {
 }
 
 export default function StatusBar() {
+  const { t } = useI18n();
   const [status, setStatus] = useState<StatusInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -18,13 +20,13 @@ export default function StatusBar() {
   useEffect(() => {
     async function fetchStatus() {
       if (typeof window === 'undefined' || !window.electronAPI?.getStatus) return;
-      
+
       try {
         const data = await window.electronAPI.getStatus();
         setStatus(data);
         setError(null);
       } catch {
-        setError('Failed to get status');
+        setError(t('nav.statusError'));
       }
     }
 
@@ -34,6 +36,7 @@ export default function StatusBar() {
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function formatUptime(seconds: number): string {
@@ -54,7 +57,7 @@ export default function StatusBar() {
           <AlertCircle size={12} className="text-red-500" />
         )}
         <span className={status?.server === 'running' ? 'text-green-600' : 'text-red-600'}>
-          Server: {status?.server || 'unknown'}
+          {t('nav.serverLabel')}{status?.server || t('nav.serverUnknown')}
         </span>
       </div>
 
@@ -66,13 +69,13 @@ export default function StatusBar() {
       <div className="flex items-center gap-1">
         <HardDrive size={12} className="text-gray-400" />
         <span>
-          Heap: {status?.memory.heapUsed || 0} / {status?.memory.heapTotal || 0} MB
+          {t('nav.heapLabel')}{status?.memory.heapUsed || 0} / {status?.memory.heapTotal || 0} MB
         </span>
       </div>
 
       <div className="flex items-center gap-1">
         <Clock size={12} className="text-gray-400" />
-        <span>Up: {status ? formatUptime(status.uptime) : '...'}</span>
+        <span>{t('nav.uptimeLabel')}{status ? formatUptime(status.uptime) : '...'}</span>
       </div>
 
       {error && (

@@ -8,6 +8,7 @@ release/
 .env.local
 .DS_Store
 .claude/
+.agents/
 docs/superpowers/
 .superpowers
 .gstack

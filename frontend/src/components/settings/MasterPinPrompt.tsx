@@ -48,11 +48,11 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
     setError(null);
 
     if (!PIN_REGEX.test(pin)) {
-      setError('PIN must be exactly 4 digits');
+      setError(t('settings.pinFourDigits'));
       return;
     }
     if (mode === 'set' && pin !== confirmPin) {
-      setError('PINs do not match');
+      setError(t('settings.pinMismatch'));
       setConfirmPin('');
       return;
     }
@@ -64,7 +64,7 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
     if (result.success) {
       reset();
     } else {
-      setError(result.error || 'Something went wrong');
+      setError(result.error || t('common.somethingWrong'));
       setPin('');
       setConfirmPin('');
     }
@@ -77,14 +77,14 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
           <DialogTitle>{title || t('settings.masterPin')}</DialogTitle>
           <DialogDescription>
             {description || (mode === 'set'
-              ? 'Choose a 4-digit PIN known only to you. It will be required for backups, restores, and initializing the database.'
-              : 'This action requires your device Master PIN.')}
+              ? t('settings.setPinDescription')
+              : t('settings.verifyPinDescription'))}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="master-pin">{mode === 'set' ? 'New PIN' : t('settings.masterPin')}</Label>
+            <Label htmlFor="master-pin">{mode === 'set' ? t('settings.newPin') : t('settings.masterPin')}</Label>
             <Input
               id="master-pin"
               type="password"
@@ -102,7 +102,7 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
 
           {mode === 'set' && (
             <div className="space-y-2">
-              <Label htmlFor="master-pin-confirm">Confirm PIN</Label>
+              <Label htmlFor="master-pin-confirm">{t('settings.confirmPin')}</Label>
               <Input
                 id="master-pin-confirm"
                 type="password"
@@ -126,7 +126,7 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
             {t('common.cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={submitting || pin.length !== 4}>
-            {submitting ? t('common.loading') : mode === 'set' ? 'Set PIN' : 'Confirm'}
+            {submitting ? t('common.loading') : mode === 'set' ? t('settings.setPinButton') : t('settings.confirmButton')}
           </Button>
         </DialogFooter>
       </DialogContent>

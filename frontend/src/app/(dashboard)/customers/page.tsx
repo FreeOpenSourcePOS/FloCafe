@@ -37,7 +37,7 @@ export default function CustomersPage() {
       const { data } = await api.get(`/customers/${c.id}/wallet`);
       setLedgerData(data);
     } catch {
-      toast.error('Failed to load loyalty ledger');
+      toast.error(t('customer.ledgerLoadFailed'));
     } finally {
       setLedgerLoading(false);
     }
@@ -54,7 +54,7 @@ export default function CustomersPage() {
       const { data } = await api.get('/customers', { params });
       setCustomers(data.data || []);
     } catch {
-      toast.error('Failed to load customers');
+      toast.error(t('customer.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -81,16 +81,16 @@ export default function CustomersPage() {
     try {
       if (editingCustomer) {
         await api.put(`/customers/${editingCustomer.id}`, form);
-        toast.success('Customer updated');
+        toast.success(t('customer.updated'));
       } else {
         await api.post('/customers', form);
-        toast.success('Customer added');
+        toast.success(t('customer.added'));
       }
       setShowForm(false);
       fetchCustomers();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || 'Failed to save');
+      toast.error(error.response?.data?.error || t('customer.saveFailed'));
     }
   };
 
@@ -139,7 +139,7 @@ export default function CustomersPage() {
                   {Number(c.wallet_balance) > 0 ? (
                     <span className="inline-flex items-center gap-1 text-purple-700 font-semibold text-sm">
                       <Wallet size={13} />
-                      {Number(c.wallet_balance).toLocaleString()} pts
+                      {Number(c.wallet_balance).toLocaleString()} {t('customer.ptsSuffix')}
                     </span>
                   ) : (
                     <span className="text-gray-400 text-sm">—</span>
@@ -151,7 +151,7 @@ export default function CustomersPage() {
                   </Button>
                 </td>
                 <td className="p-4 text-center">
-                  <Button variant="ghost" size="sm" onClick={() => openLedger(c)} title="View loyalty ledger">
+                  <Button variant="ghost" size="sm" onClick={() => openLedger(c)} title={t('customer.viewLedgerTitle')}>
                     <History size={14} />
                   </Button>
                 </td>
@@ -177,14 +177,14 @@ export default function CustomersPage() {
             </div>
 
             {ledgerLoading ? (
-              <div className="flex-1 flex items-center justify-center py-12 text-gray-400">Loading...</div>
+              <div className="flex-1 flex items-center justify-center py-12 text-gray-400">{t('customer.loadingLedger')}</div>
             ) : ledgerData ? (
               <>
                 {/* Summary row */}
                 <div className="flex items-center gap-6 px-6 py-4 bg-gray-50 border-b border-gray-100">
                   <div>
                     <p className="text-xs text-gray-500 mb-0.5">{t('customers.totalBalance')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{ledgerData.balance} <span className="text-sm font-normal text-gray-500">pts</span></p>
+                    <p className="text-2xl font-bold text-gray-900">{ledgerData.balance} <span className="text-sm font-normal text-gray-500">{t('customer.ptsSuffix')}</span></p>
                   </div>
                   {ledgerData.next_expiry && (
                     <div>
@@ -203,9 +203,9 @@ export default function CustomersPage() {
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
                           <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnDate')}</th>
-                          <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">Description</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">Points</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">Expires</th>
+                          <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnDescription')}</th>
+                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnPoints')}</th>
+                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnExpires')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">

@@ -114,7 +114,7 @@ export default function PrinterStatus() {
 
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuLabel className="text-xs text-gray-500">
-          Receipt Printer
+          {t('pos.printerSectionLabel')}
         </DropdownMenuLabel>
 
         {hardwarePrinter && (
@@ -136,7 +136,7 @@ export default function PrinterStatus() {
         {isConnected && deviceInfo && (
           <div className="px-2 py-1.5 text-xs text-gray-500 border-b border-gray-100">
             <p className="font-medium text-gray-700 truncate">
-              {deviceInfo.productName ?? 'Unknown device'}
+              {deviceInfo.productName ?? t('pos.printerUnknownDevice')}
             </p>
             <p>{deviceInfo.manufacturerName ?? `VID:${deviceInfo.vendorId.toString(16).toUpperCase()}`}</p>
           </div>
@@ -159,7 +159,7 @@ export default function PrinterStatus() {
                 className="text-sm cursor-pointer"
               >
                 <Printer size={14} className="mr-2" />
-                {isConnecting ? t('pos.printerConnecting') : 'Connect USB Printer'}
+                {isConnecting ? t('pos.printerConnecting') : t('pos.printerConnectUsb')}
               </DropdownMenuItem>
             )}
 
@@ -169,7 +169,7 @@ export default function PrinterStatus() {
                 className="text-sm cursor-pointer text-red-600 focus:text-red-600"
               >
                 <Unplug size={14} className="mr-2" />
-                Disconnect
+{t('pos.printerDisconnect')}
               </DropdownMenuItem>
             )}
           </>
@@ -177,7 +177,7 @@ export default function PrinterStatus() {
 
         {printMethod === 'browser' && (
           <div className="px-2 py-1.5 text-xs text-gray-500">
-            Browser print mode — change in Settings
+            {t('pos.printerBrowserMode')}
           </div>
         )}
       </DropdownMenuContent>

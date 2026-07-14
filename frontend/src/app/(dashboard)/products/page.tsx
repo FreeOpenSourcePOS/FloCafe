@@ -15,40 +15,40 @@ import { nameToColor } from '@/lib/image-utils';
 import { useI18n } from '@/hooks/useI18n';
 
 const PRESET_TAGS = [
-  { key: 'veg', label: 'Veg' },
-  { key: 'non_veg', label: 'Non-Veg' },
-  { key: 'vegan', label: 'Vegan' },
-  { key: 'egg', label: 'Egg' },
-  { key: 'spicy', label: 'Spicy' },
-  { key: 'contains_nuts', label: 'Contains Nuts' },
-  { key: 'gluten_free', label: 'Gluten-Free' },
-  { key: 'dairy_free', label: 'Dairy-Free' },
-  { key: 'new_arrival', label: 'New Arrival' },
-  { key: 'bestseller', label: 'Bestseller' },
-  { key: 'organic', label: 'Organic' },
-  { key: 'fragrance_free', label: 'Fragrance-Free' },
-  { key: 'limited', label: 'Limited' },
+  { key: 'veg', labelKey: 'pos.tagVeg' },
+  { key: 'non_veg', labelKey: 'pos.tagNonVeg' },
+  { key: 'vegan', labelKey: 'pos.tagVegan' },
+  { key: 'egg', labelKey: 'pos.tagEgg' },
+  { key: 'spicy', labelKey: 'pos.tagSpicy' },
+  { key: 'contains_nuts', labelKey: 'pos.tagContainsNuts' },
+  { key: 'gluten_free', labelKey: 'pos.tagGlutenFree' },
+  { key: 'dairy_free', labelKey: 'pos.tagDairyFree' },
+  { key: 'new_arrival', labelKey: 'pos.tagNewArrival' },
+  { key: 'bestseller', labelKey: 'pos.tagBestseller' },
+  { key: 'organic', labelKey: 'pos.tagOrganic' },
+  { key: 'fragrance_free', labelKey: 'pos.tagFragranceFree' },
+  { key: 'limited', labelKey: 'pos.tagLimited' },
 ];
 
 const CATEGORY_COLORS = [
-  { key: '', label: 'None', bg: 'bg-gray-100', text: 'text-gray-600' },
-  { key: 'red', label: 'Red', bg: 'bg-red-100', text: 'text-red-700' },
-  { key: 'orange', label: 'Orange', bg: 'bg-orange-100', text: 'text-orange-700' },
-  { key: 'amber', label: 'Amber', bg: 'bg-amber-100', text: 'text-amber-700' },
-  { key: 'yellow', label: 'Yellow', bg: 'bg-yellow-100', text: 'text-yellow-700' },
-  { key: 'lime', label: 'Lime', bg: 'bg-lime-100', text: 'text-lime-700' },
-  { key: 'green', label: 'Green', bg: 'bg-green-100', text: 'text-green-700' },
-  { key: 'emerald', label: 'Emerald', bg: 'bg-emerald-100', text: 'text-emerald-700' },
-  { key: 'teal', label: 'Teal', bg: 'bg-teal-100', text: 'text-teal-700' },
-  { key: 'cyan', label: 'Cyan', bg: 'bg-cyan-100', text: 'text-cyan-700' },
-  { key: 'sky', label: 'Sky', bg: 'bg-sky-100', text: 'text-sky-700' },
-  { key: 'blue', label: 'Blue', bg: 'bg-blue-100', text: 'text-blue-700' },
-  { key: 'indigo', label: 'Indigo', bg: 'bg-indigo-100', text: 'text-indigo-700' },
-  { key: 'violet', label: 'Violet', bg: 'bg-violet-100', text: 'text-violet-700' },
-  { key: 'purple', label: 'Purple', bg: 'bg-purple-100', text: 'text-purple-700' },
-  { key: 'fuchsia', label: 'Fuchsia', bg: 'bg-fuchsia-100', text: 'text-fuchsia-700' },
-  { key: 'pink', label: 'Pink', bg: 'bg-pink-100', text: 'text-pink-700' },
-  { key: 'rose', label: 'Rose', bg: 'bg-rose-100', text: 'text-rose-700' },
+  { key: '', labelKey: 'products.colorNone', bg: 'bg-gray-100', text: 'text-gray-600' },
+  { key: 'red', labelKey: 'products.colorRed', bg: 'bg-red-100', text: 'text-red-700' },
+  { key: 'orange', labelKey: 'products.colorOrange', bg: 'bg-orange-100', text: 'text-orange-700' },
+  { key: 'amber', labelKey: 'products.colorAmber', bg: 'bg-amber-100', text: 'text-amber-700' },
+  { key: 'yellow', labelKey: 'products.colorYellow', bg: 'bg-yellow-100', text: 'text-yellow-700' },
+  { key: 'lime', labelKey: 'products.colorLime', bg: 'bg-lime-100', text: 'text-lime-700' },
+  { key: 'green', labelKey: 'products.colorGreen', bg: 'bg-green-100', text: 'text-green-700' },
+  { key: 'emerald', labelKey: 'products.colorEmerald', bg: 'bg-emerald-100', text: 'text-emerald-700' },
+  { key: 'teal', labelKey: 'products.colorTeal', bg: 'bg-teal-100', text: 'text-teal-700' },
+  { key: 'cyan', labelKey: 'products.colorCyan', bg: 'bg-cyan-100', text: 'text-cyan-700' },
+  { key: 'sky', labelKey: 'products.colorSky', bg: 'bg-sky-100', text: 'text-sky-700' },
+  { key: 'blue', labelKey: 'products.colorBlue', bg: 'bg-blue-100', text: 'text-blue-700' },
+  { key: 'indigo', labelKey: 'products.colorIndigo', bg: 'bg-indigo-100', text: 'text-indigo-700' },
+  { key: 'violet', labelKey: 'products.colorViolet', bg: 'bg-violet-100', text: 'text-violet-700' },
+  { key: 'purple', labelKey: 'products.colorPurple', bg: 'bg-purple-100', text: 'text-purple-700' },
+  { key: 'fuchsia', labelKey: 'products.colorFuchsia', bg: 'bg-fuchsia-100', text: 'text-fuchsia-700' },
+  { key: 'pink', labelKey: 'products.colorPink', bg: 'bg-pink-100', text: 'text-pink-700' },
+  { key: 'rose', labelKey: 'products.colorRose', bg: 'bg-rose-100', text: 'text-rose-700' },
 ];
 
 type TabType = 'products' | 'categories' | 'addons';
@@ -106,7 +106,7 @@ export default function ProductsPage() {
       setCategories((catRes.data.categories as Category[]) || []);
       if (agRes) setAddonGroups((agRes.data.addon_groups as AddonGroup[]) || []);
     } catch {
-      toast.error('Failed to load products');
+      toast.error(t('products.failedToLoad'));
     } finally {
       setLoading(false);
     }
@@ -132,7 +132,7 @@ export default function ProductsPage() {
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      toast.error('Download failed');
+      toast.error(t('common.downloadFailed'));
     }
   };
 
@@ -146,7 +146,7 @@ export default function ProductsPage() {
       setCsvResult(res.data);
       fetchData();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Import failed';
+      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? t('common.importFailed');
       toast.error(msg);
     } finally {
       setCsvUploading(false);
@@ -216,10 +216,10 @@ export default function ProductsPage() {
 
       if (editingProduct) {
         await api.put(`/products/${editingProduct.id}`, payload);
-        toast.success('Product updated');
+        toast.success(t('products.updated'));
       } else {
         await api.post('/products', payload);
-        toast.success('Product created');
+        toast.success(t('products.created'));
       }
       resetForm();
       fetchData();
@@ -227,19 +227,19 @@ export default function ProductsPage() {
       const error = err as { response?: { data?: { errors?: Record<string, string[]> } } };
       const firstError = error.response?.data?.errors
         ? Object.values(error.response.data.errors)[0]?.[0]
-        : 'Failed to save product';
+        : t('products.failedToSave');
       toast.error(firstError);
     }
   };
 
   const handleDelete = async (id: number) => {
-    if (!await confirm('Delete this product?', { destructive: true, confirmLabel: t('common.delete') })) return;
+    if (!await confirm(t('products.deleteConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/products/${id}`);
-      toast.success('Product deleted');
+      toast.success(t('products.deleted'));
       fetchData();
     } catch {
-      toast.error('Failed to delete');
+      toast.error(t('common.failedToDelete'));
     }
   };
 
@@ -261,16 +261,16 @@ export default function ProductsPage() {
       const payload = { name: categoryForm.name, description: categoryForm.description || null, color: categoryForm.color || null, is_active: categoryForm.is_active };
       if (editingCategory) {
         await api.put(`/categories/${editingCategory.id}`, payload);
-        toast.success('Category updated');
+        toast.success(t('products.categoryUpdated'));
       } else {
         await api.post('/categories', payload);
-        toast.success('Category created');
+        toast.success(t('products.categoryCreated'));
       }
       resetCategoryForm();
       fetchData();
-    } catch (err) { 
+    } catch (err) {
       console.error('[Category] Save error:', err);
-      toast.error('Failed to save category'); 
+      toast.error(t('products.failedToSaveCategory'));
     }
   };
 
@@ -284,7 +284,7 @@ export default function ProductsPage() {
 
     try {
       await api.delete(`/categories/${id}`);
-      toast.success('Category deleted');
+      toast.success(t('products.categoryDeleted'));
       fetchData();
     } catch (err: unknown) {
       const e = err as { response?: { status?: number; data?: { error?: string; productCount?: number } } };
@@ -292,7 +292,7 @@ export default function ProductsPage() {
         setCatReassignTo('');
         setCatDeleteModal({ open: true, id, name, productCount: e.response.data.productCount });
       } else {
-        toast.error(e?.response?.data?.error || 'Failed to delete');
+        toast.error(e?.response?.data?.error || t('common.failedToDelete'));
       }
     }
   };
@@ -301,12 +301,12 @@ export default function ProductsPage() {
     if (!catDeleteModal.id || !catReassignTo) return;
     try {
       await api.delete(`/categories/${catDeleteModal.id}?action=reassign&reassign_to=${catReassignTo}`);
-      toast.success('Products reassigned and category deleted');
+      toast.success(t('products.reassignAndDelete'));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
-      toast.error(e?.response?.data?.error || 'Failed to delete');
+      toast.error(e?.response?.data?.error || t('common.failedToDelete'));
     }
   };
 
@@ -314,12 +314,12 @@ export default function ProductsPage() {
     if (!catDeleteModal.id) return;
     try {
       await api.delete(`/categories/${catDeleteModal.id}?action=delete_all`);
-      toast.success('Category and all products deleted');
+      toast.success(t('products.categoryAndProductsDeleted'));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
-      toast.error(e?.response?.data?.error || 'Failed to delete');
+      toast.error(e?.response?.data?.error || t('common.failedToDelete'));
     }
   };
 
@@ -343,23 +343,23 @@ export default function ProductsPage() {
       const payload = { name: addonForm.name, description: addonForm.description || null, is_required: addonForm.is_required, min_selection: addonForm.min_selection, max_selection: addonForm.max_selection, addons: addonList };
       if (editingAddonGroup) {
         await api.put(`/addon-groups/${editingAddonGroup.id}`, payload);
-        toast.success('Addon group updated');
+        toast.success(t('products.addonGroupUpdated'));
       } else {
         await api.post('/addon-groups', payload);
-        toast.success('Addon group created');
+        toast.success(t('products.addonGroupCreated'));
       }
       resetAddonForm();
       fetchData();
-    } catch { toast.error('Failed to save addon group'); }
+    } catch { toast.error(t('products.failedToSaveAddonGroup')); }
   };
 
   const handleAddonGroupDelete = async (id: number) => {
-    if (!await confirm('Delete this addon group?', { destructive: true, confirmLabel: t('common.delete') })) return;
+    if (!await confirm(t('products.deleteAddonGroupConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/addon-groups/${id}`);
-      toast.success('Addon group deleted');
+      toast.success(t('products.addonGroupDeleted'));
       fetchData();
-    } catch { toast.error('Failed to delete'); }
+    } catch { toast.error(t('common.failedToDelete')); }
   };
 
   const addAddonItem = () => setAddonList((prev) => [...prev, { name: '', price: 0 }]);
@@ -382,14 +382,14 @@ export default function ProductsPage() {
 
       <div className="flex gap-1 mb-6 border-b">
         <button onClick={() => setActiveTab('products')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'products' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          <Package size={16} /> Products
+          <Package size={16} /> {t('products.tabProducts')}
         </button>
         <button onClick={() => setActiveTab('categories')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'categories' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-          <Folder size={16} /> Categories
+          <Folder size={16} /> {t('products.tabCategories')}
         </button>
         {isRestaurant && (
           <button onClick={() => setActiveTab('addons')} className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px ${activeTab === 'addons' ? 'border-brand text-brand' : 'border-transparent text-gray-500 hover:text-gray-700'}`}>
-            <Puzzle size={16} /> Addon Groups
+            <Puzzle size={16} /> {t('products.tabAddonGroups')}
           </button>
         )}
       </div>
@@ -401,7 +401,7 @@ export default function ProductsPage() {
               <FileSpreadsheet size={16} className="mr-1" /> CSV
             </Button>
             <Button onClick={() => { resetForm(); setShowForm(true); }}>
-              <Plus size={16} className="mr-1" /> {t('common.add')} Product
+              <Plus size={16} className="mr-1" /> {t('products.addProduct')}
             </Button>
           </div>
 
@@ -423,7 +423,7 @@ export default function ProductsPage() {
             {products.map((product) => {
               const taxLabel = product.tax_type === 'none' || !product.tax_type
                 ? '—'
-                : `${product.tax_type === 'inclusive' ? 'Incl.' : 'Excl.'} ${product.tax_rate}%`;
+                : `${product.tax_type === 'inclusive' ? t('products.taxInclusiveShort') : t('products.taxExclusiveShort')} ${product.tax_rate}%`;
               return (
               <tr key={product.id} className="hover:bg-gray-50">
                 <td className="p-4 max-w-[220px]">
@@ -448,7 +448,7 @@ export default function ProductsPage() {
                     </div>
                     <div>
                       <p className="font-medium text-gray-900">{product.name}</p>
-                      {product.sku && <p className="text-xs text-gray-400 mt-0.5">SKU: {product.sku}</p>}
+                      {product.sku && <p className="text-xs text-gray-400 mt-0.5">{t('products.skuLabel', { sku: product.sku })}</p>}
                       {product.tags && product.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {product.tags.map((tag: string) => <TagBadge key={tag} tag={tag} />)}
@@ -476,7 +476,7 @@ export default function ProductsPage() {
                   <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                     product.is_active ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                   }`}>
-                    {product.is_active ? 'Active' : 'Inactive'}
+                    {product.is_active ? t('common.active') : t('common.inactive')}
                   </span>
                 </td>
                 <td className="p-4 text-right">
@@ -508,7 +508,7 @@ export default function ProductsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
             <div className="flex justify-between items-center p-6 border-b border-gray-100 shrink-0">
-              <h2 className="text-lg font-bold">{editingProduct ? 'Edit Product' : 'Add Product'}</h2>
+              <h2 className="text-lg font-bold">{editingProduct ? t('products.editProductTitle') : t('products.addProductTitle')}</h2>
               <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <div className="p-6 overflow-y-auto flex-1">
@@ -546,7 +546,7 @@ export default function ProductsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Price ({currency})</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.priceLabel', { currency })}</label>
                   <input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                 </div>
@@ -557,10 +557,10 @@ export default function ProductsPage() {
                 </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cashback %</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.cashbackLabel')}</label>
                 <input type="number" step="0.1" min="0" max="100" value={form.cb_percent} onChange={(e) => setForm({ ...form, cb_percent: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                <p className="text-xs text-gray-400 mt-1">% of item price added to customer&apos;s loyalty wallet</p>
+                <p className="text-xs text-gray-400 mt-1">{t('products.cashbackHint')}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -573,7 +573,7 @@ export default function ProductsPage() {
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tax Rate (%)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.taxRateLabel')}</label>
                   <input type="number" step="0.01" value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
@@ -585,7 +585,7 @@ export default function ProductsPage() {
                   <div className="flex flex-wrap gap-1.5 mb-2">
                     {form.tags.map((tag) => (
                       <span key={tag} className="inline-flex items-center gap-1 px-2 py-1 bg-brand/10 text-brand rounded-lg text-xs font-medium">
-                        {tagLabel(tag)}
+                        {t(tagLabel(tag))}
                         <button type="button" onClick={() => setForm((prev) => ({ ...prev, tags: prev.tags.filter((t) => t !== tag) }))} className="hover:text-red-500">
                           <X size={11} />
                         </button>
@@ -602,7 +602,7 @@ export default function ProductsPage() {
                       onClick={() => setForm((prev) => ({ ...prev, tags: [...prev.tags, pt.key] }))}
                       className="px-2 py-1 text-xs border border-gray-200 rounded-lg text-gray-600 hover:border-brand hover:text-brand transition-colors"
                     >
-                      + {pt.label}
+                      + {t(pt.labelKey)}
                     </button>
                   ))}
                 </div>
@@ -634,7 +634,7 @@ export default function ProductsPage() {
                     }}
                     className="px-3 py-1.5 text-sm bg-gray-100 rounded-lg hover:bg-gray-200 text-gray-600"
                   >
-                    Add
+                    {t('common.add')}
                   </button>
                 </div>
               </div>
@@ -664,7 +664,7 @@ export default function ProductsPage() {
                           <label htmlFor={`addon-group-${group.id}`} className="flex items-center gap-2 cursor-pointer select-none">
                             <span className="text-sm text-gray-700">{group.name}</span>
                             <span className={`text-[10px] px-1.5 py-0.5 rounded ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
-                              {group.is_required ? 'Required' : 'Optional'}
+                              {group.is_required ? t('products.required') : t('products.optional')}
                             </span>
                           </label>
                         </div>
@@ -686,7 +686,7 @@ export default function ProductsPage() {
                 </label>
               </div>
               <Button type="submit" className="w-full">
-                {editingProduct ? 'Update Product' : 'Create Product'}
+                {editingProduct ? t('products.updateProduct') : t('products.createProduct')}
               </Button>
             </form>
             </div>
@@ -703,7 +703,7 @@ export default function ProductsPage() {
               <FileSpreadsheet size={16} className="mr-1" /> CSV
             </Button>
             <Button onClick={() => { resetCategoryForm(); setShowForm(true); }}>
-              <Plus size={16} className="mr-1" /> Add Category
+              <Plus size={16} className="mr-1" /> {t('products.addCategory')}
             </Button>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -724,7 +724,7 @@ export default function ProductsPage() {
                       <td className="p-4 font-medium text-gray-900">{cat.name}</td>
                       <td className="p-4">
                         {colorObj ? (
-                          <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${colorObj.bg} ${colorObj.text}`}>{colorObj.label}</span>
+                          <span className={`inline-flex px-2 py-1 rounded-lg text-xs font-medium ${colorObj.bg} ${colorObj.text}`}>{t(colorObj.labelKey)}</span>
                         ) : <span className="text-gray-400 text-sm">—</span>}
                       </td>
                       <td className="p-4 text-center">
@@ -754,7 +754,7 @@ export default function ProductsPage() {
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
               <div className="bg-white rounded-2xl p-6 w-full max-w-md">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg font-bold">{editingCategory ? 'Edit Category' : 'Add Category'}</h2>
+                  <h2 className="text-lg font-bold">{editingCategory ? t('products.editCategoryTitle') : t('products.addCategoryTitle')}</h2>
                   <button onClick={resetCategoryForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
                 </div>
                 <form onSubmit={handleCategorySubmit} className="space-y-4">
@@ -767,10 +767,10 @@ export default function ProductsPage() {
                     <textarea value={categoryForm.description} onChange={(e) => setCategoryForm({ ...categoryForm, description: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" rows={2} />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Color</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">{t('products.colorLabel')}</label>
                     <div className="flex flex-wrap gap-2">
                       {CATEGORY_COLORS.map((c) => (
-                        <button type="button" key={c.key} onClick={() => setCategoryForm({ ...categoryForm, color: c.key })} className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 ${c.key === categoryForm.color ? 'border-brand' : 'border-transparent'} ${c.bg} ${c.text}`}>{c.label}</button>
+                        <button type="button" key={c.key} onClick={() => setCategoryForm({ ...categoryForm, color: c.key })} className={`px-3 py-1.5 rounded-lg text-xs font-medium border-2 ${c.key === categoryForm.color ? 'border-brand' : 'border-transparent'} ${c.bg} ${c.text}`}>{t(c.labelKey)}</button>
                       ))}
                     </div>
                   </div>
@@ -778,7 +778,7 @@ export default function ProductsPage() {
                     <input type="checkbox" checked={categoryForm.is_active} onChange={(e) => setCategoryForm({ ...categoryForm, is_active: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
                     <span className="text-sm text-gray-700">{t('products.fieldActive')}</span>
                   </label>
-                  <Button type="submit" className="w-full">{editingCategory ? 'Update' : 'Create'}</Button>
+                  <Button type="submit" className="w-full">{editingCategory ? t('common.update') : t('common.create')}</Button>
                 </form>
               </div>
             </div>
@@ -793,7 +793,7 @@ export default function ProductsPage() {
               <FileSpreadsheet size={16} className="mr-1" /> CSV
             </Button>
             <Button onClick={() => { resetAddonForm(); setShowAddonModal(true); }}>
-              <Plus size={16} className="mr-1" /> Add Addon Group
+              <Plus size={16} className="mr-1" /> {t('products.addAddonGroup')}
             </Button>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -812,9 +812,9 @@ export default function ProductsPage() {
                   <tr key={group.id} className="hover:bg-gray-50">
                     <td className="p-4 font-medium text-gray-900">{group.name}</td>
                     <td className="p-4 text-center">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{group.is_required ? 'Yes' : 'No'}</span>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{group.is_required ? t('common.yes') : t('common.no')}</span>
                     </td>
-                    <td className="p-4 text-center text-sm text-gray-600">{group.min_selection} - {group.max_selection}</td>
+                    <td className="p-4 text-center text-sm text-gray-600">{t('products.addonSelectionRange', { min: group.min_selection, max: group.max_selection })}</td>
                     <td className="p-4 text-center text-sm text-gray-600">{group.addons?.length || 0}</td>
                     <td className="p-4 text-right">
                       <div className="flex gap-2 justify-end">
@@ -837,7 +837,7 @@ export default function ProductsPage() {
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
               <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
                 <div className="flex justify-between items-center p-6 border-b border-gray-100 shrink-0">
-                  <h2 className="text-lg font-bold">{editingAddonGroup ? 'Edit Addon Group' : 'Add Addon Group'}</h2>
+                  <h2 className="text-lg font-bold">{editingAddonGroup ? t('products.editAddonGroupTitle') : t('products.addAddonGroupTitle')}</h2>
                   <button onClick={resetAddonForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
                 </div>
                 <div className="p-6 overflow-y-auto flex-1">
@@ -867,19 +867,19 @@ export default function ProductsPage() {
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <label className="block text-sm font-medium text-gray-700">{t('products.addonAddons')}</label>
-                      <button type="button" onClick={addAddonItem} className="text-xs text-brand hover:underline">+ Add Addon</button>
+                      <button type="button" onClick={addAddonItem} className="text-xs text-brand hover:underline">{t('products.addAddonInline')}</button>
                     </div>
                     <div className="space-y-2">
                       {addonList.map((addon, idx) => (
                         <div key={idx} className="flex gap-2">
-                          <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder="Name" className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <input type="number" step="0.01" value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} placeholder="Price" className="w-24 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={t('common.namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <input type="number" step="0.01" value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} placeholder={t('common.pricePlaceholder')} className="w-24 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                           <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
                         </div>
                       ))}
                     </div>
                   </div>
-                  <Button type="submit" className="w-full">{editingAddonGroup ? 'Update' : 'Create'}</Button>
+                  <Button type="submit" className="w-full">{editingAddonGroup ? t('common.update') : t('common.create')}</Button>
                 </form>
                 </div>
               </div>
@@ -893,8 +893,7 @@ export default function ProductsPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-lg">
             <div className="flex justify-between items-center mb-5">
               <h2 className="text-lg font-bold">
-                CSV Import / Export —{' '}
-                {csvType === 'categories' ? 'Categories' : csvType === 'products' ? 'Products' : 'Addon Groups'}
+                {t('products.csvModalTitle', { type: csvType === 'categories' ? t('products.tabCategories') : csvType === 'products' ? t('products.tabProducts') : t('products.tabAddonGroups') })}
               </h2>
               <button onClick={() => setShowCsvModal(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
@@ -910,23 +909,23 @@ export default function ProductsPage() {
                     onClick={() => downloadCsv(`/menu-csv/template/${csvType}`, `${csvType}-template.csv`)}
                     className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 font-medium"
                   >
-                    <Download size={14} /> Blank template
+                    <Download size={14} /> {t('products.csvBlankTemplate')}
                   </button>
                   <button
                     onClick={() => downloadCsv(`/menu-csv/export/${csvType}`, `${csvType}-export.csv`)}
                     className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 rounded-lg bg-white hover:bg-gray-50 font-medium"
                   >
-                    <Download size={14} /> Current data
+                    <Download size={14} /> {t('products.csvCurrentData')}
                   </button>
                 </div>
                 {csvType === 'products' && (
-                  <p className="text-xs text-gray-500">Columns: id (leave blank for new items), sku, name, category, price, description, cost, tax_type (none/inclusive/exclusive), tax_rate, cashback_percent, tags (veg/non_veg/...), is_active (yes/no) — download &quot;Current data&quot; to get item IDs, edit, then re-upload to update existing items</p>
+                  <p className="text-xs text-gray-500">{t('products.csvProductsHelp')}</p>
                 )}
                 {csvType === 'categories' && (
-                  <p className="text-xs text-gray-500">Columns: name, description, color (red/green/blue/...), icon (emoji), sort_order</p>
+                  <p className="text-xs text-gray-500">{t('products.csvCategoriesHelp')}</p>
                 )}
                 {csvType === 'addons' && (
-                  <p className="text-xs text-gray-500">Columns: group_name, addon_name, price, group_required (yes/no), group_min_select, group_max_select — group settings are read from the first row with that group name</p>
+                  <p className="text-xs text-gray-500">{t('products.csvAddonsHelp')}</p>
                 )}
               </div>
 
@@ -936,7 +935,7 @@ export default function ProductsPage() {
                 <label className="flex flex-col items-center justify-center w-full h-28 border-2 border-dashed border-gray-200 rounded-xl cursor-pointer hover:bg-gray-50 transition-colors">
                   <Upload size={20} className="text-gray-400 mb-1" />
                   <span className="text-sm text-gray-500">
-                    {csvFile ? csvFile.name : 'Click to choose a CSV file'}
+                    {csvFile ? csvFile.name : t('products.csvChooseFile')}
                   </span>
                   <input
                     type="file"
@@ -947,7 +946,7 @@ export default function ProductsPage() {
                 </label>
                 {csvFile && (
                   <Button onClick={handleCsvUpload} disabled={csvUploading} className="w-full">
-                    {csvUploading ? 'Importing…' : 'Import'}
+                    {csvUploading ? t('products.csvImporting') : t('common.import')}
                   </Button>
                 )}
               </div>
@@ -962,19 +961,19 @@ export default function ProductsPage() {
                   <div className="px-4 py-3 text-sm text-gray-700 space-y-1">
                     {csvType === 'addons' ? (
                       <>
-                        <p>Groups created: <span className="font-medium">{String(csvResult.groups_created ?? 0)}</span></p>
-                        <p>Addons created: <span className="font-medium">{String(csvResult.addons_created ?? 0)}</span></p>
+                        <p>{t('products.csvGroupsCreated')} <span className="font-medium">{String(csvResult.groups_created ?? 0)}</span></p>
+                        <p>{t('products.csvAddonsCreated')} <span className="font-medium">{String(csvResult.addons_created ?? 0)}</span></p>
                       </>
                     ) : (
-                      <p>Created: <span className="font-medium">{String(csvResult.created ?? 0)}</span></p>
+                      <p>{t('common.created')} <span className="font-medium">{String(csvResult.created ?? 0)}</span></p>
                     )}
-                    <p>Skipped (already exists): <span className="font-medium">{String(csvResult.skipped ?? 0)}</span></p>
+                    <p>{t('common.skipped')} <span className="font-medium">{String(csvResult.skipped ?? 0)}</span></p>
                   </div>
                   {Array.isArray(csvResult.warnings) && (csvResult.warnings as string[]).length > 0 && (
                     <div className="px-4 py-3 border-t border-gray-100 bg-amber-50">
                       <div className="flex items-center gap-2 mb-2">
                         <AlertCircle size={14} className="text-amber-500" />
-                        <span className="text-xs font-medium text-amber-700">Some rows had missing fields — imported with defaults</span>
+                        <span className="text-xs font-medium text-amber-700">{t('products.csvMissingFields')}</span>
                       </div>
                       <ul className="space-y-1">
                         {(csvResult.warnings as string[]).map((w, i) => (
@@ -987,7 +986,7 @@ export default function ProductsPage() {
                     <div className="px-4 py-3 border-t border-gray-100">
                       <div className="flex items-center gap-2 mb-2">
                         <AlertCircle size={14} className="text-red-500" />
-                        <span className="text-xs font-medium text-red-700">Rows skipped due to errors</span>
+                        <span className="text-xs font-medium text-red-700">{t('products.csvSkippedErrors')}</span>
                       </div>
                       <ul className="space-y-1">
                         {(csvResult.errors as string[]).map((e, i) => (
@@ -1006,44 +1005,42 @@ export default function ProductsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold text-gray-900">Delete Category</h2>
+              <h2 className="text-lg font-bold text-gray-900">{t('products.deleteCategoryTitle')}</h2>
               <button onClick={() => setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 })} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <p className="text-sm text-gray-700 mb-5">
-              <span className="font-semibold">&ldquo;{catDeleteModal.name}&rdquo;</span> has{' '}
-              <span className="font-semibold text-amber-600">{catDeleteModal.productCount} active product(s)</span>.{' '}
-              What would you like to do with them?
+              {t('products.deleteCategoryBody', { name: catDeleteModal.name, count: catDeleteModal.productCount })}
             </p>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Move products to</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.moveProductsTo')}</label>
                 <select
                   value={catReassignTo}
                   onChange={(e) => setCatReassignTo(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none"
                 >
-                  <option value="">Select a category…</option>
+                  <option value="">{t('products.selectCategoryPlaceholder')}</option>
                   {categories
                     .filter((c) => c.name.toLowerCase() === 'uncategorized' && c.id !== catDeleteModal.id)
-                    .map((c) => <option key={c.id} value={String(c.id)}>{c.name} (default)</option>)}
+                    .map((c) => <option key={c.id} value={String(c.id)}>{t('products.defaultCategoryTag', { name: c.name })}</option>)}
                   {categories
                     .filter((c) => c.name.toLowerCase() !== 'uncategorized' && c.id !== catDeleteModal.id)
                     .map((c) => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
                 </select>
               </div>
               <Button onClick={handleCategoryReassignDelete} disabled={!catReassignTo} className="w-full">
-                Move &amp; Delete Category
+                {t('products.moveAndDelete')}
               </Button>
               <div className="relative flex items-center">
                 <div className="flex-grow border-t border-gray-200" />
-                <span className="mx-3 text-xs text-gray-400">or</span>
+                <span className="mx-3 text-xs text-gray-400">{t('common.or')}</span>
                 <div className="flex-grow border-t border-gray-200" />
               </div>
               <button
                 onClick={handleCategoryForceDelete}
                 className="w-full px-4 py-2 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
               >
-                Delete Category &amp; All Products
+                {t('products.deleteCategoryAndProducts')}
               </button>
             </div>
           </div>

@@ -33,7 +33,7 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (form.password !== form.password_confirmation) {
-      toast.error('Passwords do not match');
+      toast.error(t('auth.passwordsDoNotMatch'));
       return;
     }
     setLoading(true);
@@ -44,16 +44,16 @@ export default function RegisterPage() {
       if (newTenants.length > 0) {
         await selectTenant(newTenants[0].id);
       }
-      toast.success('Account created successfully!');
+      toast.success(t('auth.accountCreated'));
       router.push('/dashboard');
     } catch (err: unknown) {
       const error = err as { response?: { data?: { errors?: Record<string, string[]>; error?: string } } };
       const errors = error.response?.data?.errors;
       if (errors) {
         const firstError = Object.values(errors)[0]?.[0];
-        toast.error(firstError || 'Registration failed');
+        toast.error(firstError || t('auth.registrationFailed'));
       } else {
-        toast.error(error.response?.data?.error || 'Registration failed');
+        toast.error(error.response?.data?.error || t('auth.registrationFailed'));
       }
     } finally {
       setLoading(false);
@@ -65,14 +65,14 @@ export default function RegisterPage() {
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
           <img src="/logo.svg" alt="Flo" width={120} height={77} className="mx-auto mb-3" />
-          <p className="text-gray-500 mt-2">Create your account and set up your restaurant</p>
+          <p className="text-gray-500 mt-2">{t('auth.registerSubtitle')}</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-lg p-8">
           <form onSubmit={handleSubmit} className="space-y-5">
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Your Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.yourName')}</label>
                 <input
                   type="text"
                   name="name"
@@ -108,7 +108,7 @@ export default function RegisterPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.confirmPassword')}</label>
                 <input
                   type="password"
                   name="password_confirmation"
@@ -122,45 +122,45 @@ export default function RegisterPage() {
               {passwordsEntered && (
                 <div className="col-span-2 -mt-2">
                   <p className={`text-xs font-medium ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}>
-                    {passwordsMatch ? 'Passwords match' : 'Passwords do not match'}
+                    {passwordsMatch ? t('auth.passwordsMatch') : t('auth.passwordsDoNotMatch')}
                   </p>
                 </div>
               )}
 
               <div className="col-span-2 border-t border-gray-200 pt-5 mt-1">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Business Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.businessNameLabel')}</label>
                 <input
                   type="text"
                   name="business_name"
                   value={form.business_name}
                   onChange={handleChange}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
-                  placeholder="e.g., Tasty Bites Restaurant"
+                  placeholder={t('auth.businessNamePlaceholder')}
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.countryLabel')}</label>
                 <select
                   name="country"
                   value={form.country}
                   onChange={handleChange}
                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
                 >
-                  <option value="IN">India</option>
-                  <option value="TH">Thailand</option>
+                  <option value="IN">{t('auth.countryIndia')}</option>
+                  <option value="TH">{t('auth.countryThailand')}</option>
                 </select>
               </div>
             </div>
 
             <Button type="submit" disabled={loading || !passwordsMatch} className="w-full" size="lg">
-              {loading ? t('auth.signingIn') : 'Create Account'}
+              {loading ? t('auth.signingIn') : t('auth.createAccount')}
             </Button>
           </form>
 
           <p className="text-center text-sm text-gray-500 mt-6">
-            Already have an account?{' '}
+            {t('auth.haveAccount')}{' '}
             <Link href="/auth/login" className="text-brand hover:text-brand-hover font-medium">
               {t('auth.signIn')}
             </Link>

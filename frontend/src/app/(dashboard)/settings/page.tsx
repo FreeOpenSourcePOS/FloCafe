@@ -71,14 +71,14 @@ TOTAL            99`;
 
 interface TemplateCard {
   id: BillTemplate;
-  name: string;
+  nameKey: string;
   preview: string;
 }
 
 const TEMPLATE_CARDS: TemplateCard[] = [
-  { id: 'classic', name: 'Classic', preview: CLASSIC_PREVIEW },
-  { id: 'compact', name: 'Compact', preview: COMPACT_PREVIEW },
-  { id: 'detailed', name: 'Detailed (GST)', preview: DETAILED_PREVIEW },
+  { id: 'classic', nameKey: 'settings.billTemplateClassicName', preview: CLASSIC_PREVIEW },
+  { id: 'compact', nameKey: 'settings.billTemplateCompactName', preview: COMPACT_PREVIEW },
+  { id: 'detailed', nameKey: 'settings.billTemplateDetailedName', preview: DETAILED_PREVIEW },
 ];
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -144,7 +144,7 @@ export default function SettingsPage() {
       const { data } = await api.get('/db-tools/health-check');
       setHealthReport(data);
     } catch {
-      toast.error('Health check failed');
+      toast.error(t('settings.healthCheckFailed'));
       setHealthCheckOpen(false);
     }
   };
@@ -160,7 +160,8 @@ export default function SettingsPage() {
     if (action === 'health-check') runHealthCheck();
     else if (action === 'initialize-db') setInitializeDbOpen(true);
     else if (action === 'master-pin') setPinGate({ mode: 'set' });
-     
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const applySafeFixes = async () => {
@@ -168,13 +169,13 @@ export default function SettingsPage() {
     try {
       const { data } = await api.post('/db-tools/apply-safe-fixes', {});
       if (data.errors?.length) {
-        toast.error(`${data.applied.length} fix(es) applied, ${data.errors.length} failed`);
+        toast.error(t('settings.fixesAppliedPartial', { applied: data.applied.length, failed: data.errors.length }));
       } else {
-        toast.success(`${data.applied.length} fix(es) applied`);
+        toast.success(t('settings.fixesApplied', { count: data.applied.length }));
       }
       await runHealthCheck();
     } catch {
-      toast.error('Applying fixes failed');
+      toast.error(t('settings.applyingFixesFailed'));
     } finally {
       setApplyingFixes(false);
     }
@@ -194,7 +195,7 @@ export default function SettingsPage() {
   };
 
   const handlePinGateSubmit = async (pin: string): Promise<{ success: boolean; error?: string }> => {
-    if (!pinGate) return { success: false, error: 'Nothing pending' };
+    if (!pinGate) return { success: false, error: t('settings.nothingPending') };
 
     if (pinGate.mode === 'set') {
       try {
@@ -205,7 +206,7 @@ export default function SettingsPage() {
         return { success: true };
       } catch (err: unknown) {
         const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Failed to save PIN' };
+        return { success: false, error: error.response?.data?.error || t('settings.savePinFailed') };
       }
     }
 
@@ -217,7 +218,7 @@ export default function SettingsPage() {
         return { success: true };
       } catch (err: unknown) {
         const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Backup failed' };
+        return { success: false, error: error.response?.data?.error || t('settings.backupFailedGeneric') };
       }
     }
 
@@ -250,7 +251,7 @@ export default function SettingsPage() {
       return { success: true, backupPath: data.backupPath };
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
-      return { success: false, error: error.response?.data?.error || 'Initialize failed' };
+      return { success: false, error: error.response?.data?.error || t('settings.initializeFailedGeneric') };
     }
   };
 
@@ -269,7 +270,7 @@ export default function SettingsPage() {
     api.get('/kds-info').then((res) => {
       setKdsInfo(res.data);
     }).catch(() => {
-      toast.error('Could not fetch KDS info');
+      toast.error(t('settings.kdsInfoFetchFailed'));
     }).finally(() => setKdsInfoLoading(false));
   };
 
@@ -392,12 +393,12 @@ export default function SettingsPage() {
         payload.port = p.port || 9100;
       }
       await api.post('/printers', payload);
-      toast.success(`${p.name} added`);
+      toast.success(t('settings.printerQuickAdded', { name: p.name }));
       fetchPrinters();
       refreshHardwarePrinter();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || 'Failed to add printer');
+      toast.error(error?.response?.data?.error || t('settings.printerAddFailed'));
     } finally {
       setAddingDetectedName(null);
     }
@@ -421,7 +422,7 @@ export default function SettingsPage() {
   };
 
   const savePrinterHw = async () => {
-    if (!printerForm.name) { toast.error('Printer name is required'); return; }
+    if (!printerForm.name) { toast.error(t('settings.printerNameRequired')); return; }
     setSavingPrinter(true);
     try {
       const payload = {
@@ -434,52 +435,52 @@ export default function SettingsPage() {
       };
       if (editingPrinterId) {
         await api.put(`/printers/${editingPrinterId}`, payload);
-        toast.success('Printer updated');
+        toast.success(t('settings.printerUpdated'));
       } else {
         await api.post('/printers', payload);
-        toast.success('Printer added');
+        toast.success(t('settings.printerSaved'));
       }
       fetchPrinters();
       refreshHardwarePrinter();
       setShowPrinterForm(false);
     } catch {
-      toast.error('Failed to save printer');
+      toast.error(t('settings.printerSaveFailed'));
     } finally {
       setSavingPrinter(false);
     }
   };
 
   const deletePrinterHw = async (id: string) => {
-    if (!await confirm('Delete this printer?', { destructive: true, confirmLabel: 'Delete' })) return;
+    if (!await confirm(t('settings.printerDeleteConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/printers/${id}`);
-      toast.success('Printer deleted');
+      toast.success(t('settings.printerDeleted'));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch { toast.error('Failed to delete'); }
+    } catch { toast.error(t('settings.printerDeleteFailed')); }
   };
 
   const setDefaultPrinter = async (id: string) => {
     try {
       await api.post(`/printers/${id}/set-default`);
-      toast.success('Default printer set');
+      toast.success(t('settings.defaultPrinterSet'));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch { toast.error('Failed'); }
+    } catch { toast.error(t('settings.actionFailed')); }
   };
 
   const testPrinterHw = async (printer: HwPrinter) => {
     if (printer.connection_type === 'webusb') {
-      toast('WebUSB: use the Connect button in the POS toolbar to test.');
+      toast(t('settings.webusbTestHint'));
       return;
     }
     setTestingPrinterId(printer.id);
     try {
       await api.post(`/printers/${printer.id}/test`);
-      toast.success('Test print sent!');
+      toast.success(t('settings.testPrintSent'));
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || 'Test print failed');
+      toast.error(error?.response?.data?.error || t('settings.testPrintFailed'));
     } finally {
       setTestingPrinterId(null);
     }
@@ -537,7 +538,7 @@ export default function SettingsPage() {
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
     setSavedBillForm(billForm);
-    toast.success('Bill template saved');
+    toast.success(t('settings.billTemplateSaved'));
   };
   const resetBillTemplate = () => setBillForm(savedBillForm);
 
@@ -616,9 +617,9 @@ export default function SettingsPage() {
       if (discountRes.data.discount_mode) setDiscountMode(discountRes.data.discount_mode);
       if (discountRes.data.discount_requires_approval !== undefined) setDiscountRequiresApproval(!!discountRes.data.discount_requires_approval);
 
-      toast.success('Settings reloaded from database');
+      toast.success(t('settings.reloadedFromDb'));
     } catch {
-      toast.error('Failed to reload settings');
+      toast.error(t('settings.reloadFailed'));
     }
   };
 
@@ -700,17 +701,17 @@ export default function SettingsPage() {
     setSavingCloud(true);
     try {
       await api.put('/settings/cloud', cloudSettings);
-      toast.success('Cloud sync settings saved');
+      toast.success(t('settings.cloudSaved'));
       setCloudTestResult(null);
     } catch {
-      toast.error('Failed to save cloud settings');
+      toast.error(t('settings.cloudSaveFailed'));
     } finally {
       setSavingCloud(false);
     }
   };
 
   const testCloudConnection = async () => {
-    if (!cloudSettings.cloud_api_key) { toast.error('Enter an API key first'); return; }
+    if (!cloudSettings.cloud_api_key) { toast.error(t('settings.apiKeyRequired')); return; }
     setTestingCloud(true);
     setCloudTestResult(null);
     try {
@@ -741,13 +742,13 @@ export default function SettingsPage() {
         cloud_store_id: res.data.cloud_store_id || prev.cloud_store_id,
       }));
       if (res.data.cloud_registration_status === 'pending') {
-        toast.success('Request sent — your API key will arrive by email within 7 days. RevFlo reports and other features unlock once it\'s applied.');
+        toast.success(t('settings.cloudRegistrationPending'));
       } else if (res.data.cloud_registration_status === 'registered') {
-        toast.success('Registered with FloAdmin');
+        toast.success(t('settings.cloudRegistrationSuccess'));
       }
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || 'Registration failed — check your connection');
+      toast.error(error.response?.data?.error || t('settings.cloudRegistrationFailed'));
     } finally {
       setRegisteringCloud(false);
     }
@@ -759,9 +760,9 @@ export default function SettingsPage() {
       await api.put('/settings/loyalty', {
         loyalty_enabled: loyaltyEnabled,
       });
-      if (!silent) toast.success('Loyalty settings saved');
+      if (!silent) toast.success(t('settings.loyaltySaved'));
     } catch (err) {
-      if (!silent) toast.error('Failed to save');
+      if (!silent) toast.error(t('settings.saveFailed'));
       throw err;
     } finally {
       setSavingLoyalty(false);
@@ -777,9 +778,9 @@ export default function SettingsPage() {
         discount_mode: discountMode,
         discount_requires_approval: discountRequiresApproval,
       });
-      if (!silent) toast.success('Discount settings saved');
+      if (!silent) toast.success(t('settings.discountSaved'));
     } catch (err) {
-      if (!silent) toast.error('Failed to save');
+      if (!silent) toast.error(t('settings.saveFailed'));
       throw err;
     } finally {
       setSavingDiscount(false);
@@ -815,9 +816,9 @@ export default function SettingsPage() {
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone });
-      if (!silent) toast.success('Store details saved');
+      if (!silent) toast.success(t('settings.storeSaved'));
     } catch (err) {
-      if (!silent) toast.error('Failed to save');
+      if (!silent) toast.error(t('settings.saveFailed'));
       throw err;
     } finally {
       setSavingBusiness(false);
@@ -827,9 +828,9 @@ export default function SettingsPage() {
   const saveAllSettings = async () => {
     try {
       await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true)]);
-      toast.success('Settings saved');
+      toast.success(t('settings.allSaved'));
     } catch {
-      toast.error('Failed to save settings');
+      toast.error(t('settings.allSaveFailed'));
     }
   };
 
@@ -839,9 +840,9 @@ export default function SettingsPage() {
       const res = await api.post('/mobile/rotate-code');
       setPairingCode(res.data.pairing_code);
       setPairingRotatedAt(res.data.rotated_at);
-      toast.success('New pairing code generated');
+      toast.success(t('settings.pairingCodeRotated'));
     } catch {
-      toast.error('Failed to generate code');
+      toast.error(t('settings.pairingCodeFailed'));
     } finally {
       setRotatingCode(false);
     }
@@ -1006,7 +1007,7 @@ export default function SettingsPage() {
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
                   {isAdmin ? (
                     <input type="text" value={form.gstin} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
-                      placeholder="22AAAAA0000A1Z5"
+                      placeholder={t('settings.taxIdPlaceholder')}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
                     <p className="font-medium text-gray-900">{form.gstin || '—'}</p>
@@ -1036,7 +1037,7 @@ export default function SettingsPage() {
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.instagramHandle')}</label>
                   {isAdmin ? (
                     <input type="text" value={form.instagramHandle} onChange={(e) => setForm((p) => ({ ...p, instagramHandle: e.target.value }))}
-                      placeholder="@yourcafe"
+                      placeholder={t('settings.instagramPlaceholder')}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
                     <p className="font-medium text-gray-900">{form.instagramHandle || '—'}</p>
@@ -1098,8 +1099,8 @@ export default function SettingsPage() {
                     onChange={(e) => setLanguage(e.target.value as 'en' | 'es')}
                     className="block w-full rounded-md border-gray-300 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                   >
-                    <option value="en">English (EN)</option>
-                    <option value="es">Español (ES)</option>
+                    <option value="en">{t('settings.languageEn')}</option>
+                    <option value="es">{t('settings.languageEs')}</option>
                   </select>
                 </div>
               </div>
@@ -1356,7 +1357,7 @@ export default function SettingsPage() {
                     </button>
                     <button onClick={openAddPrinter}
                       className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 font-medium">
-                      <Plus size={14} /> Add Manually
+                      <Plus size={14} /> {t('settings.addPrinterManually')}
                     </button>
                   </div>
                 )}
@@ -1631,7 +1632,7 @@ export default function SettingsPage() {
                     <div className="flex flex-col sm:flex-row gap-6 items-start">
                       <div className="shrink-0">
                         {kdsInfo.qr_data_url ? (
-                          <img src={kdsInfo.qr_data_url} alt="KDS QR Code" className="w-48 h-48 rounded-xl border border-gray-200" />
+                          <img src={kdsInfo.qr_data_url} alt={t('settings.kdsQrAlt')} className="w-48 h-48 rounded-xl border border-gray-200" />
                         ) : (
                           <div className="w-48 h-48 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400">
                             <QrCode size={48} />
@@ -1798,7 +1799,7 @@ export default function SettingsPage() {
                       className={`text-left rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}>
-                      <p className="font-semibold text-gray-900 mb-2">{card.name}</p>
+                      <p className="font-semibold text-gray-900 mb-2">{t(card.nameKey)}</p>
                       <pre className="font-mono text-[9px] leading-tight text-gray-600 bg-gray-50 p-2 rounded overflow-hidden mb-3 whitespace-pre">
                         {card.preview}
                       </pre>
@@ -2067,7 +2068,12 @@ export default function SettingsPage() {
                   {updateStatus.status === 'downloading' && <RefreshCw size={16} className="animate-spin text-brand" />}
                   {updateStatus.status === 'error' && <span className="text-red-600">✕</span>}
                   {updateStatus.status === 'dev-mode' && <span className="text-yellow-600">⚠</span>}
-                  <span className="font-medium capitalize">{updateStatus.status.replace(/-/g, ' ')}</span>
+                  <span className="font-medium capitalize">
+                    {updateStatus.status === 'available' ? t('settings.updateStatusAvailable')
+                     : updateStatus.status === 'up-to-date' ? t('settings.updateStatusUpToDate')
+                     : updateStatus.status === 'ready-to-install' ? t('settings.updateStatusReadyToInstall')
+                     : updateStatus.status.replace(/-/g, ' ')}
+                  </span>
                 </div>
                 {updateStatus.version && (
                   <p className="text-sm text-gray-600">{t('settings.version')}: {updateStatus.version}</p>
@@ -2168,7 +2174,7 @@ export default function SettingsPage() {
                       type="password"
                       value={cloudSettings.cloud_api_key}
                       onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_api_key: e.target.value })}
-                      placeholder="fac_live_xxxxxxxxxxxxxxxxxxxx"
+                      placeholder={t('settings.apiKeyInputPlaceholder')}
                       className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand outline-none"
                     />
                     <button
@@ -2287,7 +2293,7 @@ export default function SettingsPage() {
                     <div key={app.id} className="flex flex-col sm:flex-row gap-5 items-start border border-gray-100 rounded-xl p-5">
                       <div className="shrink-0">
                         {app.qr_data_url ? (
-                          <img src={app.qr_data_url} alt={`${app.name} QR Code`}
+                          <img src={app.qr_data_url} alt={t('settings.appQrAlt', { name: app.name })}
                             className="w-32 h-32 rounded-lg border border-gray-200" />
                         ) : (
                           <div className="w-32 h-32 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400">
@@ -2366,7 +2372,7 @@ export default function SettingsPage() {
               type="email"
               value={registerEmail}
               onChange={(e) => setRegisterEmail(e.target.value)}
-              placeholder="owner@yourcafe.com"
+              placeholder={t('settings.registrationEmailPlaceholder')}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none"
             />
           </div>
@@ -2385,7 +2391,7 @@ export default function SettingsPage() {
       <MasterPinPrompt
         open={pinGate !== null}
         mode={pinGate?.mode === 'set' ? 'set' : 'verify'}
-        title={pinGate?.mode === 'backup' ? 'Confirm Backup' : pinGate?.mode === 'import' ? 'Confirm Import' : undefined}
+        title={pinGate?.mode === 'backup' ? t('settings.confirmBackupTitle') : pinGate?.mode === 'import' ? t('settings.confirmImportTitle') : undefined}
         onCancel={() => setPinGate(null)}
         onSubmit={handlePinGateSubmit}
       />
@@ -2403,7 +2409,7 @@ export default function SettingsPage() {
         onOpenChange={setInitializeDbOpen}
         onConfirm={handleInitializeDatabase}
         onSuccess={() => {
-          toast.success('Database initialized. Redirecting to setup...');
+          toast.success(t('settings.dbInitializedRedirecting'));
           setTimeout(() => window.location.replace('/setup'), 1200);
         }}
       />

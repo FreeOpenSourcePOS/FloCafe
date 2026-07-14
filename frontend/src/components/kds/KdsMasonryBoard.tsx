@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { Order, OrderItem } from '@/lib/types';
+import { useI18n } from '@/hooks/useI18n';
 
 // --- Mock data -------------------------------------------------------------
 // Shaped exactly like the real `Order`/`OrderItem` types from src/lib/types.ts
@@ -149,15 +150,16 @@ const URGENCY_STYLES: Record<UrgencyLevel, { badge: string; ring: string; dot: s
 };
 
 const ORDER_TYPE_LABEL: Record<Order['type'], string> = {
-  dine_in: 'Dine-In',
-  takeaway: 'Takeaway',
-  delivery: 'Delivery',
-  online: 'Online',
+  dine_in: 'orders.dineIn',
+  takeaway: 'orders.takeaway',
+  delivery: 'orders.delivery',
+  online: 'orders.online',
 };
 
 // --- Card --------------------------------------------------------------
 
 function KdsOrderCard({ order, onBump }: { order: Order; onBump: (orderId: number) => void }) {
+  const { t } = useI18n();
   const elapsed = useElapsedSeconds(order.created_at);
   const urgency = urgencyFromMinutes(elapsed / 60);
   const styles = URGENCY_STYLES[urgency];
@@ -170,9 +172,9 @@ function KdsOrderCard({ order, onBump }: { order: Order; onBump: (orderId: numbe
           <div>
             <CardTitle className="text-xl font-bold tabular-nums">#{order.order_number}</CardTitle>
             <p className="text-sm text-muted-foreground">
-              {ORDER_TYPE_LABEL[order.type]}
-              {order.table && ` · Table ${order.table.name}`}
-              {order.guest_count ? ` · ${order.guest_count} guests` : ''}
+              {t(ORDER_TYPE_LABEL[order.type])}
+              {order.table && ` · ${t('kds.tableLabel', { name: order.table.name })}`}
+              {order.guest_count ? t('kds.guestCount', { count: order.guest_count }) : ''}
             </p>
           </div>
           <Badge className={cn('shrink-0 font-mono text-sm px-2 py-1 gap-1.5', styles.badge)}>
@@ -214,7 +216,7 @@ function KdsOrderCard({ order, onBump }: { order: Order; onBump: (orderId: numbe
           size="lg"
           onClick={() => onBump(order.id)}
         >
-          Bump
+          {t('kds.bump')}
         </Button>
       </CardFooter>
     </Card>
@@ -224,6 +226,7 @@ function KdsOrderCard({ order, onBump }: { order: Order; onBump: (orderId: numbe
 // --- Board -----------------------------------------------------------------
 
 export default function KdsMasonryBoard() {
+  const { t } = useI18n();
   const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
 
   function handleBump(orderId: number) {
@@ -235,12 +238,12 @@ export default function KdsMasonryBoard() {
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Kitchen Display</h1>
-        <Badge variant="outline">{orders.length} active</Badge>
+        <h1 className="text-2xl font-bold">{t('kds.title')}</h1>
+        <Badge variant="outline">{t('kds.ordersActive', { count: orders.length })}</Badge>
       </div>
 
       {orders.length === 0 ? (
-        <p className="text-muted-foreground text-center py-16">No active orders 🎉</p>
+        <p className="text-muted-foreground text-center py-16">{t('kds.emptyAll')}</p>
       ) : (
         <div className="columns-1 md:columns-3 lg:columns-4 xl:columns-5 gap-4">
           {orders.map((order) => (

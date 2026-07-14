@@ -19,12 +19,12 @@ import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useI18n } from '@/hooks/useI18n';
 
-const itemStatusConfig: Record<string, { dot: string; color: string; label: string }> = {
-  pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', label: 'Waiting' },
-  preparing: { dot: 'bg-blue-500', color: 'text-blue-700', label: 'Preparing' },
-  ready: { dot: 'bg-green-500', color: 'text-green-700', label: 'Ready' },
-  served: { dot: 'bg-purple-500', color: 'text-purple-700', label: 'Served' },
-  cancelled: { dot: 'bg-red-400', color: 'text-red-500', label: 'Cancelled' },
+const itemStatusConfig: Record<string, { dot: string; color: string; labelKey: string }> = {
+  pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', labelKey: 'orders.itemStatusWaiting' },
+  preparing: { dot: 'bg-blue-500', color: 'text-blue-700', labelKey: 'orders.itemStatusPreparing' },
+  ready: { dot: 'bg-green-500', color: 'text-green-700', labelKey: 'orders.itemStatusReady' },
+  served: { dot: 'bg-purple-500', color: 'text-purple-700', labelKey: 'orders.itemStatusServed' },
+  cancelled: { dot: 'bg-red-400', color: 'text-red-500', labelKey: 'orders.itemStatusCancelled' },
 };
 
 const orderStatusBadge: Record<string, { bg: string; text: string; labelKey: string }> = {
@@ -252,7 +252,7 @@ export default function OrdersPage() {
 
   const getTimeSince = (dateStr: string) => {
     const minutes = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (minutes < 1) return 'Just now';
+    if (minutes < 1) return t('common.justNow');
     if (minutes < 60) return `${minutes}m ago`;
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
   };
@@ -263,7 +263,7 @@ export default function OrdersPage() {
     // Check for active POS cart items to avoid accidental loss of progress
     if (cartStore.items.length > 0) {
       const proceed = await confirm(
-        'You have items in your active POS cart. Starting a new order will clear them. Proceed?'
+        t('orders.cartClearConfirm')
       );
       if (!proceed) return;
     }
@@ -285,7 +285,7 @@ export default function OrdersPage() {
     }
 
     router.push('/pos');
-    toast.success(`Started new order for ${order.customer.name}`);
+    toast.success(t('orders.newOrderStarted', { name: order.customer.name }));
   };
 
   const searchCustomersForLink = (query: string) => {
@@ -377,12 +377,12 @@ export default function OrdersPage() {
           const latestBill = data.bill as Bill;
           await printBill(
             { ...latestBill, order },
-            { business_name: currentTenant?.business_name || 'Store', currency: currentTenant?.currency || 'INR' },
+            { business_name: currentTenant?.business_name || t('common.businessNameFallback'), currency: currentTenant?.currency || 'INR' },
             { isReprint: false }
           );
           await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
         } catch {
-          toast.error('Receipt print failed — check printer connection');
+          toast.error(t('orders.receiptPrintFailedHint'));
         }
       }
     }
@@ -401,7 +401,7 @@ export default function OrdersPage() {
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
       await printBill(
         { ...order.bill, order },
-        { business_name: currentTenant?.business_name || 'Store', currency: currentTenant?.currency || 'INR' },
+        { business_name: currentTenant?.business_name || t('common.businessNameFallback'), currency: currentTenant?.currency || 'INR' },
         { isReprint }
       );
       await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
@@ -421,9 +421,9 @@ export default function OrdersPage() {
       toast.error(t('orders.onlyOwnersRemove'));
       return;
     }
-    if (!await confirm(t('orders.removeItemConfirm'), { destructive: true, confirmLabel: 'Remove' })) return;
+    if (!await confirm(t('orders.removeItemConfirm'), { destructive: true, confirmLabel: t('common.remove') })) return;
     try {
-      await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: 'Removed by manager' });
+      await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: t('orders.removedByManager') });
       toast.success(t('orders.itemRemoved'));
       fetchOrders();
     } catch (err: unknown) {
@@ -458,7 +458,7 @@ export default function OrdersPage() {
       shareBillViaWhatsApp(
         order.bill,
         { phone: order.customer.phone, country_code: order.customer.country_code },
-        { business_name: currentTenant?.business_name || 'Store', currency: currentTenant?.currency || 'INR' }
+        { business_name: currentTenant?.business_name || t('common.businessNameFallback'), currency: currentTenant?.currency || 'INR' }
       );
     } catch {
       toast.error(t('orders.whatsappFailed'));
@@ -470,7 +470,7 @@ export default function OrdersPage() {
 
     // Check if PIN is required
     if (discountRequiresApproval && discountModal.value > 0 && !discountPin) {
-      toast.error('Manager PIN required for discounts');
+      toast.error(t('orders.managerPinRequired'));
       return;
     }
 
@@ -496,7 +496,7 @@ export default function OrdersPage() {
   };
 
   const handleConvertToTakeaway = async (order: Order) => {
-    const tableNote = order.table ? ` and free table ${order.table.name}` : '';
+    const tableNote = order.table ? t('orders.freeTableSuffix', { name: order.table.name }) : '';
     if (!await confirm(t('orders.convertToTakeawayConfirm', { number: order.order_number, tableNote }))) return;
     setConvertingOrderId(order.id);
     try {
@@ -701,7 +701,7 @@ export default function OrdersPage() {
               <div key={heldOrder.tableId} className="bg-white rounded-xl border border-blue-200 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
                  <div className="p-4 border-b border-gray-100 bg-blue-50/50 flex justify-between items-center">
                    <div>
-                     <p className="font-bold text-gray-900">{tables.find(t => t.id === heldOrder.tableId)?.name || 'Table'}</p>
+                     <p className="font-bold text-gray-900">{tables.find(t => t.id === heldOrder.tableId)?.name || t('common.tableFallback')}</p>
                      <p className="text-xs text-gray-500">{new Date(heldOrder.heldAt).toLocaleTimeString()}</p>
                    </div>
                    <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-bold tracking-wide">{t('orders.held')}</span>
@@ -799,7 +799,7 @@ export default function OrdersPage() {
                       <button
                         onClick={() => handleWhatsAppShare(order)}
                         className="p-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white transition-colors"
-                        title="Share via WhatsApp"
+                        title={t('common.shareViaWhatsApp')}
                       >
                         <MessageCircle size={14} />
                       </button>
@@ -809,7 +809,7 @@ export default function OrdersPage() {
                         onClick={() => setConfirmPrintBillId(order.bill!.id)}
                         disabled={printingBillId === order.bill.id}
                         className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-50 transition-colors"
-                        title={(printHistory[order.bill.id]?.length ?? 0) > 0 ? 'Reprint' : 'Print'}
+                        title={(printHistory[order.bill.id]?.length ?? 0) > 0 ? t('common.reprint') : t('common.print')}
                       >
                         <Printer size={14} />
                       </button>
@@ -839,9 +839,9 @@ export default function OrdersPage() {
                     <button
                       onClick={() => handleCreateNewOrderForCustomer(order)}
                       className="flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition-colors shrink-0"
-                      title="Start new order for this customer"
+                      title={t('orders.startNewOrderForCustomer')}
                     >
-                      <Plus size={12} /> New Order
+                      <Plus size={12} /> {t('orders.newOrder')}
                     </button>
                   </div>
                 ) : isOwnerOrManager && !['completed', 'cancelled'].includes(order.status) ? (
@@ -876,7 +876,7 @@ export default function OrdersPage() {
                         className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-blue-600 transition-colors"
                       >
                         <UserPlus size={14} />
-                        Link Customer
+                        {t('orders.linkCustomer')}
                       </button>
                     )}
                     {linkCustomerOrderId === order.id && linkCustomerResults.length > 0 && (
@@ -894,7 +894,7 @@ export default function OrdersPage() {
                                 <span className="text-xs text-gray-500 ml-2">{customer.phone}</span>
                               )}
                             </div>
-                            {linkingCustomer && <span className="text-xs text-gray-400">Linking...</span>}
+                            {linkingCustomer && <span className="text-xs text-gray-400">{t('orders.linking')}</span>}
                           </button>
                         ))}
                       </div>
@@ -911,7 +911,7 @@ export default function OrdersPage() {
                         <div key={item.id} className="py-1.5">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span className={`w-2 h-2 rounded-full shrink-0 ${config.dot}`} title={config.label} />
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${config.dot}`} title={t(config.labelKey)} />
                               <span className={`text-sm font-medium ${config.color}`}>
                                 {item.quantity}x
                               </span>
@@ -926,7 +926,7 @@ export default function OrdersPage() {
                                 <button
                                   onClick={() => deleteItem(order.id, item.id)}
                                   className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-                                  title="Remove item"
+                                  title={t('common.removeItem')}
                                 >
                                   <Trash2 size={14} />
                                 </button>
@@ -950,23 +950,23 @@ export default function OrdersPage() {
                   {/* Bill summary */}
                   <div className="mt-3 pt-3 border-t border-dashed border-gray-200 space-y-1">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Subtotal</span>
+                      <span className="text-gray-500">{t('common.subtotal')}</span>
                       <span className="text-gray-700">{currency}{subtotal.toLocaleString()}</span>
                     </div>
                     {discount > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-purple-600">Discount</span>
+                        <span className="text-purple-600">{t('common.discount')}</span>
                         <span className="text-purple-600">-{currency}{discount.toLocaleString()}</span>
                       </div>
                     )}
                     {tax > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Tax</span>
+                        <span className="text-gray-500">{t('common.tax')}</span>
                         <span className="text-gray-700">{currency}{tax.toLocaleString()}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-100">
-                      <span className="text-gray-900">Total</span>
+                      <span className="text-gray-900">{t('common.total')}</span>
                       <span className="text-gray-900">{currency}{total.toLocaleString()}</span>
                     </div>
                     {bill && payStatus === 'partial' && (
@@ -992,7 +992,7 @@ export default function OrdersPage() {
                             <button
                               onClick={() => restoreItem(order.id, item.id)}
                               className="p-1 rounded hover:bg-green-50 text-green-400 hover:text-green-600"
-                              title="Restore"
+                              title={t('common.restore')}
                             >
                               <RotateCcw size={12} />
                             </button>
@@ -1002,7 +1002,7 @@ export default function OrdersPage() {
                     </div>
                   )}
 
-                  {/* Print History */}
+                  {t('orders.printHistory')}
                   {order.bill && printHistory[order.bill.id]?.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <button
@@ -1012,14 +1012,14 @@ export default function OrdersPage() {
                         className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
                       >
                         {printHistoryExpanded[order.bill!.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                        Print History
+                        {t('orders.printHistory')}
                       </button>
 
                       {printHistoryExpanded[order.bill!.id] && (
                         <div className="mt-2 pl-4 space-y-1">
                           {printHistory[order.bill!.id].map((print, index) => (
                             <div key={print.id} className="text-xs text-gray-500">
-                              {index + 1}. {print.print_type === 'reprint' ? 'Reprinted' : 'Printed'} by {print.user_name} at {new Date(print.printed_at).toLocaleString()}
+                              {index + 1}. {t('orders.printHistoryEntry', { printedType: print.print_type === 'reprint' ? t('orders.reprint') : t('orders.printed'), user: print.user_name, time: new Date(print.printed_at).toLocaleString() })}
                             </div>
                           ))}
                         </div>
@@ -1038,7 +1038,7 @@ export default function OrdersPage() {
                         className="flex-1 justify-center"
                       >
                         <CreditCard size={14} className="mr-1.5" />
-                        {generatingBill === order.id ? 'Generating...' : 'Checkout'}
+                        {generatingBill === order.id ? t('orders.generating') : t('orders.checkout')}
                       </Button>
                     )}
                     {!['completed', 'cancelled'].includes(order.status) && (
@@ -1061,7 +1061,7 @@ export default function OrdersPage() {
                         className="flex-1 justify-center border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                       >
                         <ShoppingBag size={14} className="mr-1.5" />
-                        {convertingOrderId === order.id ? 'Converting...' : 'Convert to Takeaway'}
+                        {convertingOrderId === order.id ? t('orders.converting') : t('orders.convertToTakeaway')}
                       </Button>
                     )}
                     {!['completed', 'cancelled'].includes(order.status) && (
@@ -1081,7 +1081,7 @@ export default function OrdersPage() {
                         ) : (
                           <Lock size={14} className="mr-1.5" />
                         )}
-                        {cancellingOrderId === order.id ? 'Cancelling...' : t('common.cancel')}
+                        {cancellingOrderId === order.id ? t('orders.cancelling') : t('common.cancel')}
                       </Button>
                     )}
                   </div>
@@ -1107,12 +1107,12 @@ export default function OrdersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
             <h2 className="text-lg font-bold text-gray-900 mb-2">
-              {(printHistory[confirmPrintBillId]?.length ?? 0) > 0 ? 'Reprint Receipt' : 'Print Receipt'}
+              {(printHistory[confirmPrintBillId]?.length ?? 0) > 0 ? t('orders.reprintReceiptTitle') : t('orders.printReceiptTitle')}
             </h2>
             <p className="text-sm text-gray-600 mb-6">
               {(printHistory[confirmPrintBillId]?.length ?? 0) > 0
-                ? 'This receipt was already printed. The reprint will be marked with a "REPRINT" banner.'
-                : 'Are you sure you want to print this receipt?'}
+                ? t('orders.reprintReceiptWarning')
+                : t('orders.printReceiptConfirm')}
             </p>
             <div className="flex justify-end gap-2">
               <Button
@@ -1129,10 +1129,10 @@ export default function OrdersPage() {
               >
                 <Printer size={14} className="mr-1.5" />
                 {printingBillId === confirmPrintBillId
-                  ? 'Printing...'
+                  ? t('orders.printing')
                   : (printHistory[confirmPrintBillId]?.length ?? 0) > 0
-                    ? 'Confirm Reprint'
-                    : 'Confirm Print'}
+                    ? t('orders.confirmReprint')
+                    : t('orders.confirmPrint')}
               </Button>
             </div>
           </div>
@@ -1148,7 +1148,7 @@ export default function OrdersPage() {
             <div className="space-y-4">
               <div>
                 <label htmlFor="cancelReason" className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason (optional)
+                  {t('common.reasonOptional')}
                 </label>
                 <input
                   id="cancelReason"
@@ -1170,7 +1170,7 @@ export default function OrdersPage() {
                     className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                   />
                   <label htmlFor="freeTable" className="text-sm text-gray-700">
-                    Free table {cancelModal.order.table.name}
+                    {t('orders.freeTable', { name: cancelModal.order.table.name })}
                   </label>
                 </div>
               )}
@@ -1178,7 +1178,7 @@ export default function OrdersPage() {
               {cancelModal.order.status !== 'pending' && (
                 <div>
                   <label htmlFor="overridePin" className="block text-sm font-medium text-gray-700 mb-1">
-                    Override PIN
+                    {t('orders.overridePinLabel')}
                   </label>
                   <input
                     id="overridePin"
@@ -1206,7 +1206,7 @@ placeholder={t('orders.managerPin')}
                 disabled={cancellingOrderId === cancelModal.order.id}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
-                {cancellingOrderId === cancelModal.order.id ? 'Cancelling...' : 'Confirm Cancel'}
+                {cancellingOrderId === cancelModal.order.id ? t('orders.cancelling') : t('orders.confirmCancel')}
               </Button>
             </div>
           </div>
@@ -1217,7 +1217,7 @@ placeholder={t('orders.managerPin')}
       {discountModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">Apply Discount - Order #{discountModal.order.order_number}</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('orders.applyDiscountTitle', { number: discountModal.order.order_number })}</h2>
 
             <div className="space-y-4">
               {/* Discount Type Toggle */}
@@ -1231,7 +1231,7 @@ placeholder={t('orders.managerPin')}
                   }`}
                 >
                   <Percent size={14} />
-                  Percentage
+                  {t('common.percentage')}
                 </button>
                 <button
                   onClick={() => updateDiscountModal({ type: 'amount', value: 0 })}
@@ -1242,14 +1242,14 @@ placeholder={t('orders.managerPin')}
                   }`}
                 >
                   <DollarSign size={14} />
-                  Amount
+                  {t('common.amount')}
                 </button>
               </div>
 
               {/* Discount Value */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {discountModal.type === 'percentage' ? 'Discount Percentage' : 'Discount Amount'}
+                  {discountModal.type === 'percentage' ? t('orders.discountPercentageLabel') : t('orders.discountAmountLabel')}
                 </label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
@@ -1285,18 +1285,18 @@ placeholder={t('orders.managerPin')}
               {/* Preview */}
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Subtotal</span>
+                  <span className="text-gray-500">{t('common.subtotal')}</span>
                   <span className="text-gray-900">{currency}{Number(discountModal.order.subtotal).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">Tax</span>
+                  <span className="text-gray-500">{t('common.tax')}</span>
                   <span className="text-gray-900">{currency}{Number(discountModal.order.tax_amount || 0).toLocaleString()}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-purple-600">
-                    Discount
+                    {t('common.discount')}
                     {discountModal.type === 'percentage' && discountModal.value > 0 && (
-                      <span className="text-gray-400 ml-1">({discountModal.value}% on subtotal)</span>
+                      <span className="text-gray-400 ml-1">{t('orders.percentOnSubtotal', { value: discountModal.value })}</span>
                     )}
                   </span>
                   <span className="text-purple-600">
@@ -1308,7 +1308,7 @@ placeholder={t('orders.managerPin')}
                   </span>
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 flex justify-between text-sm font-bold">
-                  <span className="text-gray-900">New Total</span>
+                  <span className="text-gray-900">{t('orders.newTotal')}</span>
                   <span className="text-gray-900">
                     {currency}{
                       discountModal.type === 'percentage'
@@ -1322,7 +1322,7 @@ placeholder={t('orders.managerPin')}
 
             {discountRequiresApproval && discountModal.value > 0 && (
               <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">Manager PIN</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('orders.managerPinLabel')}</label>
                 <input
                   type="password"
                   value={discountPin}
@@ -1349,7 +1349,7 @@ placeholder={t('orders.managerPin')}
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >
                 <Percent size={14} className="mr-1.5" />
-                Apply Discount
+                {t('orders.applyDiscount')}
               </Button>
             </div>
           </div>
@@ -1395,14 +1395,14 @@ placeholder={t('orders.managerPin')}
                 ))
               }
               {products.filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase())).length === 0 && (
-                <div className="px-3 py-4 text-sm text-gray-400 text-center">No items found</div>
+                <div className="px-3 py-4 text-sm text-gray-400 text-center">{t('orders.noItemsFound')}</div>
               )}
             </div>
 
             {/* Selected items */}
             {selectedItems.length > 0 && (
               <div className="space-y-2 mb-3">
-                <p className="text-xs font-medium text-gray-500 uppercase">Selected Items</p>
+                <p className="text-xs font-medium text-gray-500 uppercase">{t('orders.selectedItems')}</p>
                 {selectedItems.map(item => (
                   <div key={item.product_id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
                     <div className="flex-1 min-w-0">
@@ -1454,7 +1454,7 @@ placeholder={t('orders.managerPin')}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 <Plus size={14} className="mr-1.5" />
-                {addingItems ? 'Adding...' : `Add ${selectedItems.length} Item(s)`}
+                {addingItems ? t('orders.adding') : t('orders.addItemsCount', { count: selectedItems.length })}
               </Button>
             </div>
           </div>

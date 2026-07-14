@@ -54,6 +54,7 @@ export default function StaffPage() {
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchStaff(); }, []);
 
   const openAdd = () => {

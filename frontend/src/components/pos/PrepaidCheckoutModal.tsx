@@ -33,9 +33,9 @@ interface Props {
 }
 
 const methods = [
-  { key: 'cash', label: 'Cash', icon: Banknote },
-  { key: 'card', label: 'Card', icon: CreditCard },
-  { key: 'upi', label: 'UPI', icon: Smartphone },
+  { key: 'cash', labelKey: 'pos.methodCash', icon: Banknote },
+  { key: 'card', labelKey: 'pos.methodCard', icon: CreditCard },
+  { key: 'upi', labelKey: 'pos.methodUpi', icon: Smartphone },
 ] as const;
 
 // Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
@@ -226,7 +226,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           <div>
             <h2 className="text-lg font-bold text-gray-900">{t('pos.checkout')}</h2>
             <p className="text-xs text-gray-400 mt-0.5 capitalize">
-              {cart.orderType.replace('_', '-')} order
+              {t(`pos.orderTypeSuffix_${cart.orderType}` as 'pos.orderTypeSuffix_dine_in' | 'pos.orderTypeSuffix_takeaway' | 'pos.orderTypeSuffix_delivery' | 'pos.orderTypeSuffix_online')}
             </p>
           </div>
           <button
@@ -404,7 +404,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                       }`}
                     >
                       <Icon size={14} />
-                      {m.label}
+                      {t(m.labelKey)}
                     </button>
                   );
                 })}
@@ -516,7 +516,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
             className="w-full h-12 text-base font-semibold rounded-xl"
             size="lg"
           >
-            {taxLoading ? 'Calculating tax...' : processing ? 'Processing...' : `Confirm Payment · ${currency}${fmt(remaining)}`}
+            {taxLoading ? t('pos.calculatingTax') : processing ? t('pos.processingPayment') : t('pos.confirmPaymentAmount', { currency, amount: fmt(remaining) })}
           </Button>
         </div>
       </div>

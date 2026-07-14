@@ -59,7 +59,7 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
         <DialogHeader>
           <DialogTitle>{t('settings.databaseHealthCheck')}</DialogTitle>
           <DialogDescription>
-            Compares this database&apos;s structure against what the app expects and flags anything that&apos;s missing or unexpected.
+            {t('settings.healthCheckDescription')}
           </DialogDescription>
         </DialogHeader>
 
@@ -71,7 +71,7 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
           {isClean && (
             <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg p-4">
               <CheckCircle2 size={18} />
-              <span className="text-sm font-medium">No issues found — this database matches the expected schema.</span>
+              <span className="text-sm font-medium">{t('settings.healthCheckClean')}</span>
             </div>
           )}
 
@@ -79,7 +79,7 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Wrench size={16} className="text-brand" />
-                <h3 className="font-medium text-gray-900">Safe to fix automatically ({safeFindings.length})</h3>
+                <h3 className="font-medium text-gray-900">{t('settings.healthCheckSafeHeader', { count: safeFindings.length })}</h3>
               </div>
               <div className="space-y-2">
                 {safeFindings.map((f) => <FindingRow key={f.id} finding={f} />)}
@@ -91,10 +91,10 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle size={16} className="text-amber-600" />
-                <h3 className="font-medium text-gray-900">Needs manual review ({reviewFindings.length})</h3>
+                <h3 className="font-medium text-gray-900">{t('settings.healthCheckReviewHeader', { count: reviewFindings.length })}</h3>
               </div>
               <p className="text-xs text-gray-500 mb-2">
-                These are never applied automatically — they may involve removing data or changing a column&apos;s type, which this tool will not do on its own.
+                {t('settings.healthCheckReviewHint')}
               </p>
               <div className="space-y-2">
                 {reviewFindings.map((f) => <FindingRow key={f.id} finding={f} />)}
@@ -107,7 +107,7 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t('settings.close')}</Button>
           {safeFindings.length > 0 && (
             <Button onClick={onApplySafeFixes} disabled={applying}>
-              {applying ? 'Applying…' : `Apply ${safeFindings.length} Safe Fix${safeFindings.length === 1 ? '' : 'es'}`}
+              {applying ? t('settings.applyingFixes') : t('settings.applySafeFixes', { count: safeFindings.length })}
             </Button>
           )}
         </DialogFooter>

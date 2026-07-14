@@ -65,7 +65,7 @@ export default function POSPage() {
       await printKot(order);
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
-      const msg = err instanceof Error ? err.message : 'check printer connection';
+      const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');
       toast.error(`${t('pos.kotPrintFailed')}: ${msg}`);
     }
   };
@@ -151,7 +151,7 @@ export default function POSPage() {
 
   const handlePlaceOrder = async () => {
     if (cart.items.length === 0) {
-      toast.error('Cart is empty');
+      toast.error(t('pos.cartEmpty'));
       return;
     }
     if (customerMandatory && !cart.customerId) {
@@ -322,7 +322,7 @@ export default function POSPage() {
 
   const handleHoldTable = async (tableId: string) => {
     if (cart.items.length === 0) {
-      toast.error('Cart is empty');
+      toast.error(t('pos.cartEmpty'));
       return;
     }
     const tableName = tables.find((t) => t.id === tableId)?.name || tableId;
@@ -330,11 +330,11 @@ export default function POSPage() {
       await heldOrders.holdOrder(tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
       setShowTablePicker(false);
-      toast.success(`Order held for ${tableName}`);
+      toast.success(t('pos.orderHeld', { tableName }));
       await refreshTables();
     } catch (err: unknown) {
       const e = err as Error;
-      toast.error(e.message || 'Failed to hold order');
+      toast.error(e.message || t('pos.holdOrderFailed'));
     }
   };
 
@@ -350,7 +350,7 @@ export default function POSPage() {
   // Add cart items directly to existing order
   const handleAddCartToOrder = async (table: Table, order: Order) => {
     if (cart.items.length === 0) {
-      toast.error('Cart is empty');
+      toast.error(t('pos.cartEmpty'));
       return;
     }
     setSubmitting(true);

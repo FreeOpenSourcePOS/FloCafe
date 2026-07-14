@@ -39,12 +39,13 @@ export default function AddonGroupsPage() {
       const { data } = await api.get('/addon-groups');
       setGroups(data.addon_groups || []);
     } catch {
-      toast.error('Failed to load addon groups');
+      toast.error(t('addonGroups.failedToLoad'));
     } finally {
       setLoading(false);
     }
   };
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { fetchGroups(); }, []);
 
   const resetForm = () => {
@@ -75,10 +76,10 @@ export default function AddonGroupsPage() {
       };
       if (editingGroup) {
         await api.put(`/addon-groups/${editingGroup.id}`, payload);
-        toast.success('Group updated');
+        toast.success(t('addonGroups.groupUpdated'));
       } else {
         await api.post('/addon-groups', payload);
-        toast.success('Group created');
+        toast.success(t('addonGroups.groupCreated'));
       }
       resetForm();
       fetchGroups();
@@ -86,19 +87,19 @@ export default function AddonGroupsPage() {
       const error = err as { response?: { data?: { errors?: Record<string, string[]> } } };
       const msg = error.response?.data?.errors
         ? Object.values(error.response.data.errors)[0]?.[0]
-        : 'Failed to save';
+        : t('common.failedToSave');
       toast.error(msg);
     }
   };
 
   const handleDeleteGroup = async (id: number) => {
-    if (!await confirm('Delete this addon group and all its addons?', { destructive: true, confirmLabel: 'Delete' })) return;
+    if (!await confirm(t('addonGroups.deleteGroupConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/addon-groups/${id}`);
-      toast.success('Group deleted');
+      toast.success(t('addonGroups.groupDeleted'));
       fetchGroups();
     } catch {
-      toast.error('Failed to delete');
+      toast.error(t('common.failedToDelete'));
     }
   };
 
@@ -110,12 +111,12 @@ export default function AddonGroupsPage() {
         name: addonForm.name,
         price: Number(addonForm.price),
       });
-      toast.success('Addon added');
+      toast.success(t('addonGroups.addonAdded'));
       setAddonForm({ name: '', price: '0' });
       setAddingAddonTo(null);
       fetchGroups();
     } catch {
-      toast.error('Failed to add addon');
+      toast.error(t('addonGroups.failedToAddAddon'));
     }
   };
 
@@ -126,23 +127,23 @@ export default function AddonGroupsPage() {
         name: addonForm.name,
         price: Number(addonForm.price),
       });
-      toast.success('Addon updated');
+      toast.success(t('addonGroups.addonUpdated'));
       setAddonForm({ name: '', price: '0' });
       setEditingAddon(null);
       fetchGroups();
     } catch {
-      toast.error('Failed to update addon');
+      toast.error(t('addonGroups.failedToUpdateAddon'));
     }
   };
 
   const handleDeleteAddon = async (groupId: number, addonId: number) => {
-    if (!await confirm('Delete this addon?', { destructive: true, confirmLabel: 'Delete' })) return;
+    if (!await confirm(t('addonGroups.deleteAddonConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/addon-groups/${groupId}/addons/${addonId}`);
-      toast.success('Addon deleted');
+      toast.success(t('addonGroups.addonDeleted'));
       fetchGroups();
     } catch {
-      toast.error('Failed to delete addon');
+      toast.error(t('addonGroups.failedToDeleteAddon'));
     }
   };
 

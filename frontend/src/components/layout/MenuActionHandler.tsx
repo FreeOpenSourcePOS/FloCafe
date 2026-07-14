@@ -4,37 +4,39 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
+import { useI18n } from '@/hooks/useI18n';
 
 type PendingPinAction = 'backup' | 'restore' | null;
 
 export default function MenuActionHandler() {
+  const { t } = useI18n();
   const router = useRouter();
   const [pendingPinAction, setPendingPinAction] = useState<PendingPinAction>(null);
 
   async function runBackup(pin: string) {
-    if (!window.electronAPI?.backupDatabase) return { success: false, error: 'Not available' };
+    if (!window.electronAPI?.backupDatabase) return { success: false, error: t('common.notAvailable') };
 
-    toast.loading('Creating backup...', { id: 'backup' });
+    toast.loading(t('backup.creating'), { id: 'backup' });
     const result = await window.electronAPI.backupDatabase(pin);
     toast.remove('backup');
 
     if (result.success) {
-      toast.success(`Backup saved to ${result.path}`);
+      toast.success(t('backup.savedTo', { path: result.path ?? '' }));
     } else if (result.error !== 'Cancelled') {
-      toast.error(`Backup failed: ${result.error}`);
+      toast.error(t('backup.failedWith', { error: result.error ?? '' }));
     }
     return result;
   }
 
   async function runRestore(pin: string) {
-    if (!window.electronAPI?.restoreBackup) return { success: false, error: 'Not available' };
+    if (!window.electronAPI?.restoreBackup) return { success: false, error: t('common.notAvailable') };
 
     const result = await window.electronAPI.restoreBackup(pin);
     if (result.success) {
-      toast.success('Database restored successfully. Restarting...');
+      toast.success(t('restore.success'));
       setTimeout(() => window.location.reload(), 1500);
     } else if (result.error !== 'Cancelled') {
-      toast.error(`Restore failed: ${result.error}`);
+      toast.error(t('restore.failedWith', { error: result.error ?? '' }));
     }
     return result;
   }
@@ -58,7 +60,7 @@ export default function MenuActionHandler() {
     }
 
     if (!status.isSet) {
-      toast.error('Set a Master PIN in Settings → Data before performing this action');
+      toast.error(t('settings.setMasterPinFirst'));
       router.push('/settings?tab=data&action=master-pin');
       return;
     }
@@ -122,8 +124,8 @@ export default function MenuActionHandler() {
     <MasterPinPrompt
       open={pendingPinAction !== null}
       mode="verify"
-      title={pendingPinAction === 'backup' ? 'Confirm Backup' : 'Confirm Restore'}
-      description="Enter your device Master PIN to continue."
+      title={pendingPinAction === 'backup' ? t('settings.confirmBackupTitle') : t('settings.confirmRestoreTitle')}
+      description={t('settings.enterMasterPinPrompt')}
       onCancel={() => setPendingPinAction(null)}
       onSubmit={handlePinSubmit}
     />

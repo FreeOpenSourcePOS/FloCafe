@@ -19,6 +19,14 @@ const statusColors: Record<string, string> = {
   held: 'bg-blue-500',
 };
 
+const TABLE_STATUS_LABEL: Record<string, string> = {
+  available: 'tables.statusAvailable',
+  occupied: 'tables.statusOccupied',
+  reserved: 'tables.statusReserved',
+  cleaning: 'tables.statusCleaning',
+  held: 'tables.statusHeld',
+};
+
 interface ReserveModalProps {
   table: Table;
   onClose: () => void;
@@ -207,7 +215,7 @@ export default function TablesPage() {
       const { data } = await api.get('/tables');
       setTables(data.tables || []);
     } catch {
-      toast.error('Failed to load tables');
+      toast.error(t('tables.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -217,6 +225,7 @@ export default function TablesPage() {
     fetchTables();
     const interval = setInterval(fetchTables, 10000);
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -277,7 +286,7 @@ export default function TablesPage() {
       fetchTables();
     } catch (err: unknown) {
       const e = err as { response?: { data?: { error?: string } } };
-      toast.error(e.response?.data?.error || 'Failed to update');
+      toast.error(e.response?.data?.error || t('tables.updateStatusFailed'));
     }
   };
 
@@ -327,7 +336,7 @@ export default function TablesPage() {
                     <h3 className="font-bold text-gray-900">{table.name}</h3>
                     <span className="text-xs text-gray-400">· {t('tables.capacitySeats', { count: table.capacity })}</span>
                   </div>
-                  <span className="text-xs text-gray-400 capitalize">{table.status}</span>
+                  <span className="text-xs text-gray-400">{t(TABLE_STATUS_LABEL[table.status] ?? table.status)}</span>
                 </div>
 
                 {/* Orders section */}
@@ -388,7 +397,7 @@ export default function TablesPage() {
                   )}
                   <button onClick={() => toggleActive(table)}
                     className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                    {!table.is_active ? <><RotateCcw size={12} /> Reactivate</> : 'Deactivate'}
+                    {!table.is_active ? <><RotateCcw size={12} /> {t('tables.reactivate')}</> : t('tables.deactivate')}
                   </button>
                 </div>
               </div>
@@ -403,7 +412,7 @@ export default function TablesPage() {
               <div className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`} />
               <h3 className="font-bold text-lg text-gray-900">{table.name}</h3>
               <p className="text-sm text-gray-500">{t('tables.capacitySeats', { count: table.capacity })}</p>
-              <p className="text-xs text-gray-400 capitalize mt-1">{table.status}</p>
+              <p className="text-xs text-gray-400 mt-1">{t(TABLE_STATUS_LABEL[table.status] ?? table.status)}</p>
               {table.floor && <p className="text-xs text-gray-400">{table.floor}</p>}
               {table.status === 'reserved' && table.reservation_customer_name && (
                 <p className="text-xs text-yellow-700 font-medium mt-1 truncate">{table.reservation_customer_name}</p>
@@ -426,7 +435,7 @@ export default function TablesPage() {
               )}
               <button onClick={() => toggleActive(table)}
                 className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                {!table.is_active ? 'Reactivate' : 'Deactivate'}
+                {!table.is_active ? t('tables.reactivate') : t('tables.deactivate')}
               </button>
             </div>
           ))}

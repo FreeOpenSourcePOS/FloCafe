@@ -37,14 +37,14 @@ function phoneMatchesInput(customerPhone: string | null | undefined, inputDigits
   return customerDigits === inputDigits || customerDigits.endsWith(inputDigits) || inputDigits.endsWith(customerDigits);
 }
 
-function TagBadges({ counts }: { counts: Record<string, number> }) {
+function TagBadges({ counts, t }: { counts: Record<string, number>; t: (k: string, p?: Record<string, string | number>) => string }) {
   const entries = Object.entries(counts).filter(([, n]) => n > 0);
   if (entries.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1">
       {entries.map(([tag, count]) => (
         <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${tagColor(tag)}`}>
-          {tag} ×{count}
+          {t('pos.tagCount', { tag, count })}
         </span>
       ))}
     </div>
@@ -202,7 +202,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             <X size={14} />
           </button>
         </div>
-        {hasTags && <TagBadges counts={customer.tag_counts!} />}
+        {hasTags && <TagBadges counts={customer.tag_counts!} t={t} />}
       </div>
     );
   }
@@ -246,7 +246,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               onClick={handleSelectMatched}
               className="h-10 shrink-0 px-3 bg-brand text-white text-xs rounded-lg hover:bg-brand-hover whitespace-nowrap"
             >
-              Select
+              {t('pos.select')}
             </button>
           )}
           {isNew && name.trim() && (
@@ -255,7 +255,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               disabled={creating}
               className="h-10 shrink-0 px-3 bg-brand text-white text-xs rounded-lg hover:bg-brand-hover disabled:opacity-50 whitespace-nowrap"
             >
-              {creating ? '…' : 'Add'}
+              {creating ? t('pos.loadingEllipsis') : t('common.add')}
             </button>
           )}
         </div>
@@ -308,12 +308,12 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           {matched ? (
             <>
               <p className="text-xs text-green-600 font-medium">{t('pos.customerFoundClick')}</p>
-              {matched.tag_counts && <TagBadges counts={matched.tag_counts} />}
+              {matched.tag_counts && <TagBadges counts={matched.tag_counts} t={t} />}
               <button
                 onClick={handleSelectMatched}
                 className="w-full py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover"
               >
-                Select {matched.name}
+                {t('pos.selectName', { name: matched.name })}
               </button>
             </>
           ) : (
@@ -325,7 +325,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
                   disabled={creating}
                   className="w-full py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover disabled:opacity-50"
                 >
-                  {creating ? 'Creating…' : `Add "${name.trim()}"`}
+                  {creating ? t('pos.creating') : t('pos.addName', { name: name.trim() })}
                 </button>
               )}
             </>

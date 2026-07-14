@@ -8,10 +8,10 @@ import type { Order, OrderItem } from '@/lib/types';
 import { useI18n } from '@/hooks/useI18n';
 
 const STATUS_CONFIG = {
-  pending: { label: 'Waiting', color: 'bg-yellow-500', border: 'border-yellow-300', text: 'text-yellow-700', bg: 'bg-yellow-50', btnBg: 'bg-yellow-500 hover:bg-yellow-600' },
-  preparing: { label: 'Preparing', color: 'bg-blue-500', border: 'border-blue-300', text: 'text-blue-700', bg: 'bg-blue-50', btnBg: 'bg-blue-500 hover:bg-blue-600' },
-  ready: { label: 'Ready', color: 'bg-green-500', border: 'border-green-300', text: 'text-green-700', bg: 'bg-green-50', btnBg: 'bg-green-500 hover:bg-green-600' },
-  served: { label: 'Delivered', color: 'bg-purple-500', border: 'border-purple-300', text: 'text-purple-700', bg: 'bg-purple-50', btnBg: 'bg-purple-500 hover:bg-purple-600' },
+  pending: { labelKey: 'kds.statusWaiting', color: 'bg-yellow-500', border: 'border-yellow-300', text: 'text-yellow-700', bg: 'bg-yellow-50', btnBg: 'bg-yellow-500 hover:bg-yellow-600' },
+  preparing: { labelKey: 'kds.statusPreparing', color: 'bg-blue-500', border: 'border-blue-300', text: 'text-blue-700', bg: 'bg-blue-50', btnBg: 'bg-blue-500 hover:bg-blue-600' },
+  ready: { labelKey: 'kds.statusReady', color: 'bg-green-500', border: 'border-green-300', text: 'text-green-700', bg: 'bg-green-50', btnBg: 'bg-green-500 hover:bg-green-600' },
+  served: { labelKey: 'kds.statusDelivered', color: 'bg-purple-500', border: 'border-purple-300', text: 'text-purple-700', bg: 'bg-purple-50', btnBg: 'bg-purple-500 hover:bg-purple-600' },
 } as const;
 
 type KitchenStatus = keyof typeof STATUS_CONFIG;
@@ -60,8 +60,11 @@ interface LoggedInUser {
 
 type ConnectionMode = 'websocket' | 'rest' | null;
 
+const activeStatus = (s: string | undefined): KitchenStatus => (s || 'pending') as KitchenStatus;
+
 export default function KdsPage() {
   const { t } = useI18n();
+  const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[s].labelKey);
   const [user, setUser] = useState<LoggedInUser | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
@@ -108,17 +111,18 @@ export default function KdsPage() {
     setUpdating(itemId);
     try {
       await api.patch(`/order-items/${itemId}/status`, { status });
-      toast.success(`Item marked as ${STATUS_CONFIG[status].label}`);
+      toast.success(t('kds.itemMarked', { status: statusLabel(status) }));
     } catch {
-      toast.error('Failed to update item');
+      toast.error(t('kds.failedToUpdateItem'));
     } finally {
       setUpdating(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getTimeSince = (dateStr: string) => {
     const minutes = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (minutes < 1) return 'Just now';
+    if (minutes < 1) return t('common.justNow');
     if (minutes < 60) return `${minutes}m`;
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
   };
@@ -214,7 +218,7 @@ export default function KdsPage() {
           setConnected(true);
           setLoading(false);
         } else if (msg.type === 'auth_error') {
-          setLoginError(msg.message || 'Authentication failed');
+          setLoginError(msg.message || t('kds.authFailed'));
           ws.close();
           setLoading(false);
         } else if (msg.type === 'initial_data' && msg.orders) {
@@ -238,6 +242,7 @@ export default function KdsPage() {
         setConnectionMode('rest');
       }
     }, 5000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -288,8 +293,8 @@ export default function KdsPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
           <div className="text-center mb-8">
             <ChefHat size={48} className="mx-auto text-brand mb-4" />
-            <h1 className="text-2xl font-bold text-gray-900">Kitchen Display</h1>
-            <p className="text-gray-500 mt-2">Sign in with your kitchen staff account</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('kds.title')}</h1>
+            <p className="text-gray-500 mt-2">{t('kds.loginSubtitle')}</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-4">
@@ -333,7 +338,7 @@ export default function KdsPage() {
           </form>
 
           <p className="text-xs text-gray-400 text-center mt-6">
-            Only chef, manager, or owner roles can access the kitchen display.
+            {t('kds.loginHint')}
           </p>
         </div>
       </div>
@@ -346,23 +351,23 @@ export default function KdsPage() {
         <div className="flex items-center gap-3 mb-3">
           <ChefHat size={24} className="text-brand" />
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Kitchen Display</h1>
+            <h1 className="text-xl font-bold text-gray-900">{t('kds.title')}</h1>
             <p className="text-xs text-gray-500">{user.name} ({user.role})</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
             {connectionMode === 'websocket' ? (
-              <span title="WebSocket connected"><Wifi size={16} className="text-green-500" /></span>
+              <span title={t('kds.wsConnected')}><Wifi size={16} className="text-green-500" /></span>
             ) : connectionMode === 'rest' ? (
-              <span title="REST polling (fallback)"><WifiOff size={16} className="text-amber-500" /></span>
+              <span title={t('kds.restPolling')}><WifiOff size={16} className="text-amber-500" /></span>
             ) : null}
             <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
             <span className="text-xs text-gray-400">
-              {connected ? (connectionMode === 'websocket' ? 'Live' : 'Polling 5s') : 'Connecting...'}
+              {connected ? (connectionMode === 'websocket' ? t('kds.connectionLive') : t('kds.connectionPolling')) : t('kds.connectionConnecting')}
             </span>
             <button
               onClick={handleLogout}
               className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 ml-2"
-              title="Logout"
+              title={t('nav.logout')}
             >
               <LogOut size={20} />
             </button>
@@ -385,7 +390,7 @@ export default function KdsPage() {
                 }`}
               >
                 <div className={`w-2 h-2 rounded-full ${config.color}`} />
-                {config.label}
+                {statusLabel(status)}
                 <span className="text-xs px-1.5 py-0.5 rounded-full bg-white/60">
                   {count}
                 </span>
@@ -464,8 +469,8 @@ export default function KdsPage() {
         {filteredOrders.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
             <ChefHat size={48} className="mb-3 opacity-30" />
-            <p className="text-lg">No {STATUS_CONFIG[activeTab].label.toLowerCase()} items</p>
-            <p className="text-sm">Items will appear here when their status changes</p>
+            <p className="text-lg">{t('kds.emptyItems', { status: statusLabel(activeTab).toLowerCase() })}</p>
+            <p className="text-sm">{t('kds.emptyHint')}</p>
           </div>
         )}
       </div>
@@ -481,15 +486,15 @@ export default function KdsPage() {
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-400 font-medium mb-1">Order #{modalItem.orderNumber}</p>
+                <p className="text-xs text-gray-400 font-medium mb-1">{t('kds.modalOrderNumber', { orderNumber: modalItem.orderNumber })}</p>
                 <h2 className="text-2xl font-bold text-gray-900 leading-tight">{activeItem.product_name}</h2>
                 <div className="flex items-center gap-2 mt-1.5">
-                  <span className={`text-sm font-bold ${STATUS_CONFIG[(activeItem.status || 'pending') as KitchenStatus].text}`}>
+                  <span className={`text-sm font-bold ${STATUS_CONFIG[activeStatus(activeItem.status)].text}`}>
                     {activeItem.quantity}×
                   </span>
-                  <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_CONFIG[(activeItem.status || 'pending') as KitchenStatus].bg} ${STATUS_CONFIG[(activeItem.status || 'pending') as KitchenStatus].text}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[(activeItem.status || 'pending') as KitchenStatus].color}`} />
-                    {STATUS_CONFIG[(activeItem.status || 'pending') as KitchenStatus].label}
+                  <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_CONFIG[activeStatus(activeItem.status)].bg} ${STATUS_CONFIG[activeStatus(activeItem.status)].text}`}>
+                    <div className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[activeStatus(activeItem.status)].color}`} />
+                    {statusLabel(activeStatus(activeItem.status))}
                   </span>
                 </div>
               </div>
@@ -503,7 +508,7 @@ export default function KdsPage() {
 
             {activeItem.addons && activeItem.addons.length > 0 && (
               <div className="bg-blue-50 rounded-xl p-3">
-                <p className="text-xs font-semibold text-blue-700 mb-1.5 uppercase tracking-wide">Add-ons</p>
+                <p className="text-xs font-semibold text-blue-700 mb-1.5 uppercase tracking-wide">{t('kds.addonsLabel')}</p>
                 <div className="flex flex-wrap gap-1.5">
                   {activeItem.addons.map((addon, i) => (
                     <span key={i} className="text-sm bg-white text-blue-700 px-2.5 py-1 rounded-lg border border-blue-200 font-medium">
@@ -516,7 +521,7 @@ export default function KdsPage() {
 
             {activeItem.special_instructions && (
               <div className="bg-red-50 rounded-xl p-3">
-                <p className="text-xs font-semibold text-red-700 mb-1 uppercase tracking-wide">Special Instructions</p>
+                <p className="text-xs font-semibold text-red-700 mb-1 uppercase tracking-wide">{t('kds.specialInstructionsLabel')}</p>
                 <p className="text-sm text-red-700 italic font-medium break-words">{activeItem.special_instructions}</p>
               </div>
             )}
@@ -531,7 +536,7 @@ export default function KdsPage() {
                         ? 'bg-gray-100 text-gray-400 line-through'
                         : 'bg-gray-100 text-gray-400'
                   }`}>
-                    {STATUS_CONFIG[s].label}
+                    {statusLabel(s)}
                   </div>
                   {i < STATUS_ORDER.length - 1 && <ChevronRight size={12} className="text-gray-300 shrink-0" />}
                 </div>
@@ -545,7 +550,7 @@ export default function KdsPage() {
                   disabled={updating === activeItem.id}
                   className={`w-full py-5 rounded-2xl text-white text-xl font-bold transition-all active:scale-95 disabled:opacity-50 ${STATUS_CONFIG[nextStatus].btnBg}`}
                 >
-                  {updating === activeItem.id ? 'Updating…' : `Mark as ${STATUS_CONFIG[nextStatus].label}`}
+                  {updating === activeItem.id ? t('kds.updating') : t('kds.markAs', { status: statusLabel(nextStatus) })}
                 </button>
               )}
               {prevStatus && (
@@ -555,12 +560,12 @@ export default function KdsPage() {
                   className="w-full py-4 rounded-2xl text-gray-600 text-base font-semibold border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <ChevronLeft size={18} />
-                  Back to {STATUS_CONFIG[prevStatus].label}
+                  {t('kds.backTo', { status: statusLabel(prevStatus) })}
                 </button>
               )}
               {!nextStatus && (
                 <div className="text-center py-4 text-gray-400 text-base font-medium">
-                  ✓ Delivered — no further actions
+                  {t('kds.deliveredDone')}
                 </div>
               )}
             </div>

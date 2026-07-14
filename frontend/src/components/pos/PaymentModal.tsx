@@ -20,9 +20,9 @@ interface Props {
 }
 
 const methods = [
-  { key: 'cash', label: 'Cash', icon: Banknote },
-  { key: 'card', label: 'Card', icon: CreditCard },
-  { key: 'upi', label: 'UPI', icon: Smartphone },
+  { key: 'cash', labelKey: 'pos.methodCash', icon: Banknote },
+  { key: 'card', labelKey: 'pos.methodCard', icon: CreditCard },
+  { key: 'upi', labelKey: 'pos.methodUpi', icon: Smartphone },
 ] as const;
 
 interface Payment {
@@ -437,7 +437,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                       }`}
                     >
                       <Icon size={14} />
-                      {m.label}
+                      {t(m.labelKey)}
                     </button>
                   );
                 })}
@@ -465,7 +465,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             onClick={addSplit}
             className="w-full py-2 text-sm border border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-brand hover:text-brand transition-colors flex items-center justify-center gap-1"
           >
-            <Plus size={14} /> Split Payment
+            <Plus size={14} /> {t('pos.splitPayment')}
           </button>
 
           {/* Change Returned */}
@@ -487,7 +487,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 <span className={`text-sm font-semibold ${
                   change > 0 ? 'text-emerald-800' : 'text-gray-400'
                 }`}>
-                  Change Returned
+                  {t('pos.changeReturned')}
                 </span>
               </div>
               <span className={`text-xl font-bold tabular-nums ${
@@ -544,7 +544,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
         <div className="px-5 pb-5 border-t border-gray-100 pt-3">
           <Button onClick={handlePay} disabled={processing || totalPayment < remaining - 0.01} className="w-full" size="lg">
-            {processing ? 'Processing...' : `${t('pos.pay')} ${currency}${fmt(totalPayment)}`}
+            {processing ? t('pos.processingPayment') : `${t('pos.pay')} ${currency}${fmt(totalPayment)}`}
           </Button>
         </div>
       </div>

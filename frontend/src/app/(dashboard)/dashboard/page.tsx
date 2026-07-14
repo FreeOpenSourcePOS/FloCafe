@@ -175,7 +175,7 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-medium text-gray-900">#{order.order_number}</span>
                           <span className={`text-xs font-medium ${orderStatusColor[order.status] || 'text-gray-500'}`}>
-                            {t((`orders.status.${order.status}` as 'orders.status.pending' | 'orders.status.preparing' | 'orders.status.ready' | 'orders.status.served' | 'orders.status.completed' | 'orders.status.cancelled'))}
+                            {t(`orders.${order.status}` as 'orders.pending' | 'orders.preparing' | 'orders.ready' | 'orders.served' | 'orders.completed' | 'orders.cancelled')}
                           </span>
                         </div>
                         <p className="text-xs text-gray-400 truncate">

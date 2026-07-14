@@ -42,6 +42,12 @@ const paymentStatusBadge: Record<string, { bg: string; text: string; labelKey: s
   unpaid: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'orders.unpaidBadge' },
 };
 
+const orderTypeLabel: Record<string, string> = {
+  dine_in: 'orders.dineIn',
+  takeaway: 'orders.takeaway',
+  delivery: 'orders.delivery',
+};
+
 type FilterType = 'all' | 'active' | 'unpaid' | 'held';
 
 const tabLabelKey: Record<FilterType, string> = {
@@ -780,7 +786,7 @@ export default function OrdersPage() {
                     {(() => { const badge = orderStatusBadge[order.status]; return badge ? (
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>{t(badge.labelKey)}</span>
                     ) : null; })()}
-                    <span className="text-sm text-gray-500 capitalize">{t(`orders.${order.type}`)}</span>
+                    <span className="text-sm text-gray-500 capitalize">{t(orderTypeLabel[order.type] ?? order.type)}</span>
                     {order.table && (
                       <span className="text-sm text-orange-600 font-medium">{order.table.name}</span>
                     )}

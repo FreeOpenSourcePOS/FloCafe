@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { useI18n } from '@/hooks/useI18n';
-import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { formatCurrencyForTenant } from '@/lib/countries';
+import { useAuthStore } from '@/store/auth';
 
 interface TaxLine {
   title: string;
@@ -19,12 +20,16 @@ interface Props {
 
 export default function TaxBreakdown({ taxAmount, taxBreakdown, theme = 'dark' }: Props) {
   const { t } = useI18n();
-  const fmt = useFormatCurrency();
+  const currentTenant = useAuthStore((s) => s.currentTenant);
+  const tenantCountry = currentTenant?.country;
+  const tenantCurrency = currentTenant?.currency ?? 'INR';
   const [expanded, setExpanded] = useState(false);
   const breakdownArray = Array.isArray(taxBreakdown) ? taxBreakdown : [];
   const hasBreakdown = breakdownArray.length > 0;
 
   if (!taxAmount || taxAmount <= 0) return null;
+
+  const fmt = (n: number) => formatCurrencyForTenant(n, tenantCountry, tenantCurrency);
 
   return (
     <div>

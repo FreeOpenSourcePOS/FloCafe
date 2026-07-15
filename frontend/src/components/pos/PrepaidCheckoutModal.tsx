@@ -10,7 +10,6 @@ import { useI18n } from '@/hooks/useI18n';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
-import { useAuthStore } from '@/store/auth';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface LoyaltySettings {
@@ -49,7 +48,6 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const { tax, loading: taxLoading } = useTaxPreview(cart.items, cart.customerId);
   const customer = cart.customer;
   const { t } = useI18n();
-  const { currentTenant } = useAuthStore();
   const currencyFmt = useFormatCurrency();
 
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);
@@ -262,7 +260,6 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     <TaxBreakdown
                       taxAmount={preview.taxAmount}
                       taxBreakdown={preview.taxBreakdown}
-                      currencyCode={currentTenant?.currency || 'INR'}
                     />
                     {preview.packagingCharge > 0 && (
                       <div className="flex justify-between text-xs text-slate-300">

@@ -11,7 +11,6 @@ import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
 import { useI18n } from '@/hooks/useI18n';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
-import { useAuthStore } from '@/store/auth';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface Props {
@@ -139,7 +138,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     ? parseFloat((totalPayment - remaining).toFixed(2))
     : 0;
 
-  const { currentTenant } = useAuthStore();
   const currencyFmt = useFormatCurrency();
 
   const handleApplyDiscount = async (customVal?: number) => {
@@ -280,7 +278,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               <TaxBreakdown
                 taxAmount={Number(bill.tax_amount)}
                 taxBreakdown={bill.tax_breakdown}
-                currencyCode={currentTenant?.currency || 'INR'}
               />
               {Number(bill.delivery_charge) > 0 && (
                 <div className="flex justify-between text-slate-300">

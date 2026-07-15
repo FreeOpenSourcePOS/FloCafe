@@ -35,10 +35,6 @@ const THAILAND_VAT_RATE = 7.0;
 
 import { COUNTRIES } from '../countries';
 
-const COUNTRY_TAX_NAMES: Record<string, string> = Object.fromEntries(
-  COUNTRIES.map((c) => [c.code, c.taxName ?? 'Tax'])
-);
-
 function round(value: number, decimals: number = 2): number {
   return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
 }
@@ -134,7 +130,7 @@ function calculateDefaultTax(product: Product, taxableAmount: number, country?: 
   }
 
   const taxAmount = computeTaxAmount(product.tax_type, taxableAmount, rate);
-  const title = (country && COUNTRY_TAX_NAMES[country]) || 'Tax';
+  const title = (country && COUNTRIES.find((c) => c.code === country)?.taxName) || 'Tax';
 
   return {
     tax_amount: round(taxAmount, 2),

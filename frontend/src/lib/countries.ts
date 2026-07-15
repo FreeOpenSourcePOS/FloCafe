@@ -6,6 +6,5 @@ export {
   formatCurrency,
   formatCurrencyForTenant,
   countryName,
-  countryFlag,
   type Country,
 } from '@countries';

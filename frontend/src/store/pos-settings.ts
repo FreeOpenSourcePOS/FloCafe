@@ -5,16 +5,9 @@ export type PaperSize = 'thermal58' | 'thermal80' | 'a4' | 'a5';
 export type PrinterPrintMode = 'escpos' | 'browser';
 export type BillTemplate = 'classic' | 'compact' | 'detailed';
 
-function detectInitialLanguage(): 'en' | 'es' {
-  if (typeof navigator === 'undefined') return 'en';
-  const tag = navigator.language?.toLowerCase() ?? '';
-  return tag.startsWith('es') ? 'es' : 'en';
-}
-
 export interface PosSettingsState {
   showProductImages: boolean;
   customerMandatory: boolean;
-  phoneDigits: number;
   billingType: 'postpaid' | 'prepaid';
   tablesRequired: boolean;
   // UI language for i18n routing. Synced from tenant on auth load.
@@ -47,7 +40,6 @@ export interface PosSettingsState {
   // Actions
   setShowProductImages: (show: boolean) => void;
   setCustomerMandatory: (mandatory: boolean) => void;
-  setPhoneDigits: (digits: number) => void;
   setLanguage: (lang: 'en' | 'es') => void;
   setPrinterPaperSize: (size: PaperSize) => void;
   setPrinterEnabled: (enabled: boolean) => void;
@@ -77,10 +69,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
     (set) => ({
       showProductImages: true,
       customerMandatory: false,
-      phoneDigits: 10,
       billingType: 'postpaid',
       tablesRequired: true,
-      language: detectInitialLanguage(),
+      language: 'en',
       // Printer defaults
       printerPaperSize: 'thermal58',
       printerEnabled: false,
@@ -106,7 +97,6 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // Actions
       setShowProductImages: (show) => set({ showProductImages: show }),
       setCustomerMandatory: (mandatory) => set({ customerMandatory: mandatory }),
-      setPhoneDigits: (digits) => set({ phoneDigits: digits }),
       setLanguage: (language) => set({ language }),
       setPrinterPaperSize: (size) => set({ printerPaperSize: size }),
       setPrinterEnabled: (enabled) => set({ printerEnabled: enabled }),

@@ -13,6 +13,7 @@
     "axios": "^1.18.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "libphonenumber-js": "^1.13.8",
     "lucide-react": "^0.563.0",
     "next": "^16.2.10",
     "radix-ui": "^1.4.3",

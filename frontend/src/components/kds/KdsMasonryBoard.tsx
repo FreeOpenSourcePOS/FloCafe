@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import type { Order, OrderItem } from '@/lib/types';
 import { useI18n } from '@/hooks/useI18n';
+import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 
 // --- Mock data -------------------------------------------------------------
 // Shaped exactly like the real `Order`/`OrderItem` types from src/lib/types.ts
@@ -149,12 +150,7 @@ const URGENCY_STYLES: Record<UrgencyLevel, { badge: string; ring: string; dot: s
   critical: { badge: 'bg-red-100 text-red-700 border-red-200', ring: 'border-l-4 border-l-red-500', dot: 'bg-red-500' },
 };
 
-const ORDER_TYPE_LABEL: Record<Order['type'], string> = {
-  dine_in: 'orders.dineIn',
-  takeaway: 'orders.takeaway',
-  delivery: 'orders.delivery',
-  online: 'orders.online',
-};
+const ORDER_TYPE_LABEL = ORDER_TYPE_LABEL_KEYS;
 
 // --- Card --------------------------------------------------------------
 

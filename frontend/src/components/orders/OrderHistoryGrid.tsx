@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { formatCurrency } from '@/lib/countries';
 import type { Order, OrderItem, Bill } from '@/lib/types';
 import { useI18n } from '@/hooks/useI18n';
+import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 
 // --- Mock data ---------------------------------------------------------
 // Shaped like the real `Order` / `Bill` types (src/lib/types.ts) so this
@@ -107,24 +108,17 @@ const STATUS_LABEL_KEY: Record<string, string> = {
   cancelled: 'orders.voided',
 };
 
-const ORDER_TYPE_LABEL_KEY: Record<Order['type'], string> = {
-  dine_in: 'orders.dineIn',
-  takeaway: 'orders.takeaway',
-  delivery: 'orders.delivery',
-  online: 'orders.online',
-};
-
 function formatTimestamp(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
     month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   });
 }
 
-function HistoryOrderCard({ order, currency }: { order: HistoryOrder; currency: string }) {
+function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; currency: string; locale: string }) {
   const { t } = useI18n();
   const items: OrderItem[] = order.items ?? [];
   const bill = order.bill;
-  const fmt = (n: number) => formatCurrency(n, currency);
+  const fmt = (n: number) => formatCurrency(n, currency, locale);
 
   return (
     <Card className="gap-0 py-0 overflow-hidden">
@@ -139,7 +133,7 @@ function HistoryOrderCard({ order, currency }: { order: HistoryOrder; currency: 
           </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          {t(ORDER_TYPE_LABEL_KEY[order.type])}
+          {t(ORDER_TYPE_LABEL_KEYS[order.type])}
           {order.table && ` · ${t('orders.tableAt', { name: order.table.name })}`}
           {order.guest_count ? ` · ${t('orders.guestCount', { count: order.guest_count })}` : ''}
         </p>
@@ -212,6 +206,7 @@ function HistoryOrderCard({ order, currency }: { order: HistoryOrder; currency: 
 export default function OrderHistoryGrid() {
   const [orders] = useState<HistoryOrder[]>(MOCK_HISTORY);
   const currency = 'INR'; // sourced from tenant.currency in the real page
+  const locale = 'en-IN'; // matched from currency in the real page
 
   return (
     <div className="p-4">
@@ -222,7 +217,7 @@ export default function OrderHistoryGrid() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-max content-start items-start">
         {orders.map((order) => (
-          <HistoryOrderCard key={order.id} order={order} currency={currency} />
+          <HistoryOrderCard key={order.id} order={order} currency={currency} locale={locale} />
         ))}
       </div>
     </div>

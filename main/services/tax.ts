@@ -33,6 +33,12 @@ const INDIA_FIXED_RATES: Record<string, number> = {
 
 const THAILAND_VAT_RATE = 7.0;
 
+import { COUNTRIES } from '../countries';
+
+const COUNTRY_TAX_NAMES: Record<string, string> = Object.fromEntries(
+  COUNTRIES.map((c) => [c.code, c.taxName ?? 'Tax'])
+);
+
 function round(value: number, decimals: number = 2): number {
   return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
 }
@@ -59,7 +65,7 @@ export function calculateItemTax(
     case 'TH':
       return calculateThailandTax(product, taxableAmount);
     default:
-      return calculateDefaultTax(product, taxableAmount);
+      return calculateDefaultTax(product, taxableAmount, tenant.country);
   }
 }
 
@@ -120,7 +126,7 @@ function calculateThailandTax(product: Product, taxableAmount: number): TaxResul
   };
 }
 
-function calculateDefaultTax(product: Product, taxableAmount: number): TaxResult {
+function calculateDefaultTax(product: Product, taxableAmount: number, country?: string): TaxResult {
   const rate = product.tax_rate || 0;
 
   if (rate <= 0) {
@@ -128,10 +134,11 @@ function calculateDefaultTax(product: Product, taxableAmount: number): TaxResult
   }
 
   const taxAmount = computeTaxAmount(product.tax_type, taxableAmount, rate);
+  const title = (country && COUNTRY_TAX_NAMES[country]) || 'Tax';
 
   return {
     tax_amount: round(taxAmount, 2),
-    tax_breakdown: [{ title: 'Tax', rate, amount: round(taxAmount, 2) }],
+    tax_breakdown: [{ title, rate, amount: round(taxAmount, 2) }],
     tax_type: product.tax_type,
   };
 }

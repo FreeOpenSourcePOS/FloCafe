@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, CreditCard, Banknote, Smartphone, Wallet, Plus, Trash2, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent } from 'lucide-react';
+import { X, Wallet, Plus, Trash2, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -10,6 +10,7 @@ import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
 import { useI18n } from '@/hooks/useI18n';
+import { PAYMENT_METHODS } from '@/lib/payment-methods';
 
 interface Props {
   bill: Bill;
@@ -18,12 +19,6 @@ interface Props {
   onPaid: () => void;
   onBillUpdate?: (bill: Bill) => void;
 }
-
-const methods = [
-  { key: 'cash', labelKey: 'pos.methodCash', icon: Banknote },
-  { key: 'card', labelKey: 'pos.methodCard', icon: CreditCard },
-  { key: 'upi', labelKey: 'pos.methodUpi', icon: Smartphone },
-] as const;
 
 interface Payment {
   method: string;
@@ -416,7 +411,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           {payments.map((p, idx) => (
             <div key={idx} className="bg-gray-50 rounded-xl p-2.5 space-y-1.5">
               <div className="flex gap-1">
-                {methods.map((m) => {
+                {PAYMENT_METHODS.map((m) => {
                   const Icon = m.icon;
                   return (
                     <button

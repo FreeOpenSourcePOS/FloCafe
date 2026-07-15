@@ -9,20 +9,23 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown } from 'lucide-react';
 import type { Customer } from '@/lib/types';
-import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import { getCurrencySymbol, countryName } from '@/lib/countries';
+import { dialCodeFor, toE164 } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
+
 
 export default function CustomersPage() {
   const { currentTenant } = useAuthStore();
   const { t } = useI18n();
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR');
-  const tenantCountry = getCountryByCode(currentTenant?.country || '');
-  const dialCode = tenantCountry?.dialCode || '+91';
+  const defaultCountry = currentTenant?.country || 'IN';
+  const dialCode = dialCodeFor(defaultCountry) || '+91';
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
+
   const [form, setForm] = useState({ name: '', phone: '', email: '', country_code: dialCode });
 
   const [ledgerCustomer, setLedgerCustomer] = useState<Customer | null>(null);
@@ -66,24 +69,32 @@ export default function CustomersPage() {
 
   const openAdd = () => {
     setEditingCustomer(null);
+
     setForm({ name: '', phone: '', email: '', country_code: dialCode });
     setShowForm(true);
   };
 
   const openEdit = (c: Customer) => {
     setEditingCustomer(c);
+
     setForm({ name: c.name, phone: c.phone || '', email: c.email || '', country_code: c.country_code || dialCode });
     setShowForm(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    const e164 = toE164(form.phone, defaultCountry);
+    if (!e164) {
+      toast.error(t('pos.invalidPhone', { country: countryName(defaultCountry) }));
+      return;
+    }
+    const payload = { ...form, phone: e164, country_code: dialCodeFor(defaultCountry) };
     try {
       if (editingCustomer) {
-        await api.put(`/customers/${editingCustomer.id}`, form);
+        await api.put(`/customers/${editingCustomer.id}`, payload);
         toast.success(t('customer.updated'));
       } else {
-        await api.post('/customers', form);
+        await api.post('/customers', payload);
         toast.success(t('customer.added'));
       }
       setShowForm(false);
@@ -242,8 +253,10 @@ export default function CustomersPage() {
             <form onSubmit={handleSave} className="space-y-4">
               <input type="text" placeholder={t('customer.name')} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
-              <input type="tel" placeholder={t('customer.phone')} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+              <div className="flex items-stretch gap-2">
+                <input type="tel" placeholder={dialCode ? `${dialCode} ${t('customer.phone')}` : t('customer.phone')} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                  className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+              </div>
               <input type="email" placeholder={`${t('customer.email')} (${t('common.optional')})`} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
               <Button type="submit" className="w-full">{editingCustomer ? t('customer.update') : t('customer.add')}</Button>

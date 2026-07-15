@@ -18,6 +18,7 @@ import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useI18n } from '@/hooks/useI18n';
+import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 
 const itemStatusConfig: Record<string, { dot: string; color: string; labelKey: string }> = {
   pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', labelKey: 'orders.itemStatusWaiting' },
@@ -42,11 +43,7 @@ const paymentStatusBadge: Record<string, { bg: string; text: string; labelKey: s
   unpaid: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'orders.unpaidBadge' },
 };
 
-const orderTypeLabel: Record<string, string> = {
-  dine_in: 'orders.dineIn',
-  takeaway: 'orders.takeaway',
-  delivery: 'orders.delivery',
-};
+const orderTypeLabel = ORDER_TYPE_LABEL_KEYS;
 
 type FilterType = 'all' | 'active' | 'unpaid' | 'held';
 

@@ -61,6 +61,7 @@ function businessShape(s: Record<string, string>) {
     timezone: s.timezone || 'Asia/Kolkata',
     currency: s.currency || 'INR',
     country: s.country || 'IN',
+    language: s.language || 'en',
     gstin: s.gstin || '',
     state_code: s.state_code || '',
     business_address: s.business_address || '',
@@ -99,14 +100,16 @@ router.get('/business', (req: Request, res: Response) => {
 
 router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { business_name, timezone, currency, country, gstin, state_code,
-      business_address, business_phone, instagram_handle, billing_type, tables_required,
+    const { business_name, timezone, currency, country, language,
+      gstin, state_code, business_address, business_phone, instagram_handle,
+      billing_type, tables_required,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn } = req.body;
 
     const db = getDatabase();
     upsertSettings(db, {
-      business_name, timezone, currency, country, gstin, state_code,
-      business_address, business_phone, instagram_handle, billing_type, tables_required,
+      business_name, timezone, currency, country, language,
+      gstin, state_code, business_address, business_phone, instagram_handle,
+      billing_type, tables_required,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn,
     });
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, Banknote, CreditCard, Smartphone, Sparkles, ArrowLeftRight, CheckCircle2, User, Plus, Trash2, Percent, Wallet } from 'lucide-react';
+import { X, Sparkles, ArrowLeftRight, CheckCircle2, User, Plus, Trash2, Percent, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
@@ -9,6 +9,7 @@ import { useTaxPreview } from '@/hooks/use-tax-preview';
 import { useI18n } from '@/hooks/useI18n';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
+import { PAYMENT_METHODS } from '@/lib/payment-methods';
 
 interface LoyaltySettings {
   loyalty_enabled: boolean;
@@ -31,12 +32,6 @@ interface Props {
   onClose: () => void;
   onConfirm: (payments: PrepaidPayment[], walletAmount: number, discount: PrepaidDiscount | null) => void;
 }
-
-const methods = [
-  { key: 'cash', labelKey: 'pos.methodCash', icon: Banknote },
-  { key: 'card', labelKey: 'pos.methodCard', icon: CreditCard },
-  { key: 'upi', labelKey: 'pos.methodUpi', icon: Smartphone },
-] as const;
 
 // Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
 // Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
@@ -382,7 +377,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           {payments.map((p, idx) => (
             <div key={idx} className="bg-gray-50 rounded-xl p-2.5 space-y-1.5">
               <div className="flex gap-1">
-                {methods.map((m) => {
+                {PAYMENT_METHODS.map((m) => {
                   const Icon = m.icon;
                   return (
                     <button

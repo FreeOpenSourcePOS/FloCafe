@@ -6,10 +6,11 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, X, Search, UserPlus, RotateCcw } from 'lucide-react';
 import type { Table, Customer, Order } from '@/lib/types';
-import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
-import { getCountryByCode } from '@/lib/countries';
+import { countryName } from '@/lib/countries';
+import { toE164, dialCodeFor } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
+
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
@@ -34,10 +35,9 @@ interface ReserveModalProps {
 }
 
 function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
-  const { phoneDigits } = usePosSettingsStore();
   const { currentTenant } = useAuthStore();
   const { t } = useI18n();
-  const dialCode = getCountryByCode(currentTenant?.country || '')?.dialCode || '+91';
+  const dialCode = dialCodeFor(currentTenant?.country ?? 'IN') || '+91';
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
   const [selected, setSelected] = useState<Customer | null>(null);
@@ -47,6 +47,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
 
   const searchCustomers = (q: string) => {
     if (q.length < 2) { setResults([]); return; }
@@ -61,14 +62,15 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
 
   const handleCreateCustomer = async () => {
     if (!newName.trim() || !newPhone.trim()) return;
-    const digitsOnly = newPhone.replace(/\D/g, '');
-    if (digitsOnly.length !== phoneDigits) {
-      toast.error(t('tables.phoneDigitsExact', { count: phoneDigits }));
+    const country = currentTenant?.country ?? 'IN';
+    const e164 = toE164(newPhone, country);
+    if (!e164) {
+      toast.error(t('pos.invalidPhone', { country: countryName(country) }));
       return;
     }
     setCreating(true);
     try {
-      const { data } = await api.post('/customers', { name: newName, phone: digitsOnly, country_code: dialCode });
+      const { data } = await api.post('/customers', { name: newName, phone: e164, country_code: dialCode });
       setSelected(data.customer);
       setShowCreate(false);
       setQuery('');
@@ -154,9 +156,12 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
               <div className="space-y-2 border border-gray-200 rounded-xl p-3">
                 <input type="text" placeholder={t('products.nameLabel')} value={newName} onChange={(e) => setNewName(e.target.value)}
                   className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
-                <input type="text" placeholder={`${t('settings.phone')} (${phoneDigits} digits)`} value={newPhone}
-                  onChange={(e) => setNewPhone(e.target.value.replace(/\D/g, '').slice(0, phoneDigits))}
-                  className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                <div className="flex items-stretch gap-2">
+
+                  <input type="tel" inputMode="numeric" placeholder={`${dialCode} ${t('settings.phone')}`} value={newPhone}
+                    onChange={(e) => setNewPhone(e.target.value)}
+                    className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
+                </div>
                 <div className="flex gap-2">
                   <button onClick={() => setShowCreate(false)} className="flex-1 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">{t('tables.cancel')}</button>
                   <button onClick={handleCreateCustomer} disabled={creating || !newName.trim() || !newPhone.trim()}

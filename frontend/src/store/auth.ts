@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import api from '@/lib/api';
 import type { User, Tenant } from '@/lib/types';
+import { usePosSettingsStore } from '@/store/pos-settings';
+
+function syncTenantLanguage(t: Tenant | null | undefined) {
+  if (t?.language === 'en' || t?.language === 'es') {
+    usePosSettingsStore.getState().setLanguage(t.language);
+  }
+}
 
 interface AuthState {
   user: User | null;
@@ -37,21 +44,30 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (email: string, password: string) => {
     const { data } = await api.post('/auth/login', { email, password });
     localStorage.setItem('token', data.access_token);
+    const tenants: Tenant[] = data.tenants;
+    const currentTenant = tenants.length === 1 ? tenants[0] : null;
+    if (currentTenant) localStorage.setItem('tenant', JSON.stringify(currentTenant));
     set({
       user: data.user,
       token: data.access_token,
-      tenants: data.tenants,
+      tenants,
+      currentTenant,
     });
+    syncTenantLanguage(currentTenant);
   },
 
   register: async (registerData: RegisterData) => {
     const { data } = await api.post('/auth/register', registerData);
     localStorage.setItem('token', data.access_token);
+    const tenant: Tenant = data.tenant;
+    localStorage.setItem('tenant', JSON.stringify(tenant));
     set({
       user: data.user,
       token: data.access_token,
-      tenants: [data.tenant],
+      tenants: [tenant],
+      currentTenant: tenant,
     });
+    syncTenantLanguage(tenant);
   },
 
   selectTenant: async (tenantId: number) => {
@@ -62,6 +78,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       token: data.access_token,
       currentTenant: data.tenant,
     });
+    syncTenantLanguage(data.tenant);
   },
 
   logout: () => {
@@ -90,16 +107,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     const currentTenant = tenantStr ? JSON.parse(tenantStr) : null;
 
     if (token) {
-      // Fetch user data
       api.get('/auth/me')
         .then(({ data }) => {
+          const tenants: Tenant[] = data.tenants;
+          const resolved = currentTenant ?? (tenants.length === 1 ? tenants[0] : null);
+          if (resolved && !currentTenant) localStorage.setItem('tenant', JSON.stringify(resolved));
           set({
             user: data.user,
             token,
-            tenants: data.tenants,
-            currentTenant,
+            tenants,
+            currentTenant: resolved,
             loading: false,
           });
+          syncTenantLanguage(resolved);
         })
         .catch(() => {
           localStorage.removeItem('token');

@@ -11,7 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { COUNTRIES } from '@/lib/countries';
+import { COUNTRIES, countryName } from '@/lib/countries';
+import { dialCodeFor } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
@@ -1085,7 +1086,7 @@ export default function SettingsPage() {
                       >
                         <option value="">{t('settings.selectCountry')}</option>
                         {COUNTRIES.map((c) => (
-                          <option key={c.code} value={c.code}>{c.name}</option>
+                          <option key={c.code} value={c.code}>{countryName(c.code)}</option>
                         ))}
                       </select>
                       <input 
@@ -1108,7 +1109,7 @@ export default function SettingsPage() {
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
                       <p className="font-medium text-gray-900">
-                        {COUNTRIES.find(c => c.code === form.countryCode)?.name || '—'}
+                        {form.countryCode ? countryName(form.countryCode) : '—'}
                       </p>
                       <p className="font-medium text-gray-900">
                         {form.timezone || '—'}
@@ -1161,7 +1162,7 @@ export default function SettingsPage() {
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.phone')}</label>
                   {isAdmin ? (
                     <input type="text" value={form.businessPhone} onChange={(e) => setForm((p) => ({ ...p, businessPhone: e.target.value }))}
-                      placeholder={t('settings.phonePlaceholder', { dialCode: COUNTRIES.find((c) => c.code === form.countryCode)?.dialCode ?? '+1' })}
+                      placeholder={t('settings.phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1' })}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
                     <p className="font-medium text-gray-900">{form.businessPhone || '—'}</p>
@@ -1286,17 +1287,7 @@ export default function SettingsPage() {
                   </div>
                   <Toggle value={posSettings.customerMandatory} onChange={posSettings.setCustomerMandatory} />
                 </div>
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <div>
-                      <p className="font-medium text-gray-900">{t('settings.phoneDigits')}</p>
-                      <p className="text-sm text-gray-500">{t('settings.phoneDigitsHint', { count: 10, country: 'India' })}</p>
-                    </div>
-                  </div>
-                  <input type="number" min={7} max={15} value={posSettings.phoneDigits}
-                    onChange={(e) => posSettings.setPhoneDigits(parseInt(e.target.value) || 10)}
-                    className="w-20 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
-                </div>
+                <p className="text-sm text-gray-500">{t('settings.phoneDigitsDerived')}</p>
               </div>
             </div>
           </div>

@@ -60,6 +60,8 @@
     "test:schema-health": "node tests/run-electron-node-test.cjs tests/schema-health.test.ts",
     "test:master-pin": "node tests/run-electron-node-test.cjs tests/master-pin.test.ts",
     "test:database-tools-api": "node tests/run-electron-node-test.cjs tests/database-tools-api.test.ts",
+    "test:customer-soft-reactivate-bindings": "ts-node --transpile-only -P tests/tsconfig.json tests/customer-soft-reactivate-bindings.test.ts",
+    "test:e2e-argentina-flow": "ts-node --transpile-only -P tests/tsconfig.json tests/e2e-argentina-flow.test.ts",
     "test:translations": "ts-node --transpile-only -P tests/tsconfig.json tests/translations.test.ts"
   },
   "author": {
@@ -99,6 +101,7 @@
     "electron-updater": "^6.8.9",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
+    "libphonenumber-js": "^1.13.8",
     "node-thermal-printer": "^4.2.1",
     "qrcode": "^1.5.3",
     "uuid": "^9.0.1",

@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, ArrowRight, Check, Database, KeyRound, Search, Sparkles, UtensilsCrossed } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { COUNTRIES, getCountryByCode, type Country } from '@/lib/countries';
+import { COUNTRIES, getCountryByCode, countryName, type Country } from '@/lib/countries';
 import { getBrowserLanguage, t as translate, type Language } from '@/lib/i18n';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
@@ -71,7 +71,7 @@ export default function SetupPage() {
   const filteredCountries = COUNTRIES.filter((c) => {
     if (!q) return true;
     return (
-      c.name.toLowerCase().includes(q) ||
+      countryName(c.code).toLowerCase().includes(q) ||
       c.code.toLowerCase().includes(q) ||
       c.currency.toLowerCase().includes(q) ||
       (c.locale ?? '').toLowerCase().includes(q)
@@ -131,10 +131,6 @@ export default function SetupPage() {
         currency: countryProfile?.currency,
         timezone: countryProfile?.timezone,
         language,
-        locale: countryProfile?.locale,
-        tax_id_label: countryProfile?.taxIdLabel,
-        tax_name: countryProfile?.taxName,
-        document_title: countryProfile?.documentTitle,
       };
 
       await api.post('/auth/setup/initialize', {
@@ -242,7 +238,7 @@ export default function SetupPage() {
                         }`}
                       >
                         <div>
-                          <div className="font-semibold">{c.name}</div>
+                          <div className="font-semibold">{countryName(c.code)}</div>
                           <div className="text-xs text-muted-foreground">
                             {c.currency} · {c.taxIdLabel || t('setup.noTaxId')} · {c.locale}
                           </div>

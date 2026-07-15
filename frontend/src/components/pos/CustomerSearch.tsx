@@ -3,12 +3,13 @@
 import { useState, useRef, useEffect } from 'react';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
-import { usePosSettingsStore } from '@/store/pos-settings';
 import { useAuthStore } from '@/store/auth';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { getCountryByCode } from '@/lib/countries';
+import { countryName } from '@/lib/countries';
+import { toE164, dialCodeFor } from '@/lib/phone';
 import type { Customer } from '@/lib/types';
+
 import { useI18n } from '@/hooks/useI18n';
 
 interface Props {
@@ -53,11 +54,9 @@ function TagBadges({ counts, t }: { counts: Record<string, number>; t: (k: strin
 
 export default function CustomerSearch({ onSelected, variant = 'default' }: Props = {}) {
   const cart = useCartStore();
-  const { phoneDigits } = usePosSettingsStore();
   const { currentTenant } = useAuthStore();
-  const tenantCountry = getCountryByCode(currentTenant?.country ?? '');
-  const dialCode = tenantCountry?.dialCode ?? '';
   const { t } = useI18n();
+  const dialCode = dialCodeFor(currentTenant?.country ?? 'IN');
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [matched, setMatched] = useState<Customer | null>(null);
@@ -67,7 +66,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const nameRef = useRef<HTMLInputElement>(null);
 
   const customer = cart.customer;
-  const maxLen = phoneDigits || 10;
   const isNew = searched && !matched;
 
   useEffect(() => {
@@ -107,35 +105,11 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value;
-    let cleaned: string;
-    if (val.startsWith('+')) {
-      const spaceIdx = val.indexOf(' ');
-      if (spaceIdx !== -1) {
-        const code = '+' + val.slice(1, spaceIdx).replace(/\D/g, '');
-        const number = val.slice(spaceIdx + 1).replace(/\D/g, '').slice(0, maxLen);
-        cleaned = `${code} ${number}`;
-      } else {
-        cleaned = '+' + val.slice(1).replace(/\D/g, '').slice(0, maxLen + 4);
-      }
-    } else {
-      cleaned = val.replace(/\D/g, '').slice(0, maxLen);
-    }
-    setPhone(cleaned);
+    setPhone(val);
     if (matched !== null) setMatched(null);
     if (name !== '') setName('');
     if (searched) setSearched(false);
-    const localPart = cleaned.includes(' ')
-      ? cleaned.split(' ').slice(1).join('')
-      : cleaned.startsWith('+')
-        ? cleaned.replace(/^\+\d{1,4}/, '')
-        : cleaned;
-    searchByPhone(digitsOnly(localPart));
-  };
-
-  const handlePhoneFocus = () => {
-    if (!phone && dialCode) {
-      setPhone(dialCode + ' ');
-    }
+    searchByPhone(digitsOnly(val));
   };
 
   const handleSelectMatched = () => {
@@ -153,9 +127,15 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   const handleCreate = async () => {
     if (!name.trim() || !phone.trim()) return;
+    const country = currentTenant?.country ?? 'IN';
+    const e164 = toE164(phone, country);
+    if (!e164) {
+      toast.error(t('pos.invalidPhone', { country: countryName(country) }));
+      return;
+    }
     setCreating(true);
     try {
-      const { data } = await api.post('/customers', { name: name.trim(), phone });
+      const { data } = await api.post('/customers', { name: name.trim(), phone: e164, country_code: dialCode });
       cart.setCustomer(data.customer);
       setPhone(''); setName(''); setMatched(null); setSearched(false);
       toast.success(t('pos.customerCreated'));
@@ -212,14 +192,14 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     return (
       <div className="relative w-full min-w-0">
         <div className="h-10 flex items-center gap-2 min-w-0">
+
           <input
             type="tel"
             inputMode="tel"
             value={phone}
             onChange={handlePhoneChange}
-            onFocus={handlePhoneFocus}
             onKeyDown={handlePhoneKeyDown}
-            placeholder={t('pos.phone')}
+            placeholder={dialCode ? `${dialCode} ${t('pos.phone')}` : t('pos.phone')}
             className="h-10 w-44 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none"
           />
           <input
@@ -277,15 +257,18 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   return (
     <div className="space-y-2">
       <div className="grid grid-cols-1 gap-2">
-        <input
-          type="tel"
-          inputMode="numeric"
-          value={phone}
-          onChange={handlePhoneChange}
-          onKeyDown={handlePhoneKeyDown}
-          placeholder={t('pos.phone')}
-          className={`${baseInput} w-full py-2`}
-        />
+        <div className="flex items-stretch gap-2">
+
+          <input
+            type="tel"
+            inputMode="numeric"
+            value={phone}
+            onChange={handlePhoneChange}
+            onKeyDown={handlePhoneKeyDown}
+            placeholder={dialCode ? `${dialCode} ${t('pos.phone')}` : t('pos.phone')}
+            className={`${baseInput} flex-1 py-2`}
+          />
+        </div>
         <input
           ref={nameRef}
           type="text"

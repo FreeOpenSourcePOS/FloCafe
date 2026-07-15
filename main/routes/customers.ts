@@ -138,7 +138,7 @@ router.get('/:id/wallet', (req: Request, res: Response) => {
 
 router.post('/', (req: Request, res: Response) => {
   try {
-    const { phone, name, email, address, notes } = req.body;
+    const { phone, name, email, address, notes, country_code } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ message: 'Name is required' });
@@ -154,6 +154,7 @@ router.post('/', (req: Request, res: Response) => {
             UPDATE customers SET
               name = ?,
               email = ?,
+              country_code = COALESCE(NULLIF(?, ''), country_code),
               address = ?,
               notes = ?,
               is_active = 1,
@@ -162,6 +163,7 @@ router.post('/', (req: Request, res: Response) => {
           `).run(
             String(name).trim(),
             email ? String(email).trim() : null,
+            country_code ? String(country_code).trim() : '',
             address ? String(address).trim() : null,
             notes ? String(notes).trim() : null,
             now(),
@@ -177,13 +179,14 @@ router.post('/', (req: Request, res: Response) => {
 
     const id = 'cust-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
     db.prepare(`
-      INSERT INTO customers (id, phone, name, email, address, notes, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO customers (id, phone, name, email, country_code, address, notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id,
       phone ? String(phone).trim() : null,
       String(name).trim(),
       email ? String(email).trim() : null,
+      country_code ? String(country_code).trim() : null,
       address ? String(address).trim() : null,
       notes ? String(notes).trim() : null,
       now(),

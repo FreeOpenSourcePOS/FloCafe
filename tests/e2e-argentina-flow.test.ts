@@ -123,10 +123,6 @@ async function runArgentinaOnboarding(baseUrl, db) {
       currency: 'ARS',
       timezone: 'America/Argentina/Buenos_Aires',
       language: 'es',
-      locale: 'es-AR',
-      tax_id_label: 'CUIT',
-      tax_name: 'IVA',
-      document_title: 'Comprobante',
       terms_accepted: true,
     },
   });
@@ -137,10 +133,6 @@ async function runArgentinaOnboarding(baseUrl, db) {
   assertEqual(tenant.currency, 'ARS', 'tenant.currency = ARS');
   assertEqual(tenant.timezone, 'America/Argentina/Buenos_Aires', 'tenant.timezone = AR');
   assertEqual(tenant.language, 'es', 'tenant.language = es');
-  assertEqual(tenant.locale, 'es-AR', 'tenant.locale = es-AR');
-  assertEqual(tenant.tax_id_label, 'CUIT', 'tenant.tax_id_label = CUIT');
-  assertEqual(tenant.tax_name, 'IVA', 'tenant.tax_name = IVA');
-  assertEqual(tenant.document_title, 'Comprobante', 'tenant.document_title = Comprobante');
 
   const burger = db.prepare("SELECT id FROM products WHERE id = 'prod-demo-hamburguesa-clasica'").get();
   assert(!!burger, 'Argentina demo seeds the hamburger menu');
@@ -165,7 +157,6 @@ async function runArgentinaSettings(baseUrl, db) {
   const getRes = await api(baseUrl + '/api', '/settings/business', { headers: authHeader });
   assertEqual(getRes.status, 200, 'GET /settings/business returns 200');
   assertEqual(getRes.data.country, 'AR', 'GET returns country = AR');
-  assertEqual(getRes.data.tax_id_label, 'CUIT', 'GET returns CUIT label');
 
   const putRes = await api(baseUrl + '/api', '/settings/business', {
     method: 'PUT',
@@ -175,14 +166,10 @@ async function runArgentinaSettings(baseUrl, db) {
       country: 'AR',
       timezone: 'America/Argentina/Buenos_Aires',
       currency: 'ARS',
-      tax_id_label: 'CUIT',
-      tax_name: 'IVA',
-      document_title: 'Comprobante',
     },
   });
   assertEqual(putRes.status, 200, 'PUT /settings/business returns 200');
   assertEqual(putRes.data.country, 'AR', 'PUT preserves country = AR');
-  assertEqual(putRes.data.tax_id_label, 'CUIT', 'PUT preserves CUIT label');
 
   const verify = await api(baseUrl + '/api', '/settings/business', { headers: authHeader });
   assertEqual(verify.data.business_name, 'Burger AR E2E', 'business_name persisted');
@@ -217,22 +204,22 @@ async function runArgentinaTaxAndCustomers(baseUrl, db) {
 
 async function runArgentinaTranslations(db) {
   console.log('\n4. i18n has matching keys for both languages and every t() reference resolves');
-  const i18nPath = path.join(__dirname, '../frontend/src/lib/i18n.ts');
-  const i18nSrc = fs.readFileSync(i18nPath, 'utf8');
-  const enMatch = i18nSrc.match(/en:\s*\{([\s\S]*?)\},\s*es:/);
-  const esMatch = i18nSrc.match(/es:\s*\{([\s\S]*?)\},\s*\};/);
-  assert(!!enMatch && !!esMatch, 'i18n defines both en and es blocks');
-  if (!enMatch || !esMatch) return;
+  const i18nDir = path.join(__dirname, '../frontend/src/lib/i18n');
+  const enSrc = fs.readFileSync(path.join(i18nDir, 'en.json'), 'utf8');
+  const esSrc = fs.readFileSync(path.join(i18nDir, 'es.json'), 'utf8');
 
-  const enKeys = extractKeys(enMatch[1]);
-  const esKeys = extractKeys(esMatch[1]);
+  const enKeys = extractJsonKeys(enSrc);
+  const esKeys = extractJsonKeys(esSrc);
+  assert(enKeys.size > 0 && esKeys.size > 0, 'i18n defines both en and es blocks');
+  if (enKeys.size === 0 || esKeys.size === 0) return;
+
   assertEqual(enKeys.size, esKeys.size, `en and es have the same number of keys (en=${enKeys.size}, es=${esKeys.size})`);
   const missingInEs = [...enKeys].filter((k) => !esKeys.has(k));
   const missingInEn = [...esKeys].filter((k) => !enKeys.has(k));
   assertEqual(missingInEs.length, 0, `es is missing keys: ${missingInEs.join(', ') || 'none'}`);
   assertEqual(missingInEn.length, 0, `en is missing keys: ${missingInEn.join(', ') || 'none'}`);
 
-  assert(i18nSrc.includes("'es-AR'") || i18nSrc.includes("'comprobante'") || i18nSrc.includes("'CUIT'"), 'i18n includes Argentina-context translations');
+  assert(esSrc.includes("'CUIT'") || esSrc.includes("Comprobante") || esSrc.includes("es-AR"), 'i18n includes Argentina-context translations');
 
   // Walk the entire frontend src tree and assert every `t('key')` reference
   // resolves to a known key. Catches wiring gaps: a developer adds
@@ -242,6 +229,14 @@ async function runArgentinaTranslations(db) {
   assert(referenced.size >= 20, `at least 20 translation keys should be wired in (found ${referenced.size})`);
   const unknownRefs = [...referenced].filter((k) => !enKeys.has(k));
   assertEqual(unknownRefs.length, 0, `t() calls reference unknown keys: ${unknownRefs.join(', ') || 'none'}`);
+}
+
+function extractJsonKeys(jsonSrc) {
+  const keys = new Set();
+  const re = /"([a-z]+\.[a-zA-Z]+)"\s*:/g;
+  let m;
+  while ((m = re.exec(jsonSrc)) !== null) keys.add(m[1]);
+  return keys;
 }
 
 function scanFrontendForTKeys(root) {
@@ -261,14 +256,6 @@ function scanFrontendForTKeys(root) {
     }
   };
   walk(root);
-  return keys;
-}
-
-function extractKeys(block) {
-  const keys = new Set();
-  const re = /'([a-z]+\.[a-zA-Z]+)':/g;
-  let m;
-  while ((m = re.exec(block)) !== null) keys.add(m[1]);
   return keys;
 }
 

@@ -3,26 +3,20 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
+import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, now } from '../db';
 import { isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 
 const router = Router();
+
 const JWT_EXPIRES_IN = '24h';
 
-const COUNTRY_DIAL_CODES: Record<string, string> = {
-  IN: '+91', AR: '+54', US: '+1', CA: '+1', GB: '+44', EU: '+33', TH: '+66',
-  SG: '+65', MY: '+60', ID: '+62', PH: '+63', VN: '+84', AU: '+61', NZ: '+64',
-  AE: '+971', SA: '+966', ZA: '+27', KE: '+254', NG: '+234', BR: '+55', MX: '+52',
-  CL: '+56', UY: '+598', PY: '+595', JP: '+81', KR: '+82', CN: '+86', HK: '+852',
-  TW: '+886', PK: '+92', BD: '+880', LK: '+94', NP: '+977', EG: '+20', IL: '+972',
-  TR: '+90',
-};
-const DEFAULT_DIAL_CODE = '+1';
-
 function dialCodeFor(country: string | undefined): string {
-  if (!country) return DEFAULT_DIAL_CODE;
-  return COUNTRY_DIAL_CODES[country.toUpperCase()] || DEFAULT_DIAL_CODE;
+  if (!country) return '+1';
+  try { return `+${getCountryCallingCode(country.toUpperCase() as CountryCode)}`; }
+  catch { return '+1'; }
 }
+
 const INITIAL_ADMIN_ROLE = 'owner';
 const VALID_BUSINESS_TYPES = new Set(['restaurant']);
 const VALID_SETUP_PROFILES = new Set(['empty', 'express', 'demo']);
@@ -88,6 +82,7 @@ function buildLocalTenant(db: ReturnType<typeof getDatabase>, userRole: string) 
     currency: s.currency || 'INR',
     currency_symbol: s.currency_symbol || '₹',
     timezone: s.timezone || 'Asia/Kolkata',
+    language: s.language || 'en',
     service_model: s.service_model || 'finedine',
     plan: 'desktop',
     status: 'active',
@@ -186,7 +181,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   const cats = isEs
     ? [
         ['cat-demo-starters', 'Entradas', '#FF6B6B', '🍟', 1],
-        ['cat-demo-main', 'Hamburguesas', '#4ECDC4', '🍔', 2],
+        ['cat-demo-burger', 'Hamburguesas', '#4ECDC4', '🍔', 2],
         ['cat-demo-beverages', 'Bebidas', '#45B7D1', '🥤', 3],
         ['cat-demo-desserts', 'Postres', '#96CEB4', '🍰', 4],
       ] as const
@@ -202,9 +197,9 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     ? [
         ['prod-demo-empanadas', 'cat-demo-starters', 'Empanadas de Carne', 280, 1],
         ['prod-demo-papas', 'cat-demo-starters', 'Papas Fritas', 250, 2],
-        ['prod-demo-clasica', 'cat-demo-main', 'Hamburguesa Clásica', 800, 1],
-        ['prod-demo-doble', 'cat-demo-main', 'Hamburguesa Doble', 1100, 2],
-        ['prod-demo-bbq', 'cat-demo-main', 'Hamburguesa BBQ', 1200, 3],
+        ['prod-demo-hamburguesa-clasica', 'cat-demo-burger', 'Hamburguesa Clásica', 800, 1],
+        ['prod-demo-doble', 'cat-demo-burger', 'Hamburguesa Doble', 1100, 2],
+        ['prod-demo-bbq', 'cat-demo-burger', 'Hamburguesa BBQ', 1200, 3],
         ['prod-demo-gaseosa', 'cat-demo-beverages', 'Gaseosa Cola', 350, 1],
         ['prod-demo-agua', 'cat-demo-beverages', 'Agua Mineral', 200, 2],
         ['prod-demo-flan', 'cat-demo-desserts', 'Flan Casero', 400, 1],
@@ -247,7 +242,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   insertStaffUser(db, 'user-demo-chef', chefName, 'chef@flo.local', 'chef', 'demo12345');
 }
 
-function seedSetupProfile(db: ReturnType<typeof getDatabase>, profile: string, serviceModel: string, language?: string, country?: string): void {
+export function seedSetupProfile(db: ReturnType<typeof getDatabase>, profile: string, serviceModel: string, language?: string, country?: string): void {
   if (profile === 'express') {
     seedExpressRestaurant(db, serviceModel);
   } else if (profile === 'demo') {
@@ -612,6 +607,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         currency: normalizedCurrency,
         currency_symbol: currency_symbol || currencySymbolFor(normalizedCurrency),
         timezone,
+        language,
         business_address: outletAddress,
         business_phone: outletPhone,
         address: outletAddress,

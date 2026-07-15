@@ -6,6 +6,7 @@
  */
 
 import type { Bill, Tenant, Customer } from '@/lib/types';
+import { getCountryByCode } from '@/lib/countries';
 
 export interface WhatsAppShareOptions {
   /** Points earned from this bill (cashback) */
@@ -21,12 +22,13 @@ export interface WhatsAppShareOptions {
  */
 export function getWhatsAppShareUrl(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   customer: Pick<Customer, 'phone' | 'country_code'> | null,
   opts: WhatsAppShareOptions = {}
 ): string {
   const { pointsEarned = 0, walletBalance, businessPhone } = opts;
   const currency = tenant.currency ?? '₹';
+  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
 
   // Build the message
   const lines: string[] = [];
@@ -35,7 +37,7 @@ export function getWhatsAppShareUrl(
   lines.push(`Bill #: ${bill.bill_number}`);
   lines.push(`Date: ${formatDate(bill.order?.created_at)}`);
   lines.push(``);
-  lines.push(`*Total: ${formatAmount(bill.total, currency)}*`);
+  lines.push(`*Total: ${formatAmount(bill.total, currency, locale)}*`);
 
   if (pointsEarned > 0) {
     lines.push(``);
@@ -43,7 +45,7 @@ export function getWhatsAppShareUrl(
   }
 
   if (walletBalance !== undefined && walletBalance > 0) {
-    lines.push(`Your wallet balance: ${formatAmount(walletBalance, currency)}`);
+    lines.push(`Your wallet balance: ${formatAmount(walletBalance, currency, locale)}`);
   }
 
   lines.push(``);
@@ -71,7 +73,7 @@ export function getWhatsAppShareUrl(
 export function shareBillViaWhatsApp(
   bill: Bill,
   customerInfo: Pick<Customer, 'phone' | 'country_code'> | null,
-  tenant: Pick<Tenant, 'business_name' | 'currency'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WhatsAppShareOptions = {}
 ): void {
   const url = getWhatsAppShareUrl(bill, tenant, customerInfo, opts);
@@ -83,11 +85,12 @@ export function shareBillViaWhatsApp(
  */
 export function getWhatsAppMessage(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WhatsAppShareOptions = {}
 ): string {
   const { pointsEarned = 0, walletBalance } = opts;
   const currency = tenant.currency ?? '₹';
+  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
 
   const lines: string[] = [];
 
@@ -95,7 +98,7 @@ export function getWhatsAppMessage(
   lines.push(`Bill #: ${bill.bill_number}`);
   lines.push(`Date: ${formatDate(bill.order?.created_at)}`);
   lines.push(``);
-  lines.push(`Total: ${formatAmount(bill.total, currency)}`);
+  lines.push(`Total: ${formatAmount(bill.total, currency, locale)}`);
 
   if (pointsEarned > 0) {
     lines.push(``);
@@ -103,7 +106,7 @@ export function getWhatsAppMessage(
   }
 
   if (walletBalance !== undefined && walletBalance > 0) {
-    lines.push(`Your wallet balance: ${formatAmount(walletBalance, currency)}`);
+    lines.push(`Your wallet balance: ${formatAmount(walletBalance, currency, locale)}`);
   }
 
   lines.push(``);
@@ -116,8 +119,8 @@ export function getWhatsAppMessage(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatAmount(value: number | string, currency: string): string {
-  return `${currency}${Number(value).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatAmount(value: number | string, currency: string, locale: string): string {
+  return `${currency}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function formatDate(iso?: string): string {

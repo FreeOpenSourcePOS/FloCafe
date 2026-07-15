@@ -13,6 +13,7 @@ import type { OrderItem, Table, Product, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol } from '@/lib/countries';
 import { usePrinterStore } from '@/hooks/usePrinter';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
@@ -129,6 +130,7 @@ export default function OrdersPage() {
   const linkSearchRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR');
+  const fmt = useFormatCurrency();
   const isOwnerOrManager = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
 
   const fetchOrders = async () => {
@@ -380,7 +382,11 @@ export default function OrdersPage() {
           const latestBill = data.bill as Bill;
           await printBill(
             { ...latestBill, order },
-            { business_name: currentTenant?.business_name || t('common.businessNameFallback'), currency: currentTenant?.currency || 'INR' },
+            {
+              business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+              currency: currentTenant?.currency || 'INR',
+              country: currentTenant?.country || 'IN',
+            },
             { isReprint: false }
           );
           await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
@@ -404,7 +410,11 @@ export default function OrdersPage() {
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
       await printBill(
         { ...order.bill, order },
-        { business_name: currentTenant?.business_name || t('common.businessNameFallback'), currency: currentTenant?.currency || 'INR' },
+        {
+          business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+          currency: currentTenant?.currency || 'INR',
+          country: currentTenant?.country || 'IN',
+        },
         { isReprint }
       );
       await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
@@ -461,7 +471,11 @@ export default function OrdersPage() {
       shareBillViaWhatsApp(
         order.bill,
         { phone: order.customer.phone, country_code: order.customer.country_code },
-        { business_name: currentTenant?.business_name || t('common.businessNameFallback'), currency: currentTenant?.currency || 'INR' }
+        {
+          business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+          currency: currentTenant?.currency || 'INR',
+          country: currentTenant?.country || 'IN',
+        }
       );
     } catch {
       toast.error(t('orders.whatsappFailed'));
@@ -924,7 +938,7 @@ export default function OrdersPage() {
                               )}
                             </div>
                             <div className="flex items-center gap-2">
-                              <span className="text-sm text-gray-600">{currency}{Number(item.total).toLocaleString()}</span>
+                              <span className="text-sm text-gray-600">{fmt(Number(item.total))}</span>
                               {item.status === 'pending' && isOwnerOrManager && !paid && (
                                 <button
                                   onClick={() => deleteItem(order.id, item.id)}
@@ -940,7 +954,7 @@ export default function OrdersPage() {
                             <div className="pl-4 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                               {item.addons.map((addon, idx) => (
                                 <span key={addon.id ?? `${item.id}-${idx}`} className="text-xs text-gray-400">
-                                  + {addon.name}{addon.price ? ` (${currency}${Number(addon.price).toLocaleString()})` : ''}
+                                  + {addon.name}{addon.price ? ` (${fmt(Number(addon.price))})` : ''}
                                 </span>
                               ))}
                             </div>
@@ -954,28 +968,28 @@ export default function OrdersPage() {
                   <div className="mt-3 pt-3 border-t border-dashed border-gray-200 space-y-1">
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-500">{t('common.subtotal')}</span>
-                      <span className="text-gray-700">{currency}{subtotal.toLocaleString()}</span>
+                      <span className="text-gray-700">{fmt(subtotal)}</span>
                     </div>
                     {discount > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-purple-600">{t('common.discount')}</span>
-                        <span className="text-purple-600">-{currency}{discount.toLocaleString()}</span>
+                        <span className="text-purple-600">-{fmt(discount)}</span>
                       </div>
                     )}
                     {tax > 0 && (
                       <div className="flex justify-between text-sm">
                         <span className="text-gray-500">{t('common.tax')}</span>
-                        <span className="text-gray-700">{currency}{tax.toLocaleString()}</span>
+                        <span className="text-gray-700">{fmt(tax)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-100">
                       <span className="text-gray-900">{t('common.total')}</span>
-                      <span className="text-gray-900">{currency}{total.toLocaleString()}</span>
+                      <span className="text-gray-900">{fmt(total)}</span>
                     </div>
                     {bill && payStatus === 'partial' && (
                       <div className="flex justify-between text-xs text-gray-500 pt-0.5">
-                        <span>{t('orders.paid')} {currency}{Number(bill.paid_amount).toLocaleString()}</span>
-                        <span>{t('orders.balance')} {currency}{Number(bill.balance).toLocaleString()}</span>
+                        <span>{t('orders.paid')} {fmt(Number(bill.paid_amount))}</span>
+                        <span>{t('orders.balance')} {fmt(Number(bill.balance))}</span>
                       </div>
                     )}
                   </div>
@@ -1289,11 +1303,11 @@ placeholder={t('orders.managerPin')}
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">{t('common.subtotal')}</span>
-                  <span className="text-gray-900">{currency}{Number(discountModal.order.subtotal).toLocaleString()}</span>
+                  <span className="text-gray-900">{fmt(Number(discountModal.order.subtotal))}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">{t('common.tax')}</span>
-                  <span className="text-gray-900">{currency}{Number(discountModal.order.tax_amount || 0).toLocaleString()}</span>
+                  <span className="text-gray-900">{fmt(Number(discountModal.order.tax_amount || 0))}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-purple-600">
@@ -1303,21 +1317,21 @@ placeholder={t('orders.managerPin')}
                     )}
                   </span>
                   <span className="text-purple-600">
-                    -{currency}{
+                    -{fmt(
                       discountModal.type === 'percentage'
-                        ? (Number(discountModal.order.subtotal) * discountModal.value / 100).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                        : Number(discountModal.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                    }
+                        ? Number(discountModal.order.subtotal) * discountModal.value / 100
+                        : Number(discountModal.value)
+                    )}
                   </span>
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 flex justify-between text-sm font-bold">
                   <span className="text-gray-900">{t('orders.newTotal')}</span>
                   <span className="text-gray-900">
-                    {currency}{
+                    {fmt(
                       discountModal.type === 'percentage'
-                        ? (Number(discountModal.order.subtotal) * (1 - discountModal.value / 100) + Number(discountModal.order.tax_amount || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                        : (Number(discountModal.order.subtotal) - Number(discountModal.value) + Number(discountModal.order.tax_amount || 0)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-                    }
+                        ? Number(discountModal.order.subtotal) * (1 - discountModal.value / 100) + Number(discountModal.order.tax_amount || 0)
+                        : Number(discountModal.order.subtotal) - Number(discountModal.value) + Number(discountModal.order.tax_amount || 0)
+                    )}
                   </span>
                 </div>
               </div>
@@ -1390,7 +1404,7 @@ placeholder={t('orders.managerPin')}
                     <div>
                       <span className="text-sm font-medium text-gray-900">{product.name}</span>
                       {product.price && (
-                        <span className="text-xs text-gray-500 ml-2">{currency}{Number(product.price).toLocaleString()}</span>
+                        <span className="text-xs text-gray-500 ml-2">{fmt(Number(product.price))}</span>
                       )}
                     </div>
                     <Plus size={14} className="text-green-500" />

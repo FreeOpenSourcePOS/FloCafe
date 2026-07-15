@@ -11,6 +11,8 @@ import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
 import { useI18n } from '@/hooks/useI18n';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
+import { useAuthStore } from '@/store/auth';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface Props {
   bill: Bill;
@@ -137,8 +139,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     ? parseFloat((totalPayment - remaining).toFixed(2))
     : 0;
 
-  const fmt = (n: number) =>
-    n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const { currentTenant } = useAuthStore();
+  const currencyFmt = useFormatCurrency();
 
   const handleApplyDiscount = async (customVal?: number) => {
     if (applyingDiscount) return;
@@ -195,7 +197,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       const walletPointsRequired = walletAmt * redemptionRate;
       if (walletPointsRequired > walletBalance) {
         const maxCurrency = Math.floor(walletBalance / redemptionRate);
-        toast.error(t('pos.walletMaxAmount', { max: `${currency}${fmt(maxCurrency)}` }));
+        toast.error(t('pos.walletMaxAmount', { max: currencyFmt(maxCurrency) }));
         return;
       }
     }
@@ -251,7 +253,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             <div className="flex items-start justify-between mb-3">
               <div>
                 <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">{t('pos.totalDue')}</p>
-                <p className="text-4xl font-bold mt-1 tracking-tight">{currency}{fmt(remaining)}</p>
+                <p className="text-4xl font-bold mt-1 tracking-tight">{currencyFmt(remaining)}</p>
               </div>
               {cartCustomer && (
                 <div className="text-right ml-4 shrink-0">
@@ -267,40 +269,40 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             <div className="border-t border-white/10 pt-3 space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-300">
                 <span>{t('pos.subtotal')}</span>
-                <span>{currency}{fmt(Number(bill.subtotal))}</span>
+                <span>{currencyFmt(Number(bill.subtotal))}</span>
               </div>
               {Number(bill.discount_amount) > 0 && (
                 <div className="flex justify-between text-emerald-400 font-medium">
                   <span>{t('pos.discount')}</span>
-                  <span>− {currency}{fmt(Number(bill.discount_amount))}</span>
+                  <span>− {currencyFmt(Number(bill.discount_amount))}</span>
                 </div>
               )}
               <TaxBreakdown
                 taxAmount={Number(bill.tax_amount)}
                 taxBreakdown={bill.tax_breakdown}
-                currency={currency}
+                currencyCode={currentTenant?.currency || 'INR'}
               />
               {Number(bill.delivery_charge) > 0 && (
                 <div className="flex justify-between text-slate-300">
                   <span>{t('pos.delivery')}</span>
-                  <span>{currency}{fmt(Number(bill.delivery_charge))}</span>
+                  <span>{currencyFmt(Number(bill.delivery_charge))}</span>
                 </div>
               )}
               {Number(bill.packaging_charge) > 0 && (
                 <div className="flex justify-between text-slate-300">
                   <span>{t('pos.packaging')}</span>
-                  <span>{currency}{fmt(Number(bill.packaging_charge))}</span>
+                  <span>{currencyFmt(Number(bill.packaging_charge))}</span>
                 </div>
               )}
               {Number(bill.round_off) !== 0 && (
                 <div className="flex justify-between text-slate-300">
                   <span>{t('pos.roundOff')}</span>
-                  <span>{Number(bill.round_off) > 0 ? '+' : ''}{currency}{fmt(Number(bill.round_off))}</span>
+                  <span>{Number(bill.round_off) > 0 ? '+' : ''}{currencyFmt(Number(bill.round_off))}</span>
                 </div>
               )}
               <div className="flex justify-between text-white font-semibold border-t border-white/10 pt-1.5 mt-1">
                 <span>{t('pos.total')}</span>
-                <span>{currency}{fmt(Number(bill.total))}</span>
+                <span>{currencyFmt(Number(bill.total))}</span>
               </div>
             </div>
           </div>
@@ -313,7 +315,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 <span className="text-gray-700 font-medium">{t('pos.loyalty')}</span>
                 <span className="font-semibold text-gray-700">
                   {walletBalance !== null
-                    ? t('pos.pointsApproxValue', { count: walletBalance, currency, value: fmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
+                    ? t('pos.pointsApproxValue', { count: walletBalance, currency, value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
                     : '…'}
                 </span>
               </div>
@@ -340,7 +342,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               />
               <span className="text-sm font-medium text-gray-700">
                 {Number(bill.discount_amount) > 0
-                  ? `${t('pos.discount')}: -${currency}${fmt(Number(bill.discount_amount))}`
+                  ? `${t('pos.discount')}: -${currencyFmt(Number(bill.discount_amount))}`
                   : t('pos.applyDiscount')}
               </span>
             </label>
@@ -478,7 +480,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               <span className={`text-xl font-bold tabular-nums ${
                 change > 0 ? 'text-emerald-600' : 'text-gray-300'
               }`}>
-                {currency}{change > 0 ? fmt(change) : '0.00'}
+                {currencyFmt(change)}
               </span>
             </div>
           )}
@@ -492,7 +494,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 </div>
                 <span className={`text-sm font-semibold ${walletBalance > 0 ? 'text-purple-700' : 'text-gray-400'}`}>
                   {walletBalance > 0
-                    ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), currency, value: fmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
+                    ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), currency, value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
                     : t('pos.noBalance')}
                 </span>
               </div>
@@ -529,7 +531,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
         <div className="px-5 pb-5 border-t border-gray-100 pt-3">
           <Button onClick={handlePay} disabled={processing || totalPayment < remaining - 0.01} className="w-full" size="lg">
-            {processing ? t('pos.processingPayment') : `${t('pos.pay')} ${currency}${fmt(totalPayment)}`}
+            {processing ? t('pos.processingPayment') : `${t('pos.pay')} ${currencyFmt(totalPayment)}`}
           </Button>
         </div>
       </div>

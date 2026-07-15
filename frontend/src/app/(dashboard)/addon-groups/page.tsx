@@ -2,17 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
-import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/hooks/useI18n';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AddonGroup, Addon } from '@/lib/types';
-import { getCurrencySymbol } from '@/lib/countries';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 
 export default function AddonGroupsPage() {
-  const { currentTenant } = useAuthStore();
   const { t } = useI18n();
   const [groups, setGroups] = useState<AddonGroup[]>([]);
   const [loading, setLoading] = useState(true);
@@ -32,7 +30,7 @@ export default function AddonGroupsPage() {
   const [addingAddonTo, setAddingAddonTo] = useState<number | null>(null);
   const [editingAddon, setEditingAddon] = useState<{ groupId: number; addon: Addon } | null>(null);
 
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR');
+  const fmt = useFormatCurrency();
 
   const extractErrorMessage = (err: unknown, fallback: string) => {
     const error = err as { response?: { data?: { errors?: Record<string, string[]> } } };
@@ -242,7 +240,7 @@ export default function AddonGroupsPage() {
                             <span className="text-sm text-gray-700">{addon.name}</span>
                             <div className="flex items-center gap-3">
                               <span className="text-sm font-medium text-gray-900">
-                                {Number(addon.price) === 0 ? t('pos.free') : `${currency}${Number(addon.price).toLocaleString()}`}
+                                {Number(addon.price) === 0 ? t('pos.free') : fmt(Number(addon.price))}
                               </span>
                               <button onClick={() => { setEditingAddon({ groupId: group.id, addon }); setAddonForm({ name: addon.name, price: String(addon.price) }); }}
                                 className="p-1 text-gray-400 hover:text-brand"><Pencil size={14} /></button>

@@ -10,6 +10,8 @@ import { useI18n } from '@/hooks/useI18n';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
+import { useAuthStore } from '@/store/auth';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface LoyaltySettings {
   loyalty_enabled: boolean;
@@ -47,6 +49,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const { tax, loading: taxLoading } = useTaxPreview(cart.items, cart.customerId);
   const customer = cart.customer;
   const { t } = useI18n();
+  const { currentTenant } = useAuthStore();
+  const currencyFmt = useFormatCurrency();
 
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -178,7 +182,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       const walletPointsRequired = walletAmt * LOYALTY_REDEMPTION_RATE;
       if (walletPointsRequired > walletBalance) {
         const maxCurrency = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-        toast.error(t('pos.walletMaxAmount', { max: `${currency}${fmt(maxCurrency)}` }));
+        toast.error(t('pos.walletMaxAmount', { max: currencyFmt(maxCurrency) }));
         return;
       }
     }
@@ -258,7 +262,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     <TaxBreakdown
                       taxAmount={preview.taxAmount}
                       taxBreakdown={preview.taxBreakdown}
-                      currency={currency}
+                      currencyCode={currentTenant?.currency || 'INR'}
                     />
                     {preview.packagingCharge > 0 && (
                       <div className="flex justify-between text-xs text-slate-300">

@@ -12,6 +12,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useI18n } from '@/hooks/useI18n';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem } from '@/lib/types';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface Props {
   tables: Table[];
@@ -36,6 +37,7 @@ export default function CartPanel({ tables, currency, submitting, onPlaceOrder, 
   const billingType = usePosSettingsStore((s) => s.billingType);
   const { t } = useI18n();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
+  const fmt = useFormatCurrency();
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
 
   const handleHold = async () => {
@@ -146,7 +148,7 @@ export default function CartPanel({ tables, currency, submitting, onPlaceOrder, 
                     <div className="mt-0.5">
                       {item.addons.map((a) => (
                         <p key={a.id} className="text-xs text-gray-400">
-                          + {a.name} {Number(a.price) > 0 && `(${currency}${Number(a.price).toLocaleString()})`}
+                          + {a.name} {Number(a.price) > 0 && `(${fmt(Number(a.price))})`}
                         </p>
                       ))}
                     </div>

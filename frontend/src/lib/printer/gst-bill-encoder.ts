@@ -9,6 +9,7 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
+import { getCountryByCode } from '@/lib/countries';
 
 export interface GstBillOptions {
   /** 58 mm (2.5", 32 chars) or 80 mm (3.5", 48 chars). Default: 58 */
@@ -42,13 +43,14 @@ function maskPhoneOnReceipt(phone: string): string {
  */
 export function buildGstBillBytes(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: GstBillOptions = {}
 ): Uint8Array {
   const { paperWidth = 58, showFooter = true, gstin, address, phone, useUnicode = false } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = tenant.currency ?? '₹';
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
+  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const order = bill.order;
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
@@ -96,7 +98,7 @@ export function buildGstBillBytes(
   for (const item of items) {
     const line = `${item.product_name}`;
 
-    enc.text(padRow(line, formatAmount(item.total, currency), cols)).newline();
+    enc.text(padRow(line, formatAmount(item.total, currency, locale), cols)).newline();
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
@@ -109,7 +111,7 @@ export function buildGstBillBytes(
       for (const addon of item.addons) {
         const addonLine = `   + ${addon.name}`;
         const addonPrice = addon.price && Number(addon.price) > 0
-          ? formatAmount(Number(addon.price) * item.quantity, currency)
+          ? formatAmount(Number(addon.price) * item.quantity, currency, locale)
           : '';
         enc.text(padRow(addonLine, addonPrice, cols)).newline();
       }
@@ -132,14 +134,14 @@ export function buildGstBillBytes(
 
     if (igst > 0) {
       // Inter-state - IGST
-      enc.text(padRow('IGST @12%', formatAmount(igst, currency), cols)).newline();
+      enc.text(padRow('IGST @12%', formatAmount(igst, currency, locale), cols)).newline();
     } else {
       // Intra-state - CGST + SGST
       if (cgst > 0) {
-        enc.text(padRow('CGST @6%', formatAmount(cgst, currency), cols)).newline();
+        enc.text(padRow('CGST @6%', formatAmount(cgst, currency, locale), cols)).newline();
       }
       if (sgst > 0) {
-        enc.text(padRow('SGST @6%', formatAmount(sgst, currency), cols)).newline();
+        enc.text(padRow('SGST @6%', formatAmount(sgst, currency, locale), cols)).newline();
       }
     }
   }
@@ -148,23 +150,23 @@ export function buildGstBillBytes(
   enc.rule({ style: 'single' });
 
   const totals: [string, string][] = [
-    ['Subtotal', formatAmount(bill.subtotal, currency)],
+    ['Subtotal', formatAmount(bill.subtotal, currency, locale)],
   ];
 
   if (Number(bill.discount_amount) > 0) {
-    totals.push(['Discount', `-${formatAmount(bill.discount_amount, currency)}`]);
+    totals.push(['Discount', `-${formatAmount(bill.discount_amount, currency, locale)}`]);
   }
 
   if (Number(bill.tax_amount) > 0) {
-    totals.push(['Total Tax', formatAmount(bill.tax_amount, currency)]);
+    totals.push(['Total Tax', formatAmount(bill.tax_amount, currency, locale)]);
   }
 
   if (Number(bill.service_charge) > 0) {
-    totals.push(['Service Chg', formatAmount(bill.service_charge, currency)]);
+    totals.push(['Service Chg', formatAmount(bill.service_charge, currency, locale)]);
   }
 
   if (Number(bill.delivery_charge) > 0) {
-    totals.push(['Delivery', formatAmount(bill.delivery_charge, currency)]);
+    totals.push(['Delivery', formatAmount(bill.delivery_charge, currency, locale)]);
   }
 
   for (const [label, value] of totals) {
@@ -172,7 +174,7 @@ export function buildGstBillBytes(
   }
 
   enc.rule({ style: 'double' });
-  enc.bold(true).width(2).text(padRow('TOTAL', formatAmount(bill.total, currency), cols)).width(1);
+  enc.bold(true).width(2).text(padRow('TOTAL', formatAmount(bill.total, currency, locale), cols)).width(1);
   enc.bold(false).newline();
 
   // ── Payment Details ───────────────────────────────────────────────────────
@@ -180,7 +182,7 @@ export function buildGstBillBytes(
     enc.newline();
     enc.text('Payments:').newline();
     for (const p of bill.payment_details) {
-      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency), cols)).newline();
+      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale), cols)).newline();
     }
   }
 
@@ -210,8 +212,8 @@ function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
-function formatAmount(value: number | string, currency: string): string {
-  return `${currency}${Number(value).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatAmount(value: number | string, currency: string, locale: string): string {
+  return `${currency}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function capitalize(str: string): string {

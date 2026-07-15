@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight } from 'lucide-react';
 import { getCurrencySymbol } from '@/lib/countries';
 import { useI18n } from '@/hooks/useI18n';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface DailyStats {
   sales: number;
@@ -58,6 +59,7 @@ export default function DashboardPage() {
 
   const isOwner = currentTenant?.role === 'owner';
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR');
+  const fmt = useFormatCurrency();
 
   useEffect(() => {
     if (currentTenant && !isOwner) {
@@ -183,7 +185,7 @@ export default function DashboardPage() {
                         </p>
                       </div>
                       <span className="text-sm font-semibold text-gray-900 shrink-0">
-                        {currency}{Number(order.total).toLocaleString()}
+                        {fmt(Number(order.total))}
                       </span>
                     </Link>
                   ))}
@@ -213,7 +215,7 @@ export default function DashboardPage() {
                         <p className="text-xs text-gray-400">{localizeTemplate(t('dashboard.productSoldOrders'), { quantity: product.total_quantity, orders: product.order_count })}</p>
                       </div>
                       <span className="text-sm font-semibold text-gray-900 shrink-0">
-                        {currency}{Number(product.total_revenue).toLocaleString()}
+                        {fmt(Number(product.total_revenue))}
                       </span>
                     </div>
                   ))}

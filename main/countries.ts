@@ -113,6 +113,12 @@ export const formatCurrency = (amount: number, currency: string, locale = 'en-US
   }
 };
 
+export const formatCurrencyForTenant = (
+  amount: number,
+  countryCode: string | undefined,
+  currency: string,
+): string => formatCurrency(amount, currency, getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US');
+
 export const countryName = (code: string): string => dn.of(code.toUpperCase()) ?? code;
 
 export const countryFlag = (code: string): string =>

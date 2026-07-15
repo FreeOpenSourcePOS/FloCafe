@@ -8,6 +8,7 @@
 import type { Bill, Tenant } from '@/lib/types';
 import toast from 'react-hot-toast';
 import { normalizeCurrencyToAscii } from './unicode';
+import { getCountryByCode } from '@/lib/countries';
 
 export type PaperSize = 'a4' | 'a5' | 'thermal58' | 'thermal80';
 
@@ -29,7 +30,7 @@ export interface WebPrintOptions {
  */
 export function printWebBill(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WebPrintOptions = {}
 ): void {
   const { paperSize = 'a4', includeGst = false, gstin, address, phone, footerNote, businessName, useUnicode = false, isReprint = false } = opts;
@@ -60,13 +61,14 @@ export function printWebBill(
  */
 export function generateBillHtml(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency'>,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WebPrintOptions = {}
 ): string {
   const { paperSize = 'a4', includeGst = false, gstin, address, phone, footerNote, businessName, useUnicode = false, isReprint = false } = opts;
   const displayName = businessName ?? tenant.business_name;
   const rawCurrency = tenant.currency ?? '₹';
   const currency = useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency);
+  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const order = bill.order;
 
   const styles = getPaperStyles(paperSize);
@@ -138,8 +140,8 @@ export function generateBillHtml(
               ${item.special_instructions ? `<br><small class="text-italic">${item.special_instructions}</small>` : ''}
             </td>
             <td class="text-right">${item.quantity}</td>
-            <td class="text-right">${formatAmount(Number(item.unit_price), currency)}</td>
-            <td class="text-right">${formatAmount(item.total, currency)}</td>
+            <td class="text-right">${formatAmount(Number(item.unit_price), currency, locale)}</td>
+            <td class="text-right">${formatAmount(item.total, currency, locale)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -153,10 +155,10 @@ export function generateBillHtml(
       </thead>
       <tbody>
         ${igst > 0 ? `
-          <tr><td>IGST @${taxBreakdown.find(t => t.title === 'IGST')?.rate || 12}%</td><td class="text-right">${formatAmount(igst, currency)}</td></tr>
+          <tr><td>IGST @${taxBreakdown.find(t => t.title === 'IGST')?.rate || 12}%</td><td class="text-right">${formatAmount(igst, currency, locale)}</td></tr>
         ` : `
-          ${cgst > 0 ? `<tr><td>CGST @${taxBreakdown.find(t => t.title === 'CGST')?.rate || 6}%</td><td class="text-right">${formatAmount(cgst, currency)}</td></tr>` : ''}
-          ${sgst > 0 ? `<tr><td>SGST @${taxBreakdown.find(t => t.title === 'SGST')?.rate || 6}%</td><td class="text-right">${formatAmount(sgst, currency)}</td></tr>` : ''}
+          ${cgst > 0 ? `<tr><td>CGST @${taxBreakdown.find(t => t.title === 'CGST')?.rate || 6}%</td><td class="text-right">${formatAmount(cgst, currency, locale)}</td></tr>` : ''}
+          ${sgst > 0 ? `<tr><td>SGST @${taxBreakdown.find(t => t.title === 'SGST')?.rate || 6}%</td><td class="text-right">${formatAmount(sgst, currency, locale)}</td></tr>` : ''}
         `}
       </tbody>
     </table>
@@ -164,12 +166,12 @@ export function generateBillHtml(
 
     <!-- Totals -->
     <table class="totals-table">
-      <tr><td>Subtotal</td><td class="text-right">${formatAmount(bill.subtotal, currency)}</td></tr>
-      ${Number(bill.discount_amount) > 0 ? `<tr><td>Discount</td><td class="text-right">-${formatAmount(bill.discount_amount, currency)}</td></tr>` : ''}
-      ${Number(bill.tax_amount) > 0 ? `<tr><td>Total Tax</td><td class="text-right">${formatAmount(bill.tax_amount, currency)}</td></tr>` : ''}
-      ${Number(bill.service_charge) > 0 ? `<tr><td>Service Charge</td><td class="text-right">${formatAmount(bill.service_charge, currency)}</td></tr>` : ''}
-      ${Number(bill.delivery_charge) > 0 ? `<tr><td>Delivery Charge</td><td class="text-right">${formatAmount(bill.delivery_charge, currency)}</td></tr>` : ''}
-      <tr class="total-row"><td><strong>Grand Total</strong></td><td class="text-right"><strong>${formatAmount(bill.total, currency)}</strong></td></tr>
+      <tr><td>Subtotal</td><td class="text-right">${formatAmount(bill.subtotal, currency, locale)}</td></tr>
+      ${Number(bill.discount_amount) > 0 ? `<tr><td>Discount</td><td class="text-right">-${formatAmount(bill.discount_amount, currency, locale)}</td></tr>` : ''}
+      ${Number(bill.tax_amount) > 0 ? `<tr><td>Total Tax</td><td class="text-right">${formatAmount(bill.tax_amount, currency, locale)}</td></tr>` : ''}
+      ${Number(bill.service_charge) > 0 ? `<tr><td>Service Charge</td><td class="text-right">${formatAmount(bill.service_charge, currency, locale)}</td></tr>` : ''}
+      ${Number(bill.delivery_charge) > 0 ? `<tr><td>Delivery Charge</td><td class="text-right">${formatAmount(bill.delivery_charge, currency, locale)}</td></tr>` : ''}
+      <tr class="total-row"><td><strong>Grand Total</strong></td><td class="text-right"><strong>${formatAmount(bill.total, currency, locale)}</strong></td></tr>
     </table>
 
     <!-- Payments -->
@@ -180,7 +182,7 @@ export function generateBillHtml(
       </thead>
       <tbody>
         ${bill.payment_details.map(p => `
-          <tr><td>${capitalize(p.method)}</td><td class="text-right">${formatAmount(p.amount, currency)}</td></tr>
+          <tr><td>${capitalize(p.method)}</td><td class="text-right">${formatAmount(p.amount, currency, locale)}</td></tr>
         `).join('')}
       </tbody>
     </table>
@@ -256,8 +258,8 @@ function getPaperStyles(size: PaperSize): string {
   }
 }
 
-function formatAmount(value: number | string, currency: string): string {
-  return `${currency}${Number(value).toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+function formatAmount(value: number | string, currency: string, locale: string): string {
+  return `${currency}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function capitalize(str: string): string {

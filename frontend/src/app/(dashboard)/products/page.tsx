@@ -10,6 +10,7 @@ import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import ImageUploader from '@/components/products/ImageUploader';
 import { getCurrencySymbol } from '@/lib/countries';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 import { nameToColor } from '@/lib/image-utils';
 import { useI18n } from '@/hooks/useI18n';
@@ -91,6 +92,7 @@ export default function ProductsPage() {
   const [catReassignTo, setCatReassignTo] = useState<string>('');
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR');
+  const fmt = useFormatCurrency();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const isOwnerOrManager = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
 
@@ -461,8 +463,8 @@ export default function ProductsPage() {
                 </td>
                 <td className="p-4 text-sm text-gray-600">{product.category?.name || '—'}</td>
                 <td className="p-4 text-right">
-                  <p className="font-medium">{currency}{Number(product.price).toLocaleString()}</p>
-                  {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">Cost: {currency}{Number(product.cost_price).toLocaleString()}</p>}
+                  <p className="font-medium">{fmt(Number(product.price))}</p>
+                  {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">Cost: {fmt(Number(product.cost_price))}</p>}
                 </td>
                 <td className="p-4 text-sm text-gray-600">{taxLabel}</td>
                 <td className="p-4 text-center">

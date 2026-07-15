@@ -85,6 +85,7 @@ export default function POSPage() {
       await printBill(bill, {
         business_name: currentTenant.business_name,
         currency,
+        country: currentTenant.country,
       });
     } catch {
       // Non-fatal: print failure should not block the checkout flow.

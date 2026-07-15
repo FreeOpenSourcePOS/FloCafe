@@ -8,6 +8,7 @@ import api from '@/lib/api';
 import { useI18n } from '@/hooks/useI18n';
 import toast from 'react-hot-toast';
 import type { Table, Order, Bill, OrderItem } from '@/lib/types';
+import { useAuthStore } from '@/store/auth';
 
 interface Props {
   table: Table;
@@ -29,6 +30,7 @@ export default function TableCheckoutModal({
   onAddCartToOrder
 }: Props) {
   const { t } = useI18n();
+  const { currentTenant } = useAuthStore();
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -159,7 +161,7 @@ export default function TableCheckoutModal({
           <TaxBreakdown
             taxAmount={Number(order.tax_amount)}
             taxBreakdown={order.tax_breakdown}
-            currency={currency}
+            currencyCode={currentTenant?.currency || 'INR'}
             theme="light"
           />
           <div className="flex justify-between text-lg font-bold">

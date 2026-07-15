@@ -42,8 +42,8 @@ interface PrinterState {
 
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  printBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency'>, opts?: ReceiptOptions) => Promise<void>;
-  printGstBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency'>, opts?: GstBillOptions) => Promise<void>;
+  printBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>, opts?: ReceiptOptions) => Promise<void>;
+  printGstBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>, opts?: GstBillOptions) => Promise<void>;
   printKot: (order: Order, opts?: KotOptions) => Promise<void>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;

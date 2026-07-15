@@ -9,15 +9,16 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown } from 'lucide-react';
 import type { Customer } from '@/lib/types';
-import { getCurrencySymbol, countryName } from '@/lib/countries';
+import { countryName } from '@/lib/countries';
 import { dialCodeFor, parsePhone } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 
 export default function CustomersPage() {
   const { currentTenant } = useAuthStore();
   const { t } = useI18n();
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR');
+  const fmt = useFormatCurrency();
   const defaultCountry = currentTenant?.country || 'IN';
   const dialCode = dialCodeFor(defaultCountry) || '+91';
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -145,7 +146,7 @@ export default function CustomersPage() {
                   {c.phone ? (c.country_code && !c.phone.startsWith(c.country_code) ? `${c.country_code}${c.phone}` : c.phone) : '—'}
                 </td>
                 <td className="p-4 text-center text-sm">{c.visits_count}</td>
-                <td className="p-4 text-right font-medium">{currency}{Number(c.total_spent).toLocaleString()}</td>
+                <td className="p-4 text-right font-medium">{fmt(Number(c.total_spent))}</td>
                 <td className="p-4 text-right">
                   {Number(c.wallet_balance) > 0 ? (
                     <span className="inline-flex items-center gap-1 text-purple-700 font-semibold text-sm">

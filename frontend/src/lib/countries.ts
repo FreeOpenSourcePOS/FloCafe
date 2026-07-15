@@ -4,6 +4,7 @@ export {
   getCountryByCode,
   getCurrencySymbol,
   formatCurrency,
+  formatCurrencyForTenant,
   countryName,
   countryFlag,
   type Country,

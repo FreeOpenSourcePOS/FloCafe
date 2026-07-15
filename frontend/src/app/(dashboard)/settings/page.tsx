@@ -1242,8 +1242,12 @@ export default function SettingsPage() {
                   <p className="text-sm text-gray-500 mb-1">{t('settings.languages')}</p>
                   <select
                     value={language}
-                    onChange={(e) => setLanguage(e.target.value as 'en' | 'es')}
-                    className="block w-full rounded-md border-gray-300 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                    onChange={(e) => {
+                      const lang = e.target.value as 'en' | 'es';
+                      setLanguage(lang);
+                      api.put('/settings/business', { language: lang }).catch(() => toast.error(t('settings.saveFailed')));
+                    }}
+                    className="block w-full rounded-md border-gray-200 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                   >
                     <option value="en">{t('settings.languageEn')}</option>
                     <option value="es">{t('settings.languageEs')}</option>

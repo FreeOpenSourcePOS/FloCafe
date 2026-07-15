@@ -8,7 +8,7 @@ import { Plus, X, Search, UserPlus, RotateCcw } from 'lucide-react';
 import type { Table, Customer, Order } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { countryName } from '@/lib/countries';
-import { toE164, dialCodeFor } from '@/lib/phone';
+import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
 
 
@@ -63,14 +63,14 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
   const handleCreateCustomer = async () => {
     if (!newName.trim() || !newPhone.trim()) return;
     const country = currentTenant?.country ?? 'IN';
-    const e164 = toE164(newPhone, country);
-    if (!e164) {
+    const parsed = parsePhone(newPhone, country);
+    if (!parsed) {
       toast.error(t('pos.invalidPhone', { country: countryName(country) }));
       return;
     }
     setCreating(true);
     try {
-      const { data } = await api.post('/customers', { name: newName, phone: e164, country_code: dialCode });
+      const { data } = await api.post('/customers', { name: newName, phone: parsed.e164, country_code: parsed.countryCode });
       setSelected(data.customer);
       setShowCreate(false);
       setQuery('');

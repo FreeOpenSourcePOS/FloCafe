@@ -314,7 +314,11 @@ router.post('/print-bill', requireRole('owner', 'manager'), async (req: Request,
       currency_symbol: settings.currency_symbol || '₹',
       instagram_handle: settings.instagram_handle || '',
       customer_name: customer?.name || '',
-      customer_phone: customer?.phone ? `${customer.country_code || '+91'} ${customer.phone}` : '',
+      customer_phone: customer?.phone
+        ? (customer.country_code && !customer.phone.startsWith(customer.country_code)
+           ? `${customer.country_code} ${customer.phone}`
+           : customer.phone)
+        : '',
       points_earned: pointsEarned,
       points_redeemed: pointsRedeemed,
       points_balance: pointsBalance,

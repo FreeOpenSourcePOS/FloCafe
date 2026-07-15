@@ -10,7 +10,7 @@ import toast from 'react-hot-toast';
 import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown } from 'lucide-react';
 import type { Customer } from '@/lib/types';
 import { getCurrencySymbol, countryName } from '@/lib/countries';
-import { dialCodeFor, toE164 } from '@/lib/phone';
+import { dialCodeFor, parsePhone } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
 
 
@@ -83,12 +83,12 @@ export default function CustomersPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const e164 = toE164(form.phone, defaultCountry);
-    if (!e164) {
+    const parsed = parsePhone(form.phone, defaultCountry);
+    if (!parsed) {
       toast.error(t('pos.invalidPhone', { country: countryName(defaultCountry) }));
       return;
     }
-    const payload = { ...form, phone: e164, country_code: dialCodeFor(defaultCountry) };
+    const payload = { ...form, phone: parsed.e164, country_code: parsed.countryCode };
     try {
       if (editingCustomer) {
         await api.put(`/customers/${editingCustomer.id}`, payload);

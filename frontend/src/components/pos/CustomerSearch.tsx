@@ -7,7 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import { X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { countryName } from '@/lib/countries';
-import { toE164, dialCodeFor } from '@/lib/phone';
+import { parsePhone, dialCodeFor } from '@/lib/phone';
 import type { Customer } from '@/lib/types';
 
 import { useI18n } from '@/hooks/useI18n';
@@ -128,14 +128,14 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const handleCreate = async () => {
     if (!name.trim() || !phone.trim()) return;
     const country = currentTenant?.country ?? 'IN';
-    const e164 = toE164(phone, country);
-    if (!e164) {
+    const parsed = parsePhone(phone, country);
+    if (!parsed) {
       toast.error(t('pos.invalidPhone', { country: countryName(country) }));
       return;
     }
     setCreating(true);
     try {
-      const { data } = await api.post('/customers', { name: name.trim(), phone: e164, country_code: dialCode });
+      const { data } = await api.post('/customers', { name: name.trim(), phone: parsed.e164, country_code: parsed.countryCode });
       cart.setCustomer(data.customer);
       setPhone(''); setName(''); setMatched(null); setSearched(false);
       toast.success(t('pos.customerCreated'));

@@ -801,6 +801,22 @@ const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.exec(`UPDATE loyalty_ledger SET expires_at = NULL WHERE expires_at IS NOT NULL`);
     },
   },
+  {
+    version: 22,
+    name: 'add_customers_phone_digits',
+    up: () => {
+      if (!getColumns(db, 'customers').includes('phone_digits')) {
+        db.exec(`
+          ALTER TABLE customers ADD COLUMN phone_digits TEXT
+            GENERATED ALWAYS AS (
+              CASE WHEN phone IS NULL THEN NULL
+                   ELSE REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', ''), '(', '')
+              END
+            ) STORED
+        `);
+      }
+    },
+  },
 ];
 
 function runMigrations(): void {

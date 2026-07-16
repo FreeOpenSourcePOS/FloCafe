@@ -82,7 +82,7 @@ export function registerRoutes(app: Express): void {
 
       const customers = db.prepare(`
         SELECT * FROM customers
-        WHERE is_active = 1 AND (phone LIKE ? OR name LIKE ? OR email LIKE ?)
+        WHERE is_active = 1 AND (phone_digits LIKE ? OR name LIKE ? OR email LIKE ?)
         ORDER BY name LIMIT 20
       `).all(searchTerm, searchTerm, searchTerm);
 

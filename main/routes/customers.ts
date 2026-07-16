@@ -54,7 +54,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
 
     if (req.query.search) {
       const search = `%${req.query.search}%`;
-      query += ' AND (c.name LIKE ? OR c.phone LIKE ? OR c.email LIKE ?)';
+      query += ' AND (c.name LIKE ? OR c.phone_digits LIKE ? OR c.email LIKE ?)';
       params.push(search, search, search);
     }
 
@@ -66,28 +66,6 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
 
     const customers = db.prepare(query).all(...params);
     res.json({ data: customers });
-  } catch (error: any) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.get('/search', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
-  try {
-    const { q } = req.query;
-    if (!q || String(q).length < 2) {
-      return res.status(400).json({ error: 'Search query must be at least 2 characters' });
-    }
-
-    const db = getDatabase();
-    const searchTerm = `%${q}%`;
-
-    const customers = db.prepare(`
-      SELECT * FROM customers
-      WHERE is_active = 1 AND (phone LIKE ? OR name LIKE ? OR email LIKE ?)
-      ORDER BY name LIMIT 20
-    `).all(searchTerm, searchTerm, searchTerm);
-
-    res.json({ customers: customers.map(parseCustomer) });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }

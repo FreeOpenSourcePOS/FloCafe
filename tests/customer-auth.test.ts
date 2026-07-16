@@ -73,7 +73,6 @@ async function main() {
 
   const unauthCases: Array<[string, string, object?]> = [
     ['GET',    '/api/customers/'],
-    ['GET',    `/api/customers/search?q=test`],
     ['GET',    `/api/customers/${custId}`],
     ['GET',    `/api/customers/${custId}/wallet`],
     ['POST',   '/api/customers/', { name: 'Attacker', phone: '5559999999' }],
@@ -94,9 +93,6 @@ async function main() {
   for (const [label, auth] of [['cashier', cashierAuth], ['waiter', waiterAuth]]) {
     const listRes = await request(app).get('/api/customers/').set(auth as any);
     assertEqual(listRes.status, 200, `${label} can GET /api/customers/`);
-
-    const searchRes = await request(app).get('/api/customers/search?q=Auth').set(auth as any);
-    assertEqual(searchRes.status, 200, `${label} can GET /api/customers/search`);
 
     const getRes = await request(app).get(`/api/customers/${custId}`).set(auth as any);
     assertEqual(getRes.status, 200, `${label} can GET /api/customers/:id`);

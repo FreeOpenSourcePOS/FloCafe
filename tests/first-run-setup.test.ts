@@ -75,7 +75,7 @@ async function main() {
     throw error;
   }
 
-  assert.equal(getCurrentSchemaVersion(), 21, 'fresh database migrates to latest schema');
+  assert.equal(getCurrentSchemaVersion(), 22, 'fresh database migrates to latest schema');
   assert.equal(count('users'), 0, 'fresh install starts without users');
   assert.equal(count('categories'), 0, 'fresh install starts with no sample categories');
   assert.equal(count('products'), 0, 'fresh install starts with no sample products');

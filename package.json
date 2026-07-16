@@ -85,10 +85,10 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20.14.0",
     "@types/qrcode": "^1.5.6",
-    "@types/supertest": "^7.2.0",
+    "@types/supertest": "^7.2.1",
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.5.10",
-    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.63.0",
     "electron": "^31.7.7",
     "electron-builder": "^26.15.3",
@@ -100,9 +100,9 @@
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^11.10.0",
-    "bonjour-service": "^1.2.1",
+    "bonjour-service": "^1.4.3",
     "cors": "^2.8.5",
-    "electron-log": "^5.4.3",
+    "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
@@ -110,7 +110,7 @@
     "node-thermal-printer": "^4.2.1",
     "qrcode": "^1.5.3",
     "uuid": "^11.1.1",
-    "ws": "^8.17.0"
+    "ws": "^8.21.1"
   },
   "build": {
     "appId": "com.flo.desktop",

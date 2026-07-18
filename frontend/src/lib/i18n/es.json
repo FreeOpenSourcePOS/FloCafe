@@ -1177,5 +1177,8 @@
   "tables.statusHeld": "En espera",
   "tables.statusOccupied": "Ocupada",
   "tables.statusReserved": "Reservada",
-  "tables.updateStatusFailed": "No se pudo actualizar"
+  "tables.updateStatusFailed": "No se pudo actualizar",
+  "customers.invalidPhoneSingular": "el cliente tiene",
+  "customers.invalidPhonePlural": "los clientes tienen",
+  "common.reviewFix": "Revisar y corregir"
 }

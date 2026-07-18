@@ -22,7 +22,7 @@ interface Props {
 
 export default function TableCheckoutModal({
   table,
-  currency,
+
   cartItemCount,
   onClose,
   onAddItems,

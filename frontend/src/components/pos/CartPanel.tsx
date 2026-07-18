@@ -30,7 +30,7 @@ const orderTypeIcons = {
   delivery: Truck,
 };
 
-export default function CartPanel({ tables, currency, submitting, onPlaceOrder, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();

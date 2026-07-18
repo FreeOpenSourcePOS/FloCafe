@@ -32,10 +32,9 @@ function digitsOnly(value: string | null | undefined): string {
   return String(value || '').replace(/\D/g, '');
 }
 
-function phoneMatchesInput(customerPhone: string | null | undefined, inputDigits: string): boolean {
-  const customerDigits = digitsOnly(customerPhone);
-  if (!customerDigits || !inputDigits) return false;
-  return customerDigits === inputDigits || customerDigits.endsWith(inputDigits) || inputDigits.endsWith(customerDigits);
+function phoneMatchesInput(customerPhoneDigits: string | null | undefined, inputDigits: string): boolean {
+  if (!customerPhoneDigits || !inputDigits) return false;
+  return customerPhoneDigits.includes(inputDigits);
 }
 
 function TagBadges({ counts, t }: { counts: Record<string, number>; t: (k: string, p?: Record<string, string | number>) => string }) {
@@ -90,7 +89,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       try {
         const { data } = await api.get(`/customers-search?q=${encodeURIComponent(p)}`);
         const results = Array.isArray(data) ? data : (data.customers || []);
-        const exactMatch = results.find((result: Customer) => phoneMatchesInput(result.phone, p)) || null;
+        const exactMatch = results.find((result: Customer) => phoneMatchesInput(result.phone_digits, p)) || null;
         const found: Customer | null = exactMatch || results[0] || null;
         setMatched(found);
         setName(found ? found.name : '');

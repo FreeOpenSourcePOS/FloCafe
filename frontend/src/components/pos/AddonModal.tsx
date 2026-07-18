@@ -15,7 +15,7 @@ interface Props {
   onClose: () => void;
 }
 
-export default function AddonModal({ product, currency, onAdd, onClose }: Props) {
+export default function AddonModal({ product, onAdd, onClose }: Props) {
   const { t } = useI18n();
   const fmt = useFormatCurrency();
   const [selected, setSelected] = useState<Record<number, Addon[]>>({});

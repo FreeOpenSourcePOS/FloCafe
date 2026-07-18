@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 
 
 import toast from 'react-hot-toast';
-import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown } from 'lucide-react';
+import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
 import { dialCodeFor, parsePhone } from '@/lib/phone';
@@ -21,6 +22,10 @@ export default function CustomersPage() {
   const fmt = useFormatCurrency();
   const defaultCountry = currentTenant?.country || 'IN';
   const dialCode = dialCodeFor(defaultCountry) || '+91';
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const filter = searchParams.get('filter');
+  
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -54,7 +59,9 @@ export default function CustomersPage() {
 
   const fetchCustomers = async () => {
     try {
-      const params = search ? { search } : {};
+      const params: Record<string, string> = {};
+      if (search) params.search = search;
+      if (filter) params.filter = filter;
       const { data } = await api.get('/customers', { params });
       setCustomers(data.data || []);
     } catch {
@@ -66,7 +73,7 @@ export default function CustomersPage() {
 
    
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchCustomers(); }, [search]);
+  useEffect(() => { fetchCustomers(); }, [search, filter]);
 
   const openAdd = () => {
     setEditingCustomer(null);
@@ -109,7 +116,17 @@ export default function CustomersPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('nav.customers')}</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="text-2xl font-bold text-gray-900">{t('nav.customers')}</h1>
+          {filter === 'invalid_phones' && (
+            <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">
+              <AlertCircle size={14} /> Action Required
+              <button onClick={() => router.push('/customers')} className="ml-1 text-red-500 hover:text-red-700">
+                <X size={12} />
+              </button>
+            </span>
+          )}
+        </div>
         <Button onClick={openAdd}><Plus size={16} className="mr-1" /> {t('customer.add')}</Button>
       </div>
 
@@ -143,7 +160,16 @@ export default function CustomersPage() {
                   <p className="text-xs text-gray-500">{c.email || '—'}</p>
                 </td>
                 <td className="p-4 text-sm text-gray-600">
-                  {c.phone ? (c.country_code && !c.phone.startsWith(c.country_code) ? `${c.country_code}${c.phone}` : c.phone) : '—'}
+                  <div className="flex items-center gap-2">
+                    <span>
+                      {c.phone ? (c.country_code && !c.phone.startsWith(c.country_code) ? `${c.country_code}${c.phone}` : c.phone) : '—'}
+                    </span>
+                    {c.phone && !c.phone.startsWith('+') && (
+                      <div className="text-red-500 flex items-center" title="Invalid format">
+                        <AlertCircle size={16} />
+                      </div>
+                    )}
+                  </div>
                 </td>
                 <td className="p-4 text-center text-sm">{c.visits_count}</td>
                 <td className="p-4 text-right font-medium">{fmt(Number(c.total_spent))}</td>

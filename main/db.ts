@@ -817,7 +817,133 @@ const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 23,
+    name: 'normalize_customer_phones',
+    up: () => {
+      const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
+      const tenantCountry = tenantCountryRow?.value || 'IN';
+      
+      const { parsePhoneE164 } = require('./lib/phone');
+
+      const customers = db.prepare(
+        "SELECT id, phone, country_code FROM customers WHERE phone IS NOT NULL AND phone != ''"
+      ).all() as any[];
+
+      let normalized = 0, unparseable = 0;
+
+      for (const c of customers) {
+        const hint = c.country_code || tenantCountry;
+        const parsed = parsePhoneE164(c.phone, hint);
+        if (parsed) {
+          db.prepare('UPDATE customers SET phone = ?, country_code = ? WHERE id = ?')
+            .run(parsed.e164, parsed.countryCode, c.id);
+          normalized++;
+        } else {
+          console.log(`[MIGRATION v23] unparseable: ${c.id} ${c.phone}`);
+          unparseable++;
+        }
+      }
+      console.log(`[MIGRATION v23] normalized: ${normalized}, unparseable: ${unparseable}`);
+
+      const dupes = db.prepare(`
+        SELECT phone_digits, GROUP_CONCAT(id) as ids, COUNT(*) as cnt
+        FROM customers
+        WHERE phone_digits IS NOT NULL AND phone_digits != ''
+        GROUP BY phone_digits
+        HAVING cnt > 1
+      `).all() as any[];
+
+      let merged = 0;
+
+      for (const group of dupes) {
+        const ids = group.ids.split(',').sort();
+        const allRows = db.prepare(
+          `SELECT * FROM customers WHERE id IN (${ids.map(() => '?').join(',')})
+           ORDER BY created_at ASC, id ASC`
+        ).all(...ids) as any[];
+
+        const winner = allRows[0];
+        const losers = allRows.slice(1);
+
+        const coalesceFields = ['email', 'address', 'notes', 'country_code'];
+        for (const loser of losers) {
+          for (const field of coalesceFields) {
+            if (!winner[field] && loser[field]) {
+              winner[field] = loser[field];
+            }
+          }
+        }
+
+        db.prepare(`
+          UPDATE customers SET email = ?, address = ?, notes = ?, country_code = ?, updated_at = ?
+          WHERE id = ?
+        `).run(winner.email, winner.address, winner.notes, winner.country_code, now(), winner.id);
+
+        const fkTables = ['orders', 'bills', 'held_orders', 'loyalty_ledger'];
+        for (const table of fkTables) {
+          db.prepare(`UPDATE ${table} SET customer_id = ? WHERE customer_id IN (${losers.map(() => '?').join(',')})`)
+            .run(winner.id, ...losers.map((l: any) => l.id));
+        }
+
+        const loserIds = losers.map((l: any) => l.id);
+        db.prepare(`DELETE FROM customers WHERE id IN (${loserIds.map(() => '?').join(',')})`)
+          .run(...loserIds);
+
+        console.log(`[MIGRATION v23] merged ${loserIds.join(',')} → ${winner.id} (phone: ${winner.phone})`);
+        merged += losers.length;
+      }
+      console.log(`[MIGRATION v23] merged ${merged} duplicate customer(s)`);
+
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_phone_digits_unique
+        ON customers(phone_digits)
+        WHERE phone_digits IS NOT NULL AND phone_digits != ''
+      `);
+      
+      const total = db.prepare('SELECT COUNT(*) as cnt FROM customers').get() as { cnt: number };
+      const nonE164 = db.prepare(
+        "SELECT COUNT(*) as cnt FROM customers WHERE phone IS NOT NULL AND phone != '' AND phone NOT LIKE '+%'"
+      ).get() as { cnt: number };
+      console.log(`[MIGRATION v23] verification: ${total.cnt} customers, ${nonE164.cnt} still non-E.164`);
+      if (nonE164.cnt > 0) {
+        console.warn(`[MIGRATION v23] WARNING: ${nonE164.cnt} customers have unparseable phones (preserved as raw)`);
+      }
+    },
+  },
 ];
+
+function syncBackupBeforeMigration(version: number): void {
+  try {
+    const dbPath = getDbPath();
+    const backupDir = getBackupDir();
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const targetPath = path.join(backupDir, `flo-backup-${timestamp}-pre-v${version}.db`);
+
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    fs.copyFileSync(dbPath, targetPath);
+
+    const backupDb = new Database(targetPath);
+    backupDb.pragma('journal_mode = DELETE');
+    backupDb.exec(`
+      CREATE TABLE IF NOT EXISTS _flo_meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      )
+    `);
+    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('schema_version', String(getCurrentSchemaVersion()));
+    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('backup_created_at', new Date().toISOString());
+    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('app_version', app.getVersion());
+    backupDb.close();
+
+    console.log(`[DB] Auto-backup before migration v${version} created at ${targetPath}`);
+  } catch (err: any) {
+    console.error(`[DB] Auto-backup before migration failed:`, err.message);
+  }
+}
 
 function runMigrations(): void {
   const current = getCurrentSchemaVersion();
@@ -832,6 +958,12 @@ function runMigrations(): void {
 
   for (const migration of MIGRATIONS) {
     if (migration.version <= current) continue;
+    
+    if (migration.version === 23) {
+      console.log(`[DB] Triggering auto-backup before v23...`);
+      syncBackupBeforeMigration(23);
+    }
+
     console.log(`[DB] Applying migration v${migration.version}: ${migration.name}`);
     db.transaction(() => {
       migration.up();

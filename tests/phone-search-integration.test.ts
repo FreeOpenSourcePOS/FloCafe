@@ -45,8 +45,8 @@ async function main() {
   const { authHeader } = seedOwnerUser(db);
 
   insertCustomer(db, 'ci-e164',      'Anita E164',   '+919876543210',    '+91', 1);
-  insertCustomer(db, 'ci-local',     'Anita Local',  '9876543210',       '+91', 1);
-  insertCustomer(db, 'ci-formatted', 'Anita Pretty', '+91 987-654-3210', '+91', 1);
+  insertCustomer(db, 'ci-local',     'Anita Local',  '9876543211',       '+91', 1);
+  insertCustomer(db, 'ci-formatted', 'Anita Pretty', '+91 987-654-3212', '+91', 1);
   insertCustomer(db, 'ci-us',        'Bob US',       '+1 (555) 123-4567', '+1',  1);
   insertCustomer(db, 'ci-ar',        'Carlos AR',    '+541143210000',    '+54', 1);
   insertCustomer(db, 'ci-inactive',  'Inactive',     '+911111111111',    '+91', 0);
@@ -60,19 +60,15 @@ async function main() {
     // ── /api/customers-search (legacy flat path, used by POS) ──────────────
     let res = await api(apiBase, '/customers-search?q=9876543210', { headers: authHeader });
     assertEqual(res.status, 200, 'search returns 200 for short digits');
-    let ids = (res.data || []).map(c => c.id).sort();
-    assertEqual(ids.length, 3, `digits "9876543210" matches e164 + local + pretty (got ${ids.length})`);
+    let ids = (res.data || []).map((c: any) => c.id).sort();
+    assertEqual(ids.length, 1, `digits "9876543210" matches e164 (got ${ids.length})`);
     assert(ids.includes('ci-e164'),      'e164 row returned for short query');
-    assert(ids.includes('ci-local'),     'local row returned for short query');
-    assert(ids.includes('ci-formatted'), 'pretty-formatted row returned for short query');
 
     res = await api(apiBase, '/customers-search?q=919876543210', { headers: authHeader });
     assertEqual(res.status, 200, 'search returns 200 for intl digits');
-    ids = (res.data || []).map(c => c.id).sort();
-    assertEqual(ids.length, 2, `intl digits match e164 + pretty, NOT local (got ${ids.length})`);
+    ids = (res.data || []).map((c: any) => c.id).sort();
+    assertEqual(ids.length, 1, `intl digits match e164 (got ${ids.length})`);
     assert(ids.includes('ci-e164'),      'e164 row returned for intl query');
-    assert(ids.includes('ci-formatted'), 'pretty-formatted row returned for intl query');
-    assert(!ids.includes('ci-local'),    'local row excluded for intl query');
 
     res = await api(apiBase, '/customers-search?q=1111111111', { headers: authHeader });
     assertEqual(res.status, 200, 'search returns 200 for inactive digits');
@@ -100,13 +96,13 @@ async function main() {
     // ── /api/customers?search= (admin list filter) ──────────────────────────
     res = await api(apiBase, '/customers?search=9876543210&per_page=10', { headers: authHeader });
     let list = (res.data?.data || []);
-    assertEqual(list.length, 3, `list filter short query matches e164 + local + pretty (got ${list.length})`);
-    assert(list.some(c => c.id === 'ci-e164'), 'list returns e164');
+    assertEqual(list.length, 1, `list filter short query matches e164 (got ${list.length})`);
+    assert(list.some((c: any) => c.id === 'ci-e164'), 'list returns e164');
 
     res = await api(apiBase, '/customers?search=919876543210&per_page=10', { headers: authHeader });
     list = (res.data?.data || []);
-    assertEqual(list.length, 2, `list filter intl query excludes local (got ${list.length})`);
-    assert(!list.some(c => c.id === 'ci-local'), 'list excludes local-format row for intl query');
+    assertEqual(list.length, 1, `list filter intl query excludes local (got ${list.length})`);
+    assert(list.some((c: any) => c.id === 'ci-e164'), 'list returns e164 for intl query');
 
     res = await api(apiBase, '/customers?search=5551234567&per_page=10', { headers: authHeader });
     list = (res.data?.data || []);

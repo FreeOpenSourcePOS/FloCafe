@@ -23,8 +23,9 @@ import { databaseRoutes } from './database';
 import { databaseToolsRoutes } from './database-tools';
 import { menuCsvRoutes } from './menu-csv';
 import { heldOrderRoutes } from './held-orders';
-import { getDatabase, now, parseItemJson, withTxn } from '../db';
+import { getDatabase, now, parseItemJson, withTxn, getSettingValue } from '../db';
 import { cloudSync } from '../services/cloud-sync';
+import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 
 export function registerRoutes(app: Express): void {
   // Auth routes
@@ -101,7 +102,12 @@ export function registerRoutes(app: Express): void {
       }
 
       const db = getDatabase();
-      const customer = db.prepare('SELECT * FROM customers WHERE phone = ?').get(phone);
+      const tenantCountry = getSettingValue('country') || 'IN';
+      const parsed = parsePhoneE164(String(phone).trim(), String(country_code || tenantCountry).trim());
+      const lookupPhone = parsed ? parsed.e164 : String(phone).trim();
+      const phoneDigits = stripPhoneDigits(lookupPhone);
+
+      const customer = db.prepare('SELECT * FROM customers WHERE phone_digits = ?').get(phoneDigits);
 
       if (customer) {
         res.json({ found: true, customer });

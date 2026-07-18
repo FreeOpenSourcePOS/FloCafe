@@ -49,7 +49,7 @@ interface Props {
 
 export default function ProductGrid({
   categories, products, selectedCategory, setSelectedCategory,
-  search, setSearch, currency, onProductClick, sidebarOpen = true,
+  search, setSearch, onProductClick, sidebarOpen = true,
 }: Props) {
   const cart = useCartStore();
   const { showProductImages } = usePosSettingsStore();

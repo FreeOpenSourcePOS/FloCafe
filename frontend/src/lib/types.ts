@@ -114,6 +114,7 @@ export interface Table {
 export interface Customer {
   id: string | number;
   phone: string;
+  phone_digits?: string | null;
   country_code: string;
   name: string;
   email: string | null;

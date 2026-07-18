@@ -1177,5 +1177,8 @@
   "tables.statusHeld": "Held",
   "tables.statusOccupied": "Occupied",
   "tables.statusReserved": "Reserved",
-  "tables.updateStatusFailed": "Failed to update"
+  "tables.updateStatusFailed": "Failed to update",
+  "customers.invalidPhoneSingular": "customer has",
+  "customers.invalidPhonePlural": "customers have",
+  "common.reviewFix": "Review & Fix"
 }

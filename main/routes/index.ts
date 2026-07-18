@@ -103,7 +103,7 @@ export function registerRoutes(app: Express): void {
 
       const db = getDatabase();
       const tenantCountry = getSettingValue('country') || 'IN';
-      const parsed = parsePhoneE164(String(phone).trim(), String(country_code || tenantCountry).trim());
+      const parsed = parsePhoneE164(String(phone).trim(), tenantCountry);
       const lookupPhone = parsed ? parsed.e164 : String(phone).trim();
       const phoneDigits = stripPhoneDigits(lookupPhone);
 

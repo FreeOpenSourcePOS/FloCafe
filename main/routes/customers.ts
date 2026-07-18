@@ -152,7 +152,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
     if (finalPhone) {
       const tenantCountry = getSettingValue('country') || 'IN';
-      const parsed = parsePhoneE164(finalPhone, finalCountryCode || tenantCountry);
+      const parsed = parsePhoneE164(finalPhone, tenantCountry);
       if (!parsed) {
         return res.status(400).json({ message: 'Phone number is not valid. Use international format (e.g. +919876543210).' });
       }
@@ -231,7 +231,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
     if (finalPhone) {
       const tenantCountry = getSettingValue('country') || 'IN';
-      const parsed = parsePhoneE164(finalPhone, finalCountryCode || tenantCountry);
+      const parsed = parsePhoneE164(finalPhone, tenantCountry);
       if (!parsed) {
         return res.status(400).json({ error: 'Phone number is not valid. Use international format (e.g. +919876543210).' });
       }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { AlertCircle, ChevronRight, X } from 'lucide-react';
+import { AlertCircle, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import api from '@/lib/api';
 import { useI18n } from '@/hooks/useI18n';
@@ -7,19 +7,22 @@ import { useI18n } from '@/hooks/useI18n';
 export default function GlobalNotifications() {
   const { t } = useI18n();
   const [invalidPhonesCount, setInvalidPhonesCount] = useState(0);
-  const [dismissed, setDismissed] = useState(false);
 
   useEffect(() => {
-    api.get('/customers/alerts')
-      .then(res => {
-        if (res.data?.invalidPhonesCount > 0) {
-          setInvalidPhonesCount(res.data.invalidPhonesCount);
-        }
-      })
-      .catch(() => {});
+    const fetchAlerts = () => {
+      api.get('/customers/alerts')
+        .then(res => {
+          setInvalidPhonesCount(res.data?.invalidPhonesCount || 0);
+        })
+        .catch(() => {});
+    };
+
+    fetchAlerts();
+    const interval = setInterval(fetchAlerts, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  if (invalidPhonesCount === 0 || dismissed) return null;
+  if (invalidPhonesCount === 0) return null;
 
   return (
     <div className="bg-red-50 border-b border-red-100 px-4 py-2 flex items-center justify-between shrink-0">
@@ -35,13 +38,6 @@ export default function GlobalNotifications() {
           {t('common.reviewFix') || 'Review & Fix'} <ChevronRight className="w-4 h-4 ml-0.5" />
         </Link>
       </div>
-      <button 
-        onClick={() => setDismissed(true)}
-        className="text-red-400 hover:text-red-600 p-1"
-        aria-label="Dismiss notification"
-      >
-        <X className="w-4 h-4" />
-      </button>
     </div>
   );
 }

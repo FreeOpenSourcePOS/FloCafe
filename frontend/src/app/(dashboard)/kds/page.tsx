@@ -588,7 +588,7 @@ export default function KdsPage() {
           </div>
         </div>
       )}
-      <ConfirmDialog />
+      {ConfirmDialog}
     </div>
   );
 }

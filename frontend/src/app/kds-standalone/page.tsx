@@ -573,7 +573,7 @@ export default function KdsStandalonePage() {
           </div>
         </div>
       )}
-      <ConfirmDialog />
+      {ConfirmDialog}
     </div>
   );
 }

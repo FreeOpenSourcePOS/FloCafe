@@ -148,7 +148,7 @@ export default function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
-      <ConfirmDialog />
+      {ConfirmDialog}
     </Sidebar>
   );
 }

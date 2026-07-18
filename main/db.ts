@@ -524,7 +524,7 @@ export function buildIdealSchemaDb(): Database.Database {
 // Each entry runs exactly once, in order, wrapped in a transaction.
 // To add a schema change: append a new entry. Never edit existing entries.
 
-const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
+export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   {
     version: 1,
     name: 'initial_schema',
@@ -833,8 +833,7 @@ const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       let normalized = 0, unparseable = 0;
 
       for (const c of customers) {
-        const hint = c.country_code || tenantCountry;
-        const parsed = parsePhoneE164(c.phone, hint);
+        const parsed = parsePhoneE164(c.phone, tenantCountry);
         if (parsed) {
           db.prepare('UPDATE customers SET phone = ?, country_code = ? WHERE id = ?')
             .run(parsed.e164, parsed.countryCode, c.id);
@@ -909,6 +908,34 @@ const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       if (nonE164.cnt > 0) {
         console.warn(`[MIGRATION v23] WARNING: ${nonE164.cnt} customers have unparseable phones (preserved as raw)`);
       }
+    },
+  },
+  {
+    version: 24,
+    name: 'normalize_customer_phones_retry',
+    up: () => {
+      const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
+      const tenantCountry = tenantCountryRow?.value || 'IN';
+      
+      const { parsePhoneE164 } = require('./lib/phone');
+
+      const customers = db.prepare(
+        "SELECT id, phone, country_code FROM customers WHERE phone IS NOT NULL AND phone != ''"
+      ).all() as any[];
+
+      let normalized = 0, unparseable = 0;
+
+      for (const c of customers) {
+        const parsed = parsePhoneE164(c.phone, tenantCountry);
+        if (parsed && parsed.e164 !== c.phone) {
+          db.prepare('UPDATE customers SET phone = ?, country_code = ? WHERE id = ?')
+            .run(parsed.e164, parsed.countryCode, c.id);
+          normalized++;
+        } else if (!parsed) {
+          unparseable++;
+        }
+      }
+      console.log(`[MIGRATION v24] normalized: ${normalized}, unparseable: ${unparseable}`);
     },
   },
 ];

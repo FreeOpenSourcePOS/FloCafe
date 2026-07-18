@@ -135,11 +135,11 @@ async function main() {
     });
     assertEqual(pay2.status, 200, 'payment accepted');
 
-    // Coffee: cb_percent=0 → 0, Sandwich: floor(200 × 10/100) = 20 → total = 20
+    // Coffee: cb_percent=0 → 0, Sandwich: floor(200 × 10/100) = 20 → total = 20 * 100 = 2000
     const ledger2 = db.prepare(
       "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-global-1' AND type = 'credit' AND bill_id = ?"
     ).get(bill2.data.bill.id) as any;
-    assertEqual(ledger2.amount, 20, 'cashback = 20 (only from the cb_percent=10 item)');
+    assertEqual(ledger2.amount, 2000, 'cashback = 2000 points (only from the cb_percent=10 item)');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario 3: Discounted order — cashback on discounted subtotal
@@ -178,11 +178,11 @@ async function main() {
     });
     assertEqual(pay3.status, 200, 'payment accepted');
 
-    // Discounted subtotal = ₹200, cb_percent = 10 → cashback = floor(200 × 10/100) = 20
+    // Discounted subtotal = ₹200, cb_percent = 10 → cashback = floor(200 × 10/100) = 20 * 100 = 2000
     const ledger3 = db.prepare(
       "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-global-2' AND type = 'credit' AND bill_id = ?"
     ).get(bill3Gen.data.bill.id) as any;
-    assertEqual(ledger3.amount, 20, 'cashback = 20 (₹200 discounted × cb_percent 10)');
+    assertEqual(ledger3.amount, 2000, 'cashback = 2000 points (₹200 discounted × cb_percent 10)');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario 4: Customer list API returns updated wallet_balance
@@ -194,12 +194,12 @@ async function main() {
 
     const cust1 = customers.data.data.find((c: any) => c.id === 'cust-global-1');
     assert(cust1 !== undefined, 'cust-global-1 found in list');
-    // Total earned: 0 (scenario 1) + 20 (scenario 2) = 20
-    assertEqual(cust1.wallet_balance, 20, 'wallet_balance = 20 (0 + 20)');
+    // Total earned: 0 (scenario 1) + 2000 (scenario 2) = 2000
+    assertEqual(cust1.wallet_balance, 2000, 'wallet_balance = 2000 points (0 + 2000)');
 
     const cust2 = customers.data.data.find((c: any) => c.id === 'cust-global-2');
     assert(cust2 !== undefined, 'cust-global-2 found in list');
-    assertEqual(cust2.wallet_balance, 20, 'wallet_balance = 20 (discounted order)');
+    assertEqual(cust2.wallet_balance, 2000, 'wallet_balance = 2000 points (discounted order)');
 
   } finally {
     server.close();

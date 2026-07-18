@@ -102,9 +102,9 @@ async function main() {
     ).get(billId) as any;
     assert(ledgerEntry !== undefined, 'loyalty credit entry exists');
     if (ledgerEntry) {
-      // 5% of ₹1000 subtotal = ₹50 cashback (floor)
-      const expectedCashback = Math.floor(1000 * 5 / 100);
-      assertEqual(ledgerEntry.amount, expectedCashback, `cashback = ₹${expectedCashback} (5% of ₹1000)`);
+      // 5% of ₹1000 subtotal = ₹50 cashback (floor) * 100 points/₹ = 5000 points
+      const expectedCashback = Math.floor(1000 * 5 / 100) * 100;
+      assertEqual(ledgerEntry.amount, expectedCashback, `cashback = ${expectedCashback} points (5% of ₹1000)`);
       assert(ledgerEntry.expires_at === null, 'points do not expire');
     }
 
@@ -126,7 +126,7 @@ async function main() {
       "SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE customer_id = 'cust-loyal' AND type = 'debit'"
     ).get() as any;
     const walletBalance = Math.max(0, credits.total - debits.total);
-    assertEqual(walletBalance, 50, `wallet balance = ₹50 (5% cashback on ₹1000)`);
+    assertEqual(walletBalance, 5000, `wallet balance = 5000 points (5% cashback on ₹1000)`);
 
   } finally {
     server.close();

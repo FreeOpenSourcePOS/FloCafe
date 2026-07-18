@@ -249,7 +249,7 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
             }
             // Points earned come solely from each item's own cashback percentage
             if (item.cb_percent > 0) {
-              loyaltyCashbackToCredit += Math.floor(effectiveSubtotal * item.cb_percent / 100);
+              loyaltyCashbackToCredit += Math.floor(effectiveSubtotal * item.cb_percent / 100) * 100; // Multiply by LOYALTY_REDEMPTION_RATE (100) to store as points instead of raw currency
             }
           }
         }

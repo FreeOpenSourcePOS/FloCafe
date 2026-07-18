@@ -1181,16 +1181,18 @@ export default function SettingsPage() {
                     <p className="font-medium text-gray-900">{form.taxRegistered ? t('settings.yes') : t('settings.no')}</p>
                   )}
                 </div>
-                <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
-                  {isAdmin ? (
-                    <input type="text" value={form.gstin} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
-                      placeholder={t('settings.taxIdPlaceholder')}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
-                  ) : (
-                    <p className="font-medium text-gray-900">{form.gstin || '—'}</p>
-                  )}
-                </div>
+                {form.taxRegistered && (
+                  <div>
+                    <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
+                    {isAdmin ? (
+                      <input type="text" value={form.gstin} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
+                        placeholder={t('settings.taxIdPlaceholder')}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                    ) : (
+                      <p className="font-medium text-gray-900">{form.gstin || '—'}</p>
+                    )}
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.phone')}</label>
                   {isAdmin ? (

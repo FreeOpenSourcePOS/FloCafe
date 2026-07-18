@@ -810,7 +810,7 @@ const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           ALTER TABLE customers ADD COLUMN phone_digits TEXT
             GENERATED ALWAYS AS (
               CASE WHEN phone IS NULL THEN NULL
-                   ELSE REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', ''), '(', '')
+                   ELSE REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(phone, '+', ''), ' ', ''), '-', ''), '(', ''), ')', ''), '.', '')
               END
             ) STORED
         `);

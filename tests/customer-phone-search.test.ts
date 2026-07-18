@@ -21,6 +21,7 @@ const ins = db.prepare(
 ins.run('c-e164',     'Anita E164',  '+919876543210',     1);
 ins.run('c-local',    'Anita Local', '9876543210',        1);
 ins.run('c-formatted','Anita Pretty','+91 987-654-3210',  1);
+ins.run('c-us',       'Bob US',      '+1 (555) 123-4567', 1);
 ins.run('c-ar',       'Carlos AR',   '+541143210000',     1);
 ins.run('c-inactive', 'Inactive',    '+911111111111',     0);
 
@@ -39,6 +40,14 @@ try {
   assert(hits1.includes('c-e164'),      'e164 row returned');
   assert(hits1.includes('c-local'),     'local row returned');
   assert(hits1.includes('c-formatted'), 'pretty-formatted row returned');
+
+  const hitsUs = search('5551234567');
+  assertEqual(hitsUs.length, 1, `US short digits "5551234567" find c-us only (got ${hitsUs.length})`);
+  assertEqual(hitsUs[0], 'c-us', 'US pretty-format row matched after stripping parens');
+
+  const hitsUsIntl = search('15551234567');
+  assertEqual(hitsUsIntl.length, 1, `US intl digits "15551234567" find c-us only (got ${hitsUsIntl.length})`);
+  assertEqual(hitsUsIntl[0], 'c-us', 'US pretty-format row matched for intl-digit query');
 
   const hits2 = search('919876543210');
   assertEqual(hits2.length, 2, `intl digits "919876543210" match e164 and pretty-formatted rows (got ${hits2.length})`);

@@ -47,6 +47,7 @@ async function main() {
   insertCustomer(db, 'ci-e164',      'Anita E164',   '+919876543210',    '+91', 1);
   insertCustomer(db, 'ci-local',     'Anita Local',  '9876543210',       '+91', 1);
   insertCustomer(db, 'ci-formatted', 'Anita Pretty', '+91 987-654-3210', '+91', 1);
+  insertCustomer(db, 'ci-us',        'Bob US',       '+1 (555) 123-4567', '+1',  1);
   insertCustomer(db, 'ci-ar',        'Carlos AR',    '+541143210000',    '+54', 1);
   insertCustomer(db, 'ci-inactive',  'Inactive',     '+911111111111',    '+91', 0);
 
@@ -82,6 +83,16 @@ async function main() {
     assertEqual(ids.length, 1, `AR digits find ci-ar only (got ${ids.length})`);
     assertEqual(ids[0], 'ci-ar', 'AR row is ci-ar');
 
+    res = await api(apiBase, '/customers-search?q=5551234567', { headers: authHeader });
+    ids = (res.data || []).map(c => c.id);
+    assertEqual(ids.length, 1, `US short digits "5551234567" find ci-us only after stripping parens (got ${ids.length})`);
+    assertEqual(ids[0], 'ci-us', 'US pretty-format row matched for short query');
+
+    res = await api(apiBase, '/customers-search?q=15551234567', { headers: authHeader });
+    ids = (res.data || []).map(c => c.id);
+    assertEqual(ids.length, 1, `US intl digits "15551234567" find ci-us only (got ${ids.length})`);
+    assertEqual(ids[0], 'ci-us', 'US pretty-format row matched for intl query');
+
     res = await api(apiBase, '/customers-search?q=anita', { headers: authHeader });
     ids = (res.data || []).map(c => c.id).sort();
     assertEqual(ids.length, 3, `name LIKE branch matches anita (got ${ids.length})`);
@@ -96,6 +107,16 @@ async function main() {
     list = (res.data?.data || []);
     assertEqual(list.length, 2, `list filter intl query excludes local (got ${list.length})`);
     assert(!list.some(c => c.id === 'ci-local'), 'list excludes local-format row for intl query');
+
+    res = await api(apiBase, '/customers?search=5551234567&per_page=10', { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, `list filter US short query matches ci-us only (got ${list.length})`);
+    assertEqual(list[0]?.id, 'ci-us', 'list filter matches US pretty-format row');
+
+    res = await api(apiBase, '/customers?search=15551234567&per_page=10', { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, `list filter US intl query matches ci-us only (got ${list.length})`);
+    assertEqual(list[0]?.id, 'ci-us', 'list filter matches US pretty-format row for intl query');
 
     server.close();
     closeDatabase();

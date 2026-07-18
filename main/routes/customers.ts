@@ -48,7 +48,7 @@ router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'waiter'), (req
       FROM customers 
       WHERE is_active = 1 
       AND phone IS NOT NULL AND phone != '' 
-      AND phone NOT LIKE '+%'
+      AND phone != '+' || phone_digits
     `).get() as { count: number };
     
     res.json({ invalidPhonesCount: result.count });
@@ -77,7 +77,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
     }
 
     if (req.query.filter === 'invalid_phones') {
-      query += " AND c.phone IS NOT NULL AND c.phone != '' AND c.phone NOT LIKE '+%'";
+      query += " AND c.phone IS NOT NULL AND c.phone != '' AND c.phone != '+' || c.phone_digits";
     }
 
     query += ' ORDER BY c.name';

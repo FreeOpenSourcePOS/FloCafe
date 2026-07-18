@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import { Clock, ChefHat, X, ChevronRight, ChevronLeft, LogOut, Wifi, WifiOff, Eye, EyeOff } from 'lucide-react';
 import type { Order, OrderItem } from '@/lib/types';
 import { useI18n } from '@/hooks/useI18n';
+import { useConfirm } from '@/hooks/use-confirm';
 
 const STATUS_CONFIG = {
   pending: { labelKey: 'kds.statusWaiting', color: 'bg-yellow-500', border: 'border-yellow-300', text: 'text-yellow-700', bg: 'bg-yellow-50', btnBg: 'bg-yellow-500 hover:bg-yellow-600' },
@@ -64,6 +65,7 @@ const activeStatus = (s: string | undefined): KitchenStatus => (s || 'pending') 
 
 export default function KdsPage() {
   const { t } = useI18n();
+  const { confirm, ConfirmDialog } = useConfirm();
   const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[s].labelKey);
   const [user, setUser] = useState<LoggedInUser | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -157,7 +159,8 @@ export default function KdsPage() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    if (!await confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) return;
     if (wsRef.current) {
       wsRef.current.close();
     }
@@ -585,6 +588,7 @@ export default function KdsPage() {
           </div>
         </div>
       )}
+      <ConfirmDialog />
     </div>
   );
 }

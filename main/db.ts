@@ -1312,7 +1312,7 @@ function seedCloudSyncDefaults(): void {
   // see specs/floadmin.md § api surface). Harmless pre-claim: every send path in
   // cloud-sync.ts is gated on api_key being present, which only exists after a
   // human claims the store on FloAdmin, so nothing transmits before then.
-  insertSettingIfMissing('cloud_sync_enabled', '1');
+  insertSettingIfMissing('cloud_sync_enabled', '0');
   insertSettingIfMissing('cloud_orders_enabled', '0');
   insertSettingIfMissing('cloud_reports_enabled', '1');
   insertSettingIfMissing('cloud_command_polling_enabled', '1');
@@ -1348,7 +1348,7 @@ function seedInstallDefaults(): void {
   insert('setup_profile', '');
   insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
   insert('cloud_connected', 'false');
-  insert('cloud_sync_enabled', '1');
+  insert('cloud_sync_enabled', '0');
   insert('cloud_orders_enabled', '0');
   insert('cloud_reports_enabled', '1');
   insert('cloud_command_polling_enabled', '1');

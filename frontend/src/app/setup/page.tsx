@@ -57,6 +57,15 @@ export default function SetupPage() {
   const [masterPinConfirm, setMasterPinConfirm] = useState('');
   const masterPinValid = /^\d{4}$/.test(masterPin) && masterPin === masterPinConfirm;
 
+  const isPasswordValid = (password: string) => {
+    if (!password || password.length < 8) return false;
+    if (!/[A-Z]/.test(password)) return false;
+    if (!/[a-z]/.test(password)) return false;
+    if (!/[0-9]/.test(password)) return false;
+    return true;
+  };
+  const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
+
   useEffect(() => {
     api.get('/auth/setup/status')
       .then(({ data }) => setMasterPinAvailable(!!data.masterPinAvailable))
@@ -94,6 +103,10 @@ export default function SetupPage() {
   const validateOwner = () => {
     if (!form.name.trim() || !form.email.trim() || !form.password) {
       toast.error(t('setup.errorNameRequired'));
+      return false;
+    }
+    if (!isPasswordValid(form.password)) {
+      toast.error('Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.');
       return false;
     }
     if (form.password !== form.confirmPassword) {
@@ -431,6 +444,11 @@ export default function SetupPage() {
                       </div>
                     </div>
                   </div>
+                  {!passwordMeetsRequirements && (
+                    <p className="text-xs font-medium text-red-600">
+                      Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.
+                    </p>
+                  )}
                   {passwordsEntered && (
                     <p className={`text-xs font-medium ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}>
                       {passwordsMatch ? t('setup.passwordsMatch') : t('setup.passwordsMismatch')}
@@ -471,7 +489,8 @@ export default function SetupPage() {
                     </span>
                   </label>
 
-                  <Button type="submit" disabled={!passwordsMatch || !termsAccepted} className="w-full" size="lg">
+
+                  <Button type="submit" disabled={!passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
                     {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </form>

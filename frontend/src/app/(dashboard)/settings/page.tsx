@@ -625,6 +625,7 @@ export default function SettingsPage() {
   const [registeringCloud, setRegisteringCloud] = useState(false);
   const [cloudTestResult, setCloudTestResult] = useState<'ok' | 'fail' | null>(null);
   const [showRegisterConfirm, setShowRegisterConfirm] = useState(false);
+  const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
   const [registerEmail, setRegisterEmail] = useState('');
 
   const resetBusiness = async () => {
@@ -2208,8 +2209,26 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
+              {cloudStatus.cloud_registration_status === 'unregistered' ? (
+                <div className="bg-gray-50 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-4">
+                  <div className="p-3 bg-white rounded-full shadow-sm">
+                    <Cloud className="w-6 h-6 text-brand" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">Cloud Services Disabled</h3>
+                    <p className="text-sm text-gray-500 mt-1 max-w-sm">Initialize cloud services to enable remote sales reporting, bill sync, and online dashboard access.</p>
+                  </div>
+                  <button
+                    onClick={() => setShowInitializeCloudConfirm(true)}
+                    className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:opacity-90"
+                  >
+                    Initialize Cloud Services
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
                   {cloudStatus.cloud_registration_status === 'registered' ? (
                     <CheckCircle2 size={16} className="text-green-600 shrink-0" />
                   ) : cloudStatus.cloud_registration_status === 'pending' ? (
@@ -2293,10 +2312,12 @@ export default function SettingsPage() {
                   <span className="text-sm text-gray-700">{t('settings.enableBillSync')}</span>
                 </label>
 
-                {cloudSettings.cloud_last_sync && (
-                  <p className="text-xs text-gray-400">{t('settings.lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
-                )}
-              </div>
+                    {cloudSettings.cloud_last_sync && (
+                      <p className="text-xs text-gray-400">{t('settings.lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* OrderFlow — online orders */}
@@ -2555,6 +2576,29 @@ export default function SettingsPage() {
               onClick={() => { setShowRegisterConfirm(false); registerCloud(registerEmail.trim()); }}
             >
               {registeringCloud ? t('settings.registering') : t('settings.registerWithFloadmin')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Initialize Cloud Disclaimer Dialog */}
+      <Dialog open={showInitializeCloudConfirm} onOpenChange={setShowInitializeCloudConfirm}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Initialize Cloud Services</DialogTitle>
+            <DialogDescription>
+              Allow diagnostic and usage data collection to improve the product.
+              <br /><br />
+              This enables basic telemetry and provisions your local database to communicate with the FloAdmin cloud servers for remote reporting and sync.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowInitializeCloudConfirm(false)}>{t('settings.cancel')}</Button>
+            <Button
+              disabled={registeringCloud}
+              onClick={() => { setShowInitializeCloudConfirm(false); registerCloud(''); }}
+            >
+              {registeringCloud ? t('settings.registering') : 'Accept & Initialize'}
             </Button>
           </DialogFooter>
         </DialogContent>

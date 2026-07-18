@@ -8,6 +8,7 @@ import { getCurrentSchemaVersion, getDatabase, now } from '../db';
 import { isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode } from '../countries';
+import { cloudSync } from '../services/cloud-sync';
 
 const router = Router();
 

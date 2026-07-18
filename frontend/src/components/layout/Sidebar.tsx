@@ -22,6 +22,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
 import { useI18n } from '@/hooks/useI18n';
+import { useConfirm } from '@/hooks/use-confirm';
 import {
   Sidebar,
   SidebarContent,
@@ -55,6 +56,7 @@ export default function AppSidebar() {
   const { tablesRequired, setTablesRequired } = usePosSettingsStore();
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const { t } = useI18n();
+  const { confirm, ConfirmDialog } = useConfirm();
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
 
   const role = currentTenant?.role || 'cashier';
@@ -138,7 +140,7 @@ export default function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={() => { if (window.confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) logout(); }} tooltip={t('nav.logoutTooltip')}>
+            <SidebarMenuButton onClick={async () => { if (await confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) logout(); }} tooltip={t('nav.logoutTooltip')}>
               <LogOut />
               <span>{t('nav.logout')}</span>
             </SidebarMenuButton>
@@ -146,6 +148,7 @@ export default function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
+      <ConfirmDialog />
     </Sidebar>
   );
 }

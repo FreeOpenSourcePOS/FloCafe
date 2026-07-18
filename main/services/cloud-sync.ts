@@ -180,7 +180,7 @@ class CloudSyncService {
     // explicitly rejected), announce itself with no staff action required. Only
     // done once at boot, not on every reload(), so saving an unrelated cloud
     // setting doesn't re-trigger it.
-    this.maybeAutoRegister();
+    // this.maybeAutoRegister(); // [Bankim] Re-enable this to restore zero-touch registration at boot
   }
 
   reload() {
@@ -637,7 +637,9 @@ class CloudSyncService {
    */
   private maybeAutoRegister() {
     const db = getDatabase();
-    const status = this.readSettings(db).cloud_registration_status || 'unregistered';
+    const settings = this.readSettings(db);
+    if (settings.cloud_sync_enabled !== '1') return;
+    const status = settings.cloud_registration_status || 'unregistered';
     if (status !== 'unregistered' && status !== 'registration_failed') return;
     this.attemptAutoRegister();
   }

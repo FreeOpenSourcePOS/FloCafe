@@ -66,7 +66,8 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
       MAX(0,
         COALESCE((SELECT SUM(ll.amount) FROM loyalty_ledger ll WHERE ll.customer_id = c.id AND ll.type = 'credit'), 0) -
         COALESCE((SELECT SUM(ll.amount) FROM loyalty_ledger ll WHERE ll.customer_id = c.id AND ll.type = 'debit'), 0)
-      ) as wallet_balance
+      ) as wallet_balance,
+      (SELECT MAX(created_at) FROM orders o WHERE o.customer_id = c.id) as last_visit_at
       FROM customers c WHERE c.is_active = 1`;
     const params: any[] = [];
 
@@ -80,7 +81,20 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
       query += " AND c.phone IS NOT NULL AND c.phone != '' AND c.phone != '+' || c.phone_digits";
     }
 
-    query += ' ORDER BY c.name';
+    const sortField = (req.query.sort as string) || 'name';
+    const sortOrder = (req.query.order as string) === 'desc' ? 'DESC' : 'ASC';
+    
+    const allowedSortFields: Record<string, string> = {
+      name: 'c.name COLLATE NOCASE',
+      phone: 'c.phone_digits',
+      visits: 'visits_count',
+      spent: 'total_spent',
+      loyalty: 'wallet_balance',
+      last_visit: 'last_visit_at'
+    };
+
+    const orderBy = allowedSortFields[sortField] || 'c.name COLLATE NOCASE';
+    query += ` ORDER BY ${orderBy} ${sortOrder}`;
 
     if (req.query.per_page) {
       query += ` LIMIT ${parseInt(req.query.per_page as string)}`;

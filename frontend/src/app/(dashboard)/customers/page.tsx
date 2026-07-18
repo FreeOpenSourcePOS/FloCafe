@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
 import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
 import { dialCodeFor, parsePhone } from '@/lib/phone';
@@ -29,6 +30,8 @@ export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [sortField, setSortField] = useState('name');
+  const [sortOrder, setSortOrder] = useState<'asc'|'desc'>('asc');
   const [showForm, setShowForm] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
 
@@ -62,6 +65,8 @@ export default function CustomersPage() {
       const params: Record<string, string> = {};
       if (search) params.search = search;
       if (filter) params.filter = filter;
+      if (sortField) params.sort = sortField;
+      if (sortOrder) params.order = sortOrder;
       const { data } = await api.get('/customers', { params });
       setCustomers(data.data || []);
     } catch {
@@ -73,7 +78,7 @@ export default function CustomersPage() {
 
    
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchCustomers(); }, [search, filter]);
+  useEffect(() => { fetchCustomers(); }, [search, filter, sortField, sortOrder]);
 
   const openAdd = () => {
     setEditingCustomer(null);
@@ -113,6 +118,20 @@ export default function CustomersPage() {
     }
   };
 
+  const SortIcon = ({ field }: { field: string }) => {
+    if (sortField !== field) return <span className="text-gray-300 w-3 inline-block ml-1 opacity-0 group-hover:opacity-100 transition-opacity">↕</span>;
+    return sortOrder === 'asc' ? <TrendingUp size={12} className="inline ml-1 text-gray-500" /> : <TrendingDown size={12} className="inline ml-1 text-gray-500" />;
+  };
+
+  const onSort = (field: string) => {
+    if (sortField === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortOrder(field === 'name' ? 'asc' : 'desc');
+    }
+  };
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -143,11 +162,24 @@ export default function CustomersPage() {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('customers.columnCustomer')}</th>
-              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('customer.phone')}</th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('customer.visits')}</th>
-              <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('customer.totalSpent')}</th>
-              <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('customer.loyalty')}</th>
+              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('name')}>
+                {t('customers.columnCustomer')} <SortIcon field="name" />
+              </th>
+              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('phone')}>
+                {t('customer.phone')} <SortIcon field="phone" />
+              </th>
+              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('last_visit')}>
+                Last Visit <SortIcon field="last_visit" />
+              </th>
+              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('visits')}>
+                {t('customer.visits')} <SortIcon field="visits" />
+              </th>
+              <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('spent')}>
+                {t('customer.totalSpent')} <SortIcon field="spent" />
+              </th>
+              <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('loyalty')}>
+                {t('customer.loyalty')} <SortIcon field="loyalty" />
+              </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('customers.columnActions')}</th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('customers.columnLedger')}</th>
             </tr>
@@ -170,6 +202,9 @@ export default function CustomersPage() {
                       </div>
                     )}
                   </div>
+                </td>
+                <td className="p-4 text-center text-sm text-gray-500 whitespace-nowrap">
+                  {c.last_visit_at ? fmtDate(c.last_visit_at) : '—'}
                 </td>
                 <td className="p-4 text-center text-sm">{c.visits_count}</td>
                 <td className="p-4 text-right font-medium">{fmt(Number(c.total_spent))}</td>

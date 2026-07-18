@@ -252,8 +252,8 @@ export default function SettingsPage() {
 
     if (pinGate.mode === 'backup') {
       try {
-        await api.post('/db/backup', { master_pin: pin });
-        toast.success(t('settings.backupCreated'));
+        const response = await api.post('/db/backup', { master_pin: pin });
+        toast.success(`${t('settings.backupCreated')} ${response.data.path}`, { duration: 5000 });
         setPinGate(null);
         return { success: true };
       } catch (err: unknown) {
@@ -275,8 +275,8 @@ export default function SettingsPage() {
     }
     if (!masterPinStatus.available) {
       try {
-        await api.post('/db/backup', {});
-        toast.success(t('settings.backupCreated'));
+        const response = await api.post('/db/backup', {});
+        toast.success(`${t('settings.backupCreated')} ${response.data.path}`, { duration: 5000 });
       } catch {
         toast.error(t('settings.backupFailed'));
       }
@@ -2011,8 +2011,8 @@ export default function SettingsPage() {
               <button
                 onClick={async () => {
                   try {
-                    const response = await fetch('/api/db/export');
-                    const blob = await response.blob();
+                    const response = await api.get('/db/export', { responseType: 'blob' });
+                    const blob = new Blob([response.data], { type: 'application/json' });
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;

@@ -15,6 +15,7 @@ import {
   LogOut,
   PanelLeft,
   ChefHat,
+  UserCircle,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -50,7 +51,7 @@ const ALL_NAV_ITEMS = [
 
 export default function AppSidebar() {
   const pathname = usePathname();
-  const { currentTenant, logout } = useAuthStore();
+  const { user, currentTenant, logout } = useAuthStore();
   const { tablesRequired, setTablesRequired } = usePosSettingsStore();
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const { t } = useI18n();
@@ -131,7 +132,13 @@ export default function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={logout} tooltip={t('nav.logoutTooltip')}>
+            <SidebarMenuButton tooltip={user?.name || user?.email || t('nav.user', { defaultValue: 'User' })}>
+              <UserCircle />
+              <span className="truncate">{user?.name || user?.email || t('nav.user', { defaultValue: 'User' })}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={() => { if (window.confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) logout(); }} tooltip={t('nav.logoutTooltip')}>
               <LogOut />
               <span>{t('nav.logout')}</span>
             </SidebarMenuButton>

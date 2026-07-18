@@ -69,6 +69,7 @@ function businessShape(s: Record<string, string>) {
     instagram_handle: s.instagram_handle || '',
     billing_type: s.billing_type || 'postpaid',
     tables_required: s.tables_required !== 'false',
+    tax_registered: s.tax_registered === 'true' || s.tax_registered === '1',
     bill_show_name: s.bill_show_name !== 'false',
     bill_show_address: s.bill_show_address !== 'false',
     bill_show_phone: s.bill_show_phone !== 'false',
@@ -83,7 +84,6 @@ function taxShape(s: Record<string, string>) {
     state_code: s.state_code || '',
     tax_scheme: s.tax_scheme || 'regular',
     country: s.country || 'IN',
-    loyalty_enabled: s.loyalty_enabled === 'true' || s.loyalty_enabled === '1',
   };
 }
 
@@ -102,14 +102,14 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
   try {
     const { business_name, timezone, currency, country, language,
       gstin, state_code, business_address, business_phone, instagram_handle,
-      billing_type, tables_required,
+      billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn } = req.body;
 
     const db = getDatabase();
     upsertSettings(db, {
       business_name, timezone, currency, country, language,
       gstin, state_code, business_address, business_phone, instagram_handle,
-      billing_type, tables_required,
+      billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn,
     });
 
@@ -301,7 +301,7 @@ router.post('/cloud/test', requireRole('owner', 'manager'), async (_req: Request
 const ALLOWED_WILDCARD_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
-  'billing_type', 'tables_required', 'bill_show_name', 'bill_show_address',
+  'billing_type', 'tables_required', 'tax_registered', 'bill_show_name', 'bill_show_address',
   'bill_show_phone', 'bill_show_gstn',
   'tax_scheme',
   'loyalty_enabled',

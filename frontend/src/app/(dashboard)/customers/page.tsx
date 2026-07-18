@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { cn } from '@/lib/utils';
+
 import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
 import { dialCodeFor, parsePhone } from '@/lib/phone';

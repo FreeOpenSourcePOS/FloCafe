@@ -7,7 +7,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
-import { formatDate, formatTime } from './format-date';
+import { formatTime } from './format-date';
 
 export interface KotOptions {
   /** 58 mm (32 chars) or 80 mm (48 chars). Default: 58 */

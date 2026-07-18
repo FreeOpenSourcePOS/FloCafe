@@ -1181,7 +1181,7 @@ export default function SettingsPage() {
                     <p className="font-medium text-gray-900">{form.taxRegistered ? t('settings.yes') : t('settings.no')}</p>
                   )}
                 </div>
-                {form.taxRegistered && (
+                {form.taxRegistered ? (
                   <div>
                     <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
                     {isAdmin ? (
@@ -1192,7 +1192,7 @@ export default function SettingsPage() {
                       <p className="font-medium text-gray-900">{form.gstin || '—'}</p>
                     )}
                   </div>
-                )}
+                ) : <div className="hidden md:block" />}
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.phone')}</label>
                   {isAdmin ? (

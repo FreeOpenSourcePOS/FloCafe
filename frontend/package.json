@@ -21,7 +21,7 @@
     "radix-ui": "^1.6.4",
     "react": "19.2.7",
     "react-dom": "19.2.7",
-    "react-dropzone": "^15.0.0",
+    "react-dropzone": "^19.1.1",
     "react-easy-crop": "^6.2.2",
     "react-hot-toast": "^2.6.0",
     "tailwind-merge": "^3.6.0",

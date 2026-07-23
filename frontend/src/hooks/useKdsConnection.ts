@@ -125,8 +125,10 @@ export interface UseKdsConnectionResult {
   loginPassword: string;
   loginError: string;
   loginLoading: boolean;
+  rememberMe: boolean;
   setLoginEmail: (v: string) => void;
   setLoginPassword: (v: string) => void;
+  setRememberMe: (v: boolean) => void;
   handleLogin: (e: React.FormEvent) => Promise<void>;
   handleLogout: () => Promise<void>;
   updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean }) => Promise<void>;
@@ -160,6 +162,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
   const [loginLoading, setLoginLoading] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -289,6 +292,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (ws.readyState === WebSocket.CONNECTING) {
           ws.close();
           setConnectionMode('rest');
+          setLoading(false);
         }
       }, 5000);
     },
@@ -306,6 +310,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         const { data } = await api.post(loginPath, {
           email: loginEmail,
           password: loginPassword,
+          rememberMe,
         });
 
         const loggedInUser: KdsUser = {
@@ -325,7 +330,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setLoginLoading(false);
       }
     },
-    [api, loginEmail, loginPassword, loginPath, t, tryWebSocket],
+    [api, loginEmail, loginPassword, loginPath, rememberMe, t, tryWebSocket],
   );
 
   const handleLogout = useCallback(async () => {
@@ -391,8 +396,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     loginPassword,
     loginError,
     loginLoading,
+    rememberMe,
     setLoginEmail,
     setLoginPassword,
+    setRememberMe,
     handleLogin,
     handleLogout,
     updateItemStatus,

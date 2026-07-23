@@ -12,6 +12,7 @@ interface CartState {
   orderNotes: string;
 
   addItem: (product: Product, quantity?: number, addons?: Addon[], specialInstructions?: string) => void;
+  updateItemDetails: (cartItemId: string, quantity: number, addons: Addon[], specialInstructions: string) => void;
   removeItem: (cartItemId: string) => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
   clearCart: () => void;
@@ -67,6 +68,38 @@ export const useCartStore = create<CartState>((set, get) => ({
     } else {
       set({
         items: [...items, { id: itemId, product, quantity, addons, special_instructions: specialInstructions }],
+      });
+    }
+  },
+
+  updateItemDetails: (cartItemId, quantity, addons, specialInstructions) => {
+    const items = get().items;
+    const target = items.find((i) => i.id === cartItemId);
+    if (!target) return;
+
+    const newId = generateCartItemId(target.product.id, addons, specialInstructions);
+    if (newId === cartItemId) {
+      set({
+        items: items.map((i) =>
+          i.id === cartItemId ? { ...i, quantity, addons, special_instructions: specialInstructions } : i
+        ),
+      });
+      return;
+    }
+
+    // The edit produced a config that matches another existing line — merge into it.
+    const collision = items.find((i) => i.id === newId && i.id !== cartItemId);
+    if (collision) {
+      set({
+        items: items
+          .filter((i) => i.id !== cartItemId)
+          .map((i) => (i.id === newId ? { ...i, quantity: i.quantity + quantity } : i)),
+      });
+    } else {
+      set({
+        items: items.map((i) =>
+          i.id === cartItemId ? { ...i, id: newId, quantity, addons, special_instructions: specialInstructions } : i
+        ),
       });
     }
   },

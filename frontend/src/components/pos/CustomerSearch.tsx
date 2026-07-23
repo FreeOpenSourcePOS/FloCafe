@@ -4,11 +4,13 @@ import { useState, useRef, useEffect } from 'react';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
 import { useAuthStore } from '@/store/auth';
-import { X } from 'lucide-react';
+import { usePosSettingsStore } from '@/store/pos-settings';
+import { X, Pencil, Gift } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
 import type { Customer } from '@/lib/types';
+import EditCustomerModal from './EditCustomerModal';
 
 import { useI18n } from '@/hooks/useI18n';
 
@@ -54,18 +56,31 @@ function TagBadges({ counts, t }: { counts: Record<string, number>; t: (k: strin
 export default function CustomerSearch({ onSelected, variant = 'default' }: Props = {}) {
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
+  const enforcePhoneLength = usePosSettingsStore((s) => s.enforcePhoneLength);
   const { t } = useI18n();
-  const dialCode = dialCodeFor(currentTenant?.country ?? 'IN');
+  const country = currentTenant?.country ?? 'IN';
+  const dialCode = dialCodeFor(country);
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [matched, setMatched] = useState<Customer | null>(null);
   const [searched, setSearched] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState(false);
+  const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const nameRef = useRef<HTMLInputElement>(null);
+  const autoAdvancedRef = useRef(false);
 
   const customer = cart.customer;
   const isNew = searched && !matched;
+
+  useEffect(() => {
+    if (!customer) { setLoyaltyPoints(null); return; }
+    api.get(`/customers/${customer.id}/wallet`)
+      .then((res) => setLoyaltyPoints(res.data.balance))
+      .catch(() => setLoyaltyPoints(null));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.id]);
 
   useEffect(() => {
     if (cart.customerId && !cart.customer) {
@@ -108,7 +123,13 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     if (matched !== null) setMatched(null);
     if (name !== '') setName('');
     if (searched) setSearched(false);
+    if (val.trim() === '') autoAdvancedRef.current = false;
     searchByPhone(digitsOnly(val));
+
+    if (enforcePhoneLength && !autoAdvancedRef.current && parsePhone(val, country)) {
+      autoAdvancedRef.current = true;
+      requestAnimationFrame(() => nameRef.current?.focus());
+    }
   };
 
   const handleSelectMatched = () => {
@@ -126,7 +147,6 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   const handleCreate = async () => {
     if (!name.trim() || !phone.trim()) return;
-    const country = currentTenant?.country ?? 'IN';
     const parsed = parsePhone(phone, country);
     if (!parsed) {
       toast.error(t('pos.invalidPhone', { country: countryName(country) }));
@@ -147,6 +167,15 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     }
   };
 
+  // Auto-commit when focus leaves the phone/name widget entirely — the user
+  // shouldn't have to click Add/Select if they've already moved on.
+  const handleWidgetBlur = (e: React.FocusEvent<HTMLDivElement>) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    if (creating) return;
+    if (matched) { handleSelectMatched(); return; }
+    if (isNew && name.trim() && phone.trim()) { handleCreate(); }
+  };
+
   const handleClear = () => cart.setCustomer(null);
 
   // ── Shared input classes ───────────────────────────────────────────────────
@@ -158,30 +187,65 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
     if (variant === 'topbar') {
       return (
-        <div className="h-10 flex items-center gap-2 px-3 bg-brand-light rounded-lg min-w-0 w-full">
-          <div className="flex-1 min-w-0 flex items-center gap-x-2 flex-wrap">
-            <span className="font-semibold text-brand text-sm truncate">{customer.name}</span>
-            <span className="text-brand/70 text-xs shrink-0">{customer.phone}</span>
+        <>
+          <div className="h-10 flex items-center gap-2 px-3 bg-brand-light rounded-lg min-w-0 w-full">
+            <button
+              onClick={() => setEditingCustomer(true)}
+              title={t('pos.editCustomer', { defaultValue: 'Edit name / phone' })}
+              className="flex-1 min-w-0 flex items-center gap-x-2 flex-wrap text-left group"
+            >
+              <span className="font-semibold text-brand text-sm truncate group-hover:underline">{customer.name}</span>
+              <span className="text-brand/70 text-xs shrink-0">{customer.phone}</span>
+              <Pencil size={11} className="text-brand/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+              {!!loyaltyPoints && loyaltyPoints > 0 && (
+                <span className="flex items-center gap-0.5 text-xs font-medium text-brand bg-white/70 rounded-full px-1.5 py-0.5 shrink-0">
+                  <Gift size={11} />
+                  {t('pos.loyaltyPointsShort', { count: loyaltyPoints, defaultValue: '{count} pts' })}
+                </span>
+              )}
+              {hasTags && <TagBadges counts={customer.tag_counts!} t={t} />}
+            </button>
+            <button onClick={handleClear} className="text-brand hover:text-brand-hover shrink-0 ml-auto">
+              <X size={14} />
+            </button>
           </div>
-          <button onClick={handleClear} className="text-brand hover:text-brand-hover shrink-0 ml-auto">
-            <X size={14} />
-          </button>
-        </div>
+          {editingCustomer && (
+            <EditCustomerModal
+              customer={customer}
+              onClose={() => setEditingCustomer(false)}
+              onSaved={(updated) => cart.setCustomer(updated)}
+            />
+          )}
+        </>
       );
     }
 
     return (
       <div className="space-y-1">
         <div className="flex items-center justify-between px-3 py-2 bg-brand-light rounded-lg text-sm">
-          <div className="flex-1 min-w-0">
-            <span className="font-medium text-brand truncate">{customer.name}</span>
-            {customer.phone && <span className="text-xs text-gray-500 ml-2">{customer.phone}</span>}
-          </div>
+          <button onClick={() => setEditingCustomer(true)} className="flex-1 min-w-0 flex items-center gap-2 text-left group">
+            <span className="font-medium text-brand truncate group-hover:underline">{customer.name}</span>
+            {customer.phone && <span className="text-xs text-gray-500">{customer.phone}</span>}
+            <Pencil size={11} className="text-brand/50 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+          </button>
           <button onClick={handleClear} className="text-brand hover:text-brand-hover ml-2 shrink-0">
             <X size={14} />
           </button>
         </div>
+        {!!loyaltyPoints && loyaltyPoints > 0 && (
+          <span className="inline-flex items-center gap-0.5 text-xs font-medium text-brand bg-brand-light rounded-full px-1.5 py-0.5">
+            <Gift size={11} />
+            {t('pos.loyaltyPointsShort', { count: loyaltyPoints, defaultValue: '{count} pts' })}
+          </span>
+        )}
         {hasTags && <TagBadges counts={customer.tag_counts!} t={t} />}
+        {editingCustomer && (
+          <EditCustomerModal
+            customer={customer}
+            onClose={() => setEditingCustomer(false)}
+            onSaved={(updated) => cart.setCustomer(updated)}
+          />
+        )}
       </div>
     );
   }
@@ -190,7 +254,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   if (variant === 'topbar') {
     return (
       <div className="relative w-full min-w-0">
-        <div className="h-10 flex items-center gap-2 min-w-0">
+        <div className="h-10 flex items-center gap-2 min-w-0" onBlur={handleWidgetBlur}>
 
           <input
             type="tel"
@@ -254,7 +318,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   // ── Default variant (stacked, used in modal) ───────────────────────────────
   return (
-    <div className="space-y-2">
+    <div className="space-y-2" onBlur={handleWidgetBlur}>
       <div className="grid grid-cols-1 gap-2">
         <div className="flex items-stretch gap-2">
 

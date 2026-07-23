@@ -17,11 +17,34 @@
  * pairing flow described in the PR body.
  */
 
-import Module from 'node:module';
-const realResolve = (Module as any)._resolveFilename;
-(Module as any)._resolveFilename = function (request: string, ...rest: any[]) {
-  if (request === 'electron') return require.resolve('./_electron-stub.cjs');
-  return realResolve.call(this, request, ...rest);
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+// Stub `electron` with isPackaged: true and an isolated per-run temp userData
+// dir (same pattern as tests/issue-127-password-recovery.test.ts). This test
+// inserts rows into whatsapp_messages and never cleans them up, so pointing
+// getDbPath() at the shared dev-root flo.db (what _electron-stub.cjs's
+// isPackaged: false would do) makes the rate-limit assertion flaky across
+// repeated local runs.
+const Module = require('module');
+const realLoad = Module._load;
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-whatsapp-middleware-'));
+const mockElectron = {
+  app: {
+    getPath: (key: string) => (key === 'userData' ? testDir : os.tmpdir()),
+    getVersion: () => '0.0.0-stub',
+    isPackaged: true,
+  },
+  safeStorage: {
+    isEncryptionAvailable: () => false,
+    encryptString: (s: string) => Buffer.from(s, 'utf8'),
+    decryptString: (b: Buffer) => Buffer.from(b).toString('utf8'),
+  },
+};
+Module._load = function (request: string, parent: unknown, isMain: boolean) {
+  if (request === 'electron') return mockElectron;
+  return realLoad.apply(this, arguments as any);
 };
 
 const Database = require('better-sqlite3');
@@ -34,8 +57,8 @@ async function main(): Promise<void> {
     console.log(`  ${cond ? 'PASS' : 'FAIL'}: ${msg}`);
   };
 
-  // --- Set up DB with the WhatsApp schema. Uses the existing _electron-stub
-  // so this works in plain Node when the Electron binary isn't installed.
+  // --- Set up DB with the WhatsApp schema, isolated in testDir (see mock
+  // above) so repeated local runs don't accumulate rows in the shared dev DB.
   const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
   initDatabase();
   const db = getDatabase();
@@ -149,6 +172,8 @@ async function main(): Promise<void> {
   // --- Cleanup ---
   whatsapp.shutdown();
   closeDatabase();
+  Module._load = realLoad;
+  fs.rmSync(testDir, { recursive: true, force: true });
 
   if (failures.length > 0) {
     console.error(`\n${failures.length} assertions failed.`);
@@ -160,5 +185,7 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   console.error('Test crashed:', err);
+  Module._load = realLoad;
+  fs.rmSync(testDir, { recursive: true, force: true });
   process.exit(1);
 });

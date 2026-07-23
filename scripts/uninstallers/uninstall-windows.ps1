@@ -6,11 +6,13 @@
   Removes the Flo Cafe app, its shortcuts, and its registry uninstall entry.
   Prefers running the app's own NSIS uninstaller silently if it can find one;
   otherwise cleans up the install directory, shortcuts, and registry entry
-  directly. Your business data (SQLite database, backups, Master PIN) is left
-  alone unless you pass -PurgeData.
+  directly. Your business data (SQLite database, backups, Master PIN) is
+  only deleted if you say so: interactively, you'll be asked Delete or
+  Keep; non-interactively, pass -PurgeData to delete it or leave it out to
+  keep it.
 
 .PARAMETER PurgeData
-  Also delete your database, backups, and Master PIN. Irreversible.
+  Also delete your database, backups, and Master PIN without asking. Irreversible.
 
 .PARAMETER DryRun
   Show what would be removed without touching anything.
@@ -124,15 +126,28 @@ if ($entry) {
 
 # ── User data (database, backups, Master PIN) ────────────────────────────
 $userDataPath = Join-Path $env:APPDATA $AppName
+Write-Step "Your business data"
+Write-Log "database, backups, and Master PIN live at:"
+Write-Log "  $userDataPath"
+
+if (-not $PurgeData -and -not $DryRun) {
+  Write-Host ""
+  Write-Host "Delete this data too? This is IRREVERSIBLE -- there is no undo." -ForegroundColor Yellow
+  $answer = ''
+  if (-not [Console]::IsInputRedirected) {
+    try { $answer = Read-Host "Delete or Keep? [d/K]" } catch { $answer = '' }
+  } else {
+    Write-Log "no terminal available to prompt -- keeping your data (pass -PurgeData to delete non-interactively)"
+  }
+  if ($answer -match '^[Dd]') { $PurgeData = $true }
+}
+
 if ($PurgeData) {
-  Write-Step "Removing your business data (database, backups, Master PIN)..."
+  Write-Step "Removing your business data..."
   Write-Log "this is irreversible -- there is no undo"
   Invoke-Removal $userDataPath "user data" | Out-Null
 } else {
-  Write-Step "Keeping your business data"
-  Write-Log "database, backups, and Master PIN remain at:"
-  Write-Log "  $userDataPath"
-  Write-Log "re-run with -PurgeData to also delete this (irreversible)"
+  Write-Log "keeping your data"
 }
 
 Write-Step "Done."

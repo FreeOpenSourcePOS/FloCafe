@@ -20,6 +20,7 @@ function LoginContent() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showTenantSelect, setShowTenantSelect] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
@@ -81,7 +82,7 @@ function LoginContent() {
     setLoading(true);
     setLoginError(null);
     try {
-      await login(email, password);
+      await login(email, password, rememberMe);
       toast.success(t('auth.signInSuccess'));
     } catch (err: unknown) {
       const error = err as { response?: { status?: number; data?: { error?: string; attempts_remaining?: number; lockout_minutes?: number } } };
@@ -179,6 +180,15 @@ function LoginContent() {
                   </button>
                 </div>
               </div>
+              <label className="flex items-center gap-2 text-sm text-muted-foreground select-none cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="rounded border-input text-primary focus:ring-primary"
+                />
+                {t('auth.rememberMe')}
+              </label>
               {loginError && (
                 <p className="text-sm text-destructive text-center">{loginError}</p>
               )}

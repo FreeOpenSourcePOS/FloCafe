@@ -13,14 +13,30 @@ interface Props {
   currency: string;
   onAdd: (product: Product, quantity: number, addons: Addon[], specialInstructions: string) => void;
   onClose: () => void;
+  initialQuantity?: number;
+  initialAddons?: Addon[];
+  initialInstructions?: string;
+  mode?: 'add' | 'edit';
 }
 
-export default function AddonModal({ product, onAdd, onClose }: Props) {
+function groupInitialAddons(addons: Addon[]): Record<number, Addon[]> {
+  const grouped: Record<number, Addon[]> = {};
+  for (const addon of addons) {
+    const groupId = addon.addon_group_id;
+    if (groupId == null) continue;
+    grouped[groupId] = [...(grouped[groupId] || []), addon];
+  }
+  return grouped;
+}
+
+export default function AddonModal({
+  product, onAdd, onClose,
+  initialQuantity = 1, initialAddons = [], initialInstructions = '', mode = 'add',
+}: Props) {
   const { t } = useI18n();
-  const fmt = useFormatCurrency();
-  const [selected, setSelected] = useState<Record<string | number, Addon[]>>({});
-  const [quantity, setQuantity] = useState(1);
-  const [instructions, setInstructions] = useState('');
+  const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() => groupInitialAddons(initialAddons));
+  const [quantity, setQuantity] = useState(initialQuantity);
+  const [instructions, setInstructions] = useState(initialInstructions);
 
   const groups = product.addon_groups || [];
 
@@ -245,7 +261,9 @@ export default function AddonModal({ product, onAdd, onClose }: Props) {
             </button>
           </div>
           <Button onClick={handleAdd} disabled={!isValid} className="w-full" size="lg">
-            {t('pos.addToCart', { total: fmt(itemTotal) })}
+            {mode === 'edit'
+              ? t('pos.saveItemChanges', { total: fmt(itemTotal), defaultValue: 'Save changes — {total}' })
+              : t('pos.addToCart', { total: fmt(itemTotal) })}
           </Button>
         </div>
       </div>

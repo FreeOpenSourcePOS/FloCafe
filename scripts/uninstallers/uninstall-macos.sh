@@ -3,7 +3,9 @@
 #
 # Removes the Flo Cafe app and its support files (preferences, caches, logs,
 # auto-update state). Your business data (SQLite database, backups, Master
-# PIN) is left alone unless you pass --purge-data.
+# PIN) is only deleted if you say so: interactively, you'll be asked
+# Delete or Keep; non-interactively, pass --purge-data to delete it or
+# leave it out to keep it.
 #
 # Download and run directly, no need to clone the repo:
 #   curl -fsSL https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-macos.sh -o uninstall-macos.sh
@@ -11,8 +13,8 @@
 #   ./uninstall-macos.sh
 #
 # Usage:
-#   ./uninstall-macos.sh              Remove the app + support files, keep your data
-#   ./uninstall-macos.sh --purge-data Also delete your database, backups, and Master PIN (irreversible)
+#   ./uninstall-macos.sh              Remove the app + support files; asks whether to also delete your data
+#   ./uninstall-macos.sh --purge-data Also delete your database, backups, and Master PIN without asking (irreversible)
 #   ./uninstall-macos.sh --dry-run    Show what would be removed without touching anything
 
 set -euo pipefail
@@ -86,15 +88,30 @@ remove_path "$HOME/Library/Saved Application State/$BUNDLE_ID.savedState"
 remove_path "$HOME/Library/HTTPStorages/$BUNDLE_ID"
 remove_path "$HOME/Library/WebKit/$BUNDLE_ID"
 
+DATA_PATH="$HOME/Library/Application Support/$APP_NAME"
+step "Your business data"
+log "database, backups, and Master PIN live at:"
+log "  $DATA_PATH"
+
+if [ "$PURGE_DATA" -eq 0 ] && [ "$DRY_RUN" -eq 0 ]; then
+  echo
+  echo -e "\033[1m⚠️  Delete this data too? This is IRREVERSIBLE — there is no undo.\033[0m"
+  answer=""
+  if ! { read -r -p "Delete or Keep? [d/K] " answer < /dev/tty; } 2>/dev/null; then
+    answer=""
+    log "no terminal available to prompt — keeping your data (pass --purge-data to delete non-interactively)"
+  fi
+  case "$answer" in
+    [Dd]*) PURGE_DATA=1 ;;
+    *) PURGE_DATA=0 ;;
+  esac
+fi
+
 if [ "$PURGE_DATA" -eq 1 ]; then
-  step "⚠️  Removing your business data (database, backups, Master PIN)…"
-  log "this is irreversible — there is no undo"
-  remove_path "$HOME/Library/Application Support/$APP_NAME"
+  step "Removing your business data…"
+  remove_path "$DATA_PATH"
 else
-  step "Keeping your business data"
-  log "database, backups, and Master PIN remain at:"
-  log "  ~/Library/Application Support/$APP_NAME"
-  log "re-run with --purge-data to also delete this (irreversible)"
+  log "keeping your data"
 fi
 
 step "Done."

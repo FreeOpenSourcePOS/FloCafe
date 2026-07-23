@@ -76,7 +76,7 @@ Or grab the latest build directly from [Releases](https://github.com/FreeOpenSou
 | **Linux (AppImage)** | `Flo.Cafe-<version>.AppImage` | Portable Linux binary, built on `ubuntu-22.04` for glibc compatibility with Ubuntu 22.04+ and similarly recent distros |
 | **Linux (Debian)** | `flo-desktop_<version>_amd64.deb` | Debian/Ubuntu package, same `ubuntu-22.04` build target |
 
-**Uninstalling:** standalone uninstaller scripts for macOS and Windows are attached to every [release](https://github.com/FreeOpenSourcePOS/FloCafe/releases) — useful if the packaged uninstaller is missing or a reinstall needs a clean slate. They remove the app and its support files but leave your database/backups/Master PIN alone unless you pass `--purge-data` / `-PurgeData`.
+**Uninstalling:** standalone uninstaller scripts for macOS and Windows are attached to every [release](https://github.com/FreeOpenSourcePOS/FloCafe/releases) — useful if the packaged uninstaller is missing or a reinstall needs a clean slate. They always remove the app and its support files; for your database/backups/Master PIN, run interactively and you'll be asked Delete or Keep, or pass `--purge-data` / `-PurgeData` upfront to delete without asking (add `--dry-run` / `-DryRun` to preview first).
 
 ```sh
 # macOS
@@ -374,6 +374,26 @@ construction. Switching *between* channels (e.g. a direct-download install to a 
 store install) does not carry data over automatically, since sandboxed apps use an
 OS-isolated storage location — use Settings → Database Tools → Backup/Restore to move
 data across a channel switch.
+
+### Cutting a release
+
+Bump `version` in `package.json` (and `package-lock.json`'s two matching `version`
+fields), add a matching `## [x.y.z] - YYYY-MM-DD` entry to `CHANGELOG.md`, commit, and
+push a `vX.Y.Z` tag. That tag push is the only trigger — `.github/workflows/release.yml`
+picks it up automatically from there:
+
+1. Creates the GitHub release. **Release notes ("what's new") are pulled straight from
+   that `CHANGELOG.md` entry** (`scripts/changelog-notes.sh`), not GitHub's PR-based
+   `--generate-notes` — this repo pushes straight to `main` instead of merging PRs, so
+   PR-based notes would come back empty. A `## [x.y.z]` entry in `CHANGELOG.md` is
+   **mandatory**: this step fails the workflow loudly instead of publishing a release
+   with no notes if one is missing.
+2. Builds and uploads installers for Linux (AppImage/deb/rpm/snap), macOS (dmg/zip +
+   the `latest-mac.yml` auto-update manifest), and Windows (nsis/portable + the
+   `latest.yml` manifest) — each platform job verifies its own auto-update assets exist
+   before uploading, so a release can't silently ship without a working update path.
+3. Uploads `scripts/uninstallers/uninstall-macos.sh` and `uninstall-windows.ps1` as
+   standalone assets on the same release (see [Uninstalling](#downloads) above).
 
 ## Troubleshooting
 

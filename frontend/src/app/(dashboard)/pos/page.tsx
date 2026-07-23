@@ -9,7 +9,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { useSidebar } from '@/components/ui/sidebar';
 import toast from 'react-hot-toast';
 import { ShoppingCart, X } from 'lucide-react';
-import type { Addon, Category, Product, Table, Bill, Order } from '@/lib/types';
+import type { Addon, Category, Product, Table, Bill, Order, CartItem } from '@/lib/types';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
   Drawer, DrawerContent, DrawerTrigger,
@@ -50,6 +50,7 @@ export default function POSPage() {
   // Modal state
   const [showTablePicker, setShowTablePicker] = useState(false);
   const [addonProduct, setAddonProduct] = useState<Product | null>(null);
+  const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
   const [checkoutTable, setCheckoutTable] = useState<Table | null>(null);
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
@@ -161,9 +162,14 @@ export default function POSPage() {
     cart.addItem(product, quantity, addons, instructions);
   };
 
+  const handleEditItemSave = (_product: Product, quantity: number, addons: Addon[], instructions: string) => {
+    if (!editingCartItem) return;
+    cart.updateItemDetails(editingCartItem.id, quantity, addons, instructions);
+  };
+
   // A modal already open means the scan (if one lands) isn't meant for the
   // product grid — e.g. it could be a barcode field inside that modal.
-  const anyModalOpen = showTablePicker || !!addonProduct || !!checkoutTable
+  const anyModalOpen = showTablePicker || !!addonProduct || !!editingCartItem || !!checkoutTable
     || !!paymentBill || showCustomerPrompt || showPrepaidCheckout;
 
   useBarcodeScanner((code) => {
@@ -445,6 +451,7 @@ export default function POSPage() {
     submitting,
     onPlaceOrder: handlePlaceOrder,
     onShowTablePicker: () => setShowTablePicker(true),
+    onEditItem: setEditingCartItem,
     existingOrder: pendingOrder,
   };
 
@@ -516,6 +523,19 @@ export default function POSPage() {
           currency={currency}
           onAdd={handleAddonAdd}
           onClose={() => setAddonProduct(null)}
+        />
+      )}
+
+      {editingCartItem && (
+        <AddonModal
+          product={editingCartItem.product}
+          currency={currency}
+          mode="edit"
+          initialQuantity={editingCartItem.quantity}
+          initialAddons={editingCartItem.addons}
+          initialInstructions={editingCartItem.special_instructions}
+          onAdd={handleEditItemSave}
+          onClose={() => setEditingCartItem(null)}
         />
       )}
 

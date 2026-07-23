@@ -3,7 +3,7 @@ import { getDatabase, now, getSettingValue } from '../db';
 import { requireRole } from '../middleware/security';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 
-function parseCustomer(c: any): any {
+export function parseCustomer(c: any): any {
   if (!c) return c;
   return {
     ...c,
@@ -13,7 +13,7 @@ function parseCustomer(c: any): any {
 
 const router = Router();
 
-function getWalletBalance(customerId: string | number | null): number {
+export function getWalletBalance(customerId: string | number | null): number {
   if (!customerId) return 0;
   const db = getDatabase();
   const credits = db.prepare(`
@@ -233,7 +233,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
   }
 });
 
-router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
   try {
     const {
       phone, name, email, address, notes, country_code
@@ -286,22 +286,9 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
   }
 });
 
-router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  try {
-    const db = getDatabase();
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
-    if (!customer) {
-      return res.status(404).json({ error: 'Customer not found' });
-    }
-
-    // Never hard-delete — orders/bills/loyalty_ledger reference customer_id with
-    // no FK, so removing the row would silently orphan historical records.
-    db.prepare('UPDATE customers SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
-    res.json({ message: 'Customer deleted' });
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
+// Customers are never deletable — not even soft-deleted — by design: every
+// row is permanently referenced by orders/bills/loyalty_ledger with no FK,
+// and losing a customer's history/loyalty standing is worse than a stale
+// record. There is intentionally no DELETE /:id route.
 
 export const customerRoutes = router;

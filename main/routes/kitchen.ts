@@ -12,10 +12,19 @@ router.get('/orders', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
 
+    // A prepaid order is marked 'completed' the moment its bill is fully
+    // paid, which can happen before the kitchen has prepared anything — so
+    // a completed order still belongs here if it has items the kitchen
+    // hasn't served yet (see main/services/kds.ts's activeOrdersCondition
+    // for the WebSocket-side equivalent of this same rule).
     const orders = db.prepare(`
       SELECT o.*
       FROM orders o
-      WHERE o.status NOT IN ('completed', 'cancelled')
+      WHERE o.status != 'cancelled'
+        AND (
+          o.status != 'completed'
+          OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.status NOT IN ('served', 'cancelled'))
+        )
       ORDER BY o.created_at ASC
     `).all();
 
@@ -32,7 +41,13 @@ router.get('/orders', (req: Request, res: Response) => {
     const counts = db.prepare(`
       SELECT status, COUNT(*) as count
       FROM order_items
-      WHERE order_id IN (SELECT id FROM orders WHERE status NOT IN ('completed', 'cancelled'))
+      WHERE order_id IN (
+        SELECT id FROM orders o WHERE o.status != 'cancelled'
+          AND (
+            o.status != 'completed'
+            OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.status NOT IN ('served', 'cancelled'))
+          )
+      )
       GROUP BY status
     `).all() as { status: string; count: number }[];
 

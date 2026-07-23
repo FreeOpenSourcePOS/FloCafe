@@ -1951,6 +1951,16 @@ export default function SettingsPage() {
                   }} />
                 </div>
                 <p className="text-sm text-gray-500">{t('settings.phoneDigitsDerived')}</p>
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                  <div>
+                    <p className="font-medium text-gray-900">{t('settings.enforcePhoneLength', { defaultValue: 'Enforce Phone Number Length' })}</p>
+                    <p className="text-sm text-gray-500">{t('settings.enforcePhoneLengthHint', { defaultValue: 'Automatically jump to the Name field once a valid phone number for your country has been typed — e.g. 10 digits for India.' })}</p>
+                  </div>
+                  <Toggle value={posSettings.enforcePhoneLength} onChange={(v) => {
+                    posSettings.setEnforcePhoneLength(v);
+                    toast.success(v ? t('settings.enforcePhoneLengthEnabled', { defaultValue: 'Phone length enforcement enabled' }) : t('settings.enforcePhoneLengthDisabled', { defaultValue: 'Phone length enforcement disabled' }), { id: 'pos-local' });
+                  }} />
+                </div>
               </div>
             </div>
           </div>

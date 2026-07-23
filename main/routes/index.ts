@@ -10,7 +10,7 @@ import { billRoutes } from './bills';
 import { tableRoutes } from './tables';
 import { kitchenStationRoutes } from './kitchen-stations';
 import { kitchenRoutes } from './kitchen';
-import { customerRoutes } from './customers';
+import { customerRoutes, parseCustomer, getWalletBalance } from './customers';
 import { staffRoutes } from './staff';
 import { settingsRoutes } from './settings';
 import { reportRoutes } from './reports';
@@ -138,9 +138,14 @@ export function registerRoutes(app: Express): void {
         SELECT * FROM customers
         WHERE is_active = 1 AND (phone_digits LIKE ? OR name LIKE ? OR email LIKE ?)
         ORDER BY name LIMIT 20
-      `).all(searchTerm, searchTerm, searchTerm);
+      `).all(searchTerm, searchTerm, searchTerm) as any[];
 
-      res.json(customers);
+      const results = customers.map((c) => ({
+        ...parseCustomer(c),
+        wallet_balance: getWalletBalance(c.id),
+      }));
+
+      res.json(results);
     } catch (error: any) {
       console.error("[API] Internal error:", error);
       res.status(500).json({ error: "Internal server error" });

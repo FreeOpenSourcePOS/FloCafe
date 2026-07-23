@@ -93,6 +93,7 @@ export default function OrdersPage() {
   const [tabFilter, setTabFilter] = useState<FilterType>('active');
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
+  const [kdsEnabled, setKdsEnabled] = useState(true);
   const { confirm, ConfirmDialog } = useConfirm();
   const isWhatsAppReady = useWhatsAppReady();
 
@@ -156,6 +157,12 @@ export default function OrdersPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    api.get('/settings/kds_enabled')
+      .then((res) => setKdsEnabled(res.data?.setting?.value !== 'false'))
+      .catch(() => setKdsEnabled(true));
+  }, []);
 
   useEffect(() => {
     const initPage = async () => {
@@ -331,9 +338,23 @@ export default function OrdersPage() {
     }
   };
 
+  // A prepaid order is marked 'completed' the moment its bill is fully paid,
+  // which can happen before the kitchen has prepared anything (payment and
+  // kitchen fulfillment are independent and can finish in either order) — so
+  // a completed order still counts as "active" if the kitchen hasn't served
+  // all of its items yet. Only applies when this business uses KDS; without
+  // it item status is never updated, so it can't be used as a signal.
+  const isOrderActive = (order: Order) => {
+    if (order.status === 'cancelled') return false;
+    if (order.status === 'completed') {
+      return kdsEnabled && (order.items || []).some((item) => !['served', 'cancelled'].includes(item.status));
+    }
+    return true;
+  };
+
   const filteredOrders = orders.filter((order) => {
     // Tab filter
-    if (tabFilter === 'active' && ['completed', 'cancelled'].includes(order.status)) return false;
+    if (tabFilter === 'active' && !isOrderActive(order)) return false;
     if (tabFilter === 'unpaid' && !(order.bill && order.bill.payment_status !== 'paid')) return false;
 
     // Search by order number
@@ -349,7 +370,7 @@ export default function OrdersPage() {
       return false;
     }
     // Filter by status
-    if (filters.status === 'active' && ['completed', 'cancelled'].includes(order.status)) {
+    if (filters.status === 'active' && !isOrderActive(order)) {
       return false;
     }
     if (filters.status === 'completed' && order.status !== 'completed') {

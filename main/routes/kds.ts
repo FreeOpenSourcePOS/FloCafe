@@ -18,11 +18,19 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     const db = getDatabase();
     const stationId = req.query.station_id as string;
 
+    // A prepaid order is marked 'completed' the moment its bill is fully
+    // paid, which can happen before the kitchen has prepared anything — so
+    // a completed order still belongs here if it has items the kitchen
+    // hasn't served yet.
     let query = `
       SELECT o.*, t.number as table_name, t.floor, t.section
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
-      WHERE o.status NOT IN ('completed', 'cancelled')
+      WHERE o.status != 'cancelled'
+        AND (
+          o.status != 'completed'
+          OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.status NOT IN ('served', 'cancelled'))
+        )
     `;
     const params: any[] = [];
 
@@ -140,7 +148,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       JOIN orders o ON oi.order_id = o.id
       LEFT JOIN tables t ON o.table_id = t.id
       WHERE oi.status NOT IN ('completed', 'cancelled', 'served')
-        AND o.status NOT IN ('completed', 'cancelled')
+        AND o.status != 'cancelled'
     `;
 
     const params: any[] = [];

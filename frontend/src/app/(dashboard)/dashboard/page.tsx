@@ -5,16 +5,24 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
-import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3 } from 'lucide-react';
+import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet } from 'lucide-react';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCountryByCode } from '@/lib/countries';
+import { PAYMENT_METHODS } from '@/lib/payment-methods';
+
+interface PaymentMethodBreakdown {
+  method: string | null;
+  count: number;
+  total: number;
+}
 
 interface DailyStats {
   sales: number;
   runningOrders: number;
   pendingOrders: number;
   tablesOccupied: number;
+  paymentMethods: PaymentMethodBreakdown[];
 }
 
 interface DaySummary {
@@ -22,6 +30,7 @@ interface DaySummary {
   orders: { count: number; total: number };
   bills: { count: number; total: number; collected: number };
   customers: { new: number };
+  paymentMethods: PaymentMethodBreakdown[];
 }
 
 interface TopProduct {
@@ -161,6 +170,9 @@ export default function DashboardPage() {
   }, [isOwner, selectedDate]);
 
   if (!isOwner) return null;
+
+  const paymentMethods = isToday ? (stats?.paymentMethods ?? []) : (daySummary?.paymentMethods ?? []);
+  const paymentMethodsTotal = paymentMethods.reduce((sum, pm) => sum + Number(pm.total), 0);
 
   // Running/Pending Orders and Tables Occupied are live, "right now" concepts
   // that don't retroactively apply to a past date (an order isn't "pending"
@@ -408,6 +420,45 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Payment Methods */}
+          <div className="bg-white rounded-xl border border-gray-100 p-4 mt-4">
+            <div className="flex items-center gap-2 mb-4">
+              <Wallet size={16} className="text-gray-400" />
+              <h2 className="font-semibold text-gray-900">{t('dashboard.paymentMethods')}</h2>
+            </div>
+            {paymentMethods.length === 0 ? (
+              <p className="text-sm text-gray-400 text-center py-6">{t('dashboard.noPaymentsYet')}</p>
+            ) : (
+              <div className="space-y-3">
+                {paymentMethods.map((pm) => {
+                  const meta = PAYMENT_METHODS.find((m) => m.key === pm.method);
+                  const Icon = meta?.icon ?? Wallet;
+                  const label = meta ? t(meta.labelKey) : t('pos.methodWallet');
+                  const percent = paymentMethodsTotal > 0 ? Math.round((Number(pm.total) / paymentMethodsTotal) * 100) : 0;
+                  return (
+                    <div key={pm.method ?? 'unknown'}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <Icon size={14} className="text-gray-400" />
+                          <span className="text-sm font-medium text-gray-900">{label}</span>
+                        </div>
+                        <span className="text-sm font-semibold text-gray-900">{fmt(Number(pm.total))}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-brand rounded-full" style={{ width: `${percent}%` }} />
+                        </div>
+                        <span className="text-xs text-gray-400 shrink-0">
+                          {localizeTemplate(t('dashboard.paymentMethodCount'), { count: pm.count, percent })}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           {/* Business Patterns */}

@@ -8,6 +8,10 @@ export type BillTemplate = 'classic' | 'compact' | 'detailed';
 export interface PosSettingsState {
   showProductImages: boolean;
   customerMandatory: boolean;
+  // When enabled, the POS auto-advances focus from phone → name as soon as
+  // the typed digits form a valid number for the tenant's country, so
+  // cashiers don't have to tab/click over manually.
+  enforcePhoneLength: boolean;
   billingType: 'postpaid' | 'prepaid';
   tablesRequired: boolean;
   // UI language for i18n routing. Synced from tenant on auth load.
@@ -48,6 +52,7 @@ export interface PosSettingsState {
   // Actions
   setShowProductImages: (show: boolean) => void;
   setCustomerMandatory: (mandatory: boolean) => void;
+  setEnforcePhoneLength: (enabled: boolean) => void;
   setLanguage: (lang: 'en' | 'es') => void;
   setPrinterPaperSize: (size: PaperSize) => void;
   setPrinterEnabled: (enabled: boolean) => void;
@@ -80,6 +85,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
     (set) => ({
       showProductImages: true,
       customerMandatory: false,
+      enforcePhoneLength: false,
       billingType: 'postpaid',
       tablesRequired: true,
       language: 'en',
@@ -115,6 +121,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // Actions
       setShowProductImages: (show) => set({ showProductImages: show }),
       setCustomerMandatory: (mandatory) => set({ customerMandatory: mandatory }),
+      setEnforcePhoneLength: (enabled) => set({ enforcePhoneLength: enabled }),
       setLanguage: (language) => set({ language }),
       setPrinterPaperSize: (size) => set({ printerPaperSize: size }),
       setPrinterEnabled: (enabled) => set({ printerEnabled: enabled }),

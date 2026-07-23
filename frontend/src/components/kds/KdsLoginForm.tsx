@@ -46,6 +46,16 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
             />
           </div>
 
+          <label className="flex items-center gap-2 text-sm text-gray-600 select-none cursor-pointer">
+            <input
+              type="checkbox"
+              checked={conn.rememberMe}
+              onChange={(e) => conn.setRememberMe(e.target.checked)}
+              className="rounded border-gray-300 text-brand focus:ring-brand"
+            />
+            {t('auth.rememberMe')}
+          </label>
+
           <button
             type="submit"
             disabled={conn.loginLoading}

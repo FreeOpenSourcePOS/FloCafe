@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import jwt, { SignOptions } from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
@@ -13,6 +13,12 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 const router = Router();
 
 const JWT_EXPIRES_IN = '24h';
+const JWT_REMEMBER_EXPIRES_IN = '10d';
+const JWT_REMEMBER_EXPIRES_IN_SECONDS = 10 * 24 * 60 * 60;
+
+function expiresInFor(remember: boolean): SignOptions['expiresIn'] {
+  return remember ? JWT_REMEMBER_EXPIRES_IN : JWT_EXPIRES_IN;
+}
 
 function dialCodeFor(country: string | undefined): string {
   if (!country) return '+1';
@@ -303,7 +309,7 @@ router.post('/login', authRateLimit(), (req: Request, res: Response) => {
       return res.status(429).json({ error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.` });
     }
 
-    const { email, password } = req.body;
+    const { email, password, rememberMe } = req.body;
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' });
@@ -323,10 +329,11 @@ router.post('/login', authRateLimit(), (req: Request, res: Response) => {
 
     resetSuccessfulLogin(ip);
 
+    const remember = !!rememberMe;
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role },
+      { userId: user.id, email: user.email, role: user.role, remember },
       getJWTSecret(),
-      { expiresIn: JWT_EXPIRES_IN }
+      { expiresIn: expiresInFor(remember) }
     );
 
     const tenant = buildLocalTenant(db, user.role);
@@ -334,7 +341,7 @@ router.post('/login', authRateLimit(), (req: Request, res: Response) => {
     res.json({
       access_token: token,
       token_type: 'bearer',
-      expires_in: 86400,
+      expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
       user: {
         id: user.id,
         name: user.name,
@@ -372,10 +379,11 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     const tenant = buildLocalTenant(db, user.role);
 
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
+    const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, tenantId: 1 },
+      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember },
       getJWTSecret(),
-      { expiresIn: JWT_EXPIRES_IN }
+      { expiresIn: expiresInFor(remember) }
     );
 
     res.json({
@@ -405,16 +413,17 @@ router.post('/refresh', (req: Request, res: Response) => {
 
     const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, getJWTSecret()) as any;
+    const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId },
+      { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId, remember },
       getJWTSecret(),
-      { expiresIn: JWT_EXPIRES_IN }
+      { expiresIn: expiresInFor(remember) }
     );
 
     res.json({
       access_token: newToken,
       token_type: 'bearer',
-      expires_in: 86400,
+      expires_in: remember ? JWT_REMEMBER_EXPIRES_IN_SECONDS : 86400,
     });
   } catch {
     res.status(401).json({ error: 'Invalid token' });

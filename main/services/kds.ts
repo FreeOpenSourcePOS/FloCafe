@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret } from '../routes/auth';
 
@@ -193,6 +193,27 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
   }));
 }
 
+/**
+ * An order can be marked 'completed' the moment its bill is fully paid
+ * (see bills.ts), which for a prepaid order happens before the kitchen has
+ * even started — payment and kitchen fulfillment are independent and can
+ * finish in either order. So "still needs the kitchen's attention" isn't
+ * just `status NOT IN ('completed','cancelled')`: a completed-by-payment
+ * order still belongs on KDS as long as it has items the kitchen hasn't
+ * served yet. Non-completed orders (pending/preparing/ready/served) are
+ * always included, matching the original behavior for the normal flow.
+ */
+function activeOrdersCondition(): string {
+  if (!isKdsEnabled()) return `o.status NOT IN ('completed', 'cancelled')`;
+  return `
+    o.status != 'cancelled'
+    AND (
+      o.status != 'completed'
+      OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = o.id AND oi2.status NOT IN ('served', 'cancelled'))
+    )
+  `;
+}
+
 function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
   const db = getDatabase();
 
@@ -200,7 +221,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     SELECT o.*, t.number as table_name
     FROM orders o
     LEFT JOIN tables t ON o.table_id = t.id
-    WHERE o.status NOT IN ('completed', 'cancelled')
+    WHERE ${activeOrdersCondition()}
   `;
 
   query += ' ORDER BY o.created_at ASC';
@@ -231,7 +252,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     FROM order_items oi
     JOIN products p ON oi.product_id = p.id
     JOIN orders o ON oi.order_id = o.id
-    WHERE o.status NOT IN ('completed', 'cancelled')
+    WHERE ${activeOrdersCondition()}
   `;
 
   if (categoryIds.length > 0) {

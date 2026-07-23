@@ -33,6 +33,28 @@ function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { 
   return { hourCounts, dayCounts };
 }
 
+/**
+ * `bills.payment_details` is a JSON array of individual payment splits
+ * (`[{method, amount, timestamp, ...}, ...]`), not a single object — a bill
+ * can be paid across multiple methods (e.g. part cash, part card). Flattens
+ * that with `json_each` and buckets by the split's own timestamp (not the
+ * bill's `paid_at`, which only marks when the bill became fully paid and
+ * would misattribute or drop earlier partial-payment splits on other days).
+ */
+function paymentMethodBreakdown(db: ReturnType<typeof getDatabase>, date: string) {
+  return db.prepare(`
+    SELECT
+      json_extract(je.value, '$.method') as method,
+      COUNT(*) as count,
+      COALESCE(SUM(json_extract(je.value, '$.amount')), 0) as total
+    FROM bills b, json_each(b.payment_details) je
+    WHERE b.payment_details IS NOT NULL
+      AND date(json_extract(je.value, '$.timestamp')) = date(?)
+    GROUP BY method
+    ORDER BY total DESC
+  `).all(date);
+}
+
 /** argmax/argmin over counts, restricted to indices where include(count) is true. Returns null if nothing qualifies. */
 function pickExtreme(counts: number[], mode: 'max' | 'min', include: (count: number) => boolean): { index: number; count: number } | null {
   let best: { index: number; count: number } | null = null;
@@ -72,6 +94,7 @@ router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: 
       runningOrders: runningOrders.count,
       pendingOrders: pendingOrders.count,
       tablesOccupied: tablesOccupied.count,
+      paymentMethods: paymentMethodBreakdown(db, today),
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -102,12 +125,6 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
       SELECT status, COUNT(*) as count FROM orders WHERE date(created_at) = date(?) GROUP BY status
     `).all(date);
 
-    const topPaymentMethods = db.prepare(`
-      SELECT payment_details, COUNT(*) as count, SUM(paid_amount) as total
-      FROM bills WHERE payment_status = 'paid' AND date(paid_at) = date(?)
-      GROUP BY json_extract(payment_details, '$.method')
-    `).all(date);
-
     res.json({
       summary: {
         date,
@@ -115,7 +132,7 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
         bills: { count: billsToday.count, total: billsToday.total, collected: billsToday.collected },
         customers: { new: customersToday.count },
         ordersByStatus,
-        topPaymentMethods,
+        paymentMethods: paymentMethodBreakdown(db, date),
       }
     });
   } catch (error: any) {

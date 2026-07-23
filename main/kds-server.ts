@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled } from './db';
-import { setupKdsWebSocket } from './services/kds';
+import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions } from './middleware/security';
 
@@ -289,6 +289,8 @@ export function startKdsServer(): Promise<void> {
 
         db.prepare("UPDATE order_items SET status = ?, updated_at = datetime('now') WHERE id = ?")
           .run(status, req.params.id);
+
+        notifyKdsUpdate();
 
         res.json({ success: true });
       } catch (error: any) {

@@ -80,6 +80,13 @@ export default function KdsStandalonePage() {
     );
   }
 
-  if (conn.loading || !conn.user) return <KdsLoginForm conn={conn} />;
+  if (conn.loading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-900">
+        <div className="w-10 h-10 border-4 border-white/40 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  if (!conn.user) return <KdsLoginForm conn={conn} />;
   return <KdsWorkspace conn={conn} serverDefault={kdsDefaultView} />;
 }

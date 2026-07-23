@@ -2,7 +2,7 @@
 
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck,
-  Plus, Minus, Trash2, Pause, MapPin,
+  Plus, Minus, Trash2, Pause, MapPin, SquarePen,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
@@ -11,7 +11,7 @@ import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useI18n } from '@/hooks/useI18n';
 import toast from 'react-hot-toast';
-import type { Table, Order, OrderItem } from '@/lib/types';
+import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface Props {
@@ -20,6 +20,7 @@ interface Props {
   submitting: boolean;
   onPlaceOrder: () => void;
   onShowTablePicker: () => void;
+  onEditItem?: (item: CartItem) => void;
   variant?: 'sidebar' | 'drawer';
   existingOrder?: Order | null;
 }
@@ -30,7 +31,7 @@ const orderTypeIcons = {
   delivery: Truck,
 };
 
-export default function CartPanel({ tables, submitting, onPlaceOrder, variant = 'sidebar', existingOrder }: Props) {
+export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem, variant = 'sidebar', existingOrder }: Props) {
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
@@ -141,9 +142,20 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, variant = 
                   <Trash2 size={13} />
                 </button>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
-                    {item.product.name}
-                  </p>
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-sm font-medium text-gray-900 truncate">
+                      {item.product.name}
+                    </p>
+                    {onEditItem && (
+                      <button
+                        onClick={() => onEditItem(item)}
+                        className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 text-xs font-medium transition-colors"
+                      >
+                        <SquarePen size={12} />
+                        {t('common.edit')}
+                      </button>
+                    )}
+                  </div>
                   {item.addons.length > 0 && (
                     <div className="mt-0.5">
                       {item.addons.map((a) => (

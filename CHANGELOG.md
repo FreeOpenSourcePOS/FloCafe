@@ -2,6 +2,18 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.4] - 2026-07-23
+
+### Fixed
+- Paying a prepaid order in full marks it "completed" immediately, which was yanking it off the Orders-active tab and every KDS view (WebSocket, standalone REST, dashboard REST, station display) the instant it was paid — often before the kitchen had even started cooking it. A completed order now stays visible in those views as long as it still has order items the kitchen hasn't served.
+- Standalone Kitchen Display: item status changes now broadcast over the shared KDS websocket, so moving an item to the next stage shows up live instead of needing a manual refresh. Also fixed the login screen flashing briefly before a saved session finished being checked, including a case where a slow/failed websocket handshake could leave it stuck loading forever.
+- Removed `DELETE /customers/:id` entirely — customer order history and loyalty standing are worth more than reclaiming a stale row, and nothing in the UI called this endpoint anyway.
+
+### Added
+- "Keep me logged in" checkbox on the KDS and main login screens — issues a 10-day session instead of the default 24 hours.
+- Dashboard now has a "Payment Methods" breakdown, and fixes a bug where a bill paid with a split payment (part-cash/part-card) was being collapsed into a single NULL-keyed group instead of counted per method.
+- POS: customer phone/name entry now commits on blur instead of requiring an explicit Add/Select click; an optional POS Workflow setting auto-advances focus from phone to name once a valid number is typed; cart items get an Edit button to reopen and adjust addons/instructions after the item's already in the cart; clicking a selected customer's name opens a popup to correct their name/phone (cashiers can now do this too, not just owner/manager), and the topbar shows pending loyalty points and dietary/behavior tags for the selected customer.
+
 ## [2.0.3] - 2026-07-23
 
 ### Fixed

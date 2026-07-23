@@ -14,15 +14,38 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # full tag history — needed for the "Full Changelog" compare link below
 
       - name: Create GitHub release (if not exists)
+        # Release notes come from CHANGELOG.md, not --generate-notes: this repo
+        # pushes straight to main instead of merging PRs, so GitHub's PR-based
+        # auto-generated notes come back empty (see git history around
+        # v2.0.0/v2.0.3 for what that looked like). A CHANGELOG.md entry is
+        # mandatory for every release — this step fails loudly instead of
+        # publishing a release with no notes if one is missing.
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          gh release view "v${VERSION}" --repo FreeOpenSourcePOS/FloCafe 2>/dev/null || \
+          if gh release view "v${VERSION}" --repo FreeOpenSourcePOS/FloCafe >/dev/null 2>&1; then
+            echo "Release v${VERSION} already exists, skipping creation."
+            exit 0
+          fi
+
+          if ! ./scripts/changelog-notes.sh "${VERSION}" > /tmp/release-notes.md; then
+            echo "::error::CHANGELOG.md has no '## [${VERSION}]' entry — add one before tagging a release."
+            exit 1
+          fi
+
+          PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -v "^v${VERSION}\$" | head -1)
+          if [ -n "$PREV_TAG" ]; then
+            echo "" >> /tmp/release-notes.md
+            echo "**Full Changelog**: https://github.com/FreeOpenSourcePOS/FloCafe/compare/${PREV_TAG}...v${VERSION}" >> /tmp/release-notes.md
+          fi
+
           gh release create "v${VERSION}" \
             --repo FreeOpenSourcePOS/FloCafe \
             --title "v${VERSION}" \
-            --generate-notes
+            --notes-file /tmp/release-notes.md
         env:
           GH_TOKEN: ${{ github.token }}
 

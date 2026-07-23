@@ -197,6 +197,7 @@ async function runTests() {
     ],
   });
 
+  if (orderRes.status !== 201) console.log('ORDER ERR:', orderRes.body);
   assertEqual(orderRes.status, 201, 'Order created successfully with addon quantities');
   assertEqual(orderRes.body.order.subtotal, 15.00, 'Order subtotal multiplies addon price by addon quantity');
 
@@ -250,6 +251,28 @@ async function runTests() {
     items: [{ product_id: prodId, quantity: 1, addons: [{ name: 'Shot', price: 1, quantity: 1.5 }] }],
   });
   assertEqual(invalidFractional.status, 400, 'Fractional addon quantity rejected');
+
+  // Test multi-quantity rejection when group disallows it
+  const disallowGroupRes = await makeRequest(app, 'POST', '/api/addon-groups', {
+    name: 'Single Choice Group',
+    allow_multiple_quantities: false,
+    max_selection: 1,
+    addons: [{ name: 'Single Addon', price: 0.5 }],
+  });
+  const disallowGroupId = disallowGroupRes.body.addon_group.id;
+  const disallowAddonId = disallowGroupRes.body.addon_group.addons[0].id;
+
+  const invalidMultiRes = await makeRequest(app, 'POST', '/api/orders', {
+    type: 'dine_in',
+    items: [{ product_id: prodId, quantity: 1, addons: [{ id: disallowAddonId, addon_group_id: disallowGroupId, name: 'Single Addon', price: 0.5, quantity: 2 }] }],
+  });
+  assertEqual(invalidMultiRes.status, 400, 'Multi-quantity rejected when group allow_multiple_quantities is false');
+
+  const invalidMaxRes = await makeRequest(app, 'POST', '/api/orders', {
+    type: 'dine_in',
+    items: [{ product_id: prodId, quantity: 1, addons: [{ id: disallowAddonId, addon_group_id: disallowGroupId, name: 'Single Addon', price: 0.5, quantity: 3 }] }],
+  });
+  assertEqual(invalidMaxRes.status, 400, 'Exceeding group max_selection quantity rejected');
 
   console.log('\n5. Legacy Row Default Quantity Test');
   const legacyOrder = db.prepare(`

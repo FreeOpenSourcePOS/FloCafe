@@ -43,6 +43,56 @@ function syncCustomerTagCounts(db: any, customerId: string, items: { product_id:
     .run(JSON.stringify(counts), now(), customerId);
 }
 
+function validateItemAddonGroupLimits(db: ReturnType<typeof getDatabase>, addons: any[] | null | undefined): void {
+  if (!addons || !Array.isArray(addons) || addons.length === 0) return;
+
+  for (const addon of addons) {
+    if (!addon) continue;
+    if (addon.quantity !== undefined) {
+      if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
+        throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+      }
+    }
+  }
+
+  const groupSelections = new Map<string, { totalQty: number; hasMultiQty: boolean }>();
+
+  for (const addon of addons) {
+    if (!addon) continue;
+    let groupId: string | null = addon.addon_group_id || null;
+    if (!groupId && addon.id) {
+      const dbAddon = db.prepare('SELECT addon_group_id FROM addons WHERE id = ?').get(addon.id) as { addon_group_id: string } | undefined;
+      if (dbAddon) groupId = dbAddon.addon_group_id;
+    }
+
+    if (groupId) {
+      const qty = Math.max(1, Math.floor(addon.quantity || 1));
+      const current = groupSelections.get(groupId) || { totalQty: 0, hasMultiQty: false };
+      groupSelections.set(groupId, {
+        totalQty: current.totalQty + qty,
+        hasMultiQty: current.hasMultiQty || qty > 1,
+      });
+    }
+  }
+
+  for (const [groupId, selection] of groupSelections.entries()) {
+    const group = db.prepare('SELECT * FROM addon_groups WHERE id = ? AND is_active = 1').get(groupId) as any;
+    if (!group) continue;
+
+    if (!group.allow_multiple_quantities && selection.hasMultiQty) {
+      throw new Error(`Add-on group "${group.name}" does not allow multiple quantities`);
+    }
+
+    if (group.max_selection !== null && group.max_selection !== undefined && selection.totalQty > group.max_selection) {
+      throw new Error(`Total add-on quantity for group "${group.name}" exceeds maximum allowed (${group.max_selection})`);
+    }
+
+    if (group.min_selection && selection.totalQty < group.min_selection) {
+      throw new Error(`Selection for group "${group.name}" requires at least ${group.min_selection} item(s)`);
+    }
+  }
+}
+
 router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
@@ -154,16 +204,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       validateOrderNotes(db, special_instructions);
       for (const item of items) {
         validateItemNotes(db, item.special_instructions);
-        if (item.addons && Array.isArray(item.addons)) {
-          for (const addon of item.addons) {
-            if (!addon) continue;
-            if (addon.quantity !== undefined) {
-              if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
-                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
-              }
-            }
-          }
-        }
+        validateItemAddonGroupLimits(db, item.addons);
       }
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -334,16 +375,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     try {
       for (const item of items) {
         validateItemNotes(db, item.special_instructions);
-        if (item.addons && Array.isArray(item.addons)) {
-          for (const addon of item.addons) {
-            if (!addon) continue;
-            if (addon.quantity !== undefined) {
-              if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
-                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
-              }
-            }
-          }
-        }
+        validateItemAddonGroupLimits(db, item.addons);
       }
       if (special_instructions !== undefined) {
         validateOrderNotes(db, special_instructions);

@@ -68,7 +68,7 @@ export default function ProductsPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [editingAddonGroup, setEditingAddonGroup] = useState<AddonGroup | null>(null);
   const [categoryForm, setCategoryForm] = useState({ name: '', description: '', color: '', is_active: true });
-  const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, min_selection: 0, max_selection: 10 });
+  const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
   const [addonList, setAddonList] = useState<{ id?: number | string; name: string; price: number; is_active?: boolean }[]>([]);
@@ -330,7 +330,7 @@ export default function ProductsPage() {
   };
 
   const resetAddonForm = () => {
-    setAddonForm({ name: '', description: '', is_required: false, min_selection: 0, max_selection: 10 });
+    setAddonForm({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: 0, max_selection: 10 });
     setEditingAddonGroup(null);
     setShowAddonModal(false);
     setAddonList([]);
@@ -338,7 +338,7 @@ export default function ProductsPage() {
 
   const openEditAddonGroup = (group: AddonGroup) => {
     setEditingAddonGroup(group);
-    setAddonForm({ name: group.name, description: group.description || '', is_required: Boolean(group.is_required), min_selection: group.min_selection, max_selection: group.max_selection });
+    setAddonForm({ name: group.name, description: group.description || '', is_required: Boolean(group.is_required), allow_multiple_quantities: Boolean(group.allow_multiple_quantities), min_selection: group.min_selection, max_selection: group.max_selection });
     setAddonList(group.addons?.map((a) => ({ id: a.id, name: a.name, price: a.price, is_active: Boolean(a.is_active) })) || []);
     setShowAddonModal(true);
   };
@@ -346,7 +346,7 @@ export default function ProductsPage() {
   const handleAddonGroupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const payload = { name: addonForm.name, description: addonForm.description || null, is_required: addonForm.is_required, min_selection: addonForm.min_selection, max_selection: addonForm.max_selection, addons: addonList };
+      const payload = { name: addonForm.name, description: addonForm.description || null, is_required: addonForm.is_required, allow_multiple_quantities: addonForm.allow_multiple_quantities, min_selection: addonForm.min_selection, max_selection: addonForm.max_selection, addons: addonList };
       if (editingAddonGroup) {
         await api.put(`/addon-groups/${editingAddonGroup.id}`, payload);
         toast.success(t('products.addonGroupUpdated'));
@@ -891,6 +891,10 @@ export default function ProductsPage() {
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={addonForm.is_required} onChange={(e) => setAddonForm({ ...addonForm, is_required: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
                     <span className="text-sm text-gray-700">{t('products.addonRequired')}</span>
+                  </label>
+                  <label className="flex items-center gap-2">
+                    <input type="checkbox" checked={addonForm.allow_multiple_quantities} onChange={(e) => setAddonForm({ ...addonForm, allow_multiple_quantities: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
+                    <span className="text-sm text-gray-700">Allow multiple quantities per add-on</span>
                   </label>
                   <div>
                     <div className="flex justify-between items-center mb-2">

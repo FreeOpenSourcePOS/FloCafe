@@ -132,7 +132,7 @@ export default function AddonModal({
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold text-sm text-gray-900">{group.name}</h3>
                   <span className="flex items-center gap-2">
-                    {group.is_required && (
+                    {Boolean(group.is_required) && (
                       <span className="text-xs text-red-500 font-medium">{t('pos.required')}</span>
                     )}
                     {group.max_selection ? (() => {
@@ -224,7 +224,7 @@ export default function AddonModal({
                     );
                   })}
                 </div>
-                {group.is_required && count < group.min_selection && (
+                {Boolean(group.is_required) && count < group.min_selection && (
                   <p className="text-xs text-red-500 mt-1">{t('pos.selectAtLeast', { count: group.min_selection })}</p>
                 )}
               </div>

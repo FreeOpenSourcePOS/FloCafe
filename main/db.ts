@@ -26,6 +26,16 @@ export function getSettingValue(key: string): string | null {
   return row?.value ?? null;
 }
 
+export function upsertSettings(entries: Record<string, string | undefined | null>): void {
+  const stmt = db.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `);
+  for (const [key, val] of Object.entries(entries)) {
+    if (val !== undefined) stmt.run(key, val ?? '', now());
+  }
+}
+
 function upsertSetting(key: string, value: string): void {
   db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -94,6 +104,64 @@ export function ensureCloudIdentity(): { posHash: string; deviceSecret: string }
 
   insertSettingIfMissing('cloud_device_created_at', now());
   return { posHash, deviceSecret };
+}
+
+/** Locally-cached RevFlo pairing code (plaintext) — FloAdmin only ever returns it once. */
+export function getCachedPairingCode(): { code: string; expiresAt: string } | null {
+  const code = getSettingValue('mobile_pairing_code');
+  const expiresAt = getSettingValue('mobile_pairing_code_expires_at');
+  if (!code || !expiresAt) return null;
+  if (new Date(expiresAt).getTime() <= Date.now()) return null;
+  return { code, expiresAt };
+}
+
+export function setCachedPairingCode(code: string, expiresAt: string): void {
+  upsertSetting('mobile_pairing_code', code);
+  upsertSetting('mobile_pairing_code_expires_at', expiresAt);
+}
+
+/** Random UUID, generated once and persisted — never derived from store/device identity. */
+export function ensureTelemetryAnonId(): string {
+  let anonId = getSettingValue('telemetry_anon_id');
+  if (!anonId) {
+    anonId = crypto.randomUUID();
+    upsertSetting('telemetry_anon_id', anonId);
+  }
+  return anonId;
+}
+
+/**
+ * Opt-in: consent is captured once at first-run setup (see
+ * routes/auth.ts `/setup/initialize`'s `anonymous_data_consent`), which sets
+ * this setting explicitly. Missing/anything but the literal 'true' means no
+ * consent was ever given (including pre-existing installs from before this
+ * setting existed) — never defaults to on.
+ */
+export function isTelemetryEnabled(): boolean {
+  return getSettingValue('telemetry_enabled') === 'true';
+}
+
+/**
+ * Kitchen Display System on/off switch (issue #133). Defaults to enabled
+ * (missing/anything but the literal 'false') so pre-existing installs that
+ * predate this setting keep their current always-on behavior.
+ */
+export function isKdsEnabled(): boolean {
+  return getSettingValue('kds_enabled') !== 'false';
+}
+
+/**
+ * KOT ticket printing on/off switch (issue #133) — coarser than
+ * `auto_print_kot` (which only gates *automatic* printing on order
+ * placement). When this is off, no KOT print command may be sent,
+ * automatic or manual. Defaults to enabled, same reasoning as isKdsEnabled.
+ */
+export function isKotPrintingEnabled(): boolean {
+  return getSettingValue('kot_printing_enabled') !== 'false';
+}
+
+export function upsertTelemetryLastPing(): void {
+  upsertSetting('telemetry_last_ping_at', now());
 }
 
 /** Atomic multi-statement mutation. Use for anything touching >1 row or >1 table. */
@@ -330,6 +398,69 @@ export async function createBackup(targetPath?: string): Promise<{ path: string;
   }
 
   return { path: finalPath, schemaVersion: currentVersion };
+}
+
+/** Reads the schema_version stamp createBackup() writes into _flo_meta. Older backups predating that stamp (or a file that fails to open) return null. */
+function readBackupSchemaVersion(fullPath: string): number | null {
+  let backupDb: Database.Database | undefined;
+  try {
+    backupDb = new Database(fullPath, { readonly: true, fileMustExist: true });
+    const row = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
+    return row ? parseInt(row.value, 10) : null;
+  } catch {
+    return null;
+  } finally {
+    backupDb?.close();
+  }
+}
+
+/**
+ * Lists backups in the managed backups/ directory, newest first. Only
+ * backups written by createBackup()/syncBackupBeforeMigration() live here —
+ * a backup saved to a user-chosen custom path (via the Export Backup /
+ * "choose location" flow) intentionally does not appear here, same as it
+ * never has for the existing File > Export Backup menu action. See #120.
+ */
+export function listBackups(): { fileName: string; path: string; sizeBytes: number; createdAt: string; kind: 'manual' | 'auto'; schemaVersion: number | null }[] {
+  const backupDir = getBackupDir();
+  if (!fs.existsSync(backupDir)) return [];
+
+  return fs.readdirSync(backupDir)
+    .filter((fileName) => fileName.startsWith('flo-backup-') && fileName.endsWith('.db'))
+    .map((fileName) => {
+      const fullPath = path.join(backupDir, fileName);
+      const stat = fs.statSync(fullPath);
+      return {
+        fileName,
+        path: fullPath,
+        sizeBytes: stat.size,
+        createdAt: stat.mtime.toISOString(),
+        kind: (fileName.includes('-pre-v') ? 'auto' : 'manual') as 'manual' | 'auto',
+        schemaVersion: readBackupSchemaVersion(fullPath),
+      };
+    })
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+/**
+ * Deletes one backup from the managed backups/ directory by file name.
+ * fileName is validated against the exact naming scheme createBackup() uses
+ * and resolved only inside backupDir, so a path-traversal fileName (e.g.
+ * `../../flo.db`) can't escape the backups folder or delete the live DB.
+ */
+export function deleteBackup(fileName: string): void {
+  if (!/^flo-backup-[\w.-]+\.db$/.test(fileName)) {
+    throw new Error('Invalid backup file name');
+  }
+  const backupDir = getBackupDir();
+  const fullPath = path.join(backupDir, fileName);
+  if (path.dirname(fullPath) !== backupDir) {
+    throw new Error('Invalid backup file name');
+  }
+  if (!fs.existsSync(fullPath)) {
+    throw new Error('Backup not found');
+  }
+  fs.unlinkSync(fullPath);
 }
 
 function getColumns(dbInstance: Database.Database, tableName: string): string[] {
@@ -821,6 +952,17 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 23,
     name: 'normalize_customer_phones',
     up: () => {
+      // country_code only exists in createSchema()'s CREATE TABLE, which is
+      // a no-op (IF NOT EXISTS) for any install whose customers table
+      // predates that column being added — this migration is the first
+      // thing to actually read/write it, and was crashing with "no such
+      // column: country_code" on every such upgrade (reported on a fresh
+      // Windows install of v1.9.7). Guard it here instead of assuming it's
+      // there.
+      if (!getColumns(db, 'customers').includes('country_code')) {
+        db.exec(`ALTER TABLE customers ADD COLUMN country_code TEXT DEFAULT '+91'`);
+      }
+
       const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
       const tenantCountry = tenantCountryRow?.value || 'IN';
       
@@ -916,7 +1058,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     up: () => {
       const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
       const tenantCountry = tenantCountryRow?.value || 'IN';
-      
+
       const { parsePhoneE164 } = require('./lib/phone');
 
       const customers = db.prepare(
@@ -938,9 +1080,196 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[MIGRATION v24] normalized: ${normalized}, unparseable: ${unparseable}`);
     },
   },
+  {
+    version: 25,
+    name: 'add_order_item_addons_table',
+    up: () => {
+      // Selected addons are snapshotted as JSON on order_items.addons. That
+      // works for print/receipt display but makes addon reporting ("addons
+      // sold by day/product/station") require JSON parsing instead of
+      // indexed SQL, and ambiguous parsed-vs-raw-JSON typing already caused
+      // a KOT print failure (see 02a511e). Add a normalized snapshot table
+      // and backfill it from existing rows. order_items.addons stays the
+      // read-path source of truth for now — this migration only adds the
+      // table and starts populating it; see issue #125.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS order_item_addons (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          order_item_id INTEGER NOT NULL,
+          addon_id TEXT,
+          addon_name TEXT NOT NULL,
+          price NUMERIC NOT NULL DEFAULT 0,
+          quantity INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (order_item_id) REFERENCES order_items(id) ON DELETE CASCADE,
+          FOREIGN KEY (addon_id) REFERENCES addons(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_order_item_addons_order_item_id ON order_item_addons(order_item_id);
+        CREATE INDEX IF NOT EXISTS idx_order_item_addons_addon_id ON order_item_addons(addon_id);
+      `);
+
+      const rows = db.prepare(
+        `SELECT id, addons, created_at FROM order_items WHERE addons IS NOT NULL AND addons != '' AND addons != 'null'`
+      ).all() as { id: number; addons: string; created_at: string }[];
+
+      let backfilled = 0, skipped = 0;
+      for (const row of rows) {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(row.addons);
+        } catch {
+          skipped++;
+          continue;
+        }
+        if (!Array.isArray(parsed) || parsed.length === 0) continue;
+        insertOrderItemAddons(db, row.id, parsed, row.created_at || now());
+        backfilled++;
+      }
+      console.log(`[MIGRATION v25] backfilled addons for ${backfilled} order items (${skipped} unparseable, skipped)`);
+    },
+  },
+  {
+    version: 26,
+    name: 'add_kds_default_view',
+    up: () => {
+      db.prepare(
+        `INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('kds_default_view', 'tabs', ?)`
+      ).run(now());
+    },
+  },
+  {
+    version: 27,
+    name: 'add_station_printer_link_and_user_stations',
+    up: () => {
+      // Links a kitchen station to a printer row instead of duplicating
+      // ip/port/name inline, and lets a staff login (or shared counter
+      // login) be assigned to one or more stations. See issue #134.
+      const stationColumns = getColumns(db, 'kitchen_stations');
+      if (!stationColumns.includes('printer_id')) {
+        db.exec(`ALTER TABLE kitchen_stations ADD COLUMN printer_id TEXT REFERENCES printers(id) ON DELETE SET NULL`);
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS station_users (
+          user_id TEXT NOT NULL,
+          station_id TEXT NOT NULL,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (user_id, station_id),
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (station_id) REFERENCES kitchen_stations(id) ON DELETE CASCADE
+        );
+      `);
+    },
+  },
+  {
+    version: 28,
+    name: 'seed_telemetry_settings',
+    up: () => {
+      // Installs that ran first-run setup before telemetry was added (v1.9.4)
+      // never had these rows written — loadInstallDefaults() only runs on a
+      // fresh DB. INSERT OR IGNORE is safe: fresh installs already have them.
+      // All default to off so existing installs stay opted-out.
+      const t = now();
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', 'false', ?)`).run(t);
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('telemetry_enabled', 'false', ?)`).run(t);
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics', ?)`).run(t);
+    },
+  },
+  {
+    version: 29,
+    name: 'whatsapp_messaging',
+    up: () => {
+      createWhatsAppSchema();
+      seedWhatsAppDefaults();
+    },
+  },
+  {
+    version: 30,
+    name: 'drop_order_items_addons_json_column',
+    up: () => {
+      // order_item_addons (v25) has been the sole write target for selected
+      // addons for a while now, and every read path was moved onto it in the
+      // same release this migration ships in — order_items.addons is no
+      // longer written or read anywhere in the app. This is the cleanup: one
+      // more backfill sweep (belt-and-braces — v25 already ran, but this
+      // catches anything created between then and the dual-write existing,
+      // or any hand-edited row), then drop the column outright rather than
+      // leave a dead, unused JSON copy sitting in the schema. See issue #125.
+      const columns = getColumns(db, 'order_items');
+      if (!columns.includes('addons')) return; // already dropped (idempotent re-run)
+
+      const rows = db.prepare(`
+        SELECT id, addons, created_at FROM order_items
+        WHERE addons IS NOT NULL AND addons != '' AND addons != 'null'
+          AND NOT EXISTS (SELECT 1 FROM order_item_addons WHERE order_item_id = order_items.id)
+      `).all() as { id: number; addons: string; created_at: string }[];
+
+      let backfilled = 0;
+      const unrecoverable: number[] = [];
+      for (const row of rows) {
+        let parsed: any;
+        try {
+          parsed = JSON.parse(row.addons);
+        } catch {
+          unrecoverable.push(row.id);
+          continue;
+        }
+        if (!Array.isArray(parsed) || parsed.length === 0) continue;
+        insertOrderItemAddons(db, row.id, parsed, row.created_at || now());
+        backfilled++;
+      }
+      console.log(`[MIGRATION v30] backfilled ${backfilled} order_item(s) still missing a normalized addons snapshot`);
+
+      if (unrecoverable.length > 0) {
+        console.warn(`[MIGRATION v30] ${unrecoverable.length} order_item row(s) have unparseable legacy addons JSON (ids: ${unrecoverable.join(', ')}) and could not be migrated. Leaving the addons column in place so this data isn't lost — please review these rows manually.`);
+        return;
+      }
+
+      const remaining = (db.prepare(`
+        SELECT COUNT(*) as count FROM order_items
+        WHERE addons IS NOT NULL AND addons != '' AND addons != 'null'
+          AND NOT EXISTS (SELECT 1 FROM order_item_addons WHERE order_item_id = order_items.id)
+      `).get() as { count: number }).count;
+
+      if (remaining > 0) {
+        console.warn(`[MIGRATION v30] ${remaining} order_item row(s) still lack a normalized addons snapshot after backfill — skipping the column drop this run.`);
+        return;
+      }
+
+      db.exec('ALTER TABLE order_items DROP COLUMN addons');
+      console.log('[MIGRATION v30] Dropped order_items.addons — order_item_addons is now the only place selected addons live.');
+    },
+  },
+  {
+    version: 31,
+    name: 'add_customers_tag_counts_column',
+    up: () => {
+      // tag_counts, like country_code (fixed in v23's guard above), only
+      // ever existed in createSchema()'s CREATE TABLE — no migration added
+      // it for installs whose customers table predates it. Unlike
+      // country_code this isn't just a startup-migration crash: it's read
+      // and written on every order for a returning customer
+      // (routes/orders.ts), so any affected install would crash there
+      // instead, mid-use rather than at launch.
+      if (!getColumns(db, 'customers').includes('tag_counts')) {
+        db.exec(`ALTER TABLE customers ADD COLUMN tag_counts TEXT DEFAULT NULL`);
+      }
+    },
+  },
+  {
+    version: 32,
+    name: 'add_kds_and_kot_printing_toggles',
+    up: () => {
+      // Independent on/off switches for the Kitchen Display System and for
+      // KOT ticket printing (issue #133) — not every business runs both.
+      // Default 'true' on both to match the pre-toggle always-on behavior
+      // existing installs already have.
+      insertSettingIfMissing('kds_enabled', 'true');
+      insertSettingIfMissing('kot_printing_enabled', 'true');
+    },
+  },
 ];
 
-function syncBackupBeforeMigration(version: number): void {
+function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
   try {
     const dbPath = getDbPath();
     const backupDir = getBackupDir();
@@ -948,7 +1277,7 @@ function syncBackupBeforeMigration(version: number): void {
       fs.mkdirSync(backupDir, { recursive: true });
     }
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const targetPath = path.join(backupDir, `flo-backup-${timestamp}-pre-v${version}.db`);
+    const targetPath = path.join(backupDir, `flo-backup-${timestamp}-pre-v${fromVersion}-to-v${toVersion}.db`);
 
     db.pragma('wal_checkpoint(TRUNCATE)');
     fs.copyFileSync(dbPath, targetPath);
@@ -966,9 +1295,20 @@ function syncBackupBeforeMigration(version: number): void {
     backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('app_version', app.getVersion());
     backupDb.close();
 
-    console.log(`[DB] Auto-backup before migration v${version} created at ${targetPath}`);
+    console.log(`[DB] Auto-backup before migrating v${fromVersion} → v${toVersion} created at ${targetPath}`);
   } catch (err: any) {
     console.error(`[DB] Auto-backup before migration failed:`, err.message);
+  }
+}
+
+export class SchemaVersionMismatchError extends Error {
+  constructor(public readonly dbVersion: number, public readonly appVersion: number) {
+    super(
+      `Database schema (v${dbVersion}) is newer than this app version supports (v${appVersion}). ` +
+      `This usually means another device or a previous update already upgraded this database. ` +
+      `Please update Flo Cafe to the latest version before continuing.`
+    );
+    this.name = 'SchemaVersionMismatchError';
   }
 }
 
@@ -976,20 +1316,39 @@ function runMigrations(): void {
   const current = getCurrentSchemaVersion();
   const target = MIGRATIONS.length > 0 ? MIGRATIONS[MIGRATIONS.length - 1].version : 0;
 
-  if (current >= target) {
+  if (current > target) {
+    // The database has already been migrated by a newer build than this one
+    // (shared/synced DB, or a stale install/shortcut still pointing at this
+    // binary). Proceeding would let old queries reference columns a later
+    // migration already dropped (e.g. order_items.addons, #133) — fail loudly
+    // at startup instead of mid-transaction during business hours.
+    throw new SchemaVersionMismatchError(current, target);
+  }
+
+  if (current === target) {
     console.log(`[DB] Schema up to date (v${current})`);
     return;
   }
 
   console.log(`[DB] Schema: v${current} → v${target}`);
 
+  // Back up once, up front, before running the whole pending batch — not just
+  // before specific hand-picked versions. An install that's been stuck for a
+  // long time (broken auto-update, offline for months, etc.) can jump through
+  // a dozen+ migrations in a single run; every one of them deserves the same
+  // protection, not just the couple we happened to remember to flag by number.
+  //
+  // Deliberately unconditional, including current === 0: that's NOT a
+  // reliable signal for "nothing to protect" — real old installs can report
+  // user_version 0 if they predate this app's version-tracking pragma (see
+  // tests/fixtures/upgrade-snapshots/pre-migration-scheme-v1.5.0.db), and
+  // those are exactly the installs with the most pending migrations and the
+  // most at stake. A brand-new install just backs up an empty/tiny file.
+  console.log(`[DB] Triggering auto-backup before migrating v${current} → v${target}...`);
+  syncBackupBeforeMigration(current, target);
+
   for (const migration of MIGRATIONS) {
     if (migration.version <= current) continue;
-    
-    if (migration.version === 23) {
-      console.log(`[DB] Triggering auto-backup before v23...`);
-      syncBackupBeforeMigration(23);
-    }
 
     console.log(`[DB] Applying migration v${migration.version}: ${migration.name}`);
     db.transaction(() => {
@@ -1000,6 +1359,12 @@ function runMigrations(): void {
   }
 }
 
+// createSchema() only runs for migration v1, i.e. brand-new installs — for
+// any existing install this is a no-op (CREATE TABLE IF NOT EXISTS). If you
+// add a column directly to a CREATE TABLE below, existing installs never
+// get it unless you also add a guarded ALTER migration for it (see v23/v29
+// in MIGRATIONS above for the pattern, and specs/DatabaseMigrations.md).
+// tests/upgrade-path.test.ts exists specifically to catch this class of bug.
 function createSchema(): void {
   db.exec(`
     -- ── Master data tables ──────────────────────────────────────────────
@@ -1081,13 +1446,24 @@ function createSchema(): void {
       name TEXT NOT NULL,
       description TEXT,
       category_ids TEXT,
+      printer_id TEXT,
       printer_ip TEXT,
       printer_port INTEGER DEFAULT 9100,
       printer_name TEXT,
       is_active INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (printer_id) REFERENCES printers(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS station_users (
+      user_id TEXT NOT NULL,
+      station_id TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (user_id, station_id),
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (station_id) REFERENCES kitchen_stations(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS tables (
@@ -1302,6 +1678,50 @@ function createCloudSyncSchema(): void {
   `);
 }
 
+function createWhatsAppSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS whatsapp_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bill_id INTEGER REFERENCES bills(id),
+      customer_id TEXT REFERENCES customers(id),
+      phone_e164 TEXT NOT NULL,
+      direction TEXT NOT NULL CHECK (direction IN ('outbound','inbound')),
+      kind TEXT NOT NULL DEFAULT 'manual_reply'
+        CHECK (kind IN ('bill_receipt','manual_reply','auto_followup')),
+      status TEXT NOT NULL DEFAULT 'queued'
+        CHECK (status IN ('queued','seen','typing','sent','delivered','read','failed')),
+      body TEXT NOT NULL,
+      external_message_id TEXT,
+      error TEXT,
+      queued_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      seen_at TEXT,
+      typing_at TEXT,
+      sent_at TEXT,
+      delivered_at TEXT,
+      read_at TEXT,
+      failed_at TEXT,
+      created_by_user_id TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_phone
+      ON whatsapp_messages(phone_e164, queued_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_status
+      ON whatsapp_messages(status, queued_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_bill
+      ON whatsapp_messages(bill_id);
+    CREATE INDEX IF NOT EXISTS idx_whatsapp_messages_inbound_unread
+      ON whatsapp_messages(direction, status, queued_at DESC)
+      WHERE direction = 'inbound' AND status NOT IN ('read','failed');
+
+    CREATE TABLE IF NOT EXISTS whatsapp_blocklist (
+      phone_e164 TEXT PRIMARY KEY,
+      reason TEXT,
+      blocked_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      blocked_by_user_id TEXT
+    );
+  `);
+}
+
 function seedCloudSyncDefaults(): void {
   createCloudSyncSchema();
 
@@ -1312,7 +1732,7 @@ function seedCloudSyncDefaults(): void {
   // see specs/floadmin.md § api surface). Harmless pre-claim: every send path in
   // cloud-sync.ts is gated on api_key being present, which only exists after a
   // human claims the store on FloAdmin, so nothing transmits before then.
-  insertSettingIfMissing('cloud_sync_enabled', '1');
+  insertSettingIfMissing('cloud_sync_enabled', '0');
   insertSettingIfMissing('cloud_orders_enabled', '0');
   insertSettingIfMissing('cloud_reports_enabled', '1');
   insertSettingIfMissing('cloud_command_polling_enabled', '1');
@@ -1320,6 +1740,18 @@ function seedCloudSyncDefaults(): void {
   insertSettingIfMissing('cloud_registration_status', 'unregistered');
 
   ensureCloudIdentity();
+}
+
+function seedWhatsAppDefaults(): void {
+  insertSettingIfMissing('whatsapp_enabled', 'false');
+  insertSettingIfMissing('whatsapp_activated_by_user_id', '');
+  insertSettingIfMissing('whatsapp_activated_at', '');
+  insertSettingIfMissing('whatsapp_disclosure_version_acknowledged', '');
+  insertSettingIfMissing('whatsapp_connected_phone', '');
+  insertSettingIfMissing('whatsapp_disclosure_version', '1');
+  // On by default — no one asks Flo to send a paid bill into a group chat.
+  // Operators who do want group processing have to opt in explicitly.
+  insertSettingIfMissing('whatsapp_filter_groups', 'true');
 }
 
 function seedInstallDefaults(): void {
@@ -1348,11 +1780,16 @@ function seedInstallDefaults(): void {
   insert('setup_profile', '');
   insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
   insert('cloud_connected', 'false');
-  insert('cloud_sync_enabled', '1');
+  insert('cloud_sync_enabled', '0');
   insert('cloud_orders_enabled', '0');
   insert('cloud_reports_enabled', '1');
   insert('cloud_command_polling_enabled', '1');
   insert('cloud_registration_status', 'unregistered');
+  insert('anonymous_data_consent', 'true');
+  insert('telemetry_enabled', 'true');
+  insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
+  insert('kds_enabled', 'true');
+  insert('kot_printing_enabled', 'true');
 
   seedCloudSyncDefaults();
 
@@ -1426,9 +1863,40 @@ export function verifyPin(storedHash: string | null | undefined, inputPin: strin
   return bcrypt.compareSync(String(inputPin), storedHash);
 }
 
+/**
+ * Snapshots an order item's selected addons into the normalized
+ * order_item_addons table — the only place selected addons are stored (see
+ * issue #125; order_items.addons was dropped in migration v28). Silently
+ * skips entries missing a name.
+ */
+export function insertOrderItemAddons(
+  dbInstance: Database.Database,
+  orderItemId: number | bigint,
+  addons: { id?: string; name?: string; price?: number }[] | null | undefined,
+  createdAt: string
+): void {
+  if (!addons || !Array.isArray(addons) || addons.length === 0) return;
+  const addonExists = dbInstance.prepare('SELECT 1 FROM addons WHERE id = ?');
+  const insertAddon = dbInstance.prepare(`
+    INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)
+    VALUES (?, ?, ?, ?, 1, ?)
+  `);
+  for (const addon of addons) {
+    if (!addon || !addon.name) continue;
+    // addon_id has an FK to addons(id) — if the catalog addon was since
+    // deleted (or the id never matched one, e.g. ad-hoc/legacy data), fall
+    // back to NULL rather than let the FK violation abort order creation.
+    // addon_name/price are the snapshot of record either way.
+    const linkedAddonId = addon.id && addonExists.get(addon.id) ? addon.id : null;
+    insertAddon.run(orderItemId, linkedAddonId, addon.name, addon.price || 0, createdAt);
+  }
+}
+
 /** Parse JSON string fields on order_item rows returned from SQLite.
  *  Stored as JSON.stringify(value) — may be "null", "[...]", "{...}" etc.
- *  Returns actual JS value (array / object / null) so the frontend can map/iterate. */
+ *  Returns actual JS value (array / object / null) so the frontend can map/iterate.
+ *  addons is not handled here — see attachEffectiveAddons, which resolves it
+ *  from the normalized order_item_addons table instead. */
 export function parseItemJson(item: any): any {
   const tryParse = (val: any) => {
     if (typeof val !== 'string') return val;
@@ -1436,11 +1904,39 @@ export function parseItemJson(item: any): any {
   };
   return {
     ...item,
-    addons: tryParse(item.addons),
     variant_selection: tryParse(item.variant_selection),
     modifier_selection: tryParse(item.modifier_selection),
     tax_breakdown: tryParse(item.tax_breakdown),
   };
+}
+
+/**
+ * Resolves selected addons for a batch of order_items rows from the
+ * normalized order_item_addons table — the sole source of truth (see issue
+ * #125; order_items.addons was dropped in migration v28). Returns new
+ * objects with `addons` set to an array (empty if the item has none); does
+ * not mutate the input.
+ */
+export function attachEffectiveAddons<T extends { id: number }>(
+  dbInstance: Database.Database,
+  items: T[]
+): (T & { addons: { id: string | null; name: string; price: number; quantity: number }[] })[] {
+  if (items.length === 0) return items as (T & { addons: { id: string | null; name: string; price: number; quantity: number }[] })[];
+
+  const ids = items.map((item) => item.id);
+  const placeholders = ids.map(() => '?').join(',');
+  const rows = dbInstance.prepare(
+    `SELECT * FROM order_item_addons WHERE order_item_id IN (${placeholders}) ORDER BY id`
+  ).all(...ids) as { order_item_id: number; addon_id: string | null; addon_name: string; price: number; quantity: number }[];
+
+  const byItem = new Map<number, { id: string | null; name: string; price: number; quantity: number }[]>();
+  for (const row of rows) {
+    const list = byItem.get(row.order_item_id) || [];
+    list.push({ id: row.addon_id, name: row.addon_name, price: row.price, quantity: row.quantity });
+    byItem.set(row.order_item_id, list);
+  }
+
+  return items.map((item) => ({ ...item, addons: byItem.get(item.id) || [] }));
 }
 
 /** Parse JSON text columns on bill/order rows returned from SQLite. */

@@ -4,10 +4,10 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag } from 'lucide-react';
+import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
-import { shareBillViaWhatsApp } from '@/lib/whatsapp-share';
+import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
 import { useConfirm } from '@/hooks/use-confirm';
 import type { OrderItem, Table, Product, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
@@ -20,6 +20,7 @@ import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatDate } from '@/hooks/useFormatDate';
+import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 
 const itemStatusConfig: Record<string, { dot: string; color: string; labelKey: string }> = {
@@ -93,6 +94,7 @@ export default function OrdersPage() {
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
   const { confirm, ConfirmDialog } = useConfirm();
+  const isWhatsAppReady = useWhatsAppReady();
 
   // Consolidated filter state
   const [filters, setFilters] = useState<Filters>({ search: '', table: '', type: '', status: '' });
@@ -110,6 +112,7 @@ export default function OrdersPage() {
   // Print states
   const [generatingBill, setGeneratingBill] = useState<number | null>(null);
   const [printingBillId, setPrintingBillId] = useState<number | null>(null);
+  const [sendingWaOrderId, setSendingWaOrderId] = useState<number | null>(null);
   const [confirmPrintBillId, setConfirmPrintBillId] = useState<number | null>(null);
 
   // Other states
@@ -484,6 +487,23 @@ export default function OrdersPage() {
     }
   };
 
+  const handleSendViaFlo = async (order: Order) => {
+    if (!order.bill) {
+      toast.error(t('orders.billNotFound'));
+      return;
+    }
+    if (!order.customer?.phone) {
+      toast.error(t('whatsapp.send.customerPhoneRequired'));
+      return;
+    }
+    setSendingWaOrderId(order.id);
+    try {
+      await sendBillViaFlo(order.bill, order.customer.phone, currency, t);
+    } finally {
+      setSendingWaOrderId(null);
+    }
+  };
+
   const handleApplyDiscount = async () => {
     if (!discountModal) return;
 
@@ -816,11 +836,12 @@ export default function OrdersPage() {
                     )}
                     {paid && order.customer?.phone && (
                       <button
-                        onClick={() => handleWhatsAppShare(order)}
-                        className="p-1.5 rounded-lg bg-green-500 hover:bg-green-600 text-white transition-colors"
-                        title={t('common.shareViaWhatsApp')}
+                        onClick={() => isWhatsAppReady ? handleSendViaFlo(order) : handleWhatsAppShare(order)}
+                        disabled={sendingWaOrderId === order.id}
+                        className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-70"
+                        title={isWhatsAppReady ? 'Send via Flo' : t('common.shareViaWhatsApp')}
                       >
-                        <MessageCircle size={14} />
+                        {sendingWaOrderId === order.id ? <Loader2 className="size-4 animate-spin" /> : isWhatsAppReady ? <Send size={14} /> : <MessageCircle size={14} />}
                       </button>
                     )}
                     {order.bill && (

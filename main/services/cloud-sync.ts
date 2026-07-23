@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
-import { getDatabase, now, parseItemJson, ensureCloudIdentity } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity } from '../db';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -41,6 +41,7 @@ type CloudSettings = {
   orders_enabled: boolean;
   reports_enabled: boolean;
   command_polling_enabled: boolean;
+  cloud_registration_status: string;
 };
 
 type CloudCommand = {
@@ -179,7 +180,13 @@ class CloudSyncService {
     // First-run zero-touch: if this install has never registered (and hasn't been
     // explicitly rejected), announce itself with no staff action required. Only
     // done once at boot, not on every reload(), so saving an unrelated cloud
-    // setting doesn't re-trigger it.
+    // setting doesn't re-trigger it. Gated on cloud_sync_enabled inside
+    // maybeAutoRegister() itself — this never phones home for an install that
+    // hasn't opted into cloud sync, and registering only creates an inert
+    // pending row (no billing/syncing) until a human manually claims it in
+    // FloAdmin, so there's no trust/security cost to auto-announcing here.
+    // Re-enabled 2026-07-22 — see FreeOpenSourcePOS/FloAdmin@1dcbc8e (the
+    // pos.php idempotent-refresh fix that makes repeat registers safe).
     this.maybeAutoRegister();
   }
 
@@ -197,12 +204,14 @@ class CloudSyncService {
     this.maybeStartRelay();
     this.maybeStartStatusPoll();
 
-    log.info('[CloudSync] started', {
-      server: cfg.server_url,
-      sync: cfg.sync_enabled,
-      commands: cfg.command_polling_enabled,
-      registered: Boolean(cfg.api_key),
-    });
+    if (cfg.api_key || cfg.cloud_registration_status !== 'unregistered') {
+      log.info('[CloudSync] started', {
+        server: cfg.server_url,
+        sync: cfg.sync_enabled,
+        commands: cfg.command_polling_enabled,
+        registered: Boolean(cfg.api_key),
+      });
+    }
   }
 
   stop() {
@@ -223,6 +232,12 @@ class CloudSyncService {
       const socket = this.relaySocket;
       this.relaySocket = null;
       socket.removeAllListeners();
+      // Terminating a still-CONNECTING socket makes `ws` synchronously emit
+      // 'error' ("closed before the connection was established"). The real
+      // listeners were just removed above, so with nothing left to catch it
+      // that throws and crashes the process — swallow it, we're intentionally
+      // discarding this socket.
+      socket.on('error', () => {});
       if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
         socket.terminate();
       }
@@ -259,7 +274,10 @@ class CloudSyncService {
     };
   }
 
-  async register(email?: string): Promise<Record<string, unknown>> {
+  // No owner/business email is ever sent here — FloAdmin doesn't store or
+  // use it yet (documented gap, specs/floadmin.md § POST /api/pos/register),
+  // and owners never log into FloAdmin, so there's nothing for it to do.
+  async register(): Promise<Record<string, unknown>> {
     const db = getDatabase();
     const settings = this.readSettings(db);
     const { posHash, deviceSecret } = ensureCloudIdentity();
@@ -275,7 +293,6 @@ class CloudSyncService {
       business: {
         name: settings.business_name || '',
         phone: settings.business_phone || settings.phone || '',
-        email: email || settings.email || '',
         country: settings.country || 'IN',
         timezone: settings.timezone || 'Asia/Kolkata',
       },
@@ -350,18 +367,35 @@ class CloudSyncService {
     return { ok: true, data, status: this.getStatus() };
   }
 
-  pushBill(bill: Record<string, unknown>) {
-    this.enqueueEvent('bill.paid', 'bill', String(bill.id ?? bill.pos_bill_id ?? ''), bill);
+  /**
+   * Generate (or, with revoke=true, explicitly rotate) the RevFlo pairing
+   * code for this store. revoke=true also disconnects every already-paired
+   * device — only the explicit "Generate new code" action in Settings should
+   * pass it; a plain cache-miss refetch must not silently kick anyone off.
+   * See specs/floadmin.md § Device pairing.
+   */
+  async generatePairingCode(revoke: boolean): Promise<{ code: string; expires_at: string }> {
+    const res = await this.signedFetch('/api/pos/pairing-code', {
+      method: 'POST',
+      body: JSON.stringify({ revoke_devices: revoke }),
+    });
+    if (!res.ok) throw new Error(`Pairing code request failed (${res.status})`);
+    return res.json() as Promise<{ code: string; expires_at: string }>;
   }
 
-  recordBillPaid(billId: number | string) {
-    try {
-      const snapshot = this.buildBillSnapshot(billId);
-      if (snapshot) this.enqueueEvent('bill.paid', 'bill', String(billId), snapshot);
-    } catch (err) {
-      log.warn('[CloudSync] bill snapshot failed', (err as Error).message);
-    }
+  /** Devices (RevFlo installs) currently paired to this store. */
+  async listPairedDevices(): Promise<Record<string, unknown>[]> {
+    const res = await this.signedFetch('/api/pos/devices', { method: 'GET' });
+    if (!res.ok) throw new Error(`Device list request failed (${res.status})`);
+    const data = (await res.json().catch(() => ({ devices: [] }))) as { devices?: Record<string, unknown>[] };
+    return Array.isArray(data.devices) ? data.devices : [];
   }
+
+  // No customer data (name/phone/email) is ever sent to the cloud either —
+  // storing customer PII centrally is unnecessary liability with no upside
+  // for this business, on top of bills/orders/payments already never being
+  // pushed. There used to be a customer-upsert call here piggybacked on
+  // bill payment; removed entirely, not replaced with anything.
 
   recordOrderChanged(orderId: number | string, eventType = 'order.updated') {
     try {
@@ -637,7 +671,9 @@ class CloudSyncService {
    */
   private maybeAutoRegister() {
     const db = getDatabase();
-    const status = this.readSettings(db).cloud_registration_status || 'unregistered';
+    const settings = this.readSettings(db);
+    if (settings.cloud_sync_enabled !== '1') return;
+    const status = settings.cloud_registration_status || 'unregistered';
     if (status !== 'unregistered' && status !== 'registration_failed') return;
     this.attemptAutoRegister();
   }
@@ -921,26 +957,9 @@ class CloudSyncService {
     return this.decorateOrder(order);
   }
 
-  private buildBillSnapshot(billId: number | string) {
-    const db = getDatabase();
-    const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
-    if (!bill) return null;
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as any;
-    const customer = bill.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id) : null;
-    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(bill.order_id).map(parseItemJson);
-    return {
-      bill: {
-        ...bill,
-        payment_details: safeJsonParse(bill.payment_details),
-      },
-      order: order ? this.decorateOrder(order, items) : null,
-      customer,
-    };
-  }
-
   private decorateOrder(order: any, itemsOverride?: any[]) {
     const db = getDatabase();
-    const items = itemsOverride ?? db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+    const items = itemsOverride ?? attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
     const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
     const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
     const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any;
@@ -1009,6 +1028,7 @@ class CloudSyncService {
         orders_enabled: s.cloud_orders_enabled === '1',
         reports_enabled: s.cloud_reports_enabled === '1',
         command_polling_enabled: s.cloud_command_polling_enabled === '1',
+        cloud_registration_status: s.cloud_registration_status || 'unregistered',
       };
     } catch (err) {
       log.warn('[CloudSync] settings unavailable', (err as Error).message);

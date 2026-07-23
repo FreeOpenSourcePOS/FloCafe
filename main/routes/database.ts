@@ -80,7 +80,7 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[DB Export] Error:', error);
-    res.status(500).json({ error: 'Export failed: ' + error.message });
+    res.status(500).json({ error: 'Export failed' });
   }
 });
 
@@ -171,7 +171,7 @@ router.post('/import', requireRole('owner'),
     }
   } catch (error: any) {
     console.error('[DB Import] Error:', error);
-    res.status(500).json({ error: 'Import failed: ' + error.message });
+    res.status(500).json({ error: 'Import failed' });
   }
 });
 
@@ -195,7 +195,7 @@ router.post('/backup', requireRole('owner'), requireMasterPin, async (req: Reque
     });
   } catch (error: any) {
     console.error('[DB Backup] Error:', error);
-    res.status(500).json({ error: 'Backup failed: ' + error.message });
+    res.status(500).json({ error: 'Backup failed' });
   }
 });
 
@@ -208,7 +208,7 @@ router.get('/download', requireRole('owner'), requireMasterPin, (req: Request, r
     res.download(dbPath, filename);
   } catch (error: any) {
     console.error('[DB Download] Error:', error);
-    res.status(500).json({ error: 'Download failed: ' + error.message });
+    res.status(500).json({ error: 'Download failed' });
   }
 });
 
@@ -228,7 +228,8 @@ router.get('/tables', requireRole('owner'), (req: Request, res: Response) => {
     res.json({ tables: tableInfo });
   } catch (error: any) {
     console.error('[DB Tables] Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

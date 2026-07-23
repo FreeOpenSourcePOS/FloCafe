@@ -45,3 +45,66 @@ export function getBrowserLanguage(): Language {
   }
   return 'en';
 }
+
+/**
+ * On mount, fetches the tenant's preferred language from `/api/kds/info`
+ * and pushes it into the global `usePosSettingsStore`. Cross-origin tabs
+ * (KDS standalone) inherit the language set on the dashboard.
+ *
+ * Idempotent: only sets language if the server actually returned one.
+ * Best-effort: never throws, never blocks the UI.
+ */
+import { useEffect } from 'react';
+import { usePosSettingsStore } from '@/store/pos-settings';
+
+export function useSyncServerLanguage(): void {
+  const setLanguage = usePosSettingsStore((s) => s.setLanguage);
+  useEffect(() => {
+    let cancelled = false;
+    fetchServerInfo().then((info) => {
+      if (cancelled) return;
+      // Keep the existing tenant language when metadata is unavailable.
+      if (info.language) setLanguage(info.language);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [setLanguage]);
+}
+
+export type ServerInfo = {
+  language: Language | null;
+  country: string | null;
+  kdsDefaultView: 'tabs' | 'kanban' | null;
+};
+
+/**
+ * Fetch the tenant's preferred language + KDS defaults from the public
+ * KDS info endpoint. Never throws: on timeout/error returns empty info,
+ * so callers fall back to local heuristics. 1500ms is generous for a LAN;
+ * this must not block first paint of the login screen.
+ */
+export async function fetchServerInfo(baseUrl = '', timeoutMs = 1500): Promise<ServerInfo> {
+  const empty: ServerInfo = { language: null, country: null, kdsDefaultView: null };
+  if (typeof window === 'undefined') return empty;
+  try {
+    const res = await fetch(`${baseUrl}/api/kds/info`, {
+      signal: AbortSignal.timeout(timeoutMs),
+      cache: 'no-store',
+    });
+    if (!res.ok) return empty;
+    const data = (await res.json()) as {
+      language?: string | null;
+      country?: string | null;
+      kds_default_view?: string | null;
+    };
+    return {
+      language: data.language === 'es' ? 'es' : data.language === 'en' ? 'en' : null,
+      country: data.country || null,
+      kdsDefaultView:
+        data.kds_default_view === 'kanban' ? 'kanban' : data.kds_default_view === 'tabs' ? 'tabs' : null,
+    };
+  } catch {
+    return empty;
+  }
+}

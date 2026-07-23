@@ -1,11 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
-import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench } from 'lucide-react';
+import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -17,6 +18,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
+import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import type { HealthCheckReport } from '@/types/electron';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatDate } from '@/hooks/useFormatDate';
@@ -72,6 +74,13 @@ SGST @3%           3
 ===============
 TOTAL            99`;
 
+function formatBackupSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 interface TemplateCard {
   id: BillTemplate;
   nameKey: string;
@@ -121,10 +130,97 @@ function SettingsNavItem({
   );
 }
 
+function KdsDefaultViewCard() {
+  const { t } = useI18n();
+  const [view, setView] = useState<'tabs' | 'kanban'>('tabs');
+  const [savedView, setSavedView] = useState<'tabs' | 'kanban'>('tabs');
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    api.get('/settings/kds').then((res) => {
+      const v = res.data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs';
+      setView(v);
+      setSavedView(v);
+    }).catch(() => {});
+  }, []);
+
+  const dirty = view !== savedView;
+
+  async function save() {
+    setSaving(true);
+    try {
+      const { data } = await api.put('/settings/kds', { kds_default_view: view });
+      const next = data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs';
+      setSavedView(next);
+      setView(next);
+      toast.success(t('settings.kdsViewSaved'));
+    } catch {
+      toast.error(t('settings.kdsViewSaveFailed'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-6">
+      <div className="flex items-center gap-2 mb-4">
+        <Monitor size={20} className="text-gray-500" />
+        <h2 className="font-semibold text-gray-900">{t('settings.kdsDefaultView')}</h2>
+      </div>
+      <p className="text-sm text-gray-500 mb-5">{t('settings.kdsDefaultViewHint')}</p>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button
+          type="button"
+          onClick={() => setView('tabs')}
+          className={`text-left rounded-lg border-2 px-4 py-3 transition ${
+            view === 'tabs'
+              ? 'border-brand bg-brand/5'
+              : 'border-gray-200 hover:border-gray-300'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <input type="radio" readOnly checked={view === 'tabs'} className="text-brand" />
+            <span className="font-medium text-gray-900">{t('settings.kdsDefaultViewTabs')}</span>
+          </div>
+          <p className="text-xs text-gray-500 ml-6">{t('settings.kdsDefaultViewTabsHint')}</p>
+        </button>
+        <button
+          type="button"
+          onClick={() => setView('kanban')}
+          className={`text-left rounded-lg border-2 px-4 py-3 transition ${
+            view === 'kanban'
+              ? 'border-brand bg-brand/5'
+              : 'border-gray-200 hover:border-gray-300'
+          }`}
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <input type="radio" readOnly checked={view === 'kanban'} className="text-brand" />
+            <span className="font-medium text-gray-900">{t('settings.kdsDefaultViewKanban')}</span>
+          </div>
+          <p className="text-xs text-gray-500 ml-6">{t('settings.kdsDefaultViewKanbanHint')}</p>
+        </button>
+      </div>
+
+      <div className="flex justify-end mt-5 pt-4 border-t border-gray-100">
+        <button
+          type="button"
+          onClick={save}
+          disabled={!dirty || saving}
+          className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium text-sm"
+        >
+          {saving ? t('common.saving') : t('common.save')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 
 export default function SettingsPage() {
   const { currentTenant, user, updateCurrentTenant } = useAuthStore();
   const posSettings = usePosSettingsStore();
+  const whatsappEnabled = posSettings.whatsappEnabled;
   const { printMethod, setPrintMethod, refreshHardwarePrinter } = usePrinterStore();
   usePrinterStatusSync();
   const { t, language, setLanguage } = useI18n();
@@ -163,11 +259,21 @@ export default function SettingsPage() {
   const [initializeDbOpen, setInitializeDbOpen] = useState(false);
   const [shakeSaveBar, setShakeSaveBar] = useState(false);
 
-  // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'import'
-  // open a verify prompt and, on success, run the pending action.
+  // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'backup-custom'/
+  // 'import'/'restore' open a verify prompt and, on success, run the pending action.
   type ImportPayload = { app: string; schema_version?: string; data: Record<string, unknown[]> };
-  type PinGate = { mode: 'set' } | { mode: 'backup' } | { mode: 'import'; payload: { data: ImportPayload; overwrite: boolean } } | null;
+  type BackupInfo = { fileName: string; path: string; sizeBytes: number; createdAt: string; kind: 'manual' | 'auto'; schemaVersion: number | null };
+  type PinGate =
+    | { mode: 'set' }
+    | { mode: 'backup' }
+    | { mode: 'backup-custom' }
+    | { mode: 'import'; payload: { data: ImportPayload; overwrite: boolean } }
+    | { mode: 'restore'; payload: { backupPath: string } }
+    | { mode: 'delete-backup'; payload: { fileName: string } }
+    | null;
   const [pinGate, setPinGate] = useState<PinGate>(null);
+  const [backups, setBackups] = useState<BackupInfo[]>([]);
+  const [backupsLoading, setBackupsLoading] = useState(false);
 
   const fetchMasterPinStatus = async () => {
     try {
@@ -175,6 +281,18 @@ export default function SettingsPage() {
       setMasterPinStatus(data);
     } catch {
       // ignore — card just shows "Unknown" state until retried
+    }
+  };
+
+  const fetchBackups = async () => {
+    setBackupsLoading(true);
+    try {
+      const { data } = await api.get('/db-tools/backups');
+      setBackups(data.backups ?? []);
+    } catch {
+      // ignore — history card just shows empty state until retried
+    } finally {
+      setBackupsLoading(false);
     }
   };
 
@@ -191,6 +309,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     fetchMasterPinStatus();
+    fetchBackups();
 
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
@@ -252,13 +371,62 @@ export default function SettingsPage() {
 
     if (pinGate.mode === 'backup') {
       try {
-        await api.post('/db/backup', { master_pin: pin });
-        toast.success(t('settings.backupCreated'));
+        const response = await api.post('/db/backup', { master_pin: pin });
+        toast.success(`${t('settings.backupCreated')} ${response.data.path}`, { duration: 5000 });
         setPinGate(null);
+        fetchBackups();
         return { success: true };
       } catch (err: unknown) {
         const error = err as { response?: { data?: { error?: string } } };
         return { success: false, error: error.response?.data?.error || t('settings.backupFailedGeneric') };
+      }
+    }
+
+    if (pinGate.mode === 'backup-custom') {
+      if (!window.electronAPI?.backupDatabase) {
+        return { success: false, error: t('common.notAvailable') };
+      }
+      const result = await window.electronAPI.backupDatabase(pin);
+      if (result.success) {
+        toast.success(`${t('settings.backupCreated')} ${result.path}`, { duration: 5000 });
+        setPinGate(null);
+        return { success: true };
+      }
+      if (result.error === 'Cancelled') {
+        setPinGate(null);
+        return { success: true };
+      }
+      return { success: false, error: result.error || t('settings.backupFailedGeneric') };
+    }
+
+    if (pinGate.mode === 'restore') {
+      if (!window.electronAPI?.restoreBackup) {
+        return { success: false, error: t('common.notAvailable') };
+      }
+      const result = await window.electronAPI.restoreBackup(pin, pinGate.payload.backupPath);
+      if (result.success) {
+        toast.success(t('restore.success'));
+        setPinGate(null);
+        setTimeout(() => window.location.reload(), 1500);
+        return { success: true };
+      }
+      if (result.error === 'Cancelled') {
+        setPinGate(null);
+        return { success: true };
+      }
+      return { success: false, error: result.error || t('settings.restoreFailedGeneric') };
+    }
+
+    if (pinGate.mode === 'delete-backup') {
+      try {
+        await api.post(`/db-tools/backups/${encodeURIComponent(pinGate.payload.fileName)}/delete`, { master_pin: pin });
+        toast.success(t('settings.backupDeleted'));
+        setPinGate(null);
+        fetchBackups();
+        return { success: true };
+      } catch (err: unknown) {
+        const error = err as { response?: { data?: { error?: string } } };
+        return { success: false, error: error.response?.data?.error || t('settings.backupDeleteFailed') };
       }
     }
 
@@ -275,14 +443,95 @@ export default function SettingsPage() {
     }
     if (!masterPinStatus.available) {
       try {
-        await api.post('/db/backup', {});
-        toast.success(t('settings.backupCreated'));
+        const response = await api.post('/db/backup', {});
+        toast.success(`${t('settings.backupCreated')} ${response.data.path}`, { duration: 5000 });
       } catch {
         toast.error(t('settings.backupFailed'));
       }
       return;
     }
     setPinGate({ mode: 'backup' });
+  };
+
+  // Lets the owner pick a custom save location (external drive, cloud-synced
+  // folder, etc.) via the same native save dialog the File menu's "Export
+  // Backup" action already uses. A backup saved this way does not appear in
+  // the Backup History list below — same as it never has for the menu
+  // action — since it's outside the managed backups/ directory. See #120.
+  const handleChooseBackupLocation = async () => {
+    if (masterPinStatus.available && !masterPinStatus.isSet) {
+      toast.error(t('settings.masterPinRequiredForBackup'));
+      return;
+    }
+    if (!masterPinStatus.available) {
+      if (!window.electronAPI?.backupDatabase) {
+        toast.error(t('common.notAvailable'));
+        return;
+      }
+      const result = await window.electronAPI.backupDatabase('');
+      if (result.success) {
+        toast.success(`${t('settings.backupCreated')} ${result.path}`, { duration: 5000 });
+      } else if (result.error !== 'Cancelled') {
+        toast.error(result.error || t('settings.backupFailedGeneric'));
+      }
+      return;
+    }
+    setPinGate({ mode: 'backup-custom' });
+  };
+
+  const handleRestoreFromHistory = async (backup: BackupInfo) => {
+    const ok = await confirm(t('settings.restoreConfirm', { fileName: backup.fileName }), {
+      title: t('settings.confirmRestoreTitle'),
+      confirmLabel: t('settings.restoreBackup'),
+      destructive: true,
+    });
+    if (!ok) return;
+
+    if (masterPinStatus.available && !masterPinStatus.isSet) {
+      toast.error(t('settings.setMasterPinFirst'));
+      return;
+    }
+    if (!masterPinStatus.available) {
+      if (!window.electronAPI?.restoreBackup) {
+        toast.error(t('common.notAvailable'));
+        return;
+      }
+      const result = await window.electronAPI.restoreBackup('', backup.path);
+      if (result.success) {
+        toast.success(t('restore.success'));
+        setTimeout(() => window.location.reload(), 1500);
+      } else if (result.error !== 'Cancelled') {
+        toast.error(result.error || t('settings.restoreFailedGeneric'));
+      }
+      return;
+    }
+    setPinGate({ mode: 'restore', payload: { backupPath: backup.path } });
+  };
+
+  const handleDeleteBackup = async (backup: BackupInfo) => {
+    const ok = await confirm(t('settings.deleteBackupConfirm', { fileName: backup.fileName }), {
+      title: t('settings.confirmDeleteBackupTitle'),
+      confirmLabel: t('settings.deleteBackup'),
+      destructive: true,
+    });
+    if (!ok) return;
+
+    if (masterPinStatus.available && !masterPinStatus.isSet) {
+      toast.error(t('settings.setMasterPinFirst'));
+      return;
+    }
+    if (!masterPinStatus.available) {
+      try {
+        await api.post(`/db-tools/backups/${encodeURIComponent(backup.fileName)}/delete`, {});
+        toast.success(t('settings.backupDeleted'));
+        fetchBackups();
+      } catch (err: unknown) {
+        const error = err as { response?: { data?: { error?: string } } };
+        toast.error(error.response?.data?.error || t('settings.backupDeleteFailed'));
+      }
+      return;
+    }
+    setPinGate({ mode: 'delete-backup', payload: { fileName: backup.fileName } });
   };
 
   const handleInitializeDatabase = async (pin: string) => {
@@ -326,6 +575,7 @@ export default function SettingsPage() {
   };
   const [moreApps, setMoreApps] = useState<MoreApp[]>([]);
   const [moreAppsLoading, setMoreAppsLoading] = useState(false);
+  const [revflo, setRevflo] = useState<MoreApp | null>(null);
 
   useEffect(() => {
     setMoreAppsLoading(true);
@@ -334,11 +584,17 @@ export default function SettingsPage() {
     }).catch(() => {
       // Silent — this tab is informational, not critical
     }).finally(() => setMoreAppsLoading(false));
+
+    api.get('/more-apps/revflo').then((res) => {
+      setRevflo(res.data.app || null);
+    }).catch(() => {
+      // Silent — the card still shows the pairing code without the QR promo
+    });
   }, []);
 
   // ── Updates ─────────────────────────────────────────────────────────────────
   type UpdateStatus = {
-    status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready-to-install' | 'error' | 'dev-mode' | 'store';
+    status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready-to-install' | 'error' | 'dev-mode' | 'store' | 'unsupported';
     version?: string;
     percent?: number;
     error?: string;
@@ -528,11 +784,139 @@ export default function SettingsPage() {
     }
   };
 
+  // ── Kitchen Stations ─────────────────────────────────────────────────────
+  type KitchenStation = {
+    id: string; name: string; description?: string; category_ids?: string;
+    printer_id?: string | null; is_active: number; sort_order: number;
+  };
+  type StaffOption = { id: string; name: string; role: string };
+  type CategoryOption = { id: string; name: string };
+
+  const [stations, setStations] = useState<KitchenStation[]>([]);
+  const [stationCategories, setStationCategories] = useState<CategoryOption[]>([]);
+  const [stationStaff, setStationStaff] = useState<StaffOption[]>([]);
+  const [stationUsersByStation, setStationUsersByStation] = useState<Record<string, StaffOption[]>>({});
+  const [showStationForm, setShowStationForm] = useState(false);
+  const [editingStationId, setEditingStationId] = useState<string | null>(null);
+  const [stationForm, setStationForm] = useState<{
+    name: string; category_ids: string[]; printer_id: string; user_ids: string[];
+  }>({ name: '', category_ids: [], printer_id: '', user_ids: [] });
+  const [savingStation, setSavingStation] = useState(false);
+
+  const fetchStations = () => {
+    api.get('/kitchen-stations').then((res) => setStations(res.data.kitchenStations || [])).catch(() => {});
+  };
+  const fetchStationCategories = () => {
+    api.get('/categories').then((res) => setStationCategories(res.data.categories || [])).catch(() => {});
+  };
+  const fetchStationStaff = () => {
+    api.get('/staff').then((res) => setStationStaff(res.data.staff || [])).catch(() => {});
+  };
+  const fetchStationUsers = async (stationId: string) => {
+    try {
+      const res = await api.get(`/kitchen-stations/${stationId}`);
+      setStationUsersByStation((prev) => ({ ...prev, [stationId]: res.data.kitchenStation.users || [] }));
+    } catch { /* ignore */ }
+  };
+
+  const openAddStation = () => {
+    setEditingStationId(null);
+    setStationForm({ name: '', category_ids: [], printer_id: '', user_ids: [] });
+    setShowStationForm(true);
+  };
+
+  const openEditStation = async (station: KitchenStation) => {
+    setEditingStationId(station.id);
+    let categoryIds: string[] = [];
+    try { categoryIds = station.category_ids ? JSON.parse(station.category_ids) : []; } catch { categoryIds = []; }
+    let userIds: string[] = stationUsersByStation[station.id]?.map((u) => u.id) || [];
+    if (!stationUsersByStation[station.id]) {
+      try {
+        const res = await api.get(`/kitchen-stations/${station.id}`);
+        const users = res.data.kitchenStation.users || [];
+        setStationUsersByStation((prev) => ({ ...prev, [station.id]: users }));
+        userIds = users.map((u: StaffOption) => u.id);
+      } catch { /* ignore */ }
+    }
+    setStationForm({ name: station.name, category_ids: categoryIds, printer_id: station.printer_id || '', user_ids: userIds });
+    setShowStationForm(true);
+  };
+
+  const toggleStationFormValue = (field: 'category_ids' | 'user_ids', value: string) => {
+    setStationForm((prev) => {
+      const set = new Set(prev[field]);
+      if (set.has(value)) set.delete(value); else set.add(value);
+      return { ...prev, [field]: Array.from(set) };
+    });
+  };
+
+  const saveStation = async () => {
+    if (!stationForm.name.trim()) { toast.error(t('settings.stationNameRequired')); return; }
+    setSavingStation(true);
+    try {
+      const payload = {
+        name: stationForm.name.trim(),
+        category_ids: stationForm.category_ids,
+        printer_id: stationForm.printer_id || null,
+      };
+      let stationId = editingStationId;
+      if (editingStationId) {
+        await api.put(`/kitchen-stations/${editingStationId}`, payload);
+      } else {
+        const res = await api.post('/kitchen-stations', payload);
+        stationId = res.data.kitchenStation.id;
+      }
+      if (stationId) {
+        await api.put(`/kitchen-stations/${stationId}/users`, { user_ids: stationForm.user_ids });
+        await fetchStationUsers(stationId);
+      }
+      toast.success(editingStationId ? t('settings.stationUpdated') : t('settings.stationSaved'));
+      setShowStationForm(false);
+      fetchStations();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      toast.error(error?.response?.data?.error || t('settings.stationSaveFailed'));
+    } finally {
+      setSavingStation(false);
+    }
+  };
+
+  const deleteStation = async (id: string) => {
+    if (!await confirm(t('settings.stationDeleteConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
+    try {
+      await api.delete(`/kitchen-stations/${id}`);
+      toast.success(t('settings.stationDeleted'));
+      fetchStations();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      toast.error(error?.response?.data?.error || t('settings.stationDeleteFailed'));
+    }
+  };
+
+  useEffect(() => {
+    stations.forEach((s) => {
+      if (!stationUsersByStation[s.id]) fetchStationUsers(s.id);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stations]);
+
   // Mobile App Pairing
   const [pairingCode, setPairingCode] = useState<string | null>(null);
-  const [pairingRotatedAt, setPairingRotatedAt] = useState<string | null>(null);
+  const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
+  // Defaults to true (not false) so the "Generate Pairing Code" button can't
+  // render — and be clicked — before the /settings/cloud fetch below has told
+  // us whether this store is actually registered. Clicking it in that window
+  // used to hit the backend while registration status was still unknown and
+  // fail with a generic error even on stores that end up fully registered.
+  const [pairingUnavailable, setPairingUnavailable] = useState(true);
   const [rotatingCode, setRotatingCode] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
+  const [pairedDevices, setPairedDevices] = useState<Array<{
+    id: string; platform: string | null; app_version: string | null;
+    user_agent: string | null; country: string | null;
+    first_seen_at: string | null; last_seen_at: string | null;
+  }>>([]);
+  const [devicesLoading, setDevicesLoading] = useState(false);
 
   // Printing local state (buffered — saved only on explicit Save)
   type PrintingForm = {
@@ -589,12 +973,14 @@ export default function SettingsPage() {
     businessName: string; countryCode: string; timezone: string; currency: string;
     billingType: 'postpaid' | 'prepaid';
     tablesRequired: boolean;
+    taxRegistered: boolean;
     gstin: string; businessAddress: string; businessPhone: string; instagramHandle: string;
     billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowGstn: boolean;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
     tablesRequired: true,
+    taxRegistered: false,
     gstin: '', businessAddress: '', businessPhone: '', instagramHandle: '',
     billShowName: true, billShowAddress: true, billShowPhone: true, billShowGstn: false,
   });
@@ -617,13 +1003,51 @@ export default function SettingsPage() {
     cloud_last_heartbeat: null as string | null,
     cloud_last_error: null as string | null,
   });
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- used in saveCloud(), not yet wired to a spinner
+   
   const [savingCloud, setSavingCloud] = useState(false);
   const [testingCloud, setTestingCloud] = useState(false);
   const [registeringCloud, setRegisteringCloud] = useState(false);
   const [cloudTestResult, setCloudTestResult] = useState<'ok' | 'fail' | null>(null);
-  const [showRegisterConfirm, setShowRegisterConfirm] = useState(false);
-  const [registerEmail, setRegisterEmail] = useState('');
+  const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
+
+  const [telemetryEnabled, setTelemetryEnabled] = useState(false);
+  const [savingTelemetry, setSavingTelemetry] = useState(false);
+
+  type GoogleDriveStatus = {
+    configured: boolean;
+    secure_storage_available: boolean;
+    connected: boolean;
+    account_email: string | null;
+    frequency: 'daily' | 'weekly';
+    retention_count: number;
+    last_backup_at: string | null;
+    last_backup_status: 'success' | 'error' | null;
+    last_backup_filename: string | null;
+    last_error: string | null;
+  };
+  const [googleDriveStatus, setGoogleDriveStatus] = useState<GoogleDriveStatus>({
+    configured: false,
+    secure_storage_available: true,
+    connected: false,
+    account_email: null,
+    frequency: 'daily',
+    retention_count: 10,
+    last_backup_at: null,
+    last_backup_status: null,
+    last_backup_filename: null,
+    last_error: null,
+  });
+  const [connectingGoogleDrive, setConnectingGoogleDrive] = useState(false);
+  const [disconnectingGoogleDrive, setDisconnectingGoogleDrive] = useState(false);
+  const [backingUpGoogleDrive, setBackingUpGoogleDrive] = useState(false);
+  const [savingGoogleDrivePrefs, setSavingGoogleDrivePrefs] = useState(false);
+
+  // Kitchen workflow toggles (issue #133) — independent on/off switches,
+  // default true to match pre-toggle always-on behavior.
+  const [kdsEnabledSetting, setKdsEnabledSetting] = useState(true);
+  const [savingKdsEnabled, setSavingKdsEnabled] = useState(false);
+  const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
+  const [savingKotPrintingEnabled, setSavingKotPrintingEnabled] = useState(false);
 
   const resetBusiness = async () => {
     try {
@@ -642,6 +1066,7 @@ export default function SettingsPage() {
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
+        taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
         gstin: d.gstin || '',
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
@@ -680,6 +1105,9 @@ export default function SettingsPage() {
     fetchPrinters();
     fetchDetectedPrinters();
     fetchKdsInfo();
+    fetchStations();
+    fetchStationCategories();
+    fetchStationStaff();
 
     api.get('/settings/loyalty').then((res) => {
       setLoyaltyEnabled(!!res.data.loyalty_enabled);
@@ -701,10 +1129,28 @@ export default function SettingsPage() {
       if (res.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!res.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!res.data.discount_requires_approval); }
     }).catch(() => {});
 
-    api.get('/mobile/pairing-code').then((res) => {
-      setPairingCode(res.data.pairing_code);
-      setPairingRotatedAt(res.data.rotated_at);
+    api.get('/settings/telemetry_enabled').then((res) => {
+      setTelemetryEnabled(res.data.setting?.value === 'true');
+    }).catch(() => {
+      // No row yet = consent never given (setup predates this feature, or
+      // declined) = stays off until explicitly turned on here.
+      setTelemetryEnabled(false);
+    });
+
+    fetchGoogleDriveStatus();
+
+    api.get('/settings/kds_enabled').then((res) => {
+      const enabled = res.data.setting?.value !== 'false';
+      setKdsEnabledSetting(enabled);
+      posSettings.setKdsEnabled(enabled);
     }).catch(() => {});
+
+    api.get('/settings/kot_printing_enabled').then((res) => {
+      const enabled = res.data.setting?.value !== 'false';
+      setKotPrintingEnabledSetting(enabled);
+      posSettings.setKotPrintingEnabled(enabled);
+    }).catch(() => {});
+
 
     api.get('/settings/cloud').then((res) => {
       const settings = {
@@ -724,6 +1170,21 @@ export default function SettingsPage() {
         cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
         cloud_last_error: res.data.cloud_last_error || null,
       });
+
+      // Mobile pairing requires cloud registration — skip the requests entirely
+      // for unregistered stores to avoid 502 noise in the console.
+      if (res.data.cloud_registration_status === 'registered') {
+        api.get('/mobile/pairing-code').then((pcRes) => {
+          setPairingCode(pcRes.data.pairing_code);
+          setPairingExpiresAt(pcRes.data.expires_at);
+          setPairingUnavailable(false);
+        }).catch(() => {
+          setPairingUnavailable(true);
+        });
+        loadPairedDevices();
+      } else {
+        setPairingUnavailable(true);
+      }
     }).catch(() => {});
 
     api.get('/settings/business').then((res) => {
@@ -736,6 +1197,7 @@ export default function SettingsPage() {
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
+        taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
         gstin: d.gstin || '',
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
@@ -824,12 +1286,152 @@ export default function SettingsPage() {
     }
   };
 
+  const saveTelemetry = async (enabled: boolean) => {
+    const previous = telemetryEnabled;
+    setTelemetryEnabled(enabled);
+    setSavingTelemetry(true);
+    try {
+      await api.put('/settings/telemetry_enabled', { value: enabled ? 'true' : 'false' });
+    } catch {
+      setTelemetryEnabled(previous);
+      toast.error(t('settings.saveFailed'));
+    } finally {
+      setSavingTelemetry(false);
+    }
+  };
+
+  const fetchGoogleDriveStatus = async () => {
+    try {
+      const res = await api.get('/settings/google-drive');
+      setGoogleDriveStatus({
+        configured: !!res.data.configured,
+        secure_storage_available: res.data.secure_storage_available !== false,
+        connected: !!res.data.connected,
+        account_email: res.data.account_email || null,
+        frequency: res.data.frequency === 'weekly' ? 'weekly' : 'daily',
+        retention_count: Number(res.data.retention_count) || 10,
+        last_backup_at: res.data.last_backup_at || null,
+        last_backup_status: res.data.last_backup_status || null,
+        last_backup_filename: res.data.last_backup_filename || null,
+        last_error: res.data.last_error || null,
+      });
+    } catch {
+      // Leave defaults (not configured / not connected) — this section is
+      // optional and must never block the rest of Settings from loading.
+    }
+  };
+
+  const connectGoogleDrive = async () => {
+    setConnectingGoogleDrive(true);
+    try {
+      const res = await api.post('/settings/google-drive/connect');
+      setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
+      toast.success(t('settings.googleDriveConnectedSuccess'));
+      fetchBackups();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      toast.error(error.response?.data?.error || t('settings.googleDriveConnectFailed'));
+    } finally {
+      setConnectingGoogleDrive(false);
+    }
+  };
+
+  const disconnectGoogleDrive = async () => {
+    const ok = await confirm(t('settings.googleDriveDisconnectConfirm'), {
+      confirmLabel: t('settings.googleDriveDisconnect'),
+      destructive: true,
+    });
+    if (!ok) return;
+    setDisconnectingGoogleDrive(true);
+    try {
+      const res = await api.post('/settings/google-drive/disconnect');
+      setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
+      toast.success(t('settings.googleDriveDisconnectedSuccess'));
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      toast.error(error.response?.data?.error || t('settings.googleDriveDisconnectFailed'));
+    } finally {
+      setDisconnectingGoogleDrive(false);
+    }
+  };
+
+  const backupToGoogleDriveNow = async () => {
+    setBackingUpGoogleDrive(true);
+    try {
+      const res = await api.post('/settings/google-drive/backup-now');
+      setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
+      toast.success(t('settings.googleDriveBackupSuccess'));
+      fetchBackups();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      toast.error(error.response?.data?.error || t('settings.googleDriveBackupFailed'));
+      fetchGoogleDriveStatus();
+    } finally {
+      setBackingUpGoogleDrive(false);
+    }
+  };
+
+  const updateGoogleDrivePrefs = async (patch: { frequency?: 'daily' | 'weekly'; retention_count?: number }) => {
+    const previous = googleDriveStatus;
+    setGoogleDriveStatus((prev) => ({ ...prev, ...patch }));
+    setSavingGoogleDrivePrefs(true);
+    try {
+      const res = await api.put('/settings/google-drive', patch);
+      setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      setGoogleDriveStatus(previous);
+      toast.error(error.response?.data?.error || t('settings.googleDriveSavePreferencesFailed'));
+    } finally {
+      setSavingGoogleDrivePrefs(false);
+    }
+  };
+
+  // Kitchen workflow toggles (issue #133) — saved immediately on toggle
+  // (not batched with the rest of the form) since turning KDS off also
+  // invalidates outstanding pairing tokens server-side; a stale local
+  // "unsaved" toggle would be misleading about that security-relevant effect.
+  const saveKdsEnabled = async (enabled: boolean) => {
+    const previous = kdsEnabledSetting;
+    setKdsEnabledSetting(enabled);
+    posSettings.setKdsEnabled(enabled);
+    setSavingKdsEnabled(true);
+    try {
+      await api.put('/settings/kds_enabled', { value: enabled ? 'true' : 'false' });
+      toast.success(enabled ? t('settings.kdsEnabledOn', { defaultValue: 'Kitchen Display System enabled' }) : t('settings.kdsEnabledOff', { defaultValue: 'Kitchen Display System disabled' }));
+    } catch {
+      setKdsEnabledSetting(previous);
+      posSettings.setKdsEnabled(previous);
+      toast.error(t('settings.saveFailed'));
+    } finally {
+      setSavingKdsEnabled(false);
+    }
+  };
+
+  const saveKotPrintingEnabled = async (enabled: boolean) => {
+    const previous = kotPrintingEnabledSetting;
+    setKotPrintingEnabledSetting(enabled);
+    posSettings.setKotPrintingEnabled(enabled);
+    setSavingKotPrintingEnabled(true);
+    try {
+      await api.put('/settings/kot_printing_enabled', { value: enabled ? 'true' : 'false' });
+      toast.success(enabled ? t('settings.kotPrintingEnabledOn', { defaultValue: 'KOT printing enabled' }) : t('settings.kotPrintingEnabledOff', { defaultValue: 'KOT printing disabled' }));
+    } catch {
+      setKotPrintingEnabledSetting(previous);
+      posSettings.setKotPrintingEnabled(previous);
+      toast.error(t('settings.saveFailed'));
+    } finally {
+      setSavingKotPrintingEnabled(false);
+    }
+  };
+
   const saveLoyalty = async (silent = false) => {
     setSavingLoyalty(true);
     try {
       await api.put('/settings/loyalty', {
         loyalty_enabled: loyaltyEnabled,
       });
+      setSavedLoyaltyEnabled(loyaltyEnabled);
       if (!silent) toast.success(t('settings.loyaltySaved'));
     } catch (err) {
       if (!silent) toast.error(t('settings.saveFailed'));
@@ -848,6 +1450,10 @@ export default function SettingsPage() {
         discount_mode: discountMode,
         discount_requires_approval: discountRequiresApproval,
       });
+      setSavedDiscountMaxPct(normalizeDiscountPercentage(discountMaxPct));
+      setSavedDiscountMaxAmount(normalizeDiscountAmount(discountMaxAmount));
+      setSavedDiscountMode(discountMode);
+      setSavedDiscountRequiresApproval(discountRequiresApproval);
       if (!silent) toast.success(t('settings.discountSaved'));
     } catch (err) {
       if (!silent) toast.error(t('settings.saveFailed'));
@@ -858,6 +1464,12 @@ export default function SettingsPage() {
   };
 
   const saveBusinessInfo = async (silent = false) => {
+    const phone = form.businessPhone.trim();
+    if (phone && !/^\+?[\d\s\-().]{7,20}$/.test(phone)) {
+      toast.error(t('settings.invalidPhoneFormat', { defaultValue: 'Invalid phone number format' }));
+      return;
+    }
+
     setSavingBusiness(true);
     try {
       await api.put('/settings/business', {
@@ -867,6 +1479,7 @@ export default function SettingsPage() {
         country: form.countryCode,
         billing_type: form.billingType,
         tables_required: form.tablesRequired,
+        tax_registered: form.taxRegistered,
         gstin: form.gstin,
         business_address: form.businessAddress,
         business_phone: form.businessPhone,
@@ -919,18 +1532,36 @@ export default function SettingsPage() {
     try {
       const res = await api.post('/mobile/rotate-code');
       setPairingCode(res.data.pairing_code);
-      setPairingRotatedAt(res.data.rotated_at);
+      setPairingExpiresAt(res.data.expires_at);
+      setPairingUnavailable(false);
       toast.success(t('settings.pairingCodeRotated'));
-    } catch {
-      toast.error(t('settings.pairingCodeFailed'));
+      loadPairedDevices();
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { error?: string } } };
+      // Surface the backend's actual reason (e.g. "this POS hasn't been
+      // claimed in FloAdmin yet") instead of a one-size-fits-all message —
+      // "not registered" and "FloAdmin unreachable" need different next steps.
+      toast.error(error.response?.data?.error || t('settings.pairingCodeFailed'));
     } finally {
       setRotatingCode(false);
     }
   };
 
+  const loadPairedDevices = async () => {
+    setDevicesLoading(true);
+    try {
+      const res = await api.get('/mobile/devices');
+      setPairedDevices(res.data.devices || []);
+    } catch {
+      setPairedDevices([]);
+    } finally {
+      setDevicesLoading(false);
+    }
+  };
+
   const copyPairingCode = () => {
     if (!pairingCode) return;
-    navigator.clipboard.writeText(pairingCode).then(() => {
+    navigator.clipboard.writeText(pairingCode.toUpperCase()).then(() => {
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 2000);
     });
@@ -952,8 +1583,7 @@ export default function SettingsPage() {
     discountMaxAmount !== savedDiscountMaxAmount ||
     discountMode !== savedDiscountMode ||
     discountRequiresApproval !== savedDiscountRequiresApproval ||
-    JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings) ||
-    showPrinterForm;
+    JSON.stringify(cloudSettings) !== JSON.stringify(savedCloudSettings);
 
   useEffect(() => {
     if (!isDirty) return;
@@ -994,7 +1624,7 @@ export default function SettingsPage() {
             <h1 className="text-2xl font-bold text-gray-900">{t('settings.title')}</h1>
           </div>
 
-          <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible border-b md:border-b-0 md:border-r border-gray-200 pb-2 md:pb-0 md:pr-2">
+           <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible border-b md:border-b-0 md:border-r border-gray-200 pb-2 md:pb-0 md:pr-2">
 
             {/* Store group */}
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-gray-100">
@@ -1010,6 +1640,9 @@ export default function SettingsPage() {
             </div>
             <SettingsNavItem label={t('settings.posWorkflow')} value="pos" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabKds')} value="kds" active={activeTab} onClick={setActiveTab} />
+            {/* WhatsApp opt-in lives under Operations because the receive-bill
+                workflow is what the cashier touches every time a customer pays. */}
+            <SettingsNavItem label={t('settings.tabWhatsapp')} value="whatsapp" active={activeTab} onClick={setActiveTab} />
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
@@ -1152,20 +1785,37 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('settings.taxRegistered', { defaultValue: 'Tax Registered' })}</label>
                   {isAdmin ? (
-                    <input type="text" value={form.gstin} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
-                      placeholder={t('settings.taxIdPlaceholder')}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                    <select
+                      value={form.taxRegistered ? 'yes' : 'no'}
+                      onChange={(e) => setForm((p) => ({ ...p, taxRegistered: e.target.value === 'yes' }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                    >
+                      <option value="yes">{t('settings.yes')}</option>
+                      <option value="no">{t('settings.no')}</option>
+                    </select>
                   ) : (
-                    <p className="font-medium text-gray-900">{form.gstin || '—'}</p>
+                    <p className="font-medium text-gray-900">{form.taxRegistered ? t('settings.yes') : t('settings.no')}</p>
                   )}
                 </div>
+                {form.taxRegistered ? (
+                  <div>
+                    <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
+                    {isAdmin ? (
+                      <input type="text" value={form.gstin} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
+                        placeholder={t('settings.taxIdPlaceholder')}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                    ) : (
+                      <p className="font-medium text-gray-900">{form.gstin || '—'}</p>
+                    )}
+                  </div>
+                ) : <div className="hidden md:block" />}
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.phone')}</label>
                   {isAdmin ? (
                     <input type="text" value={form.businessPhone} onChange={(e) => setForm((p) => ({ ...p, businessPhone: e.target.value }))}
-                      placeholder={t('settings.phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1' })}
+                      placeholder={t('settings.phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1', defaultValue: '+1 555 000 0000' })}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
                     <p className="font-medium text-gray-900">{form.businessPhone || '—'}</p>
@@ -1276,7 +1926,10 @@ export default function SettingsPage() {
                   <p className="font-medium text-gray-900">{t('settings.showProductImages')}</p>
                   <p className="text-sm text-gray-500">{t('settings.showProductImagesHint')}</p>
                 </div>
-                <Toggle value={posSettings.showProductImages} onChange={posSettings.setShowProductImages} />
+                <Toggle value={posSettings.showProductImages} onChange={(v) => {
+                  posSettings.setShowProductImages(v);
+                  toast.success(v ? t('settings.productImagesEnabled', { defaultValue: 'Product images enabled' }) : t('settings.productImagesDisabled', { defaultValue: 'Product images disabled' }), { id: 'pos-local' });
+                }} />
               </div>
             </div>
 
@@ -1292,7 +1945,10 @@ export default function SettingsPage() {
                     <p className="font-medium text-gray-900">{t('settings.customerMandatory')}</p>
                     <p className="text-sm text-gray-500">{t('settings.customerMandatoryHint')}</p>
                   </div>
-                  <Toggle value={posSettings.customerMandatory} onChange={posSettings.setCustomerMandatory} />
+                  <Toggle value={posSettings.customerMandatory} onChange={(v) => {
+                    posSettings.setCustomerMandatory(v);
+                    toast.success(v ? t('settings.customerMandatoryEnabled', { defaultValue: 'Mandatory customer enabled' }) : t('settings.customerMandatoryDisabled', { defaultValue: 'Mandatory customer disabled' }), { id: 'pos-local' });
+                  }} />
                 </div>
                 <p className="text-sm text-gray-500">{t('settings.phoneDigitsDerived')}</p>
               </div>
@@ -1303,6 +1959,32 @@ export default function SettingsPage() {
         {/* Kitchen Display — own tab under Operations */}
         <TabsContent value="kds">
           <div className="pb-6 max-w-3xl space-y-6">
+            {/* KDS on/off (issue #133) — not every business runs a Kitchen Display. */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">{t('settings.kdsEnabledToggle', { defaultValue: 'Kitchen Display System' })}</p>
+                  <p className="text-sm text-gray-500">{t('settings.kdsEnabledToggleHint', { defaultValue: 'Show the Kitchen Display and allow devices to pair over your network. Turn this off if this business doesn’t use a KDS.' })}</p>
+                </div>
+                <Toggle value={kdsEnabledSetting} onChange={(v) => { if (!savingKdsEnabled) saveKdsEnabled(v); }} />
+              </div>
+              {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
+                <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800">
+                    {t('settings.kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {!kdsEnabledSetting && (
+              <p className="text-sm text-gray-400 italic">
+                {t('settings.kdsPairingHiddenHint', { defaultValue: 'Pairing is hidden while the Kitchen Display System is disabled.' })}
+              </p>
+            )}
+
+            {kdsEnabledSetting && (
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <ChefHat size={20} className="text-gray-500" />
@@ -1394,12 +2076,148 @@ export default function SettingsPage() {
               )}
 
               {!kdsInfo && !kdsInfoLoading && (
-                <button onClick={fetchKdsInfo}
-                  className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
-                  {t('settings.loadKdsInfo')}
-                </button>
+                <>
+                  <p className="text-sm text-gray-500 mb-3">
+                    {t('settings.kdsLoadHint', { defaultValue: 'Load connection details to pair kitchen display devices on your local network.' })}
+                  </p>
+                  <button onClick={fetchKdsInfo}
+                    className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
+                    {t('settings.loadKdsInfo')}
+                  </button>
+                </>
               )}
             </div>
+            )}
+
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <ChefHat size={20} className="text-gray-500" />
+                  <h2 className="font-semibold text-gray-900">{t('settings.kitchenStations')}</h2>
+                </div>
+                <button onClick={openAddStation}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
+                  <Plus size={14} />
+                  {t('settings.addStation')}
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-5">{t('settings.kitchenStationsHint')}</p>
+
+              {stations.length === 0 ? (
+                <p className="text-sm text-gray-400 py-4 text-center">{t('settings.noStationsYet')}</p>
+              ) : (
+                <div className="space-y-2">
+                  {stations.map((station) => {
+                    let categoryIds: string[] = [];
+                    try { categoryIds = station.category_ids ? JSON.parse(station.category_ids) : []; } catch { categoryIds = []; }
+                    const categoryNames = categoryIds
+                      .map((id) => stationCategories.find((c) => c.id === id)?.name)
+                      .filter(Boolean);
+                    const printer = hwPrinters.find((p) => p.id === station.printer_id);
+                    const users = stationUsersByStation[station.id] || [];
+                    return (
+                      <div key={station.id} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg">
+                        <div className="min-w-0">
+                          <p className="font-medium text-gray-900">{station.name}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {categoryNames.length > 0 ? categoryNames.join(', ') : t('settings.stationNoCategories')}
+                            {' · '}
+                            {printer ? printer.name : t('settings.stationNoPrinter')}
+                            {users.length > 0 && ` · ${users.map((u) => u.name).join(', ')}`}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button onClick={() => openEditStation(station)}
+                            className="px-2 py-1 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded">
+                            {t('common.edit')}
+                          </button>
+                          <button onClick={() => deleteStation(station.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {showStationForm && (
+                <Dialog open={showStationForm} onOpenChange={setShowStationForm}>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>{editingStationId ? t('settings.editStation') : t('settings.addStation')}</DialogTitle>
+                      <DialogDescription>{t('settings.stationFormHint')}</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.stationName')}</label>
+                        <input type="text" value={stationForm.name}
+                          onChange={(e) => setStationForm((f) => ({ ...f, name: e.target.value }))}
+                          placeholder={t('settings.stationNamePlaceholder')}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.stationCategories')}</label>
+                        {stationCategories.length === 0 ? (
+                          <p className="text-xs text-gray-400">{t('settings.noCategoriesYet')}</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                            {stationCategories.map((cat) => (
+                              <label key={cat.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-full text-xs cursor-pointer hover:bg-gray-50">
+                                <input type="checkbox" checked={stationForm.category_ids.includes(cat.id)}
+                                  onChange={() => toggleStationFormValue('category_ids', cat.id)}
+                                  className="rounded border-gray-300 text-brand focus:ring-brand" />
+                                {cat.name}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.stationPrinter')}</label>
+                        <select value={stationForm.printer_id}
+                          onChange={(e) => setStationForm((f) => ({ ...f, printer_id: e.target.value }))}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
+                          <option value="">{t('settings.stationUseDefaultPrinter')}</option>
+                          {hwPrinters.map((p) => (
+                            <option key={p.id} value={p.id}>{p.name}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.stationStaff')}</label>
+                        {stationStaff.length === 0 ? (
+                          <p className="text-xs text-gray-400">{t('settings.noStaffYet')}</p>
+                        ) : (
+                          <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                            {stationStaff.map((u) => (
+                              <label key={u.id} className="flex items-center gap-1.5 px-2.5 py-1 border border-gray-200 rounded-full text-xs cursor-pointer hover:bg-gray-50">
+                                <input type="checkbox" checked={stationForm.user_ids.includes(u.id)}
+                                  onChange={() => toggleStationFormValue('user_ids', u.id)}
+                                  className="rounded border-gray-300 text-brand focus:ring-brand" />
+                                {u.name}
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowStationForm(false)}>{t('common.cancel')}</Button>
+                      <Button onClick={saveStation} disabled={savingStation}>
+                        {savingStation ? t('common.saving') : t('common.save')}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
+            </div>
+
+            <KdsDefaultViewCard />
 
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
               <strong>{t('settings.howItWorks')}</strong> {t('settings.howItWorksBody')}
@@ -1524,60 +2342,6 @@ export default function SettingsPage() {
                   <p className="font-medium text-gray-900 capitalize">{currentTenant?.role || '—'}</p>
                 </div>
               </div>
-            </div>
-
-            
-            {/* Mobile App */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Smartphone size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.mobileApp')}</h2>
-              </div>
-              <p className="text-sm text-gray-500 mb-4">
-                {t('settings.mobileAppHint')}
-              </p>
-              {pairingCode ? (
-                <div className="space-y-3">
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
-                      <span className="font-mono text-2xl font-bold tracking-[0.3em] text-gray-900">
-                        {pairingCode}
-                      </span>
-                    </div>
-                    <button
-                      onClick={copyPairingCode}
-                      className="p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500"
-                      title={t('settings.copyCode')}
-                    >
-                      {copiedCode ? <Check size={18} className="text-green-600" /> : <Copy size={18} />}
-                    </button>
-                  </div>
-                  {pairingRotatedAt && (
-                    <p className="text-xs text-gray-400">
-                      {t('settings.codeGenerated', { date: formatDate(pairingRotatedAt) })}
-                    </p>
-                  )}
-                  <button
-                    onClick={rotatePairingCode}
-                    disabled={rotatingCode}
-                    className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
-                  >
-                    <RefreshCw size={14} className={rotatingCode ? 'animate-spin' : ''} />
-                    {rotatingCode ? t('settings.generating') : t('settings.generateNewCode')}
-                  </button>
-                  <p className="text-xs text-amber-600">
-                    {t('settings.disconnectDevicesWarning')}
-                  </p>
-                </div>
-              ) : (
-                <button
-                  onClick={rotatePairingCode}
-                  disabled={rotatingCode}
-                  className="px-5 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium"
-                >
-                  {rotatingCode ? t('settings.generating') : t('settings.generatePairingCode')}
-                </button>
-              )}
             </div>
           </div>
         </TabsContent>
@@ -1816,6 +2580,26 @@ export default function SettingsPage() {
         <TabsContent value="receipts-printing">
           <div className="pb-6 max-w-3xl">
           <div className="space-y-6">
+            {/* KOT printing on/off (issue #133) — coarser than Auto-print KOT
+                below: when this is off, no KOT ever prints, automatic or manual. */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-gray-900">{t('settings.kotPrintingEnabledToggle', { defaultValue: 'KOT Ticket Printing' })}</p>
+                  <p className="text-sm text-gray-500">{t('settings.kotPrintingEnabledToggleHint', { defaultValue: 'Allow KOT tickets to print at all, automatically or manually. Turn this off if this business doesn’t use a KOT printer.' })}</p>
+                </div>
+                <Toggle value={kotPrintingEnabledSetting} onChange={(v) => { if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v); }} />
+              </div>
+              {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
+                <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800">
+                    {t('settings.kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Printer size={20} className="text-gray-500" />
@@ -1853,12 +2637,19 @@ export default function SettingsPage() {
                       : t('settings.printMethodBrowserHint')}
                   </p>
                 </div>
-                <div className="flex items-center justify-between">
+                <div className={`flex items-center justify-between ${!kotPrintingEnabledSetting ? 'opacity-50' : ''}`}>
                   <div>
                     <p className="font-medium text-gray-900">{t('settings.autoPrintKot')}</p>
-                    <p className="text-sm text-gray-500">{t('settings.autoPrintKotHint')}</p>
+                    <p className="text-sm text-gray-500">
+                      {kotPrintingEnabledSetting
+                        ? t('settings.autoPrintKotHint')
+                        : t('settings.autoPrintKotDisabledHint', { defaultValue: 'KOT printing is turned off above, so this has no effect.' })}
+                    </p>
                   </div>
-                  <Toggle value={printingForm.autoPrintKot} onChange={(v) => setPrintingForm((p) => ({ ...p, autoPrintKot: v }))} />
+                  <Toggle
+                    value={printingForm.autoPrintKot && kotPrintingEnabledSetting}
+                    onChange={(v) => { if (kotPrintingEnabledSetting) setPrintingForm((p) => ({ ...p, autoPrintKot: v })); }}
+                  />
                 </div>
                 <div className="flex items-center justify-between">
                   <div>
@@ -1968,8 +2759,8 @@ export default function SettingsPage() {
               <button
                 onClick={async () => {
                   try {
-                    const response = await fetch('/api/db/export');
-                    const blob = await response.blob();
+                    const response = await api.get('/db/export', { responseType: 'blob' });
+                    const blob = new Blob([response.data], { type: 'application/json' });
                     const url = window.URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
@@ -1998,12 +2789,88 @@ export default function SettingsPage() {
               <p className="text-sm text-gray-500 mb-4">
                 {t('settings.createBackupHint')}
               </p>
-              <button
-                onClick={handleCreateBackup}
-                className="px-5 py-2 text-sm bg-gray-600 text-white rounded-lg hover:opacity-90 font-medium"
-              >
-                {t('settings.createBackup')}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleCreateBackup}
+                  className="px-5 py-2 text-sm bg-gray-600 text-white rounded-lg hover:opacity-90 font-medium"
+                >
+                  {t('settings.createBackup')}
+                </button>
+                <button
+                  onClick={handleChooseBackupLocation}
+                  className="px-5 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                >
+                  {t('settings.chooseBackupLocation')}
+                </button>
+              </div>
+            </div>
+
+            {/* Backup History */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <Database size={20} className="text-gray-500" />
+                  <h2 className="font-semibold text-gray-900">{t('settings.backupHistory')}</h2>
+                </div>
+                <button
+                  onClick={fetchBackups}
+                  disabled={backupsLoading}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                  title={t('settings.refresh')}
+                >
+                  <RefreshCw size={16} className={backupsLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+              <p className="text-sm text-gray-500 mb-4">
+                {t('settings.backupHistoryHint')}
+              </p>
+              {backups.length === 0 ? (
+                <p className="text-sm text-gray-400 py-4 text-center">
+                  {backupsLoading ? t('common.loading') : t('settings.backupHistoryEmpty')}
+                </p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {backups.map((backup) => (
+                    <div key={backup.path} className="flex items-center justify-between py-3 gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium text-gray-900">{formatDateTime(backup.createdAt)}</span>
+                          {backup.kind === 'auto' && (
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100">
+                              {t('settings.backupKindAuto')}
+                            </span>
+                          )}
+                          {googleDriveStatus.last_backup_filename === backup.fileName && (
+                            <span className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
+                              <HardDrive size={11} />
+                              {t('settings.googleDriveUploadedBadge')}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-400 truncate">
+                          {formatBackupSize(backup.sizeBytes)}
+                          {backup.schemaVersion != null && ` · ${t('settings.backupSchemaVersion', { version: backup.schemaVersion })}`}
+                        </p>
+                      </div>
+                      <div className="shrink-0 flex items-center gap-2">
+                        <button
+                          onClick={() => handleRestoreFromHistory(backup)}
+                          className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
+                        >
+                          {t('settings.restoreBackup')}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteBackup(backup)}
+                          className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"
+                          title={t('settings.deleteBackup')}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Database Import */}
@@ -2150,6 +3017,24 @@ export default function SettingsPage() {
         </TabsContent>
 
         {/* Integrations tab — cloud + OrderFlow + More Apps */}
+        <TabsContent value="whatsapp">
+          <div className="pb-6 max-w-3xl space-y-6">
+            {!whatsappEnabled ? (
+              <WhatsAppEnableCard />
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-semibold text-gray-900">{t('whatsapp.settings.enabled')}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('whatsapp.settings.enabledHint')}</p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/whatsapp">{t('whatsapp.settings.openConnection')}</Link>
+                </Button>
+              </div>
+            )}
+          </div>
+        </TabsContent>
+
         <TabsContent value="integrations">
           <div className="pb-6 max-w-3xl space-y-6">
             <div className="space-y-6">
@@ -2165,8 +3050,26 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
+              {cloudStatus.cloud_registration_status === 'unregistered' ? (
+                <div className="bg-gray-50 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-4">
+                  <div className="p-3 bg-white rounded-full shadow-sm">
+                    <Cloud className="w-6 h-6 text-brand" />
+                  </div>
+                  <div>
+                    <h3 className="font-medium text-gray-900">Cloud Services Disabled</h3>
+                    <p className="text-sm text-gray-500 mt-1 max-w-sm">Initialize cloud services to enable remote sales reporting, bill sync, and online dashboard access.</p>
+                  </div>
+                  <button
+                    onClick={() => setShowInitializeCloudConfirm(true)}
+                    className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:opacity-90"
+                  >
+                    Initialize Cloud Services
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
                   {cloudStatus.cloud_registration_status === 'registered' ? (
                     <CheckCircle2 size={16} className="text-green-600 shrink-0" />
                   ) : cloudStatus.cloud_registration_status === 'pending' ? (
@@ -2192,7 +3095,7 @@ export default function SettingsPage() {
                 </div>
                 {cloudStatus.cloud_registration_status !== 'registered' && (
                   <button
-                    onClick={() => { setRegisterEmail(user?.email || ''); setShowRegisterConfirm(true); }}
+                    onClick={() => registerCloud('')}
                     disabled={registeringCloud}
                     className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
                   >
@@ -2250,10 +3153,165 @@ export default function SettingsPage() {
                   <span className="text-sm text-gray-700">{t('settings.enableBillSync')}</span>
                 </label>
 
-                {cloudSettings.cloud_last_sync && (
-                  <p className="text-xs text-gray-400">{t('settings.lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
-                )}
+                    {cloudSettings.cloud_last_sync && (
+                      <p className="text-xs text-gray-400">{t('settings.lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Privacy — anonymous telemetry */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Lock size={20} className="text-gray-500" />
+                <div>
+                  <h2 className="font-semibold text-gray-900">{t('settings.privacy')}</h2>
+                </div>
               </div>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={telemetryEnabled}
+                  disabled={savingTelemetry}
+                  onChange={(e) => saveTelemetry(e.target.checked)}
+                  className="rounded border-gray-300 text-brand focus:ring-brand"
+                />
+                <span className="text-sm text-gray-700">{t('settings.anonymousTelemetry')}</span>
+              </label>
+              <p className="text-xs text-gray-500">{t('settings.anonymousTelemetryHint')}</p>
+            </div>
+
+            {/* Google Drive — automated off-device backups (#129) */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <HardDrive size={20} className="text-gray-500" />
+                <div>
+                  <h2 className="font-semibold text-gray-900">{t('settings.googleDrive')}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('settings.googleDriveHint')}</p>
+                </div>
+              </div>
+
+              {!googleDriveStatus.configured ? (
+                <div className="bg-gray-50 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-2">
+                  <div className="p-3 bg-white rounded-full shadow-sm">
+                    <HardDrive className="w-6 h-6 text-gray-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900">{t('settings.googleDriveNotConfigured')}</p>
+                  <p className="text-xs text-gray-500 max-w-sm">{t('settings.googleDriveNotConfiguredHint')}</p>
+                </div>
+              ) : !googleDriveStatus.secure_storage_available ? (
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                  <p className="text-sm text-amber-800">{t('settings.googleDriveSecureStorageUnavailable')}</p>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      {googleDriveStatus.connected ? (
+                        <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+                      ) : (
+                        <CloudOff size={16} className="text-gray-400 shrink-0" />
+                      )}
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {googleDriveStatus.connected ? t('settings.googleDriveConnected') : t('settings.googleDriveNotConnected')}
+                        </p>
+                        {googleDriveStatus.connected && googleDriveStatus.account_email && (
+                          <p className="text-xs text-gray-500">{t('settings.googleDriveAccount')}: {googleDriveStatus.account_email}</p>
+                        )}
+                      </div>
+                    </div>
+                    {(currentTenant?.role === 'owner') && (
+                      googleDriveStatus.connected ? (
+                        <button
+                          onClick={disconnectGoogleDrive}
+                          disabled={disconnectingGoogleDrive}
+                          className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium shrink-0"
+                        >
+                          {disconnectingGoogleDrive ? t('settings.googleDriveDisconnecting') : t('settings.googleDriveDisconnect')}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={connectGoogleDrive}
+                          disabled={connectingGoogleDrive}
+                          className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
+                        >
+                          {connectingGoogleDrive ? t('settings.googleDriveConnecting') : t('settings.googleDriveConnect')}
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  {googleDriveStatus.connected && (
+                    <>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.googleDriveFrequency')}</label>
+                          <select
+                            value={googleDriveStatus.frequency}
+                            disabled={savingGoogleDrivePrefs}
+                            onChange={(e) => updateGoogleDrivePrefs({ frequency: e.target.value as 'daily' | 'weekly' })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
+                          >
+                            <option value="daily">{t('settings.googleDriveFrequencyDaily')}</option>
+                            <option value="weekly">{t('settings.googleDriveFrequencyWeekly')}</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.googleDriveRetention')}</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={googleDriveStatus.retention_count}
+                            disabled={savingGoogleDrivePrefs}
+                            onChange={(e) => setGoogleDriveStatus((prev) => ({ ...prev, retention_count: Number(e.target.value) || prev.retention_count }))}
+                            onBlur={(e) => {
+                              const n = Number(e.target.value);
+                              if (Number.isInteger(n) && n >= 1 && n <= 100) updateGoogleDrivePrefs({ retention_count: n });
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500">{t('settings.googleDriveRetentionHint')}</p>
+
+                      <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
+                        <div className="text-xs text-gray-500">
+                          {googleDriveStatus.last_backup_at ? (
+                            googleDriveStatus.last_backup_status === 'error' ? (
+                              <span className="flex items-center gap-1 text-red-600">
+                                <AlertTriangle size={13} />
+                                {t('settings.googleDriveLastBackupErrorAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-gray-500">
+                                <CheckCircle2 size={13} className="text-green-600" />
+                                {t('settings.googleDriveLastBackupSuccessAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
+                              </span>
+                            )
+                          ) : (
+                            <span>{t('settings.googleDriveLastBackup')}: {t('settings.googleDriveLastBackupNever')}</span>
+                          )}
+                        </div>
+                        {(currentTenant?.role === 'owner') && (
+                          <button
+                            onClick={backupToGoogleDriveNow}
+                            disabled={backingUpGoogleDrive}
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
+                          >
+                            <UploadCloud size={15} />
+                            {backingUpGoogleDrive ? t('settings.googleDriveBackingUp') : t('settings.googleDriveBackupNow')}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
             </div>
 
             {/* OrderFlow — online orders */}
@@ -2283,15 +3341,128 @@ export default function SettingsPage() {
                   <p className="font-mono text-gray-700">{t('settings.webhookSwiggy', { id: cloudSettings.cloud_store_id })}</p>
                 </div>
               )}
-
-              <div className="bg-gray-50 rounded-lg px-4 py-3 text-xs space-y-1">
-                <p className="text-gray-500 font-medium">{t('settings.orderflowHowItWorks')}</p>
-                <p className="text-gray-700">{t('settings.orderflowStep1')}</p>
-                <p className="text-gray-700">{t('settings.orderflowStep2')}</p>
-                <p className="text-gray-700">{t('settings.orderflowStep3')}</p>
-              </div>
             </div>
 
+            {/* RevFlo — consolidated: download/QR + app (pairing) code + paired devices */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
+              <div className="flex items-center gap-2">
+                <Smartphone size={20} className="text-gray-500" />
+                <div>
+                  <h2 className="font-semibold text-gray-900">{revflo?.name || t('settings.revflo')}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{revflo?.tagline || t('settings.revfloHint')}</p>
+                </div>
+              </div>
+
+              {revflo?.available && (
+                <div className="flex flex-col sm:flex-row gap-5 items-start border border-gray-100 rounded-xl p-5">
+                  <div className="shrink-0">
+                    {revflo.qr_data_url ? (
+                      <img src={revflo.qr_data_url} alt={t('settings.appQrAlt', { name: revflo.name })}
+                        className="w-28 h-28 rounded-lg border border-gray-200" />
+                    ) : (
+                      <div className="w-28 h-28 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400">
+                        <QrCode size={32} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex gap-3 text-sm">
+                    {revflo.ios_url && (
+                      <a href={revflo.ios_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+                        {t('settings.downloadForIos')}
+                      </a>
+                    )}
+                    {revflo.android_url && (
+                      <a href={revflo.android_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
+                        {t('settings.downloadForAndroid')}
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="text-sm font-medium text-gray-900 mb-1">{t('settings.mobileApp')}</p>
+                <p className="text-xs text-gray-500 mb-4">{t('settings.mobileAppHint')}</p>
+                {pairingUnavailable ? (
+                  <p className="text-sm text-gray-500">{t('settings.mobilePairingNeedsCloud')}</p>
+                ) : pairingCode ? (
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
+                        <span className="font-mono text-2xl font-bold tracking-[0.3em] text-gray-900">
+                          {pairingCode.toUpperCase()}
+                        </span>
+                      </div>
+                      <button
+                        onClick={copyPairingCode}
+                        className="p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500"
+                        title={t('settings.copyCode')}
+                      >
+                        {copiedCode ? <Check size={18} className="text-green-600" /> : <Copy size={18} />}
+                      </button>
+                    </div>
+                    {pairingExpiresAt && (
+                      <p className="text-xs text-gray-400">
+                        {t('settings.codeExpires', { date: formatDate(pairingExpiresAt) })}
+                      </p>
+                    )}
+                    <button
+                      onClick={rotatePairingCode}
+                      disabled={rotatingCode}
+                      className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
+                    >
+                      <RefreshCw size={14} className={rotatingCode ? 'animate-spin' : ''} />
+                      {rotatingCode ? t('settings.generating') : t('settings.generateNewCode')}
+                    </button>
+                    <p className="text-xs text-amber-600">
+                      {t('settings.disconnectDevicesWarning')}
+                    </p>
+                  </div>
+                ) : (
+                  <button
+                    onClick={rotatePairingCode}
+                    disabled={rotatingCode}
+                    className="px-5 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium"
+                  >
+                    {rotatingCode ? t('settings.generating') : t('settings.generatePairingCode')}
+                  </button>
+                )}
+              </div>
+
+              {!pairingUnavailable && (
+                <div className="pt-5 border-t border-gray-100">
+                  <p className="text-sm font-medium text-gray-900 mb-3">{t('settings.pairedDevices')}</p>
+                  {devicesLoading ? (
+                    <p className="text-sm text-gray-400">{t('settings.loading')}</p>
+                  ) : pairedDevices.length === 0 ? (
+                    <p className="text-sm text-gray-500">{t('settings.noPairedDevices')}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {pairedDevices.map((d) => (
+                        <div key={d.id} className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium text-gray-900 capitalize">
+                              {d.platform || t('settings.unknownPlatform')}
+                              {d.country ? ` · ${d.country}` : ''}
+                            </span>
+                            <span className="text-xs text-gray-400">
+                              {t('settings.lastActive', { date: formatDate(d.last_seen_at) })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {t('settings.firstPaired', { date: formatDate(d.first_seen_at) })}
+                            {d.app_version ? ` · v${d.app_version}` : ''}
+                          </p>
+                          {d.user_agent && (
+                            <p className="text-xs text-gray-400 mt-1 truncate" title={d.user_agent}>{d.user_agent}</p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
           </div>
             <div className="space-y-6">
@@ -2390,10 +3561,12 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500 mb-6">
               {updateStatus?.status === 'store'
                 ? t('settings.softwareUpdatesHintStore')
+                : updateStatus?.status === 'unsupported'
+                ? t('settings.softwareUpdatesHintUnsupported')
                 : t('settings.softwareUpdatesHintDefault')}
             </p>
 
-            {updateStatus && updateStatus.status !== 'store' && (
+            {updateStatus && updateStatus.status !== 'store' && updateStatus.status !== 'unsupported' && (
               <div className={`p-4 rounded-lg mb-4 ${
                 updateStatus.status === 'available' || updateStatus.status === 'ready-to-install'
                   ? 'bg-green-50 border border-green-200'
@@ -2447,7 +3620,7 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {updateStatus?.status !== 'store' && (
+            {updateStatus?.status !== 'store' && updateStatus?.status !== 'unsupported' && (
               <button
                 onClick={handleCheckUpdates}
                 disabled={updateStatus?.status === 'checking' || updateStatus?.status === 'downloading'}
@@ -2486,32 +3659,24 @@ export default function SettingsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Register with FloAdmin — confirmation Dialog */}
-      <Dialog open={showRegisterConfirm} onOpenChange={setShowRegisterConfirm}>
+      {/* Initialize Cloud Disclaimer Dialog */}
+      <Dialog open={showInitializeCloudConfirm} onOpenChange={setShowInitializeCloudConfirm}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('settings.registerWithFloadmin')}</DialogTitle>
+            <DialogTitle>Initialize Cloud Services</DialogTitle>
             <DialogDescription>
-              {t('settings.registrationRegisterHelp')}
+              Allow diagnostic and usage data collection to improve the product.
+              <br /><br />
+              This enables basic telemetry and provisions your local database to communicate with the FloAdmin cloud servers for remote reporting and sync.
             </DialogDescription>
           </DialogHeader>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.email')}</label>
-            <input
-              type="email"
-              value={registerEmail}
-              onChange={(e) => setRegisterEmail(e.target.value)}
-              placeholder={t('settings.registrationEmailPlaceholder')}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none"
-            />
-          </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRegisterConfirm(false)}>{t('settings.cancel')}</Button>
+            <Button variant="outline" onClick={() => setShowInitializeCloudConfirm(false)}>{t('settings.cancel')}</Button>
             <Button
-              disabled={!registerEmail.trim() || registeringCloud}
-              onClick={() => { setShowRegisterConfirm(false); registerCloud(registerEmail.trim()); }}
+              disabled={registeringCloud}
+              onClick={() => { setShowInitializeCloudConfirm(false); registerCloud(''); }}
             >
-              {registeringCloud ? t('settings.registering') : t('settings.registerWithFloadmin')}
+              {registeringCloud ? t('settings.registering') : 'Accept & Initialize'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2520,7 +3685,12 @@ export default function SettingsPage() {
       <MasterPinPrompt
         open={pinGate !== null}
         mode={pinGate?.mode === 'set' ? 'set' : 'verify'}
-        title={pinGate?.mode === 'backup' ? t('settings.confirmBackupTitle') : pinGate?.mode === 'import' ? t('settings.confirmImportTitle') : undefined}
+        title={
+          pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('settings.confirmBackupTitle')
+          : pinGate?.mode === 'import' ? t('settings.confirmImportTitle')
+          : pinGate?.mode === 'restore' ? t('settings.confirmRestoreTitle')
+          : undefined
+        }
         onCancel={() => setPinGate(null)}
         onSubmit={handlePinGateSubmit}
       />
@@ -2547,8 +3717,8 @@ export default function SettingsPage() {
           <div className={`bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 pointer-events-auto ${shakeSaveBar ? 'animate-shake' : ''}`}>
             <span className="text-sm font-medium">{t('settings.unsavedChanges', { defaultValue: 'You have unsaved changes' })}</span>
             <div className="flex items-center gap-2">
-              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('settings.discard', { defaultValue: 'Discard' })}</button>
-              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount) ? t('settings.saving') : t('settings.saveChanges', { defaultValue: 'Save Changes' })}</button>
+              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('settings.discard', { defaultValue: 'Discard' })}</button>
+              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud) ? t('settings.saving') : t('settings.saveChanges', { defaultValue: 'Save Changes' })}</button>
             </div>
           </div>
         </div>

@@ -7,8 +7,11 @@ import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
 import { getLocalIP, getAllLocalIPs } from '../server';
 import { getKdsPort } from '../kds-server';
+import { requireKdsEnabled } from '../middleware/security';
 
 const router = Router();
+
+router.use(requireKdsEnabled);
 
 router.get('/', async (_req: Request, res: Response) => {
   const kdsPort = getKdsPort();

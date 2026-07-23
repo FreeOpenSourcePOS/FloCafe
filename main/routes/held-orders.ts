@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 
 const router = Router();
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const rows = db.prepare('SELECT * FROM held_orders ORDER BY updated_at DESC').all();
@@ -20,7 +20,8 @@ router.get('/', (req: Request, res: Response) => {
     }));
     res.json({ orders });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -57,7 +58,8 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -73,7 +75,8 @@ router.delete('/:tableId', requireRole('owner', 'manager', 'cashier', 'waiter'),
 
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

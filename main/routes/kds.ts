@@ -1,14 +1,19 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, attachEffectiveAddons } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
-import { requireRole } from '../middleware/security';
+import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
 
 const router = Router();
 
+// KDS disabled → 404 the pairing surface, checked before the role gate below
+// so a request from an authenticated-but-wrong-role user doesn't leak that
+// the route exists either (issue #133).
+router.use('/pairing', requireKdsEnabledOr404);
+
 router.use(requireRole('chef', 'manager', 'owner'));
 
-router.get('/orders', (req: Request, res: Response) => {
+router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const stationId = req.query.station_id as string;
@@ -31,21 +36,22 @@ router.get('/orders', (req: Request, res: Response) => {
     const orders = db.prepare(query).all(...params);
 
     const ordersWithItems = orders.map((order: any) => {
-      const items = db.prepare(`
+      const items = attachEffectiveAddons(db, db.prepare(`
         SELECT oi.*, p.category_id, c.name as category_name
         FROM order_items oi
         LEFT JOIN products p ON oi.product_id = p.id
         LEFT JOIN categories c ON p.category_id = c.id
         WHERE oi.order_id = ?
         ORDER BY oi.created_at ASC
-      `).all(order.id);
+      `).all(order.id) as any[]);
 
       return { ...order, items };
     });
 
     res.json({ orders: ordersWithItems });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -56,7 +62,8 @@ router.get('/pairing', (req: Request, res: Response) => {
 
     res.json({ stations });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -96,11 +103,12 @@ router.post('/pairing', requireRole('owner', 'manager'), (req: Request, res: Res
       }
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.get('/display', (req: Request, res: Response) => {
+router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const stationId = req.query.station_id as string;
@@ -144,7 +152,7 @@ router.get('/display', (req: Request, res: Response) => {
 
     itemsQuery += ' ORDER BY oi.created_at ASC';
 
-    const items = db.prepare(itemsQuery).all(...params);
+    const items = attachEffectiveAddons(db, db.prepare(itemsQuery).all(...params) as any[]);
 
     const groupedByOrder: Record<number, any> = {};
     for (const item of items) {
@@ -170,11 +178,12 @@ router.get('/display', (req: Request, res: Response) => {
       orders: Object.values(groupedByOrder),
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-router.patch('/items/:id/status', (req: Request, res: Response) => {
+router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const { status } = req.body;
 
@@ -203,7 +212,8 @@ router.patch('/items/:id/status', (req: Request, res: Response) => {
     const updatedItem = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
     res.json({ item: updatedItem });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

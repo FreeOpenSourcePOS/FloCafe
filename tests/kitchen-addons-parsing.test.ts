@@ -1,13 +1,11 @@
 /**
  * Kitchen Orders — Addons Parsing Test
  *
- * Verifies that the /api/kitchen/orders endpoint returns addons as a
- * parsed array, not a raw JSON string. This catches regressions where
- * SQLite TEXT columns are returned unparsed, causing
- * "e.addons.map is not a function" on the KDS frontend.
- *
- * Also verifies the round-trip: order creation stores addons as JSON
- * string, kitchen endpoint returns them as a parsed array.
+ * Verifies that the /api/kitchen/orders endpoint returns addons as an
+ * array — resolved from the normalized order_item_addons table via
+ * attachEffectiveAddons (see issue #125) — never a raw JSON string or
+ * null, which used to cause "e.addons.map is not a function" on the KDS
+ * frontend back when addons lived as JSON on order_items.addons.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/kitchen-addons-parsing.test.ts
  */
@@ -125,13 +123,12 @@ function seedTestData() {
     `INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, ?, ?)`
   ).run('prod-addons', 'cat-addons', 'Burger', 200, 1, 1);
 
-  // Order with addons stored as JSON string (how the orders API stores it)
-  const addonsArray = [
-    { id: 1, name: 'Extra Cheese', price: 50 },
-    { id: 2, name: 'Bacon', price: 80 },
-  ];
-  const addonsJson = JSON.stringify(addonsArray);
+  db.prepare(`INSERT INTO addon_groups (id, name) VALUES ('ag-addons', 'Extras')`).run();
+  db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES ('addon-cheese', 'ag-addons', 'Extra Cheese', 50, 1)`).run();
+  db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES ('addon-bacon', 'ag-addons', 'Bacon', 80, 1)`).run();
 
+  // Order with selected addons snapshotted into order_item_addons (how the
+  // orders API stores them — order_items.addons no longer exists, issue #125)
   db.prepare(
     `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -139,14 +136,20 @@ function seedTestData() {
 
   const orderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-ADDONS-001') as any).id;
 
-  // Insert order_item with addons as JSON string (mimics what the orders API does)
   db.prepare(
     `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity,
-      subtotal, tax_amount, total, addons, special_instructions, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(orderId, 'prod-addons', 'Burger', 200, 1, 330, 0, 330, addonsJson, 'No pickles', 'preparing', now(), now());
+      subtotal, tax_amount, total, special_instructions, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(orderId, 'prod-addons', 'Burger', 200, 1, 330, 0, 330, 'No pickles', 'preparing', now(), now());
+  const itemId1 = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any).id;
+  db.prepare(
+    `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at) VALUES (?, ?, ?, ?, 1, ?)`
+  ).run(itemId1, 'addon-cheese', 'Extra Cheese', 50, now());
+  db.prepare(
+    `INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at) VALUES (?, ?, ?, ?, 1, ?)`
+  ).run(itemId1, 'addon-bacon', 'Bacon', 80, now());
 
-  // Order with null addons
+  // Order with no addons at all
   db.prepare(
     `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -155,22 +158,9 @@ function seedTestData() {
   const orderId2 = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-ADDONS-002') as any).id;
   db.prepare(
     `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity,
-      subtotal, tax_amount, total, addons, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(orderId2, 'prod-addons', 'Burger', 200, 1, 200, 0, 200, null, 'pending', now(), now());
-
-  // Order with empty array addons (stored as "[]")
-  db.prepare(
-    `INSERT INTO orders (order_number, table_id, type, status, subtotal, total, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run('ORD-ADDONS-003', null, 'takeaway', 'ready', 200, 200, now(), now());
-
-  const orderId3 = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('ORD-ADDONS-003') as any).id;
-  db.prepare(
-    `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity,
-      subtotal, tax_amount, total, addons, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(orderId3, 'prod-addons', 'Burger', 200, 1, 200, 0, 200, '[]', 'ready', now(), now());
+      subtotal, tax_amount, total, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(orderId2, 'prod-addons', 'Burger', 200, 1, 200, 0, 200, 'pending', now(), now());
 }
 
 // ── Main ──────────────────────────────────────────────────────────────────────
@@ -244,31 +234,20 @@ async function main() {
       assertEqual(item1?.addons?.[1]?.price, 80, 'second addon price is correct');
     }
 
-    // ── Test 2: Null addons stays null ─────────────────────────────────
-    console.log('\n2. Null addons remains null/falsy');
+    // ── Test 2: item with no selected addons gets an empty array ────────
+    console.log('\n2. Item with no addons returns an empty array (not null)');
     {
       const res = await request(baseUrl, '/api/kitchen/orders', {
         headers: { Authorization: authHeader },
       });
       const order2 = res.data.orders.find((o: any) => o.order_number === 'ORD-ADDONS-002');
       const item2 = order2?.items?.[0];
-      assert(!item2?.addons, 'null addons is falsy');
+      assert(Array.isArray(item2?.addons), 'addons is an array even with no selections');
+      assertEqual(item2?.addons?.length, 0, 'addons array is empty');
     }
 
-    // ── Test 3: Empty array addons ─────────────────────────────────────
-    console.log('\n3. Empty array addons is parsed correctly');
-    {
-      const res = await request(baseUrl, '/api/kitchen/orders', {
-        headers: { Authorization: authHeader },
-      });
-      const order3 = res.data.orders.find((o: any) => o.order_number === 'ORD-ADDONS-003');
-      const item3 = order3?.items?.[0];
-      assert(Array.isArray(item3?.addons), 'empty addons is an array');
-      assertEqual(item3?.addons?.length, 0, 'empty addons has length 0');
-    }
-
-    // ── Test 4: special_instructions preserved ─────────────────────────
-    console.log('\n4. Special instructions are preserved');
+    // ── Test 3: special_instructions preserved ─────────────────────────
+    console.log('\n3. Special instructions are preserved');
     {
       const res = await request(baseUrl, '/api/kitchen/orders', {
         headers: { Authorization: authHeader },

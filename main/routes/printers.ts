@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled } from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceipt, printKOT, detectConnectedPrinters } from '../printers/thermal';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
@@ -27,7 +27,8 @@ router.get('/', (_req: Request, res: Response) => {
     const printers = db.prepare('SELECT * FROM printers ORDER BY is_default DESC, name').all().map(printerShape);
     res.json({ printers });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -39,7 +40,8 @@ router.get('/detect', async (_req: Request, res: Response) => {
     res.json({ printers });
   } catch (error: any) {
     console.error('[Printer] Detection error:', error);
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -56,7 +58,8 @@ router.get('/:id', (req: Request, res: Response) => {
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
     res.json({ printer: printerShape(printer) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -105,7 +108,8 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
     res.status(201).json({ printer: printerShape(printer) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -151,7 +155,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
     res.json({ printer: printerShape(printer) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -165,7 +170,8 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
     db.prepare('DELETE FROM printers WHERE id = ?').run(req.params.id);
     res.json({ message: 'Printer deleted' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -181,7 +187,8 @@ router.post('/:id/set-default', requireRole('owner', 'manager'), (req: Request, 
 
     res.json({ message: 'Default printer set' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -215,7 +222,8 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
       res.status(502).json({ error: 'Printer did not respond or print failed' });
     }
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -261,7 +269,7 @@ router.post('/print-bill', requireRole('owner', 'manager'), async (req: Request,
     console.log('[Print Bill] Order:', order.order_number);
 
     // Fetch order items
-    const items: any[] = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(bill.order_id);
+    const items: any[] = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(bill.order_id) as any[]);
     order.items = items;
     console.log('[Print Bill] Items count:', items.length);
 
@@ -340,22 +348,79 @@ router.post('/print-bill', requireRole('owner', 'manager'), async (req: Request,
   } catch (error: any) {
     console.error('[Print Bill] Error:', error);
     console.error('[Print Bill] Error stack:', error.stack);
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
+// Groups order items across active, fully-configured kitchen stations (has both
+// a category allowlist and a linked printer). Items whose category isn't claimed
+// by any station fall back to the default printer under the generic 'Kitchen'
+// label — this is also what happens for the whole order when no station is
+// configured at all, so stores not using stations see no behavior change.
+export function routeItemsToStations(db: any, orderItems: any[]): { stationName: string; printer: any; items: any[] }[] {
+  const rawStations = db.prepare(
+    `SELECT * FROM kitchen_stations WHERE is_active = 1 AND printer_id IS NOT NULL AND category_ids IS NOT NULL AND category_ids != ''`
+  ).all() as any[];
+
+  const stations = rawStations
+    .map((s) => {
+      let categoryIds: string[] = [];
+      try {
+        categoryIds = JSON.parse(s.category_ids) || [];
+      } catch {
+        categoryIds = [];
+      }
+      const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(s.printer_id);
+      return { ...s, categoryIds, printer };
+    })
+    .filter((s) => s.categoryIds.length > 0 && s.printer);
+
+  if (stations.length === 0) {
+    return [{ stationName: 'Kitchen', printer: null, items: orderItems }];
+  }
+
+  const groups = new Map<string, { stationName: string; printer: any; items: any[] }>();
+  const unrouted: any[] = [];
+
+  for (const item of orderItems) {
+    const product: any = item.product_id ? db.prepare('SELECT category_id FROM products WHERE id = ?').get(item.product_id) : null;
+    const categoryId = product?.category_id;
+    const matched = categoryId ? stations.find((s) => s.categoryIds.includes(categoryId)) : undefined;
+    if (matched) {
+      if (!groups.has(matched.id)) {
+        groups.set(matched.id, { stationName: matched.name, printer: matched.printer, items: [] });
+      }
+      groups.get(matched.id)!.items.push(item);
+    } else {
+      unrouted.push(item);
+    }
+  }
+
+  const result = Array.from(groups.values());
+  if (unrouted.length > 0) {
+    result.push({ stationName: 'Kitchen', printer: null, items: unrouted });
+  }
+  return result;
+}
+
 // POST /api/printers/print-kot — print KOT via backend (desktop app)
 router.post('/print-kot', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+  // Coarser than auto_print_kot — when this is off, no KOT print command
+  // should ever be sent, automatic or manual (issue #133).
+  if (!isKotPrintingEnabled()) {
+    return res.status(403).json({ error: 'KOT printing is disabled for this business' });
+  }
   try {
     const { orderId, stationName, items, useUnicode = false } = req.body;
-    
+
     if (!orderId) {
       return res.status(400).json({ error: 'orderId is required' });
     }
 
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
-    
+
     if (!printer) {
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });
     }
@@ -366,10 +431,9 @@ router.post('/print-kot', requireRole('owner', 'manager'), async (req: Request, 
     }
 
     // Fetch order items from database
-    const orderItems: any[] = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId);
-    
+    const orderItems: any[] = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[]);
+
     // Fetch table info if available
-    let tableName: string | undefined;
     if (order.table_id) {
       const table: any = db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id);
       if (table) {
@@ -377,10 +441,21 @@ router.post('/print-kot', requireRole('owner', 'manager'), async (req: Request, 
       }
     }
 
-    // Use existing printKOT function
-    const kotItems = items || orderItems;
-    const station = stationName || 'Kitchen';
-    const success = await printKOT(order, kotItems, station, useUnicode);
+    // An explicit stationName/items override (not used by the current frontend,
+    // but kept for any external caller) always prints a single ticket, as before.
+    // Otherwise, auto-route items to their configured kitchen stations.
+    let success = true;
+    if (stationName || items) {
+      const kotItems = items || orderItems;
+      const station = stationName || 'Kitchen';
+      success = await printKOT(order, kotItems, station, useUnicode);
+    } else {
+      const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
+      for (const group of groups) {
+        const ok = await printKOT(order, group.items, group.stationName, useUnicode, group.printer || undefined);
+        success = success && ok;
+      }
+    }
 
     if (success) {
       res.json({ success: true });
@@ -389,7 +464,8 @@ router.post('/print-kot', requireRole('owner', 'manager'), async (req: Request, 
     }
   } catch (error: any) {
     console.error('[Print KOT] Error:', error);
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

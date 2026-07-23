@@ -260,6 +260,6 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     });
   } catch (error: any) {
     console.error('[Tax] Preview error:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: "Internal server error" });
   }
 }

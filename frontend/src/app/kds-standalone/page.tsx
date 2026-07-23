@@ -1,575 +1,85 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
-import toast from 'react-hot-toast';
-import { Clock, ChefHat, X, ChevronRight, ChevronLeft, LogOut, Wifi, WifiOff, Eye, EyeOff } from 'lucide-react';
-import { useI18n } from '@/hooks/useI18n';
+import { KdsLoginForm } from '@/components/kds/KdsLoginForm';
+import { KdsWorkspace } from '@/components/kds/KdsWorkspace';
+import { useKdsConnection } from '@/hooks/useKdsConnection';
+import { useServerKdsInfo } from '@/hooks/useServerKdsInfo';
+import { useSyncServerLanguage } from '@/lib/i18n';
+import { useEffect, useMemo, useState } from 'react';
 
-// Create local API client for KDS server
-const api = axios.create({
-  baseURL: typeof window !== 'undefined' ? window.location.origin : '',
-  timeout: 10000,
-});
+// `/api/kds/info` 404s when kds_enabled is off (issue #133) — that's the
+// signal this route uses to make itself unreachable. Distinguishes a real
+// 404 from a network error (offline/unreachable server), which should not
+// lock the device out — that's a connectivity problem, not a disabled
+// feature, and the login form below already surfaces connection failures.
+function useKdsDisabledCheck(baseUrl: string): boolean {
+  const [disabled, setDisabled] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    let cancelled = false;
+    fetch(`${baseUrl}/api/kds/info`, { cache: 'no-store' })
+      .then((res) => { if (!cancelled && res.status === 404) setDisabled(true); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [baseUrl]);
+  return disabled;
+}
 
-// Add token to requests
-api.interceptors.request.use((config) => {
-  if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('kds_user');
-    if (saved) {
-      const user = JSON.parse(saved);
-      if (user.token) {
-        config.headers.Authorization = `Bearer ${user.token}`;
+// Standalone axios client — points at this KDS server's origin (e.g. :3002),
+// separate from the dashboard's `lib/api` which targets the main backend.
+function createStandaloneApi() {
+  const api = axios.create({
+    baseURL: window.location.origin,
+    timeout: 10000,
+  });
+  api.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token');
+    if (token) config.headers.Authorization = `Bearer ${token}`;
+    return config;
+  });
+  api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        window.location.reload();
       }
-    }
-  }
-  return config;
-});
-
-// Handle 401 — token expired or invalid, force re-login
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401 && typeof window !== 'undefined') {
-      localStorage.removeItem('kds_user');
-      // Force page reload to reset state and show login form
-      window.location.reload();
-    }
-    return Promise.reject(error);
-  }
-);
-
-const STATUS_CONFIG = {
-  pending: { labelKey: 'kds.statusWaiting', color: 'bg-yellow-500', border: 'border-yellow-300', text: 'text-yellow-700', bg: 'bg-yellow-50', btnBg: 'bg-yellow-500 hover:bg-yellow-600' },
-  preparing: { labelKey: 'kds.statusPreparing', color: 'bg-blue-500', border: 'border-blue-300', text: 'text-blue-700', bg: 'bg-blue-50', btnBg: 'bg-blue-500 hover:bg-blue-600' },
-  ready: { labelKey: 'kds.statusReady', color: 'bg-green-500', border: 'border-green-300', text: 'text-green-700', bg: 'bg-green-50', btnBg: 'bg-green-500 hover:bg-green-600' },
-  served: { labelKey: 'kds.statusDelivered', color: 'bg-purple-500', border: 'border-purple-300', text: 'text-purple-700', bg: 'bg-purple-50', btnBg: 'bg-purple-500 hover:bg-purple-600' },
-} as const;
-
-type KitchenStatus = keyof typeof STATUS_CONFIG;
-
-const STATUS_ORDER: KitchenStatus[] = ['pending', 'preparing', 'ready', 'served'];
-
-const NEXT_STATUS: Record<string, KitchenStatus | null> = {
-  pending: 'preparing',
-  preparing: 'ready',
-  ready: 'served',
-  served: null,
-};
-
-const PREV_STATUS: Record<string, KitchenStatus | null> = {
-  pending: null,
-  preparing: 'pending',
-  ready: 'preparing',
-  served: 'ready',
-};
-
-interface OrderItem {
-  id: number;
-  order_id: number;
-  product_id: string;
-  product_name: string;
-  quantity: number;
-  status: string;
-  addons?: Array<{ id: string; name: string; price: number }>;
-  special_instructions?: string;
-  created_at: string;
-  updated_at: string;
+      return Promise.reject(error);
+    },
+  );
+  return api;
 }
-
-interface Order {
-  id: number;
-  order_number: string;
-  type: string;
-  table_id?: number;
-  customer_id?: string;
-  status: string;
-  subtotal: number;
-  tax_amount: number;
-  total: number;
-  created_at: string;
-  updated_at: string;
-  items?: OrderItem[];
-  table?: { name: string } | null;
-  special_instructions?: string | null;
-}
-
-interface ModalItem {
-  item: OrderItem;
-  orderNumber: string;
-}
-
-interface LoggedInUser {
-  id: string;
-  name: string;
-  role: string;
-  categoryIds: string[];
-  token: string;
-}
-
-type ConnectionMode = 'websocket' | 'rest' | null;
-
-const activeStatus = (s: string | undefined): KitchenStatus => (s || 'pending') as KitchenStatus;
 
 export default function KdsStandalonePage() {
-  const { t } = useI18n();
-  const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[s].labelKey);
-  const [user, setUser] = useState<LoggedInUser | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [counts, setCounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<KitchenStatus>('pending');
-  const [modalItem, setModalItem] = useState<ModalItem | null>(null);
-  const [updating, setUpdating] = useState<number | null>(null);
-  const [connected, setConnected] = useState(false);
-  const [connectionMode, setConnectionMode] = useState<ConnectionMode>(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loginError, setLoginError] = useState('');
-  const [loginLoading, setLoginLoading] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const stopRestPolling = useCallback(() => {
-    if (restIntervalRef.current) {
-      clearInterval(restIntervalRef.current);
-      restIntervalRef.current = null;
-    }
-  }, []);
-
-  const fetchOrdersRest = useCallback(async () => {
-    try {
-      const { data } = await api.get('/api/kds/orders');
-      setOrders(data.orders || []);
-      
-      // Calculate counts from orders
-      const calcCounts: Record<string, number> = { pending: 0, preparing: 0, ready: 0, served: 0 };
-      (data.orders || []).forEach((order: Order) => {
-        order.items?.forEach((item) => {
-          if (calcCounts[item.status] !== undefined) {
-            calcCounts[item.status]++;
-          }
-        });
-      });
-      setCounts(calcCounts);
-      setConnected(true);
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 401) {
-        // Token expired/invalid — interceptor handles reload, just stop polling
-        stopRestPolling();
-        return;
-      }
-      setConnected(false);
-    }
-  }, [stopRestPolling]);
-
-  const startRestPolling = useCallback(() => {
-    stopRestPolling();
-    setConnectionMode('rest');
-    setConnected(true);
-    fetchOrdersRest();
-    restIntervalRef.current = setInterval(fetchOrdersRest, 5000);
-  }, [fetchOrdersRest, stopRestPolling]);
-
-  const updateItemStatus = useCallback(async (itemId: number, status: KitchenStatus) => {
-    setUpdating(itemId);
-    try {
-      await api.patch(`/api/kds/items/${itemId}/status`, { status });
-      toast.success(t('kds.itemMarked', { status: statusLabel(status) }));
-      setModalItem(null);
-      fetchOrdersRest();
-    } catch {
-      toast.error(t('kds.failedToUpdateItem'));
-    } finally {
-      setUpdating(null);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fetchOrdersRest]);
-
-  const getTimeSince = (dateStr: string) => {
-    const minutes = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (minutes < 1) return t('common.justNow');
-    if (minutes < 60) return `${minutes}m`;
-    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+  useSyncServerLanguage();
+  // Lazy-init the axios instance — must not run during SSR prerender.
+  const api = useMemo(() => (typeof window !== 'undefined' ? createStandaloneApi() : null), []);
+  // kds-server.ts (this page's backend, a separate Express app from the main
+  // server) exposes a smaller, differently-named route set than the
+  // dashboard-embedded KDS talks to — override the hook's main-server defaults.
+  const standaloneEndpoints = {
+    login: '/api/auth/login',
+    me: '/api/auth/me',
+    orders: '/api/kds/orders',
+    itemStatus: '/api/kds/items/:itemId/status',
   };
+  const conn = useKdsConnection(api ? { api, endpoints: standaloneEndpoints } : { api: axios.create() });
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const { kdsDefaultView } = useServerKdsInfo(origin);
+  const kdsDisabled = useKdsDisabledCheck(origin);
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoginError('');
-    setLoginLoading(true);
-
-    try {
-      const { data } = await api.post('/api/auth/login', {
-        email: loginEmail,
-        password: loginPassword,
-      });
-
-      const loggedInUser: LoggedInUser = {
-        id: data.user.id,
-        name: data.user.name,
-        role: data.user.role,
-        categoryIds: data.user.category_ids || [],
-        token: data.access_token || '',
-      };
-
-      setUser(loggedInUser);
-      localStorage.setItem('kds_user', JSON.stringify(loggedInUser));
-      startRestPolling();
-      setLoading(false);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      setLoginError(error.response?.data?.error || t('kds.loginFailed'));
-    } finally {
-      setLoginLoading(false);
-    }
-  };
-
-  const handleLogout = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
-    stopRestPolling();
-    setUser(null);
-    setOrders([]);
-    setConnected(false);
-    setConnectionMode(null);
-    localStorage.removeItem('kds_user');
-  };
-
-  useEffect(() => {
-    const savedUser = localStorage.getItem('kds_user');
-    if (savedUser) {
-      try {
-        const parsed = JSON.parse(savedUser) as LoggedInUser;
-        setUser(parsed);
-        startRestPolling();
-        setLoading(false);
-      } catch {
-        localStorage.removeItem('kds_user');
-        setLoading(false);
-      }
-    } else {
-      setLoading(false);
-    }
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      stopRestPolling();
-    };
-  }, [startRestPolling, stopRestPolling]);
-
-  const filteredOrders = orders
-    .map((order) => ({
-      ...order,
-      items: (order.items || []).filter((item) => (item.status || 'pending') === activeTab),
-    }))
-    .filter((order) => order.items.length > 0);
-
-  const activeItem = modalItem?.item;
-  const nextStatus = activeItem ? NEXT_STATUS[activeItem.status || 'pending'] : null;
-  const prevStatus = activeItem ? PREV_STATUS[activeItem.status || 'pending'] : null;
-
-  if (loading || !user) {
+  if (kdsDisabled) {
     return (
-      <div className="min-h-screen bg-gray-100 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl shadow-xl p-8 w-full max-w-md">
-          <div className="text-center mb-8">
-            <ChefHat size={48} className="mx-auto text-brand mb-4" />
-            <h1 className="text-2xl font-bold text-gray-900">{t('kds.title')}</h1>
-            <p className="text-gray-500 mt-2">{t('kds.loginSubtitle')}</p>
-          </div>
-
-          <form onSubmit={handleLogin} className="space-y-4">
-            {loginError && (
-              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-                {loginError}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.email')}</label>
-              <input
-                type="email"
-                autoComplete="email"
-                value={loginEmail}
-                onChange={(e) => setLoginEmail(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
-                placeholder={t('auth.emailPlaceholder')}
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.password')}</label>
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="current-password"
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
-                  placeholder={t('auth.passwordPlaceholder')}
-                  required
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loginLoading}
-              className="w-full py-3 bg-brand text-white font-semibold rounded-lg hover:bg-brand/90 disabled:opacity-50"
-            >
-              {loginLoading ? t('auth.signingIn') : t('auth.signIn')}
-            </button>
-          </form>
-
-          <p className="text-xs text-gray-400 text-center mt-6">
-            {t('kds.loginHint')}
-          </p>
-        </div>
+      <div className="flex flex-col items-center justify-center h-screen gap-3 text-center px-6 bg-gray-900 text-white">
+        <h1 className="text-lg font-semibold">Kitchen Display is disabled</h1>
+        <p className="text-sm text-gray-400 max-w-sm">
+          This business has turned off the Kitchen Display System. Ask an owner or manager to re-enable it from Settings.
+        </p>
       </div>
     );
   }
 
-  return (
-    <div className="h-full flex flex-col">
-      <div className="shrink-0 mb-4">
-        <div className="flex items-center gap-3 mb-3">
-          <ChefHat size={24} className="text-brand" />
-          <div>
-            <h1 className="text-xl font-bold text-gray-900">{t('kds.title')}</h1>
-            <p className="text-xs text-gray-500">{user.name} ({user.role})</p>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            {connectionMode === 'websocket' ? (
-              <span title={t('kds.wsConnected')}><Wifi size={16} className="text-green-500" /></span>
-            ) : connectionMode === 'rest' ? (
-              <span title={t('kds.restPolling')}><WifiOff size={16} className="text-amber-500" /></span>
-            ) : null}
-            <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
-            <span className="text-xs text-gray-400">
-              {connected ? (connectionMode === 'websocket' ? t('kds.connectionLive') : t('kds.connectionPolling')) : t('kds.connectionConnecting')}
-            </span>
-            <button
-              onClick={handleLogout}
-              className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 ml-2"
-              title={t('nav.logout')}
-            >
-              <LogOut size={20} />
-            </button>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {(Object.keys(STATUS_CONFIG) as KitchenStatus[]).map((status) => {
-            const config = STATUS_CONFIG[status];
-            const count = counts[status] || 0;
-            const isActive = activeTab === status;
-            return (
-              <button
-                key={status}
-                onClick={() => setActiveTab(status)}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${
-                  isActive
-                    ? `${config.bg} ${config.text} ring-2 ring-current`
-                    : `${config.bg} ${config.text} opacity-50 hover:opacity-80`
-                }`}
-              >
-                <div className={`w-2 h-2 rounded-full ${config.color}`} />
-                {statusLabel(status)}
-                <span className="text-xs px-1.5 py-0.5 rounded-full bg-white/60">
-                  {count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto">
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4">
-          {filteredOrders.map((order) => (
-            <div
-              key={order.id}
-              className={`bg-white rounded-xl border-2 ${STATUS_CONFIG[activeTab].border} p-4 flex flex-col`}
-            >
-              <div className="flex justify-between items-center mb-3">
-                <div>
-                  <span className="font-bold text-lg">#{order.order_number}</span>
-                  <span className="text-xs text-gray-500 ml-2">
-                    {order.type.replace('_', ' ')}
-                    {order.table && ` — ${order.table.name}`}
-                  </span>
-                </div>
-                <div className="flex items-center gap-1 text-xs text-gray-400">
-                  <Clock size={12} />
-                  {getTimeSince(order.created_at)}
-                </div>
-              </div>
-
-              {order.special_instructions && (
-                <div className="mb-2 px-2 py-1.5 bg-amber-50 border border-amber-200 rounded-lg">
-                  <p className="text-sm text-amber-700 font-medium break-words">📝 {order.special_instructions}</p>
-                </div>
-              )}
-
-              <div className="space-y-2 flex-1">
-                {order.items?.map((item) => {
-                  const itemStatus = (item.status || 'pending') as KitchenStatus;
-                  const config = STATUS_CONFIG[itemStatus];
-
-                  return (
-                    <button
-                      key={item.id}
-                      onClick={() => setModalItem({ item, orderNumber: order.order_number })}
-                      className={`w-full text-left rounded-xl border-2 ${config.border} ${config.bg} px-3 py-2.5 transition-all active:scale-95 hover:brightness-95`}
-                    >
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${config.color}`} />
-                        <span className={`font-bold text-sm w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
-                        <span className="text-gray-900 text-sm font-semibold flex-1 truncate">{item.product_name}</span>
-                        <ChevronRight size={14} className="text-gray-400 shrink-0" />
-                      </div>
-                      {Array.isArray(item.addons) && item.addons.length > 0 && (
-                        <div className="ml-[26px] flex flex-wrap gap-1 mt-1">
-                          {item.addons.map((addon, i) => (
-                            <span key={i} className="text-[10px] bg-white/70 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200">
-                              + {addon.name}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      {item.special_instructions && (
-                        <p className="ml-[26px] text-[11px] text-red-600 italic mt-0.5 font-medium">
-                          {`"${item.special_instructions}"`}
-                        </p>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {filteredOrders.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-            <ChefHat size={48} className="mb-3 opacity-30" />
-            <p className="text-lg">{t('kds.emptyItems', { status: statusLabel(activeTab).toLowerCase() })}</p>
-            <p className="text-sm">{t('kds.emptyHint')}</p>
-          </div>
-        )}
-      </div>
-
-      {modalItem && activeItem && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
-          onClick={() => setModalItem(null)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col gap-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-400 font-medium mb-1">{t('kds.modalOrderNumber', { orderNumber: modalItem.orderNumber })}</p>
-                <h2 className="text-2xl font-bold text-gray-900 leading-tight">{activeItem.product_name}</h2>
-                <div className="flex items-center gap-2 mt-1.5">
-                  <span className={`text-sm font-bold ${STATUS_CONFIG[activeStatus(activeItem.status)].text}`}>
-                    {activeItem.quantity}×
-                  </span>
-                  <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_CONFIG[activeStatus(activeItem.status)].bg} ${STATUS_CONFIG[activeStatus(activeItem.status)].text}`}>
-                    <div className={`w-1.5 h-1.5 rounded-full ${STATUS_CONFIG[activeStatus(activeItem.status)].color}`} />
-                    {statusLabel(activeStatus(activeItem.status))}
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setModalItem(null)}
-                className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 shrink-0"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {Array.isArray(activeItem.addons) && activeItem.addons.length > 0 && (
-              <div className="bg-blue-50 rounded-xl p-3">
-                <p className="text-xs font-semibold text-blue-700 mb-1.5 uppercase tracking-wide">{t('kds.addonsLabel')}</p>
-                <div className="flex flex-wrap gap-1.5">
-                  {activeItem.addons.map((addon, i) => (
-                    <span key={i} className="text-sm bg-white text-blue-700 px-2.5 py-1 rounded-lg border border-blue-200 font-medium">
-                      + {addon.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {activeItem.special_instructions && (
-              <div className="bg-red-50 rounded-xl p-3">
-                <p className="text-xs font-semibold text-red-700 mb-1 uppercase tracking-wide">{t('kds.specialInstructionsLabel')}</p>
-                <p className="text-sm text-red-700 italic font-medium">{activeItem.special_instructions}</p>
-              </div>
-            )}
-
-            <div className="flex items-center justify-center gap-1.5">
-              {STATUS_ORDER.map((s, i) => (
-                <div key={s} className="flex items-center gap-1.5">
-                  <div className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
-                    (activeItem.status || 'pending') === s
-                      ? `${STATUS_CONFIG[s].bg} ${STATUS_CONFIG[s].text} ring-2 ring-current`
-                      : STATUS_ORDER.indexOf((activeItem.status || 'pending') as KitchenStatus) > i
-                        ? 'bg-gray-100 text-gray-400 line-through'
-                        : 'bg-gray-100 text-gray-400'
-                  }`}>
-                    {statusLabel(s)}
-                  </div>
-                  {i < STATUS_ORDER.length - 1 && <ChevronRight size={12} className="text-gray-300 shrink-0" />}
-                </div>
-              ))}
-            </div>
-
-            <div className="flex flex-col gap-3">
-              {nextStatus && (
-                <button
-                  onClick={() => updateItemStatus(activeItem.id, nextStatus)}
-                  disabled={updating === activeItem.id}
-                  className={`w-full py-5 rounded-2xl text-white text-xl font-bold transition-all active:scale-95 disabled:opacity-50 ${STATUS_CONFIG[nextStatus].btnBg}`}
-                >
-                  {updating === activeItem.id ? t('kds.updating') : t('kds.markAs', { status: statusLabel(nextStatus) })}
-                </button>
-              )}
-              {prevStatus && (
-                <button
-                  onClick={() => updateItemStatus(activeItem.id, prevStatus)}
-                  disabled={updating === activeItem.id}
-                  className="w-full py-4 rounded-2xl text-gray-600 text-base font-semibold border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-                >
-                  <ChevronLeft size={18} />
-                  {t('kds.backTo', { status: statusLabel(prevStatus) })}
-                </button>
-              )}
-              {!nextStatus && (
-                <div className="text-center py-4 text-gray-400 text-base font-medium">
-                  {t('kds.deliveredDone')}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+  if (conn.loading || !conn.user) return <KdsLoginForm conn={conn} />;
+  return <KdsWorkspace conn={conn} serverDefault={kdsDefaultView} />;
 }

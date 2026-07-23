@@ -73,7 +73,7 @@ export default function ProductsPage() {
 
   const [addonList, setAddonList] = useState<{ id?: number; name: string; price: number; is_active?: boolean }[]>([]);
   const [form, setForm] = useState({
-    name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '',
+    name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '', barcode: '',
     tax_type: 'inclusive', tax_rate: '5', description: '',
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
@@ -157,7 +157,7 @@ export default function ProductsPage() {
 
   const resetForm = () => {
     setForm({
-      name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '',
+      name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '', barcode: '',
       tax_type: 'inclusive', tax_rate: '5', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
@@ -176,6 +176,7 @@ export default function ProductsPage() {
       cost_price: String(product.cost_price || ''),
       cb_percent: String(product.cb_percent ?? 0),
       sku: product.sku || '',
+      barcode: product.barcode || '',
       tax_type: product.tax_type || 'inclusive',
       tax_rate: String(product.tax_rate || '5'),
       description: product.description || '',
@@ -201,6 +202,7 @@ export default function ProductsPage() {
         cost_price: form.cost_price ? Number(form.cost_price) : null,
         cb_percent: Number(form.cb_percent) || 0,
         sku: form.sku || null,
+        barcode: form.barcode || null,
         tax_type: form.tax_type,
         tax_rate: Number(form.tax_rate),
         description: form.description || null,
@@ -228,10 +230,10 @@ export default function ProductsPage() {
       resetForm();
       fetchData();
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { errors?: Record<string, string[]> } } };
+      const error = err as { response?: { data?: { errors?: Record<string, string[]>; error?: string } } };
       const firstError = error.response?.data?.errors
         ? Object.values(error.response.data.errors)[0]?.[0]
-        : t('products.failedToSave');
+        : error.response?.data?.error || t('products.failedToSave');
       toast.error(firstError);
     }
   };
@@ -453,6 +455,7 @@ export default function ProductsPage() {
                     <div>
                       <p className="font-medium text-gray-900">{product.name}</p>
                       {product.sku && <p className="text-xs text-gray-400 mt-0.5">{t('products.skuLabel', { sku: product.sku })}</p>}
+                      {product.barcode && <p className="text-xs text-gray-400 mt-0.5 font-mono">{t('products.barcodeLabel', { barcode: product.barcode })}</p>}
                       {product.tags && product.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1.5">
                           {product.tags.map((tag: string) => <TagBadge key={tag} tag={tag} />)}
@@ -547,6 +550,13 @@ export default function ProductsPage() {
                   <input type="text" value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldBarcode')}</label>
+                <input type="text" value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })}
+                  placeholder={t('products.fieldBarcodePlaceholder')}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none font-mono" />
+                <p className="text-xs text-gray-400 mt-1">{t('products.fieldBarcodeHint')}</p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

@@ -7,7 +7,7 @@
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
-import { formatDate, formatTime } from './format-date';
+import { formatTime } from './format-date';
 
 export interface KotOptions {
   /** 58 mm (32 chars) or 80 mm (48 chars). Default: 58 */
@@ -73,10 +73,14 @@ export function buildKotBytes(
     enc.bold(true).text(truncate(qtyName, cols)).newline();
     enc.bold(false);
 
-    // Addons
-    if (item.addons && item.addons.length > 0) {
-      for (const addon of item.addons) {
-        enc.text(`   + ${truncate(addon.name, cols - 4)}`).newline();
+    // Addons can come from older/API paths as a JSON string. Normalize before
+    // iterating so a stored string cannot abort KOT printing.
+    const addons = parseAddons(item.addons);
+    if (addons.length > 0) {
+      for (const addon of addons) {
+        if (addon.name) {
+          enc.text(`   + ${truncate(addon.name, cols - 4)}`).newline();
+        }
       }
     }
 
@@ -107,4 +111,25 @@ export function buildKotBytes(
 
 function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str;
+}
+
+function parseAddons(addons: unknown): Array<{ name: string }> {
+  if (!addons) return [];
+  if (typeof addons === 'string') {
+    try {
+      const parsed = JSON.parse(addons);
+      return Array.isArray(parsed) ? parsed.filter(hasAddonName) : [];
+    } catch {
+      return [];
+    }
+  }
+  return Array.isArray(addons) ? addons.filter(hasAddonName) : [];
+}
+
+function hasAddonName(addon: unknown): addon is { name: string } {
+  return (
+    typeof addon === 'object' &&
+    addon !== null &&
+    typeof (addon as { name?: unknown }).name === 'string'
+  );
 }

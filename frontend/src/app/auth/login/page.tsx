@@ -185,6 +185,13 @@ function LoginContent() {
               <Button type="submit" disabled={loading} className="w-full" size="lg">
                 {loading ? t('auth.signingIn') : t('auth.signIn')}
               </Button>
+              <button
+                type="button"
+                onClick={() => router.push('/auth/recover')}
+                className="w-full text-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {t('auth.forgotPasswordLink')}
+              </button>
             </form>
           </CardContent>
         </Card>

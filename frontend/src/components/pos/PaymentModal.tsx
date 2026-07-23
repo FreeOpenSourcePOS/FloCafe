@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, Wallet, Plus, Trash2, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent } from 'lucide-react';
+import { X, Wallet, Plus, Trash2, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -12,6 +12,8 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { useI18n } from '@/hooks/useI18n';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
+import { sendBillViaFlo } from '@/lib/whatsapp-share';
 
 interface Props {
   bill: Bill;
@@ -37,6 +39,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const effectiveCustomerId = bill.customer_id || cartCustomerId || null;
   const { confirm, ConfirmDialog } = useConfirm();
   const { t } = useI18n();
+  const isWhatsAppReady = useWhatsAppReady();
+  const [justPaid, setJustPaid] = useState(false);
+  const [sendingWa, setSendingWa] = useState(false);
   const [payments, setPayments] = useState<Payment[]>([
     { method: 'cash', amount: remaining.toString() },
   ]);
@@ -217,12 +222,26 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       } else {
         toast.success(t('pos.paymentRecorded'));
       }
-      onPaid();
+      setJustPaid(true);
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
       toast.error(axiosErr.response?.data?.error || t('pos.paymentFailed'));
     } finally {
       setProcessing(false);
+    }
+  };
+
+  const handleSendWhatsApp = async () => {
+    const phone = cartCustomer?.phone;
+    if (!phone) {
+      toast.error(t('whatsapp.send.customerPhoneRequired'));
+      return;
+    }
+    setSendingWa(true);
+    try {
+      await sendBillViaFlo(bill, phone, currency, t);
+    } finally {
+      setSendingWa(false);
     }
   };
 
@@ -526,10 +545,29 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           )}
         </div>
 
-        <div className="px-5 pb-5 border-t border-gray-100 pt-3">
-          <Button onClick={handlePay} disabled={processing || totalPayment < remaining - 0.01} className="w-full" size="lg">
-            {processing ? t('pos.processingPayment') : `${t('pos.pay')} ${currencyFmt(totalPayment)}`}
-          </Button>
+        <div className="px-5 pb-5 border-t border-gray-100 pt-3 space-y-2">
+          {justPaid ? (
+            <>
+              {isWhatsAppReady && cartCustomer?.phone && (
+                <Button
+                  onClick={handleSendWhatsApp}
+                  disabled={sendingWa}
+                  className="w-full bg-emerald-600 hover:bg-emerald-700"
+                  size="lg"
+                >
+                  <Send size={16} className="mr-2" />
+                  {sendingWa ? t('pos.processingPayment') : t('pos.sendViaWhatsApp')}
+                </Button>
+              )}
+              <Button onClick={onPaid} variant="outline" className="w-full" size="lg">
+                {t('common.done')}
+              </Button>
+            </>
+          ) : (
+            <Button onClick={handlePay} disabled={processing || totalPayment < remaining - 0.01} className="w-full" size="lg">
+              {processing ? t('pos.processingPayment') : `${t('pos.pay')} ${currencyFmt(totalPayment)}`}
+            </Button>
+          )}
         </div>
       </div>
       {ConfirmDialog}

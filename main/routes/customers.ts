@@ -36,7 +36,8 @@ router.delete('/admin/cleanup', requireRole('owner'), (req: Request, res: Respon
     const result = db.prepare("DELETE FROM customers WHERE id IS NULL").run();
     res.json({ message: `Deleted ${result.changes} customers with null IDs` });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -53,7 +54,8 @@ router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'waiter'), (req
     
     res.json({ invalidPhonesCount: result.count });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -103,7 +105,8 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
     const customers = db.prepare(query).all(...params);
     res.json({ data: customers });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -127,7 +130,8 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
 
     res.json({ customer: { ...customer, walletBalance, loyaltyHistory, recentOrders } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -147,7 +151,8 @@ router.get('/:id/wallet', requireRole('owner', 'manager', 'cashier', 'waiter'), 
 
     res.json({ balance, transactions });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -224,7 +229,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
     res.status(201).json({ customer });
   } catch (error: any) {
     console.error('[Customer POST error]', error);
-    res.status(500).json({ message: 'Failed to create customer: ' + error.message });
+    res.status(500).json({ message: 'Failed to create customer' });
   }
 });
 
@@ -276,7 +281,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const updated = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
     res.json({ customer: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -293,7 +299,8 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
     db.prepare('UPDATE customers SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Customer deleted' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

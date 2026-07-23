@@ -3,12 +3,15 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
-import { initDatabase, closeDatabase } from './db';
+import { initDatabase, closeDatabase, SchemaVersionMismatchError } from './db';
 import { startServer, stopServer, getLocalIP, isServerRunning } from './server';
 import { cloudSync } from './services/cloud-sync';
+import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry';
+import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { initPrinter, printReceipt, printKOT } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
+import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 
@@ -142,8 +145,12 @@ function checkForUpdates(): void {
   // Linux: auto-updater is not supported.
   // AppImage requires the APPIMAGE env var (not always set) and the deb
   // package is managed by apt — electron-updater cannot update either.
-  // Skip silently so no error is logged and no error status is sent to the UI.
-  if (process.platform === 'linux') return;
+  // Still tell the renderer so "Check for Updates" doesn't sit there doing
+  // nothing forever when clicked.
+  if (process.platform === 'linux') {
+    mainWindow?.webContents.send('update-status', { status: 'unsupported' });
+    return;
+  }
 
   if (isStoreBuild) {
     log.debug('[Update] Store build — updates handled by the platform store');
@@ -580,11 +587,15 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Starting local server...');
     await startServer();
 
-    console.log('[Flo] Starting cloud sync...');
     cloudSync.start();
+    telemetry.start();
+    googleDrive.start();
 
     console.log('[Flo] Starting KDS server on port 3002...');
     await startKdsServer();
+
+    console.log('[Flo] Initializing WhatsApp service...');
+    initWhatsAppFromDb();
 
     console.log('[Flo] Starting mDNS advertisement...');
     startMdns();
@@ -625,9 +636,12 @@ async function initialize(): Promise<void> {
     createTray();
     createMenu();
     // Auto-updater: not supported on Linux (AppImage needs APPIMAGE env var;
-    // deb is managed by apt). Skip entirely on Linux to avoid error noise.
-    if (!isStoreBuild && process.platform !== 'linux') {
-      setupAutoUpdater();
+    // deb is managed by apt), so only wire up electron-updater's listeners
+    // there. checkForUpdates() itself already no-ops safely on Linux (with
+    // an 'unsupported' status sent to the renderer), so still run the
+    // initial check on Linux to surface that status without requiring a click.
+    if (!isStoreBuild) {
+      if (process.platform !== 'linux') setupAutoUpdater();
       setTimeout(() => checkForUpdates(), 5000);
     }
 
@@ -635,6 +649,24 @@ async function initialize(): Promise<void> {
   } catch (error) {
     console.error('[Flo] Initialization error:', error);
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
+
+    // Best-effort: report the fatal startup failure so support can see which
+    // installs are stuck on a stale build without waiting for a user to
+    // describe the error message themselves. Never let this delay/block the
+    // actual quit — db may not even be open yet depending on where init failed.
+    try {
+      const payload: Record<string, unknown> = {
+        error_message: String(error instanceof Error ? error.message : error).slice(0, 500),
+      };
+      if (error instanceof SchemaVersionMismatchError) {
+        payload.db_schema_version = error.dbVersion;
+        payload.app_schema_version = error.appVersion;
+      }
+      await sendTelemetryEvent('startup_failed', payload);
+    } catch (telemetryError) {
+      console.error('[Flo] Failed to report startup error via telemetry:', telemetryError);
+    }
+
     app.quit();
     process.exit(1);
   }
@@ -670,6 +702,9 @@ function runCleanup(): void {
 
   // Tear down services — each wrapped so one failure doesn't block others
   try { cloudSync.stop(); } catch (e) { console.error('[Flo] cloudSync.stop error:', e); }
+  try { telemetry.stop(); } catch (e) { console.error('[Flo] telemetry.stop error:', e); }
+  try { googleDrive.stop(); } catch (e) { console.error('[Flo] googleDrive.stop error:', e); }
+  try { shutdownWhatsApp(); } catch (e) { console.error('[Flo] shutdownWhatsApp error:', e); }
   try { stopMdns(); } catch (e) { console.error('[Flo] stopMdns error:', e); }
   try { stopKdsServer(); } catch (e) { console.error('[Flo] stopKdsServer error:', e); }
   try { stopServer(); } catch (e) { console.error('[Flo] stopServer error:', e); }

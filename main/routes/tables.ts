@@ -66,7 +66,8 @@ router.get('/', (req: Request, res: Response) => {
     const tables = rows.map((t: any) => tableShape(t, activeOrderForTable(db, t.id)));
     res.json({ tables });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -83,7 +84,8 @@ router.get('/:id', (req: Request, res: Response) => {
     // Normalize: frontend expects `name`, schema column is `number`
     res.json({ table: tableShape(table as any, activeOrder) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -119,7 +121,8 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(tableId);
     res.status(201).json({ table });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -157,7 +160,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
     res.json({ table: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -183,7 +187,8 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
     res.json({ table: tableShape(updated as any) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -202,7 +207,8 @@ router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, r
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
     res.json({ table: tableShape(updated as any) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -282,7 +288,9 @@ router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'waite
       targetTable: moved.targetTable,
     });
   } catch (error: any) {
-    res.status(error.status || 500).json({ error: error.message });
+    const statusCode = error.status || 500;
+    console.error('[API] Table move failed:', error);
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Table move failed' : error.message });
   }
 });
 
@@ -311,7 +319,8 @@ router.patch('/:id/status', requireRole('owner', 'manager'), (req: Request, res:
     const updated = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id);
     res.json({ table: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

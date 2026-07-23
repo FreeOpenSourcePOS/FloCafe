@@ -25,7 +25,7 @@ const {
   initTestDb, createApp, startServer,
   seedOwnerUser,
   api, assert, assertEqual,
-  closeDatabase, getDatabase,
+  closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
 
 const { heldOrderRoutes } = require('../main/routes/held-orders');
@@ -90,6 +90,18 @@ async function main() {
     const verifyRes = await api(baseUrl, '/api/held-orders', { headers: authHeader });
     assertEqual(verifyRes.data.orders.length, 0, 'Held orders list is empty after deletion');
     console.log('  ✓ DELETE /held-orders removes order correctly');
+
+    // ─── Scenario D: unexpected errors do not leak implementation details ───
+    console.log('\n─── Scenario D: held-order errors are sanitized ───');
+    db.prepare(`
+      INSERT INTO held_orders (id, table_id, items, customer_id, guest_count, order_notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('ho-malformed', 'tbl-malformed', '{invalid-json', null, 1, '', now(), now());
+    const errorRes = await api(baseUrl, '/api/held-orders', { headers: authHeader });
+    assertEqual(errorRes.status, 500, 'GET /held-orders returns 500 for malformed stored data');
+    assertEqual(errorRes.data.error, 'Internal server error', 'Unexpected error uses generic client message');
+    assert(!String(errorRes.data.error).includes('JSON'), 'Error response does not expose parser details');
+    console.log('  ✓ Held-order errors are sanitized');
 
     console.log('\n✅ All held orders tests passed');
   } finally {

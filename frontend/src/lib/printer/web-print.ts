@@ -13,6 +13,16 @@ import { formatDate } from './format-date';
 
 export type PaperSize = 'a4' | 'a5' | 'thermal58' | 'thermal80';
 
+/** Encodes HTML entity characters so database-sourced values can't inject markup/scripts into the bill print window. */
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 export interface WebPrintOptions {
   paperSize?: PaperSize;
   includeGst?: boolean;
@@ -90,7 +100,7 @@ export function generateBillHtml(
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Bill #${bill.bill_number}</title>
+  <title>Bill #${escapeHtml(bill.bill_number)}</title>
   <style>
     ${styles}
     @media print {
@@ -104,21 +114,21 @@ export function generateBillHtml(
     ${isReprint ? `<div class="reprint-banner">** REPRINT **</div>` : ''}
     <!-- Header -->
     <div class="header">
-      ${displayName ? `<h1>${displayName}</h1>` : ''}
-      ${address ? `<p>${address.replace(/\n/g, '<br>')}</p>` : ''}
-      ${phone ? `<p>Ph: ${phone}</p>` : ''}
-      ${gstin ? `<p>GSTIN: ${gstin}</p>` : ''}
+      ${displayName ? `<h1>${escapeHtml(displayName)}</h1>` : ''}
+      ${address ? `<p>${escapeHtml(address).replace(/\n/g, '<br>')}</p>` : ''}
+      ${phone ? `<p>Ph: ${escapeHtml(phone)}</p>` : ''}
+      ${gstin ? `<p>GSTIN: ${escapeHtml(gstin)}</p>` : ''}
     </div>
 
     <!-- Bill Details -->
     <div class="bill-details">
       <table>
         <tr>
-          <td><strong>Bill #:</strong> ${bill.bill_number}</td>
+          <td><strong>Bill #:</strong> ${escapeHtml(bill.bill_number)}</td>
           <td><strong>Date:</strong> ${formatDate(order?.created_at, locale)}</td>
         </tr>
-        ${order?.table?.name ? `<tr><td><strong>Table:</strong> ${order.table.name}</td><td></td></tr>` : ''}
-        ${order?.customer?.name ? `<tr><td><strong>Customer:</strong> ${order.customer.name}${order.customer.phone ? ` (${order.customer.phone})` : ''}</td><td></td></tr>` : ''}
+        ${order?.table?.name ? `<tr><td><strong>Table:</strong> ${escapeHtml(order.table.name)}</td><td></td></tr>` : ''}
+        ${order?.customer?.name ? `<tr><td><strong>Customer:</strong> ${escapeHtml(order.customer.name)}${order.customer.phone ? ` (${escapeHtml(order.customer.phone)})` : ''}</td><td></td></tr>` : ''}
       </table>
     </div>
 
@@ -136,9 +146,9 @@ export function generateBillHtml(
         ${items.map(item => `
           <tr>
             <td>
-              ${item.product_name}
-              ${item.addons && item.addons.length > 0 ? `<br><small class="text-muted">${item.addons.map(a => `+ ${a.name}`).join(', ')}</small>` : ''}
-              ${item.special_instructions ? `<br><small class="text-italic">${item.special_instructions}</small>` : ''}
+              ${escapeHtml(item.product_name)}
+              ${item.addons && item.addons.length > 0 ? `<br><small class="text-muted">${item.addons.map(a => `+ ${escapeHtml(a.name)}`).join(', ')}</small>` : ''}
+              ${item.special_instructions ? `<br><small class="text-italic">${escapeHtml(item.special_instructions)}</small>` : ''}
             </td>
             <td class="text-right">${item.quantity}</td>
             <td class="text-right">${formatAmount(Number(item.unit_price), currency, locale)}</td>
@@ -191,7 +201,7 @@ export function generateBillHtml(
 
     <!-- Footer -->
     <div class="footer">
-      ${footerNote ? `<p>${footerNote}</p>` : '<p>Thank you for your visit!</p>'}
+      ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : '<p>Thank you for your visit!</p>'}
       ${includeGst ? '<p>Rates inclusive of GST</p>' : ''}
     </div>
   </div>

@@ -33,7 +33,8 @@ router.get('/', (req: Request, res: Response) => {
 
     res.json({ categories: categoriesWithChildren });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -50,7 +51,8 @@ router.get('/:id', (req: Request, res: Response) => {
 
     res.json({ category: { ...category, children, products } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -74,7 +76,8 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
     res.status(201).json({ category });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -103,7 +106,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const updated = db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.id);
     res.json({ category: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -149,7 +153,8 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
     db.prepare('UPDATE categories SET deleted_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Category deleted' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

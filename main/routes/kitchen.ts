@@ -1,10 +1,11 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, parseItemJson } from '../db';
-import { requireRole } from '../middleware/security';
+import { getDatabase, parseItemJson, attachEffectiveAddons } from '../db';
+import { requireRole, requireKdsEnabled } from '../middleware/security';
 
 const router = Router();
 
 router.use(requireRole('chef', 'manager', 'owner'));
+router.use(requireKdsEnabled);
 
 // GET /api/kitchen/orders — returns active orders with items for KDS display
 router.get('/orders', (req: Request, res: Response) => {
@@ -19,7 +20,7 @@ router.get('/orders', (req: Request, res: Response) => {
     `).all();
 
     const ordersWithItems = orders.map((order: any) => {
-      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+      const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
       const tableRow = order.table_id
         ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
         : null;
@@ -41,7 +42,8 @@ router.get('/orders', (req: Request, res: Response) => {
     res.json({ orders: ordersWithItems, counts: countMap });
   } catch (error: any) {
     console.error('[Kitchen] Orders fetch error:', error);
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

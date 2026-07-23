@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { ArrowLeft, ArrowRight, Check, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { COUNTRIES, getCountryByCode, countryName, type Country } from '@/lib/countries';
 import { getBrowserLanguage, t as translate, type Language } from '@/lib/i18n';
@@ -26,6 +26,10 @@ const SERVICE_MODELS: Array<{ value: ServiceModel }> = [
   { value: 'qsr' },
   { value: 'finedine' },
 ];
+
+// Mirrors main/services/cloud-sync.ts DEFAULT_CLOUD_SERVER_URL — kept in sync
+// manually since the frontend can't import backend TS modules directly.
+const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
 export default function SetupPage() {
   const { logout } = useAuthStore();
@@ -49,6 +53,7 @@ export default function SetupPage() {
     business_name: '',
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [anonymousDataConsent, setAnonymousDataConsent] = useState(true);
   const passwordsEntered = form.password.length > 0 && form.confirmPassword.length > 0;
   const passwordsMatch = !passwordsEntered || form.password === form.confirmPassword;
 
@@ -56,6 +61,18 @@ export default function SetupPage() {
   const [masterPin, setMasterPin] = useState('');
   const [masterPinConfirm, setMasterPinConfirm] = useState('');
   const masterPinValid = /^\d{4}$/.test(masterPin) && masterPin === masterPinConfirm;
+
+  const [cloudEnabled, setCloudEnabled] = useState(false);
+  const [cloudServerUrl, setCloudServerUrl] = useState(DEFAULT_CLOUD_SERVER_URL);
+
+  const isPasswordValid = (password: string) => {
+    if (!password || password.length < 8) return false;
+    if (!/[A-Z]/.test(password)) return false;
+    if (!/[a-z]/.test(password)) return false;
+    if (!/[0-9]/.test(password)) return false;
+    return true;
+  };
+  const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
 
   useEffect(() => {
     api.get('/auth/setup/status')
@@ -86,6 +103,8 @@ export default function SetupPage() {
 
   const completeSetup = () => {
     usePosSettingsStore.getState().setLanguage(language);
+    // Persist language server-side so the standalone KDS inherits it.
+    api.put(`/settings/language`, { value: language }).catch(() => {});
     logout();
     toast.success(t('setup.completeSetupSuccess'));
     window.location.replace('/auth/login');
@@ -94,6 +113,10 @@ export default function SetupPage() {
   const validateOwner = () => {
     if (!form.name.trim() || !form.email.trim() || !form.password) {
       toast.error(t('setup.errorNameRequired'));
+      return false;
+    }
+    if (!isPasswordValid(form.password)) {
+      toast.error('Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.');
       return false;
     }
     if (form.password !== form.confirmPassword) {
@@ -143,7 +166,10 @@ export default function SetupPage() {
         setup_profile: profile,
         service_model: serviceModel,
         terms_accepted: termsAccepted,
+        anonymous_data_consent: anonymousDataConsent,
         master_pin: masterPinAvailable ? masterPin : undefined,
+        cloud_sync_enabled: cloudEnabled,
+        cloud_server_url: cloudEnabled ? (cloudServerUrl.trim() || DEFAULT_CLOUD_SERVER_URL) : undefined,
         ...countryPayload,
       });
       completeSetup();
@@ -165,7 +191,7 @@ export default function SetupPage() {
         </div>
 
         <div className="flex justify-center gap-2 mb-8">
-          {[1, 2, 3, 4, 5].map((s) => (
+          {[1, 2, 3, 4, 5, 6].map((s) => (
             <div
               key={s}
               className={`w-3 h-3 rounded-full transition-colors ${
@@ -275,6 +301,9 @@ export default function SetupPage() {
                   <h2 className="text-xl font-semibold mb-2">{t('setup.setMasterPinTitle')}</h2>
                   <p className="text-muted-foreground text-sm">
                     {t('setup.setMasterPinDescription')}
+                  </p>
+                  <p className="text-muted-foreground text-xs mt-2 bg-muted rounded-lg p-3">
+                    {t('setup.masterPinRecoveryNote')}
                   </p>
                 </div>
 
@@ -431,6 +460,11 @@ export default function SetupPage() {
                       </div>
                     </div>
                   </div>
+                  {!passwordMeetsRequirements && (
+                    <p className="text-xs font-medium text-red-600">
+                      Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.
+                    </p>
+                  )}
                   {passwordsEntered && (
                     <p className={`text-xs font-medium ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}>
                       {passwordsMatch ? t('setup.passwordsMatch') : t('setup.passwordsMismatch')}
@@ -471,7 +505,21 @@ export default function SetupPage() {
                     </span>
                   </label>
 
-                  <Button type="submit" disabled={!passwordsMatch || !termsAccepted} className="w-full" size="lg">
+                  <label className="flex items-start gap-2 text-sm text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={anonymousDataConsent}
+                      onChange={(e) => setAnonymousDataConsent(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                    />
+                    <span>
+                      <span className="font-medium text-foreground">{t('setup.anonymousDataTitle')}</span>
+                      <span className="block mt-1">{t('setup.anonymousDataDescription')}</span>
+                    </span>
+                  </label>
+
+
+                  <Button type="submit" disabled={!passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
                     {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </form>
@@ -537,6 +585,60 @@ export default function SetupPage() {
               <div className="space-y-6">
                 <button
                   onClick={() => setStep(4)}
+                  className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <ArrowLeft className="w-4 h-4" /> {t('setup.back')}
+                </button>
+
+                <div className="text-center">
+                  <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
+                    <Cloud className="w-5 h-5 text-primary" />
+                  </div>
+                  <h2 className="text-xl font-semibold mb-2">{t('setup.cloudTitle')}</h2>
+                  <p className="text-muted-foreground text-sm">{t('setup.cloudSubtitle')}</p>
+                </div>
+
+                <label className="flex items-start gap-3 cursor-pointer p-4 rounded-xl border-2 border-gray-200">
+                  <input
+                    type="checkbox"
+                    checked={cloudEnabled}
+                    onChange={(e) => setCloudEnabled(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                  />
+                  <span>
+                    <span className="font-medium text-foreground">{t('setup.cloudEnableLabel')}</span>
+                    <span className="block text-sm text-muted-foreground mt-1">{t('setup.cloudEnableHint')}</span>
+                  </span>
+                </label>
+
+                {cloudEnabled && (
+                  <div className="space-y-2">
+                    <Label htmlFor="cloud-server-url">{t('setup.cloudUrlLabel')}</Label>
+                    <Input
+                      id="cloud-server-url"
+                      type="url"
+                      value={cloudServerUrl}
+                      onChange={(e) => setCloudServerUrl(e.target.value)}
+                      placeholder={DEFAULT_CLOUD_SERVER_URL}
+                    />
+                    <p className="text-xs text-muted-foreground">{t('setup.cloudUrlHint')}</p>
+                  </div>
+                )}
+
+                <p className="text-xs text-muted-foreground bg-muted rounded-lg p-3">
+                  {cloudEnabled ? t('setup.cloudRecoveryNoteEnabled') : t('setup.cloudRecoveryNoteDisabled')}
+                </p>
+
+                <Button onClick={() => setStep(6)} className="w-full" size="lg">
+                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            )}
+
+            {step === 6 && (
+              <div className="space-y-6">
+                <button
+                  onClick={() => setStep(5)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
                   <ArrowLeft className="w-4 h-4" /> {t('setup.back')}

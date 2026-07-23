@@ -4,7 +4,7 @@
  * Tests:
  * A) validateImageUrl — server-side validation of Base64 data URIs
  * B) PUT /:id — COALESCE fix for image_url (clear image, don't touch image)
- * C) GET /:id/image — serve Base64, ETag, legacy URL redirect, 404
+ * C) GET /:id/image — serve Base64, ETag, reject legacy external URLs, 404
  * D) GET / — has_image flag computed, image_url stripped from response
  * E) POST /fetch-url — CORS proxy (mocked external fetch)
  * F) POST / — create product with image_url validation
@@ -200,15 +200,15 @@ async function main() {
     });
     assertEqual(notModifiedResponse.status, 304, 'C2: 304 Not Modified on matching ETag');
 
-    // C3: Legacy URL redirect
+    // C3: Legacy external URL must not become an open redirect
     // Manually set image_url to a legacy URL
     db.prepare('UPDATE products SET image_url = ? WHERE id = ?').run(LEGACY_URL, 'prod-1');
     const redirectResponse = await (globalThis as any).fetch(`${baseUrl}/api/products/prod-1/image`, {
       headers: authHeader,
       redirect: 'manual',
     });
-    assertEqual(redirectResponse.status, 302, 'C3: Legacy URL returns 302 redirect');
-    assertEqual(redirectResponse.headers.get('location'), LEGACY_URL, 'C3: Redirect location is correct');
+    assertEqual(redirectResponse.status, 404, 'C3: Legacy external URL returns 404');
+    assertEqual(redirectResponse.headers.get('location'), null, 'C3: Legacy external URL has no redirect location');
 
     // Restore valid image for remaining tests
     db.prepare('UPDATE products SET image_url = ? WHERE id = ?').run(VALID_PNG, 'prod-1');

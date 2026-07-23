@@ -15,12 +15,15 @@ import {
   LogOut,
   PanelLeft,
   ChefHat,
+  UserCircle,
+  MessageCircle,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
 import { useI18n } from '@/hooks/useI18n';
+import { useConfirm } from '@/hooks/use-confirm';
 import {
   Sidebar,
   SidebarContent,
@@ -40,6 +43,7 @@ const ALL_NAV_ITEMS = [
   { href: '/pos', labelKey: 'nav.pos', icon: ShoppingCart, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard, roles: ['owner'], businessTypes: null },
   { href: '/orders', labelKey: 'nav.orders', icon: ClipboardList, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
+  { href: '/whatsapp', labelKey: 'nav.whatsapp', icon: MessageCircle, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/products', labelKey: 'nav.products', icon: Package, roles: ['owner', 'manager'], businessTypes: null },
   { href: '/tables', labelKey: 'nav.tables', icon: Grid3X3, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
   { href: '/settings?tab=kds', labelKey: 'nav.kds', icon: ChefHat, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
@@ -50,16 +54,21 @@ const ALL_NAV_ITEMS = [
 
 export default function AppSidebar() {
   const pathname = usePathname();
-  const { currentTenant, logout } = useAuthStore();
-  const { tablesRequired, setTablesRequired } = usePosSettingsStore();
+  const { user, currentTenant, logout } = useAuthStore();
+  const { tablesRequired, kdsEnabled, whatsappEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled } = usePosSettingsStore();
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const { t } = useI18n();
+  const { confirm, ConfirmDialog } = useConfirm();
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
 
   const role = currentTenant?.role || 'cashier';
   const businessType = currentTenant?.business_type || 'restaurant';
   const navItems = ALL_NAV_ITEMS.filter((item) => {
     if (item.href === '/tables' && !tablesRequired) return false;
+    // KDS disabled → hide the nav entry entirely (issue #133).
+    if (item.href === '/settings?tab=kds' && !kdsEnabled) return false;
+    // WhatsApp integration not enabled on this tenant → hide the nav entry.
+    if (item.href === '/whatsapp' && !whatsappEnabled) return false;
     return item.roles.includes(role)
       && (item.businessTypes === null || item.businessTypes.includes(businessType));
   });
@@ -72,7 +81,17 @@ export default function AppSidebar() {
         setTablesRequired(typeof res.data.tables_required === 'boolean' ? res.data.tables_required : true);
       })
       .catch(() => { });
-  }, [currentTenant, setTablesRequired]);
+    api.get('/settings/kds_enabled')
+      .then((res) => setKdsEnabled(res.data.setting?.value !== 'false'))
+      .catch(() => { });
+    // Sync the WhatsApp enabled flag from the backend so the sidebar shows
+    // the nav entry only when the integration is actually enabled on this
+    // tenant. The WhatsApp page also writes the store on enable/disable so
+    // the sidebar updates without a refetch when the user toggles.
+    api.get('/whatsapp/status')
+      .then((res) => setWhatsappEnabled(!!res.data?.enabled))
+      .catch(() => { });
+  }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled]);
 
   return (
     <Sidebar collapsible="icon">
@@ -131,7 +150,13 @@ export default function AppSidebar() {
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={logout} tooltip={t('nav.logoutTooltip')}>
+            <SidebarMenuButton tooltip={user?.name || user?.email || t('nav.user', { defaultValue: 'User' })}>
+              <UserCircle />
+              <span className="truncate">{user?.name || user?.email || t('nav.user', { defaultValue: 'User' })}</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+          <SidebarMenuItem>
+            <SidebarMenuButton onClick={async () => { if (await confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) logout(); }} tooltip={t('nav.logoutTooltip')}>
               <LogOut />
               <span>{t('nav.logout')}</span>
             </SidebarMenuButton>
@@ -139,6 +164,7 @@ export default function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
       <SidebarRail />
+      {ConfirmDialog}
     </Sidebar>
   );
 }

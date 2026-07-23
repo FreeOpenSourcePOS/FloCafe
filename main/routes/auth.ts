@@ -5,9 +5,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, now } from '../db';
-import { isMasterPinAvailable, setMasterPin } from '../services/master-pin';
+import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode } from '../countries';
+import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 
 const router = Router();
 
@@ -346,7 +347,8 @@ router.post('/login', authRateLimit(), (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('[Auth] Login error:', error);
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -480,7 +482,82 @@ router.post('/password/change', (req: Request, res: Response) => {
 
     res.json({ message: 'Password changed successfully' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── POST /api/auth/recover-password ───────────────────────────────────────────
+// Local, unauthenticated-but-PIN-gated recovery for a locked-out owner (#127).
+//
+// Deliberately does NOT require a JWT/session — that's the whole point: the
+// owner has no working credentials. Local proof of ownership is the Master
+// PIN instead (see main/services/master-pin.ts). This endpoint only ever
+// updates one existing owner's password column; it can never create,
+// reinitialize, or wipe anything — that stays behind /api/db-tools/initialize
+// (owner session + Master PIN + explicit confirmation phrase).
+//
+// No remote backdoor: nothing here lets a Flo cloud server or anyone without
+// physical/local access to this machine set the password. See #128 for the
+// signup-time copy explaining this to the owner, and the scope note in this
+// PR for why the optional cloud/email identity-verification tier described in
+// the issue is intentionally NOT implemented here (no cloud server exists in
+// this repo to issue the short-lived signed grant safely).
+
+router.post('/recover-password', authRateLimit(), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+
+    // First-run setup is the only recovery path when there is no owner yet —
+    // never let this endpoint substitute for /setup/initialize.
+    if (getUserCount(db) === 0) {
+      return res.status(409).json({ error: 'Setup has not been completed yet. Use first-run setup to create the owner account.' });
+    }
+
+    const email = normalizeEmail(req.body?.email);
+    const { master_pin, new_password } = req.body || {};
+
+    if (!email || !isValidEmail(email)) {
+      return res.status(400).json({ error: 'A valid email is required' });
+    }
+    if (!new_password || !validatePassword(new_password)) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
+    }
+
+    // Rate-limit key is IP-scoped only (not email-scoped) so an attacker can't
+    // reset the Master PIN attempt counter simply by guessing a different
+    // email address on each request.
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const pinResult = authorizeMasterPin(master_pin, `auth:recover-password:${ip}`);
+    if (!pinResult.ok) {
+      return res.status(pinResult.status).json({ error: pinResult.error });
+    }
+
+    const user = db.prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1')
+      .get(email, INITIAL_ADMIN_ROLE) as any;
+    if (!user) {
+      return res.status(404).json({ error: 'No active owner account found with that email on this install' });
+    }
+
+    const hashedPassword = bcrypt.hashSync(new_password, 10);
+    db.prepare('UPDATE users SET password = ?, updated_at = ? WHERE id = ?').run(hashedPassword, now(), user.id);
+
+    // Local audit trail — this codebase has no dedicated audit-events table,
+    // so we follow its existing convention: a tagged console log (grep-able
+    // in the app's log file) plus a timestamp/identity pair in `settings`,
+    // the same generic key/value mechanism already used for e.g.
+    // `telemetry_last_ping_at`.
+    upsertSettings(db, {
+      last_password_recovery_at: now(),
+      last_password_recovery_email: email,
+    });
+    console.warn(`[Auth] Password recovery: owner password for ${email} was reset locally via Master PIN`);
+
+    res.json({ message: 'Password reset successfully. You can now log in with your new password.' });
+  } catch (error: any) {
+    console.error('[Auth] Password recovery error:', error);
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -500,7 +577,8 @@ router.get('/setup/status', (_req: Request, res: Response) => {
       masterPinAvailable: isMasterPinAvailable(),
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -533,7 +611,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       tax_registered,
       billing_type,
       terms_accepted,
+      anonymous_data_consent,
       master_pin,
+      cloud_sync_enabled,
+      cloud_server_url,
     } = req.body;
     const email = normalizeEmail(req.body.email);
     const displayName = String(name || '').trim();
@@ -545,6 +626,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const resolvedStoreName = storeName || 'Store';
     const outletAddress = String(business_address || address || '').trim();
     const outletPhone = String(business_phone || phone || '').trim();
+    const anonymousDataConsent = anonymous_data_consent === true;
 
     if (!displayName || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
@@ -576,6 +658,19 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
 
     if (!VALID_SERVICE_MODELS.has(normalizedServiceModel)) {
       return res.status(400).json({ error: 'Invalid service model' });
+    }
+
+    // Cloud services (#128): off by default, opt-in only. The URL is only
+    // validated/stored when the owner actually enables sync — an invalid URL
+    // in a disabled, unused field shouldn't block setup.
+    const cloudSyncEnabled = cloud_sync_enabled === true;
+    let normalizedCloudServerUrl: string | undefined;
+    if (cloudSyncEnabled) {
+      try {
+        normalizedCloudServerUrl = normalizeCloudServerUrl(cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
+      } catch {
+        return res.status(400).json({ error: 'Cloud server URL must be a valid HTTPS URL' });
+      }
     }
 
     const db = getDatabase();
@@ -625,6 +720,11 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         service_model: normalizedServiceModel,
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
+        anonymous_data_consent: anonymousDataConsent ? 'true' : 'false',
+        telemetry_enabled: anonymousDataConsent ? 'true' : 'false',
+        telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
+        cloud_sync_enabled: cloudSyncEnabled ? 'true' : 'false',
+        cloud_server_url: normalizedCloudServerUrl || DEFAULT_CLOUD_SERVER_URL,
       });
 
       seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);
@@ -635,6 +735,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     if (masterPinRequired) {
       setMasterPin(String(master_pin));
     }
+
+    // Pick up the cloud settings just written without requiring a restart —
+    // mirrors PUT /api/settings/cloud's own reload() call.
+    cloudSync.reload();
 
     const token = jwt.sign(
       { userId, email, role: INITIAL_ADMIN_ROLE },
@@ -658,7 +762,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const status = message.includes('already complete') ? 403
       : message.includes('already exists') ? 400
         : 500;
-    res.status(status).json({ error: message });
+    res.status(status).json({ error: status === 500 ? 'Setup failed' : message });
   }
 });
 

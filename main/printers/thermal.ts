@@ -464,10 +464,10 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
   }
 }
 
-export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false): Promise<boolean> {
+export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any): Promise<boolean> {
   try {
-    console.log('[Printer] printKOT called, items count:', items?.length || 0, 'useUnicode:', useUnicode);
-    const printer = getPrinterConfig();
+    console.log('[Printer] printKOT called, items count:', items?.length || 0, 'useUnicode:', useUnicode, 'station:', stationName);
+    const printer = targetPrinter || getPrinterConfig();
     if (!printer) {
       console.log('[Printer] No printer configured');
       return false;
@@ -841,13 +841,6 @@ function addonRow(addon: any, nameLen: number, amtLen: number, cols: number, pre
 }
 
 function parseAddons(addons: any): any[] {
-  if (!addons) return [];
-  if (typeof addons === 'string') {
-    try {
-      const parsed = JSON.parse(addons);
-      return Array.isArray(parsed) ? parsed : [];
-    } catch { return []; }
-  }
   return Array.isArray(addons) ? addons : [];
 }
 
@@ -894,6 +887,12 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
 
   for (const item of items) {
     lines.push('{DOUBLE_HEIGHT}{BOLD}' + item.quantity + 'x  ' + item.product_name + '{/BOLD}{/DOUBLE_HEIGHT}');
+    const addons = parseAddons(item.addons);
+    for (const addon of addons) {
+      if (addon?.name) {
+        lines.push('  + ' + truncate(String(addon.name), cols - 4));
+      }
+    }
     if (item.special_instructions) {
       lines.push('  ** ' + item.special_instructions + ' **');
     }

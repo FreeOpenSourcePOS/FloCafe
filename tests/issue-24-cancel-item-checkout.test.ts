@@ -27,7 +27,7 @@ process.env.JWT_SECRET = 'test-secret-issue-24';
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
+  seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
   api, assert, assertEqual, assertIncludes,
   getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
@@ -168,6 +168,69 @@ async function main() {
       });
       assertEqual(cancelRes.status, 200, 'C: last item cancelled successfully');
       assertEqual(cancelRes.data.order.total, 0, 'C: order total = 0 after all items cancelled');
+      // Issue #132: cancelling the last item must transition the order itself
+      // to cancelled — otherwise it silently stays "active" with zero items,
+      // cluttering the Active list and never freeing its table.
+      assertEqual(cancelRes.data.order.status, 'cancelled', 'C: order status = cancelled after last item cancelled');
+      assert(!!cancelRes.data.order.cancelled_at, 'C: cancelled_at is set');
+
+      // Restoring an item on a now-cancelled order must be refused — same
+      // rule that already applies to an explicitly whole-order-cancelled order.
+      const restoreRes = await api(baseUrl, `/api/orders/${orderId}/items/${itemId}/restore`, {
+        method: 'PATCH',
+        headers: authHeader,
+      });
+      assertEqual(restoreRes.status, 400, 'C: cannot restore an item on a now-cancelled order');
+    }
+
+    // ── Issue #132 — Scenario D: cancelling the last item frees the table ──
+    console.log('\n─── Scenario D: last item cancel frees the table (dine-in) ───');
+    {
+      seedTable(db, 'tbl-132-1', 132, 4);
+      getDatabase().prepare("UPDATE tables SET status = 'occupied' WHERE id = ?").run('tbl-132-1');
+
+      const createRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: { type: 'dine_in', table_id: 'tbl-132-1', items: [
+          { product_id: 'prod-24-a', quantity: 1 },
+        ]},
+        headers: authHeader,
+      });
+      assertEqual(createRes.status, 201, 'D: dine-in order created');
+      const orderId = createRes.data.order.id;
+      const itemId = createRes.data.order.items[0].id;
+
+      const cancelRes = await api(baseUrl, `/api/orders/${orderId}/items/${itemId}/cancel`, {
+        method: 'PATCH',
+        headers: authHeader,
+      });
+      assertEqual(cancelRes.status, 200, 'D: last item cancelled on dine-in order');
+      assertEqual(cancelRes.data.order.status, 'cancelled', 'D: order status = cancelled');
+
+      const tableRow = getDatabase().prepare('SELECT status FROM tables WHERE id = ?').get('tbl-132-1') as any;
+      assertEqual(tableRow.status, 'available', 'D: table freed after last item cancelled');
+    }
+
+    // ── Issue #132 — Scenario E: cancelling a non-last item does NOT cancel the order ──
+    console.log('\n─── Scenario E: cancelling one of several items leaves order active ───');
+    {
+      const createRes = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        body: { type: 'takeaway', items: [
+          { product_id: 'prod-24-a', quantity: 1 },
+          { product_id: 'prod-24-b', quantity: 1 },
+        ]},
+        headers: authHeader,
+      });
+      const orderId = createRes.data.order.id;
+      const itemToCancel = createRes.data.order.items.find((i: any) => i.product_id === 'prod-24-b').id;
+
+      const cancelRes = await api(baseUrl, `/api/orders/${orderId}/items/${itemToCancel}/cancel`, {
+        method: 'PATCH',
+        headers: authHeader,
+      });
+      assertEqual(cancelRes.status, 200, 'E: item cancelled');
+      assert(cancelRes.data.order.status !== 'cancelled', 'E: order stays active — one item still active');
     }
 
   } finally {

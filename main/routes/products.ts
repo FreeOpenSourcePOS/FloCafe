@@ -12,7 +12,10 @@ async function assertPublicHostname(hostname: string): Promise<void> {
   let addresses: dns.LookupAddress[];
   try {
     addresses = await dns.promises.lookup(hostname, { all: true, verbatim: true });
-  } catch {
+  } catch (error: any) {
+    if (error?.code === 'ENOTFOUND') {
+      throw error;
+    }
     throw new Error('Could not resolve hostname');
   }
   if (addresses.length === 0) {
@@ -177,6 +180,11 @@ router.get('/', (req: Request, res: Response) => {
       const searchTerm = `%${req.query.search}%`;
       params.push(searchTerm, searchTerm);
     }
+    if (req.query.barcode) {
+      // Exact match — this is the scan-to-lookup path, not a fuzzy search.
+      query += ' AND p.barcode = ?';
+      params.push(req.query.barcode);
+    }
     if (req.query.low_stock === 'true') {
       query += ' AND p.track_inventory = 1 AND p.stock_quantity <= p.low_stock_threshold';
     }
@@ -200,12 +208,13 @@ router.get('/', (req: Request, res: Response) => {
 
     res.json({ products: productsWithRelations });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 // ── GET /:id — single product with relations ───────────────────────────
-router.get('/:id/image', (req: Request, res: Response) => {
+router.get('/:id/image', async (req: Request, res: Response) => {
   // Image endpoint — must be defined BEFORE /:id to avoid route conflict
   try {
     const db = getDatabase();
@@ -219,13 +228,11 @@ router.get('/:id/image', (req: Request, res: Response) => {
 
     const imageUrl = row.image_url as string;
 
-    // Handle legacy URL strings (not Base64 data URIs)
-    // 302 (not 301) because this is a temporary migration path — legacy URLs
-    // should eventually be re-uploaded as Base64 through the new UI. Using 301
-    // would tell browsers to permanently cache the redirect, which would prevent
-    // us from later serving the re-uploaded Base64 version at this same URL.
+    // Legacy external image URLs are not redirected. This endpoint is public
+    // for <img> tags, so redirecting database values would create an open
+    // redirect. Re-upload legacy images as validated Base64 data URIs.
     if (!imageUrl.startsWith('data:')) {
-      return res.redirect(302, imageUrl);
+      return res.status(404).json({ error: 'No image' });
     }
 
     // Parse the data URI: "data:image/webp;base64,AAAA..."
@@ -263,7 +270,8 @@ router.get('/:id/image', (req: Request, res: Response) => {
     });
     res.send(buffer);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -281,7 +289,8 @@ router.get('/:id', (req: Request, res: Response) => {
 
     res.json({ product: { ...(product as any), tags: parseTags((product as any).tags), category: rel.category, addonGroups: rel.addon_groups } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -323,7 +332,10 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
 
       try {
         await assertPublicHostname(parsedUrl.hostname);
-      } catch {
+      } catch (error: any) {
+        if (error?.code === 'ENOTFOUND') {
+          return res.status(502).json({ error: 'Could not resolve hostname' });
+        }
         return res.status(400).json({ error: 'URL is not allowed' });
       }
 
@@ -417,14 +429,15 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
       return res.status(502).json({ error: 'Could not fetch the image' });
     }
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const {
-      category_id, name, sku, description, price, cost_price,
+      category_id, name, sku, barcode, description, price, cost_price,
       tax_type, tax_rate, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
@@ -440,18 +453,30 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     }
 
     const db = getDatabase();
+
+    // A barcode scan must resolve to exactly one product — unlike sku, which
+    // is informational only, a duplicate barcode would make scanning ambiguous.
+    if (barcode) {
+      const clash = db.prepare(
+        'SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL'
+      ).get(barcode);
+      if (clash) {
+        return res.status(400).json({ error: 'Another product already uses this barcode' });
+      }
+    }
+
     const id = generateShortId('products');
 
     // Wrap product INSERT + addon_group INSERTs in a transaction
     // so a partial failure doesn't leave orphaned records
     const insertProduct = db.transaction(() => {
       db.prepare(`
-        INSERT INTO products (id, category_id, name, sku, description, price, cost,
+        INSERT INTO products (id, category_id, name, sku, barcode, description, price, cost,
           tax_type, tax_rate, track_inventory, stock_quantity, low_stock_threshold,
           is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, category_id || null, name, sku || null, description || null, price, cost_price || 0,
+        id, category_id || null, name, sku || null, barcode || null, description || null, price, cost_price || 0,
         tax_type || 'none', tax_rate || 0,
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, image_url || null,
@@ -471,7 +496,8 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
     res.status(201).json({ product });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -484,7 +510,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     }
 
     const {
-      category_id, name, sku, description, price, cost_price,
+      category_id, name, sku, barcode, description, price, cost_price,
       tax_type, tax_rate, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
@@ -497,22 +523,32 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       }
     }
 
+    if (barcode) {
+      const clash = db.prepare(
+        'SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL AND id != ?'
+      ).get(barcode, req.params.id);
+      if (clash) {
+        return res.status(400).json({ error: 'Another product already uses this barcode' });
+      }
+    }
+
     // Detect whether client explicitly sent image_url (even as null/undefined)
     // so we can distinguish "don't touch image_url" from "clear image_url"
     const hasImageUrl = 'image_url' in req.body;
 
     db.prepare(`
-      UPDATE products SET 
-        category_id = COALESCE(@category_id, category_id), 
+      UPDATE products SET
+        category_id = COALESCE(@category_id, category_id),
         name = COALESCE(@name, name),
-        sku = COALESCE(@sku, sku), 
-        description = COALESCE(@description, description), 
+        sku = COALESCE(@sku, sku),
+        barcode = COALESCE(@barcode, barcode),
+        description = COALESCE(@description, description),
         price = COALESCE(@price, price),
         cost = COALESCE(@cost, cost),
-        tax_type = COALESCE(@tax_type, tax_type), 
+        tax_type = COALESCE(@tax_type, tax_type),
         tax_rate = COALESCE(@tax_rate, tax_rate),
         track_inventory = COALESCE(@track_inventory, track_inventory),
-        stock_quantity = COALESCE(@stock_quantity, stock_quantity), 
+        stock_quantity = COALESCE(@stock_quantity, stock_quantity),
         low_stock_threshold = COALESCE(@low_stock_threshold, low_stock_threshold),
         is_active = COALESCE(@is_active, is_active),
         image_url = CASE WHEN @has_image_url = 1 THEN @image_url ELSE image_url END,
@@ -522,12 +558,12 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         updated_at = @updated_at
       WHERE id = @id
     `).run({
-      category_id, name, sku, description, price, cost: cost_price,
+      category_id, name, sku, barcode, description, price, cost: cost_price,
       tax_type, tax_rate,
       track_inventory: track_inventory ? 1 : track_inventory === 0 ? 0 : null,
       stock_quantity, low_stock_threshold,
       is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,
-      has_image_url: hasImageUrl ? 1 : 0, 
+      has_image_url: hasImageUrl ? 1 : 0,
       image_url: hasImageUrl ? image_url : null,
       sort_order, cb_percent,
       tags: tags ? JSON.stringify(tags) : null,
@@ -552,7 +588,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
     res.json({ product: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -567,7 +604,8 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
     db.prepare('UPDATE products SET deleted_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Product deleted' });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -609,7 +647,8 @@ router.post('/:id/stock', requireRole('owner', 'manager'), (req: Request, res: R
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
     res.json({ product: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

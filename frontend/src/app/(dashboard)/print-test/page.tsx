@@ -1,9 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Printer, FileText, MessageCircle, Download, Usb, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePrinterStore } from '@/hooks/usePrinter';
+import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { createTestBill, createTestOrder, createTestTenant, createTestCustomer } from '@/lib/printer/test-data';
 import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
@@ -21,6 +22,11 @@ export default function PrintTestPage() {
   const [testing, setTesting] = useState(false);
 
   const { printBill, printGstBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
+  const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
+
+  useEffect(() => {
+    if (!kotPrintingEnabled && testMode === 'kot') setTestMode('receipt');
+  }, [kotPrintingEnabled, testMode]);
 
   const testBill = createTestBill();
   const testOrder = createTestOrder();
@@ -61,6 +67,13 @@ export default function PrintTestPage() {
           }
           break;
         case 'kot':
+          // Manual "Print KOT" test action — must be blocked here too, since
+          // the browser-print path below never goes through the printKot()
+          // choke point that enforces kot_printing_enabled (issue #133).
+          if (!kotPrintingEnabled) {
+            toast.error('KOT printing is disabled for this business');
+            break;
+          }
           if (printMethod === 'browser') {
             const html = generateKotHtml(testOrder, paperWidth);
             await printerService.printViaBrowser(html, paperWidth);
@@ -124,7 +137,9 @@ export default function PrintTestPage() {
   const testOptions: { value: TestMode; label: string; icon: React.ElementType }[] = [
     { value: 'receipt', label: 'Basic Receipt (Thermal)', icon: Printer },
     { value: 'gst', label: 'GST Bill (Thermal)', icon: Printer },
-    { value: 'kot', label: 'KOT (Kitchen Ticket)', icon: Printer },
+    // Hidden entirely when KOT printing is disabled — this is a manual
+    // "Print KOT" action, which must never be reachable in that state (#133).
+    ...(kotPrintingEnabled ? [{ value: 'kot' as TestMode, label: 'KOT (Kitchen Ticket)', icon: Printer }] : []),
     { value: 'web-a4', label: 'A4 Web Print', icon: FileText },
     { value: 'web-a5', label: 'A5 Web Print', icon: FileText },
     { value: 'whatsapp', label: 'WhatsApp Share', icon: MessageCircle },

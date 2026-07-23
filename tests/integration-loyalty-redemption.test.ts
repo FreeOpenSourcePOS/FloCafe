@@ -201,10 +201,10 @@ async function main() {
     assertEqual(pay3Cash.data.bill.payment_status, 'paid', 'bill is fully paid');
 
     // Cashback should be proportional to cash-paid portion
-    // Full cashback: 5% of ₹200 (subtotal) = 10 points
+    // Full cashback: 5% of ₹200 (subtotal) = 10 currency units = 1000 points
     // Cash-paid proportion: cashPay3 / bill3Total
-    // Actual cashback: floor(10 × (cashPay3 / bill3Total))
-    const expectedCashback3 = Math.floor(10 * (cashPay3 / bill3Total));
+    // Actual cashback: floor(10 * (cashPay3 / bill3Total)) * 100
+    const expectedCashback3 = Math.floor(10 * (cashPay3 / bill3Total)) * 100;
     const creditEntry3 = db.prepare(
       "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-redeem' AND type = 'credit' AND bill_id = ?"
     ).get(bill3.data.bill.id) as any;
@@ -297,9 +297,9 @@ async function main() {
     assertEqual(pay5Cash.status, 200, 'cash payment accepted');
 
     // Cashback: proportional to cash-paid portion
-    // Full cashback: 5% of ₹200 (subtotal) = 10 points
+    // Full cashback: 5% of ₹200 (subtotal) = 10 currency units = 1000 points
     // Cash-paid proportion: cashPay5 / bill5Total
-    const expectedCashback5 = Math.floor(10 * (cashPay5 / bill5Total));
+    const expectedCashback5 = Math.floor(10 * (cashPay5 / bill5Total)) * 100;
     const creditEntry5 = db.prepare(
       "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-redeem-3' AND type = 'credit' AND bill_id = ?"
     ).get(bill5.data.bill.id) as any;

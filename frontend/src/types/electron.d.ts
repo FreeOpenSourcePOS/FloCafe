@@ -9,7 +9,7 @@ export interface ElectronAPI {
 
   // Database
   backupDatabase: (pin?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
-  restoreBackup: (pin?: string) => Promise<{ success: boolean; error?: string }>;
+  restoreBackup: (pin?: string, backupPath?: string) => Promise<{ success: boolean; error?: string }>;
   dbHealthCheck: () => Promise<HealthCheckReport | { error: string }>;
   dbApplySafeFixes: (findingIds?: string[]) => Promise<{ applied: string[]; skipped: string[]; errors: { id: string; error: string }[] }>;
   dbInitialize: (pin: string, confirmationPhrase: string) => Promise<{ success: boolean; backupPath?: string; error?: string }>;

@@ -6,7 +6,10 @@ import * as path from 'node:path';
 
 const Module = require('module');
 const originalLoad = Module._load;
-const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-first-run-'));
+// `let` (not `const`) — the cloud-services setup scenario below re-points
+// this at a second fresh temp dir so it can exercise a brand-new first-run
+// database, independent of the owner already created in the primary scenario.
+let testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-first-run-'));
 
 const mockApp = {
   isPackaged: true,
@@ -75,7 +78,7 @@ async function main() {
     throw error;
   }
 
-  assert.equal(getCurrentSchemaVersion(), 24, 'fresh database migrates to latest schema');
+assert.equal(getCurrentSchemaVersion(), 32, 'fresh database migrates to latest schema');
   assert.equal(count('users'), 0, 'fresh install starts without users');
   assert.equal(count('categories'), 0, 'fresh install starts with no sample categories');
   assert.equal(count('products'), 0, 'fresh install starts with no sample products');
@@ -137,6 +140,7 @@ async function main() {
         setup_profile: 'express',
         service_model: 'qsr',
         terms_accepted: true,
+        anonymous_data_consent: true,
       }),
     });
 
@@ -153,6 +157,9 @@ async function main() {
     assert.equal(setting('billing_type'), 'prepaid');
     assert.equal(setting('tables_required'), 'false');
     assert.equal(setting('onboarding_completed'), 'true');
+    assert.equal(setting('anonymous_data_consent'), 'true');
+    assert.equal(setting('telemetry_enabled'), 'true');
+    assert.equal(setting('telemetry_scope'), 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
     assert.equal(count('categories'), 2, 'express setup seeds minimal categories');
     assert.equal(count('products'), 4, 'express setup seeds minimal products');
     assert.equal(count('tables'), 0, 'qsr express setup does not seed dine-in tables');
@@ -174,8 +181,72 @@ async function main() {
     assert.equal(second.status, 403);
     assert.equal(count('users'), 1, 'setup cannot create a second owner');
     console.log('   ✓ setup endpoint is disabled after the first user exists');
+
+    // Cloud services during setup are off by default (#128) — the "first"
+    // owner above never sent cloud_sync_enabled, so it should have landed
+    // disabled with the default cloud server URL.
+    assert.equal(setting('cloud_sync_enabled'), 'false', 'cloud sync defaults to disabled when not requested at setup');
+    assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com/', 'cloud server URL keeps the pre-seeded default when cloud sync is disabled');
+    console.log('   ✓ setup endpoint leaves cloud services disabled by default');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+
+  // ── Cloud services opt-in during first-run setup (#128) ──────────────────
+  // Exercises a second, independent fresh install so we can complete
+  // /setup/initialize with cloud_sync_enabled: true — the DB above already
+  // has its one allowed owner.
+  console.log('\n   Cloud services opt-in during setup');
+  closeDatabase();
+  fs.rmSync(testDir, { recursive: true, force: true });
+  testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-first-run-cloud-'));
+  initDatabase();
+
+  const cloudApi = express();
+  cloudApi.use(express.json());
+  cloudApi.use('/api/auth', authRoutes);
+  let cloudServer: http.Server;
+  try {
+    cloudServer = await listen(cloudApi);
+  } catch (error: any) {
+    if (error?.code === 'EPERM' || error?.code === 'EACCES') {
+      console.log('   ⚠ Skipping cloud opt-in assertions: local port binding is blocked in this environment.');
+      return;
+    }
+    throw error;
+  }
+  const cloudAddress = cloudServer.address() as { port: number };
+  const cloudBaseUrl = `http://127.0.0.1:${cloudAddress.port}/api/auth`;
+
+  try {
+    const badUrl = await request(cloudBaseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
+        business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
+        terms_accepted: true,
+        cloud_sync_enabled: true, cloud_server_url: 'not-a-valid-url',
+      }),
+    });
+    assert.equal(badUrl.status, 400, 'an invalid cloud server URL is rejected when cloud sync is enabled');
+    assert.equal(count('users'), 0, 'no owner is created when the cloud server URL is invalid');
+    console.log('   ✓ setup rejects an invalid cloud server URL when cloud sync is enabled');
+
+    const enabled = await request(cloudBaseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Cloud Owner', email: 'cloud-owner@example.com', password: 'TestPass123',
+        business_type: 'restaurant', setup_profile: 'empty', service_model: 'qsr',
+        terms_accepted: true,
+        cloud_sync_enabled: true, cloud_server_url: 'https://cloud.example.test/relay',
+      }),
+    });
+    assert.equal(enabled.status, 200, `setup succeeds with a valid custom cloud server URL (got ${enabled.status}, ${JSON.stringify(enabled.data)})`);
+    assert.equal(setting('cloud_sync_enabled'), 'true', 'cloud sync is enabled when requested at setup');
+    assert.equal(setting('cloud_server_url'), 'https://cloud.example.test/relay', 'the custom cloud server URL is persisted, normalized');
+    console.log('   ✓ setup persists an explicit cloud_sync_enabled + custom cloud_server_url');
+  } finally {
+    await new Promise<void>((resolve) => cloudServer.close(() => resolve()));
   }
 }
 

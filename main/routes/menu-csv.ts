@@ -123,7 +123,8 @@ router.get('/export/categories', requireRole('owner', 'manager'), (_req: Request
     res.setHeader('Content-Disposition', 'attachment; filename="categories-export.csv"');
     res.send(lines.join('\n'));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[API] Menu CSV export failed:', err);
+    res.status(500).json({ error: 'Menu CSV export failed' });
   }
 });
 
@@ -155,7 +156,8 @@ router.get('/export/products', requireRole('owner', 'manager'), (_req: Request, 
     res.setHeader('Content-Disposition', 'attachment; filename="products-export.csv"');
     res.send(lines.join('\n'));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[API] Menu CSV export failed:', err);
+    res.status(500).json({ error: 'Menu CSV export failed' });
   }
 });
 
@@ -177,7 +179,8 @@ router.get('/export/addons', requireRole('owner', 'manager'), (_req: Request, re
     res.setHeader('Content-Disposition', 'attachment; filename="addons-export.csv"');
     res.send(lines.join('\n'));
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[API] Menu CSV export failed:', err);
+    res.status(500).json({ error: 'Menu CSV export failed' });
   }
 });
 
@@ -215,7 +218,8 @@ router.post('/import/categories', requireRole('owner', 'manager'), (req: Request
 
     res.json({ created, skipped, errors });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[API] Menu CSV import failed:', err);
+    res.status(500).json({ error: 'Menu CSV import failed' });
   }
 });
 
@@ -303,7 +307,8 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
 
     res.json({ created, updated, skipped, errors });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[API] Menu CSV import failed:', err);
+    res.status(500).json({ error: 'Menu CSV import failed' });
   }
 });
 
@@ -374,7 +379,8 @@ router.post('/import/addons', requireRole('owner', 'manager'), (req: Request, re
 
     res.json({ groups_created: groupsCreated, addons_created: addonsCreated, skipped, errors });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    console.error('[API] Menu CSV import failed:', err);
+    res.status(500).json({ error: 'Menu CSV import failed' });
   }
 });
 

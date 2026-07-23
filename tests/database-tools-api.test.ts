@@ -157,6 +157,24 @@ async function runTests() {
     assert(backupFiles.length > 0, 'a backup file was actually written to the backups directory');
   }
 
+  // ── Test 3b: GET /db-tools/backups lists what was just created (#120) ───
+  console.log('\nTest 3b: GET /db-tools/backups');
+  {
+    const forbidden = await request(app).get('/api/db-tools/backups').set('Authorization', `Bearer ${cashierToken}`);
+    assert(forbidden.status === 403, `non-owner is forbidden (got ${forbidden.status})`);
+
+    const ok = await request(app).get('/api/db-tools/backups').set('Authorization', `Bearer ${ownerToken}`);
+    assert(ok.status === 200, `owner gets 200 (got ${ok.status})`);
+    assert(Array.isArray(ok.body.backups), 'response has a backups array');
+    assert(ok.body.backups.length >= 1, 'the backup created in Test 3 is listed');
+
+    const entry = ok.body.backups[0];
+    assert(typeof entry.fileName === 'string' && entry.fileName.endsWith('.db'), 'entry has a .db fileName');
+    assert(typeof entry.sizeBytes === 'number' && entry.sizeBytes > 0, 'entry has a positive sizeBytes');
+    assert(!Number.isNaN(new Date(entry.createdAt).getTime()), 'entry has a parseable createdAt');
+    assert(entry.kind === 'manual', 'a backup created via POST /db/backup is classified as manual, not auto');
+  }
+
   // ── Test 4: POST /db-tools/initialize ────────────────────────────────────
   console.log('\nTest 4: POST /db-tools/initialize');
   {
@@ -176,7 +194,7 @@ async function runTests() {
     const freshDb = getDatabase();
     const userCount = (freshDb.prepare('SELECT COUNT(*) as c FROM users').get() as { c: number }).c;
     assert(userCount === 0, 'no users remain after initialize — back to first-run state');
-    assert(getCurrentSchemaVersion() === 24, 'the recreated database is at the latest schema version');
+    assert(getCurrentSchemaVersion() === 32, 'the recreated database is at the latest schema version');
 
     // The core "locked-out owner" guarantee: the Master PIN survives a full DB wipe
     // because it lives outside flo.db entirely.

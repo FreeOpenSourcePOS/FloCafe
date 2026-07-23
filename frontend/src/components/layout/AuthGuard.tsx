@@ -10,7 +10,7 @@ export function getLandingPage(): string {
   return '/pos';
 }
 
-const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/auth/login', '/auth/register', '/setup'];
+const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/auth/login', '/auth/register', '/auth/recover', '/setup'];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const { t } = useI18n();

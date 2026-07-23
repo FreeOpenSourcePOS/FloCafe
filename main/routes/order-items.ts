@@ -1,28 +1,14 @@
 import { Router, Request, Response } from 'express';
-import jwt from 'jsonwebtoken';
-import { getDatabase, now, parseItemJson } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
-import { getJWTSecret } from './auth';
 
 const router = Router();
-
-/** Decode the Bearer token and return the role, or null if missing/invalid. */
-function getRoleFromToken(req: Request): string | null {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  try {
-    const decoded = jwt.verify(authHeader.split(' ')[1], getJWTSecret()) as { role?: string };
-    return decoded.role ?? null;
-  } catch {
-    return null;
-  }
-}
 
 // PATCH /api/order-items/:id/status — update a single item's kitchen status
 // Only chef, manager, or owner can update item status
 router.patch('/:id/status', (req: Request, res: Response) => {
   try {
-    const role = getRoleFromToken(req);
+    const role = (req as any).user?.role;
     if (!role || !['chef', 'manager', 'owner'].includes(role)) {
       return res.status(403).json({ error: 'Only chef, manager, or owner can update item status' });
     }
@@ -44,7 +30,7 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       .run(status, now(), req.params.id);
 
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(item.order_id) as any;
-    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(item.order_id).map(parseItemJson);
+    const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(item.order_id).map(parseItemJson) as any[]);
     const tableRow = order.table_id
       ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
       : null;
@@ -55,7 +41,8 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     res.json({ order: { ...order, items, table } });
   } catch (error: any) {
     console.error('[OrderItems] Status update error:', error);
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

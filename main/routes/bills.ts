@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, generateBillNumber, now, withTxn, getSettingValue, parseRowJson, verifyPin } from '../db';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
-import { cloudSync } from '../services/cloud-sync';
 import { printReceipt } from '../services/receipt';
 import { requireRole } from '../middleware/security';
 
@@ -59,7 +58,8 @@ router.get('/', requireRole('owner', 'manager', 'cashier'), (req: Request, res: 
     const bills = db.prepare(query).all(...params).map(parseRowJson);
     res.json({ bills });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -76,7 +76,8 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, re
 
     res.json({ bill: { ...bill, order, customer } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -94,7 +95,8 @@ router.get('/order/:orderId', requireRole('owner', 'manager', 'cashier'), (req: 
 
     res.json({ bill: { ...bill, order, customer } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -192,7 +194,8 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
     notifyOrderUpdated();
     res.status(201).json({ bill });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -249,7 +252,7 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
             }
             // Points earned come solely from each item's own cashback percentage
             if (item.cb_percent > 0) {
-              loyaltyCashbackToCredit += Math.floor(effectiveSubtotal * item.cb_percent / 100);
+              loyaltyCashbackToCredit += Math.floor(effectiveSubtotal * item.cb_percent / 100) * 100; // Multiply by LOYALTY_REDEMPTION_RATE (100) to store as points instead of raw currency
             }
           }
         }
@@ -395,14 +398,12 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
     const billStatus = (result.bill as any)?.payment_status;
     if (billStatus === 'paid') notifyKdsUpdate();
     notifyOrderUpdated();
-    if (billStatus === 'paid' && (result.bill as any)?.id) {
-      cloudSync.recordBillPaid((result.bill as any).id);
-    }
 
     res.json(result);
   } catch (error: any) {
     const statusCode = error.statusCode || 500;
-    res.status(statusCode).json({ error: error.message });
+    console.error('[API] Bill payment failed:', error);
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });
   }
 });
 
@@ -510,7 +511,8 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     notifyOrderUpdated();
     res.json({ bill: updatedBill });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -528,7 +530,8 @@ router.post('/:id/markPrinted', requireRole('owner', 'manager'), (req: Request, 
     const updatedBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
     res.json({ bill: updatedBill });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -549,7 +552,8 @@ router.post('/:id/print', requireRole('owner', 'manager', 'cashier'), async (req
   } catch (error: any) {
     // Return 404 for "Bill not found", 500 for other errors
     const statusCode = error.message?.includes('Bill not found') ? 404 : 500;
-    res.status(statusCode).json({ error: error.message });
+    console.error('[API] Receipt printing failed:', error);
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Receipt printing failed' : 'Bill not found' });
   }
 });
 
@@ -567,7 +571,8 @@ router.get('/:id/print-history', requireRole('owner', 'manager', 'cashier'), (re
 
     res.json({ prints });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

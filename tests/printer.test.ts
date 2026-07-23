@@ -87,10 +87,10 @@ const fixtureOrder = {
       total: 540,
       tax_rate: 5,
       tax_amount: 25,
-      addons: JSON.stringify([
+      addons: [
         { name: 'Extra Cheese', price: 20 },
         { name: 'Bacon', price: 20 },
-      ]),
+      ],
       special_instructions: 'No onions',
     },
     {
@@ -100,7 +100,7 @@ const fixtureOrder = {
       total: 70,
       tax_rate: 0,
       tax_amount: 0,
-      addons: null,
+      addons: [],
     },
     {
       product_name: 'Very Long Product Name That Should Get Truncated By Formatter',
@@ -109,7 +109,7 @@ const fixtureOrder = {
       total: 315,
       tax_type: 'gst_5',
       tax_amount: 15,
-      addons: '[]',
+      addons: [],
     },
   ],
 };
@@ -258,6 +258,8 @@ console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
   assert('renders order number', text.includes('ORD-20260421-0001'));
   assert('renders table number', text.includes('T3'));
   assert('renders each item with qty prefix', text.includes('2x  Cheeseburger'));
+  assert('renders addon "Extra Cheese"', text.includes('+ Extra Cheese'));
+  assert('renders addon "Bacon"', text.includes('+ Bacon'));
   assert('renders special instructions with ** markers', text.includes('** No onions **'));
   assert('sets DOUBLE_HEIGHT mode for items', bytesContain(buf, [ESC, 0x21, 0x18]));
   assert('does NOT render prices (KOT has no money)', !text.includes('₹'));

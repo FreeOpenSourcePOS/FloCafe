@@ -1,5 +1,4 @@
 import { Express } from 'express';
-import { randomBytes } from 'crypto';
 import { authRoutes } from './auth';
 import { requireRole } from '../middleware/security';
 import { categoryRoutes } from './categories';
@@ -18,14 +17,37 @@ import { reportRoutes } from './reports';
 import { kdsRoutes } from './kds';
 import { kdsInfoRoutes } from './kds-info';
 import { moreAppsRoutes } from './more-apps';
+import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printerRoutes } from './printers';
 import { databaseRoutes } from './database';
 import { databaseToolsRoutes } from './database-tools';
 import { menuCsvRoutes } from './menu-csv';
 import { heldOrderRoutes } from './held-orders';
-import { getDatabase, now, parseItemJson, withTxn, getSettingValue } from '../db';
+import { whatsappRoutes } from './whatsapp';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode } from '../db';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
+
+// "Cloud POS is not registered" (thrown synchronously by cloud-sync.ts's
+// signedFetch, no network call even attempted) means this store was never
+// claimed in FloAdmin — a distinct, actionable state from a genuine
+// connectivity failure reaching FloAdmin, and the two need different status
+// codes/messages so the frontend (and anyone reading server logs) doesn't
+// mistake "not claimed yet" for "FloAdmin is down".
+function isUnregisteredCloudError(error: any): boolean {
+  return typeof error?.message === 'string' && error.message.includes('is not registered');
+}
+
+function mobilePairingErrorStatus(error: any): number {
+  return isUnregisteredCloudError(error) ? 409 : 502;
+}
+
+function mobilePairingErrorMessage(error: any): string {
+  if (isUnregisteredCloudError(error)) {
+    return 'This POS hasn’t been claimed in FloAdmin yet. Complete registration in FloAdmin, then try generating a pairing code again.';
+  }
+  return error?.message || 'Could not reach FloAdmin';
+}
 
 export function registerRoutes(app: Express): void {
   // Auth routes
@@ -54,6 +76,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/db-tools', databaseToolsRoutes);
   app.use('/api/menu-csv', menuCsvRoutes);
   app.use('/api/held-orders', heldOrderRoutes);
+  app.use('/api/whatsapp', whatsappRoutes);
 
   // Tax preview
   app.post('/api/tax/preview', async (req, res) => {
@@ -61,13 +84,43 @@ export function registerRoutes(app: Express): void {
     calculateTaxPreview(req, res);
   });
 
-  // Mobile pairing code — cryptographically random, owner-only
-  app.get('/api/mobile/pairing-code', requireRole('owner'), (req, res) => {
-    const pairingCode = randomBytes(4).toString('hex'); // 8-char random code
-    res.json({
-      pairing_code: pairingCode,
-      rotated_at: new Date().toISOString(),
-    });
+  // Mobile pairing code — proxies FloAdmin (see cloud-sync.ts generatePairingCode).
+  // Cache-first: repeat GETs (e.g. reopening Settings) must NOT generate a new
+  // code or disconnect paired devices — only a stale/missing cache calls out.
+  app.get('/api/mobile/pairing-code', requireRole('owner'), async (req, res) => {
+    try {
+      const cached = getCachedPairingCode();
+      if (cached) {
+        return res.json({ pairing_code: cached.code, expires_at: cached.expiresAt });
+      }
+      const { code, expires_at } = await cloudSync.generatePairingCode(false);
+      setCachedPairingCode(code, expires_at);
+      res.json({ pairing_code: code, expires_at });
+    } catch (error: any) {
+      res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
+    }
+  });
+
+  // Explicit rotate — disconnects every currently-paired RevFlo device.
+  app.post('/api/mobile/rotate-code', requireRole('owner'), async (req, res) => {
+    try {
+      const { code, expires_at } = await cloudSync.generatePairingCode(true);
+      setCachedPairingCode(code, expires_at);
+      res.json({ pairing_code: code, expires_at });
+    } catch (error: any) {
+      res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
+    }
+  });
+
+  // Paired RevFlo devices for this store — Settings > Mobile App session list.
+  app.get('/api/mobile/devices', requireRole('owner'), async (req, res) => {
+    try {
+      const devices = await cloudSync.listPairedDevices();
+      res.json({ devices });
+    } catch (error: any) {
+      console.error('[API] FloAdmin request failed:', error);
+      res.status(502).json({ error: 'Could not reach FloAdmin' });
+    }
   });
 
   // Legacy/flat customer search endpoint (frontend uses this)
@@ -89,7 +142,8 @@ export function registerRoutes(app: Express): void {
 
       res.json(customers);
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error("[API] Internal error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -115,7 +169,8 @@ export function registerRoutes(app: Express): void {
         res.json({ found: false, customer: null });
       }
     } catch (error: any) {
-      res.status(500).json({ error: error.message });
+      console.error("[API] Internal error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -124,15 +179,9 @@ export function registerRoutes(app: Express): void {
     try {
       const { orderId, itemId } = req.params;
 
-      // Verify JWT token and check role
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
-      const jwt = require('jsonwebtoken');
-      const { getJWTSecret } = require('./auth');
-      const decoded = jwt.verify(authHeader.split(' ')[1], getJWTSecret()) as { role?: string };
-      const userRole = decoded.role;
+      // requireAuth (main/server.ts) already verified the token and attached
+      // the user's current DB role to req.user — use that, not the JWT claim.
+      const userRole = (req as any).user?.role;
       if (!userRole || !['owner', 'manager'].includes(userRole)) {
         return res.status(403).json({ error: 'Only owner or manager can cancel items' });
       }
@@ -193,9 +242,36 @@ export function registerRoutes(app: Express): void {
         const roundOff = Math.round(preRoundTotal) - preRoundTotal;
         const total = Math.round(preRoundTotal);
 
-        db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, newTaxAmount, newDiscountAmount, total, roundOff, now(), orderId);
+        // #132 FIX: cancelling the last active item leaves nothing to serve or
+        // bill — treat it as the whole order being cancelled, the same way the
+        // explicit order-level cancel (routes/orders.ts) does: free the table,
+        // restore tracked inventory, and stamp cancelled_at/cancellation_reason.
+        // Without this the order silently stayed "active" with zero items,
+        // cluttering the Active list and permanently holding its table.
+        const orderCancelled = activeItems.length === 0 && order.status !== 'cancelled';
+
+        if (orderCancelled) {
+          const allItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[];
+          for (const i of allItems) {
+            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(i.product_id) as any;
+            if (product?.track_inventory) {
+              db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
+                .run(i.quantity, now(), product.id);
+            }
+          }
+          db.prepare(`
+            UPDATE orders SET subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, round_off = ?,
+              status = 'cancelled', cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?
+          `).run(subtotal, newTaxAmount, newDiscountAmount, total, roundOff, now(), 'All items cancelled', now(), orderId);
+          if (order.table_id) {
+            db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
+              .run(now(), order.table_id);
+          }
+        } else {
+          db.prepare(`
+            UPDATE orders SET subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
+          `).run(subtotal, newTaxAmount, newDiscountAmount, total, roundOff, now(), orderId);
+        }
 
         // Sync bill if it exists
         const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
@@ -206,15 +282,20 @@ export function registerRoutes(app: Express): void {
         }
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
-        const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson);
-        return { updatedOrder, items };
+        const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
+        return { updatedOrder, items, orderCancelled };
       });
 
-      cloudSync.recordOrderChanged(orderId, 'order.item_cancelled');
+      cloudSync.recordOrderChanged(orderId, result.orderCancelled ? 'order.cancelled' : 'order.item_cancelled');
+      if (result.orderCancelled) {
+        notifyKdsUpdate();
+        notifyOrderUpdated();
+      }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);
-      res.status(500).json({ error: error.message });
+      console.error("[API] Internal error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 
@@ -223,15 +304,9 @@ export function registerRoutes(app: Express): void {
     try {
       const { orderId, itemId } = req.params;
 
-      // Verify JWT token and check role
-      const authHeader = req.headers.authorization;
-      if (!authHeader?.startsWith('Bearer ')) {
-        return res.status(401).json({ error: 'Authentication required' });
-      }
-      const jwt = require('jsonwebtoken');
-      const { getJWTSecret } = require('./auth');
-      const decoded = jwt.verify(authHeader.split(' ')[1], getJWTSecret()) as { role?: string };
-      const userRole = decoded.role;
+      // requireAuth (main/server.ts) already verified the token and attached
+      // the user's current DB role to req.user — use that, not the JWT claim.
+      const userRole = (req as any).user?.role;
       if (!userRole || !['owner', 'manager'].includes(userRole)) {
         return res.status(403).json({ error: 'Only owner or manager can restore items' });
       }
@@ -313,7 +388,7 @@ export function registerRoutes(app: Express): void {
         }
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
-        const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson);
+        const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
         return { updatedOrder, items };
       });
 
@@ -321,7 +396,8 @@ export function registerRoutes(app: Express): void {
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Restore item error:', error);
-      res.status(500).json({ error: error.message });
+      console.error("[API] Internal error:", error);
+      res.status(500).json({ error: "Internal server error" });
     }
   });
 }

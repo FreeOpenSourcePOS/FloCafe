@@ -1,8 +1,49 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, getSettingValue } from '../db';
 import { requireRole } from '../middleware/security';
 
 const router = Router();
+
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/**
+ * Buckets order timestamps into local hour-of-day (0-23) and local
+ * day-of-week (0=Sunday..6=Saturday), using the tenant's configured
+ * timezone rather than server/UTC time — otherwise "busiest hour" would
+ * reflect UTC, not when the restaurant is actually busy. SQLite has no
+ * IANA timezone support (only fixed offsets), so this bucketing happens
+ * in JS via Intl instead of in SQL.
+ */
+function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { hourCounts: number[]; dayCounts: number[] } {
+  const hourFmt = new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' });
+  const weekdayFmt = new Intl.DateTimeFormat('en-US', { timeZone, weekday: 'long' });
+
+  const hourCounts = new Array(24).fill(0);
+  const dayCounts = new Array(7).fill(0);
+
+  for (const ts of timestamps) {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) continue;
+    const hour = parseInt(hourFmt.format(d), 10);
+    if (hour >= 0 && hour <= 23) hourCounts[hour]++;
+    const dayIdx = WEEKDAY_NAMES.indexOf(weekdayFmt.format(d));
+    if (dayIdx >= 0) dayCounts[dayIdx]++;
+  }
+
+  return { hourCounts, dayCounts };
+}
+
+/** argmax/argmin over counts, restricted to indices where include(count) is true. Returns null if nothing qualifies. */
+function pickExtreme(counts: number[], mode: 'max' | 'min', include: (count: number) => boolean): { index: number; count: number } | null {
+  let best: { index: number; count: number } | null = null;
+  counts.forEach((count, index) => {
+    if (!include(count)) return;
+    if (!best || (mode === 'max' ? count > best.count : count < best.count)) {
+      best = { index, count };
+    }
+  });
+  return best;
+}
 
 router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
@@ -33,7 +74,8 @@ router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: 
       tablesOccupied: tablesOccupied.count,
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -77,7 +119,8 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
       }
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -121,7 +164,8 @@ router.get('/sales', requireRole('owner', 'manager'), (req: Request, res: Respon
       }
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -147,7 +191,8 @@ router.get('/topProducts', requireRole('owner', 'manager'), (req: Request, res: 
 
     res.json({ topProducts });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -155,15 +200,29 @@ router.get('/recentOrders', requireRole('owner', 'manager'), (req: Request, res:
   try {
     const db = getDatabase();
     const limit = parseInt(req.query.limit as string) || 20;
+    const date = req.query.date as string | undefined;
 
-    const recentOrders = db.prepare(`
-      SELECT o.*, t.number as table_name, c.name as customer_name
-      FROM orders o
-      LEFT JOIN tables t ON o.table_id = t.id
-      LEFT JOIN customers c ON o.customer_id = c.id
-      ORDER BY o.created_at DESC
-      LIMIT ?
-    `).all(limit);
+    // Without a date, "most recent overall" (dashboard live view). With one,
+    // scoped to that day — lets the dashboard show a past day's orders
+    // instead of always the latest regardless of which date is selected.
+    const recentOrders = date
+      ? db.prepare(`
+          SELECT o.*, t.number as table_name, c.name as customer_name
+          FROM orders o
+          LEFT JOIN tables t ON o.table_id = t.id
+          LEFT JOIN customers c ON o.customer_id = c.id
+          WHERE date(o.created_at) = date(?)
+          ORDER BY o.created_at DESC
+          LIMIT ?
+        `).all(date, limit)
+      : db.prepare(`
+          SELECT o.*, t.number as table_name, c.name as customer_name
+          FROM orders o
+          LEFT JOIN tables t ON o.table_id = t.id
+          LEFT JOIN customers c ON o.customer_id = c.id
+          ORDER BY o.created_at DESC
+          LIMIT ?
+        `).all(limit);
 
     const ordersWithItems = recentOrders.map((order: any) => {
       const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
@@ -172,7 +231,8 @@ router.get('/recentOrders', requireRole('owner', 'manager'), (req: Request, res:
 
     res.json({ recentOrders: ordersWithItems });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -206,7 +266,104 @@ router.get('/tables', requireRole('owner', 'manager'), (req: Request, res: Respo
       tableUtilization
     });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// ── GET /insights — dashboard metrics beyond today's snapshot ──────────────
+// AOV, top staff, top categories, busiest/idlest hour & day-of-week, and
+// average kitchen prep time, aggregated over a trailing window (default 30
+// days) so hour/day patterns reflect a consistent trend rather than one day.
+router.get('/insights', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);
+    const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const timeZone = getSettingValue('timezone') || 'Asia/Kolkata';
+
+    // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
+    const revenue = db.prepare(`
+      SELECT COUNT(*) as billCount, COALESCE(SUM(paid_amount), 0) as total
+      FROM bills
+      WHERE payment_status = 'paid' AND date(paid_at) >= date(?)
+    `).get(startDate) as { billCount: number; total: number };
+    const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
+
+    // Kitchen velocity — substitutes for "best cook", which isn't derivable:
+    // order_items has no per-chef attribution (marking an item ready doesn't
+    // record who did it), so there's no data to rank individual cooks by.
+    // Average prep time is the closest real signal for kitchen performance.
+    const prepTime = db.prepare(`
+      SELECT AVG((julianday(ready_at) - julianday(cooking_started_at)) * 24 * 60) as avgMinutes,
+        COUNT(*) as sampleSize
+      FROM orders
+      WHERE cooking_started_at IS NOT NULL AND ready_at IS NOT NULL
+        AND date(created_at) >= date(?) AND status != 'cancelled'
+    `).get(startDate) as { avgMinutes: number | null; sampleSize: number };
+
+    // Top staff by revenue — covers whoever creates orders (owner/manager/
+    // cashier/waiter, per POST /orders' own role gate), i.e. "best cashier".
+    const topStaff = db.prepare(`
+      SELECT u.id as user_id, u.name, u.role,
+        COALESCE(SUM(o.total), 0) as revenue,
+        COUNT(o.id) as orderCount
+      FROM orders o
+      JOIN users u ON u.id = o.user_id
+      WHERE date(o.created_at) >= date(?) AND o.status != 'cancelled'
+      GROUP BY u.id
+      ORDER BY revenue DESC
+      LIMIT 5
+    `).all(startDate);
+
+    // Top categories by revenue.
+    const topCategories = db.prepare(`
+      SELECT c.id as category_id, COALESCE(c.name, 'Uncategorized') as name,
+        COALESCE(SUM(oi.quantity), 0) as quantity,
+        COALESCE(SUM(oi.subtotal), 0) as revenue
+      FROM order_items oi
+      JOIN orders o ON o.id = oi.order_id
+      JOIN products p ON p.id = oi.product_id
+      LEFT JOIN categories c ON c.id = p.category_id
+      WHERE date(o.created_at) >= date(?) AND oi.status != 'cancelled'
+      GROUP BY c.id
+      ORDER BY revenue DESC
+      LIMIT 5
+    `).all(startDate);
+
+    // Busiest/idlest hour & day-of-week, bucketed in the tenant's local timezone.
+    const orderTimestamps = (db.prepare(
+      `SELECT created_at FROM orders WHERE date(created_at) >= date(?) AND status != 'cancelled'`
+    ).all(startDate) as { created_at: string }[]).map((r) => r.created_at);
+
+    const { hourCounts, dayCounts } = bucketByLocalHourAndWeekday(orderTimestamps, timeZone);
+
+    // Hours with zero orders are excluded from busiest/idlest — almost
+    // certainly "closed overnight" rather than a meaningful idle signal,
+    // and would otherwise trivially always "win" idlest hour.
+    const busiestHour = pickExtreme(hourCounts, 'max', (c) => c > 0);
+    const idlestHour = pickExtreme(hourCounts, 'min', (c) => c > 0);
+
+    // Day-of-week zero counts ARE kept — "closed Mondays" is a real,
+    // useful signal, unlike an overnight hour with no foot traffic.
+    const busiestDay = pickExtreme(dayCounts, 'max', () => true);
+    const idlestDay = pickExtreme(dayCounts, 'min', () => true);
+
+    res.json({
+      windowDays: days,
+      aov,
+      ordersAnalyzed: orderTimestamps.length,
+      avgPrepTimeMinutes: prepTime.sampleSize > 0 && prepTime.avgMinutes !== null ? Math.round(prepTime.avgMinutes) : null,
+      topStaff,
+      topCategories,
+      busiestHour: busiestHour ? { hour: busiestHour.index, orderCount: busiestHour.count } : null,
+      idlestHour: idlestHour ? { hour: idlestHour.index, orderCount: idlestHour.count } : null,
+      busiestDayOfWeek: busiestDay ? { dayIndex: busiestDay.index, orderCount: busiestDay.count } : null,
+      idlestDayOfWeek: idlestDay ? { dayIndex: idlestDay.index, orderCount: idlestDay.count } : null,
+    });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

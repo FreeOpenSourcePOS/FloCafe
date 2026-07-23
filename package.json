@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "1.9.2",
+  "version": "2.0.3",
   "description": "Flo - Self-hosted Point of Sale System",
   "engines": {
     "node": ">=22.0.0"
@@ -29,8 +29,9 @@
     "pack": "electron-builder --dir",
     "start": "electron .",
     "rebuild": "HOME=~/.electron-gyp node-gyp rebuild --target=$(node -p \"require('./node_modules/electron/package.json').version\") --arch=$(node -p \"process.arch\") --dist-url=https://electronjs.org/headers --runtime=electron --directory node_modules/better-sqlite3",
-    "test": "bash tests/run-test.sh npm run test:cors && bash tests/run-test.sh npm run test:first-run && bash tests/run-test.sh npm run test:security && bash tests/run-test.sh npm run test:customer-auth && bash tests/run-test.sh npm run test:backup && bash tests/run-test.sh npm run test:printer && bash tests/run-test.sh npm run test:translations && bash tests/run-test.sh npm run test:phone && bash tests/run-test.sh npm run test:currency && bash tests/run-test.sh npm run test:customer-phone-search && bash tests/run-test.sh npm run test:phone-search-integration && bash tests/run-test.sh npm run test:receipt-column-width && bash tests/run-test.sh npm run test:notes-validation && bash tests/run-test.sh npm run test:receipt-printing && bash tests/run-test.sh npm run test:cancel-override && bash tests/run-test.sh npm run test:kitchen-addons && bash tests/run-test.sh npm run test:sequence && bash tests/run-test.sh npm run test:integration-happy && bash tests/run-test.sh npm run test:integration-tax && bash tests/run-test.sh npm run test:integration-payments && bash tests/run-test.sh npm run test:integration-lifecycle && bash tests/run-test.sh npm run test:integration-reconciliation && bash tests/run-test.sh npm run test:integration-loyalty && bash tests/run-test.sh npm run test:integration-discount && bash tests/run-test.sh npm run test:loyalty-toggle && bash tests/run-test.sh npm run test:discount-system && bash tests/run-test.sh npm run test:integration-discount-settings && bash tests/run-test.sh npm run test:integration-loyalty-global && bash tests/run-test.sh npm run test:integration-loyalty-redemption && bash tests/run-test.sh npm run test:bills-print-api && bash tests/run-test.sh npm run test:issue-24 && bash tests/run-test.sh npm run test:tables-string-ids && bash tests/run-test.sh npm run test:held-orders && bash tests/run-test.sh npm run test:schema-health && bash tests/run-test.sh npm run test:master-pin && bash tests/run-test.sh npm run test:database-tools-api && bash tests/run-test.sh npm run test:phone-validation && bash tests/run-test.sh npm run test:phone-migration",
+    "test": "bash tests/run-test.sh npm run test:cors && bash tests/run-test.sh npm run test:release-config && bash tests/run-test.sh npm run test:first-run && bash tests/run-test.sh npm run test:security && bash tests/run-test.sh npm run test:customer-auth && bash tests/run-test.sh npm run test:backup && bash tests/run-test.sh npm run test:printer && bash tests/run-test.sh npm run test:translations && bash tests/run-test.sh npm run test:phone && bash tests/run-test.sh npm run test:currency && bash tests/run-test.sh npm run test:customer-phone-search && bash tests/run-test.sh npm run test:phone-search-integration && bash tests/run-test.sh npm run test:receipt-column-width && bash tests/run-test.sh npm run test:notes-validation && bash tests/run-test.sh npm run test:receipt-printing && bash tests/run-test.sh npm run test:cancel-override && bash tests/run-test.sh npm run test:kitchen-addons && bash tests/run-test.sh npm run test:order-item-addons && bash tests/run-test.sh npm run test:issue-125-addon-reads && bash tests/run-test.sh npm run test:windows-country-code-crash && bash tests/run-test.sh npm run test:reports-insights && bash tests/run-test.sh npm run test:sequence && bash tests/run-test.sh npm run test:integration-happy && bash tests/run-test.sh npm run test:integration-tax && bash tests/run-test.sh npm run test:integration-payments && bash tests/run-test.sh npm run test:integration-lifecycle && bash tests/run-test.sh npm run test:integration-reconciliation && bash tests/run-test.sh npm run test:integration-loyalty && bash tests/run-test.sh npm run test:integration-discount && bash tests/run-test.sh npm run test:loyalty-toggle && bash tests/run-test.sh npm run test:discount-system && bash tests/run-test.sh npm run test:integration-discount-settings && bash tests/run-test.sh npm run test:integration-loyalty-global && bash tests/run-test.sh npm run test:integration-loyalty-redemption && bash tests/run-test.sh npm run test:bills-print-api && bash tests/run-test.sh npm run test:issue-24 && bash tests/run-test.sh npm run test:issue-134-routing && bash tests/run-test.sh npm run test:issue-134-mgmt && bash tests/run-test.sh npm run test:issue-137-barcode && bash tests/run-test.sh npm run test:tables-string-ids && bash tests/run-test.sh npm run test:held-orders && bash tests/run-test.sh npm run test:schema-health && bash tests/run-test.sh npm run test:upgrade-path && bash tests/run-test.sh npm run test:master-pin && bash tests/run-test.sh npm run test:google-drive && bash tests/run-test.sh npm run test:database-tools-api && bash tests/run-test.sh npm run test:phone-validation && bash tests/run-test.sh npm run test:phone-migration && bash tests/run-test.sh npm run test:issue-133-kds-kot-toggles && bash tests/run-test.sh npm run test:whatsapp-schema && bash tests/run-test.sh npm run test:whatsapp-service && bash tests/run-test.sh npm run test:whatsapp-middleware && bash tests/run-test.sh npm run test:issue-127-password-recovery",
     "test:cors": "ts-node --transpile-only -P tests/tsconfig.json tests/cors-security.test.ts",
+    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts",
     "test:notes-validation": "ts-node --transpile-only -P tests/tsconfig.json tests/order-notes-validation.test.ts",
     "test:first-run": "node tests/run-electron-node-test.cjs tests/first-run-setup.test.ts",
     "test:security": "node tests/run-electron-node-test.cjs tests/security-hardening.test.ts",
@@ -42,6 +43,10 @@
     "test:bills-print-api": "ts-node --transpile-only -P tests/tsconfig.json tests/bills-print-api.test.ts",
     "test:cancel-override": "node tests/run-electron-node-test.cjs tests/cancel-override.test.ts",
     "test:kitchen-addons": "node tests/run-electron-node-test.cjs tests/kitchen-addons-parsing.test.ts",
+    "test:order-item-addons": "node tests/run-electron-node-test.cjs tests/order-item-addons.test.ts",
+    "test:issue-125-addon-reads": "node tests/run-electron-node-test.cjs tests/issue-125-addon-read-paths.test.ts",
+    "test:windows-country-code-crash": "node tests/run-electron-node-test.cjs tests/issue-windows-country-code-crash.test.ts",
+    "test:reports-insights": "node tests/run-electron-node-test.cjs tests/reports-insights.test.ts",
     "test:integration-happy": "node tests/run-electron-node-test.cjs tests/integration-happy-path.test.ts",
     "test:integration-tax": "node tests/run-electron-node-test.cjs tests/integration-tax.test.ts",
     "test:integration-payments": "node tests/run-electron-node-test.cjs tests/integration-payments.test.ts",
@@ -56,12 +61,19 @@
     "test:integration-loyalty-global": "node tests/run-electron-node-test.cjs tests/integration-loyalty-global-rate.test.ts",
     "test:integration-loyalty-redemption": "node tests/run-electron-node-test.cjs tests/integration-loyalty-redemption.test.ts",
     "test:issue-24": "node tests/run-electron-node-test.cjs tests/issue-24-cancel-item-checkout.test.ts",
+    "test:issue-134-routing": "node tests/run-electron-node-test.cjs tests/issue-134-station-routing.test.ts",
+    "test:issue-134-mgmt": "node tests/run-electron-node-test.cjs tests/issue-134-station-management.test.ts",
+    "test:issue-133-kds-kot-toggles": "node tests/run-electron-node-test.cjs tests/issue-133-kds-kot-toggles.test.ts",
+    "test:issue-137-barcode": "node tests/run-electron-node-test.cjs tests/issue-137-barcode.test.ts",
     "test:tables-string-ids": "node tests/run-electron-node-test.cjs tests/tables-string-ids.test.ts",
     "test:held-orders": "node tests/run-electron-node-test.cjs tests/held-orders.test.ts",
     "test:product-images": "node tests/run-electron-node-test.cjs tests/product-images.test.ts",
     "test:schema-health": "node tests/run-electron-node-test.cjs tests/schema-health.test.ts",
+    "test:upgrade-path": "node tests/run-electron-node-test.cjs tests/upgrade-path.test.ts",
     "test:master-pin": "node tests/run-electron-node-test.cjs tests/master-pin.test.ts",
+    "test:google-drive": "node tests/run-electron-node-test.cjs tests/google-drive.test.ts",
     "test:database-tools-api": "node tests/run-electron-node-test.cjs tests/database-tools-api.test.ts",
+    "test:issue-127-password-recovery": "node tests/run-electron-node-test.cjs tests/issue-127-password-recovery.test.ts",
     "test:customer-soft-reactivate-bindings": "ts-node --transpile-only -P tests/tsconfig.json tests/customer-soft-reactivate-bindings.test.ts",
     "test:customer-phone-search": "node tests/run-electron-node-test.cjs tests/customer-phone-search.test.ts",
     "test:phone-search-integration": "node tests/run-electron-node-test.cjs tests/phone-search-integration.test.ts",
@@ -71,7 +83,10 @@
     "test:currency": "ts-node --transpile-only -P tests/tsconfig.json tests/currency.test.ts",
     "test:receipt-column-width": "ts-node --transpile-only -P tests/tsconfig.json tests/receipt-column-width.test.ts",
     "test:phone-validation": "node tests/run-electron-node-test.cjs tests/phone-validation.test.ts",
-    "test:phone-migration": "node tests/run-electron-node-test.cjs tests/phone-migration.test.ts"
+    "test:phone-migration": "node tests/run-electron-node-test.cjs tests/phone-migration.test.ts",
+    "test:whatsapp-schema": "node tests/run-electron-node-test.cjs tests/whatsapp-schema.test.ts",
+    "test:whatsapp-service": "ts-node --transpile-only -P tests/tsconfig.json tests/whatsapp-service.test.ts",
+    "test:whatsapp-middleware": "node tests/run-electron-node-test.cjs tests/whatsapp-middleware.test.ts"
   },
   "author": {
     "name": "Flo",
@@ -87,34 +102,37 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.21",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/node": "^20.14.0",
+    "@types/node": "^26.1.1",
     "@types/qrcode": "^1.5.6",
-    "@types/supertest": "^7.2.0",
+    "@types/supertest": "^7.2.1",
     "@types/uuid": "^9.0.8",
     "@types/ws": "^8.5.10",
-    "@typescript-eslint/eslint-plugin": "^8.63.0",
+    "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.63.0",
     "electron": "^31.7.7",
     "electron-builder": "^26.15.3",
-    "eslint": "^9.39.4",
+    "eslint": "^10.7.0",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc13",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^11.10.0",
-    "bonjour-service": "^1.2.1",
+    "better-sqlite3": "^12.11.1",
+    "bonjour-service": "^1.4.3",
     "cors": "^2.8.5",
-    "electron-log": "^5.4.3",
+    "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "express": "^4.19.2",
+    "googleapis": "^173.0.0",
     "jsonwebtoken": "^9.0.2",
-    "libphonenumber-js": "^1.13.8",
+    "libphonenumber-js": "^1.13.9",
     "node-thermal-printer": "^4.2.1",
+    "pino": "^10.3.1",
     "qrcode": "^1.5.3",
     "uuid": "^11.1.1",
-    "ws": "^8.17.0"
+    "ws": "^8.21.1"
   },
   "build": {
     "appId": "com.flo.desktop",
@@ -179,6 +197,13 @@
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "x64",
             "arm64"

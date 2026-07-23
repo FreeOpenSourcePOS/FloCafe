@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue } from '../db';
+import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons } from '../db';
 import { calculateItemTax } from '../services/tax';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
@@ -88,7 +88,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
 
     // Load related data
     const ordersWithRelations = orders.map((order: any) => {
-      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+      const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
       const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
       const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
       const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
@@ -98,7 +98,8 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
 
     res.json({ orders: ordersWithRelations });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -115,7 +116,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
       return res.status(403).json({ error: 'Waiters can only view their own orders' });
     }
 
-    const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson);
+    const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
     const tableRow = (order as any).table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get((order as any).table_id) as any : null;
     const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
     const customer = (order as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((order as any).customer_id) : null;
@@ -123,13 +124,21 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
 
     res.json({ order: { ...order, items, table, customer, bill } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
 router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
-    const { table_id, customer_id, user_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = req.body;
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = req.body;
+    // Always the authenticated caller, never client-supplied — trusting a
+    // client-sent user_id would let staff spoof order attribution, and the
+    // frontend has in fact never sent one, so every order got user_id=NULL.
+    // That silently broke waiters' own order visibility (GET /orders scopes
+    // waiters to `user_id = <their id>`, which NULL can never match) and any
+    // per-staff sales attribution.
+    const authenticatedUserId = (req as any).user.userId;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ error: 'At least one item is required' });
@@ -169,7 +178,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
         INSERT INTO orders (order_number, table_id, customer_id, user_id, type, guest_count, special_instructions,
           packaging_charge, delivery_charge, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `).run(orderNumber, table_id || null, customer_id || null, user_id || null, type, guest_count || null,
+      `).run(orderNumber, table_id || null, customer_id || null, authenticatedUserId, type, guest_count || null,
         special_instructions || null, packaging_charge || 0, delivery_charge || 0, now(), now());
 
       const orderId = orderResult.lastInsertRowid;
@@ -182,8 +191,8 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       const insertItem = db.prepare(`
         INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
           subtotal, tax_amount, tax_breakdown, tax_type, discount_amount, total, variant_selection,
-          modifier_selection, addons, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          modifier_selection, special_instructions, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       for (const item of items) {
@@ -233,15 +242,16 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
         const itemTotal = itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
         subtotal += itemSubtotal;
 
-        insertItem.run(
+        const itemCreatedAt = now();
+        const insertItemResult = insertItem.run(
           orderId, product.id, product.name, product.sku, unitPrice, quantity,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown),
           product.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
           JSON.stringify(item.modifier_selection || null),
-          JSON.stringify(item.addons || null),
-          item.special_instructions || null, now(), now()
+          item.special_instructions || null, itemCreatedAt, itemCreatedAt
         );
+        insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
 
         if (product.track_inventory) {
           db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
@@ -263,7 +273,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       }
 
       const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;
-      const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson);
+      const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
       return { order, orderItems };
     });
 
@@ -282,7 +292,8 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
     res.status(201).json({ order: Object.assign({}, order, { items: orderItems }) });
   } catch (error: any) {
     console.error('[Orders] Create error:', error);
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -332,8 +343,8 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       const insertItem = db.prepare(`
         INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
           subtotal, tax_amount, tax_breakdown, tax_type, discount_amount, total, variant_selection,
-          modifier_selection, addons, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+          modifier_selection, special_instructions, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       for (const item of items) {
@@ -371,15 +382,16 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
         const taxResult = calculateItemTax(tenantInfo, product, itemSubtotal, customer);
         const itemTotal = itemSubtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount);
 
-        insertItem.run(
+        const itemCreatedAt = now();
+        const insertItemResult = insertItem.run(
           req.params.id, product.id, product.name, product.sku, unitPrice, quantity,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown),
           product.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
           JSON.stringify(item.modifier_selection || null),
-          JSON.stringify(item.addons || null),
-          item.special_instructions || null, now(), now()
+          item.special_instructions || null, itemCreatedAt, itemCreatedAt
         );
+        insertOrderItemAddons(db, insertItemResult.lastInsertRowid, item.addons, itemCreatedAt);
 
         if (product.track_inventory) {
           db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
@@ -451,7 +463,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       }
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
-      const updatedItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson);
+      const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
       return { updatedOrder, updatedItems };
     });
 
@@ -460,7 +472,8 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
 
     res.json({ order: Object.assign({}, updatedOrder, { items: updatedItems }) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -565,7 +578,7 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'chef', 'waiter'), (
       }
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
-      const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson);
+      const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
       const tableRow2 = updatedOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any : null;
       const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
       return { updatedOrder, orderItems, table };
@@ -577,7 +590,8 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'chef', 'waiter'), (
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -621,7 +635,8 @@ router.patch('/:id/customer', requireRole('owner', 'manager'), (req: Request, re
 
     res.json({ order: { ...updatedOrder, customer } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -652,7 +667,7 @@ router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashie
     });
 
     const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
-    const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson);
+    const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
 
     cloudSync.recordOrderChanged(req.params.id, 'order.type_changed');
     notifyKdsUpdate();
@@ -660,7 +675,8 @@ router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashie
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table: null }) });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -812,7 +828,8 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
     notifyOrderUpdated();
     res.json({ order: result });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -889,17 +906,8 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
     }
 
     // Calculate item discount amount (include addon prices)
-    let addonTotal = 0;
-    if (item.addons) {
-      try {
-        const addons = typeof item.addons === 'string' ? JSON.parse(item.addons) : item.addons;
-        if (Array.isArray(addons)) {
-          for (const addon of addons) {
-            addonTotal += (addon.price || 0) * item.quantity;
-          }
-        }
-      } catch { }
-    }
+    const addonRows = db.prepare('SELECT price FROM order_item_addons WHERE order_item_id = ?').all(item.id) as { price: number }[];
+    const addonTotal = addonRows.reduce((sum, addon) => sum + (addon.price || 0) * item.quantity, 0);
     const itemBaseTotal = item.unit_price * item.quantity + addonTotal;
 
     let discountAmount: number;
@@ -986,7 +994,8 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
 
     res.json({ item: updatedItem });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

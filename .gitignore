@@ -1,9 +1,14 @@
 node_modules/
 dist/
 release/
+mas-build-output/
 *.db
 *.db-shm
 *.db-wal
+# Intentional exception: a real committed DB fixture for the upgrade-path
+# regression test (tests/upgrade-path.test.ts, specs/DatabaseMigrations.md).
+!tests/fixtures/upgrade-snapshots/*.db
+backups/
 .env
 .env.local
 .DS_Store
@@ -12,6 +17,8 @@ release/
 docs/superpowers/
 .superpowers
 .gstack
+# WhatsApp linked-device credentials (Baileys auth state) — never commit
+whatsapp-auth/
 
 # Local pentest reports/PoCs — never commit
 vuln/

@@ -36,7 +36,8 @@ router.get('/', requireRole('owner', 'manager'), (req: Request, res: Response) =
     const staff = db.prepare(query).all(...params);
     res.json({ staff });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -61,7 +62,8 @@ router.get('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
     res.json({ staff: { ...member, performance } });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -113,7 +115,8 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
 
     res.status(201).json({ staff: member });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -180,7 +183,8 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
 
     res.json({ staff: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -211,7 +215,8 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
     ).get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -229,7 +234,8 @@ router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, r
     ).get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

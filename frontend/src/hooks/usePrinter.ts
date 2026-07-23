@@ -183,8 +183,17 @@ export const usePrinterStore = create<PrinterState>()(
 
       printKot: async (order, opts) => {
         set({ lastError: null });
+        // Single choke point for every KOT print path (auto + manual): when
+        // kot_printing_enabled is off, no KOT print command may ever go out
+        // (issue #133) — coarser than auto_print_kot, which only gates
+        // automatic printing on order placement.
+        const { kotPrintingEnabled, printerUseUnicode } = usePosSettingsStore.getState();
+        if (!kotPrintingEnabled) {
+          const err = new Error('KOT printing is disabled for this business');
+          set({ lastError: err.message });
+          throw err;
+        }
         try {
-          const { printerUseUnicode } = usePosSettingsStore.getState();
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {

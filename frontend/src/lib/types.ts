@@ -53,6 +53,7 @@ export interface Product {
   category_id: number;
   name: string;
   sku: string | null;
+  barcode: string | null;
   description: string | null;
   price: number;
   cost_price: number | null;

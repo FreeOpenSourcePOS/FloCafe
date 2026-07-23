@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret } from '../routes/auth';
 
@@ -209,7 +209,10 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
 
   // Filter and attach items
   const ordersWithItems = orders.map((order: any) => {
-    let items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
+    let items = attachEffectiveAddons(db, db
+      .prepare('SELECT * FROM order_items WHERE order_id = ?')
+      .all(order.id)
+      .map(parseItemJson) as any[]);
 
     // Filter items by category if user has category restrictions
     if (categoryIds.length > 0) {

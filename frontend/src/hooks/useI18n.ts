@@ -10,15 +10,13 @@ export function useI18n(): {
 } {
   const language = usePosSettingsStore((s) => s.language);
   const setLanguage = usePosSettingsStore((s) => s.setLanguage);
-  
+
+  // Stable identity per language — prevents `useCallback(..., [t])` consumers
+  // (e.g. useKdsConnection's tryWebSocket) from churning on every render and
+  // tearing down their WebSocket in a loop.
   const t = useCallback(
     (key: string, params?: Record<string, string | number>) => translate(key, language, params),
-    [language]
+    [language],
   );
-
-  return {
-    language,
-    setLanguage,
-    t,
-  };
+  return { language, setLanguage, t };
 }

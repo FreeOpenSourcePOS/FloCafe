@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import * as fs from 'fs';
-import { getDbPath, createBackup, closeDatabase, initDatabase } from '../db';
+import { getDbPath, createBackup, closeDatabase, initDatabase, listBackups, deleteBackup } from '../db';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { runHealthCheck, applySafeFixes } from '../services/schema-health';
@@ -14,7 +14,7 @@ router.get('/health-check', requireRole('owner'), (_req: Request, res: Response)
     res.json(runHealthCheck());
   } catch (error: any) {
     console.error('[DB Tools] health-check error:', error);
-    res.status(500).json({ error: 'Health check failed: ' + error.message });
+    res.status(500).json({ error: 'Health check failed' });
   }
 });
 
@@ -24,7 +24,31 @@ router.post('/apply-safe-fixes', requireRole('owner'), (req: Request, res: Respo
     res.json(applySafeFixes(findingIds));
   } catch (error: any) {
     console.error('[DB Tools] apply-safe-fixes error:', error);
-    res.status(500).json({ error: 'Applying fixes failed: ' + error.message });
+    res.status(500).json({ error: 'Applying fixes failed' });
+  }
+});
+
+// Read-only listing of the managed backups/ directory (#120). Not master-PIN
+// gated — same read-only rationale as /health-check.
+router.get('/backups', requireRole('owner'), (_req: Request, res: Response) => {
+  try {
+    res.json({ backups: listBackups() });
+  } catch (error: any) {
+    console.error('[DB Tools] list backups error:', error);
+    res.status(500).json({ error: 'Listing backups failed' });
+  }
+});
+
+// Deletes one backup from the managed backups/ directory (#120) — same
+// master-PIN gate as creating one, since a backup is the safety net a
+// restore/initialize depends on.
+router.post('/backups/:fileName/delete', requireRole('owner'), requireMasterPin, (req: Request, res: Response) => {
+  try {
+    deleteBackup(req.params.fileName);
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('[DB Tools] delete backup error:', error);
+    res.status(400).json({ error: 'Deleting backup failed' });
   }
 });
 
@@ -47,7 +71,8 @@ router.post('/master-pin/reset', requireRole('owner'), (req: Request, res: Respo
     resetMasterPin(pin!);
     res.json({ success: true });
   } catch (error: any) {
-    res.status(500).json({ error: 'Failed to set Master PIN: ' + error.message });
+    console.error('[DB Tools] set Master PIN error:', error);
+    res.status(500).json({ error: 'Failed to set Master PIN' });
   }
 });
 
@@ -72,7 +97,7 @@ router.post('/initialize', requireRole('owner'), requireMasterPin, async (req: R
     res.json({ success: true, backupPath });
   } catch (error: any) {
     console.error('[DB Tools] initialize error:', error);
-    res.status(500).json({ error: 'Initialize failed: ' + error.message });
+    res.status(500).json({ error: 'Initialize failed' });
   }
 });
 

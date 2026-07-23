@@ -6,10 +6,10 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getDatabase, parseItemJson } from './db';
+import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import { getJWTSecret } from './routes/auth';
-import { rateLimit, corsOptions } from './middleware/security';
+import { rateLimit, authRateLimit, corsOptions } from './middleware/security';
 
 let kdsServer: http.Server | null = null;
 const KDS_PORT = parseInt(process.env.KDS_PORT || '3002', 10);
@@ -126,8 +126,35 @@ export function startKdsServer(): Promise<void> {
       });
     });
 
+    // Public tenant metadata — language + KDS defaults.
+    // No auth: the standalone KDS needs this on first paint, before login,
+    // and lives on a different origin than the main API.
+    app.get('/api/kds/info', (_req: Request, res: Response) => {
+      // Disabled KDS → pretend the endpoint doesn't exist rather than
+      // confirming it's just off; this is the first thing a standalone KDS
+      // device fetches, pre-login, so it's the least info a stale/
+      // misconfigured device on the LAN should get (issue #133).
+      if (!isKdsEnabled()) {
+        return res.status(404).json({ error: 'Not found' });
+      }
+      try {
+        const db = getDatabase();
+        const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
+        const s: Record<string, string> = {};
+        for (const row of rows) s[row.key] = row.value;
+        res.json({
+          language: s.language || null,
+          country: s.country || null,
+          kds_default_view: s.kds_default_view === 'kanban' ? 'kanban' : 'tabs',
+        });
+      } catch (error: any) {
+        console.error("[API] Internal error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    });
+
     // KDS Auth - verify user has chef/manager/owner role
-    app.post('/api/auth/login', (req: Request, res: Response) => {
+    app.post('/api/auth/login', authRateLimit(), (req: Request, res: Response) => {
       try {
         const { email, password } = req.body;
         if (!email || !password) {
@@ -164,12 +191,32 @@ export function startKdsServer(): Promise<void> {
           },
         });
       } catch (error: any) {
-        res.status(500).json({ error: error.message });
+        console.error("[API] Internal error:", error);
+        res.status(500).json({ error: "Internal server error" });
+      }
+    });
+
+    // Current user info — lets the frontend restore a session from a saved
+    // token on page load/reload instead of forcing a fresh login every time.
+    app.get('/api/auth/me', requireAuth, (req: Request, res: Response) => {
+      try {
+        const authedUser = (req as any).user as KdsRequestUser;
+        const db = getDatabase();
+        const row = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(authedUser.userId) as any;
+        if (!row) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+        res.json({ user: row });
+      } catch (error: any) {
+        res.status(500).json({ error: 'Internal server error' });
       }
     });
 
     // Get orders for KDS (pending, preparing, ready)
     app.get('/api/kds/orders', requireAuth, (req: Request, res: Response) => {
+      if (!isKdsEnabled()) {
+        return res.status(403).json({ error: 'KDS is disabled for this business' });
+      }
       try {
         const db = getDatabase();
         const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
@@ -187,7 +234,7 @@ export function startKdsServer(): Promise<void> {
         const orders = db.prepare(query).all();
 
         const ordersWithItems = orders.map((order: any) => {
-          let items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson);
+          let items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
 
           // Filter by category if provided
           if (categoryIds.length > 0) {
@@ -207,12 +254,16 @@ export function startKdsServer(): Promise<void> {
 
         res.json({ orders: ordersWithItems });
       } catch (error: any) {
-        res.status(500).json({ error: error.message });
+        console.error("[API] Internal error:", error);
+        res.status(500).json({ error: "Internal server error" });
       }
     });
 
     // Update order item status
     app.patch('/api/kds/items/:id/status', requireAuth, (req: Request, res: Response) => {
+      if (!isKdsEnabled()) {
+        return res.status(403).json({ error: 'KDS is disabled for this business' });
+      }
       try {
         const { status } = req.body;
         const validStatuses = ['pending', 'preparing', 'ready', 'served'];
@@ -242,7 +293,8 @@ export function startKdsServer(): Promise<void> {
         res.json({ success: true });
       } catch (error: any) {
         console.error('[KDS Server] PATCH item status error:', error);
-        res.status(500).json({ error: error.message });
+        console.error("[API] Internal error:", error);
+        res.status(500).json({ error: "Internal server error" });
       }
     });
 
@@ -253,7 +305,8 @@ export function startKdsServer(): Promise<void> {
         const categories = db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();
         res.json({ categories });
       } catch (error: any) {
-        res.status(500).json({ error: error.message });
+        console.error("[API] Internal error:", error);
+        res.status(500).json({ error: "Internal server error" });
       }
     });
 
@@ -314,7 +367,7 @@ export function startKdsServer(): Promise<void> {
     // ── Error handler ────────────────────────────────────────────────
     app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
       console.error('[KDS Server] Error:', err);
-      res.status(500).json({ error: err.message || 'Internal server error' });
+      res.status(500).json({ error: 'Internal server error' });
     });
 
     let currentKdsPort = KDS_PORT;
@@ -325,8 +378,27 @@ export function startKdsServer(): Promise<void> {
       console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
 
       if (kdsServer) {
-        const wss = new WebSocketServer({ server: kdsServer, path: '/kds' });
+        // noServer + a manual 'upgrade' handler so a disabled KDS can 404 the
+        // upgrade instead of completing it — see main/server.ts for the same
+        // pattern on the primary API server (issue #133).
+        const wss = new WebSocketServer({ noServer: true });
         setupKdsWebSocket(wss);
+
+        kdsServer.on('upgrade', (request, socket, head) => {
+          const pathname = (request.url || '').split('?')[0];
+          if (pathname !== '/kds') return;
+
+          if (!isKdsEnabled()) {
+            socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+
+          wss.handleUpgrade(request, socket, head, (ws) => {
+            wss.emit('connection', ws, request);
+          });
+        });
+
         console.log(`[KDS Server] WebSocket running on ws://localhost:${activeKdsPort}/kds`);
       }
 

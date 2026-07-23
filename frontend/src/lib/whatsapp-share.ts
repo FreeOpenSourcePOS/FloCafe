@@ -8,6 +8,8 @@
 import type { Bill, Tenant, Customer } from '@/lib/types';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './printer/format-date';
+import api from './api';
+import toast from 'react-hot-toast';
 
 export interface WhatsAppShareOptions {
   /** Points earned from this bill (cashback) */
@@ -122,4 +124,41 @@ export function getWhatsAppMessage(
 
 function formatAmount(value: number | string, currency: string, locale: string): string {
   return `${currency}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/**
+ * Send a paid bill receipt through Flo's connected WhatsApp session.
+ * Single source of truth for the /whatsapp/send call + error-toast mapping,
+ * shared by the orders list and the PaymentModal "send after payment" step.
+ */
+export async function sendBillViaFlo(
+  bill: Bill,
+  customerPhone: string,
+  currency: string,
+  t: (key: string, params?: Record<string, string | number>) => string,
+): Promise<void> {
+  const message = `Receipt for bill ${bill.bill_number} — Total ${currency} ${bill.total}`;
+  try {
+    const { data } = await api.post('/whatsapp/send', {
+      bill_id: bill.id,
+      phone_e164: customerPhone,
+      body: message,
+    });
+    if (data?.ok) toast.success(t('whatsapp.send.success'));
+  } catch (err: unknown) {
+    const axiosErr = err as { response?: { data?: { error?: string; reason?: string } } };
+    const reason = axiosErr?.response?.data?.reason;
+    const msg = axiosErr?.response?.data?.error ?? t('whatsapp.send.failed');
+    if (reason === 'not_connected') {
+      toast.error(t('whatsapp.send.error.notConnected'));
+    } else if (reason === 'not_on_whatsapp') {
+      toast.error(t('whatsapp.send.error.notOnWhatsapp'));
+    } else if (reason === 'blocked') {
+      toast.error(t('whatsapp.send.error.blocked'));
+    } else if (reason === 'rate_limited') {
+      toast.error(msg || t('whatsapp.send.error.rateLimited'));
+    } else {
+      toast.error(msg);
+    }
+  }
 }

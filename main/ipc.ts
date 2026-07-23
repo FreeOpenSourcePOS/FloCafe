@@ -5,6 +5,7 @@ import { getDatabase, createBackup, restoreBackup, restoreBackup as restoreFn, n
 import { getLocalIP } from './server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
+import { getStatus as getWhatsAppStatus } from './services/whatsapp';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -17,6 +18,7 @@ const ALLOWED_IPC_KEYS = new Set([
   'tax_scheme',
   'loyalty_enabled',
   'printer_method', 'paper_size', 'bill_template',
+  'telemetry_enabled',
 ]);
 
 const SENSITIVE_SETTING_KEYS = new Set([
@@ -64,21 +66,28 @@ export function registerIpcHandlers(): void {
     }
   });
 
-  ipcMain.handle('restore-backup', async (event, pin?: string) => {
+  ipcMain.handle('restore-backup', async (event, pin?: string, presetBackupPath?: string) => {
     const auth = authorizeMasterPin(pin, 'ipc:restore');
     if (!auth.ok) return { success: false, error: auth.error };
 
     try {
-      const result = await dialog.showOpenDialog({
-        filters: [{ name: 'SQLite Database', extensions: ['db'] }],
-        properties: ['openFile'],
-      });
+      // A specific backup (e.g. picked from the Backup History list, #120)
+      // skips the native file picker entirely.
+      let backupPath = presetBackupPath;
+      if (!backupPath) {
+        const result = await dialog.showOpenDialog({
+          filters: [{ name: 'SQLite Database', extensions: ['db'] }],
+          properties: ['openFile'],
+        });
 
-      if (result.canceled || !result.filePaths.length) {
-        return { success: false, error: 'Cancelled' };
+        if (result.canceled || !result.filePaths.length) {
+          return { success: false, error: 'Cancelled' };
+        }
+        backupPath = result.filePaths[0];
+      } else if (!fs.existsSync(backupPath)) {
+        return { success: false, error: 'Backup file no longer exists' };
       }
 
-      const backupPath = result.filePaths[0];
       const backupVersion = getSchemaVersionFromBackup(backupPath);
 
       if (backupVersion === 0) {
@@ -208,6 +217,15 @@ export function registerIpcHandlers(): void {
     }
   });
 
+  // WhatsApp status snapshot for renderer polling on app focus
+  ipcMain.handle('whatsapp-get-status', async () => {
+    try {
+      return getWhatsAppStatus();
+    } catch (err: any) {
+      return { error: err.message };
+    }
+  });
+
   // KDS info
   ipcMain.handle('get-kds-info', async () => {
     const localIP = getLocalIP();
@@ -317,75 +335,6 @@ export function registerIpcHandlers(): void {
       };
     } catch (error: any) {
       return { error: error.message };
-    }
-  });
-
-  // User management
-  ipcMain.handle('get-users', async () => {
-    try {
-      const db = getDatabase();
-      const users = db.prepare('SELECT id, name, email, role, is_active, created_at FROM users').all();
-      return users;
-    } catch (error: any) {
-      return { error: error.message };
-    }
-  });
-
-  ipcMain.handle('create-user', async (event, userData: any) => {
-    try {
-      const bcrypt = require('bcryptjs');
-      const hashedPassword = bcrypt.hashSync(userData.password, 10);
-      const hashedPin = userData.pin ? bcrypt.hashSync(userData.pin.toString(), 10) : null;
-
-      const db = getDatabase();
-      const result = db.prepare(`
-        INSERT INTO users (name, email, password, pin_hash, role, is_active, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-      `).run(userData.name, userData.email, hashedPassword, hashedPin,
-        userData.role || 'cashier', now(), now());
-
-      return { success: true, id: result.lastInsertRowid };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('update-user', async (event, id: number, userData: any) => {
-    try {
-      const db = getDatabase();
-      const updates: string[] = [];
-      const params: any[] = [];
-
-      if (userData.name) { updates.push('name = ?'); params.push(userData.name); }
-      if (userData.email) { updates.push('email = ?'); params.push(userData.email); }
-      if (userData.pin !== undefined) {
-        updates.push('pin_hash = ?');
-        const bcrypt = require('bcryptjs');
-        params.push(userData.pin ? bcrypt.hashSync(userData.pin.toString(), 10) : null);
-      }
-      if (userData.role) { updates.push('role = ?'); params.push(userData.role); }
-      if (userData.is_active !== undefined) { updates.push('is_active = ?'); params.push(userData.is_active ? 1 : 0); }
-
-      if (updates.length === 0) return { success: false, error: 'No updates provided' };
-
-      updates.push('updated_at = ?');
-      params.push(now());
-      params.push(id);
-
-      db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
-      return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message };
-    }
-  });
-
-  ipcMain.handle('delete-user', async (event, id: number) => {
-    try {
-      const db = getDatabase();
-      db.prepare('DELETE FROM users WHERE id = ?').run(id);
-      return { success: true };
-    } catch (error: any) {
-      return { success: false, error: error.message };
     }
   });
 

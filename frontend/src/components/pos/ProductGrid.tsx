@@ -71,6 +71,18 @@ export default function ProductGrid({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return;
+              // Typed or pasted barcode, not just a scanner — a dedicated
+              // action into this field works regardless of typing speed.
+              const trimmed = search.trim();
+              if (!trimmed) return;
+              const match = products.find((p) => p.barcode === trimmed);
+              if (match) {
+                onProductClick(match);
+                setSearch('');
+              }
+            }}
             placeholder={t('pos.searchProducts')}
             className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />

@@ -110,9 +110,10 @@ export function buildGstBillBytes(
     // Addons
     if (item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
-        const addonLine = `   + ${addon.name}`;
+        const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
+        const addonLine = `   + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
         const addonPrice = addon.price && Number(addon.price) > 0
-          ? formatAmount(Number(addon.price) * item.quantity, currency, locale)
+          ? formatAmount(Number(addon.price) * qty * item.quantity, currency, locale)
           : '';
         enc.text(padRow(addonLine, addonPrice, cols)).newline();
       }

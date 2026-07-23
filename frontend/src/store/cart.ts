@@ -28,10 +28,14 @@ interface CartState {
   itemCount: () => number;
 }
 
-function generateCartItemId(productId: number, addons: Addon[], specialInstructions: string): string {
+function generateCartItemId(productId: number | string, addons: Addon[], specialInstructions: string): string {
   const parts = [String(productId)];
   if (addons.length > 0) {
-    parts.push(addons.map((a) => a.id).sort((a, b) => a - b).join(','));
+    const addonStr = [...addons]
+      .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+      .map((a) => `${a.id}:${a.quantity || 1}`)
+      .join(',');
+    parts.push(addonStr);
   }
   if (specialInstructions) {
     parts.push(specialInstructions);
@@ -101,7 +105,7 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   subtotal: () => {
     return get().items.reduce((sum, item) => {
-      const addonTotal = item.addons.reduce((a, addon) => a + Number(addon.price), 0);
+      const addonTotal = item.addons.reduce((a, addon) => a + Number(addon.price) * (Number(addon.quantity) || 1), 0);
       return sum + (Number(item.product.price) + addonTotal) * item.quantity;
     }, 0);
   },

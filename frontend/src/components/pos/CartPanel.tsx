@@ -148,7 +148,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, variant = 
                     <div className="mt-0.5">
                       {item.addons.map((a) => (
                         <p key={a.id} className="text-xs text-gray-400">
-                          + {a.name} {Number(a.price) > 0 && `(${fmt(Number(a.price))})`}
+                          + {a.name}{(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''} {Number(a.price) > 0 && `(${fmt(Number(a.price) * (a.quantity || 1))})`}
                         </p>
                       ))}
                     </div>

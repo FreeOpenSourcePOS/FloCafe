@@ -71,14 +71,14 @@ export default function ProductsPage() {
   const [addonForm, setAddonForm] = useState({ name: '', description: '', is_required: false, min_selection: 0, max_selection: 10 });
   const [showAddonModal, setShowAddonModal] = useState(false);
 
-  const [addonList, setAddonList] = useState<{ id?: number; name: string; price: number; is_active?: boolean }[]>([]);
+  const [addonList, setAddonList] = useState<{ id?: number | string; name: string; price: number; is_active?: boolean }[]>([]);
   const [form, setForm] = useState({
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '', barcode: '',
     tax_type: 'inclusive', tax_rate: '5', description: '',
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
     customTag: '',
-    addon_group_ids: [] as number[],
+    addon_group_ids: [] as (number | string)[],
     image_url: null as string | null,
   });
   const [imageTouched, setImageTouched] = useState(false);
@@ -338,8 +338,8 @@ export default function ProductsPage() {
 
   const openEditAddonGroup = (group: AddonGroup) => {
     setEditingAddonGroup(group);
-    setAddonForm({ name: group.name, description: group.description || '', is_required: group.is_required, min_selection: group.min_selection, max_selection: group.max_selection });
-    setAddonList(group.addons?.map((a) => ({ id: a.id, name: a.name, price: a.price, is_active: a.is_active })) || []);
+    setAddonForm({ name: group.name, description: group.description || '', is_required: Boolean(group.is_required), min_selection: group.min_selection, max_selection: group.max_selection });
+    setAddonList(group.addons?.map((a) => ({ id: a.id, name: a.name, price: a.price, is_active: Boolean(a.is_active) })) || []);
     setShowAddonModal(true);
   };
 
@@ -359,7 +359,7 @@ export default function ProductsPage() {
     } catch { toast.error(t('products.failedToSaveAddonGroup')); }
   };
 
-  const handleAddonGroupDelete = async (id: number) => {
+  const handleAddonGroupDelete = async (id: number | string) => {
     if (!await confirm(t('products.deleteAddonGroupConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/addon-groups/${id}`);

@@ -154,6 +154,16 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       validateOrderNotes(db, special_instructions);
       for (const item of items) {
         validateItemNotes(db, item.special_instructions);
+        if (item.addons && Array.isArray(item.addons)) {
+          for (const addon of item.addons) {
+            if (!addon) continue;
+            if (addon.quantity !== undefined) {
+              if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
+                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+              }
+            }
+          }
+        }
       }
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -221,9 +231,16 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
         }
 
         let itemSubtotal = unitPrice * quantity;
-        if (item.addons) {
+        if (item.addons && Array.isArray(item.addons)) {
           for (const addon of item.addons) {
-            itemSubtotal += (addon.price || 0) * quantity;
+            if (!addon) continue;
+            if (addon.quantity !== undefined) {
+              if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
+                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+              }
+            }
+            const addonQty = addon.quantity || 1;
+            itemSubtotal += (addon.price || 0) * addonQty * quantity;
           }
         }
         itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
@@ -317,6 +334,16 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     try {
       for (const item of items) {
         validateItemNotes(db, item.special_instructions);
+        if (item.addons && Array.isArray(item.addons)) {
+          for (const addon of item.addons) {
+            if (!addon) continue;
+            if (addon.quantity !== undefined) {
+              if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
+                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+              }
+            }
+          }
+        }
       }
       if (special_instructions !== undefined) {
         validateOrderNotes(db, special_instructions);
@@ -372,9 +399,16 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
         }
 
         let itemSubtotal = unitPrice * quantity;
-        if (item.addons) {
+        if (item.addons && Array.isArray(item.addons)) {
           for (const addon of item.addons) {
-            itemSubtotal += (addon.price || 0) * quantity;
+            if (!addon) continue;
+            if (addon.quantity !== undefined) {
+              if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
+                throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
+              }
+            }
+            const addonQty = addon.quantity || 1;
+            itemSubtotal += (addon.price || 0) * addonQty * quantity;
           }
         }
         itemSubtotal = Math.max(0, itemSubtotal - itemDiscount);
@@ -906,8 +940,8 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
     }
 
     // Calculate item discount amount (include addon prices)
-    const addonRows = db.prepare('SELECT price FROM order_item_addons WHERE order_item_id = ?').all(item.id) as { price: number }[];
-    const addonTotal = addonRows.reduce((sum, addon) => sum + (addon.price || 0) * item.quantity, 0);
+    const addonRows = db.prepare('SELECT price, quantity FROM order_item_addons WHERE order_item_id = ?').all(item.id) as { price: number; quantity?: number }[];
+    const addonTotal = addonRows.reduce((sum, addon) => sum + (addon.price || 0) * (addon.quantity || 1) * item.quantity, 0);
     const itemBaseTotal = item.unit_price * item.quantity + addonTotal;
 
     let discountAmount: number;

@@ -17,18 +17,18 @@ export default function AddonGroupsPage() {
   const { confirm, ConfirmDialog } = useConfirm();
   const [showForm, setShowForm] = useState(false);
   const [editingGroup, setEditingGroup] = useState<AddonGroup | null>(null);
-  const [expandedGroup, setExpandedGroup] = useState<number | null>(null);
+  const [expandedGroup, setExpandedGroup] = useState<number | string | null>(null);
 
   // Group form
   const [form, setForm] = useState({
-    name: '', description: '', is_required: false,
+    name: '', description: '', is_required: false, allow_multiple_quantities: false,
     min_selection: '0', max_selection: '1',
   });
 
   // Addon form (inline)
   const [addonForm, setAddonForm] = useState({ name: '', price: '0' });
-  const [addingAddonTo, setAddingAddonTo] = useState<number | null>(null);
-  const [editingAddon, setEditingAddon] = useState<{ groupId: number; addon: Addon } | null>(null);
+  const [addingAddonTo, setAddingAddonTo] = useState<number | string | null>(null);
+  const [editingAddon, setEditingAddon] = useState<{ groupId: number | string; addon: Addon } | null>(null);
 
   const fmt = useFormatCurrency();
 
@@ -52,7 +52,7 @@ export default function AddonGroupsPage() {
   useEffect(() => { fetchGroups(); }, []);
 
   const resetForm = () => {
-    setForm({ name: '', description: '', is_required: false, min_selection: '0', max_selection: '1' });
+    setForm({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: '0', max_selection: '1' });
     setEditingGroup(null);
     setShowForm(false);
   };
@@ -62,7 +62,8 @@ export default function AddonGroupsPage() {
     setForm({
       name: group.name,
       description: group.description || '',
-      is_required: group.is_required,
+      is_required: Boolean(group.is_required),
+      allow_multiple_quantities: Boolean(group.allow_multiple_quantities),
       min_selection: String(group.min_selection),
       max_selection: String(group.max_selection),
     });
@@ -102,7 +103,7 @@ export default function AddonGroupsPage() {
     }
   };
 
-  const handleDeleteGroup = async (id: number) => {
+  const handleDeleteGroup = async (id: number | string) => {
     if (!await confirm(t('addonGroups.deleteGroupConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/addon-groups/${id}`);
@@ -114,7 +115,7 @@ export default function AddonGroupsPage() {
   };
 
   // Addon CRUD
-  const handleAddAddon = async (groupId: number) => {
+  const handleAddAddon = async (groupId: number | string) => {
     if (!addonForm.name.trim()) return;
     try {
       await api.post(`/addon-groups/${groupId}/addons`, {
@@ -146,7 +147,7 @@ export default function AddonGroupsPage() {
     }
   };
 
-  const handleDeleteAddon = async (groupId: number, addonId: number) => {
+  const handleDeleteAddon = async (groupId: number | string, addonId: number | string) => {
     if (!await confirm(t('addonGroups.deleteAddonConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/addon-groups/${groupId}/addons/${addonId}`);
@@ -314,6 +315,11 @@ export default function AddonGroupsPage() {
                 <input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked })}
                   className="rounded border-gray-300 text-brand focus:ring-brand" />
                 <span className="text-sm text-gray-700">{t('products.requiredSelection')}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="allow_multiple_quantities" checked={form.allow_multiple_quantities} onChange={(e) => setForm({ ...form, allow_multiple_quantities: e.target.checked })}
+                  className="rounded border-gray-300 text-brand focus:ring-brand" />
+                <label htmlFor="allow_multiple_quantities" className="text-sm text-gray-700">Allow multiple quantities per add-on</label>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

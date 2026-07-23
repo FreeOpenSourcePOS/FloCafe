@@ -180,9 +180,10 @@ export function buildClassicReceiptBytes(
     // Addons
     if (item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
-        const addonLabel = truncate(`  + ${addon.name}`, cols - 8);
+        const qty = addon.quantity || 1;
+        const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
         if (addon.price && Number(addon.price) > 0) {
-          const addonTotal = Number(addon.price) * item.quantity;
+          const addonTotal = Number(addon.price) * qty * item.quantity;
           enc.text(padRow(addonLabel, formatAmount(addonTotal, currency, locale), cols)).newline();
         } else {
           enc.text(addonLabel).newline();
@@ -445,9 +446,10 @@ export function buildDetailedReceiptBytes(
 
     if (item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
-        const addonLabel = truncate(`  + ${addon.name}`, cols - 8);
+        const qty = addon.quantity || 1;
+        const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
         if (addon.price && Number(addon.price) > 0) {
-          const addonTotal = Number(addon.price) * item.quantity;
+          const addonTotal = Number(addon.price) * qty * item.quantity;
           enc.text(padRow(addonLabel, formatAmount(addonTotal, currency, locale), cols)).newline();
         } else {
           enc.text(addonLabel).newline();

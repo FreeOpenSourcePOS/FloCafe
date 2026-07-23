@@ -1267,6 +1267,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSettingIfMissing('kot_printing_enabled', 'true');
     },
   },
+  {
+    version: 33,
+    name: 'add_addon_groups_allow_multiple_quantities',
+    up: () => {
+      if (!getColumns(db, 'addon_groups').includes('allow_multiple_quantities')) {
+        db.exec(`ALTER TABLE addon_groups ADD COLUMN allow_multiple_quantities INTEGER DEFAULT 0`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -1417,6 +1426,7 @@ function createSchema(): void {
       is_required INTEGER DEFAULT 0,
       min_selection INTEGER DEFAULT 0,
       max_selection INTEGER DEFAULT 1,
+      allow_multiple_quantities INTEGER DEFAULT 0,
       is_active INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -1872,14 +1882,14 @@ export function verifyPin(storedHash: string | null | undefined, inputPin: strin
 export function insertOrderItemAddons(
   dbInstance: Database.Database,
   orderItemId: number | bigint,
-  addons: { id?: string; name?: string; price?: number }[] | null | undefined,
+  addons: { id?: string; name?: string; price?: number; quantity?: number }[] | null | undefined,
   createdAt: string
 ): void {
   if (!addons || !Array.isArray(addons) || addons.length === 0) return;
   const addonExists = dbInstance.prepare('SELECT 1 FROM addons WHERE id = ?');
   const insertAddon = dbInstance.prepare(`
     INSERT INTO order_item_addons (order_item_id, addon_id, addon_name, price, quantity, created_at)
-    VALUES (?, ?, ?, ?, 1, ?)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
   for (const addon of addons) {
     if (!addon || !addon.name) continue;
@@ -1888,7 +1898,8 @@ export function insertOrderItemAddons(
     // back to NULL rather than let the FK violation abort order creation.
     // addon_name/price are the snapshot of record either way.
     const linkedAddonId = addon.id && addonExists.get(addon.id) ? addon.id : null;
-    insertAddon.run(orderItemId, linkedAddonId, addon.name, addon.price || 0, createdAt);
+    const qty = Math.max(1, Math.floor(Number(addon.quantity) || 1));
+    insertAddon.run(orderItemId, linkedAddonId, addon.name, addon.price || 0, qty, createdAt);
   }
 }
 

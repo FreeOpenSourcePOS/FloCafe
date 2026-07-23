@@ -72,7 +72,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
                   key={`${addon.id ?? addon.name}-${i}`}
                   className="text-sm bg-white text-blue-700 px-2.5 py-1 rounded-lg border border-blue-200 font-medium"
                 >
-                  + {addon.name}
+                  + {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
                 </span>
               ))}
             </div>

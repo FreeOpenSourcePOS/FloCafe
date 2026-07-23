@@ -68,7 +68,7 @@ export function useTaxPreview(
           items: items.map((item) => ({
             product_id: item.product.id,
             quantity: item.quantity,
-            addons: item.addons.map((a) => ({ price: Number(a.price) })),
+            addons: item.addons.map((a) => ({ price: Number(a.price), quantity: Number(a.quantity) || 1 })),
             discount_amount: 0,
           })),
           customer_id: customerId || null,

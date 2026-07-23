@@ -194,7 +194,7 @@ async function runTests() {
     const freshDb = getDatabase();
     const userCount = (freshDb.prepare('SELECT COUNT(*) as c FROM users').get() as { c: number }).c;
     assert(userCount === 0, 'no users remain after initialize — back to first-run state');
-    assert(getCurrentSchemaVersion() === 32, 'the recreated database is at the latest schema version');
+    assert(getCurrentSchemaVersion() === 33, 'the recreated database is at the latest schema version');
 
     // The core "locked-out owner" guarantee: the Master PIN survives a full DB wipe
     // because it lives outside flo.db entirely.

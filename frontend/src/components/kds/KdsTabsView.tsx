@@ -132,7 +132,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                               key={`${addon.id ?? addon.name}-${i}`}
                               className="text-[10px] bg-white/70 text-blue-600 px-1.5 py-0.5 rounded border border-blue-200"
                             >
-                              + {addon.name}
+                              + {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}
                             </span>
                           ))}
                         </div>

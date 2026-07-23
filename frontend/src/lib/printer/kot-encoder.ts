@@ -79,7 +79,9 @@ export function buildKotBytes(
     if (addons.length > 0) {
       for (const addon of addons) {
         if (addon.name) {
-          enc.text(`   + ${truncate(addon.name, cols - 4)}`).newline();
+          const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
+          const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
+          enc.text(`   + ${truncate(addonText, cols - 4)}`).newline();
         }
       }
     }

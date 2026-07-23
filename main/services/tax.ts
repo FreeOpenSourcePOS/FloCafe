@@ -215,7 +215,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       let subtotal = unitPrice * quantity;
       if (itemData.addons) {
         for (const addon of itemData.addons) {
-          subtotal += (addon.price || 0) * quantity;
+          subtotal += (addon.price || 0) * (addon.quantity || 1) * quantity;
         }
       }
       subtotal = Math.max(0, subtotal - itemDiscount);

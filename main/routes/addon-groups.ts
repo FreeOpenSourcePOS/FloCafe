@@ -65,7 +65,7 @@ router.get('/:id', (req: Request, res: Response) => {
 
 router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { name, description, is_required, min_selection, max_selection, sort_order, addons } = req.body;
+    const { name, description, is_required, min_selection, max_selection, allow_multiple_quantities, sort_order, addons } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Name is required' });
@@ -83,10 +83,10 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const groupId = randomUUID();
     const { group, groupAddons } = withTxn(() => {
       db.prepare(`
-        INSERT INTO addon_groups (id, name, description, is_required, min_selection, max_selection, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO addon_groups (id, name, description, is_required, min_selection, max_selection, allow_multiple_quantities, sort_order, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        groupId, name, description || null, is_required ? 1 : 0, min_selection || 0, max_selection || 1, sort_order || 0, now(), now()
+        groupId, name, description || null, is_required ? 1 : 0, min_selection || 0, max_selection || 1, allow_multiple_quantities ? 1 : 0, sort_order || 0, now(), now()
       );
 
       if (addons && addons.length > 0) {
@@ -117,7 +117,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       return res.status(404).json({ error: 'Addon group not found' });
     }
 
-    const { name, description, is_required, min_selection, max_selection, sort_order, is_active, addons } = req.body;
+    const { name, description, is_required, min_selection, max_selection, allow_multiple_quantities, sort_order, is_active, addons } = req.body;
 
     const effectiveMin = min_selection ?? (group as any).min_selection;
     const effectiveMax = max_selection ?? (group as any).max_selection;
@@ -129,14 +129,16 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       return res.status(400).json({ errors: boundsError });
     }
 
+    const allowMultVal = allow_multiple_quantities === undefined ? null : (allow_multiple_quantities ? 1 : 0);
+
     const { updated, updatedAddons } = withTxn(() => {
       db.prepare(`
         UPDATE addon_groups SET name = COALESCE(?, name), description = COALESCE(?, description),
           is_required = COALESCE(?, is_required), min_selection = COALESCE(?, min_selection),
-          max_selection = COALESCE(?, max_selection), sort_order = COALESCE(?, sort_order),
-          is_active = COALESCE(?, is_active), updated_at = ?
+          max_selection = COALESCE(?, max_selection), allow_multiple_quantities = COALESCE(?, allow_multiple_quantities),
+          sort_order = COALESCE(?, sort_order), is_active = COALESCE(?, is_active), updated_at = ?
         WHERE id = ?
-      `).run(name, description, is_required, min_selection, max_selection, sort_order, is_active, now(), req.params.id);
+      `).run(name, description, is_required, min_selection, max_selection, allowMultVal, sort_order, is_active, now(), req.params.id);
 
       if (Array.isArray(addons)) {
         db.prepare('DELETE FROM addons WHERE addon_group_id = ?').run(req.params.id);

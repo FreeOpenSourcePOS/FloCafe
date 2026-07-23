@@ -76,23 +76,25 @@ export interface Product {
 }
 
 export interface AddonGroup {
-  id: number;
+  id: number | string;
   name: string;
   description: string | null;
-  is_required: boolean;
+  is_required: boolean | number;
   min_selection: number;
   max_selection: number;
+  allow_multiple_quantities?: boolean | number;
   sort_order: number;
-  is_active: boolean;
+  is_active: boolean | number;
   addons?: Addon[];
 }
 
 export interface Addon {
-  id: number;
-  addon_group_id: number;
+  id: number | string;
+  addon_group_id: number | string;
   name: string;
   price: number;
-  is_active: boolean;
+  quantity?: number;
+  is_active: boolean | number;
   sort_order: number;
 }
 
@@ -166,7 +168,7 @@ export interface OrderItem {
   subtotal: number;
   tax_amount: number;
   total: number;
-  addons: { id?: number; name: string; price?: number }[] | null;
+  addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
   special_instructions: string | null;
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled';
 }

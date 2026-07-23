@@ -977,7 +977,7 @@ export default function OrdersPage() {
                             <div className="pl-4 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                               {item.addons.map((addon, idx) => (
                                 <span key={addon.id ?? `${item.id}-${idx}`} className="text-xs text-gray-400">
-                                  + {addon.name}{addon.price ? ` (${fmt(Number(addon.price))})` : ''}
+                                  + {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}{addon.price ? ` (${fmt(Number(addon.price) * (addon.quantity || 1))})` : ''}
                                 </span>
                               ))}
                             </div>

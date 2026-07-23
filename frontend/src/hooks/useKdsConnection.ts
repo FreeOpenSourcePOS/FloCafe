@@ -46,6 +46,7 @@ export interface KdsOrderItemAddon {
   id?: string | number;
   name: string;
   price?: number;
+  quantity?: number;
 }
 
 export interface KdsOrderItem {

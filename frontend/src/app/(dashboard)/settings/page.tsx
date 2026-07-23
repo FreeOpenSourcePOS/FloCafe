@@ -1922,8 +1922,8 @@ export default function SettingsPage() {
                 <Monitor size={20} className="text-gray-500" />
                 <h2 className="font-semibold text-gray-900">{t('settings.posDisplay')}</h2>
               </div>
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900">{t('settings.showProductImages')}</p>
                   <p className="text-sm text-gray-500">{t('settings.showProductImagesHint')}</p>
                 </div>
@@ -1941,8 +1941,8 @@ export default function SettingsPage() {
                 <h2 className="font-semibold text-gray-900">{t('settings.posWorkflow')}</h2>
               </div>
               <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900">{t('settings.customerMandatory')}</p>
                     <p className="text-sm text-gray-500">{t('settings.customerMandatoryHint')}</p>
                   </div>
@@ -1952,8 +1952,8 @@ export default function SettingsPage() {
                   }} />
                 </div>
                 <p className="text-sm text-gray-500">{t('settings.phoneDigitsDerived')}</p>
-                <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                  <div>
+                <div className="flex items-center justify-between gap-4 pt-2 border-t border-gray-100">
+                  <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900">{t('settings.enforcePhoneLength', { defaultValue: 'Enforce Phone Number Length' })}</p>
                     <p className="text-sm text-gray-500">{t('settings.enforcePhoneLengthHint', { defaultValue: 'Automatically jump to the Name field once a valid phone number for your country has been typed — e.g. 10 digits for India.' })}</p>
                   </div>
@@ -1972,8 +1972,8 @@ export default function SettingsPage() {
           <div className="pb-6 max-w-3xl space-y-6">
             {/* KDS on/off (issue #133) — not every business runs a Kitchen Display. */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center justify-between">
-                <div>
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex-1 min-w-0">
                   <p className="font-medium text-gray-900">{t('settings.kdsEnabledToggle', { defaultValue: 'Kitchen Display System' })}</p>
                   <p className="text-sm text-gray-500">{t('settings.kdsEnabledToggleHint', { defaultValue: 'Show the Kitchen Display and allow devices to pair over your network. Turn this off if this business doesn’t use a KDS.' })}</p>
                 </div>

@@ -166,9 +166,9 @@ export default function AddonModal({
                               : 'border-gray-200 hover:border-gray-300'
                           }`}
                         >
-                          <div>
+                          <div className="flex items-center gap-2">
                             <span className="font-medium">{addon.name}</span>
-                            <span className={`ml-2 text-xs ${isSel ? 'text-brand font-semibold' : 'text-gray-500'}`}>
+                            <span className={`text-xs ${isSel ? 'text-brand font-semibold' : 'text-gray-500'}`}>
                               {Number(addon.price) === 0 ? t('pos.freeAddon') : `+${fmt(Number(addon.price))}`}
                             </span>
                           </div>
@@ -206,21 +206,50 @@ export default function AddonModal({
                     }
 
                     return (
-                      <button
+                      <div
                         key={addon.id}
-                        type="button"
-                        onClick={() => toggleAddonCheckbox(group, addon)}
                         className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm transition-colors ${
                           isSel
                             ? 'border-brand bg-brand-light text-brand'
                             : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
-                        <span className="font-medium">{addon.name}</span>
-                        <span className={isSel ? 'text-brand font-semibold' : 'text-gray-500'}>
-                          {Number(addon.price) === 0 ? t('pos.freeAddon') : `+${fmt(Number(addon.price))}`}
-                        </span>
-                      </button>
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium">{addon.name}</span>
+                          <span className={`text-xs ${isSel ? 'text-brand font-semibold' : 'text-gray-500'}`}>
+                            {Number(addon.price) === 0 ? t('pos.freeAddon') : `+${fmt(Number(addon.price))}`}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {isSel ? (
+                            <div className="flex items-center gap-1.5 bg-white border border-brand rounded-lg p-0.5">
+                              <button
+                                type="button"
+                                onClick={() => toggleAddonCheckbox(group, addon)}
+                                className="w-6 h-6 rounded flex items-center justify-center text-brand hover:bg-brand-light"
+                              >
+                                <Minus size={14} />
+                              </button>
+                              <span className="text-xs font-bold w-4 text-center text-brand">1</span>
+                              <button
+                                type="button"
+                                disabled
+                                className="w-6 h-6 rounded flex items-center justify-center text-gray-300 cursor-not-allowed opacity-50"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => toggleAddonCheckbox(group, addon)}
+                              className="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 hover:bg-gray-200"
+                            >
+                              <Plus size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     );
                   })}
                 </div>

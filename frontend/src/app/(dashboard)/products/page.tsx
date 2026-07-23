@@ -5,7 +5,7 @@ import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, X, Package, Folder, Puzzle, FileSpreadsheet, Download, Upload, CheckCircle, AlertCircle, AlertTriangle } from 'lucide-react';
 import type { Product, Category, AddonGroup } from '@/lib/types';
 import TagBadge, { tagLabel } from '@/components/pos/DietaryBadge';
 import ImageUploader from '@/components/products/ImageUploader';
@@ -418,6 +418,7 @@ export default function ProductsPage() {
             <tr>
               <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnProduct')}</th>
               <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnCategory')}</th>
+              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">Add-ons</th>
               <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnPrice')}</th>
               <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnTax')}</th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnStock')}</th>
@@ -427,6 +428,8 @@ export default function ProductsPage() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {products.map((product) => {
+              const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
+              const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
               const taxLabel = product.tax_type === 'none' || !product.tax_type
                 ? '—'
                 : `${product.tax_type === 'inclusive' ? t('products.taxInclusiveShort') : t('products.taxExclusiveShort')} ${product.tax_rate}%`;
@@ -464,7 +467,25 @@ export default function ProductsPage() {
                     </div>
                   </div>
                 </td>
-                <td className="p-4 text-sm text-gray-600">{product.category?.name || '—'}</td>
+                <td className="p-4 text-sm text-gray-600">
+                  <div className="flex flex-col gap-0.5">
+                    <span>{product.category?.name || '—'}</span>
+                    {isCategoryInactive && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title="Parent category is inactive; product is hidden on POS">
+                        <AlertTriangle size={11} className="shrink-0" /> Category Inactive
+                      </span>
+                    )}
+                  </div>
+                </td>
+                <td className="p-4 text-center">
+                  {product.addon_groups && product.addon_groups.length > 0 ? (
+                    <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
+                      {product.addon_groups.length} {product.addon_groups.length === 1 ? 'group' : 'groups'}
+                    </span>
+                  ) : (
+                    <span className="text-gray-400 text-sm">—</span>
+                  )}
+                </td>
                 <td className="p-4 text-right">
                   <p className="font-medium">{fmt(Number(product.price))}</p>
                   {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">Cost: {fmt(Number(product.cost_price))}</p>}
@@ -485,6 +506,9 @@ export default function ProductsPage() {
                   }`}>
                     {product.is_active ? t('common.active') : t('common.inactive')}
                   </span>
+                  {product.is_active && isCategoryInactive && (
+                    <span className="text-[10px] text-amber-600 font-medium block mt-1">(Hidden on POS)</span>
+                  )}
                 </td>
                 <td className="p-4 text-right">
                   <div className="flex gap-2 justify-end">

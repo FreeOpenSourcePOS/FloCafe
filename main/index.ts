@@ -270,7 +270,7 @@ function createWindow(): void {
         },
       };
     }
-    shell.openExternal(url);
+    shell.openExternal(url).catch((err) => console.warn('[Flo] Failed to open external URL:', err?.message || err));
     return { action: 'deny' };
   });
 

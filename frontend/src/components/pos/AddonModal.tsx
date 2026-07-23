@@ -97,8 +97,9 @@ export default function AddonModal({
 
   const isValid = groups.every((g) => {
     const count = getGroupTotalQuantity(g.id);
-    if (g.is_required && count < g.min_selection) return false;
-    if (g.min_selection > 0 && count < g.min_selection) return false;
+    const requiredMin = Boolean(g.is_required) ? Math.max(1, g.min_selection || 1) : (g.min_selection || 0);
+    if (count < requiredMin) return false;
+    if (g.max_selection && count > g.max_selection) return false;
     return true;
   });
 
@@ -253,9 +254,15 @@ export default function AddonModal({
                     );
                   })}
                 </div>
-                {Boolean(group.is_required) && count < group.min_selection && (
-                  <p className="text-xs text-red-500 mt-1">{t('pos.selectAtLeast', { count: group.min_selection })}</p>
-                )}
+                {(() => {
+                  const requiredMin = Boolean(group.is_required) ? Math.max(1, group.min_selection || 1) : (group.min_selection || 0);
+                  if (requiredMin > 0 && count < requiredMin) {
+                    return (
+                      <p className="text-xs text-red-500 mt-1">{t('pos.selectAtLeast', { count: requiredMin })}</p>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             );
           })}

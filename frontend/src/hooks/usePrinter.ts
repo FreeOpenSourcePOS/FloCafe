@@ -173,7 +173,9 @@ export const usePrinterStore = create<PrinterState>()(
           if (get().printMethod === 'escpos') {
             await printerService.print(bytes);
           } else {
-            throw new Error('Browser print mode - use printViaBrowser instead');
+            const paperWidth = get().paperWidth || 80;
+            const html = `<html><body style="font-family:monospace;white-space:pre;padding:10px;">${new TextDecoder().decode(bytes)}</body></html>`;
+            await printerService.printViaBrowser(html, paperWidth);
           }
         } catch (err) {
           set({ lastError: (err as Error).message });
@@ -212,7 +214,9 @@ export const usePrinterStore = create<PrinterState>()(
           if (get().printMethod === 'escpos') {
             await printerService.print(bytes);
           } else {
-            throw new Error('Browser print mode - use printViaBrowser instead');
+            const paperWidth = get().paperWidth || 80;
+            const html = `<html><body style="font-family:monospace;white-space:pre;padding:10px;">${new TextDecoder().decode(bytes)}</body></html>`;
+            await printerService.printViaBrowser(html, paperWidth);
           }
         } catch (err) {
           set({ lastError: (err as Error).message });

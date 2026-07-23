@@ -19,8 +19,8 @@ interface Props {
   mode?: 'add' | 'edit';
 }
 
-function groupInitialAddons(addons: Addon[]): Record<number, Addon[]> {
-  const grouped: Record<number, Addon[]> = {};
+function groupInitialAddons(addons: Addon[]): Record<string | number, Addon[]> {
+  const grouped: Record<string | number, Addon[]> = {};
   for (const addon of addons) {
     const groupId = addon.addon_group_id;
     if (groupId == null) continue;
@@ -34,6 +34,7 @@ export default function AddonModal({
   initialQuantity = 1, initialAddons = [], initialInstructions = '', mode = 'add',
 }: Props) {
   const { t } = useI18n();
+  const fmt = useFormatCurrency();
   const [selected, setSelected] = useState<Record<string | number, Addon[]>>(() => groupInitialAddons(initialAddons));
   const [quantity, setQuantity] = useState(initialQuantity);
   const [instructions, setInstructions] = useState(initialInstructions);

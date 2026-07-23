@@ -129,7 +129,14 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       return res.status(400).json({ errors: boundsError });
     }
 
-    const allowMultVal = allow_multiple_quantities === undefined ? null : (allow_multiple_quantities ? 1 : 0);
+    const reqName = name ?? null;
+    const reqDesc = description ?? null;
+    const reqReq = is_required === undefined ? null : (is_required ? 1 : 0);
+    const reqMin = min_selection ?? null;
+    const reqMax = max_selection ?? null;
+    const reqAllowMult = allow_multiple_quantities === undefined ? null : (allow_multiple_quantities ? 1 : 0);
+    const reqSort = sort_order ?? null;
+    const reqActive = is_active === undefined ? null : (is_active ? 1 : 0);
 
     const { updated, updatedAddons } = withTxn(() => {
       db.prepare(`
@@ -138,7 +145,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
           max_selection = COALESCE(?, max_selection), allow_multiple_quantities = COALESCE(?, allow_multiple_quantities),
           sort_order = COALESCE(?, sort_order), is_active = COALESCE(?, is_active), updated_at = ?
         WHERE id = ?
-      `).run(name, description, is_required, min_selection, max_selection, allowMultVal, sort_order, is_active, now(), req.params.id);
+      `).run(reqName, reqDesc, reqReq, reqMin, reqMax, reqAllowMult, reqSort, reqActive, now(), req.params.id);
 
       if (Array.isArray(addons)) {
         db.prepare('DELETE FROM addons WHERE addon_group_id = ?').run(req.params.id);

@@ -100,17 +100,6 @@ jobs:
         # Required for both matrix entries: x64 and arm64 each produce a snap.
         run: sudo snap install snapcraft --classic
 
-      - name: Install LXD
-        # useLXD=true in package.json snapcraft config requires an LXD daemon
-        # running on the host. snapcraft manages the container lifecycle, but
-        # daemon install + init is on us. Both ubuntu-24.04 and the arm64
-        # variant support this. --minimal answers all of lxd init's prompts
-        # with sane defaults (dir storage backend, lxdbr0 bridge, no IPv6).
-        run: |
-          sudo snap install lxd
-          sudo lxd init --minimal
-          sudo lxd waitready
-
       - name: Install npm dependencies
         run: npm ci
         env:
@@ -127,6 +116,8 @@ jobs:
         # we declare arm64 on every target so the arm64 matrix entry builds
         # all four as arm64.
         run: npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm snap --publish never
+        env:
+          SNAPCRAFT_BUILD_ENVIRONMENT: host
 
       - name: Upload Linux assets to GitHub release
         # Each matrix entry uploads its own arch-tagged artifacts. Filename

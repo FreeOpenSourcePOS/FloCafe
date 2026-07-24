@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.11] - 2026-07-24
+
+### Fixed
+- Linux snap builds no longer depend on the GNOME extension or LXD and now run Snapcraft in destructive host mode.
+
 ## [2.0.10] - 2026-07-24
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "2.0.10",
+  "version": "2.0.11",
   "description": "Flo - Self-hosted Point of Sale System",
   "engines": {
     "node": ">=22.0.0"
@@ -300,10 +300,7 @@
       "base": "core24",
       "core24": {
         "confinement": "strict",
-        "extensions": [
-          "gnome"
-        ],
-        "useLXD": true,
+        "useDestructiveMode": true,
         "plugs": [
           "default",
           "cups-control",

@@ -127,8 +127,6 @@ jobs:
         # we declare arm64 on every target so the arm64 matrix entry builds
         # all four as arm64.
         run: npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm snap --publish never
-        env:
-          SNAPCRAFT_BUILD_ENVIRONMENT: host
 
       - name: Upload Linux assets to GitHub release
         # Each matrix entry uploads its own arch-tagged artifacts. Filename

@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.0.12] - 2026-07-24
+
+### Fixed
+- Snap Store publishing now uses Snapcraft's supported register and upload arguments for amd64 and arm64 builds.
+
 ## [2.0.11] - 2026-07-24
 
 ### Fixed

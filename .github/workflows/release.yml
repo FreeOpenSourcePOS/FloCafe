@@ -145,17 +145,10 @@ jobs:
             exit 0
           fi
           SNAP_NAME="flocafe"
-          # snapcraft CLI uses amd64 for x86_64; map our matrix.arch accordingly.
-          case "${{ matrix.arch }}" in
-            x64)   SNAP_ARCH=amd64 ;;
-            arm64) SNAP_ARCH=arm64 ;;
-            *) echo "::error::unsupported arch ${{ matrix.arch }}"; exit 1 ;;
-          esac
           SNAP=$(ls release/*.snap | head -1)
           [ -n "$SNAP" ] || { echo "::error::No .snap produced by electron-builder for ${{ matrix.arch }}"; exit 1; }
-          # register for this architecture (idempotent across matrix entries and runs)
-          snapcraft register "$SNAP_NAME" --arch="$SNAP_ARCH" || echo "::warning::register skipped/failed; continuing"
-          snapcraft upload "$SNAP" --release=stable --arch="$SNAP_ARCH"
+          snapcraft register "$SNAP_NAME" || echo "::warning::register skipped/failed; continuing"
+          snapcraft upload "$SNAP" --release=stable
 
   release-mac:
     runs-on: macos-latest

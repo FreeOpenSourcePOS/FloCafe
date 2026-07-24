@@ -1,0 +1,81 @@
+name: Full Cross-Platform Matrix
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * *' # Nightly
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-matrix:
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: --linux
+            extra-deps: sudo apt-get update -qq && sudo apt-get install -y fakeroot dpkg
+          - os: macos-latest
+            target: --mac
+            extra-deps: echo "No extra deps needed"
+          - os: windows-latest
+            target: --win
+            extra-deps: echo "No extra deps needed"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install platform dependencies
+        run: ${{ matrix.extra-deps }}
+
+      - name: Install npm dependencies
+        run: npm ci
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Cache frontend node_modules
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-frontend-
+
+      - name: Build frontend
+        run: npm run build:frontend
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Compile main process
+        run: npm run build
+
+      - name: Run full platform test suite
+        run: npm test
+
+      - name: Package (unpacked directory, no installer)
+        run: npx electron-builder ${{ matrix.target }} --dir --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: flo-${{ matrix.os }}-${{ github.run_number }}
+          path: release/
+          retention-days: 7

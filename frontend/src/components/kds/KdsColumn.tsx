@@ -25,7 +25,7 @@ export function KdsColumn({ status, count, children }: KdsColumnProps) {
     <div className="flex-1 min-w-[260px] flex flex-col">
       <div className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}>
         <div className={`w-2 h-2 rounded-full ${config.color}`} />
-        <span className={`text-sm font-semibold ${config.text}`}>{statusLabel}</span>
+        <span className={`text-base font-semibold ${config.text}`}>{statusLabel}</span>
         <span className="ml-auto text-xs px-1.5 py-0.5 rounded-full bg-white/70 text-gray-700 font-medium tabular-nums">
           {count}
         </span>

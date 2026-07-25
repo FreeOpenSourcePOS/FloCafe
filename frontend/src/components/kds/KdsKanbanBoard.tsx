@@ -177,7 +177,7 @@ function KanbanOrderCard({
       <div className={`rounded-xl border-2 ${config.border} bg-white p-3 flex flex-col shadow-sm`}>
         <div className="flex justify-between items-center mb-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-            <span className="font-bold text-xs shrink-0">#{order.order_number}</span>
+            <span className="font-bold text-sm shrink-0">#{order.order_number}</span>
             <Badge
               variant="outline"
               className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
@@ -188,14 +188,14 @@ function KanbanOrderCard({
               <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
             )}
           </div>
-          <div className="flex items-center gap-1 text-xs text-gray-400 font-mono shrink-0">
+          <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
             <Clock size={12} />
             {timeSince(order.created_at)}
           </div>
         </div>
 
         {order.special_instructions && (
-          <p className="mb-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 font-medium break-words">
+          <p className="mb-2 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-sm text-amber-700 font-medium break-words">
             📝 {order.special_instructions}
           </p>
         )}
@@ -213,14 +213,14 @@ function KanbanOrderCard({
               className={`w-full text-left rounded-lg border ${config.border} ${config.bg} px-2 py-1.5 hover:brightness-95 active:scale-[0.98] transition`}
             >
               <div className="flex items-center gap-2">
-                <span className={`text-xs font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
-                <span className="text-sm text-gray-900 font-medium flex-1 truncate">{item.product_name}</span>
+                <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
+                <span className="text-lg text-gray-900 font-medium flex-1 truncate">{item.product_name}</span>
                 {item.addons && item.addons.length > 0 && (
                   <span className="text-[10px] text-blue-600">+{item.addons.length}</span>
                 )}
               </div>
               {item.special_instructions && (
-                <p className="ml-[26px] text-xs text-red-600 italic mt-0.5 font-medium break-words">
+                <p className="ml-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
                   {`"${item.special_instructions}"`}
                 </p>
               )}

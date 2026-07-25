@@ -96,7 +96,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
             >
               <div className="flex justify-between items-center mb-3 gap-2">
                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  <span className="font-bold text-sm shrink-0">#{order.order_number}</span>
+                  <span className="font-bold text-base shrink-0">#{order.order_number}</span>
                   <Badge
                     variant="outline"
                     className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
@@ -107,7 +107,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                     <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
                   )}
                 </div>
-                <div className="flex items-center gap-1 text-xs text-gray-400 font-mono shrink-0">
+                <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
                   <Clock size={12} />
                   {timeSince(order.created_at)}
                 </div>
@@ -134,8 +134,8 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                     >
                       <div className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${config.color}`} />
-                        <span className={`font-bold text-sm w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
-                        <span className="text-gray-900 text-sm font-semibold flex-1 truncate">
+                        <span className={`font-bold text-base w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
+                        <span className="text-gray-900 text-lg font-semibold flex-1 truncate">
                           {item.product_name}
                         </span>
                         <ChevronRight size={14} className="text-gray-400 shrink-0" />
@@ -153,7 +153,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                         </div>
                       )}
                       {item.special_instructions && (
-                        <p className="ml-[26px] text-xs text-red-600 italic mt-0.5 font-medium break-words">
+                        <p className="ml-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
                           {`"${item.special_instructions}"`}
                         </p>
                       )}

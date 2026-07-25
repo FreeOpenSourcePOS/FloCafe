@@ -2,6 +2,22 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.1.0] - 2026-07-26
+
+### Added
+- Configurable order number format: owners/managers can set a custom prefix, toggle the date segment, and choose whether the sequence resets daily at store-timezone midnight or keeps climbing (`GET`/`PUT /settings/order-numbering`, new "Order Number Format" section in Settings).
+- KDS order type badges (dine-in/takeaway/delivery/online) on both the Kanban and Tabs views, plus a live-ticking elapsed-time display (HH:MM:SS) that updates every second instead of showing a static "Xm" snapshot.
+- macOS releases are now code-signed and notarized end to end (Developer ID Application cert + Apple notarization), fixing "'Flo Cafe' has been blocked because it may reduce your privacy... move it to the Bin" for anyone downloading the DMG/zip.
+
+### Fixed
+- LAN login: the desktop client now derives its API base URL from `window.location.origin` instead of a build-time-baked `NEXT_PUBLIC_API_URL`, so loading the app over LAN (e.g. `http://192.168.x.x:3001`) no longer fails with `ERR_CONNECTION_REFUSED`.
+- POS product grid category filter chips now wrap onto multiple lines instead of scrolling off-screen.
+- KDS: item names, quantity, special instructions, timer, and column headers were undersized (10-14px) for kitchen-tablet readability; bumped up across both Kanban and Tabs views.
+- KDS: the table badge was missing on orders delivered over the WebSocket push (the primary path — REST is only a 5s fallback) because the live-order broadcast built a flat `table_name` field instead of the nested `table: { name }` shape the frontend reads; brought in line with the REST path, which already did this correctly.
+- Upgraded Electron 31.7.7 -> 43.2.0: Apple had revoked the notarization ticket for the `electron@31.7.7` prebuilt binary itself (confirmed on a clean re-download, unrelated to any local machine issue), which is what caused local `npm run dev` to be Gatekeeper-blocked with no "Open Anyway" option. Electron 31 was also long past Electron's supported window.
+- Upgraded `better-sqlite3` 12.11.1 -> 13.0.1 (now N-API based, ABI-stable across Node/Electron versions) and `uuid` 11.1.1 -> 14.0.1.
+- Upgraded Express 4.22.2 -> 5.2.1. Fixed two breaking changes surfaced by the bump: a bare wildcard route (`app.get('*', ...)`) in the KDS SPA fallback, which Express 5's router now rejects at startup and needs a named wildcard (`/*splat`); and `req.body` no longer defaulting to `{}` when a request has no parseable body (body-parser 2.x, bundled with Express 5) — restored the old default via middleware rather than patching every route.
+
 ## [2.0.12] - 2026-07-24
 
 ### Fixed

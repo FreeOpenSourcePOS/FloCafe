@@ -237,7 +237,8 @@
           "target": "mas",
           "arch": "universal"
         }
-      ]
+      ],
+      "x64ArchFiles": "**/*.node"
     },
     "masDev": {
       "identity": "Apple Development: Codify Apps Private Limited (BKDY677XJA)"

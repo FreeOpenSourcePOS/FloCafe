@@ -97,6 +97,9 @@
   },
   "homepage": "https://flo.local",
   "license": "MIT",
+  "overrides": {
+    "node-abi": "^4.33.0"
+  },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
     "@types/bcryptjs": "^3.0.0",
@@ -112,7 +115,7 @@
     "@types/ws": "^8.5.10",
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.63.0",
-    "electron": "^31.7.7",
+    "electron": "^43.2.0",
     "electron-builder": "^26.15.3",
     "eslint": "^10.7.0",
     "supertest": "^7.2.2",

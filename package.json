@@ -125,7 +125,7 @@
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc13",
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.1",
     "bonjour-service": "^1.4.3",
     "cors": "^2.8.5",
     "electron-log": "^5.4.4",
@@ -137,7 +137,7 @@
     "node-thermal-printer": "^4.2.1",
     "pino": "^10.3.1",
     "qrcode": "^1.5.3",
-    "uuid": "^11.1.1",
+    "uuid": "^14.0.1",
     "ws": "^8.21.1"
   },
   "build": {

@@ -129,8 +129,8 @@ function run() {
     'release-linux job must run scripts/update-metainfo.js before the electron-builder build.'
   );
   assert.ok(
-    /ubuntu-22\.04-arm64/.test(linuxJob),
-    'release-linux job must include an ubuntu-22.04-arm64 matrix entry so arm64 AppImages ' +
+    /ubuntu-24\.04-arm64/.test(linuxJob),
+    'release-linux job must include an ubuntu-24.04-arm64 matrix entry so arm64 AppImages ' +
     'are actually built — declaring arm64 in build.linux.target is not enough without a runner.'
   );
   assert.ok(

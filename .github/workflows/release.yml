@@ -13,7 +13,7 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           fetch-depth: 0 # full tag history — needed for the "Full Changelog" compare link below
 
@@ -76,17 +76,17 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: ubuntu-22.04
+            runner: ubuntu-24.04
           - arch: arm64
-            runner: ubuntu-22.04-arm64
+            runner: ubuntu-24.04-arm64
     concurrency:
       # Independent per-arch so an arm64 build doesn't cancel x64 (or vice versa).
       group: release-linux-${{ github.ref }}-${{ matrix.arch }}
       cancel-in-progress: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '22'
 
@@ -145,25 +145,18 @@ jobs:
             exit 0
           fi
           SNAP_NAME="flocafe"
-          # snapcraft CLI uses amd64 for x86_64; map our matrix.arch accordingly.
-          case "${{ matrix.arch }}" in
-            x64)   SNAP_ARCH=amd64 ;;
-            arm64) SNAP_ARCH=arm64 ;;
-            *) echo "::error::unsupported arch ${{ matrix.arch }}"; exit 1 ;;
-          esac
           SNAP=$(ls release/*.snap | head -1)
           [ -n "$SNAP" ] || { echo "::error::No .snap produced by electron-builder for ${{ matrix.arch }}"; exit 1; }
-          # register for this architecture (idempotent across matrix entries and runs)
-          snapcraft register "$SNAP_NAME" --arch="$SNAP_ARCH" || echo "::warning::register skipped/failed; continuing"
-          snapcraft upload "$SNAP" --release=stable --arch="$SNAP_ARCH"
+          snapcraft register "$SNAP_NAME" || echo "::warning::register skipped/failed; continuing"
+          snapcraft upload "$SNAP" --release=stable
 
   release-mac:
     runs-on: macos-latest
     needs: create-release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '22'
 
@@ -207,9 +200,9 @@ jobs:
     runs-on: windows-latest
     needs: create-release
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v7
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '22'
 

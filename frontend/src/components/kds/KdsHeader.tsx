@@ -59,7 +59,7 @@ export function KdsHeader({
             <button
               onClick={() => onChangeView('tabs')}
               aria-pressed={viewMode === 'tabs'}
-              className={`px-2.5 py-1 text-xs font-medium rounded-md transition ${
+              className={`min-w-11 min-h-11 px-2.5 py-1 text-xs font-medium rounded-md transition ${
                 viewMode === 'tabs'
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -70,7 +70,7 @@ export function KdsHeader({
             <button
               onClick={() => onChangeView('kanban')}
               aria-pressed={viewMode === 'kanban'}
-              className={`px-2.5 py-1 text-xs font-medium rounded-md transition ${
+              className={`min-w-11 min-h-11 px-2.5 py-1 text-xs font-medium rounded-md transition ${
                 viewMode === 'kanban'
                   ? 'bg-white text-gray-900 shadow-sm'
                   : 'text-gray-500 hover:text-gray-700'
@@ -82,7 +82,7 @@ export function KdsHeader({
 
           <button
             onClick={onLogout}
-            className="p-2 hover:bg-gray-100 rounded-lg text-gray-500 ml-2"
+            className="min-w-11 min-h-11 p-2 hover:bg-gray-100 rounded-lg text-gray-500 ml-2"
             title={t('nav.logout')}
           >
             <LogOut size={20} />

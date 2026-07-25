@@ -15,7 +15,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
           <p className="text-gray-500 mt-2">{t('kds.loginSubtitle')}</p>
         </div>
 
-        <form onSubmit={conn.handleLogin} className="space-y-4">
+        <form data-testid="kds-login-form" onSubmit={conn.handleLogin} className="space-y-4">
           {conn.loginError && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
               {conn.loginError}
@@ -25,6 +25,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.email')}</label>
             <input
+              data-testid="kds-login-email"
               type="email"
               value={conn.loginEmail}
               onChange={(e) => conn.setLoginEmail(e.target.value)}
@@ -37,6 +38,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('auth.password')}</label>
             <input
+              data-testid="kds-login-password"
               type="password"
               value={conn.loginPassword}
               onChange={(e) => conn.setLoginPassword(e.target.value)}
@@ -57,6 +59,7 @@ export function KdsLoginForm({ conn }: { conn: UseKdsConnectionResult }) {
           </label>
 
           <button
+            data-testid="kds-login-submit"
             type="submit"
             disabled={conn.loginLoading}
             className="w-full py-3 bg-brand text-white font-semibold rounded-lg hover:bg-brand/90 disabled:opacity-50"

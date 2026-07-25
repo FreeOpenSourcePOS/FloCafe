@@ -12,6 +12,7 @@ import { getJWTSecret } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions } from './middleware/security';
 
 let kdsServer: http.Server | null = null;
+let kdsWss: WebSocketServer | null = null;
 const KDS_PORT = parseInt(process.env.KDS_PORT || '3002', 10);
 let activeKdsPort = KDS_PORT;
 
@@ -384,6 +385,7 @@ export function startKdsServer(): Promise<void> {
         // upgrade instead of completing it — see main/server.ts for the same
         // pattern on the primary API server (issue #133).
         const wss = new WebSocketServer({ noServer: true });
+        kdsWss = wss;
         setupKdsWebSocket(wss);
 
         kdsServer.on('upgrade', (request, socket, head) => {
@@ -427,6 +429,11 @@ export function startKdsServer(): Promise<void> {
 }
 
 export function stopKdsServer(): void {
+  if (kdsWss) {
+    for (const client of kdsWss.clients) client.terminate();
+    kdsWss.close();
+    kdsWss = null;
+  }
   if (kdsServer) {
     kdsServer.close();
     kdsServer = null;

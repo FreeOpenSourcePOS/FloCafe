@@ -63,7 +63,7 @@ export default function ProductGrid({
   });
 
   return (
-    <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+    <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <div className="shrink-0 mb-3">
         <div className="relative mb-2">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
@@ -135,6 +135,7 @@ export default function ProductGrid({
             return (
               <div
                 key={product.id}
+                data-testid="pos-product-card"
                 onClick={() => onProductClick(product)}
                 className="bg-white rounded-xl p-2.5 border border-gray-100 hover:border-brand/40 hover:shadow-md transition-all text-left relative group cursor-pointer overflow-hidden"
               >

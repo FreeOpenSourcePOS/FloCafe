@@ -10,7 +10,7 @@ export function KdsWorkspace({ conn, serverDefault }: { conn: UseKdsConnectionRe
   const { viewMode, setViewMode } = useKdsView(serverDefault);
 
   return (
-    <div className="h-full flex flex-col">
+    <div data-testid="kds-workspace" className="h-full flex flex-col">
       <KdsHeader
         userName={conn.user!.name}
         userRole={conn.user!.role}

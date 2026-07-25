@@ -62,16 +62,19 @@ Module._load = function (request, parent, isMain) {
 // ── Now load and start the compiled backend ───────────────────────────────────
 const { initDatabase } = require('./dist/db');
 const { startServer } = require('./dist/server');
+const { startKdsServer } = require('./dist/kds-server');
 
 (async () => {
   try {
     console.log('[DevServer] Initializing database...');
     initDatabase();
 
-    console.log('[DevServer] Starting Express server...');
+    console.log('[DevServer] Starting Express server & KDS server...');
     await startServer();
+    await startKdsServer();
 
-    console.log('[DevServer] ✅ Backend running on http://localhost:3001');
+    console.log('[DevServer] ✅ Main API running on http://localhost:3001');
+    console.log('[DevServer] ✅ KDS Server running on http://localhost:3002');
     console.log('[DevServer]    Frontend dev server: http://localhost:3000');
     console.log('[DevServer]    API health: http://localhost:3001/api/health');
   } catch (err) {

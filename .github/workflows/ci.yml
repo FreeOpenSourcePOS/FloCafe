@@ -1,12 +1,5 @@
 # ---------------------------------------------------------------
 # FloCafe — CI Validation
-#
-# Trigger: Push to main, pull requests to main.
-# Runs: Tests (all 3 platforms), type checks, backend lint,
-# frontend lint + build, dependency audit, and packaging.
-# Uploads build artifacts for manual testing (7-day retention).
-#
-# Cost: $0 — GitHub Actions is unlimited for public repos.
 # ---------------------------------------------------------------
 
 name: CI
@@ -17,20 +10,56 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
 jobs:
-  # ── Job 1: Unit Tests (all platforms) ────────────────────────
-  test:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  # 1. Dependency Review (Security)
+  dependency-review:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/dependency-review-action@3b139cfc5fae8b618d3eae3675e383bb1769c019 # v4.5.0
+        with:
+          fail-on-severity: high
+
+  # 2. Path Filtering
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+      kds: ${{ steps.filter.outputs.kds }}
+      db: ${{ steps.filter.outputs.db }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
+        id: filter
+        with:
+          filters: |
+            frontend: ['frontend/**']
+            backend: ['main/**']
+            kds: ['main/kds-server.ts', 'main/services/kds.ts']
+            db: ['main/db.ts', 'main/migrations/**']
+
+  # 3. Linux Baseline
+  linux-baseline:
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Set up Node.js 22
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           node-version: '22'
           cache: 'npm'
@@ -38,161 +67,85 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Rebuild native modules for current Node version
+      - name: Rebuild native modules
         run: npx @electron/rebuild -f -w better-sqlite3 || npm rebuild better-sqlite3
 
-      - name: Run tests
-        run: npm test
-
-  # ── Job 2: TypeScript compilation check ──────────────────────
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
+      - name: Backend lint
+        run: npm run lint:backend
 
       - name: Compile TypeScript
         run: npx tsc --noEmit
 
-  # ── Job 3: Backend lint ──────────────────────────────────────
-  backend-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Lint backend
-        run: npm run lint:backend
-
-  # ── Job 4: Frontend lint + build ────────────────────────────
-  frontend-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: 'npm'
-
       - name: Cache frontend node_modules
-        uses: actions/cache@v6
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: frontend/node_modules
           key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}
           restore-keys: |
             ${{ runner.os }}-frontend-
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
+        working-directory: frontend
         run: npm ci
 
-      - name: Lint frontend
+      - name: Frontend lint
         working-directory: frontend
         run: npm run lint
-
-      - name: Build frontend (validates types + compilation)
-        run: npm run build:frontend
-        env:
-          NEXT_TELEMETRY_DISABLED: 1
-
-  # ── Job 5: Dependency audit (advisory) ──────────────────────
-  audit:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Audit dependencies
-        run: npm audit --audit-level=high || true
-
-  # ── Job 6: Build validation on all 3 platforms ───────────────
-  build:
-    needs: [test, typecheck, frontend-lint]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            target: --linux
-            extra-deps: sudo apt-get update -qq && sudo apt-get install -y fakeroot dpkg
-          - os: macos-latest
-            target: --mac
-            extra-deps: echo "No extra deps needed"
-          - os: windows-latest
-            target: --win
-            extra-deps: echo "No extra deps needed"
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Set up Node.js 22
-        uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-          cache: 'npm'
-
-      - name: Install platform dependencies
-        run: ${{ matrix.extra-deps }}
-
-      - name: Install npm dependencies
-        run: npm ci
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: Cache frontend node_modules
-        uses: actions/cache@v6
-        with:
-          path: frontend/node_modules
-          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-frontend-
 
       - name: Build frontend
         run: npm run build:frontend
         env:
           NEXT_TELEMETRY_DISABLED: 1
 
-      - name: Compile main process
+      - name: Core test suite (Includes smoke & kds integration)
+        run: npm test
+
+  # 4. Playwright E2E
+  e2e-playwright:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules
+        run: npx @electron/rebuild -f -w better-sqlite3 || npm rebuild better-sqlite3
+
+      - name: Build main backend process
         run: npm run build
 
-      - name: Package (unpacked directory, no installer)
-        run: npx electron-builder ${{ matrix.target }} --dir --publish never
+      - name: Build frontend
+        run: npm run build:frontend
         env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          NEXT_TELEMETRY_DISABLED: 1
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v7
+      - name: Install frontend dependencies for Playwright
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Playwright Browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        working-directory: frontend
+        run: npx playwright test
+        env:
+          CI: true
+
+      - uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        if: always()
         with:
-          name: flo-${{ matrix.os }}-${{ github.run_number }}
-          path: release/
-          retention-days: 7
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 10

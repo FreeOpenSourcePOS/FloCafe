@@ -56,13 +56,17 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
     }));
   });
 
-  setInterval(() => {
+  const heartbeat = setInterval(() => {
     clients.forEach((client, ws) => {
       if (client.userId && ws.readyState === WebSocket.OPEN) {
         ws.ping();
       }
     });
   }, 30000);
+  // The HTTP server owns this WebSocket server. Do not keep Electron/test
+  // processes alive after that server has closed.
+  heartbeat.unref();
+  wss.once('close', () => clearInterval(heartbeat));
 
   console.log('[KDS] WebSocket server setup complete');
 }

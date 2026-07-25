@@ -129,9 +129,11 @@ function run() {
     'release-linux job must run scripts/update-metainfo.js before the electron-builder build.'
   );
   assert.ok(
-    /ubuntu-24\.04-arm64/.test(linuxJob),
-    'release-linux job must include an ubuntu-24.04-arm64 matrix entry so arm64 AppImages ' +
-    'are actually built — declaring arm64 in build.linux.target is not enough without a runner.'
+    /ubuntu-24\.04-arm\b/.test(linuxJob),
+    'release-linux job must include an ubuntu-24.04-arm matrix entry (the actual GitHub-hosted ' +
+    'arm64 Linux runner label — note: no "64" suffix) so arm64 AppImages are actually built. ' +
+    'declaring arm64 in build.linux.target is not enough without a runner, and the wrong label ' +
+    '(e.g. ubuntu-24.04-arm64) leaves the job stuck queued forever with no matching runner.'
   );
   assert.ok(
     /matrix\.arch\s*==\s*['"]x64['"]/.test(linuxJob),

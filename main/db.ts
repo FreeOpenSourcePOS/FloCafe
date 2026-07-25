@@ -1855,7 +1855,7 @@ function getNextSequence(name: string, date: string): number {
 }
 
 /** YYYYMMDD for "now" in the given IANA timezone (falls back to UTC if the zone is invalid). */
-function dateStampInTimezone(timezone: string): string {
+export function dateStampInTimezone(timezone: string): string {
   try {
     const parts = new Intl.DateTimeFormat('en-CA', {
       timeZone: timezone,

@@ -78,7 +78,7 @@ jobs:
           - arch: x64
             runner: ubuntu-24.04
           - arch: arm64
-            runner: ubuntu-24.04-arm64
+            runner: ubuntu-24.04-arm
     concurrency:
       # Independent per-arch so an arm64 build doesn't cancel x64 (or vice versa).
       group: release-linux-${{ github.ref }}-${{ matrix.arch }}

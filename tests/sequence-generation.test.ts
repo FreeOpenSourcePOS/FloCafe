@@ -26,7 +26,7 @@ const {
   assert, assertEqual,
 } = require('./helpers/test-setup');
 
-const { generateOrderNumber, generateBillNumber } = require('../main/db');
+const { generateOrderNumber, generateBillNumber, dateStampInTimezone } = require('../main/db');
 
 async function main() {
   console.log('Test: Sequence Number Generation');
@@ -43,19 +43,24 @@ async function main() {
 
     // ── Test 2: First order number is ORD-<date>-0001 ─────────────────
     console.log('\n2. First order number is ORD-<date>-0001');
+    // generateOrderNumber() dates its bucket in the store timezone
+    // (default Asia/Kolkata), while generateBillNumber() below still
+    // uses raw UTC -- these two are NOT always the same calendar day
+    // (Kolkata is UTC+5:30), so each needs its own expected date.
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const orderToday = dateStampInTimezone('Asia/Kolkata');
     const first = generateOrderNumber();
-    assertEqual(first, `ORD-${today}-0001`, 'First order number matches');
+    assertEqual(first, `ORD-${orderToday}-0001`, 'First order number matches');
 
     // ── Test 3: Second order number is ORD-<date>-0002 ────────────────
     console.log('\n3. Second order number is ORD-<date>-0002');
     const second = generateOrderNumber();
-    assertEqual(second, `ORD-${today}-0002`, 'Second order number matches');
+    assertEqual(second, `ORD-${orderToday}-0002`, 'Second order number matches');
 
     // ── Test 4: Third order number is ORD-<date>-0003 ────────────────
     console.log('\n4. Third order number is ORD-<date>-0003');
     const third = generateOrderNumber();
-    assertEqual(third, `ORD-${today}-0003`, 'Third order number matches');
+    assertEqual(third, `ORD-${orderToday}-0003`, 'Third order number matches');
 
     // ── Test 5: Order numbers are sequential ──────────────────────────
     console.log('\n5. Order numbers are sequential');
@@ -90,7 +95,7 @@ async function main() {
     const billRow = seqRows.find((r: any) => r.name === 'bills');
     assert(orderRow !== undefined, 'Orders sequence row exists');
     assert(billRow !== undefined, 'Bills sequence row exists');
-    assertEqual(orderRow?.date, today, 'Orders row has today date');
+    assertEqual(orderRow?.date, orderToday, 'Orders row has today date');
     assertEqual(billRow?.date, today, 'Bills row has today date');
 
     // ── Summary ───────────────────────────────────────────────────────

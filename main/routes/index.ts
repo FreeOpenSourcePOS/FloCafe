@@ -16,6 +16,7 @@ import { settingsRoutes } from './settings';
 import { reportRoutes } from './reports';
 import { kdsRoutes } from './kds';
 import { kdsInfoRoutes } from './kds-info';
+import { posInfoRoutes } from './pos-info';
 import { moreAppsRoutes } from './more-apps';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printerRoutes } from './printers';
@@ -70,6 +71,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/reports', reportRoutes);
   app.use('/api/kds', kdsRoutes);
   app.use('/api/kds-info', kdsInfoRoutes);
+  app.use('/api/pos-info', posInfoRoutes);
   app.use('/api/more-apps', moreAppsRoutes);
   app.use('/api/printers', printerRoutes);
   app.use('/api/db', databaseRoutes);

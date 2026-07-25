@@ -18,6 +18,7 @@ let app: Express;
 let wss: WebSocketServer;
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
+let activePort = PORT;
 
 /**
  * JWT verification middleware. Skips health check and auth routes (those
@@ -61,6 +62,10 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
 
 export function isServerRunning(): boolean {
   return server !== null;
+}
+
+export function getServerPort(): number {
+  return activePort;
 }
 
 /**
@@ -212,6 +217,7 @@ export function startServer(): Promise<void> {
     let attempts = 0;
 
     server = app.listen(currentPort, '0.0.0.0', () => {
+      activePort = currentPort;
       console.log(`[Server] HTTP server running on http://localhost:${currentPort}`);
 
       if (server) {

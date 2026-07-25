@@ -247,7 +247,9 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
       });
     }
 
-    return { ...order, items };
+    // Normalize: frontend expects table.name, query aliases the join as table_name.
+    const table = order.table_name ? { name: order.table_name } : null;
+    return { ...order, items, table };
   }).filter((order: any) => order.items.length > 0);
 
   // Get counts (filtered by category)

@@ -25,7 +25,8 @@ import { databaseToolsRoutes } from './database-tools';
 import { menuCsvRoutes } from './menu-csv';
 import { heldOrderRoutes } from './held-orders';
 import { whatsappRoutes } from './whatsapp';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
+import { checkPinRateLimit } from './orders';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 
@@ -185,6 +186,7 @@ export function registerRoutes(app: Express): void {
   app.patch('/api/orders/:orderId/items/:itemId/cancel', (req, res) => {
     try {
       const { orderId, itemId } = req.params;
+      const { override_pin } = req.body;
 
       // requireAuth (main/server.ts) already verified the token and attached
       // the user's current DB role to req.user — use that, not the JWT claim.
@@ -204,11 +206,65 @@ export function registerRoutes(app: Express): void {
         return res.status(404).json({ error: 'Item not found in this order' });
       }
 
+      // #150: an item the kitchen has already started on (preparing/ready)
+      // can't be silently deleted like a pending one — the ingredients are
+      // already consumed. Voiding it instead requires a manager PIN, mirrors
+      // the whole-order-cancel override pattern below (routes/orders.ts
+      // ~L580-609), and leaves a negative bill line so the removal stays
+      // visible on the bill rather than the item just vanishing.
+      const isInProgressVoid = ['preparing', 'ready'].includes(item.status);
+      if (isInProgressVoid) {
+        if (!override_pin) {
+          return res.status(400).json({ error: 'Manager PIN required to void an item already in progress' });
+        }
+
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const rateLimitKey = `pin:${clientIp}:item-void:${itemId}`;
+        if (!checkPinRateLimit(rateLimitKey)) {
+          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
+        }
+
+        const pinUser = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+          .all()
+          .find((u: any) => verifyPin(u.pin_hash, override_pin));
+        if (!pinUser) {
+          return res.status(403).json({ error: 'Invalid manager PIN' });
+        }
+      }
+
       // BUG #17 FIX: Wrap cancel + total recalc in transaction
       const result = withTxn(() => {
-        // Soft delete - mark as cancelled
-        db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
-          .run(now(), itemId);
+        if (isInProgressVoid) {
+          // Leave the original line alone (it's a true record of what was
+          // ordered and prepared) and add a mirrored negative line instead of
+          // deleting anything — the bill total nets to the refund/comp
+          // automatically via the recalc below, same as a plain cancel would,
+          // but both lines stay on the bill permanently.
+          db.prepare(`
+            INSERT INTO order_items (
+              order_id, product_id, product_name, product_sku, unit_price, quantity,
+              subtotal, tax_amount, tax_breakdown, tax_type, discount_amount, total,
+              variant_selection, modifier_selection, status, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
+          `).run(
+            orderId, item.product_id, `Void: ${item.product_name}`, item.product_sku,
+            -item.unit_price, item.quantity, -item.subtotal, -(item.tax_amount || 0),
+            item.tax_breakdown, item.tax_type, -(item.discount_amount || 0), -item.total,
+            item.variant_selection, item.modifier_selection, now(), now(),
+          );
+          // #150 Q1-Q4 decision: mark 'voided', not 'cancelled' — a distinct,
+          // terminal status. Item stage-change endpoints (routes/kds.ts,
+          // routes/order-items.ts, kds-server.ts) reject any further
+          // transition once status is 'voided', and inventory is
+          // deliberately left alone: it was already deducted when the item
+          // was added, and voiding an already-prepared item must not restock it.
+          db.prepare("UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?")
+            .run(now(), now(), itemId);
+        } else {
+          // Soft delete - mark as cancelled
+          db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
+            .run(now(), itemId);
+        }
 
         // Recalculate order totals excluding cancelled items
         const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'")
@@ -293,7 +349,10 @@ export function registerRoutes(app: Express): void {
         return { updatedOrder, items, orderCancelled };
       });
 
-      cloudSync.recordOrderChanged(orderId, result.orderCancelled ? 'order.cancelled' : 'order.item_cancelled');
+      cloudSync.recordOrderChanged(
+        orderId,
+        result.orderCancelled ? 'order.cancelled' : (isInProgressVoid ? 'order.item_voided' : 'order.item_cancelled'),
+      );
       notifyKdsUpdate();
       notifyOrderUpdated();
       res.json({ order: { ...result.updatedOrder, items: result.items } });

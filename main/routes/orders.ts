@@ -13,7 +13,7 @@ const pinAttempts = new Map<string, { count: number; resetAt: number }>();
 const PIN_MAX_ATTEMPTS = 5;
 const PIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
-function checkPinRateLimit(key: string): boolean {
+export function checkPinRateLimit(key: string): boolean {
   const now = Date.now();
   const entry = pinAttempts.get(key);
   if (!entry || now > entry.resetAt) {

@@ -6,7 +6,7 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled } from './db';
+import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions } from './middleware/security';
@@ -242,7 +242,11 @@ export function startKdsServer(): Promise<void> {
         const orders = db.prepare(query).all();
 
         const ordersWithItems = orders.map((order: any) => {
-          let items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
+          const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
+          // #150: hide the void reversal line (bill adjustment, not a kitchen
+          // item) and age voided items off the board after their grace period.
+          const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+          let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
           // Filter by category if provided
           if (categoryIds.length > 0) {
@@ -290,6 +294,12 @@ export function startKdsServer(): Promise<void> {
         if (!item) {
           return res.status(404).json({ error: 'Order item not found' });
         }
+
+        // #150: locked once voided — see main/routes/order-items.ts for the same rule.
+        if (item.status === 'voided') {
+          return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
+        }
+
         const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
         if (categoryIds.length > 0 && !categoryIds.includes(String(item.category_id))) {
           return res.status(403).json({ error: 'Not authorized to update this item' });

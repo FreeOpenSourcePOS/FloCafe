@@ -21,9 +21,12 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
   const { t } = useI18n();
   const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[s].labelKey);
   const currentStatus = (item.status || 'pending') as KitchenStatus;
-  const currentIdx = STATUS_ORDER.indexOf(currentStatus);
-  const next = STATUS_ORDER[currentIdx + 1] ?? null;
-  const prev = STATUS_ORDER[currentIdx - 1] ?? null;
+  // 'voided' is locked — it's outside STATUS_ORDER on purpose (issue #150),
+  // so there's no next/prev to compute for it.
+  const isVoided = currentStatus === 'voided';
+  const currentIdx = isVoided ? -1 : STATUS_ORDER.indexOf(currentStatus as Exclude<KitchenStatus, 'voided'>);
+  const next = !isVoided ? STATUS_ORDER[currentIdx + 1] ?? null : null;
+  const prev = !isVoided ? STATUS_ORDER[currentIdx - 1] ?? null : null;
 
   return (
     <div
@@ -41,7 +44,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
             <p className="text-xs text-gray-400 font-medium mb-1">
               {t('kds.modalOrderNumber', { orderNumber })}
             </p>
-            <h2 className="text-2xl font-bold text-gray-900 leading-tight">{item.product_name}</h2>
+            <h2 className={`text-2xl font-bold leading-tight ${isVoided ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{item.product_name}</h2>
             <div className="flex items-center gap-2 mt-1.5">
               <span className={`text-sm font-bold ${STATUS_CONFIG[currentStatus].text}`}>
                 {item.quantity}×
@@ -88,53 +91,63 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
           </div>
         )}
 
-        <div className="flex items-center justify-center gap-1.5">
-          {STATUS_ORDER.map((s, i) => {
-            const isCurrent = currentStatus === s;
-            const isPast = currentIdx > i;
-            return (
-              <div key={s} className="flex items-center gap-1.5">
-                <div
-                  className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
-                    isCurrent
-                      ? `${STATUS_CONFIG[s].bg} ${STATUS_CONFIG[s].text} ring-2 ring-current`
-                      : isPast
-                        ? 'bg-gray-100 text-gray-400 line-through'
-                        : 'bg-gray-100 text-gray-400'
-                  }`}
-                >
-                  {statusLabel(s)}
+        {!isVoided && (
+          <div className="flex items-center justify-center gap-1.5">
+            {STATUS_ORDER.map((s, i) => {
+              const isCurrent = currentStatus === s;
+              const isPast = currentIdx > i;
+              return (
+                <div key={s} className="flex items-center gap-1.5">
+                  <div
+                    className={`flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-full ${
+                      isCurrent
+                        ? `${STATUS_CONFIG[s].bg} ${STATUS_CONFIG[s].text} ring-2 ring-current`
+                        : isPast
+                          ? 'bg-gray-100 text-gray-400 line-through'
+                          : 'bg-gray-100 text-gray-400'
+                    }`}
+                  >
+                    {statusLabel(s)}
+                  </div>
+                  {i < STATUS_ORDER.length - 1 && <ChevronRight size={12} className="text-gray-300 shrink-0" />}
                 </div>
-                {i < STATUS_ORDER.length - 1 && <ChevronRight size={12} className="text-gray-300 shrink-0" />}
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         <div className="flex flex-col gap-3">
-          {next && (
-            <button
-              onClick={() => onUpdateStatus(item.id, next)}
-              disabled={updating}
-              className={`w-full py-5 rounded-2xl text-white text-xl font-bold transition-all active:scale-95 disabled:opacity-50 ${STATUS_CONFIG[next].color} hover:brightness-90`}
-            >
-              {updating ? t('kds.updating') : t('kds.markAs', { status: statusLabel(next) })}
-            </button>
-          )}
-          {prev && (
-            <button
-              onClick={() => onUpdateStatus(item.id, prev)}
-              disabled={updating}
-              className="w-full py-4 rounded-2xl text-gray-600 text-base font-semibold border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
-            >
-              <ChevronLeft size={18} />
-              {t('kds.backTo', { status: statusLabel(prev) })}
-            </button>
-          )}
-          {!next && (
-            <div className="text-center py-4 text-gray-400 text-base font-medium">
-              {t('kds.deliveredDone')}
+          {isVoided ? (
+            <div className="text-center py-4 text-red-500 text-base font-medium">
+              {t('kds.itemVoidedLocked')}
             </div>
+          ) : (
+            <>
+              {next && (
+                <button
+                  onClick={() => onUpdateStatus(item.id, next)}
+                  disabled={updating}
+                  className={`w-full py-5 rounded-2xl text-white text-xl font-bold transition-all active:scale-95 disabled:opacity-50 ${STATUS_CONFIG[next].color} hover:brightness-90`}
+                >
+                  {updating ? t('kds.updating') : t('kds.markAs', { status: statusLabel(next) })}
+                </button>
+              )}
+              {prev && (
+                <button
+                  onClick={() => onUpdateStatus(item.id, prev)}
+                  disabled={updating}
+                  className="w-full py-4 rounded-2xl text-gray-600 text-base font-semibold border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  <ChevronLeft size={18} />
+                  {t('kds.backTo', { status: statusLabel(prev) })}
+                </button>
+              )}
+              {!next && (
+                <div className="text-center py-4 text-gray-400 text-base font-medium">
+                  {t('kds.deliveredDone')}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

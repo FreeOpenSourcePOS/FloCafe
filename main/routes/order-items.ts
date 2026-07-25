@@ -26,6 +26,13 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Order item not found' });
     }
 
+    // #150: once a manager has voided an in-progress item (PATCH
+    // /api/orders/:orderId/items/:itemId/cancel with a PIN), its stage is
+    // locked — the kitchen can no longer advance or revert it.
+    if (item.status === 'voided') {
+      return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
+    }
+
     db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?')
       .run(status, now(), req.params.id);
 

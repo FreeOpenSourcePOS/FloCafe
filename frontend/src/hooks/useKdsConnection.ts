@@ -6,7 +6,10 @@ import type { AxiosInstance } from 'axios';
 import { useI18n } from '@/hooks/useI18n';
 import { useConfirm } from '@/hooks/use-confirm';
 
-export type KitchenStatus = 'pending' | 'preparing' | 'ready' | 'served';
+// 'voided' is a terminal, locked status a manager sets via the Orders page
+// PIN flow (issue #150) — it is never a target of the normal advance/revert
+// flow below, so it's deliberately excluded from STATUS_ORDER.
+export type KitchenStatus = 'pending' | 'preparing' | 'ready' | 'served' | 'voided';
 export type ConnectionMode = 'websocket' | 'rest' | null;
 
 export const STATUS_CONFIG = {
@@ -38,9 +41,16 @@ export const STATUS_CONFIG = {
     text: 'text-purple-700',
     bg: 'bg-purple-50',
   },
+  voided: {
+    labelKey: 'kds.statusVoided',
+    color: 'bg-red-500',
+    border: 'border-red-300',
+    text: 'text-red-700',
+    bg: 'bg-red-50',
+  },
 } as const;
 
-export const STATUS_ORDER: KitchenStatus[] = ['pending', 'preparing', 'ready', 'served'];
+export const STATUS_ORDER: Exclude<KitchenStatus, 'voided'>[] = ['pending', 'preparing', 'ready', 'served'];
 
 export const ORDER_TYPE_BADGE_STYLES: Record<string, string> = {
   dine_in: 'bg-blue-50 text-blue-700 border-blue-200',

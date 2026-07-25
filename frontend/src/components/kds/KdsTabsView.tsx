@@ -125,6 +125,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                 {order.items?.map((item) => {
                   const itemStatus = (item.status || 'pending') as KitchenStatus;
                   const config = STATUS_CONFIG[itemStatus];
+                  const isVoided = itemStatus === 'voided';
 
                   return (
                     <button
@@ -135,7 +136,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                       <div className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${config.color}`} />
                         <span className={`font-bold text-base w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
-                        <span className="text-gray-900 text-lg font-semibold flex-1 truncate">
+                        <span className={`text-lg font-semibold flex-1 truncate ${isVoided ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                           {item.product_name}
                         </span>
                         <ChevronRight size={14} className="text-gray-400 shrink-0" />

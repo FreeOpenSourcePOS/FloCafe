@@ -1276,6 +1276,19 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 34,
+    name: 'add_order_items_voided_at',
+    up: () => {
+      // Issue #150: voiding an in-progress (preparing/ready) item marks it
+      // status='voided' instead of hard-cancelling it, so the kitchen display
+      // can show it struck-through for a grace period before it drops off the
+      // board. voided_at is that timestamp anchor.
+      if (!getColumns(db, 'order_items').includes('voided_at')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN voided_at TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -1900,6 +1913,24 @@ export function now(): string {
 export function verifyPin(storedHash: string | null | undefined, inputPin: string | number): boolean {
   if (!storedHash || !inputPin) return false;
   return bcrypt.compareSync(String(inputPin), storedHash);
+}
+
+// Issue #150: a voided in-progress item stays on the KDS board, struck
+// through, for this long after voiding — long enough for kitchen staff to
+// notice it's been pulled — then drops off like a served item would.
+export const KDS_VOIDED_ITEM_VISIBILITY_MS = 15 * 60 * 1000;
+
+/**
+ * Whether a voided order item should still appear on a KDS surface. Only
+ * ever called for status='voided' rows; every other status is a normal
+ * KDS-visibility decision the caller already makes. The synthetic negative
+ * `void_adjustment` bill line this same void flow inserts (main/routes/index.ts)
+ * is never a kitchen item and callers should exclude it before this check
+ * even runs, not route it through here.
+ */
+export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boolean {
+  if (!voidedAt) return true;
+  return Date.now() - new Date(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
 }
 
 /**

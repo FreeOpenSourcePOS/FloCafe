@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, parseItemJson, attachEffectiveAddons } from '../db';
+import { getDatabase, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible } from '../db';
 import { requireRole, requireKdsEnabled } from '../middleware/security';
 
 const router = Router();
@@ -29,7 +29,13 @@ router.get('/orders', (req: Request, res: Response) => {
     `).all();
 
     const ordersWithItems = orders.map((order: any) => {
-      const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
+      const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
+      // #150: the void reversal line (product_id/name mirrored with negated
+      // amounts) is a bill adjustment, never a kitchen item — always hide it
+      // here. A voided item itself stays visible, struck through, for a
+      // grace period before dropping off like a served item would.
+      const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+      const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
       const tableRow = order.table_id
         ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
         : null;

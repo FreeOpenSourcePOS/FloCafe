@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret } from '../routes/auth';
 
@@ -164,24 +164,28 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
   const db = getDatabase();
   const nowStr = now();
 
+  const existingItem = db.prepare(`
+    SELECT oi.*, p.category_id
+    FROM order_items oi
+    JOIN products p ON oi.product_id = p.id
+    WHERE oi.id = ?
+  `).get(order_item_id) as any;
+
+  if (!existingItem) {
+    client.ws.send(JSON.stringify({ type: 'error', message: 'Item not found' }));
+    return;
+  }
+
+  // #150: locked once voided — see main/routes/order-items.ts for the same rule.
+  if (existingItem.status === 'voided') {
+    client.ws.send(JSON.stringify({ type: 'error', message: 'This item has been voided and can no longer be updated' }));
+    return;
+  }
+
   // Verify the item belongs to a category this user manages
-  if (client.categoryIds.length > 0) {
-    const item = db.prepare(`
-      SELECT oi.*, p.category_id 
-      FROM order_items oi 
-      JOIN products p ON oi.product_id = p.id 
-      WHERE oi.id = ?
-    `).get(order_item_id) as any;
-
-    if (!item) {
-      client.ws.send(JSON.stringify({ type: 'error', message: 'Item not found' }));
-      return;
-    }
-
-    if (!client.categoryIds.includes(item.category_id)) {
-      client.ws.send(JSON.stringify({ type: 'error', message: 'Not authorized to update this item' }));
-      return;
-    }
+  if (client.categoryIds.length > 0 && !client.categoryIds.includes(existingItem.category_id)) {
+    client.ws.send(JSON.stringify({ type: 'error', message: 'Not authorized to update this item' }));
+    return;
   }
 
   // Update item status
@@ -234,10 +238,11 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
 
   // Filter and attach items
   const ordersWithItems = orders.map((order: any) => {
-    let items = attachEffectiveAddons(db, db
-      .prepare('SELECT * FROM order_items WHERE order_id = ?')
-      .all(order.id)
-      .map(parseItemJson) as any[]);
+    const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
+    // #150: hide the void reversal line (bill adjustment, not a kitchen
+    // item) and age voided items off the board after their grace period.
+    const visibleItems = rawItems.filter((i: any) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+    let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
     // Filter items by category if user has category restrictions
     if (categoryIds.length > 0) {

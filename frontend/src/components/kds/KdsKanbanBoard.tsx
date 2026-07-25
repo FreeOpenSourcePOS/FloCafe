@@ -37,31 +37,51 @@ function statusOf(item: KdsOrderItem): KitchenStatus {
   return (item.status || 'pending') as KitchenStatus;
 }
 
+// The 4 draggable stages, as opposed to the locked 'voided' status (issue
+// #150) which gets its own read-only, non-draggable section below — never a
+// dnd-kit column, so a card can never be dragged into "voided" as a bypass
+// for the manager-PIN void flow.
+type BoardStatus = Exclude<KitchenStatus, 'voided'>;
+
 export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanbanBoardProps) {
   const [modalItem, setModalItem] = useState<{ item: KdsOrderItem; orderNumber: string } | null>(null);
 
   // Group by status, then by order. Default rendering matches the tabs view:
   // one card per order, with the order header and a list of items in that status.
   const groupsByStatus = useMemo(() => {
-    const map: Record<KitchenStatus, Array<{ order: KdsOrder; items: KdsOrderItem[] }>> = {
+    const map: Record<BoardStatus, Array<{ order: KdsOrder; items: KdsOrderItem[] }>> = {
       pending: [],
       preparing: [],
       ready: [],
       served: [],
     };
     for (const order of orders) {
-      const buckets: Record<KitchenStatus, KdsOrderItem[]> = {
+      const buckets: Record<BoardStatus, KdsOrderItem[]> = {
         pending: [],
         preparing: [],
         ready: [],
         served: [],
       };
-      for (const item of order.items || []) buckets[statusOf(item)].push(item);
+      for (const item of order.items || []) {
+        const status = statusOf(item);
+        if (status in buckets) buckets[status as BoardStatus].push(item);
+      }
       for (const status of STATUS_ORDER) {
         if (buckets[status].length > 0) map[status].push({ order, items: buckets[status] });
       }
     }
     return map;
+  }, [orders]);
+
+  // Voided items, grouped per order — read-only, struck through, and never a
+  // drag source or drop target (see BoardStatus above).
+  const voidedGroups = useMemo(() => {
+    const groups: Array<{ order: KdsOrder; items: KdsOrderItem[] }> = [];
+    for (const order of orders) {
+      const items = (order.items || []).filter((item) => statusOf(item) === 'voided');
+      if (items.length > 0) groups.push({ order, items });
+    }
+    return groups;
   }, [orders]);
 
   async function handleDragEnd(event: DragEndEvent) {
@@ -124,6 +144,13 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
               </KdsColumn>
             );
           })}
+
+          {voidedGroups.length > 0 && (
+            <VoidedColumn
+              groups={voidedGroups}
+              onItemOpen={(item, orderNumber) => setModalItem({ item, orderNumber })}
+            />
+          )}
         </div>
       </DragDropProvider>
 
@@ -227,6 +254,69 @@ function KanbanOrderCard({
             </button>
           ))}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Read-only column for voided items (issue #150) — deliberately not a
+// KdsColumn/useDroppable target and its cards aren't useDraggable, so an
+// in-progress item can only ever land here through the manager-PIN void
+// flow on the Orders page, never by a kitchen drag-and-drop shortcut.
+function VoidedColumn({
+  groups,
+  onItemOpen,
+}: {
+  groups: Array<{ order: KdsOrder; items: KdsOrderItem[] }>;
+  onItemOpen: (item: KdsOrderItem, orderNumber: string) => void;
+}) {
+  const { t } = useI18n();
+  const config = STATUS_CONFIG.voided;
+  const count = groups.reduce((sum, g) => sum + g.items.length, 0);
+
+  return (
+    <div className="flex-1 min-w-[260px] flex flex-col">
+      <div className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}>
+        <div className={`w-2 h-2 rounded-full ${config.color}`} />
+        <span className={`text-base font-semibold ${config.text}`}>{t(config.labelKey)}</span>
+        <span className="ml-auto text-xs px-1.5 py-0.5 rounded-full bg-white/70 text-gray-700 font-medium tabular-nums">
+          {count}
+        </span>
+      </div>
+      <div
+        className={`flex-1 border-2 ${config.border} border-t-0 rounded-b-lg p-2 space-y-2 overflow-y-auto bg-gray-50/40`}
+        style={{ minHeight: '60vh', maxHeight: 'calc(100vh - 220px)' }}
+      >
+        {groups.map(({ order, items }) => (
+          <div key={order.id} className={`rounded-xl border-2 ${config.border} bg-white p-3 flex flex-col shadow-sm opacity-80`}>
+            <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
+              <span className="font-bold text-sm shrink-0">#{order.order_number}</span>
+              {order.table?.name && (
+                <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
+              )}
+            </div>
+            <div className="space-y-1">
+              {items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onItemOpen(item, order.order_number)}
+                  className={`w-full text-left rounded-lg border ${config.border} ${config.bg} px-2 py-1.5 hover:brightness-95 active:scale-[0.98] transition`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
+                    <span className="text-lg text-gray-400 line-through font-medium flex-1 truncate">{item.product_name}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+        {count === 0 && (
+          <div className="flex flex-col items-center justify-center py-6 text-gray-400 text-xs">
+            <span>{t('kds.emptyColumn')}</span>
+          </div>
+        )}
       </div>
     </div>
   );

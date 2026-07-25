@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2 } from 'lucide-react';
+import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
@@ -29,6 +29,8 @@ const itemStatusConfig: Record<string, { dot: string; color: string; labelKey: s
   ready: { dot: 'bg-green-500', color: 'text-green-700', labelKey: 'orders.itemStatusReady' },
   served: { dot: 'bg-purple-500', color: 'text-purple-700', labelKey: 'orders.itemStatusServed' },
   cancelled: { dot: 'bg-red-400', color: 'text-red-500', labelKey: 'orders.itemStatusCancelled' },
+  voided: { dot: 'bg-red-500', color: 'text-red-600 line-through', labelKey: 'orders.itemStatusVoided' },
+  void_adjustment: { dot: 'bg-red-300', color: 'text-red-500 italic', labelKey: 'orders.itemStatusVoidAdjustment' },
 };
 
 const orderStatusBadge: Record<string, { bg: string; text: string; labelKey: string }> = {
@@ -72,6 +74,13 @@ interface CancelModal {
   overridePin: string;
 }
 
+interface VoidItemModal {
+  orderId: number;
+  itemId: number;
+  productName: string;
+  overridePin: string;
+}
+
 interface DiscountModal {
   order: Order;
   type: 'percentage' | 'amount';
@@ -104,6 +113,10 @@ export default function OrdersPage() {
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<number | null>(null);
   const [convertingOrderId, setConvertingOrderId] = useState<number | null>(null);
+
+  // Void (in-progress item) modal state
+  const [voidItemModal, setVoidItemModal] = useState<VoidItemModal | null>(null);
+  const [voidingItem, setVoidingItem] = useState(false);
 
   // Consolidated discount modal state
   const [discountModal, setDiscountModal] = useState<DiscountModal | null>(null);
@@ -468,6 +481,25 @@ export default function OrdersPage() {
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
       toast.error(axiosErr.response?.data?.error || t('orders.removeItemFailed'));
+    }
+  };
+
+  const handleVoidItem = async () => {
+    if (!voidItemModal) return;
+    setVoidingItem(true);
+    try {
+      await api.patch(`/orders/${voidItemModal.orderId}/items/${voidItemModal.itemId}/cancel`, {
+        reason: t('orders.removedByManager'),
+        override_pin: voidItemModal.overridePin || undefined,
+      });
+      toast.success(t('orders.itemVoided'));
+      setVoidItemModal(null);
+      fetchOrders();
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      toast.error(axiosErr.response?.data?.error || t('orders.voidItemFailed'));
+    } finally {
+      setVoidingItem(false);
     }
   };
 
@@ -1003,6 +1035,15 @@ export default function OrdersPage() {
                                   <Trash2 size={14} />
                                 </button>
                               )}
+                              {(item.status === 'preparing' || item.status === 'ready') && isOwnerOrManager && !paid && (
+                                <button
+                                  onClick={() => setVoidItemModal({ orderId: order.id, itemId: item.id, productName: item.product_name, overridePin: '' })}
+                                  className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
+                                  title={t('orders.voidItem')}
+                                >
+                                  <Ban size={14} />
+                                </button>
+                              )}
                             </div>
                           </div>
                           {item.addons && item.addons.length > 0 && (
@@ -1279,6 +1320,49 @@ placeholder={t('orders.managerPin')}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
                 {cancellingOrderId === cancelModal.order.id ? t('orders.cancelling') : t('orders.confirmCancel')}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Void In-Progress Item Modal */}
+      {voidItemModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
+            <h2 className="text-lg font-bold text-gray-900 mb-1">{t('orders.voidItem')}</h2>
+            <p className="text-sm text-gray-500 mb-4">{t('orders.voidItemConfirm', { name: voidItemModal.productName })}</p>
+
+            <div>
+              <label htmlFor="voidOverridePin" className="block text-sm font-medium text-gray-700 mb-1">
+                {t('orders.overridePinLabel')}
+              </label>
+              <input
+                id="voidOverridePin"
+                type="password"
+                autoFocus
+                value={voidItemModal.overridePin}
+                onChange={(e) => setVoidItemModal({ ...voidItemModal, overridePin: e.target.value })}
+                placeholder={t('orders.managerPin')}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setVoidItemModal(null)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button
+                size="sm"
+                onClick={handleVoidItem}
+                disabled={voidingItem || !voidItemModal.overridePin}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                {voidingItem ? t('orders.voidingItem') : t('orders.confirmVoidItem')}
               </Button>
             </div>
           </div>

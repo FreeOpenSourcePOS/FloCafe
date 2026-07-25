@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
@@ -44,14 +44,18 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     const orders = db.prepare(query).all(...params);
 
     const ordersWithItems = orders.map((order: any) => {
-      const items = attachEffectiveAddons(db, db.prepare(`
+      const rawItems = db.prepare(`
         SELECT oi.*, p.category_id, c.name as category_name
         FROM order_items oi
         LEFT JOIN products p ON oi.product_id = p.id
         LEFT JOIN categories c ON p.category_id = c.id
         WHERE oi.order_id = ?
         ORDER BY oi.created_at ASC
-      `).all(order.id) as any[]);
+      `).all(order.id) as any[];
+      // #150: hide the void reversal line (bill adjustment, not a kitchen
+      // item) and age voided items off the board after their grace period.
+      const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+      const items = attachEffectiveAddons(db, visibleItems);
 
       return { ...order, items };
     });
@@ -140,6 +144,11 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       categoryIds = [];
     }
 
+    // #150: 'void_adjustment' is a bill-only reversal line, never a kitchen
+    // item — excluded outright. A voided item itself stays visible, struck
+    // through, until voided_at ages past the same grace period every other
+    // KDS surface uses (main/db.ts's isVoidedItemKdsVisible).
+    const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString();
     let itemsQuery = `
       SELECT oi.*, o.id as order_id, o.order_number, o.type, o.status as order_status,
         o.table_id, t.number as table_name, o.special_instructions as order_notes,
@@ -147,11 +156,12 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
       LEFT JOIN tables t ON o.table_id = t.id
-      WHERE oi.status NOT IN ('completed', 'cancelled', 'served')
+      WHERE oi.status NOT IN ('completed', 'cancelled', 'served', 'void_adjustment')
+        AND (oi.status != 'voided' OR oi.voided_at > ?)
         AND o.status != 'cancelled'
     `;
 
-    const params: any[] = [];
+    const params: any[] = [voidedCutoff];
 
     if (categoryIds.length > 0) {
       itemsQuery += ` AND EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.category_id IN (${categoryIds.map(() => '?').join(',')}))`;
@@ -205,9 +215,14 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     }
 
     const db = getDatabase();
-    const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
+    const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id) as any;
     if (!item) {
       return res.status(404).json({ error: 'Order item not found' });
+    }
+
+    // #150: locked once voided — see routes/order-items.ts for the same rule.
+    if (item.status === 'voided') {
+      return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
     }
 
     const nowStr = now();

@@ -14,7 +14,7 @@
     "build": "tsc",
     "lint:backend": "eslint main/",
     "lint": "npm run lint:backend && cd frontend && npm run lint",
-    "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop NEXT_PUBLIC_API_URL=http://localhost:3001/api npm run build",
+    "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "electron-builder install-app-deps",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
@@ -214,7 +214,7 @@
       "entitlementsInherit": "build/entitlements.plist",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "notarize": false
+      "notarize": true
     },
     "mas": {
       "category": "public.app-category.business",

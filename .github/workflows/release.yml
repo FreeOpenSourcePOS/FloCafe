@@ -163,14 +163,34 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Build macOS
+      - name: Verify macOS signing credentials
+        # Fail loudly rather than let electron-builder silently emit an
+        # unsigned/unnotarized build — that shipped for every release before
+        # this check existed and is exactly what gets the app Gatekeeper-blocked
+        # ("...should move it to the Bin") for anyone who downloads it.
         run: |
-          # Unset cert vars if secret is not configured — empty CSC_LINK crashes electron-builder
-          [ -z "$CSC_LINK" ] && unset CSC_LINK && unset CSC_KEY_PASSWORD
-          npm run build:frontend && npm run build && npx electron-builder --mac --publish never
+          missing=()
+          [ -z "$CSC_LINK" ] && missing+=("MAC_CERTS")
+          [ -z "$CSC_KEY_PASSWORD" ] && missing+=("MAC_CERTS_PASSWORD")
+          [ -z "$APPLE_ID" ] && missing+=("APPLE_ID")
+          [ -z "$APPLE_APP_SPECIFIC_PASSWORD" ] && missing+=("APPLE_APP_SPECIFIC_PASSWORD")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secret(s) for signed/notarized macOS build: ${missing[*]}"
+            exit 1
+          fi
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+
+      - name: Build macOS
+        run: npm run build:frontend && npm run build && npx electron-builder --mac --publish never
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: BKDY677XJA
 
       - name: Verify macOS release assets

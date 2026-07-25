@@ -2,6 +2,12 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.2.0] - 2026-07-26
+
+### Added
+- Orders page can now void an item that's already `preparing`/`ready` on the kitchen display, not just `pending` ones — the trash icon becomes a 🚫 icon for in-progress items and opens a manager-PIN prompt (same override pattern as whole-order cancel) instead of a plain confirm. Voiding leaves the original line on the bill and adds a mirrored negative line for the same amount, so the refund/comp is visible instead of the item just disappearing; inventory is left alone since the ingredients were already consumed. The item is marked `voided` — a locked, terminal status — and shows struck through on every KDS surface (dashboard Kanban/Tabs, standalone kitchen device, WebSocket feed) for 15 minutes before dropping off the board, the same grace period a served item gets. (#150)
+- Settings → POS Workflow has a new pairing block mirroring the existing KDS pairing card: scan a QR code or type the shown local-network IP to open the same POS on a second cashier's device, backed by a new `GET /api/pos-info` endpoint.
+
 ## [2.1.0] - 2026-07-26
 
 ### Added

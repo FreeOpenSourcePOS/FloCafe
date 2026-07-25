@@ -3,16 +3,19 @@
 import { PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom';
 import { DragDropProvider, useDraggable, type DragEndEvent } from '@dnd-kit/react';
 import { Clock } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { KdsColumn } from '@/components/kds/KdsColumn';
 import { KdsItemModal } from '@/components/kds/KdsItemModal';
+import { Badge } from '@/components/ui/badge';
 import {
   STATUS_CONFIG,
   STATUS_ORDER,
+  ORDER_TYPE_BADGE_STYLES,
   type KitchenStatus,
   type KdsOrder,
   type KdsOrderItem,
 } from '@/hooks/useKdsConnection';
+import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useI18n } from '@/hooks/useI18n';
 
 export interface KdsKanbanBoardProps {
@@ -35,7 +38,6 @@ function statusOf(item: KdsOrderItem): KitchenStatus {
 }
 
 export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanbanBoardProps) {
-  const { t } = useI18n();
   const [modalItem, setModalItem] = useState<{ item: KdsOrderItem; orderNumber: string } | null>(null);
 
   // Group by status, then by order. Default rendering matches the tabs view:
@@ -74,11 +76,21 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     }
   }
 
+  // Ticks once a second so the elapsed-time display below stays live.
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setClockTick((v) => v + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   const timeSince = (dateStr: string) => {
-    const minutes = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-    if (minutes < 1) return t('common.justNow');
-    if (minutes < 60) return `${minutes}m`;
-    return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+    const totalSeconds = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const mm = String(minutes).padStart(2, '0');
+    const ss = String(seconds).padStart(2, '0');
+    return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
   };
 
   return (
@@ -146,6 +158,7 @@ function KanbanOrderCard({
   timeSince: (dateStr: string) => string;
   onItemOpen: (item: KdsOrderItem) => void;
 }) {
+  const { t } = useI18n();
   const config = STATUS_CONFIG[status];
   const itemIds = items.map((i) => i.id);
   const busy = items.some((i) => updating === i.id);
@@ -162,14 +175,20 @@ function KanbanOrderCard({
       } ${busy ? 'pointer-events-none opacity-60' : ''}`}
     >
       <div className={`rounded-xl border-2 ${config.border} bg-white p-3 flex flex-col shadow-sm`}>
-        <div className="flex justify-between items-center mb-2">
-          <div>
-            <span className="font-bold text-sm">#{order.order_number}</span>
+        <div className="flex justify-between items-center mb-2 gap-2">
+          <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+            <span className="font-bold text-xs shrink-0">#{order.order_number}</span>
+            <Badge
+              variant="outline"
+              className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
+            >
+              {t(ORDER_TYPE_LABEL_KEYS[order.type] ?? order.type)}
+            </Badge>
             {order.table?.name && (
-              <span className="text-xs text-gray-500 ml-2">— {order.table.name}</span>
+              <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
             )}
           </div>
-          <div className="flex items-center gap-1 text-xs text-gray-400">
+          <div className="flex items-center gap-1 text-xs text-gray-400 font-mono shrink-0">
             <Clock size={12} />
             {timeSince(order.created_at)}
           </div>

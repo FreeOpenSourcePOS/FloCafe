@@ -271,6 +271,49 @@ router.put('/kds', requireRole('owner', 'manager'), (req: Request, res: Response
   }
 });
 
+// ─── Order numbering settings (must come BEFORE /:key wildcard) ─────────────
+
+function orderNumberingShape(s: Record<string, string>) {
+  return {
+    order_number_prefix: s.order_number_prefix ?? 'ORD',
+    order_number_include_date: s.order_number_include_date !== 'false',
+    order_number_reset_daily: s.order_number_reset_daily !== 'false',
+  };
+}
+
+const ORDER_NUMBER_PREFIX_PATTERN = /^[A-Za-z0-9_-]{0,12}$/;
+
+router.get('/order-numbering', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+  try {
+    const s = getAllSettings(getDatabase());
+    res.json(orderNumberingShape(s));
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.put('/order-numbering', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const { order_number_prefix, order_number_include_date, order_number_reset_daily } = req.body;
+
+    if (order_number_prefix !== undefined && !ORDER_NUMBER_PREFIX_PATTERN.test(order_number_prefix)) {
+      return res.status(400).json({ error: 'order_number_prefix must be up to 12 characters (letters, numbers, - or _)' });
+    }
+
+    const db = getDatabase();
+    upsertSettings(db, {
+      order_number_prefix,
+      order_number_include_date: boolFlag(order_number_include_date),
+      order_number_reset_daily: boolFlag(order_number_reset_daily),
+    });
+    res.json(orderNumberingShape(getAllSettings(db)));
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ─── Cloud Sync settings (must come BEFORE /:key wildcard) ──────────────────
 
 router.get('/cloud', requireRole('owner', 'manager'), (req: Request, res: Response) => {

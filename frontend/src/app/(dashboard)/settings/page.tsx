@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
-import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud } from 'lucide-react';
+import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -1050,12 +1050,20 @@ export default function SettingsPage() {
   const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
   const [savingKotPrintingEnabled, setSavingKotPrintingEnabled] = useState(false);
 
+  type OrderNumberForm = { prefix: string; includeDate: boolean; resetDaily: boolean };
+  const [savedOrderNumberForm, setSavedOrderNumberForm] = useState<OrderNumberForm>({
+    prefix: 'ORD', includeDate: true, resetDaily: true,
+  });
+  const [orderNumberForm, setOrderNumberForm] = useState<OrderNumberForm>(savedOrderNumberForm);
+  const [savingOrderNumbering, setSavingOrderNumbering] = useState(false);
+
   const resetBusiness = async () => {
     try {
-      const [businessRes, loyaltyRes, discountRes] = await Promise.all([
+      const [businessRes, loyaltyRes, discountRes, orderNumberingRes] = await Promise.all([
         api.get('/settings/business'),
         api.get('/settings/loyalty'),
-        api.get('/settings/discount')
+        api.get('/settings/discount'),
+        api.get('/settings/order-numbering'),
       ]);
 
       const d = businessRes.data;
@@ -1095,6 +1103,14 @@ export default function SettingsPage() {
       }
       if (discountRes.data.discount_mode) { setDiscountMode(discountRes.data.discount_mode); setSavedDiscountMode(discountRes.data.discount_mode); }
       if (discountRes.data.discount_requires_approval !== undefined) { setDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); setSavedDiscountRequiresApproval(!!discountRes.data.discount_requires_approval); }
+
+      const loadedOrderNumbering: OrderNumberForm = {
+        prefix: orderNumberingRes.data.order_number_prefix ?? 'ORD',
+        includeDate: orderNumberingRes.data.order_number_include_date !== false,
+        resetDaily: orderNumberingRes.data.order_number_reset_daily !== false,
+      };
+      setOrderNumberForm(loadedOrderNumbering);
+      setSavedOrderNumberForm(loadedOrderNumbering);
 
       toast.success(t('settings.reloadedFromDb'));
     } catch {
@@ -1150,6 +1166,16 @@ export default function SettingsPage() {
       const enabled = res.data.setting?.value !== 'false';
       setKotPrintingEnabledSetting(enabled);
       posSettings.setKotPrintingEnabled(enabled);
+    }).catch(() => {});
+
+    api.get('/settings/order-numbering').then((res) => {
+      const loaded: OrderNumberForm = {
+        prefix: res.data.order_number_prefix ?? 'ORD',
+        includeDate: res.data.order_number_include_date !== false,
+        resetDaily: res.data.order_number_reset_daily !== false,
+      };
+      setOrderNumberForm(loaded);
+      setSavedOrderNumberForm(loaded);
     }).catch(() => {});
 
 
@@ -1510,6 +1536,31 @@ export default function SettingsPage() {
     }
   };
 
+  const saveOrderNumbering = async (silent = false) => {
+    const prefix = orderNumberForm.prefix.trim();
+    if (prefix && !/^[A-Za-z0-9_-]{0,12}$/.test(prefix)) {
+      toast.error(t('settings.orderNumberPrefixInvalid', { defaultValue: 'Prefix must be up to 12 characters (letters, numbers, - or _)' }));
+      return;
+    }
+    setSavingOrderNumbering(true);
+    try {
+      await api.put('/settings/order-numbering', {
+        order_number_prefix: prefix,
+        order_number_include_date: orderNumberForm.includeDate,
+        order_number_reset_daily: orderNumberForm.resetDaily,
+      });
+      const saved = { ...orderNumberForm, prefix };
+      setOrderNumberForm(saved);
+      setSavedOrderNumberForm(saved);
+      if (!silent) toast.success(t('settings.orderNumberingSaved', { defaultValue: 'Order number settings saved' }));
+    } catch (err) {
+      if (!silent) toast.error(t('settings.saveFailed'));
+      throw err;
+    } finally {
+      setSavingOrderNumbering(false);
+    }
+  };
+
   const resetAllSettings = async () => {
     resetPrinting();
     resetBillTemplate();
@@ -1519,7 +1570,7 @@ export default function SettingsPage() {
 
   const saveAllSettings = async () => {
     try {
-      await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true)]);
+      await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
       savePrinting(true);
       saveBillTemplate(true);
       toast.success(t('settings.allSaved'));
@@ -1872,7 +1923,71 @@ export default function SettingsPage() {
               )}
             </div>
 
-            
+            {/* Order Number Format */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Hash size={20} className="text-gray-500" />
+                <h2 className="font-semibold text-gray-900">{t('settings.orderNumberFormat', { defaultValue: 'Order Number Format' })}</h2>
+                {!isAdmin && (
+                  <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
+                    <Lock size={12} /> {t('settings.adminOnly')}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">{t('settings.orderNumberPrefix', { defaultValue: 'Prefix' })}</label>
+                  {isAdmin ? (
+                    <input
+                      type="text"
+                      value={orderNumberForm.prefix}
+                      onChange={(e) => setOrderNumberForm((p) => ({ ...p, prefix: e.target.value.toUpperCase() }))}
+                      placeholder="ORD"
+                      maxLength={12}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                    />
+                  ) : (
+                    <p className="font-medium text-gray-900">{orderNumberForm.prefix || '—'}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm text-gray-500 mb-1">{t('settings.orderNumberPreview', { defaultValue: 'Preview' })}</label>
+                  <p className="font-mono font-medium text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                    {[
+                      orderNumberForm.prefix,
+                      orderNumberForm.includeDate ? new Date().toISOString().slice(0, 10).replace(/-/g, '') : '',
+                      '0001',
+                    ].filter(Boolean).join('-')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 pt-5 border-t border-gray-100 space-y-3">
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <span className="text-sm text-gray-700">{t('settings.orderNumberIncludeDate', { defaultValue: 'Include date in order number' })}</span>
+                    <p className="text-xs text-gray-500">{t('settings.orderNumberIncludeDateHint', { defaultValue: 'Adds the current date (YYYYMMDD) after the prefix.' })}</p>
+                  </div>
+                  <Toggle
+                    value={orderNumberForm.includeDate}
+                    onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, includeDate: v })) : () => {}}
+                  />
+                </div>
+                <div className="flex items-center justify-between py-2">
+                  <div>
+                    <span className="text-sm text-gray-700">{t('settings.orderNumberResetDaily', { defaultValue: 'Reset series every 24 hours' })}</span>
+                    <p className="text-xs text-gray-500">{t('settings.orderNumberResetDailyHint', { defaultValue: 'Numbering restarts from 1 at midnight in the store’s timezone.' })}</p>
+                  </div>
+                  <Toggle
+                    value={orderNumberForm.resetDaily}
+                    onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, resetDaily: v })) : () => {}}
+                  />
+                </div>
+              </div>
+            </div>
+
+
             {/* Subscription */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -3728,8 +3843,8 @@ export default function SettingsPage() {
           <div className={`bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 pointer-events-auto ${shakeSaveBar ? 'animate-shake' : ''}`}>
             <span className="text-sm font-medium">{t('settings.unsavedChanges', { defaultValue: 'You have unsaved changes' })}</span>
             <div className="flex items-center gap-2">
-              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('settings.discard', { defaultValue: 'Discard' })}</button>
-              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud) ? t('settings.saving') : t('settings.saveChanges', { defaultValue: 'Save Changes' })}</button>
+              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('settings.discard', { defaultValue: 'Discard' })}</button>
+              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering) ? t('settings.saving') : t('settings.saveChanges', { defaultValue: 'Save Changes' })}</button>
             </div>
           </div>
         </div>

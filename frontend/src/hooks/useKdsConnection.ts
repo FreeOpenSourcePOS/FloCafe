@@ -42,6 +42,13 @@ export const STATUS_CONFIG = {
 
 export const STATUS_ORDER: KitchenStatus[] = ['pending', 'preparing', 'ready', 'served'];
 
+export const ORDER_TYPE_BADGE_STYLES: Record<string, string> = {
+  dine_in: 'bg-blue-50 text-blue-700 border-blue-200',
+  takeaway: 'bg-orange-50 text-orange-700 border-orange-200',
+  delivery: 'bg-purple-50 text-purple-700 border-purple-200',
+  online: 'bg-teal-50 text-teal-700 border-teal-200',
+};
+
 export interface KdsOrderItemAddon {
   id?: string | number;
   name: string;

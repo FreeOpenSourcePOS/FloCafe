@@ -1,14 +1,17 @@
 'use client';
 
 import { ChevronRight, Clock } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { KdsItemModal } from '@/components/kds/KdsItemModal';
+import { Badge } from '@/components/ui/badge';
 import {
   STATUS_CONFIG,
+  ORDER_TYPE_BADGE_STYLES,
   type KitchenStatus,
   type KdsOrder,
   type KdsOrderItem,
 } from '@/hooks/useKdsConnection';
+import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useI18n } from '@/hooks/useI18n';
 
 export interface KdsTabsViewProps {
@@ -29,15 +32,22 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
 
   const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[s].labelKey);
 
-  const timeSince = useCallback(
-    (dateStr: string) => {
-      const minutes = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
-      if (minutes < 1) return t('common.justNow');
-      if (minutes < 60) return `${minutes}m`;
-      return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-    },
-    [t],
-  );
+  // Ticks once a second so the elapsed-time display below stays live.
+  const [, setClockTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setClockTick((v) => v + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const timeSince = useCallback((dateStr: string) => {
+    const totalSeconds = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000));
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    const mm = String(minutes).padStart(2, '0');
+    const ss = String(seconds).padStart(2, '0');
+    return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+  }, []);
 
   const filteredOrders = orders
     .map((order) => ({
@@ -84,15 +94,20 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
               key={order.id}
               className={`bg-white rounded-xl border-2 ${STATUS_CONFIG[activeTab].border} p-4 flex flex-col`}
             >
-              <div className="flex justify-between items-center mb-3">
-                <div>
-                  <span className="font-bold text-base">#{order.order_number}</span>
-                  <span className="text-xs text-gray-500 ml-2">
-                    {order.type.replace('_', ' ')}
-                    {order.table && ` — ${order.table.name}`}
-                  </span>
+              <div className="flex justify-between items-center mb-3 gap-2">
+                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                  <span className="font-bold text-sm shrink-0">#{order.order_number}</span>
+                  <Badge
+                    variant="outline"
+                    className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
+                  >
+                    {t(ORDER_TYPE_LABEL_KEYS[order.type] ?? order.type)}
+                  </Badge>
+                  {order.table?.name && (
+                    <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
+                  )}
                 </div>
-                <div className="flex items-center gap-1 text-xs text-gray-400">
+                <div className="flex items-center gap-1 text-xs text-gray-400 font-mono shrink-0">
                   <Clock size={12} />
                   {timeSince(order.created_at)}
                 </div>

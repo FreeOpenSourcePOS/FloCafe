@@ -1800,6 +1800,9 @@ function seedInstallDefaults(): void {
   insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
   insert('kds_enabled', 'true');
   insert('kot_printing_enabled', 'true');
+  insert('order_number_prefix', 'ORD');
+  insert('order_number_include_date', 'true');
+  insert('order_number_reset_daily', 'true');
 
   seedCloudSyncDefaults();
 
@@ -1851,10 +1854,36 @@ function getNextSequence(name: string, date: string): number {
   })();
 }
 
+/** YYYYMMDD for "now" in the given IANA timezone (falls back to UTC if the zone is invalid). */
+function dateStampInTimezone(timezone: string): string {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '';
+    return `${get('year')}${get('month')}${get('day')}`;
+  } catch {
+    return new Date().toISOString().slice(0, 10).replace(/-/g, '');
+  }
+}
+
 export function generateOrderNumber(): string {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const next = getNextSequence('orders', date);
-  return `ORD-${date}-${String(next).padStart(4, '0')}`;
+  const prefix = getSettingValue('order_number_prefix') ?? 'ORD';
+  const includeDate = getSettingValue('order_number_include_date') !== 'false';
+  const resetDaily = getSettingValue('order_number_reset_daily') !== 'false';
+  const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
+
+  // The sequence "bucket": a per-day counter when the series resets at store
+  // midnight, or a single fixed bucket when the series is meant to keep
+  // climbing indefinitely.
+  const bucket = resetDaily ? dateStampInTimezone(timezone) : 'ALL';
+  const next = getNextSequence('orders', bucket);
+
+  const dateSegment = includeDate ? dateStampInTimezone(timezone) : '';
+  return [prefix, dateSegment, String(next).padStart(4, '0')].filter(Boolean).join('-');
 }
 
 export function generateBillNumber(): string {

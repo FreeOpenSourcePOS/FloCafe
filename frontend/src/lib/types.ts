@@ -195,6 +195,8 @@ export interface Bill {
   payment_details: { method: string; amount: number; timestamp: string }[] | null;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   order?: Order;
+  /** Loyalty points credited for this bill (sum of loyalty_ledger credits). Only populated by /orders endpoints. */
+  points_earned?: number;
 }
 
 export interface Staff {

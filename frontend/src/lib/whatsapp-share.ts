@@ -39,6 +39,12 @@ export function getWhatsAppShareUrl(
   lines.push(`*${tenant.business_name}*`);
   lines.push(`Bill #: ${bill.bill_number}`);
   lines.push(`Date: ${formatDate(bill.order?.created_at, locale)}`);
+  const itemLines = formatItemsList(bill.order, currency, locale);
+  if (itemLines.length > 0) {
+    lines.push(``);
+    lines.push(`*Items:*`);
+    lines.push(...itemLines);
+  }
   lines.push(``);
   lines.push(`*Total: ${formatAmount(bill.total, currency, locale)}*`);
 
@@ -100,6 +106,12 @@ export function getWhatsAppMessage(
   lines.push(`${tenant.business_name}`);
   lines.push(`Bill #: ${bill.bill_number}`);
   lines.push(`Date: ${formatDate(bill.order?.created_at)}`);
+  const itemLines = formatItemsList(bill.order, currency, locale);
+  if (itemLines.length > 0) {
+    lines.push(``);
+    lines.push(`Items:`);
+    lines.push(...itemLines);
+  }
   lines.push(``);
   lines.push(`Total: ${formatAmount(bill.total, currency, locale)}`);
 
@@ -126,6 +138,12 @@ function formatAmount(value: number | string, currency: string, locale: string):
   return `${currency}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
+/** One line per ordered item (skipping cancelled ones), e.g. "2x Chicken Biryani - ₹360.00". */
+function formatItemsList(order: Bill['order'], currency: string, locale: string): string[] {
+  const items = order?.items?.filter((item) => item.status !== 'cancelled') ?? [];
+  return items.map((item) => `${item.quantity}x ${item.product_name} - ${formatAmount(item.total, currency, locale)}`);
+}
+
 /**
  * Send a paid bill receipt through Flo's connected WhatsApp session.
  * Single source of truth for the /whatsapp/send call + error-toast mapping,
@@ -134,10 +152,11 @@ function formatAmount(value: number | string, currency: string, locale: string):
 export async function sendBillViaFlo(
   bill: Bill,
   customerPhone: string,
-  currency: string,
+  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   t: (key: string, params?: Record<string, string | number>) => string,
+  opts: WhatsAppShareOptions = {},
 ): Promise<void> {
-  const message = `Receipt for bill ${bill.bill_number} — Total ${currency} ${bill.total}`;
+  const message = getWhatsAppMessage(bill, tenant, opts);
   try {
     const { data } = await api.post('/whatsapp/send', {
       bill_id: bill.id,

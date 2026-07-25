@@ -143,6 +143,12 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
       const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
       const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
       const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any);
+      if (bill && (bill as any).customer_id) {
+        const earned = db.prepare(
+          `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`
+        ).get((bill as any).id) as { total: number };
+        (bill as any).points_earned = earned.total;
+      }
       return { ...order, items, table, customer, bill };
     });
 
@@ -171,6 +177,12 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
     const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
     const customer = (order as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((order as any).customer_id) : null;
     const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE order_id = ?').get(req.params.id));
+    if (bill && (bill as any).customer_id) {
+      const earned = db.prepare(
+        `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`
+      ).get((bill as any).id) as { total: number };
+      (bill as any).points_earned = earned.total;
+    }
 
     res.json({ order: { ...order, items, table, customer, bill } });
   } catch (error: any) {

@@ -501,7 +501,8 @@ export default function OrdersPage() {
           business_name: currentTenant?.business_name || t('common.businessNameFallback'),
           currency,
           country: currentTenant?.country || 'IN',
-        }
+        },
+        { pointsEarned: order.bill.points_earned ?? 0 }
       );
     } catch {
       toast.error(t('orders.whatsappFailed'));
@@ -519,7 +520,17 @@ export default function OrdersPage() {
     }
     setSendingWaOrderId(order.id);
     try {
-      await sendBillViaFlo(order.bill, order.customer.phone, currency, t);
+      await sendBillViaFlo(
+        order.bill,
+        order.customer.phone,
+        {
+          business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+          currency: currentTenant?.currency || 'INR',
+          country: currentTenant?.country || 'IN',
+        },
+        t,
+        { pointsEarned: order.bill.points_earned ?? 0 }
+      );
     } finally {
       setSendingWaOrderId(null);
     }

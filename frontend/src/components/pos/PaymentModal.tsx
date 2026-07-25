@@ -13,7 +13,8 @@ import { useI18n } from '@/hooks/useI18n';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
-import { sendBillViaFlo } from '@/lib/whatsapp-share';
+import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
+import { useAuthStore } from '@/store/auth';
 
 interface Props {
   bill: Bill;
@@ -39,9 +40,11 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const effectiveCustomerId = bill.customer_id || cartCustomerId || null;
   const { confirm, ConfirmDialog } = useConfirm();
   const { t } = useI18n();
+  const { currentTenant } = useAuthStore();
   const isWhatsAppReady = useWhatsAppReady();
   const [justPaid, setJustPaid] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
+  const [pointsEarned, setPointsEarned] = useState(0);
   const [payments, setPayments] = useState<Payment[]>([
     { method: 'cash', amount: remaining.toString() },
   ]);
@@ -206,19 +209,20 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     }
     setProcessing(true);
     try {
-      let pointsEarned = 0;
+      let earned = 0;
       for (const p of payments) {
         const amt = parseFloat(p.amount);
         if (!amt || amt <= 0 || isNaN(amt)) continue;
         const res = await api.post(`/bills/${bill.id}/payment`, { amount: amt, method: p.method, customer_id: effectiveCustomerId });
-        if (res.data?.loyaltyPointsEarned > 0) pointsEarned = res.data.loyaltyPointsEarned;
+        if (res.data?.loyaltyPointsEarned > 0) earned = res.data.loyaltyPointsEarned;
       }
       if (walletAmt > 0) {
         const res = await api.post(`/bills/${bill.id}/payment`, { amount: walletAmt, method: 'wallet', customer_id: effectiveCustomerId });
-        if (res.data?.loyaltyPointsEarned > 0) pointsEarned = res.data.loyaltyPointsEarned;
+        if (res.data?.loyaltyPointsEarned > 0) earned = res.data.loyaltyPointsEarned;
       }
-      if (pointsEarned > 0) {
-        toast.success(t('pos.paymentRecordedWithPoints', { points: pointsEarned }));
+      setPointsEarned(earned);
+      if (earned > 0) {
+        toast.success(t('pos.paymentRecordedWithPoints', { points: earned }));
       } else {
         toast.success(t('pos.paymentRecorded'));
       }
@@ -231,6 +235,12 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     }
   };
 
+  const tenantForShare = {
+    business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+    currency: currentTenant?.currency || 'INR',
+    country: currentTenant?.country || 'IN',
+  };
+
   const handleSendWhatsApp = async () => {
     const phone = cartCustomer?.phone;
     if (!phone) {
@@ -239,9 +249,26 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     }
     setSendingWa(true);
     try {
-      await sendBillViaFlo(bill, phone, currency, t);
+      await sendBillViaFlo(bill, phone, tenantForShare, t, { pointsEarned });
     } finally {
       setSendingWa(false);
+    }
+  };
+
+  const handleShareWhatsApp = () => {
+    if (!cartCustomer?.phone) {
+      toast.error(t('whatsapp.send.customerPhoneRequired'));
+      return;
+    }
+    try {
+      shareBillViaWhatsApp(
+        bill,
+        { phone: cartCustomer.phone, country_code: cartCustomer.country_code },
+        tenantForShare,
+        { pointsEarned }
+      );
+    } catch {
+      toast.error(t('orders.whatsappFailed'));
     }
   };
 
@@ -548,16 +575,28 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         <div className="px-5 pb-5 border-t border-gray-100 pt-3 space-y-2">
           {justPaid ? (
             <>
-              {isWhatsAppReady && cartCustomer?.phone && (
-                <Button
-                  onClick={handleSendWhatsApp}
-                  disabled={sendingWa}
-                  className="w-full bg-emerald-600 hover:bg-emerald-700"
-                  size="lg"
-                >
-                  <Send size={16} className="mr-2" />
-                  {sendingWa ? t('pos.processingPayment') : t('pos.sendViaWhatsApp')}
-                </Button>
+              {cartCustomer?.phone && (
+                isWhatsAppReady ? (
+                  <Button
+                    onClick={handleSendWhatsApp}
+                    disabled={sendingWa}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700"
+                    size="lg"
+                  >
+                    <Send size={16} className="mr-2" />
+                    {sendingWa ? t('pos.processingPayment') : t('pos.sendViaWhatsApp')}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={handleShareWhatsApp}
+                    variant="outline"
+                    className="w-full"
+                    size="lg"
+                  >
+                    <Send size={16} className="mr-2" />
+                    {t('common.shareViaWhatsApp')}
+                  </Button>
+                )
               )}
               <Button onClick={onPaid} variant="outline" className="w-full" size="lg">
                 {t('common.done')}

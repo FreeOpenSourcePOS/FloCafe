@@ -547,7 +547,7 @@ router.post('/:id/print', requireRole('owner', 'manager', 'cashier'), async (req
     // User ID is set by the requireAuth middleware after JWT verification
     const userId = (req as any).user?.userId || (req as any).user?.id || 'unknown';
 
-    const result = await printReceipt(parseInt(req.params.id), userId, print_type);
+    const result = await printReceipt(parseInt(req.params.id as string), userId, print_type);
     res.json(result);
   } catch (error: any) {
     // Return 404 for "Bill not found", 500 for other errors

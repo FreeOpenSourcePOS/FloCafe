@@ -44,7 +44,7 @@ router.get('/backups', requireRole('owner'), (_req: Request, res: Response) => {
 // restore/initialize depends on.
 router.post('/backups/:fileName/delete', requireRole('owner'), requireMasterPin, (req: Request, res: Response) => {
   try {
-    deleteBackup(req.params.fileName);
+    deleteBackup(req.params.fileName as string);
     res.json({ success: true });
   } catch (error: any) {
     console.error('[DB Tools] delete backup error:', error);

@@ -119,7 +119,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
     }
     const customer = parseCustomer(customerRaw);
 
-    const walletBalance = getWalletBalance(req.params.id);
+    const walletBalance = getWalletBalance(req.params.id as string);
     const loyaltyHistory = db.prepare(`
       SELECT * FROM loyalty_ledger WHERE customer_id = ? ORDER BY created_at DESC LIMIT 50
     `).all(req.params.id);
@@ -138,7 +138,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
 router.get('/:id/wallet', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const customerId = req.params.id;
+    const customerId = req.params.id as string;
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(customerId);
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });

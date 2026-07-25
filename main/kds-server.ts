@@ -81,6 +81,13 @@ export function startKdsServer(): Promise<void> {
 
     app.use(cors(corsOptions));
     app.use(express.json());
+    // body-parser 2.x (bundled with Express 5) leaves req.body undefined
+    // instead of {} when a request has no parseable body -- restore the
+    // old default so route handlers can destructure req.body directly.
+    app.use((req: Request, _res: Response, next: NextFunction) => {
+      if (req.body === undefined) req.body = {};
+      next();
+    });
 
     // ── Global API rate limiting ──────────────────────────────────────────
     app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 100 }));
@@ -346,7 +353,7 @@ export function startKdsServer(): Promise<void> {
       });
 
       // SPA fallback - serve the standalone KDS for any unmatched routes
-      app.get('*', (req: Request, res: Response) => {
+      app.get('/*splat', (req: Request, res: Response) => {
         // Try to serve the specific route first
         const routePath = path.join(staticDir, req.path, 'index.html');
         if (fs.existsSync(routePath)) {

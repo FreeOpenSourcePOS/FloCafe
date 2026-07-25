@@ -225,7 +225,7 @@ router.put('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req: R
     }
 
     if (is_active === false && addon.is_active) {
-      const boundsError = wouldBreakMinSelection(db, req.params.groupId, req.params.addonId);
+      const boundsError = wouldBreakMinSelection(db, req.params.groupId as string, req.params.addonId as string);
       if (boundsError) {
         return res.status(400).json({ errors: boundsError });
       }
@@ -254,7 +254,7 @@ router.delete('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req
     }
 
     if (addon.is_active) {
-      const boundsError = wouldBreakMinSelection(db, req.params.groupId, req.params.addonId);
+      const boundsError = wouldBreakMinSelection(db, req.params.groupId as string, req.params.addonId as string);
       if (boundsError) {
         return res.status(400).json({ errors: boundsError });
       }

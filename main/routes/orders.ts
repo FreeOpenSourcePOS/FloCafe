@@ -545,7 +545,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       return { updatedOrder, updatedItems };
     });
 
-    cloudSync.recordOrderChanged(req.params.id, 'order.updated');
+    cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyKdsUpdate();
     notifyOrderUpdated();
 
@@ -668,7 +668,7 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'chef', 'waiter'), (
       return { updatedOrder, orderItems, table };
     });
 
-    cloudSync.recordOrderChanged(req.params.id, `order.${status}`);
+    cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
     notifyKdsUpdate();
     notifyOrderUpdated();
 
@@ -714,7 +714,7 @@ router.patch('/:id/customer', requireRole('owner', 'manager'), (req: Request, re
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(updatedOrder.customer_id)
       : null;
 
-    cloudSync.recordOrderChanged(req.params.id, 'order.updated');
+    cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyOrderUpdated();
 
     res.json({ order: { ...updatedOrder, customer } });
@@ -753,7 +753,7 @@ router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashie
     const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
     const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
 
-    cloudSync.recordOrderChanged(req.params.id, 'order.type_changed');
+    cloudSync.recordOrderChanged(req.params.id as string, 'order.type_changed');
     notifyKdsUpdate();
     notifyOrderUpdated();
 

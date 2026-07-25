@@ -175,7 +175,7 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
       is_active !== undefined ? (is_active ? 1 : 0) : null,
       now(), req.params.id
     );
-    invalidateUserAuthCache(req.params.id);
+    invalidateUserAuthCache(req.params.id as string);
 
     const updated = db.prepare(
       'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?'
@@ -209,7 +209,7 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
     }
 
     db.prepare('UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
-    invalidateUserAuthCache(req.params.id);
+    invalidateUserAuthCache(req.params.id as string);
     const updated = db.prepare(
       'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?'
     ).get(req.params.id);
@@ -228,7 +228,7 @@ router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, r
     if (member.is_active === 1) return res.status(400).json({ error: 'Already active' });
 
     db.prepare('UPDATE users SET is_active = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);
-    invalidateUserAuthCache(req.params.id);
+    invalidateUserAuthCache(req.params.id as string);
     const updated = db.prepare(
       'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?'
     ).get(req.params.id);

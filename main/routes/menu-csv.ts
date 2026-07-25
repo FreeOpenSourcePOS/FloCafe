@@ -100,7 +100,7 @@ const TEMPLATES: Record<string, string> = {
 };
 
 router.get('/template/:type', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  const { type } = req.params;
+  const type = req.params.type as string;
   const csv = TEMPLATES[type];
   if (!csv) return res.status(404).json({ error: 'Unknown template type' });
   res.setHeader('Content-Type', 'text/csv');

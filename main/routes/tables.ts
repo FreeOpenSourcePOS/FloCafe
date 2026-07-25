@@ -79,7 +79,7 @@ router.get('/:id', (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Table not found' });
     }
 
-    const activeOrder = activeOrderForTable(db, req.params.id);
+    const activeOrder = activeOrderForTable(db, req.params.id as string);
 
     // Normalize: frontend expects `name`, schema column is `number`
     res.json({ table: tableShape(table as any, activeOrder) });
@@ -214,7 +214,7 @@ router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, r
 
 router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
-    const sourceTableId = req.params.id;
+    const sourceTableId = req.params.id as string;
     const { target_table_id, order_id } = req.body;
 
     if (!target_table_id) {

@@ -475,7 +475,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (r
 
 router.get('/:key', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
   try {
-    if (SENSITIVE_SETTING_KEYS.has(req.params.key)) {
+    if (SENSITIVE_SETTING_KEYS.has(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting is sensitive and cannot be read directly' });
     }
     const db = getDatabase();
@@ -492,7 +492,7 @@ router.get('/:key', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef')
 
 router.put('/:key', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    if (!ALLOWED_WILDCARD_KEYS.has(req.params.key)) {
+    if (!ALLOWED_WILDCARD_KEYS.has(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting cannot be updated via wildcard route' });
     }
     const { value } = req.body;

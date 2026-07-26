@@ -29,6 +29,7 @@ const I18N_DIR = path.join(ROOT, 'frontend/src/lib/i18n');
 const FILES = [
   { lang: 'en', file: path.join(I18N_DIR, 'en.json') },
   { lang: 'es', file: path.join(I18N_DIR, 'es.json') },
+  { lang: 'pt', file: path.join(I18N_DIR, 'pt.json') },
 ] as const;
 
 function assert(condition: boolean, msg: string): void {
@@ -98,7 +99,8 @@ function collectCalledKeys(): Set<string> {
 }
 
 async function run(): Promise<void> {
-  console.log('Translation integrity: en.json <-> es.json');
+  const langs = FILES.map((f) => f.lang);
+  console.log(`Translation integrity: ${langs.join(' <-> ')}`);
 
   const sets = new Map<string, Set<string>>();
   const dups = new Map<string, string[]>();
@@ -118,23 +120,28 @@ async function run(): Promise<void> {
     console.log(`  ${lang}.json: ${keys.length} keys`);
   }
 
-  // 1. No missing keys either direction.
-  const enSet = sets.get('en')!;
-  const esSet = sets.get('es')!;
-  const missingInEs = [...enSet].filter((k) => !esSet.has(k));
-  const missingInEn = [...esSet].filter((k) => !enSet.has(k));
-  if (missingInEs.length || missingInEn.length) {
-    if (missingInEs.length) {
-      console.error(`\nKeys present in en.json but missing in es.json (${missingInEs.length}):`);
-      for (const k of missingInEs) console.error(`  - ${k}`);
-    }
-    if (missingInEn.length) {
-      console.error(`\nKeys present in es.json but missing in en.json (${missingInEn.length}):`);
-      for (const k of missingInEn) console.error(`  - ${k}`);
-    }
-    assert(false, 'translation key mismatch between en.json and es.json');
+  // 1. No missing keys — every file must hold the union of all keys.
+  const union = new Set<string>();
+  for (const s of sets.values()) for (const k of s) union.add(k);
+  const missing: Array<{ lang: string; key: string }> = [];
+  for (const { lang } of FILES) {
+    const s = sets.get(lang)!;
+    for (const k of union) if (!s.has(k)) missing.push({ lang, key: k });
   }
-  console.log('  ✓ no missing keys (en <-> es)');
+  if (missing.length) {
+    const byLang = new Map<string, string[]>();
+    for (const m of missing) {
+      const arr = byLang.get(m.lang) ?? [];
+      arr.push(m.key);
+      byLang.set(m.lang, arr);
+    }
+    for (const [lang, ks] of byLang) {
+      console.error(`\nKeys missing from ${lang}.json (${ks.length}):`);
+      for (const k of ks) console.error(`  - ${k}`);
+    }
+    assert(false, `translation key mismatch across ${langs.join('/')}`);
+  }
+  console.log(`  ✓ no missing keys (${langs.join(' <-> ')})`);
 
   // 2. No duplicate keys within a file.
   if (dups.size) {
@@ -167,9 +174,9 @@ async function run(): Promise<void> {
 
   // 4. Every t('...') call in the frontend points at a defined key.
   const called = collectCalledKeys();
-  const undefinedKeys = [...called].filter((k) => !enSet.has(k) || !esSet.has(k));
+  const undefinedKeys = [...called].filter((k) => !union.has(k));
   if (undefinedKeys.length) {
-    console.error(`\nKeys used in t() but missing from en.json/es.json (${undefinedKeys.length}):`);
+    console.error(`\nKeys used in t() but missing from one of ${langs.join('/')} (${undefinedKeys.length}):`);
     for (const k of undefinedKeys) console.error(`  - ${k}`);
     assert(false, 'untranslated t() keys referenced in the frontend');
   }

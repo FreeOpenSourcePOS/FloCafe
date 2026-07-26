@@ -7,7 +7,7 @@ import { Camera, Link, Upload, X, Check } from 'lucide-react';
 import { MAX_RAW_FILE_SIZE, MAX_IMAGE_LENGTH } from '@/lib/image-utils';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-
+import { useI18n } from '@/hooks/useI18n';
 interface ImageUploaderProps {
   /** Current Base64 data URI (or null if no image) */
   value: string | null;
@@ -20,6 +20,7 @@ interface ImageUploaderProps {
 type Mode = 'idle' | 'cropping' | 'url-input';
 
 export default function ImageUploader({ value, onChange, productId }: ImageUploaderProps) {
+  const { t } = useI18n();
   const [mode, setMode] = useState<Mode>('idle');
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -159,7 +160,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b">
-            <h3 className="font-semibold text-gray-900">Crop Image</h3>
+            <h3 className="font-semibold text-gray-900">{t('products.cropImage')}</h3>
             <button type="button" onClick={() => { setMode('idle'); setCropSrc(null); }} className="text-gray-400 hover:text-gray-600">
               <X size={20} />
             </button>

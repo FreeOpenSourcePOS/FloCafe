@@ -7,7 +7,7 @@ export function KdsHtmlLang() {
   const language = usePosSettingsStore((s) => s.language);
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.documentElement.lang = language === 'es' ? 'es' : 'en';
+      document.documentElement.lang = language === 'es' ? 'es' : language === 'pt' ? 'pt-BR' : 'en';
     }
   }, [language]);
   return null;

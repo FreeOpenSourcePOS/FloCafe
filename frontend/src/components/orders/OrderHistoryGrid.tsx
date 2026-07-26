@@ -140,10 +140,10 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="px-0">Item</TableHead>
-              <TableHead className="px-0 text-center w-10">Qty</TableHead>
-              <TableHead className="px-0 text-right">Rate</TableHead>
-              <TableHead className="px-0 text-right">Amt</TableHead>
+              <TableHead className="px-0">{t('printTest.item')}</TableHead>
+              <TableHead className="px-0 text-center w-10">{t('printTest.qty')}</TableHead>
+              <TableHead className="px-0 text-right">{t('printTest.rate')}</TableHead>
+              <TableHead className="px-0 text-right">{t('printTest.amt')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -162,16 +162,16 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
 
         <div className="space-y-1 text-sm">
           <div className="flex justify-between text-muted-foreground">
-            <span>Subtotal</span>
+            <span>{t('common.subtotal')}</span>
             <span className="tabular-nums">{fmt(order.subtotal)}</span>
           </div>
           <div className="flex justify-between text-muted-foreground">
-            <span>Tax</span>
+            <span>{t('common.tax')}</span>
             <span className="tabular-nums">{fmt(order.tax_amount)}</span>
           </div>
           {order.discount_amount > 0 && (
             <div className="flex justify-between text-muted-foreground">
-              <span>Discount{bill?.discount_reason ? ` (${bill.discount_reason})` : ''}</span>
+              <span>{t('common.discount')}{bill?.discount_reason ? ` (${bill.discount_reason})` : ''}</span>
               <span className="tabular-nums">−{fmt(order.discount_amount)}</span>
             </div>
           )}
@@ -183,18 +183,18 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
           )}
           <Separator className="my-1.5" />
           <div className="flex justify-between font-bold text-base">
-            <span>Grand Total</span>
+            <span>{t('common.total')}</span>
             <span className="tabular-nums">{fmt(order.total)}</span>
           </div>
         </div>
       </CardContent>
 
       <CardFooter className="px-4 pb-4 pt-3 border-t flex flex-wrap gap-2">
-        <Button variant="outline" size="sm">Print Receipt</Button>
+        <Button variant="outline" size="sm">{t('orders.printReceiptTitle')}</Button>
         {order.status === 'completed' && (
-          <Button variant="outline" size="sm">Reopen Order</Button>
+          <Button variant="outline" size="sm">{t('orders.reopenOrder')}</Button>
         )}
-        <Button variant="ghost" size="sm">View Logs</Button>
+        <Button variant="ghost" size="sm">{t('orders.viewLogs')}</Button>
       </CardFooter>
     </Card>
   );
@@ -202,6 +202,7 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
 
 export default function OrderHistoryGrid() {
   const [orders] = useState<HistoryOrder[]>(MOCK_HISTORY);
+  const { t } = useI18n();
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
   const locale = getCountryByCode(currentTenant?.country ?? 'IN')?.locale ?? 'en-IN';
@@ -209,8 +210,8 @@ export default function OrderHistoryGrid() {
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Order History</h1>
-        <Badge variant="outline">{orders.length} orders</Badge>
+        <h1 className="text-2xl font-bold">{t('orders.historyTitle')}</h1>
+        <Badge variant="outline">{t('dashboard.ordersCount', { count: orders.length })}</Badge>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-max content-start items-start">

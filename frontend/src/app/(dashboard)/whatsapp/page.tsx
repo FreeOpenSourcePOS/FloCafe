@@ -153,7 +153,7 @@ export default function WhatsAppPage() {
   const role = currentTenant?.role ?? '';
   const isAdmin = role === 'owner' || role === 'manager';
 
-  const locale = language === 'es' ? 'es-AR' : 'en-US';
+  const locale = language === 'es' ? 'es-AR' : language === 'pt' ? 'pt-BR' : 'en-US';
   const fmt = (iso: string | null | undefined) => formatDate(iso ?? undefined, locale);
   const fmtClock = (iso: string | null | undefined) => formatTime(iso ?? undefined, locale);
 

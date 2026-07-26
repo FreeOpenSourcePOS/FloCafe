@@ -480,7 +480,7 @@ export default function ProductsPage() {
                 <td className="p-4 text-center">
                   {product.addon_groups && product.addon_groups.length > 0 ? (
                     <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 border border-indigo-200">
-                      {product.addon_groups.length} {product.addon_groups.length === 1 ? 'group' : 'groups'}
+                      {t('products.addonGroupCount', { count: product.addon_groups.length })}
                     </span>
                   ) : (
                     <span className="text-gray-400 text-sm">—</span>

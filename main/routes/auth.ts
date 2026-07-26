@@ -175,15 +175,22 @@ function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel:
 }
 
 function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string, language?: string, country?: string): void {
-  const isEs = language === 'es';
+  const lang: 'en' | 'es' | 'pt' = language === 'es' ? 'es' : language === 'pt' ? 'pt' : 'en';
   const dialCode = dialCodeFor(country);
 
-  const cats = isEs
+  const cats = lang === 'es'
     ? [
         ['cat-demo-starters', 'Entradas', '#FF6B6B', '🍟', 1],
         ['cat-demo-burger', 'Hamburguesas', '#4ECDC4', '🍔', 2],
         ['cat-demo-beverages', 'Bebidas', '#45B7D1', '🥤', 3],
         ['cat-demo-desserts', 'Postres', '#96CEB4', '🍰', 4],
+      ] as const
+    : lang === 'pt'
+    ? [
+        ['cat-demo-starters', 'Entradas', '#FF6B6B', '🍟', 1],
+        ['cat-demo-burger', 'Hambúrgueres', '#4ECDC4', '🍔', 2],
+        ['cat-demo-beverages', 'Bebidas', '#45B7D1', '🥤', 3],
+        ['cat-demo-desserts', 'Sobremesas', '#96CEB4', '🍰', 4],
       ] as const
     : [
         ['cat-demo-starters', 'Starters', '#FF6B6B', '🍔', 1],
@@ -193,7 +200,7 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
       ] as const;
   for (const [id, name, color, icon, sort] of cats) insertCategory(db, id, name, color, icon, sort);
 
-  const products = isEs
+  const products = lang === 'es'
     ? [
         ['prod-demo-empanadas', 'cat-demo-starters', 'Empanadas de Carne', 280, 1],
         ['prod-demo-papas', 'cat-demo-starters', 'Papas Fritas', 250, 2],
@@ -203,6 +210,17 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['prod-demo-gaseosa', 'cat-demo-beverages', 'Gaseosa Cola', 350, 1],
         ['prod-demo-agua', 'cat-demo-beverages', 'Agua Mineral', 200, 2],
         ['prod-demo-flan', 'cat-demo-desserts', 'Flan Casero', 400, 1],
+      ] as const
+    : lang === 'pt'
+    ? [
+        ['prod-demo-coxinha', 'cat-demo-starters', 'Coxinha de Frango', 280, 1],
+        ['prod-demo-pastel', 'cat-demo-starters', 'Pastel de Queijo', 250, 2],
+        ['prod-demo-x-burger', 'cat-demo-burger', 'X-Burger', 800, 1],
+        ['prod-demo-x-dobro', 'cat-demo-burger', 'X-Dobro', 1100, 2],
+        ['prod-demo-x-bacon', 'cat-demo-burger', 'X-Bacon', 1200, 3],
+        ['prod-demo-refri', 'cat-demo-beverages', 'Refrigerante Cola', 350, 1],
+        ['prod-demo-agua', 'cat-demo-beverages', 'Água Mineral', 200, 2],
+        ['prod-demo-pudim', 'cat-demo-desserts', 'Pudim de Leite', 400, 1],
       ] as const
     : [
         ['prod-demo-paneer-tikka', 'cat-demo-starters', 'Paneer Tikka', 250, 1],
@@ -217,26 +235,30 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   for (const [id, categoryId, name, price, sort] of products) insertProduct(db, id, categoryId, name, price, sort);
 
   if (serviceModel === 'finedine') {
-    const tableLabel = isEs ? 'M' : 'T';
+    const tableLabel = lang === 'es' ? 'M' : lang === 'pt' ? 'M' : 'T';
     insertTable(db, 'tbl-demo-1', `${tableLabel}1`, 4);
     insertTable(db, 'tbl-demo-2', `${tableLabel}2`, 4);
     insertTable(db, 'tbl-demo-3', `${tableLabel}3`, 6);
     insertTable(db, 'tbl-demo-4', `${tableLabel}4`, 2);
   }
 
-  if (isEs) {
+  if (lang === 'es') {
     insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode);
     insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode);
     insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '1145678903', dialCode);
+  } else if (lang === 'pt') {
+    insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode);
+    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '1198765434', dialCode);
   } else {
     insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode);
     insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode);
     insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '9876543212', dialCode);
   }
 
-  const managerName = isEs ? 'Gerente Demo' : 'Demo Manager';
-  const cashierName = isEs ? 'Cajero Demo' : 'Demo Cashier';
-  const chefName = isEs ? 'Cocinero Demo' : 'Demo Chef';
+  const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'pt' ? 'Gerente Demo' : 'Demo Manager';
+  const cashierName = lang === 'es' ? 'Cajero Demo' : lang === 'pt' ? 'Caixa Demo' : 'Demo Cashier';
+  const chefName = lang === 'es' ? 'Cocinero Demo' : lang === 'pt' ? 'Cozinheiro Demo' : 'Demo Chef';
   insertStaffUser(db, 'user-demo-manager', managerName, 'manager@flo.local', 'manager', 'demo12345');
   insertStaffUser(db, 'user-demo-cashier', cashierName, 'cashier@flo.local', 'cashier', 'demo12345');
   insertStaffUser(db, 'user-demo-chef', chefName, 'chef@flo.local', 'chef', 'demo12345');

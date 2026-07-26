@@ -17,7 +17,7 @@ export interface PosSettingsState {
   // UI language for i18n routing. Synced from tenant on auth load.
   // Initial value reads the browser locale; persist middleware overrides
   // on reload, so user choices persist across sessions.
-  language: 'en' | 'es';
+  language: 'en' | 'es' | 'pt';
   // Printer settings
   printerPaperSize: PaperSize;
   printerEnabled: boolean;
@@ -53,7 +53,7 @@ export interface PosSettingsState {
   setShowProductImages: (show: boolean) => void;
   setCustomerMandatory: (mandatory: boolean) => void;
   setEnforcePhoneLength: (enabled: boolean) => void;
-  setLanguage: (lang: 'en' | 'es') => void;
+  setLanguage: (lang: 'en' | 'es' | 'pt') => void;
   setPrinterPaperSize: (size: PaperSize) => void;
   setPrinterEnabled: (enabled: boolean) => void;
   setPrinterPrintMode: (mode: PrinterPrintMode) => void;

@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/hooks/useI18n';
+import { ROLE_LABEL_KEYS, BUSINESS_TYPE_LABEL_KEYS } from '@/lib/i18n-enums';
 import { Eye, EyeOff } from 'lucide-react';
 
 function LoginContent() {
@@ -136,7 +137,7 @@ function LoginContent() {
                     className="w-full text-left p-4 border rounded-lg hover:border-primary hover:bg-accent transition-colors group"
                   >
                     <div className="font-semibold group-hover:text-primary">{tenant.business_name}</div>
-                    <div className="text-sm text-muted-foreground mt-0.5">{tenant.business_type} &middot; {tenant.role}</div>
+                    <div className="text-sm text-muted-foreground mt-0.5">{t(BUSINESS_TYPE_LABEL_KEYS[tenant.business_type ?? ''] ?? tenant.business_type ?? '')} &middot; {t(ROLE_LABEL_KEYS[tenant.role ?? ''] ?? tenant.role ?? '')}</div>
                   </button>
                 ))}
               </div>

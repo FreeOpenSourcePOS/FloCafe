@@ -22,6 +22,7 @@ import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import type { HealthCheckReport } from '@/types/electron';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatDate } from '@/hooks/useFormatDate';
+import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 
 const CLASSIC_PREVIEW = `   STORE NAME
    Jane Doe
@@ -2023,7 +2024,7 @@ export default function SettingsPage() {
                   <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                     currentTenant?.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                   }`}>
-                    {currentTenant?.status}
+                    {t(TENANT_STATUS_LABEL_KEYS[currentTenant?.status ?? ''] ?? currentTenant?.status ?? '')}
                   </span>
                 </div>
                 <div>
@@ -2031,7 +2032,7 @@ export default function SettingsPage() {
                   <select
                     value={language}
                     onChange={(e) => {
-                      const lang = e.target.value as 'en' | 'es';
+                      const lang = e.target.value as 'en' | 'es' | 'pt';
                       setLanguage(lang);
                       api.put('/settings/business', { language: lang }).catch(() => toast.error(t('settings.saveFailed')));
                     }}
@@ -2039,6 +2040,7 @@ export default function SettingsPage() {
                   >
                     <option value="en">{t('settings.languageEn')}</option>
                     <option value="es">{t('settings.languageEs')}</option>
+                    <option value="pt">{t('settings.languagePt')}</option>
                   </select>
                 </div>
               </div>

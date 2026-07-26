@@ -10,7 +10,7 @@ import { useAuthStore } from '@/store/auth';
 import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
-
+import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
@@ -358,7 +358,7 @@ export default function TablesPage() {
                             order.status === 'served' ? 'bg-purple-100 text-purple-700' :
                             'bg-gray-100 text-gray-600'
                           }`}>
-                            {order.status}
+                            {t(ORDER_STATUS_LABEL_KEYS[order.status] ?? order.status)}
                           </span>
                         </div>
                         {order.customer?.name && (
@@ -372,7 +372,7 @@ export default function TablesPage() {
                                 <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} flex-shrink-0`} />
                                 <span className="flex-1 truncate text-gray-700">{item.product_name}</span>
                                 <span className="text-gray-500">×{item.quantity}</span>
-                                <span className={`font-medium capitalize ${sc.text}`}>{item.status}</span>
+                                <span className={`font-medium capitalize ${sc.text}`}>{t(ITEM_STATUS_LABEL_KEYS[item.status] ?? item.status)}</span>
                               </div>
                             );
                           })}

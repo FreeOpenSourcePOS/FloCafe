@@ -20,7 +20,7 @@ export interface Tenant {
   plan: string;
   status: string;
   role?: string;
-  language?: 'en' | 'es';
+  language?: 'en' | 'es' | 'pt';
 }
 
 export interface Category {

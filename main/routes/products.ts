@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, generateShortId } from '../db';
+import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
+import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 
@@ -143,7 +144,25 @@ function loadProductRelationsBatch(db: any, products: any[]) {
   return result;
 }
 
+const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
+
 const router = Router();
+
+function validateTaxCategoryId(categoryId: unknown): string | null {
+  if (categoryId === null || categoryId === undefined || categoryId === '') return null;
+  if (typeof categoryId !== 'string') return 'tax_category_id must be a string or null';
+
+  const country = getSettingValue('country') || 'IN';
+  const businessType = getSettingValue('business_type') || 'restaurant';
+  const pack = getActiveCountryPack(country);
+  if (!hasConfiguredTaxCategories(pack, businessType)) {
+    return `No configured tax categories are available for country ${country} and business type ${businessType}`;
+  }
+  if (!pack.categories.some((category) => category.id === categoryId)) {
+    return `Unknown tax_category_id "${categoryId}" for country ${country}`;
+  }
+  return null;
+}
 
 function parseTags(raw: any): string[] {
   if (Array.isArray(raw)) return raw;
@@ -161,7 +180,7 @@ router.get('/', (req: Request, res: Response) => {
     const db = getDatabase();
     let query = `SELECT p.id, p.category_id, p.name, p.description, p.price, p.cost, p.sku, p.barcode,
       p.is_active, p.sort_order, p.track_inventory, p.stock_quantity, p.low_stock_threshold,
-      p.tax_type, p.tax_rate, p.cb_percent, p.tags, p.deleted_at, p.created_at, p.updated_at,
+      p.tax_type, p.tax_rate, p.tax_category_id, p.tax_behavior, p.cb_percent, p.tags, p.deleted_at, p.created_at, p.updated_at,
       CASE WHEN p.image_url IS NULL OR p.image_url = '' THEN 0 ELSE 1 END AS has_image
       FROM products p 
       LEFT JOIN categories c ON p.category_id = c.id
@@ -438,12 +457,20 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
   try {
     const {
       category_id, name, sku, barcode, description, price, cost_price,
-      tax_type, tax_rate, track_inventory, stock_quantity,
+      tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
 
     if (!name || price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
+    }
+
+    if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+      return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
+    }
+    const taxCategoryError = validateTaxCategoryId(tax_category_id);
+    if (taxCategoryError) {
+      return res.status(400).json({ error: taxCategoryError });
     }
 
     // Validate image_url at write time (server-side security boundary)
@@ -472,12 +499,12 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const insertProduct = db.transaction(() => {
       db.prepare(`
         INSERT INTO products (id, category_id, name, sku, barcode, description, price, cost,
-          tax_type, tax_rate, track_inventory, stock_quantity, low_stock_threshold,
+          tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity, low_stock_threshold,
           is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, category_id || null, name, sku || null, barcode || null, description || null, price, cost_price || 0,
-        tax_type || 'none', tax_rate || 0,
+        tax_type || 'none', tax_rate || 0, tax_category_id || null, tax_behavior || 'country_default',
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, image_url || null,
         sort_order || 0, cb_percent || 0, JSON.stringify(tags || []),
@@ -511,9 +538,17 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
     const {
       category_id, name, sku, barcode, description, price, cost_price,
-      tax_type, tax_rate, track_inventory, stock_quantity,
+      tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
+
+    if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+      return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
+    }
+    const taxCategoryError = validateTaxCategoryId(tax_category_id);
+    if (taxCategoryError) {
+      return res.status(400).json({ error: taxCategoryError });
+    }
 
     // Validate image_url at write time (server-side security boundary)
     if ('image_url' in req.body) {
@@ -535,6 +570,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     // Detect whether client explicitly sent image_url (even as null/undefined)
     // so we can distinguish "don't touch image_url" from "clear image_url"
     const hasImageUrl = 'image_url' in req.body;
+    const hasTaxCategoryId = 'tax_category_id' in req.body;
 
     db.prepare(`
       UPDATE products SET
@@ -547,6 +583,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         cost = COALESCE(@cost, cost),
         tax_type = COALESCE(@tax_type, tax_type),
         tax_rate = COALESCE(@tax_rate, tax_rate),
+        tax_category_id = CASE WHEN @has_tax_category_id = 1 THEN @tax_category_id ELSE tax_category_id END,
+        tax_behavior = COALESCE(@tax_behavior, tax_behavior),
         track_inventory = COALESCE(@track_inventory, track_inventory),
         stock_quantity = COALESCE(@stock_quantity, stock_quantity),
         low_stock_threshold = COALESCE(@low_stock_threshold, low_stock_threshold),
@@ -559,7 +597,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       WHERE id = @id
     `).run({
       category_id, name, sku, barcode, description, price, cost: cost_price,
-      tax_type, tax_rate,
+      tax_type, tax_rate, tax_category_id, tax_behavior,
+      has_tax_category_id: hasTaxCategoryId ? 1 : 0,
       track_inventory: track_inventory ? 1 : track_inventory === 0 ? 0 : null,
       stock_quantity, low_stock_threshold,
       is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,

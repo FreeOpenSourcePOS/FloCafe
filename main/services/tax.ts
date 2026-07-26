@@ -1,3 +1,5 @@
+import Decimal from 'decimal.js';
+
 interface TenantInfo {
   country: string;
   business_type: string;
@@ -21,6 +23,7 @@ interface TaxResult {
   tax_amount: number;
   tax_breakdown: TaxBreakdown[];
   tax_type: string;
+  tax_snapshot?: Record<string, unknown> | null;
 }
 
 interface TaxBreakdown {
@@ -51,6 +54,21 @@ function round(value: number, decimals: number = 2): number {
   return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
 }
 
+// Same country -> bundled-pack selection used by calculateItemTax below and
+// by the GET /api/tax/categories endpoint (routes/index.ts) — kept as one
+// function so the two never drift apart on which pack is "active".
+export function getActiveCountryPack(country: string): CountryPack {
+  return country === 'IN' ? INDIA_PACK : country === 'TH' ? THAILAND_PACK : GENERIC_PACK;
+}
+
+export function hasConfiguredTaxCategories(pack: CountryPack, businessType: string): boolean {
+  return pack.categories.some((category) => category.ruleIds.some((ruleId) => {
+    const rule = pack.rules.find((candidate) => candidate.id === ruleId);
+    return Boolean(rule
+      && (!rule.conditions?.businessTypes || rule.conditions.businessTypes.includes(businessType)));
+  }));
+}
+
 export function calculateItemTax(
   tenant: TenantInfo,
   product: Product,
@@ -59,38 +77,52 @@ export function calculateItemTax(
 ): TaxResult {
   const taxCategoryId = product.tax_category_id || product.tax_category;
   if (taxCategoryId) {
-    const pack = tenant.country === 'IN'
-      ? INDIA_PACK
-      : tenant.country === 'TH'
-        ? THAILAND_PACK
-        : GENERIC_PACK;
-    const calculation = TaxEngine.calculate({
-      pack,
-      country: tenant.country,
-      businessType: tenant.business_type,
-      storeStateCode: tenant.state_code,
-      transactionDate: new Date().toISOString(),
-      customer: customer
-        ? {
-          registrationNumber: customer.gstin,
-          stateCode: customer.customer_state_code,
-        }
-        : null,
-      lines: [{
-        lineId: 'legacy-item-adapter',
-        kind: 'product',
-        quantity: '1',
-        unitPrice: String(taxableAmount),
-        productCategoryId: taxCategoryId,
-        taxBehavior: product.tax_behavior
-          || (product.tax_type === 'inclusive'
-            ? 'inclusive'
-            : product.tax_type === 'exclusive'
-              ? 'exclusive'
-              : 'country_default'),
-      }],
-    });
+    const pack = getActiveCountryPack(tenant.country);
+    let calculation;
+    try {
+      calculation = TaxEngine.calculate({
+        pack,
+        country: tenant.country,
+        businessType: tenant.business_type,
+        storeStateCode: tenant.state_code,
+        transactionDate: new Date().toISOString(),
+        customer: customer
+          ? {
+            registrationNumber: customer.gstin,
+            stateCode: customer.customer_state_code,
+          }
+          : null,
+        lines: [{
+          lineId: 'legacy-item-adapter',
+          kind: 'product',
+          quantity: '1',
+          unitPrice: String(taxableAmount),
+          productCategoryId: taxCategoryId,
+          taxBehavior: product.tax_behavior
+            || (product.tax_type === 'inclusive'
+              ? 'inclusive'
+              : product.tax_type === 'exclusive'
+                ? 'exclusive'
+                : 'country_default'),
+        }],
+      });
+    } catch (engineError: any) {
+      // A misconfigured category/pack is a data problem, not a server bug —
+      // checkout must block loudly on a bad tax config, never fall through
+      // to charging zero tax. statusCode lets route handlers return 400
+      // instead of a generic 500 (see orders.ts / index.ts catch blocks).
+      throw Object.assign(
+        new Error(`Tax calculation failed: ${engineError.message}`),
+        { statusCode: 400 },
+      );
+    }
     const line = calculation.lines[0];
+    if (line.taxBehavior !== 'exempt' && line.components.length === 0) {
+      throw Object.assign(
+        new Error(`Tax calculation failed: no tax rules apply to category ${taxCategoryId} for business type ${tenant.business_type}`),
+        { statusCode: 400 },
+      );
+    }
     return {
       tax_amount: Number(line.taxAmount),
       tax_breakdown: line.components.map((component) => ({
@@ -98,7 +130,11 @@ export function calculateItemTax(
         rate: Number(component.rate || 0),
         amount: Number(component.amount),
       })),
-      tax_type: product.tax_type,
+      // The engine resolves country_default against the active pack. Persist
+      // that effective behavior on the order item so every later total
+      // recomputation knows whether the tax is already included in the price.
+      tax_type: line.taxBehavior === 'exempt' ? 'none' : line.taxBehavior,
+      tax_snapshot: calculation.snapshot,
     };
   }
 
@@ -221,6 +257,128 @@ export function aggregateTaxBreakdown(itemBreakdowns: any[]): TaxBreakdown[] {
     ...line,
     amount: round(line.amount, 2),
   }));
+}
+
+// Rolls up whichever active order_items carry a per-item engine snapshot
+// (order_items.tax_snapshot, only present for tax_category_id-driven items —
+// see calculateItemTax above) into the order/bill-level tax_snapshot column.
+// Items still on the legacy path have no snapshot and are simply omitted,
+// same as aggregateTaxBreakdown already omits non-array breakdowns — a
+// mixed order is not "wrong," it just doesn't have a snapshot for the part
+// that was never migrated to a category.
+export function aggregateTaxSnapshots(itemSnapshotsJson: (string | null | undefined)[]): string | null {
+  const snapshots = itemSnapshotsJson
+    .map((raw) => {
+      if (!raw) return null;
+      try { return JSON.parse(raw); } catch { return null; }
+    })
+    .filter((snapshot) => snapshot !== null);
+
+  return snapshots.length > 0 ? JSON.stringify(snapshots) : null;
+}
+
+// A prepared-item void is represented by a new negative order_item. Mirror
+// the immutable tax evidence with signed amounts as well, otherwise the
+// order-level snapshot would still claim positive tax after the rows net to 0.
+export function invertTaxSnapshot(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const snapshot = JSON.parse(raw);
+    if (!snapshot || !Array.isArray(snapshot.lines)) return null;
+    const negate = (value: unknown) => {
+      if (typeof value !== 'string' && typeof value !== 'number') return value;
+      return new Decimal(value).negated().toString();
+    };
+    snapshot.lines = snapshot.lines.map((line: any) => ({
+      ...line,
+      lineId: `${line.lineId}:void-adjustment`,
+      grossAmount: negate(line.grossAmount),
+      taxableBase: negate(line.taxableBase),
+      taxAmount: negate(line.taxAmount),
+      components: Array.isArray(line.components)
+        ? line.components.map((component: any) => ({
+          ...component,
+          amount: negate(component.amount),
+          roundingRemainder: negate(component.roundingRemainder),
+        }))
+        : line.components,
+    }));
+    return JSON.stringify(snapshot);
+  } catch {
+    return null;
+  }
+}
+
+export function invertTaxBreakdown(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const breakdown = JSON.parse(raw);
+    if (!Array.isArray(breakdown)) return null;
+    return JSON.stringify(breakdown.map((component: any) => ({
+      ...component,
+      amount: new Decimal(component.amount || 0).negated().toNumber(),
+    })));
+  } catch {
+    return null;
+  }
+}
+
+export function scaleTaxBreakdowns(
+  breakdowns: any[],
+  ratio: number,
+  targetTaxAmount: number,
+): any[] {
+  const cloned = breakdowns.map((breakdown) => Array.isArray(breakdown)
+    ? breakdown.map((component) => ({ ...component }))
+    : breakdown);
+  const entries: Array<{
+    component: any;
+    rounded: Decimal;
+    remainder: Decimal;
+    outerIndex: number;
+    innerIndex: number;
+  }> = [];
+  const scale = new Decimal(ratio);
+
+  cloned.forEach((breakdown, outerIndex) => {
+    if (!Array.isArray(breakdown)) return;
+    breakdown.forEach((component: any, innerIndex: number) => {
+      const rawAmount = new Decimal(component.amount || 0).mul(scale);
+      const rounded = rawAmount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+      entries.push({
+        component,
+        rounded,
+        remainder: rawAmount.minus(rounded),
+        outerIndex,
+        innerIndex,
+      });
+    });
+  });
+
+  if (entries.length === 0) return cloned;
+  const roundedTotal = entries.reduce((sum, entry) => sum.plus(entry.rounded), new Decimal(0));
+  const centsDelta = new Decimal(targetTaxAmount)
+    .minus(roundedTotal)
+    .mul(100)
+    .toDecimalPlaces(0, Decimal.ROUND_HALF_UP)
+    .toNumber();
+  const direction = Math.sign(centsDelta);
+  const allocationOrder = [...entries].sort((left, right) => {
+    const remainderOrder = direction >= 0
+      ? right.remainder.comparedTo(left.remainder)
+      : left.remainder.comparedTo(right.remainder);
+    if (remainderOrder !== 0) return remainderOrder;
+    const titleOrder = String(left.component.title || '').localeCompare(String(right.component.title || ''));
+    if (titleOrder !== 0) return titleOrder;
+    return left.outerIndex - right.outerIndex || left.innerIndex - right.innerIndex;
+  });
+
+  for (let index = 0; index < Math.abs(centsDelta); index++) {
+    const entry = allocationOrder[index % allocationOrder.length];
+    entry.rounded = entry.rounded.plus(direction * 0.01);
+  }
+  for (const entry of entries) entry.component.amount = entry.rounded.toNumber();
+  return cloned;
 }
 
 export function calculateRoundOff(total: number): number {

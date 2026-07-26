@@ -27,6 +27,12 @@ import { heldOrderRoutes } from './held-orders';
 import { whatsappRoutes } from './whatsapp';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
+import {
+  aggregateTaxSnapshots,
+  invertTaxBreakdown,
+  invertTaxSnapshot,
+  scaleTaxBreakdowns,
+} from '../services/tax';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 
@@ -85,6 +91,34 @@ export function registerRoutes(app: Express): void {
   app.post('/api/tax/preview', async (req, res) => {
     const { calculateTaxPreview } = await import('../services/tax');
     calculateTaxPreview(req, res);
+  });
+
+  // Categories available under the store's active country pack — powers the
+  // product-page category selector. Read-only; pack activation/management
+  // (installing/updating a pack) is a separate, later feature.
+  app.get('/api/tax/categories', requireRole('owner', 'manager'), async (req, res) => {
+    try {
+      const { getActiveCountryPack, hasConfiguredTaxCategories } = await import('../services/tax');
+      const country = getSettingValue('country') || 'IN';
+      const businessType = getSettingValue('business_type') || 'restaurant';
+      const pack = getActiveCountryPack(country);
+      const configurationReady = hasConfiguredTaxCategories(pack, businessType);
+      res.json({
+        pack_id: pack.id,
+        country: pack.country,
+        // The bundled generic pack deliberately has no rules. Exposing its
+        // placeholder categories as assignable would migrate a product from
+        // legacy tax to a zero-tax engine path.
+        categories: configurationReady
+          ? pack.categories.map((category) => ({ id: category.id, label: category.label }))
+          : [],
+        configuration_ready: configurationReady,
+        unclassified_category_id: pack.unclassifiedCategoryId,
+      });
+    } catch (error: any) {
+      console.error('[API] Internal error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   });
 
   // Mobile pairing code — proxies FloAdmin (see cloud-sync.ts generatePairingCode).
@@ -243,13 +277,14 @@ export function registerRoutes(app: Express): void {
           db.prepare(`
             INSERT INTO order_items (
               order_id, product_id, product_name, product_sku, unit_price, quantity,
-              subtotal, tax_amount, tax_breakdown, tax_type, discount_amount, total,
+              subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total,
               variant_selection, modifier_selection, status, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
           `).run(
             orderId, item.product_id, `Void: ${item.product_name}`, item.product_sku,
             -item.unit_price, item.quantity, -item.subtotal, -(item.tax_amount || 0),
-            item.tax_breakdown, item.tax_type, -(item.discount_amount || 0), -item.total,
+            invertTaxBreakdown(item.tax_breakdown), invertTaxSnapshot(item.tax_snapshot), item.tax_type,
+            -(item.discount_amount || 0), -item.total,
             item.variant_selection, item.modifier_selection, now(), now(),
           );
           // #150 Q1-Q4 decision: mark 'voided', not 'cancelled' — a distinct,
@@ -272,13 +307,23 @@ export function registerRoutes(app: Express): void {
         let subtotal = 0;
         let totalTax = 0;
         let exclusiveTax = 0;
+        const allTaxBreakdowns: any[] = [];
+        const allTaxSnapshots: (string | null)[] = [];
         for (const i of activeItems) {
           subtotal += i.subtotal || 0;
           totalTax += i.tax_amount || 0;
           if (i.tax_type !== 'inclusive') {
             exclusiveTax += i.tax_amount || 0;
           }
+          if (i.tax_breakdown) {
+            try {
+              const breakdown = JSON.parse(i.tax_breakdown);
+              if (Array.isArray(breakdown)) allTaxBreakdowns.push(breakdown);
+            } catch { }
+          }
+          allTaxSnapshots.push(i.tax_snapshot || null);
         }
+        const orderTaxSnapshot = aggregateTaxSnapshots(allTaxSnapshots);
 
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const existingDiscountAmount = order.discount_amount || 0;
@@ -294,11 +339,13 @@ export function registerRoutes(app: Express): void {
         const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
         let newTaxAmount = totalTax;
         let newExclusiveTax = exclusiveTax;
+        let taxRatio = 1;
         if (newDiscountAmount > 0 && subtotal > 0) {
-          const taxRatio = discountedSubtotal / subtotal;
+          taxRatio = discountedSubtotal / subtotal;
           newTaxAmount = Math.round(totalTax * taxRatio * 100) / 100;
           newExclusiveTax = Math.round(exclusiveTax * taxRatio * 100) / 100;
         }
+        const scaledTaxBreakdowns = scaleTaxBreakdowns(allTaxBreakdowns, taxRatio, newTaxAmount);
 
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
         const preRoundTotal = discountedSubtotal + newExclusiveTax + (order.delivery_charge || 0) + (order.packaging_charge || 0);
@@ -323,25 +370,25 @@ export function registerRoutes(app: Express): void {
             }
           }
           db.prepare(`
-            UPDATE orders SET subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, round_off = ?,
+            UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
               status = 'cancelled', cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?
-          `).run(subtotal, newTaxAmount, newDiscountAmount, total, roundOff, now(), 'All items cancelled', now(), orderId);
+          `).run(subtotal, newTaxAmount, JSON.stringify(scaledTaxBreakdowns), orderTaxSnapshot, newDiscountAmount, total, roundOff, now(), 'All items cancelled', now(), orderId);
           if (order.table_id) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
               .run(now(), order.table_id);
           }
         } else {
           db.prepare(`
-            UPDATE orders SET subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-          `).run(subtotal, newTaxAmount, newDiscountAmount, total, roundOff, now(), orderId);
+            UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
+          `).run(subtotal, newTaxAmount, JSON.stringify(scaledTaxBreakdowns), orderTaxSnapshot, newDiscountAmount, total, roundOff, now(), orderId);
         }
 
         // Sync bill if it exists
         const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
         if (existingBill) {
           const newBillBalance = Math.max(0, total - (existingBill.paid_amount || 0));
-          db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-            .run(total, newBillBalance, newTaxAmount, newDiscountAmount, roundOff, now(), existingBill.id);
+          db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
+            .run(total, newBillBalance, newTaxAmount, JSON.stringify(scaledTaxBreakdowns), orderTaxSnapshot, newDiscountAmount, roundOff, now(), existingBill.id);
         }
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
@@ -359,7 +406,7 @@ export function registerRoutes(app: Express): void {
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);
       console.error("[API] Internal error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
     }
   });
 
@@ -406,13 +453,23 @@ export function registerRoutes(app: Express): void {
         let subtotal = 0;
         let totalTax = 0;
         let exclusiveTax = 0;
+        const allTaxBreakdowns: any[] = [];
+        const allTaxSnapshots: (string | null)[] = [];
         for (const i of activeItems) {
           subtotal += i.subtotal || 0;
           totalTax += i.tax_amount || 0;
           if (i.tax_type !== 'inclusive') {
             exclusiveTax += i.tax_amount || 0;
           }
+          if (i.tax_breakdown) {
+            try {
+              const breakdown = JSON.parse(i.tax_breakdown);
+              if (Array.isArray(breakdown)) allTaxBreakdowns.push(breakdown);
+            } catch { }
+          }
+          allTaxSnapshots.push(i.tax_snapshot || null);
         }
+        const orderTaxSnapshot = aggregateTaxSnapshots(allTaxSnapshots);
 
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
         const existingDiscountAmount = order.discount_amount || 0;
@@ -428,11 +485,13 @@ export function registerRoutes(app: Express): void {
         const discountedSubtotal = Math.max(0, subtotal - newDiscountAmount);
         let newTaxAmount = totalTax;
         let newExclusiveTax = exclusiveTax;
+        let taxRatio = 1;
         if (newDiscountAmount > 0 && subtotal > 0) {
-          const taxRatio = discountedSubtotal / subtotal;
+          taxRatio = discountedSubtotal / subtotal;
           newTaxAmount = Math.round(totalTax * taxRatio * 100) / 100;
           newExclusiveTax = Math.round(exclusiveTax * taxRatio * 100) / 100;
         }
+        const scaledTaxBreakdowns = scaleTaxBreakdowns(allTaxBreakdowns, taxRatio, newTaxAmount);
 
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
         const preRoundTotal = discountedSubtotal + newExclusiveTax + (order.delivery_charge || 0) + (order.packaging_charge || 0);
@@ -440,15 +499,15 @@ export function registerRoutes(app: Express): void {
         const total = Math.round(preRoundTotal);
 
         db.prepare(`
-          UPDATE orders SET subtotal = ?, tax_amount = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
-        `).run(subtotal, newTaxAmount, newDiscountAmount, total, roundOff, now(), orderId);
+          UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
+        `).run(subtotal, newTaxAmount, JSON.stringify(scaledTaxBreakdowns), orderTaxSnapshot, newDiscountAmount, total, roundOff, now(), orderId);
 
         // Sync bill if it exists
         const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
         if (existingBill) {
           const newBillBalance = Math.max(0, total - (existingBill.paid_amount || 0));
-          db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-            .run(total, newBillBalance, newTaxAmount, newDiscountAmount, roundOff, now(), existingBill.id);
+          db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
+            .run(total, newBillBalance, newTaxAmount, JSON.stringify(scaledTaxBreakdowns), orderTaxSnapshot, newDiscountAmount, roundOff, now(), existingBill.id);
         }
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
@@ -463,7 +522,7 @@ export function registerRoutes(app: Express): void {
     } catch (error: any) {
       console.error('[Orders] Restore item error:', error);
       console.error("[API] Internal error:", error);
-      res.status(500).json({ error: "Internal server error" });
+      res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
     }
   });
 }

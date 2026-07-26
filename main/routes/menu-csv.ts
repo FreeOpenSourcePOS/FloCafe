@@ -1,9 +1,12 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, generateShortId } from '../db';
+import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import { requireRole } from '../middleware/security';
+import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 
 const router = Router();
+
+const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
 
 // ─── CSV helpers ─────────────────────────────────────────────────────────────
 
@@ -75,13 +78,13 @@ const TEMPLATES: Record<string, string> = {
   ].join('\n'),
 
   products: [
-    'id,sku,name,category,price,description,cost,tax_type,tax_rate,cashback_percent,tags,is_active',
-    ',,Cappuccino,Beverages,150,Rich espresso with steamed milk,50,inclusive,5,0,"veg,bestseller",yes',
-    ',,Espresso,Beverages,100,,40,inclusive,5,0,veg,yes',
-    ',,Cold Coffee,Beverages,130,Chilled blended coffee,45,inclusive,5,0,"veg,new_arrival",yes',
-    ',,Classic Burger,Food,250,Juicy patty with lettuce and tomato,100,exclusive,5,0,non_veg,yes',
-    ',,Veg Sandwich,Food,180,Fresh vegetables in toasted bread,60,none,0,0,"veg,new_arrival",yes',
-    ',,Chocolate Cake,Desserts,120,Rich chocolate slice,,none,0,0,veg,yes',
+    'id,sku,name,category,price,description,cost,tax_type,tax_rate,tax_category,tax_behavior,cashback_percent,tags,is_active',
+    ',,Cappuccino,Beverages,150,Rich espresso with steamed milk,50,inclusive,5,,,0,"veg,bestseller",yes',
+    ',,Espresso,Beverages,100,,40,inclusive,5,,,0,veg,yes',
+    ',,Cold Coffee,Beverages,130,Chilled blended coffee,45,inclusive,5,,,0,"veg,new_arrival",yes',
+    ',,Classic Burger,Food,250,Juicy patty with lettuce and tomato,100,exclusive,5,,,0,non_veg,yes',
+    ',,Veg Sandwich,Food,180,Fresh vegetables in toasted bread,60,none,0,,,0,"veg,new_arrival",yes',
+    ',,Chocolate Cake,Desserts,120,Rich chocolate slice,,none,0,,,0,veg,yes',
   ].join('\n'),
 
   addons: [
@@ -140,7 +143,7 @@ router.get('/export/products', requireRole('owner', 'manager'), (_req: Request, 
          ORDER BY c.sort_order, p.sort_order, p.name`
       )
       .all() as any[];
-    const lines = ['id,sku,name,category,price,description,cost,tax_type,tax_rate,cashback_percent,tags,is_active'];
+    const lines = ['id,sku,name,category,price,description,cost,tax_type,tax_rate,tax_category,tax_behavior,cashback_percent,tags,is_active'];
     for (const p of rows) {
       let tags = '';
       if (p.tags) {
@@ -149,7 +152,8 @@ router.get('/export/products', requireRole('owner', 'manager'), (_req: Request, 
       }
       lines.push(
         toCsvRow([p.id, p.sku, p.name, p.category_name, p.price, p.description, p.cost,
-          p.tax_type, p.tax_rate, p.cb_percent ?? 0, tags, p.is_active ? 'yes' : 'no'])
+          p.tax_type, p.tax_rate, p.tax_category_id ?? '', p.tax_behavior ?? '',
+          p.cb_percent ?? 0, tags, p.is_active ? 'yes' : 'no'])
       );
     }
     res.setHeader('Content-Type', 'text/csv');
@@ -228,7 +232,11 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
     const { csv } = req.body as { csv: string };
     if (!csv) return res.status(400).json({ error: 'No CSV data provided' });
 
-    const rows = toObjects(parseCSV(csv));
+    const parsedCsv = parseCSV(csv);
+    const headers = new Set((parsedCsv[0] || []).map((header) => header.trim().toLowerCase()));
+    const hasTaxCategoryColumn = headers.has('tax_category');
+    const hasTaxBehaviorColumn = headers.has('tax_behavior');
+    const rows = toObjects(parsedCsv);
     if (!rows.length) return res.status(400).json({ error: 'CSV has no data rows' });
 
     const db = getDatabase();
@@ -238,6 +246,12 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
       .all() as any[];
     const catMap: Record<string, string> = {};
     for (const c of catRows) catMap[c.name.toLowerCase()] = c.id;
+
+    const country = getSettingValue('country') || 'IN';
+    const businessType = getSettingValue('business_type') || 'restaurant';
+    const activePack = getActiveCountryPack(country);
+    const taxCategoriesConfigured = hasConfiguredTaxCategories(activePack, businessType);
+    const taxCategoryIds = new Set(activePack.categories.map((category) => category.id));
 
     let created = 0, updated = 0, skipped = 0;
     const errors: string[] = [];
@@ -271,6 +285,27 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
       const cbPercent = parseFloat(r.cashback_percent) || 0;
       const sku = r.sku || null;
 
+      let taxCategoryId: string | null = null;
+      if (r.tax_category) {
+        if (!taxCategoriesConfigured) {
+          errors.push(`Row ${i + 2} (${r.name}): the active country pack (${activePack.id}) has no configured tax rules for business type ${businessType}`);
+          continue;
+        }
+        if (!taxCategoryIds.has(r.tax_category)) {
+          errors.push(`Row ${i + 2} (${r.name}): tax_category "${r.tax_category}" is not defined in the active country pack (${activePack.id})`);
+          continue;
+        }
+        taxCategoryId = r.tax_category;
+      }
+      let taxBehavior: string | null = hasTaxBehaviorColumn ? 'country_default' : null;
+      if (r.tax_behavior) {
+        if (!VALID_TAX_BEHAVIORS.includes(r.tax_behavior)) {
+          errors.push(`Row ${i + 2} (${r.name}): tax_behavior "${r.tax_behavior}" must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}`);
+          continue;
+        }
+        taxBehavior = r.tax_behavior;
+      }
+
       // If an id is provided, try to update the existing product
       if (r.id) {
         const existing = db
@@ -282,10 +317,15 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
         }
         db.prepare(
           `UPDATE products SET name=?, category_id=?, price=?, description=?, cost=?,
-           tax_type=?, tax_rate=?, cb_percent=?, tags=?, is_active=?, sku=?, updated_at=?
+           tax_type=?, tax_rate=?,
+           tax_category_id=CASE WHEN ? = 1 THEN ? ELSE tax_category_id END,
+           tax_behavior=CASE WHEN ? = 1 THEN ? ELSE tax_behavior END,
+           cb_percent=?, tags=?, is_active=?, sku=?, updated_at=?
            WHERE id=?`
         ).run(r.name, categoryId, price, r.description || null, cost,
-          taxType, taxRate, cbPercent, tagsJson, isActive, sku, now(), r.id);
+          taxType, taxRate, hasTaxCategoryColumn ? 1 : 0, taxCategoryId,
+          hasTaxBehaviorColumn ? 1 : 0, taxBehavior,
+          cbPercent, tagsJson, isActive, sku, now(), r.id);
         updated++;
         continue;
       }
@@ -298,10 +338,10 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
 
       db.prepare(
         `INSERT INTO products (id, name, category_id, price, description, cost, tax_type, tax_rate,
-         cb_percent, tags, is_active, sku, sort_order, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
+         tax_category_id, tax_behavior, cb_percent, tags, is_active, sku, sort_order, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).run(generateShortId('products'), r.name, categoryId, price, r.description || null,
-        cost, taxType, taxRate, cbPercent, tagsJson, isActive, sku, now(), now());
+        cost, taxType, taxRate, taxCategoryId, taxBehavior || 'country_default', cbPercent, tagsJson, isActive, sku, now(), now());
       created++;
     }
 

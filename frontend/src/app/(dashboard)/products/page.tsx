@@ -74,7 +74,7 @@ export default function ProductsPage() {
   const [addonList, setAddonList] = useState<{ id?: number | string; name: string; price: number; is_active?: boolean }[]>([]);
   const [form, setForm] = useState({
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '', barcode: '',
-    tax_type: 'inclusive', tax_rate: '5', description: '',
+    tax_type: 'inclusive', tax_rate: '5', tax_category_id: '', tax_behavior: 'country_default', description: '',
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
     customTag: '',
@@ -90,6 +90,11 @@ export default function ProductsPage() {
   const [csvUploading, setCsvUploading] = useState(false);
   const [catDeleteModal, setCatDeleteModal] = useState<{ open: boolean; id: number | null; name: string; productCount: number }>({ open: false, id: null, name: '', productCount: 0 });
   const [catReassignTo, setCatReassignTo] = useState<string>('');
+
+  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
+  const [showBulkTaxModal, setShowBulkTaxModal] = useState(false);
+  const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
+  const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
   const fmt = useFormatCurrency();
@@ -128,6 +133,9 @@ export default function ProductsPage() {
       })
       .catch(() => toast.error(t('products.failedToLoad')))
       .finally(() => setLoading(false));
+    api.get('/tax/categories')
+      .then((res) => setTaxCategories((res.data as { categories?: { id: string; label: string }[] }).categories || []))
+      .catch(() => setTaxCategories([]));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -152,6 +160,28 @@ export default function ProductsPage() {
     }
   };
 
+  const legacyProducts = products.filter((p) => !p.tax_category_id && p.is_active);
+
+  const handleBulkTaxAssign = async () => {
+    if (!bulkTaxCategoryId || legacyProducts.length === 0) return;
+    setBulkTaxApplying(true);
+    try {
+      const results = await Promise.allSettled(
+        legacyProducts.map((p) => api.put(`/products/${p.id}`, { tax_category_id: bulkTaxCategoryId })),
+      );
+      const failedCount = results.filter((r) => r.status === 'rejected').length;
+      if (failedCount > 0) {
+        toast.error(`Assigned category to ${results.length - failedCount} of ${results.length} products — ${failedCount} failed`);
+      } else {
+        toast.success(`Tax category assigned to ${results.length} product(s)`);
+      }
+      setShowBulkTaxModal(false);
+      fetchData();
+    } finally {
+      setBulkTaxApplying(false);
+    }
+  };
+
   const handleCsvUpload = async () => {
     if (!csvFile) return;
     setCsvUploading(true);
@@ -172,7 +202,7 @@ export default function ProductsPage() {
   const resetForm = () => {
     setForm({
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '', barcode: '',
-      tax_type: 'inclusive', tax_rate: '5', description: '',
+      tax_type: 'inclusive', tax_rate: '5', tax_category_id: '', tax_behavior: 'country_default', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
     });
@@ -193,6 +223,8 @@ export default function ProductsPage() {
       barcode: product.barcode || '',
       tax_type: product.tax_type || 'inclusive',
       tax_rate: String(product.tax_rate || '5'),
+      tax_category_id: product.tax_category_id || '',
+      tax_behavior: product.tax_behavior || 'country_default',
       description: product.description || '',
       track_inventory: product.track_inventory,
       stock_quantity: String(product.stock_quantity || '0'),
@@ -219,6 +251,8 @@ export default function ProductsPage() {
         barcode: form.barcode || null,
         tax_type: form.tax_type,
         tax_rate: Number(form.tax_rate),
+        tax_category_id: form.tax_category_id || null,
+        tax_behavior: form.tax_category_id ? form.tax_behavior : 'country_default',
         description: form.description || null,
         track_inventory: form.track_inventory,
         stock_quantity: Number(form.stock_quantity),
@@ -417,6 +451,11 @@ export default function ProductsPage() {
       {activeTab === 'products' && (
         <>
           <div className="flex justify-end gap-2 mb-4">
+            {isOwnerOrManager && taxCategories.length > 0 && (
+              <Button variant="outline" onClick={() => { setBulkTaxCategoryId(''); setShowBulkTaxModal(true); }}>
+                Assign tax category
+              </Button>
+            )}
             <Button variant="outline" onClick={() => openCsvModal('products')}>
               <FileSpreadsheet size={16} className="mr-1" /> CSV
             </Button>
@@ -444,9 +483,12 @@ export default function ProductsPage() {
             {products.map((product) => {
               const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
               const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
-              const taxLabel = product.tax_type === 'none' || !product.tax_type
-                ? '—'
-                : `${product.tax_type === 'inclusive' ? t('products.taxInclusiveShort') : t('products.taxExclusiveShort')} ${product.tax_rate}%`;
+              const taxCategoryLabel = taxCategories.find((tc) => tc.id === product.tax_category_id)?.label;
+              const taxLabel = product.tax_category_id
+                ? (taxCategoryLabel || product.tax_category_id)
+                : product.tax_type === 'none' || !product.tax_type
+                  ? '—'
+                  : `${product.tax_type === 'inclusive' ? t('products.taxInclusiveShort') : t('products.taxExclusiveShort')} ${product.tax_rate}%`;
               return (
               <tr key={product.id} className="hover:bg-gray-50">
                 <td className="p-4 max-w-[220px]">
@@ -504,7 +546,16 @@ export default function ProductsPage() {
                   <p className="font-medium">{fmt(Number(product.price))}</p>
                   {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">Cost: {fmt(Number(product.cost_price))}</p>}
                 </td>
-                <td className="p-4 text-sm text-gray-600">{taxLabel}</td>
+                <td className="p-4 text-sm text-gray-600">
+                  <div className="flex flex-col gap-0.5">
+                    <span>{taxLabel}</span>
+                    {!product.tax_category_id && taxCategories.length > 0 && (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title="Not assigned to a tax category — using the manually entered rate">
+                        <AlertTriangle size={11} className="shrink-0" /> Legacy rate
+                      </span>
+                    )}
+                  </div>
+                </td>
                 <td className="p-4 text-center">
                   {product.track_inventory ? (
                     <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-gray-900'}`}>
@@ -614,22 +665,47 @@ export default function ProductsPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 <p className="text-xs text-gray-400 mt-1">{t('products.cashbackHint')}</p>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tax category</label>
+                <select value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
+                  <option value="">— Legacy (manual tax rate below) —</option>
+                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
+                </select>
+                {taxCategories.length === 0 && (
+                  <p className="text-xs text-gray-400 mt-1">No tax categories available — using the manual tax rate below.</p>
+                )}
+              </div>
+              {form.tax_category_id ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldTaxType')}</label>
-                  <select value={form.tax_type} onChange={(e) => setForm({ ...form, tax_type: e.target.value })}
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Tax behavior</label>
+                  <select value={form.tax_behavior} onChange={(e) => setForm({ ...form, tax_behavior: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
-                    <option value="none">{t('products.taxNone')}</option>
+                    <option value="country_default">Country default</option>
                     <option value="inclusive">{t('products.taxInclusive')}</option>
                     <option value="exclusive">{t('products.taxExclusive')}</option>
+                    <option value="exempt">Exempt</option>
                   </select>
+                  <p className="text-xs text-gray-400 mt-1">The rate is resolved from the active tax profile for this category, not entered manually.</p>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.taxRateLabel')}</label>
-                  <input type="number" step="0.01" value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldTaxType')}</label>
+                    <select value={form.tax_type} onChange={(e) => setForm({ ...form, tax_type: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
+                      <option value="none">{t('products.taxNone')}</option>
+                      <option value="inclusive">{t('products.taxInclusive')}</option>
+                      <option value="exclusive">{t('products.taxExclusive')}</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.taxRateLabel')}</label>
+                    <input type="number" step="0.01" value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: e.target.value })}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                  </div>
                 </div>
-              </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">{t('products.fieldTags')}</label>
                 {/* Selected tags */}
@@ -961,6 +1037,38 @@ export default function ProductsPage() {
             </div>
           )}
         </>
+      )}
+
+      {showBulkTaxModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-bold">Assign tax category</h2>
+              <button onClick={() => setShowBulkTaxModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
+            </div>
+            {legacyProducts.length === 0 ? (
+              <p className="text-sm text-gray-500">Every active product already has a tax category assigned.</p>
+            ) : (
+              <>
+                <p className="text-sm text-gray-600 mb-4">
+                  Apply one tax category to all <span className="font-medium">{legacyProducts.length}</span> active product(s) still on a legacy manual rate. Products with their own category already set are left untouched.
+                </p>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tax category</label>
+                <select value={bulkTaxCategoryId} onChange={(e) => setBulkTaxCategoryId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none mb-5">
+                  <option value="">{t('products.selectPlaceholder')}</option>
+                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
+                </select>
+                <div className="flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setShowBulkTaxModal(false)}>{t('common.cancel')}</Button>
+                  <Button onClick={handleBulkTaxAssign} disabled={!bulkTaxCategoryId || bulkTaxApplying}>
+                    {bulkTaxApplying ? t('products.csvImporting') : `Apply to ${legacyProducts.length} product(s)`}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       )}
 
       {showCsvModal && (

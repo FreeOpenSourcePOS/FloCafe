@@ -286,14 +286,18 @@ test('bundled India and Thailand packs reproduce current fixed behavior as data'
     10.1,
     null,
   );
-  assert.deepEqual(intra, {
-    tax_amount: 0.51,
-    tax_breakdown: [
-      { title: 'CGST', rate: 2.5, amount: 0.25 },
-      { title: 'SGST', rate: 2.5, amount: 0.26 },
-    ],
-    tax_type: 'exclusive',
-  });
+  assert.deepEqual(
+    { tax_amount: intra.tax_amount, tax_breakdown: intra.tax_breakdown, tax_type: intra.tax_type },
+    {
+      tax_amount: 0.51,
+      tax_breakdown: [
+        { title: 'CGST', rate: 2.5, amount: 0.25 },
+        { title: 'SGST', rate: 2.5, amount: 0.26 },
+      ],
+      tax_type: 'exclusive',
+    },
+  );
+  assert.ok(intra.tax_snapshot, 'categorized items also carry the full engine snapshot');
 
   const inter = calculateItemTax(
     { country: 'IN', business_type: 'salon', state_code: 'KA' },

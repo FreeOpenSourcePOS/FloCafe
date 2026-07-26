@@ -1,9 +1,41 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, withTxn } from '../db';
+import { getDatabase, now, withTxn, getSettingValue } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
+import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
+
+const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
 
 const router = Router();
+
+function invalidTaxBehavior(addons: any[] | undefined): string | null {
+  if (!Array.isArray(addons)) return null;
+  for (const addon of addons) {
+    if (addon?.tax_behavior !== undefined && addon.tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(addon.tax_behavior)) {
+      return `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}`;
+    }
+  }
+  return null;
+}
+
+function invalidTaxCategory(addons: any[] | undefined): string | null {
+  if (!Array.isArray(addons)) return null;
+  const country = getSettingValue('country') || 'IN';
+  const businessType = getSettingValue('business_type') || 'restaurant';
+  const pack = getActiveCountryPack(country);
+  for (const addon of addons) {
+    const categoryId = addon?.tax_category_id;
+    if (categoryId === null || categoryId === undefined || categoryId === '') continue;
+    if (typeof categoryId !== 'string') return 'tax_category_id must be a string or null';
+    if (!hasConfiguredTaxCategories(pack, businessType)) {
+      return `No configured tax categories are available for country ${country} and business type ${businessType}`;
+    }
+    if (!pack.categories.some((category) => category.id === categoryId)) {
+      return `Unknown tax_category_id "${categoryId}" for country ${country}`;
+    }
+  }
+  return null;
+}
 
 function validateSelectionBounds(minSelection: number, maxSelection: number, activeAddonCount: number): Record<string, string[]> | null {
   if (minSelection > maxSelection) {
@@ -78,6 +110,14 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     if (boundsError) {
       return res.status(400).json({ errors: boundsError });
     }
+    const taxBehaviorError = invalidTaxBehavior(addons);
+    if (taxBehaviorError) {
+      return res.status(400).json({ error: taxBehaviorError });
+    }
+    const taxCategoryError = invalidTaxCategory(addons);
+    if (taxCategoryError) {
+      return res.status(400).json({ error: taxCategoryError });
+    }
 
     const db = getDatabase();
     const groupId = randomUUID();
@@ -90,9 +130,17 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       );
 
       if (addons && addons.length > 0) {
-        const insertAddon = db.prepare('INSERT INTO addons (id, addon_group_id, name, price, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
+        const insertAddon = db.prepare(`
+          INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, sort_order, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
         addons.forEach((addon: any, index: number) => {
-          insertAddon.run(randomUUID(), groupId, addon.name, addon.price || 0, index, now(), now());
+          insertAddon.run(
+            randomUUID(), groupId, addon.name, addon.price || 0,
+            addon.tax_category_id || null, addon.tax_behavior || 'country_default',
+            addon.inherit_parent_tax_category !== false ? 1 : 0,
+            index, now(), now(),
+          );
         });
       }
 
@@ -128,6 +176,14 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     if (boundsError) {
       return res.status(400).json({ errors: boundsError });
     }
+    const taxBehaviorError = invalidTaxBehavior(addons);
+    if (taxBehaviorError) {
+      return res.status(400).json({ error: taxBehaviorError });
+    }
+    const taxCategoryError = invalidTaxCategory(addons);
+    if (taxCategoryError) {
+      return res.status(400).json({ error: taxCategoryError });
+    }
 
     const reqName = name ?? null;
     const reqDesc = description ?? null;
@@ -149,9 +205,17 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
       if (Array.isArray(addons)) {
         db.prepare('DELETE FROM addons WHERE addon_group_id = ?').run(req.params.id);
-        const insertAddon = db.prepare('INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        const insertAddon = db.prepare(`
+          INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
         addons.forEach((addon: any, index: number) => {
-          insertAddon.run(randomUUID(), req.params.id, addon.name, addon.price ?? 0, addon.is_active !== false ? 1 : 0, index, now(), now());
+          insertAddon.run(
+            randomUUID(), req.params.id, addon.name, addon.price ?? 0,
+            addon.tax_category_id || null, addon.tax_behavior || 'country_default',
+            addon.inherit_parent_tax_category !== false ? 1 : 0,
+            addon.is_active !== false ? 1 : 0, index, now(), now(),
+          );
         });
       }
 
@@ -190,10 +254,17 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
 // Addon management within a group
 router.post('/:groupId/addons', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { name, price, is_active, sort_order } = req.body;
+    const { name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order } = req.body;
 
     if (!name || price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
+    }
+    if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+      return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
+    }
+    const taxCategoryError = invalidTaxCategory([{ tax_category_id }]);
+    if (taxCategoryError) {
+      return res.status(400).json({ error: taxCategoryError });
     }
 
     const db = getDatabase();
@@ -203,8 +274,14 @@ router.post('/:groupId/addons', requireRole('owner', 'manager'), (req: Request, 
     }
 
     const addonId = randomUUID();
-    db.prepare('INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-      .run(addonId, req.params.groupId, name, price, is_active !== false ? 1 : 0, sort_order || 0, now(), now());
+    db.prepare(`
+      INSERT INTO addons (id, addon_group_id, name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      addonId, req.params.groupId, name, price,
+      tax_category_id || null, tax_behavior || 'country_default', inherit_parent_tax_category !== false ? 1 : 0,
+      is_active !== false ? 1 : 0, sort_order || 0, now(), now(),
+    );
 
     const addon = db.prepare('SELECT * FROM addons WHERE id = ?').get(addonId);
     res.status(201).json({ addon });
@@ -216,7 +293,15 @@ router.post('/:groupId/addons', requireRole('owner', 'manager'), (req: Request, 
 
 router.put('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { name, price, is_active, sort_order } = req.body;
+    const { name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order } = req.body;
+
+    if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
+      return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
+    }
+    const taxCategoryError = invalidTaxCategory([{ tax_category_id }]);
+    if (taxCategoryError) {
+      return res.status(400).json({ error: taxCategoryError });
+    }
 
     const db = getDatabase();
     const addon = db.prepare('SELECT * FROM addons WHERE id = ? AND addon_group_id = ?').get(req.params.addonId, req.params.groupId) as { is_active: number } | undefined;
@@ -231,11 +316,19 @@ router.put('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req: R
       }
     }
 
+    const hasTaxCategoryId = 'tax_category_id' in req.body;
     db.prepare(`
       UPDATE addons SET name = COALESCE(?, name), price = COALESCE(?, price),
+        tax_category_id = CASE WHEN ? = 1 THEN ? ELSE tax_category_id END,
+        tax_behavior = COALESCE(?, tax_behavior),
+        inherit_parent_tax_category = COALESCE(?, inherit_parent_tax_category),
         is_active = COALESCE(?, is_active), sort_order = COALESCE(?, sort_order)
       WHERE id = ?
-    `).run(name, price, is_active, sort_order, req.params.addonId);
+    `).run(
+      name, price, hasTaxCategoryId ? 1 : 0, tax_category_id, tax_behavior,
+      inherit_parent_tax_category === undefined ? null : (inherit_parent_tax_category ? 1 : 0),
+      is_active, sort_order, req.params.addonId,
+    );
 
     const updated = db.prepare('SELECT * FROM addons WHERE id = ?').get(req.params.addonId);
     res.json({ addon: updated });

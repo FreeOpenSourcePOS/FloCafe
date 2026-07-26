@@ -60,6 +60,8 @@ export interface Product {
   cb_percent?: number;
   tax_type: 'none' | 'inclusive' | 'exclusive';
   tax_rate: number;
+  tax_category_id?: string | null;
+  tax_behavior?: 'country_default' | 'inclusive' | 'exclusive' | 'exempt';
   track_inventory: boolean;
   stock_quantity: number;
   low_stock_threshold: number | null;

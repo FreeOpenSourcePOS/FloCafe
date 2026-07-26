@@ -3,6 +3,7 @@ import { getDatabase, generateBillNumber, now, withTxn, getSettingValue, parseRo
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { requireRole } from '../middleware/security';
+import { aggregateTaxSnapshots, scaleTaxBreakdowns } from '../services/tax';
 
 const router = Router();
 
@@ -141,6 +142,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
           SET subtotal       = ?,
               tax_amount     = ?,
               tax_breakdown  = ?,
+              tax_snapshot   = ?,
               discount_amount= ?,
               discount_type  = ?,
               discount_value = ?,
@@ -153,7 +155,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
               updated_at     = ?
           WHERE id = ?
         `).run(
-          orderSubtotal, orderTaxAmount, order.tax_breakdown,
+          orderSubtotal, orderTaxAmount, order.tax_breakdown, order.tax_snapshot,
           orderDiscountAmt, order.discount_type, order.discount_value, order.discount_reason,
           orderDelivery, orderPackaging, orderRoundOff,
           orderTotal, newBalance, now(),
@@ -179,12 +181,12 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
       const total = order.total || 0;
 
       return db.prepare(`
-        INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown,
+        INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
           discount_amount, discount_type, discount_value, discount_reason,
           delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?, ?)
       `).run(
-        billNumber, order_id, order.customer_id, subtotal, taxAmount, order.tax_breakdown,
+        billNumber, order_id, order.customer_id, subtotal, taxAmount, order.tax_breakdown, order.tax_snapshot,
         discountAmount, order.discount_type, order.discount_value, order.discount_reason,
         deliveryCharge, packagingCharge, roundOff, total, 0, total, now(), now()
       );
@@ -479,15 +481,38 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     }
     discountAmount = Math.round(discountAmount * 100) / 100;
 
-    // Recalculate tax on discounted subtotal (India GST is on post-discount value)
-    const discountedSubtotal = Math.max(0, bill.subtotal - discountAmount);
-    let newTaxAmount = bill.tax_amount || 0;
-    if (discountAmount > 0 && bill.subtotal > 0) {
-      const taxRatio = discountedSubtotal / bill.subtotal;
-      newTaxAmount = Math.round((bill.tax_amount || 0) * taxRatio * 100) / 100;
+    // Always derive the undiscounted tax basis from active item rows. Using
+    // bill.tax_amount here compounds the previous discount whenever a manager
+    // edits 10% to 20%. Keep inclusive tax out of the payable total.
+    const activeItems = db.prepare(
+      "SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'"
+    ).all(bill.order_id) as any[];
+    let itemTaxAmount = 0;
+    let itemExclusiveTax = 0;
+    const itemBreakdowns: any[][] = [];
+    const itemSnapshots: (string | null)[] = [];
+    for (const item of activeItems) {
+      const taxAmount = item.tax_amount || 0;
+      itemTaxAmount += taxAmount;
+      if (item.tax_type !== 'inclusive') itemExclusiveTax += taxAmount;
+      if (item.tax_breakdown) {
+        try {
+          const breakdown = JSON.parse(item.tax_breakdown);
+          if (Array.isArray(breakdown)) itemBreakdowns.push(breakdown);
+        } catch { }
+      }
+      itemSnapshots.push(item.tax_snapshot || null);
     }
 
-    const preRoundTotal = discountedSubtotal + newTaxAmount + (bill.delivery_charge || 0) + (bill.packaging_charge || 0);
+    const discountedSubtotal = Math.max(0, bill.subtotal - discountAmount);
+    const taxRatio = bill.subtotal > 0 ? discountedSubtotal / bill.subtotal : 1;
+    const newTaxAmount = Math.round(itemTaxAmount * taxRatio * 100) / 100;
+    const newExclusiveTax = Math.round(itemExclusiveTax * taxRatio * 100) / 100;
+    const scaledBreakdowns = scaleTaxBreakdowns(itemBreakdowns, taxRatio, newTaxAmount);
+    const taxBreakdownJson = JSON.stringify(scaledBreakdowns);
+    const taxSnapshotJson = aggregateTaxSnapshots(itemSnapshots);
+
+    const preRoundTotal = discountedSubtotal + newExclusiveTax + (bill.delivery_charge || 0) + (bill.packaging_charge || 0);
     const newTotal = Math.round(preRoundTotal);
     const newRoundOff = newTotal - preRoundTotal;
     const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));
@@ -495,15 +520,23 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     const updatedBill = withTxn(() => {
       db.prepare(`
         UPDATE bills SET discount_amount = ?, discount_type = ?, discount_value = ?,
-          discount_reason = ?, tax_amount = ?, total = ?, round_off = ?, balance = ?, updated_at = ?
+          discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
+          total = ?, round_off = ?, balance = ?, updated_at = ?
         WHERE id = ?
-      `).run(discountAmount, type, value, reason || null, newTaxAmount, newTotal, newRoundOff, newBalance, now(), req.params.id);
+      `).run(
+        discountAmount, type, value, reason || null, newTaxAmount, taxBreakdownJson,
+        taxSnapshotJson, newTotal, newRoundOff, newBalance, now(), req.params.id,
+      );
 
       db.prepare(`
         UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
-          discount_reason = ?, tax_amount = ?, total = ?, round_off = ?, updated_at = ?
+          discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
+          total = ?, round_off = ?, updated_at = ?
         WHERE id = ?
-      `).run(discountAmount, type, value, reason || null, newTaxAmount, newTotal, newRoundOff, now(), bill.order_id);
+      `).run(
+        discountAmount, type, value, reason || null, newTaxAmount, taxBreakdownJson,
+        taxSnapshotJson, newTotal, newRoundOff, now(), bill.order_id,
+      );
 
       return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
     });
@@ -511,8 +544,9 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     notifyOrderUpdated();
     res.json({ bill: updatedBill });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    const statusCode = error.statusCode || 500;
+    console.error('[API] Bill discount failed:', error);
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Internal server error' : error.message });
   }
 });
 

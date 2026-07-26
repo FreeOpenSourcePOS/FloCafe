@@ -2,6 +2,14 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.3.0] - 2026-07-26
+
+### Added
+- Brazilian Portuguese (pt-BR) as a third UI language alongside English and Spanish — 1548 keys with full three-way parity across the setup wizard, POS, KDS, settings, orders, tables, staff, WhatsApp, and print-test surfaces. Browser-language auto-detection and plural rules cover `pt`; the demo seed data gained a pt-BR branch. New `lib/i18n-enums.ts` centralizes backend-enum-to-label mapping (roles, order/item/table/tenant/payment statuses, business types) with a safe fallback to the raw value for anything not yet translated, so an unmapped status renders in English instead of crashing. (#153, thanks @paulovnas)
+
+### Fixed
+- A handful of hardcoded English strings (print-test labels, order history headers, an image-cropper title) now route through `t()` instead of always rendering in English regardless of the selected language.
+
 ## [2.2.0] - 2026-07-26
 
 ### Added

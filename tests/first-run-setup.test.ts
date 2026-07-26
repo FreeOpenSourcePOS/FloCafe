@@ -27,7 +27,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const express = require('express');
-const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS } = require('../main/db');
 const { authRoutes } = require('../main/routes/auth');
 
 function count(table: string): number {
@@ -78,7 +78,7 @@ async function main() {
     throw error;
   }
 
-assert.equal(getCurrentSchemaVersion(), 33, 'fresh database migrates to latest schema');
+assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].version, 'fresh database migrates to latest schema');
   assert.equal(count('users'), 0, 'fresh install starts without users');
   assert.equal(count('categories'), 0, 'fresh install starts with no sample categories');
   assert.equal(count('products'), 0, 'fresh install starts with no sample products');

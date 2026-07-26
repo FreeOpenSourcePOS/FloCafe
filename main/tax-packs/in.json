@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "id": "official-in",
+  "publisher": "FreeOpenSourcePOS",
+  "version": "1.0.0",
+  "country": "IN",
+  "jurisdiction": "*",
+  "currency": "INR",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-01-01",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": false,
+  "registrationNumberLabel": "GSTIN",
+  "categories": [
+    { "id": "standard", "label": "Standard", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["b-cgst", "a-sgst", "igst"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "b-cgst",
+      "label": "CGST",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "2.5",
+      "conditions": {
+        "businessTypes": ["restaurant", "salon"],
+        "customerStateRelation": "intra_or_unspecified"
+      }
+    },
+    {
+      "id": "a-sgst",
+      "label": "SGST",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "2.5",
+      "conditions": {
+        "businessTypes": ["restaurant", "salon"],
+        "customerStateRelation": "intra_or_unspecified"
+      }
+    },
+    {
+      "id": "igst",
+      "label": "IGST",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "5",
+      "conditions": {
+        "businessTypes": ["restaurant", "salon"],
+        "customerStateRelation": "interstate"
+      }
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

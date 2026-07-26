@@ -7,6 +7,9 @@ interface TenantInfo {
 interface Product {
   tax_type: string;
   tax_rate: number;
+  tax_category?: string;
+  tax_category_id?: string;
+  tax_behavior?: 'country_default' | 'inclusive' | 'exclusive' | 'exempt';
 }
 
 interface Customer {
@@ -34,6 +37,15 @@ const INDIA_FIXED_RATES: Record<string, number> = {
 const THAILAND_VAT_RATE = 7.0;
 
 import { COUNTRIES } from '../countries';
+import { TaxEngine } from './tax-engine';
+import type { CountryPack } from '../tax-packs/types';
+import indiaPackData from '../tax-packs/in.json';
+import thailandPackData from '../tax-packs/th.json';
+import genericPackData from '../tax-packs/generic.json';
+
+const INDIA_PACK = indiaPackData as CountryPack;
+const THAILAND_PACK = thailandPackData as CountryPack;
+const GENERIC_PACK = genericPackData as CountryPack;
 
 function round(value: number, decimals: number = 2): number {
   return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
@@ -45,6 +57,51 @@ export function calculateItemTax(
   taxableAmount: number,
   customer: Customer | null
 ): TaxResult {
+  const taxCategoryId = product.tax_category_id || product.tax_category;
+  if (taxCategoryId) {
+    const pack = tenant.country === 'IN'
+      ? INDIA_PACK
+      : tenant.country === 'TH'
+        ? THAILAND_PACK
+        : GENERIC_PACK;
+    const calculation = TaxEngine.calculate({
+      pack,
+      country: tenant.country,
+      businessType: tenant.business_type,
+      storeStateCode: tenant.state_code,
+      transactionDate: new Date().toISOString(),
+      customer: customer
+        ? {
+          registrationNumber: customer.gstin,
+          stateCode: customer.customer_state_code,
+        }
+        : null,
+      lines: [{
+        lineId: 'legacy-item-adapter',
+        kind: 'product',
+        quantity: '1',
+        unitPrice: String(taxableAmount),
+        productCategoryId: taxCategoryId,
+        taxBehavior: product.tax_behavior
+          || (product.tax_type === 'inclusive'
+            ? 'inclusive'
+            : product.tax_type === 'exclusive'
+              ? 'exclusive'
+              : 'country_default'),
+      }],
+    });
+    const line = calculation.lines[0];
+    return {
+      tax_amount: Number(line.taxAmount),
+      tax_breakdown: line.components.map((component) => ({
+        title: component.label,
+        rate: Number(component.rate || 0),
+        amount: Number(component.amount),
+      })),
+      tax_type: product.tax_type,
+    };
+  }
+
   if (product.tax_type === 'none') {
     return { tax_amount: 0, tax_breakdown: [], tax_type: 'none' };
   }

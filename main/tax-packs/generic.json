@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "id": "local-generic",
+  "publisher": "local",
+  "version": "1.0.0",
+  "country": "*",
+  "jurisdiction": "*",
+  "currency": "XXX",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-01-01",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": false,
+  "registrationNumberLabel": "Tax registration",
+  "categories": [
+    { "id": "standard", "label": "Standard", "ruleIds": [] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": [] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": [] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": [] },
+    { "id": "addon", "label": "Add-on", "ruleIds": [] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": [] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [],
+  "taxRounding": {
+    "scope": "line",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

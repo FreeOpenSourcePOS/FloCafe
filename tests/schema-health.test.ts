@@ -64,6 +64,40 @@ function main() {
 
   const db = getDatabase();
 
+  const requiredTaxTables = [
+    'country_packs',
+    'country_pack_versions',
+    'tax_categories',
+    'tax_rules',
+    'tax_overrides',
+    'tax_config_audit',
+  ];
+  for (const table of requiredTaxTables) {
+    assert.ok(
+      db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
+      `${table} exists on a fresh install`,
+    );
+  }
+  const expectedTaxColumns: Record<string, string[]> = {
+    products: ['tax_category_id', 'tax_behavior', 'tax_type', 'tax_rate'],
+    addons: ['tax_category_id', 'tax_behavior', 'inherit_parent_tax_category'],
+    orders: [
+      'tax_snapshot',
+      'packaging_tax_category_id',
+      'delivery_tax_category_id',
+      'service_charge_tax_category_id',
+    ],
+    order_items: ['tax_snapshot'],
+    bills: ['tax_snapshot'],
+  };
+  for (const [table, expected] of Object.entries(expectedTaxColumns)) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
+    for (const column of expected) {
+      assert.ok(columns.includes(column), `${table}.${column} exists on a fresh install`);
+    }
+  }
+  console.log('   ✓ fresh installs include every Phase 1 tax table and column');
+
   // ── Extra column is flagged manual_review, never auto-applicable ────────
   db.exec(`ALTER TABLE products ADD COLUMN __test_extra_col TEXT`);
   report = runHealthCheck();

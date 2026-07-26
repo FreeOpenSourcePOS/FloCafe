@@ -1289,6 +1289,63 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 35,
+    name: 'add_tax_pack_configuration_tables',
+    up: () => {
+      createTaxPackSchema();
+    },
+  },
+  {
+    version: 36,
+    name: 'add_product_and_addon_tax_categories',
+    up: () => {
+      const productColumns = getColumns(db, 'products');
+      if (!productColumns.includes('tax_category_id')) {
+        db.exec(`ALTER TABLE products ADD COLUMN tax_category_id TEXT DEFAULT NULL`);
+      }
+      if (!productColumns.includes('tax_behavior')) {
+        db.exec(`ALTER TABLE products ADD COLUMN tax_behavior TEXT DEFAULT 'country_default'`);
+      }
+
+      const addonColumns = getColumns(db, 'addons');
+      if (!addonColumns.includes('tax_category_id')) {
+        db.exec(`ALTER TABLE addons ADD COLUMN tax_category_id TEXT DEFAULT NULL`);
+      }
+      if (!addonColumns.includes('tax_behavior')) {
+        db.exec(`ALTER TABLE addons ADD COLUMN tax_behavior TEXT DEFAULT 'country_default'`);
+      }
+      if (!addonColumns.includes('inherit_parent_tax_category')) {
+        db.exec(`ALTER TABLE addons ADD COLUMN inherit_parent_tax_category INTEGER DEFAULT 1`);
+      }
+    },
+  },
+  {
+    version: 37,
+    name: 'add_transaction_tax_snapshots_and_charge_categories',
+    up: () => {
+      const orderColumns = getColumns(db, 'orders');
+      if (!orderColumns.includes('tax_snapshot')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN tax_snapshot TEXT DEFAULT NULL`);
+      }
+      if (!orderColumns.includes('packaging_tax_category_id')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN packaging_tax_category_id TEXT DEFAULT NULL`);
+      }
+      if (!orderColumns.includes('delivery_tax_category_id')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN delivery_tax_category_id TEXT DEFAULT NULL`);
+      }
+      if (!orderColumns.includes('service_charge_tax_category_id')) {
+        db.exec(`ALTER TABLE orders ADD COLUMN service_charge_tax_category_id TEXT DEFAULT NULL`);
+      }
+
+      if (!getColumns(db, 'order_items').includes('tax_snapshot')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN tax_snapshot TEXT DEFAULT NULL`);
+      }
+      if (!getColumns(db, 'bills').includes('tax_snapshot')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN tax_snapshot TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -1424,6 +1481,8 @@ function createSchema(): void {
       low_stock_threshold REAL DEFAULT 5,
       tax_type TEXT DEFAULT 'none',
       tax_rate REAL DEFAULT 0,
+      tax_category_id TEXT DEFAULT NULL,
+      tax_behavior TEXT DEFAULT 'country_default',
       cb_percent REAL DEFAULT 0,
       tags TEXT,
       deleted_at TEXT,
@@ -1451,6 +1510,9 @@ function createSchema(): void {
       addon_group_id TEXT NOT NULL,
       name TEXT NOT NULL,
       price REAL NOT NULL DEFAULT 0,
+      tax_category_id TEXT DEFAULT NULL,
+      tax_behavior TEXT DEFAULT 'country_default',
+      inherit_parent_tax_category INTEGER DEFAULT 1,
       is_active INTEGER DEFAULT 1,
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -1555,6 +1617,10 @@ function createSchema(): void {
       subtotal REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
       tax_breakdown TEXT,
+      tax_snapshot TEXT DEFAULT NULL,
+      packaging_tax_category_id TEXT DEFAULT NULL,
+      delivery_tax_category_id TEXT DEFAULT NULL,
+      service_charge_tax_category_id TEXT DEFAULT NULL,
       discount_amount REAL DEFAULT 0,
       discount_type TEXT,
       discount_value REAL,
@@ -1583,6 +1649,7 @@ function createSchema(): void {
       subtotal REAL NOT NULL,
       tax_amount REAL DEFAULT 0,
       tax_breakdown TEXT,
+      tax_snapshot TEXT DEFAULT NULL,
       tax_type TEXT,
       discount_amount REAL DEFAULT 0,
       total REAL NOT NULL,
@@ -1604,6 +1671,7 @@ function createSchema(): void {
       subtotal REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
       tax_breakdown TEXT,
+      tax_snapshot TEXT DEFAULT NULL,
       discount_amount REAL DEFAULT 0,
       discount_type TEXT,
       discount_value REAL,
@@ -1664,6 +1732,84 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS country_packs (
+      id TEXT PRIMARY KEY,
+      publisher TEXT NOT NULL,
+      country TEXT NOT NULL,
+      jurisdiction TEXT NOT NULL,
+      active_version_id TEXT,
+      status TEXT NOT NULL DEFAULT 'installed',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS country_pack_versions (
+      id TEXT PRIMARY KEY,
+      pack_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      schema_version INTEGER NOT NULL,
+      manifest_json TEXT NOT NULL,
+      pack_json TEXT NOT NULL,
+      digest TEXT,
+      signature TEXT,
+      effective_from TEXT NOT NULL,
+      effective_to TEXT,
+      min_flo_version TEXT NOT NULL,
+      published_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'staged',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pack_id, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_categories (
+      id TEXT PRIMARY KEY,
+      pack_version_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      default_behavior TEXT,
+      definition_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pack_version_id, category_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_rules (
+      id TEXT PRIMARY KEY,
+      pack_version_id TEXT NOT NULL,
+      rule_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      calculation_type TEXT NOT NULL,
+      rate TEXT,
+      amount TEXT,
+      applies_per TEXT,
+      base_rule_ids TEXT,
+      definition_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pack_version_id, rule_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_overrides (
+      id TEXT PRIMARY KEY,
+      pack_version_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      field_name TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      created_by_user_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_config_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      pack_id TEXT,
+      pack_version_id TEXT,
+      override_id TEXT,
+      actor_user_id TEXT,
+      details_json TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     -- ── Indexes ──────────────────────────────────────────────────────────
 
     CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
@@ -1673,6 +1819,97 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_orders_user       ON orders(user_id);
     CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
     CREATE INDEX IF NOT EXISTS idx_bills_order       ON bills(order_id);
+    CREATE INDEX IF NOT EXISTS idx_country_pack_versions_pack ON country_pack_versions(pack_id);
+    CREATE INDEX IF NOT EXISTS idx_tax_categories_pack_version ON tax_categories(pack_version_id);
+    CREATE INDEX IF NOT EXISTS idx_tax_rules_pack_version ON tax_rules(pack_version_id);
+    CREATE INDEX IF NOT EXISTS idx_tax_overrides_pack_version ON tax_overrides(pack_version_id);
+  `);
+}
+
+function createTaxPackSchema(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS country_packs (
+      id TEXT PRIMARY KEY,
+      publisher TEXT NOT NULL,
+      country TEXT NOT NULL,
+      jurisdiction TEXT NOT NULL,
+      active_version_id TEXT,
+      status TEXT NOT NULL DEFAULT 'installed',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS country_pack_versions (
+      id TEXT PRIMARY KEY,
+      pack_id TEXT NOT NULL,
+      version TEXT NOT NULL,
+      schema_version INTEGER NOT NULL,
+      manifest_json TEXT NOT NULL,
+      pack_json TEXT NOT NULL,
+      digest TEXT,
+      signature TEXT,
+      effective_from TEXT NOT NULL,
+      effective_to TEXT,
+      min_flo_version TEXT NOT NULL,
+      published_at TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'staged',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pack_id, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_categories (
+      id TEXT PRIMARY KEY,
+      pack_version_id TEXT NOT NULL,
+      category_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      default_behavior TEXT,
+      definition_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pack_version_id, category_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_rules (
+      id TEXT PRIMARY KEY,
+      pack_version_id TEXT NOT NULL,
+      rule_id TEXT NOT NULL,
+      label TEXT NOT NULL,
+      calculation_type TEXT NOT NULL,
+      rate TEXT,
+      amount TEXT,
+      applies_per TEXT,
+      base_rule_ids TEXT,
+      definition_json TEXT NOT NULL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pack_version_id, rule_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_overrides (
+      id TEXT PRIMARY KEY,
+      pack_version_id TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      field_name TEXT NOT NULL,
+      value_json TEXT NOT NULL,
+      created_by_user_id TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS tax_config_audit (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      action TEXT NOT NULL,
+      pack_id TEXT,
+      pack_version_id TEXT,
+      override_id TEXT,
+      actor_user_id TEXT,
+      details_json TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_country_pack_versions_pack ON country_pack_versions(pack_id);
+    CREATE INDEX IF NOT EXISTS idx_tax_categories_pack_version ON tax_categories(pack_version_id);
+    CREATE INDEX IF NOT EXISTS idx_tax_rules_pack_version ON tax_rules(pack_version_id);
+    CREATE INDEX IF NOT EXISTS idx_tax_overrides_pack_version ON tax_overrides(pack_version_id);
   `);
 }
 

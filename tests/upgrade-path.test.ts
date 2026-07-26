@@ -35,7 +35,21 @@ const originalLoad = Module._load;
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-upgrade-path-'));
 
 const FIXTURE = path.join(__dirname, 'fixtures/upgrade-snapshots/pre-migration-scheme-v1.5.0.db');
-fs.copyFileSync(FIXTURE, path.join(testDir, 'flo.db'));
+const upgradeDbPath = path.join(testDir, 'flo.db');
+fs.copyFileSync(FIXTURE, upgradeDbPath);
+
+const FixtureDatabase = require('better-sqlite3');
+const fixtureDb = new FixtureDatabase(upgradeDbPath);
+const legacyTaxBreakdown = JSON.stringify([{ title: 'Legacy Tax', rate: 5, amount: 5 }]);
+const legacyOrder = fixtureDb.prepare(`
+  INSERT INTO orders (order_number, subtotal, tax_amount, tax_breakdown, total)
+  VALUES ('ORD-LEGACY-TAX', 100, 5, ?, 105)
+`).run(legacyTaxBreakdown);
+fixtureDb.prepare(`
+  INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, tax_breakdown, total)
+  VALUES ('INV-LEGACY-TAX', ?, 100, 5, ?, 105)
+`).run(legacyOrder.lastInsertRowid, legacyTaxBreakdown);
+fixtureDb.close();
 
 const mockApp = {
   isPackaged: true,
@@ -76,7 +90,8 @@ function main() {
 
   const db = getDatabase();
   const ideal = buildIdealSchemaDb();
-  assert.equal(getCurrentSchemaVersion(), ideal.pragma('user_version', { simple: true }),
+  const latestSchemaVersion = ideal.pragma('user_version', { simple: true }) as number;
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,
     'migrated old install reaches the same schema version as a fresh install');
   ideal.close();
 
@@ -84,6 +99,59 @@ function main() {
   assert.ok(customerColumns.includes('country_code'), 'customers.country_code exists after migrating an old install');
   assert.ok(customerColumns.includes('tag_counts'), 'customers.tag_counts exists after migrating an old install');
   console.log('   ✓ customers.country_code and customers.tag_counts are present (the 9c92409 regression)');
+
+  const requiredTaxTables = [
+    'country_packs',
+    'country_pack_versions',
+    'tax_categories',
+    'tax_rules',
+    'tax_overrides',
+    'tax_config_audit',
+  ];
+  for (const table of requiredTaxTables) {
+    assert.ok(
+      db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`).get(table),
+      `${table} exists after upgrading an old install`,
+    );
+  }
+  const expectedTaxColumns: Record<string, string[]> = {
+    products: ['tax_category_id', 'tax_behavior', 'tax_type', 'tax_rate'],
+    addons: ['tax_category_id', 'tax_behavior', 'inherit_parent_tax_category'],
+    orders: [
+      'tax_snapshot',
+      'packaging_tax_category_id',
+      'delivery_tax_category_id',
+      'service_charge_tax_category_id',
+    ],
+    order_items: ['tax_snapshot'],
+    bills: ['tax_snapshot'],
+  };
+  for (const [table, expected] of Object.entries(expectedTaxColumns)) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all().map((column: any) => column.name);
+    for (const column of expected) {
+      assert.ok(columns.includes(column), `${table}.${column} exists after upgrading an old install`);
+    }
+  }
+  console.log('   ✓ old installs receive every Phase 1 tax table and guarded additive column');
+
+  assert.equal((db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count, 10);
+  const preservedOrder = db.prepare(`
+    SELECT tax_amount, tax_breakdown, tax_snapshot FROM orders WHERE order_number = 'ORD-LEGACY-TAX'
+  `).get() as any;
+  const preservedBill = db.prepare(`
+    SELECT tax_amount, tax_breakdown, tax_snapshot FROM bills WHERE bill_number = 'INV-LEGACY-TAX'
+  `).get() as any;
+  assert.deepEqual(
+    { tax_amount: preservedOrder.tax_amount, tax_breakdown: preservedOrder.tax_breakdown },
+    { tax_amount: 5, tax_breakdown: legacyTaxBreakdown },
+  );
+  assert.deepEqual(
+    { tax_amount: preservedBill.tax_amount, tax_breakdown: preservedBill.tax_breakdown },
+    { tax_amount: 5, tax_breakdown: legacyTaxBreakdown },
+  );
+  assert.equal(preservedOrder.tax_snapshot, null);
+  assert.equal(preservedBill.tax_snapshot, null);
+  console.log('   ✓ existing products, orders, bills, and legacy tax breakdowns are preserved');
 
   // ── The migrated old install must match the ideal (fresh) schema exactly ─
   const report = runHealthCheck();
@@ -101,6 +169,11 @@ function main() {
     console.log('   ✓ the backfilled columns are readable and writable');
   }
 
+  closeDatabase();
+  initDatabase();
+  assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
+  assert.equal(runHealthCheck().findings.length, 0);
+  console.log('   ✓ reopening an already-migrated database is idempotent');
   closeDatabase();
 
   console.log('='.repeat(60));

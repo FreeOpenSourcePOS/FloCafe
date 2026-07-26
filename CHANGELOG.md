@@ -2,6 +2,12 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.0] - 2026-07-26
+
+### Fixed
+- Cleared 36 accumulated `eslint-plugin-react-hooks`/React Compiler lint errors (state updates inside effect bodies, an inline component defined during render, a few functions referenced before their declaration, one non-memoizable `Date.now()` read) across ~20 frontend files. These were failing the `linux-baseline` CI job at the "Frontend lint" step, which meant "Build frontend" and "Core test suite" never even ran in that job — this was accumulated tech debt, not caused by any single feature.
+- Two backend tests (`first-run-setup`, `database-tools-api`) asserted the current schema version as a literal number, which broke the moment migration v34 shipped in 2.2.0; both now derive the expectation from the migrations list instead.
+
 ## [2.3.0] - 2026-07-26
 
 ### Added

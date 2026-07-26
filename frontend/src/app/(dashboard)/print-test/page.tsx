@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Printer, FileText, MessageCircle, Download, Usb, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePrinterStore } from '@/hooks/usePrinter';
@@ -24,9 +24,10 @@ export default function PrintTestPage() {
   const { printBill, printGstBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
   const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
   const { t } = useI18n();
-  useEffect(() => {
-    if (!kotPrintingEnabled && testMode === 'kot') setTestMode('receipt');
-  }, [kotPrintingEnabled, testMode]);
+  // Bail out of the now-unavailable KOT test mode. Read directly during render (React's
+  // recommended pattern for "adjusting state when a prop changes") — this is self-limiting,
+  // since setting testMode to 'receipt' makes the condition false on the next render.
+  if (!kotPrintingEnabled && testMode === 'kot') setTestMode('receipt');
 
   const testBill = createTestBill();
   const testOrder = createTestOrder();

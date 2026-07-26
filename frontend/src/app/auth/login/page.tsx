@@ -62,21 +62,34 @@ function LoginContent() {
     }
   }, [selectTenant, t]);
 
+  // Flip the loading spinner on the moment we're about to auto-select the sole tenant, read
+  // directly during render (React's recommended pattern for "adjusting state when a prop
+  // changes") so the effect below only needs to own the actual async selectTenant call.
+  const autoSelecting = !!(user && !currentTenant && tenants.length === 1);
+  const [wasAutoSelecting, setWasAutoSelecting] = useState(autoSelecting);
+  if (autoSelecting !== wasAutoSelecting) {
+    setWasAutoSelecting(autoSelecting);
+    if (autoSelecting) setLoading(true);
+  }
+
+  // Sticky latch — once shown, stays shown. Setting the same `true` value on every
+  // qualifying render is a no-op for React, so this needs no previous-value tracking.
+  if (user && (tenants.length > 1 || searchParams.get('select_tenant') === 'true')) {
+    setShowTenantSelect(true);
+  }
+
   useEffect(() => {
     if (user && currentTenant) {
       router.push(getLandingPage());
     } else if (user && tenants.length === 1) {
-      // Only one business — auto-select it
-      handleTenantSelect(tenants[0].id);
-    } else if (user && tenants.length > 1) {
-      setShowTenantSelect(true);
+      // Only one business — auto-select it. Inlined rather than calling
+      // handleTenantSelect() (used by the manual tenant-select button too), whose async
+      // body can't be called directly from an effect.
+      selectTenant(tenants[0].id)
+        .catch(() => toast.error(t('auth.selectBusinessFailed')))
+        .finally(() => setLoading(false));
     }
-    if (searchParams.get('select_tenant') === 'true' && user) {
-      setShowTenantSelect(true);
-    }
-   
-   
-  }, [user, tenants, currentTenant, router, searchParams, handleTenantSelect]);
+  }, [user, tenants, currentTenant, router, selectTenant, t]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

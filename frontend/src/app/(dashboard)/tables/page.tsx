@@ -227,24 +227,35 @@ export default function TablesPage() {
   };
 
   useEffect(() => {
-    fetchTables();
-    const interval = setInterval(fetchTables, 10000);
+    const load = () => {
+      api.get('/tables')
+        .then(({ data }) => setTables(data.tables || []))
+        .catch(() => toast.error(t('tables.loadFailed')))
+        .finally(() => setLoading(false));
+    };
+    load();
+    const interval = setInterval(load, 10000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Clear stale orders the moment details get hidden, read directly during render (React's
+  // recommended pattern for "adjusting state when a prop changes") so the effect below only
+  // needs to own the polling subscription.
+  const [syncedShowDetails, setSyncedShowDetails] = useState(showDetails);
+  if (showDetails !== syncedShowDetails) {
+    setSyncedShowDetails(showDetails);
+    if (!showDetails) setOrders([]);
+  }
+
   useEffect(() => {
-    if (!showDetails) {
-      setOrders([]);
-      return;
-    }
-    const fetchOrders = async () => {
-      try {
-        const { data } = await api.get('/orders', { params: { status: 'pending,preparing,ready,served' } });
-        setOrders(data.orders || []);
-      } catch {
-        // silently fail — tables still show
-      }
+    if (!showDetails) return;
+    const fetchOrders = () => {
+      api.get('/orders', { params: { status: 'pending,preparing,ready,served' } })
+        .then(({ data }) => setOrders(data.orders || []))
+        .catch(() => {
+          // silently fail — tables still show
+        });
     };
     fetchOrders();
     const interval = setInterval(fetchOrders, 10000);

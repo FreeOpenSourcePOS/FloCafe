@@ -99,6 +99,9 @@ export default function OrdersPage() {
   const { formatTime, formatDateTime } = useFormatDate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  // Snapshot of "now" for the "Xm ago" timestamps below — Date.now() can't be called directly
+  // during render (impure), so it's held in state and refreshed periodically instead.
+  const [now, setNow] = useState(() => Date.now());
   const [tabFilter, setTabFilter] = useState<FilterType>('active');
   const [paymentBill, setPaymentBill] = useState<Bill | null>(null);
   const [tables, setTables] = useState<Table[]>([]);
@@ -152,6 +155,15 @@ export default function OrdersPage() {
   const fmt = useFormatCurrency();
   const isOwnerOrManager = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
 
+  const fetchPrintHistory = async (billId: number) => {
+    try {
+      const { data } = await api.get(`/bills/${billId}/print-history`);
+      setPrintHistory(prev => ({ ...prev, [billId]: data.prints || [] }));
+    } catch {
+      // Ignore error
+    }
+  };
+
   const fetchOrders = async () => {
     try {
       const { data } = await api.get('/orders', { params: { per_page: 50 } });
@@ -175,6 +187,11 @@ export default function OrdersPage() {
     api.get('/settings/kds_enabled')
       .then((res) => setKdsEnabled(res.data?.setting?.value !== 'false'))
       .catch(() => setKdsEnabled(true));
+  }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
@@ -262,15 +279,6 @@ export default function OrdersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setTablesRequired]);
 
-  const fetchPrintHistory = async (billId: number) => {
-    try {
-      const { data } = await api.get(`/bills/${billId}/print-history`);
-      setPrintHistory(prev => ({ ...prev, [billId]: data.prints || [] }));
-    } catch {
-      // Ignore error
-    }
-  };
-
   const isOrderPaid = (order: Order) => order.bill?.payment_status === 'paid';
 
   const paymentStatusOf = (order: Order): 'paid' | 'partial' | 'unpaid' | null => {
@@ -281,7 +289,7 @@ export default function OrdersPage() {
   };
 
   const getTimeSince = (dateStr: string) => {
-    const minutes = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+    const minutes = Math.floor((now - new Date(dateStr).getTime()) / 60000);
     if (minutes < 1) return t('common.justNow');
     if (minutes < 60) return `${minutes}m ago`;
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
@@ -614,22 +622,22 @@ export default function OrdersPage() {
     }
   };
 
-  // Add Item modal: fetch products when modal opens
-  useEffect(() => {
-    if (!addItemsOrder) return;
-    const fetchProducts = async () => {
-      try {
-        const { data } = await api.get('/products', { params: { per_page: 200 } });
-        setProducts(data.products || []);
-      } catch {
-        toast.error(t('orders.menuLoadFailed'));
-      }
-    };
-    fetchProducts();
+  // Add Item modal: reset the selection the moment it opens/closes for a (new) order, read
+  // directly during render (React's recommended pattern for "adjusting state when a prop
+  // changes") so the effect below only needs to own the product fetch.
+  const [syncedAddItemsOrder, setSyncedAddItemsOrder] = useState(addItemsOrder);
+  if (addItemsOrder !== syncedAddItemsOrder) {
+    setSyncedAddItemsOrder(addItemsOrder);
     setSelectedItems([]);
     setProductSearch('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [addItemsOrder]);
+  }
+
+  useEffect(() => {
+    if (!addItemsOrder) return;
+    api.get('/products', { params: { per_page: 200 } })
+      .then(({ data }) => setProducts(data.products || []))
+      .catch(() => toast.error(t('orders.menuLoadFailed')));
+  }, [addItemsOrder, t]);
 
   const handleAddItemToSelection = (product: Product) => {
     setSelectedItems(prev => {

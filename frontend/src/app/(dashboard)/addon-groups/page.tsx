@@ -48,8 +48,13 @@ export default function AddonGroupsPage() {
     }
   };
 
+  useEffect(() => {
+    api.get('/addon-groups')
+      .then(({ data }) => setGroups(data.addon_groups || []))
+      .catch(() => toast.error(t('addonGroups.failedToLoad')))
+      .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchGroups(); }, []);
+  }, []);
 
   const resetForm = () => {
     setForm({ name: '', description: '', is_required: false, allow_multiple_quantities: false, min_selection: '0', max_selection: '1' });

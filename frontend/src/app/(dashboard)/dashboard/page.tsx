@@ -148,9 +148,18 @@ export default function DashboardPage() {
     }
   }, [currentTenant, isOwner, router]);
 
+  // Show the spinner again as soon as isOwner/selectedDate change, read directly during
+  // render (React's recommended pattern for "adjusting state when a prop changes") so the
+  // effect below only needs to own the async fetch and its own completion state.
+  const syncKey = `${isOwner}:${selectedDate}`;
+  const [syncedKey, setSyncedKey] = useState(syncKey);
+  if (syncKey !== syncedKey) {
+    setSyncedKey(syncKey);
+    if (isOwner) setLoading(true);
+  }
+
   useEffect(() => {
     if (!isOwner) return;
-    setLoading(true);
     Promise.all([
       isToday ? api.get('/reports/daily-stats') : api.get('/reports/summary', { params: { date: selectedDate } }),
       api.get('/reports/topProducts', { params: { start_date: selectedDate, end_date: selectedDate, limit: 5 } }),

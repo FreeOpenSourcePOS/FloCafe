@@ -171,7 +171,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const [user, setUser] = useState<KdsUser | null>(null);
   const [orders, setOrders] = useState<KdsOrder[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(true);
+  // Starts true only if there's a saved token to check (we're about to fetch /auth/me);
+  // otherwise there's nothing to load. Lazy-initialized once on mount instead of being set
+  // synchronously inside the mount effect below.
+  const [loading, setLoading] = useState(() => typeof window !== 'undefined' && !!window.localStorage.getItem('token'));
   const [connected, setConnected] = useState(false);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>(null);
   const [updating, setUpdating] = useState<number | null>(null);
@@ -183,6 +186,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Holds the latest tryWebSocket so its own reconnect timer can call it recursively without
+  // referencing the useCallback-bound identifier before it's declared (which the compiler
+  // can't safely memoize). Kept in sync via the unconditional assignment right after the
+  // useCallback definition below.
+  const tryWebSocketRef = useRef<(token: string) => void>(() => {});
 
   const stopRestPolling = useCallback(() => {
     if (restIntervalRef.current) {
@@ -202,11 +210,15 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     }
   }, [api, ordersPath]);
 
+  // connectionMode is already 'rest' by the time this runs (it's only invoked from the
+  // effect below, guarded on that condition), and `connected` is owned by fetchOrdersRest's
+  // own success/failure handling — so this only needs to (re)start the polling loop. The
+  // initial fetch is deferred a tick (setTimeout 0) rather than called synchronously, since
+  // this is invoked directly from that effect and its state updates must not land in the
+  // same commit.
   const startRestPolling = useCallback(() => {
     stopRestPolling();
-    setConnectionMode('rest');
-    setConnected(true);
-    fetchOrdersRest();
+    setTimeout(fetchOrdersRest, 0);
     restIntervalRef.current = setInterval(fetchOrdersRest, 5000);
   }, [fetchOrdersRest, stopRestPolling]);
 
@@ -271,7 +283,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (wsRef.current === ws) {
           reconnectTimeout = setTimeout(() => {
             if (wsRef.current === ws) {
-              tryWebSocket(token);
+              tryWebSocketRef.current(token);
             }
           }, 3000);
         }
@@ -315,6 +327,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     },
     [t, api],
   );
+  useEffect(() => {
+    tryWebSocketRef.current = tryWebSocket;
+  }, [tryWebSocket]);
 
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
@@ -367,7 +382,6 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     if (typeof window === 'undefined') return;
     const savedToken = window.localStorage.getItem('token');
     if (!savedToken) {
-      setLoading(false);
       return;
     }
     api.get(mePath)

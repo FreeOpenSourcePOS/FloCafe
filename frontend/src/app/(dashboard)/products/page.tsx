@@ -114,8 +114,22 @@ export default function ProductsPage() {
     }
   };
 
+  useEffect(() => {
+    const requests: Promise<{ data: Record<string, unknown> }>[] = [
+      api.get('/products'),
+      api.get('/categories'),
+    ];
+    if (isRestaurant) requests.push(api.get('/addon-groups'));
+    Promise.all(requests)
+      .then(([prodRes, catRes, agRes]) => {
+        setProducts((prodRes.data.products as Product[]) || []);
+        setCategories((catRes.data.categories as Category[]) || []);
+        if (agRes) setAddonGroups((agRes.data.addon_groups as AddonGroup[]) || []);
+      })
+      .catch(() => toast.error(t('products.failedToLoad')))
+      .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchData(); }, []);
+  }, []);
 
   const openCsvModal = (type: 'categories' | 'products' | 'addons') => {
     setCsvType(type);

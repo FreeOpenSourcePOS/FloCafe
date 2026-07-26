@@ -54,8 +54,13 @@ export default function StaffPage() {
     }
   };
 
+  useEffect(() => {
+    api.get('/staff')
+      .then(({ data }) => setStaff(data.staff || []))
+      .catch(() => toast.error(t('staff.failedToLoad')))
+      .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchStaff(); }, []);
+  }, []);
 
   const openAdd = () => {
     setEditingStaff(null);

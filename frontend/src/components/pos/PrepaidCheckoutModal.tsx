@@ -77,6 +77,17 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       .catch(() => {});
   }, []);
 
+  // Reset the stale balance the moment the customer changes, read directly during render
+  // (React's recommended pattern for "adjusting state when a prop changes") so there's no
+  // flash of the previous customer's balance; the actual fetch stays in the effect below.
+  const [syncedCustomerId, setSyncedCustomerId] = useState(customer?.id ?? null);
+  if ((customer?.id ?? null) !== syncedCustomerId) {
+    setSyncedCustomerId(customer?.id ?? null);
+    if (!customer?.id) {
+      setWalletBalance(null);
+    }
+  }
+
   useEffect(() => {
     if (customer?.id) {
       api.get(`/customers/${customer.id}/wallet`)
@@ -84,8 +95,6 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           setWalletBalance(Number(res.data.balance) || 0);
         })
         .catch(() => {});
-    } else {
-      setWalletBalance(null);
     }
   }, [customer?.id]);
 
@@ -119,27 +128,28 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
   // Auto-fill payment splits to match the net payable amount, but only until the cashier
   // manually edits an amount — after that, discount/wallet edits must not silently rewrite
-  // amounts they've already typed in.
-  useEffect(() => {
-    if (!preview || paymentsTouched) return;
-    setPayments((prev) => {
-      const walletUsed = parseFloat(walletAmount) || 0;
-      const cashRemaining = Math.max(0, remaining - walletUsed);
-      if (prev.length === 1) {
-        return [{ ...prev[0], amount: cashRemaining.toFixed(2) }];
-      }
-      const totalAllocated = prev.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+  // amounts they've already typed in. Read directly during render (same pattern as above)
+  // so we only react when the net total itself changes, not on every render.
+  const [syncedRemaining, setSyncedRemaining] = useState(remaining);
+  if (preview && !paymentsTouched && remaining !== syncedRemaining) {
+    setSyncedRemaining(remaining);
+    const walletUsed = parseFloat(walletAmount) || 0;
+    const cashRemaining = Math.max(0, remaining - walletUsed);
+    if (payments.length === 1) {
+      setPayments([{ ...payments[0], amount: cashRemaining.toFixed(2) }]);
+    } else {
+      const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
       if (totalAllocated > 0) {
-        return prev.map((p) => {
+        setPayments(payments.map((p) => {
           const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
           return { ...p, amount: (cashRemaining * ratio).toFixed(2) };
-        });
+        }));
+      } else {
+        const perSplit = cashRemaining / payments.length;
+        setPayments(payments.map((p) => ({ ...p, amount: perSplit.toFixed(2) })));
       }
-      const perSplit = cashRemaining / prev.length;
-      return prev.map((p) => ({ ...p, amount: perSplit.toFixed(2) }));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only recompute splits when the net total changes
-  }, [remaining, paymentsTouched]);
+    }
+  }
 
   const updatePayment = (idx: number, field: keyof Payment, value: string) => {
     if (field === 'amount') setPaymentsTouched(true);

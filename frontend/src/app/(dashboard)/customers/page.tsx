@@ -16,6 +16,10 @@ import { dialCodeFor, parsePhone } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
+function SortIcon({ field, sortField, sortOrder }: { field: string; sortField: string; sortOrder: 'asc' | 'desc' }) {
+  if (sortField !== field) return <span className="text-gray-300 w-3 inline-block ml-1 opacity-0 group-hover:opacity-100 transition-opacity">↕</span>;
+  return sortOrder === 'asc' ? <TrendingUp size={12} className="inline ml-1 text-gray-500" /> : <TrendingDown size={12} className="inline ml-1 text-gray-500" />;
+}
 
 export default function CustomersPage() {
   const { currentTenant } = useAuthStore();
@@ -76,9 +80,18 @@ export default function CustomersPage() {
     }
   };
 
-   
+  useEffect(() => {
+    const params: Record<string, string> = {};
+    if (search) params.search = search;
+    if (filter) params.filter = filter;
+    if (sortField) params.sort = sortField;
+    if (sortOrder) params.order = sortOrder;
+    api.get('/customers', { params })
+      .then(({ data }) => setCustomers(data.data || []))
+      .catch(() => toast.error(t('customer.loadFailed')))
+      .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { fetchCustomers(); }, [search, filter, sortField, sortOrder]);
+  }, [search, filter, sortField, sortOrder]);
 
   const openAdd = () => {
     setEditingCustomer(null);
@@ -116,11 +129,6 @@ export default function CustomersPage() {
       const error = err as { response?: { data?: { error?: string } } };
       toast.error(error.response?.data?.error || t('customer.saveFailed'));
     }
-  };
-
-  const SortIcon = ({ field }: { field: string }) => {
-    if (sortField !== field) return <span className="text-gray-300 w-3 inline-block ml-1 opacity-0 group-hover:opacity-100 transition-opacity">↕</span>;
-    return sortOrder === 'asc' ? <TrendingUp size={12} className="inline ml-1 text-gray-500" /> : <TrendingDown size={12} className="inline ml-1 text-gray-500" />;
   };
 
   const onSort = (field: string) => {
@@ -163,22 +171,22 @@ export default function CustomersPage() {
           <thead className="bg-gray-50">
             <tr>
               <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('name')}>
-                {t('customers.columnCustomer')} <SortIcon field="name" />
+                {t('customers.columnCustomer')} <SortIcon field="name" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('phone')}>
-                {t('customer.phone')} <SortIcon field="phone" />
+                {t('customer.phone')} <SortIcon field="phone" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('last_visit')}>
-                Last Visit <SortIcon field="last_visit" />
+                Last Visit <SortIcon field="last_visit" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('visits')}>
-                {t('customer.visits')} <SortIcon field="visits" />
+                {t('customer.visits')} <SortIcon field="visits" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('spent')}>
-                {t('customer.totalSpent')} <SortIcon field="spent" />
+                {t('customer.totalSpent')} <SortIcon field="spent" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('loyalty')}>
-                {t('customer.loyalty')} <SortIcon field="loyalty" />
+                {t('customer.loyalty')} <SortIcon field="loyalty" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('customers.columnActions')}</th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('customers.columnLedger')}</th>

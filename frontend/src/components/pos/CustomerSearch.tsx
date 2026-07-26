@@ -74,8 +74,17 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const customer = cart.customer;
   const isNew = searched && !matched;
 
+  // Reset the stale balance the moment the customer changes, read directly during render
+  // (React's recommended pattern for "adjusting state when a prop changes") so there's no
+  // flash of the previous customer's points; the actual fetch stays in the effect below.
+  const [syncedCustomerId, setSyncedCustomerId] = useState(customer?.id ?? null);
+  if ((customer?.id ?? null) !== syncedCustomerId) {
+    setSyncedCustomerId(customer?.id ?? null);
+    if (!customer) setLoyaltyPoints(null);
+  }
+
   useEffect(() => {
-    if (!customer) { setLoyaltyPoints(null); return; }
+    if (!customer) return;
     api.get(`/customers/${customer.id}/wallet`)
       .then((res) => setLoyaltyPoints(res.data.balance))
       .catch(() => setLoyaltyPoints(null));

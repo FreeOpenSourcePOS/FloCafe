@@ -66,8 +66,12 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [applyingDiscount, setApplyingDiscount] = useState(false);
   const [loyaltySettings, setLoyaltySettings] = useState<{ loyalty_enabled: boolean } | null>(null);
 
-  // Sync state with active bill discount on load or update
-  useEffect(() => {
+  // Sync state with active bill discount on load or update. Read directly during render
+  // (React's recommended pattern for "adjusting state when a prop changes") instead of an
+  // effect, since this must run before paint and would otherwise cause a flash of stale values.
+  const [syncedBill, setSyncedBill] = useState(bill);
+  if (bill !== syncedBill) {
+    setSyncedBill(bill);
     if (bill && Number(bill.discount_amount) > 0) {
       setDiscountType((bill.discount_type as 'percentage' | 'amount') || 'percentage');
       setDiscountValue(String(bill.discount_value || ''));
@@ -79,13 +83,14 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       setDiscountReason('');
       setShowDiscount(false);
     }
-  }, [bill]);
+  }
 
   // Dynamically update payment inputs when remaining balance changes, but only until the
   // cashier manually edits an amount — after that, discount/wallet edits must not silently
-  // rewrite amounts they've already typed in.
-  useEffect(() => {
-    if (paymentsTouched) return;
+  // rewrite amounts they've already typed in. Same during-render pattern as above.
+  const [syncedRemaining, setSyncedRemaining] = useState(remaining);
+  if (!paymentsTouched && remaining !== syncedRemaining) {
+    setSyncedRemaining(remaining);
     if (payments.length === 1) {
       setPayments([{ ...payments[0], amount: remaining.toString() }]);
     } else {
@@ -100,8 +105,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         setPayments(payments.map(p => ({ ...p, amount: perSplit.toFixed(2) })));
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only recompute splits when the remaining balance changes
-  }, [remaining, paymentsTouched]);
+  }
 
   useEffect(() => {
     const custId = bill.customer_id || cartCustomerId;

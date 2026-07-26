@@ -39,11 +39,22 @@ export function useTaxPreview(
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    // Skip if cart is empty
-    if (!items || items.length === 0) {
+  // Reset immediately when the cart becomes empty, read directly during render (React's
+  // recommended pattern for "adjusting state when a prop changes") rather than an effect —
+  // any in-flight request is still cancelled by the previous effect run's cleanup below.
+  const isEmpty = !items || items.length === 0;
+  const [wasEmpty, setWasEmpty] = useState(isEmpty);
+  if (isEmpty !== wasEmpty) {
+    setWasEmpty(isEmpty);
+    if (isEmpty) {
       setTax(null);
       setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // Skip if cart is empty
+    if (isEmpty) {
       return;
     }
 
@@ -98,7 +109,7 @@ export function useTaxPreview(
       }
       controller.abort();
     };
-  }, [items, customerId, packagingCharge]);
+  }, [items, customerId, packagingCharge, isEmpty]);
 
   return { tax, loading, error };
 }

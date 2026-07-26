@@ -41,8 +41,8 @@ export default function SetupPage() {
   const [showConfirmMasterPin, setShowConfirmMasterPin] = useState(false);
   const [profile, setProfile] = useState<SetupProfile>('express');
   const [serviceModel, setServiceModel] = useState<ServiceModel>('qsr');
-  const [language, setLanguage] = useState<Language>('en');
-  const [browserLanguage, setBrowserLanguage] = useState<Language>('en');
+  const [language, setLanguage] = useState<Language>(() => getBrowserLanguage());
+  const [browserLanguage] = useState<Language>(() => getBrowserLanguage());
   const [country, setCountry] = useState<string>('IN');
   const [countryQuery, setCountryQuery] = useState<string>('');
   const [form, setForm] = useState({
@@ -87,12 +87,6 @@ export default function SetupPage() {
         }
       })
       .catch(() => setMasterPinAvailable(false));
-  }, []);
-
-  useEffect(() => {
-    const detectedLanguage = getBrowserLanguage();
-    setBrowserLanguage(detectedLanguage);
-    setLanguage(detectedLanguage);
   }, []);
 
   const selectedCountry: Country | undefined = getCountryByCode(country);

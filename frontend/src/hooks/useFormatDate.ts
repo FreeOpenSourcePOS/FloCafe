@@ -1,14 +1,17 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback } from 'react';
 import { useAuthStore } from '@/store/auth';
 import { getCountryByCode } from '@/lib/countries';
 
 export function useFormatDate() {
   const currentTenant = useAuthStore((s) => s.currentTenant);
-  
-  const locale = useMemo(() => {
-    if (!currentTenant?.country) return 'en-US';
-    return getCountryByCode(currentTenant.country)?.locale ?? 'en-US';
-  }, [currentTenant?.country]);
+
+  // Plain computed value (not useMemo) — the optional chain in the dependency array
+  // (currentTenant?.country) doesn't match what React Compiler infers from the body
+  // (currentTenant.country), so manual memoization here can't be preserved anyway.
+  // It's a cheap string lookup, so recomputing each render is fine.
+  const locale = currentTenant?.country
+    ? (getCountryByCode(currentTenant.country)?.locale ?? 'en-US')
+    : 'en-US';
 
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
 

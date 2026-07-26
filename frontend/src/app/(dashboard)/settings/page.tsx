@@ -253,12 +253,15 @@ export default function SettingsPage() {
 
   const searchParams = useSearchParams();
   // ── DB tools: master PIN, health check, initialize ──────────────────────
+  // activeTab/healthCheckOpen/initializeDbOpen/pinGate all read their initial value from the
+  // ?tab=/?action= deep-link params directly (lazy init, once at mount) instead of being set
+  // by the mount effect below — that effect now only owns the actual async fetches.
   const [activeTab, setActiveTab] = useState(() => searchParams?.get('tab') || 'store');
   const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean }>({ available: false, isSet: false });
-  const [healthCheckOpen, setHealthCheckOpen] = useState(false);
+  const [healthCheckOpen, setHealthCheckOpen] = useState(() => searchParams?.get('action') === 'health-check');
   const [healthReport, setHealthReport] = useState<HealthCheckReport | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
-  const [initializeDbOpen, setInitializeDbOpen] = useState(false);
+  const [initializeDbOpen, setInitializeDbOpen] = useState(() => searchParams?.get('action') === 'initialize-db');
   const [shakeSaveBar, setShakeSaveBar] = useState(false);
 
   // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'backup-custom'/
@@ -273,9 +276,11 @@ export default function SettingsPage() {
     | { mode: 'restore'; payload: { backupPath: string } }
     | { mode: 'delete-backup'; payload: { fileName: string } }
     | null;
-  const [pinGate, setPinGate] = useState<PinGate>(null);
+  const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
-  const [backupsLoading, setBackupsLoading] = useState(false);
+  // The mount effect below always fetches backups unconditionally, so this starts true
+  // rather than being set synchronously inside that effect.
+  const [backupsLoading, setBackupsLoading] = useState(true);
 
   const fetchMasterPinStatus = async () => {
     try {
@@ -310,18 +315,27 @@ export default function SettingsPage() {
   };
 
   useEffect(() => {
-    fetchMasterPinStatus();
-    fetchBackups();
+    api.get('/db-tools/master-pin/status')
+      .then(({ data }) => setMasterPinStatus(data))
+      .catch(() => {
+        // ignore — card just shows "Unknown" state until retried
+      });
 
-    if (typeof window === 'undefined') return;
-    const params = new URLSearchParams(window.location.search);
-    const tab = params.get('tab');
-    const action = params.get('action');
-    if (tab) setActiveTab(tab);
-    if (action === 'health-check') runHealthCheck();
-    else if (action === 'initialize-db') setInitializeDbOpen(true);
-    else if (action === 'master-pin') setPinGate({ mode: 'set' });
+    api.get('/db-tools/backups')
+      .then(({ data }) => setBackups(data.backups ?? []))
+      .catch(() => {
+        // ignore — history card just shows empty state until retried
+      })
+      .finally(() => setBackupsLoading(false));
 
+    if (searchParams?.get('action') === 'health-check') {
+      api.get('/db-tools/health-check')
+        .then(({ data }) => setHealthReport(data))
+        .catch(() => {
+          toast.error(t('settings.healthCheckFailed'));
+          setHealthCheckOpen(false);
+        });
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -554,7 +568,10 @@ export default function SettingsPage() {
     qr_data_url: string | null;
     ips_data?: { ip: string; url: string; qr_data: string | null }[];
   } | null>(null);
-  const [kdsInfoLoading, setKdsInfoLoading] = useState(false);
+  // The mount effect below always fetches this unconditionally, so this starts true rather
+  // than being set synchronously inside that effect (fetchKdsInfo, used by the manual
+  // "refresh" button, still sets it explicitly for that path).
+  const [kdsInfoLoading, setKdsInfoLoading] = useState(true);
 
   const fetchKdsInfo = () => {
     setKdsInfoLoading(true);
@@ -595,11 +612,12 @@ export default function SettingsPage() {
     available: boolean;
   };
   const [moreApps, setMoreApps] = useState<MoreApp[]>([]);
-  const [moreAppsLoading, setMoreAppsLoading] = useState(false);
+  // The mount effect below always fetches this unconditionally, so this starts true rather
+  // than being set synchronously inside that effect.
+  const [moreAppsLoading, setMoreAppsLoading] = useState(true);
   const [revflo, setRevflo] = useState<MoreApp | null>(null);
 
   useEffect(() => {
-    setMoreAppsLoading(true);
     api.get('/more-apps').then((res) => {
       setMoreApps(res.data.apps || []);
     }).catch(() => {
@@ -674,23 +692,22 @@ export default function SettingsPage() {
   const [savingPrinter, setSavingPrinter] = useState(false);
   const [testingPrinterId, setTestingPrinterId] = useState<string | null>(null);
   const [detectedPrinters, setDetectedPrinters] = useState<DetectedPrinter[]>([]);
-  const [detectingPrinters, setDetectingPrinters] = useState(false);
+  // The mount effect below always detects printers unconditionally, so this starts true
+  // rather than being set synchronously inside that effect (fetchDetectedPrinters, used by
+  // the manual "refresh" button, still sets it explicitly for that path).
+  const [detectingPrinters, setDetectingPrinters] = useState(true);
   const [addingDetectedName, setAddingDetectedName] = useState<string | null>(null);
 
   const fetchPrinters = () => {
     api.get('/printers').then((res) => setHwPrinters(res.data.printers || [])).catch(() => {});
   };
 
-  const fetchDetectedPrinters = async () => {
+  const fetchDetectedPrinters = () => {
     setDetectingPrinters(true);
-    try {
-      const res = await api.get('/printers/detect');
-      setDetectedPrinters(res.data.printers || []);
-    } catch {
-      setDetectedPrinters([]);
-    } finally {
-      setDetectingPrinters(false);
-    }
+    api.get('/printers/detect')
+      .then((res) => setDetectedPrinters(res.data.printers || []))
+      .catch(() => setDetectedPrinters([]))
+      .finally(() => setDetectingPrinters(false));
   };
 
   const quickAddDetected = async (p: DetectedPrinter) => {
@@ -1138,10 +1155,52 @@ export default function SettingsPage() {
     }
   };
 
+  const fetchGoogleDriveStatus = () => {
+    api.get('/settings/google-drive').then((res) => {
+      setGoogleDriveStatus({
+        configured: !!res.data.configured,
+        secure_storage_available: res.data.secure_storage_available !== false,
+        connected: !!res.data.connected,
+        account_email: res.data.account_email || null,
+        frequency: res.data.frequency === 'weekly' ? 'weekly' : 'daily',
+        retention_count: Number(res.data.retention_count) || 10,
+        last_backup_at: res.data.last_backup_at || null,
+        last_backup_status: res.data.last_backup_status || null,
+        last_backup_filename: res.data.last_backup_filename || null,
+        last_error: res.data.last_error || null,
+      });
+    }).catch(() => {
+      // Leave defaults (not configured / not connected) — this section is
+      // optional and must never block the rest of Settings from loading.
+    });
+  };
+
+  const loadPairedDevices = async () => {
+    setDevicesLoading(true);
+    try {
+      const res = await api.get('/mobile/devices');
+      setPairedDevices(res.data.devices || []);
+    } catch {
+      setPairedDevices([]);
+    } finally {
+      setDevicesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchPrinters();
-    fetchDetectedPrinters();
-    fetchKdsInfo();
+    // Inlined rather than calling fetchDetectedPrinters() (used by the manual "refresh"
+    // button too) — detectingPrinters already starts true for this initial detection.
+    api.get('/printers/detect')
+      .then((res) => setDetectedPrinters(res.data.printers || []))
+      .catch(() => setDetectedPrinters([]))
+      .finally(() => setDetectingPrinters(false));
+    // Inlined rather than calling fetchKdsInfo() (used by the manual "refresh" button too) —
+    // kdsInfoLoading already starts true for this initial fetch.
+    api.get('/kds-info')
+      .then((res) => setKdsInfo(res.data))
+      .catch(() => toast.error(t('settings.kdsInfoFetchFailed')))
+      .finally(() => setKdsInfoLoading(false));
     fetchStations();
     fetchStationCategories();
     fetchStationStaff();
@@ -1344,27 +1403,6 @@ export default function SettingsPage() {
       toast.error(t('settings.saveFailed'));
     } finally {
       setSavingTelemetry(false);
-    }
-  };
-
-  const fetchGoogleDriveStatus = async () => {
-    try {
-      const res = await api.get('/settings/google-drive');
-      setGoogleDriveStatus({
-        configured: !!res.data.configured,
-        secure_storage_available: res.data.secure_storage_available !== false,
-        connected: !!res.data.connected,
-        account_email: res.data.account_email || null,
-        frequency: res.data.frequency === 'weekly' ? 'weekly' : 'daily',
-        retention_count: Number(res.data.retention_count) || 10,
-        last_backup_at: res.data.last_backup_at || null,
-        last_backup_status: res.data.last_backup_status || null,
-        last_backup_filename: res.data.last_backup_filename || null,
-        last_error: res.data.last_error || null,
-      });
-    } catch {
-      // Leave defaults (not configured / not connected) — this section is
-      // optional and must never block the rest of Settings from loading.
     }
   };
 
@@ -1616,18 +1654,6 @@ export default function SettingsPage() {
       toast.error(error.response?.data?.error || t('settings.pairingCodeFailed'));
     } finally {
       setRotatingCode(false);
-    }
-  };
-
-  const loadPairedDevices = async () => {
-    setDevicesLoading(true);
-    try {
-      const res = await api.get('/mobile/devices');
-      setPairedDevices(res.data.devices || []);
-    } catch {
-      setPairedDevices([]);
-    } finally {
-      setDevicesLoading(false);
     }
   };
 

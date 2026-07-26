@@ -12,12 +12,34 @@ import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache }
 
 const router = Router();
 
+const OPERATIONAL_ROLES = ['cashier', 'waiter', 'chef'];
+const VALID_ROLES = ['owner', 'manager', ...OPERATIONAL_ROLES];
+const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
+
+function canModifyTargetStaff(requesterRole: string, targetRole: string): boolean {
+  if (requesterRole === 'owner') return true;
+  if (requesterRole === 'manager') return !['owner', 'manager'].includes(targetRole);
+  return false;
+}
+
+function isOperationalRole(role: string): boolean {
+  return OPERATIONAL_ROLES.includes(role);
+}
+
+function hasNonEmptyPin(pin: unknown): boolean {
+  return pin !== undefined && pin !== null && String(pin).length > 0;
+}
+
+function isValidPin(pin: unknown): boolean {
+  return /^\d{4,6}$/.test(String(pin));
+}
+
 // ── List ──────────────────────────────────────────────────────────────────────
 
 router.get('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    let query = 'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE 1=1';
+    let query = `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE 1=1`;
     const params: any[] = [];
 
     if (req.query.role) {
@@ -47,7 +69,7 @@ router.get('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
   try {
     const db = getDatabase();
     const member = db.prepare(
-      'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?'
+      `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
     ).get(req.params.id) as any;
 
     if (!member) {
@@ -80,14 +102,20 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
     }
 
-    const validRoles = ['owner', 'manager', 'cashier', 'waiter', 'chef'];
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
+    if (!VALID_ROLES.includes(role)) {
+      return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
     }
 
-    // Only owners can create other owner accounts (privilege escalation guard)
-    if (role === 'owner' && (req as any).user.role !== 'owner') {
-      return res.status(403).json({ error: 'Only owners can create owner accounts' });
+    const requesterRole = (req as any).user.role;
+    if (requesterRole === 'manager' && !isOperationalRole(role)) {
+      return res.status(403).json({ error: 'Managers can only create operational staff accounts (cashier, waiter, chef)' });
+    }
+
+    if (isOperationalRole(role) && hasNonEmptyPin(pin)) {
+      return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
+    }
+    if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
+      return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
     }
 
     const db = getDatabase();
@@ -102,7 +130,7 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
     const id = uuidv4();
     const hashedPassword = bcrypt.hashSync(password, 10);
 
-    const hashedPin = pin ? bcrypt.hashSync(String(pin), 10) : null;
+    const hashedPin = hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null;
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, pin_hash, is_active, created_at, updated_at)
@@ -110,7 +138,7 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
     `).run(id, name, email || null, hashedPassword, role, hashedPin, now(), now());
 
     const member = db.prepare(
-      'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?'
+      `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
     ).get(id);
 
     res.status(201).json({ staff: member });
@@ -127,20 +155,35 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
     const { name, email, password, role, pin, is_active } = req.body;
     const db = getDatabase();
 
+    if (is_active !== undefined) {
+      return res.status(400).json({ error: 'Use /deactivate or /reactivate endpoints to change account status' });
+    }
+
     const member = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as any;
     if (!member) {
       return res.status(404).json({ error: 'Staff member not found' });
     }
 
-    if (role) {
-      const validRoles = ['owner', 'manager', 'cashier', 'waiter', 'chef'];
-      if (!validRoles.includes(role)) {
-        return res.status(400).json({ error: `role must be one of: ${validRoles.join(', ')}` });
+    const requesterRole = (req as any).user.role;
+    if (!canModifyTargetStaff(requesterRole, member.role)) {
+      return res.status(403).json({ error: 'Managers cannot modify owner or manager accounts' });
+    }
+
+    if (role !== undefined) {
+      if (!VALID_ROLES.includes(role)) {
+        return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
       }
-      // Only owners can assign or change roles
-      if ((req as any).user.role !== 'owner') {
+      if (role !== member.role && requesterRole !== 'owner') {
         return res.status(403).json({ error: 'Only owners can change roles' });
       }
+    }
+
+    const targetRole = role ?? member.role;
+    if (isOperationalRole(targetRole) && hasNonEmptyPin(pin)) {
+      return res.status(400).json({ error: 'PINs are only permitted for owner and manager roles' });
+    }
+    if (hasNonEmptyPin(pin) && !isValidPin(pin)) {
+      return res.status(400).json({ error: 'PIN must be between 4 and 6 numeric digits' });
     }
 
     if (email && email !== member.email) {
@@ -155,9 +198,11 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
     }
 
     const hashedPassword = password ? bcrypt.hashSync(password, 10) : member.password;
-    const hashedPin = pin !== undefined
-      ? (pin ? bcrypt.hashSync(String(pin), 10) : null)
-      : member.pin_hash;
+    const hashedPin = isOperationalRole(targetRole)
+      ? null
+      : pin !== undefined
+        ? (hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null)
+        : member.pin_hash;
 
     db.prepare(`
       UPDATE users SET
@@ -166,19 +211,17 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
         password   = ?,
         role       = COALESCE(?, role),
         pin_hash   = ?,
-        is_active  = COALESCE(?, is_active),
         updated_at = ?
       WHERE id = ?
     `).run(
       name || null, email || null, hashedPassword,
       role || null, hashedPin,
-      is_active !== undefined ? (is_active ? 1 : 0) : null,
       now(), req.params.id
     );
     invalidateUserAuthCache(req.params.id as string);
 
     const updated = db.prepare(
-      'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?'
+      `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
     ).get(req.params.id);
 
     res.json({ staff: updated });
@@ -200,6 +243,10 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
     if (!member) return res.status(404).json({ error: 'Staff member not found' });
     if (member.is_active === 0) return res.status(400).json({ error: 'Already deactivated' });
 
+    if (!canModifyTargetStaff((req as any).user.role, member.role)) {
+      return res.status(403).json({ error: 'Managers cannot deactivate or reactivate owner or manager accounts' });
+    }
+
     // Prevent deactivating the last owner
     if (member.role === 'owner') {
       const ownerCount = (db.prepare('SELECT COUNT(*) as c FROM users WHERE role = ? AND is_active = 1').get('owner') as any).c;
@@ -211,7 +258,7 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
     db.prepare('UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     invalidateUserAuthCache(req.params.id as string);
     const updated = db.prepare(
-      'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?'
+      `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
     ).get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {
@@ -227,10 +274,14 @@ router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, r
     if (!member) return res.status(404).json({ error: 'Staff member not found' });
     if (member.is_active === 1) return res.status(400).json({ error: 'Already active' });
 
+    if (!canModifyTargetStaff((req as any).user.role, member.role)) {
+      return res.status(403).json({ error: 'Managers cannot deactivate or reactivate owner or manager accounts' });
+    }
+
     db.prepare('UPDATE users SET is_active = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     invalidateUserAuthCache(req.params.id as string);
     const updated = db.prepare(
-      'SELECT id, name, email, role, is_active, created_at, updated_at FROM users WHERE id = ?'
+      `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`
     ).get(req.params.id);
     res.json({ staff: updated });
   } catch (error: any) {

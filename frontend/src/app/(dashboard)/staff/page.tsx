@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
-import { Plus, X, Edit, RotateCcw } from 'lucide-react';
+import { Plus, X, Edit, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import type { Staff } from '@/lib/types';
 import { useI18n } from '@/hooks/useI18n';
 
@@ -38,10 +38,15 @@ export default function StaffPage() {
     name: '',
     email: '',
     password: '',
+    confirmPassword: '',
     role: 'waiter',
     pin: '',
   });
   const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPin, setShowPin] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
 
   const fetchStaff = async () => {
     try {
@@ -64,24 +69,34 @@ export default function StaffPage() {
 
   const openAdd = () => {
     setEditingStaff(null);
-    setForm({ name: '', email: '', password: '', role: 'waiter', pin: '' });
+    setForm({ name: '', email: '', password: '', confirmPassword: '', role: 'waiter', pin: '' });
+    setShowPassword(false);
+    setShowPin(false);
     setShowForm(true);
   };
 
   const openEdit = (s: Staff) => {
     setEditingStaff(s);
-    setForm({ name: s.name, email: s.email || '', password: '', role: s.role, pin: '' });
+    setForm({ name: s.name, email: s.email || '', password: '', confirmPassword: '', role: s.role, pin: '' });
+    setShowPassword(false);
+    setShowPin(false);
     setShowForm(true);
   };
 
   const openResetPw = (s: Staff) => {
     setResetPwStaff(s);
     setNewPassword('');
+    setConfirmNewPassword('');
+    setShowResetPassword(false);
     setShowResetPw(true);
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (form.password && form.password !== form.confirmPassword) {
+      toast.error(t('setup.passwordsMismatch'));
+      return;
+    }
     try {
       if (editingStaff) {
         await api.put(`/staff/${editingStaff.id}`, {
@@ -102,7 +117,7 @@ export default function StaffPage() {
         });
         toast.success(t('staff.addedToast'));
       }
-      setShowForm(false);
+      closeForm();
       fetchStaff();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
@@ -112,14 +127,29 @@ export default function StaffPage() {
 
   const handleResetPassword = async () => {
     if (!resetPwStaff || !newPassword) return;
+    if (newPassword !== confirmNewPassword) {
+      toast.error(t('setup.passwordsMismatch'));
+      return;
+    }
     try {
       await api.put(`/staff/${resetPwStaff.id}`, { password: newPassword });
       toast.success(t('staff.resetPasswordToast'));
-      setShowResetPw(false);
+      closeResetPassword();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
       toast.error(error.response?.data?.error || t('staff.failedToReset'));
     }
+  };
+
+  const closeForm = () => {
+    setShowForm(false);
+    setShowPassword(false);
+    setShowPin(false);
+  };
+
+  const closeResetPassword = () => {
+    setShowResetPw(false);
+    setShowResetPassword(false);
   };
 
   const toggleActive = async (s: Staff) => {
@@ -145,7 +175,7 @@ export default function StaffPage() {
               <div>
                 <p className="font-bold text-gray-900">{s.name}</p>
                 <p className="text-xs text-gray-500">{s.email || '—'}</p>
-                {s.pin_hash && (
+                {Boolean(s.has_pin) && (
                   <p className="text-xs text-green-600 mt-1">{t('staff.pinSet')}</p>
                 )}
               </div>
@@ -180,7 +210,7 @@ export default function StaffPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{editingStaff ? t('staff.modalTitleEdit') : t('staff.modalTitleAdd')}</h2>
-              <button onClick={() => setShowForm(false)}><X size={20} className="text-gray-400" /></button>
+              <button type="button" onClick={closeForm}><X size={20} className="text-gray-400" /></button>
             </div>
             <form onSubmit={handleSave} className="space-y-4">
               <input
@@ -193,33 +223,55 @@ export default function StaffPage() {
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               />
-              <input
-                type="password" placeholder={editingStaff ? t('staff.newPasswordPlaceholder') : t('staff.passwordPlaceholder')}
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                required={!editingStaff}
-              />
-              <div>
+              <div className="relative">
                 <input
-                  type="text" placeholder={editingStaff ? t('staff.pinPlaceholderEdit') : t('staff.pinPlaceholderAdd')}
-                  value={form.pin}
-                  onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-                  className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
-                  maxLength={6}
-                  pattern="[0-9]*"
-                  inputMode="numeric"
+                  type={showPassword ? 'text' : 'password'} placeholder={editingStaff ? t('staff.newPasswordPlaceholder') : t('staff.passwordPlaceholder')}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className="w-full px-3 py-2 pr-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  required={!editingStaff}
                 />
-                <p className="text-xs text-gray-500 mt-1">{t('staff.pinHint')}</p>
+                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
+              <input
+                type={showPassword ? 'text' : 'password'} placeholder={t('auth.confirmPassword')}
+                value={form.confirmPassword}
+                onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                required={!editingStaff || Boolean(form.password)}
+              />
               <select
-                value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}
+                value={form.role} onChange={(e) => {
+                  const role = e.target.value;
+                  setForm({ ...form, role, pin: ['owner', 'manager'].includes(role) ? form.pin : '' });
+                }}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               >
                 {VALID_ROLES.map((r) => (
                   <option key={r} value={r}>{roleColorKey[r] ? t(roleColorKey[r]) : r}</option>
                 ))}
               </select>
+              {['owner', 'manager'].includes(form.role) && (
+                <div>
+                  <div className="relative">
+                    <input
+                      type={showPin ? 'text' : 'password'} placeholder={editingStaff ? t('staff.pinPlaceholderEdit') : t('staff.pinPlaceholderAdd')}
+                      value={form.pin}
+                      onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
+                      className="w-full px-3 py-2 pr-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                      maxLength={6}
+                      pattern="[0-9]*"
+                      inputMode="numeric"
+                    />
+                    <button type="button" aria-label="Toggle PIN visibility" title="Toggle PIN visibility" onClick={() => setShowPin(!showPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                      {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">{t('staff.pinHint')}</p>
+                </div>
+              )}
               <Button type="submit" className="w-full">{editingStaff ? t('staff.updateButton') : t('staff.addButton')}</Button>
             </form>
           </div>
@@ -231,13 +283,23 @@ export default function StaffPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-bold">{t('staff.resetPasswordTitle')}</h2>
-              <button onClick={() => setShowResetPw(false)}><X size={20} className="text-gray-400" /></button>
+              <button type="button" onClick={closeResetPassword}><X size={20} className="text-gray-400" /></button>
             </div>
             <p className="text-sm text-gray-600 mb-4">{t('staff.resetPasswordBody', { name: resetPwStaff.name })}</p>
             <div className="space-y-4">
+              <div className="relative">
+                <input
+                  type={showResetPassword ? 'text' : 'password'} placeholder={t('staff.newPasswordPlaceholder')} value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full px-3 py-2 pr-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                />
+                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowResetPassword(!showResetPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                  {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
               <input
-                type="password" placeholder={t('staff.newPasswordPlaceholder')} value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
+                type={showResetPassword ? 'text' : 'password'} placeholder={t('auth.confirmPassword')} value={confirmNewPassword}
+                onChange={(e) => setConfirmNewPassword(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               />
               <Button onClick={handleResetPassword} className="w-full">{t('staff.resetPasswordTitle')}</Button>

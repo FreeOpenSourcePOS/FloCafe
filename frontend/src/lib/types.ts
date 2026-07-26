@@ -204,7 +204,7 @@ export interface Staff {
   name: string;
   email: string | null;
   role: string;
-  pin_hash: string | null;
+  has_pin?: boolean | number;
   is_active: number;
   created_at: string;
   updated_at: string;

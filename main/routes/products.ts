@@ -457,7 +457,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
   try {
     const {
       category_id, name, sku, barcode, description, price, cost_price,
-      tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity,
+      tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
 
@@ -504,7 +504,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, category_id || null, name, sku || null, barcode || null, description || null, price, cost_price || 0,
-        tax_type || 'none', tax_rate || 0, tax_category_id || null, tax_behavior || 'country_default',
+        'none', 0, tax_category_id || null, tax_behavior || 'country_default',
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, image_url || null,
         sort_order || 0, cb_percent || 0, JSON.stringify(tags || []),
@@ -538,7 +538,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
     const {
       category_id, name, sku, barcode, description, price, cost_price,
-      tax_type, tax_rate, tax_category_id, tax_behavior, track_inventory, stock_quantity,
+      tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
 
@@ -581,8 +581,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         description = COALESCE(@description, description),
         price = COALESCE(@price, price),
         cost = COALESCE(@cost, cost),
-        tax_type = COALESCE(@tax_type, tax_type),
-        tax_rate = COALESCE(@tax_rate, tax_rate),
+        tax_type = 'none',
+        tax_rate = 0,
         tax_category_id = CASE WHEN @has_tax_category_id = 1 THEN @tax_category_id ELSE tax_category_id END,
         tax_behavior = COALESCE(@tax_behavior, tax_behavior),
         track_inventory = COALESCE(@track_inventory, track_inventory),
@@ -597,7 +597,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       WHERE id = @id
     `).run({
       category_id, name, sku, barcode, description, price, cost: cost_price,
-      tax_type, tax_rate, tax_category_id, tax_behavior,
+      tax_category_id, tax_behavior,
       has_tax_category_id: hasTaxCategoryId ? 1 : 0,
       track_inventory: track_inventory ? 1 : track_inventory === 0 ? 0 : null,
       stock_quantity, low_stock_threshold,

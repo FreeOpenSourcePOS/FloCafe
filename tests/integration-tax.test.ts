@@ -45,7 +45,10 @@ async function main() {
   // Seed data
   const { authHeader } = seedOwnerUser(db);
   seedCategory(db, 'cat-tax', 'Tax Test Menu');
-  seedProduct(db, 'prod-tax-1', 'cat-tax', 'Premium Coffee', 1000);
+  seedProduct(db, 'prod-tax-1', 'cat-tax', 'Premium Coffee', 1000, {
+    tax_category_id: 'standard',
+    tax_behavior: 'exclusive',
+  });
 
   const app = createApp({
     '/api/orders': orderRoutes,
@@ -133,6 +136,9 @@ async function main() {
 
     // ── Step 5: Categorized product carries a tax_snapshot end to end ────
     console.log('\n5. Categorized product — tax_snapshot persists on item/order/bill');
+    seedProduct(db, 'prod-tax-none', 'cat-tax', 'Uncategorized Coffee', 1000, {
+      tax_category_id: null,
+    });
     seedProduct(db, 'prod-tax-2', 'cat-tax', 'Categorized Latte', 500);
     db.prepare(`UPDATE products SET tax_category_id = 'standard', tax_behavior = 'exclusive' WHERE id = 'prod-tax-2'`).run();
 
@@ -141,7 +147,7 @@ async function main() {
       body: {
         type: 'takeaway',
         items: [
-          { product_id: 'prod-tax-1', quantity: 1 }, // legacy path, no category
+          { product_id: 'prod-tax-none', quantity: 1 }, // no category: tax-free
           { product_id: 'prod-tax-2', quantity: 1 }, // engine path, categorized
         ],
       },
@@ -149,8 +155,10 @@ async function main() {
     });
     assertEqual(mixedOrderRes.status, 201, 'mixed order created');
     const mixedOrderId = mixedOrderRes.data.order.id;
-    const [legacyItem, categorizedItem] = mixedOrderRes.data.order.items;
-    assert(!legacyItem.tax_snapshot, 'legacy item has no tax_snapshot');
+    const [uncategorizedItem, categorizedItem] = mixedOrderRes.data.order.items;
+    assert(!uncategorizedItem.tax_snapshot, 'uncategorized item has no tax_snapshot');
+    assertEqual(uncategorizedItem.tax_amount, 0, 'uncategorized item has zero tax');
+    assertEqual(uncategorizedItem.tax_breakdown.length, 0, 'uncategorized item has no tax breakdown');
     assert(!!categorizedItem.tax_snapshot, 'categorized item carries a tax_snapshot');
     const orderSnapshotRaw = mixedOrderRes.data.order.tax_snapshot;
     assert(!!orderSnapshotRaw, 'order rolls up a tax_snapshot from its categorized item');
@@ -159,12 +167,12 @@ async function main() {
 
     // ── Step 6: cancelled items must not re-enter later item-discount recompute ──
     console.log('\n6. Cancel one item, then discount the other — cancelled item must stay excluded');
-    const cancelRes = await api(baseUrl, `/api/orders/${mixedOrderId}/items/${legacyItem.id}/cancel`, {
+    const cancelRes = await api(baseUrl, `/api/orders/${mixedOrderId}/items/${uncategorizedItem.id}/cancel`, {
       method: 'PATCH',
       body: {},
       headers: authHeader,
     });
-    assertEqual(cancelRes.status, 200, 'legacy item cancelled');
+    assertEqual(cancelRes.status, 200, 'uncategorized item cancelled');
 
     const itemDiscountRes = await api(baseUrl, `/api/orders/${mixedOrderId}/items/${categorizedItem.id}/discount`, {
       method: 'PATCH',
@@ -249,7 +257,7 @@ async function main() {
     assertEqual(inclusiveDiscountRes.data.bill.tax_amount, 4.5, 'inclusive tax scales to ₹4.50 after discount');
     assertEqual(inclusiveDiscountRes.data.bill.total, 95, 'inclusive tax is not added again after discount');
 
-    // ── Step 9: category writes validate and allow explicit legacy fallback ──
+    // ── Step 9: category writes validate and allow explicit no-tax fallback ──
     console.log('\n9. Product/add-on tax category writes are validated and reversible');
     const invalidCategoryRes = await api(baseUrl, '/api/products/prod-tax-2', {
       method: 'PUT',
@@ -263,7 +271,7 @@ async function main() {
       body: { tax_category_id: null },
       headers: authHeader,
     });
-    assertEqual(clearCategoryRes.status, 200, 'categorized product can return to legacy tax');
+    assertEqual(clearCategoryRes.status, 200, 'categorized product can return to no tax');
     assertEqual(clearCategoryRes.data.product.tax_category_id, null, 'explicit null clears product tax category');
 
     const invalidAddonCategoryRes = await api(baseUrl, '/api/addon-groups', {
@@ -299,7 +307,7 @@ async function main() {
         headers: authHeader,
       },
     );
-    assertEqual(clearAddonCategoryRes.status, 200, 'categorized add-on can return to inherited/legacy tax');
+    assertEqual(clearAddonCategoryRes.status, 200, 'categorized add-on can return to no explicit tax category');
     assertEqual(clearAddonCategoryRes.data.addon.tax_category_id, null, 'explicit null clears add-on tax category');
 
     const legacyCsvRes = await api(baseUrl, '/api/menu-csv/import/products', {
@@ -317,6 +325,11 @@ async function main() {
       (db.prepare("SELECT tax_category_id FROM products WHERE id = 'prod-tax-inclusive'").get() as any).tax_category_id,
       'standard',
       'legacy CSV without new columns preserves an assigned tax category',
+    );
+    assertEqual(
+      (db.prepare("SELECT tax_type || ':' || tax_rate AS legacy_tax FROM products WHERE id = 'prod-tax-inclusive'").get() as any).legacy_tax,
+      'none:0.0',
+      'legacy CSV tax_type/tax_rate values are ignored and cleared',
     );
 
     db.prepare("UPDATE settings SET value = 'US' WHERE key = 'country'").run();
@@ -339,8 +352,8 @@ async function main() {
       method: 'POST',
       body: {
         csv: [
-          'id,name,category,price,tax_type,tax_rate,tax_category,tax_behavior,is_active',
-          'prod-tax-inclusive,Inclusive Meal,Tax Test Menu,105,inclusive,5,,,yes',
+          'id,name,category,price,tax_category,tax_behavior,is_active',
+          'prod-tax-inclusive,Inclusive Meal,Tax Test Menu,105,,,yes',
         ].join('\n'),
       },
       headers: authHeader,
@@ -349,8 +362,20 @@ async function main() {
     assertEqual(
       (db.prepare("SELECT tax_category_id FROM products WHERE id = 'prod-tax-inclusive'").get() as any).tax_category_id,
       null,
-      'blank tax_category in the new CSV format explicitly returns a product to legacy tax',
+      'blank tax_category in the new CSV format explicitly returns a product to no tax',
     );
+    const noTaxCheckoutRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-tax-inclusive', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(noTaxCheckoutRes.status, 201, 'product without a tax category still checks out');
+    assertEqual(noTaxCheckoutRes.data.order.tax_amount, 0, 'product without a tax category has zero tax');
+    assertEqual(noTaxCheckoutRes.data.order.tax_breakdown.length, 0, 'product without a tax category has no order tax breakdown');
+    assert(!noTaxCheckoutRes.data.order.tax_snapshot, 'product without a tax category has no order tax snapshot');
 
   } finally {
     server.close();

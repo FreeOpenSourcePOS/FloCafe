@@ -65,14 +65,6 @@ export interface TaxRollup {
   snapshotJson: string | null;
 }
 
-const INDIA_FIXED_RATES: Record<string, number> = {
-  restaurant: 5.0,
-  salon: 5.0,
-};
-
-const THAILAND_VAT_RATE = 7.0;
-
-import { COUNTRIES } from '../countries';
 import { TaxEngine } from './tax-engine';
 import type { CountryPack } from '../tax-packs/types';
 
@@ -169,12 +161,7 @@ export function calculateItemTax(
           unitPrice: String(taxableAmount),
           merchantCategoryId: merchantOverride?.categoryId,
           productCategoryId: taxCategoryId,
-          taxBehavior: product.tax_behavior
-            || (product.tax_type === 'inclusive'
-              ? 'inclusive'
-              : product.tax_type === 'exclusive'
-                ? 'exclusive'
-                : 'country_default'),
+          taxBehavior: product.tax_behavior || 'country_default',
         }],
       });
     } catch (engineError: any) {
@@ -218,24 +205,10 @@ export function calculateItemTax(
     };
   }
 
-  if (product.tax_type === 'none') {
-    return { tax_amount: 0, tax_breakdown: [], tax_type: 'none' };
-  }
-
-  const isRegistered = true; // In self-hosted, we assume tax settings are configured
-
-  if (!isRegistered) {
-    return { tax_amount: 0, tax_breakdown: [], tax_type: product.tax_type };
-  }
-
-  switch (tenant.country) {
-    case 'IN':
-      return calculateIndiaTax(tenant, product, taxableAmount, customer);
-    case 'TH':
-      return calculateThailandTax(product, taxableAmount);
-    default:
-      return calculateDefaultTax(product, taxableAmount, tenant.country);
-  }
+  // Tax is opt-in through a resolved category. Legacy product.tax_type and
+  // product.tax_rate columns remain in the schema only for non-destructive
+  // upgrade compatibility; they are not authoritative for new transactions.
+  return { tax_amount: 0, tax_breakdown: [], tax_type: 'none', tax_snapshot: null };
 }
 
 const CHARGE_KINDS: ChargeTaxKind[] = ['packaging', 'delivery', 'service_charge'];
@@ -373,87 +346,6 @@ export function calculateConfiguredChargeTaxes(
   };
 }
 
-function calculateIndiaTax(
-  tenant: TenantInfo,
-  product: Product,
-  taxableAmount: number,
-  customer: Customer | null
-): TaxResult {
-  let rate: number;
-
-  if (INDIA_FIXED_RATES[tenant.business_type]) {
-    rate = INDIA_FIXED_RATES[tenant.business_type];
-  } else {
-    rate = product.tax_rate || 0;
-  }
-
-  if (rate <= 0) {
-    return { tax_amount: 0, tax_breakdown: [], tax_type: product.tax_type };
-  }
-
-  const taxAmount = computeTaxAmount(product.tax_type, taxableAmount, rate);
-
-  // Inter-state: IGST
-  if (customer?.gstin && customer?.customer_state_code && tenant.state_code) {
-    if (customer.customer_state_code !== tenant.state_code) {
-      return {
-        tax_amount: round(taxAmount, 2),
-        tax_breakdown: [{ title: 'IGST', rate, amount: round(taxAmount, 2) }],
-        tax_type: product.tax_type,
-      };
-    }
-  }
-
-  // Intra-state: CGST + SGST
-  const halfRate = round(rate / 2, 2);
-  const halfAmount = round(taxAmount / 2, 2);
-  const otherHalf = round(taxAmount - halfAmount, 2);
-
-  return {
-    tax_amount: round(taxAmount, 2),
-    tax_breakdown: [
-      { title: 'CGST', rate: halfRate, amount: halfAmount },
-      { title: 'SGST', rate: halfRate, amount: otherHalf },
-    ],
-    tax_type: product.tax_type,
-  };
-}
-
-function calculateThailandTax(product: Product, taxableAmount: number): TaxResult {
-  const rate = THAILAND_VAT_RATE;
-  const taxAmount = computeTaxAmount(product.tax_type, taxableAmount, rate);
-
-  return {
-    tax_amount: round(taxAmount, 2),
-    tax_breakdown: [{ title: 'VAT', rate, amount: round(taxAmount, 2) }],
-    tax_type: product.tax_type,
-  };
-}
-
-function calculateDefaultTax(product: Product, taxableAmount: number, country?: string): TaxResult {
-  const rate = product.tax_rate || 0;
-
-  if (rate <= 0) {
-    return { tax_amount: 0, tax_breakdown: [], tax_type: product.tax_type };
-  }
-
-  const taxAmount = computeTaxAmount(product.tax_type, taxableAmount, rate);
-  const title = (country && COUNTRIES.find((c) => c.code === country)?.taxName) || 'Tax';
-
-  return {
-    tax_amount: round(taxAmount, 2),
-    tax_breakdown: [{ title, rate, amount: round(taxAmount, 2) }],
-    tax_type: product.tax_type,
-  };
-}
-
-function computeTaxAmount(taxType: string, amount: number, rate: number): number {
-  if (taxType === 'inclusive') {
-    return amount - (amount / (1 + rate / 100));
-  }
-  return amount * rate / 100;
-}
-
 export function aggregateTaxBreakdown(itemBreakdowns: any[]): TaxBreakdown[] {
   const merged: Record<string, TaxBreakdown> = {};
 
@@ -475,12 +367,9 @@ export function aggregateTaxBreakdown(itemBreakdowns: any[]): TaxBreakdown[] {
 }
 
 // Rolls up whichever active order_items carry a per-item engine snapshot
-// (order_items.tax_snapshot, only present for tax_category_id-driven items —
-// see calculateItemTax above) into the order/bill-level tax_snapshot column.
-// Items still on the legacy path have no snapshot and are simply omitted,
-// same as aggregateTaxBreakdown already omits non-array breakdowns — a
-// mixed order is not "wrong," it just doesn't have a snapshot for the part
-// that was never migrated to a category.
+// (order_items.tax_snapshot, only present for category-driven items — see
+// calculateItemTax above) into the order/bill-level tax_snapshot column.
+// Uncategorized items are tax-free and therefore have no snapshot to roll up.
 export function aggregateTaxSnapshots(itemSnapshotsJson: (string | null | undefined)[]): string | null {
   const snapshots = itemSnapshotsJson
     .map((raw) => {
@@ -698,12 +587,16 @@ export function combineItemAndChargeTaxes(args: {
     args.itemSnapshots,
     args.itemTaxRatio,
   );
+  const nonEmptyBreakdowns = [
+    ...scaledBreakdowns,
+    ...args.chargeTaxes.breakdowns,
+  ].filter((breakdown) => Array.isArray(breakdown) && breakdown.length > 0);
   return {
     taxAmount: new Decimal(args.itemTaxAmount).plus(args.chargeTaxes.taxAmount).toNumber(),
     exclusiveTaxAmount: new Decimal(args.itemExclusiveTaxAmount)
       .plus(args.chargeTaxes.exclusiveTaxAmount)
       .toNumber(),
-    breakdowns: [...scaledBreakdowns, ...args.chargeTaxes.breakdowns],
+    breakdowns: nonEmptyBreakdowns,
     snapshotJson: aggregateTaxSnapshots([...scaledSnapshots, ...args.chargeTaxes.snapshotJson]),
   };
 }

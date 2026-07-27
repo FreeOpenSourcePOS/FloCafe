@@ -86,6 +86,8 @@ export function generateBillHtml(
 
   const styles = getPaperStyles(paperSize);
   const taxComponents = resolveTaxComponents(bill);
+  const hasTax = Number(bill.tax_amount) !== 0
+    || taxComponents.some((component) => Number(component.amount) !== 0);
 
   const items = order?.items ?? [];
 
@@ -111,7 +113,7 @@ export function generateBillHtml(
       ${displayName ? `<h1>${escapeHtml(displayName)}</h1>` : ''}
       ${address ? `<p>${escapeHtml(address).replace(/\n/g, '<br>')}</p>` : ''}
       ${phone ? `<p>Ph: ${escapeHtml(phone)}</p>` : ''}
-      ${gstin ? `<p>${escapeHtml(taxIdLabel)}: ${escapeHtml(gstin)}</p>` : ''}
+      ${hasTax && gstin ? `<p>${escapeHtml(taxIdLabel)}: ${escapeHtml(gstin)}</p>` : ''}
     </div>
 
     <!-- Bill Details -->
@@ -193,7 +195,7 @@ export function generateBillHtml(
     <!-- Footer -->
     <div class="footer">
       ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : '<p>Thank you for your visit!</p>'}
-      ${includeGst ? '<p>Tax included where applicable</p>' : ''}
+      ${includeGst && taxComponents.length > 0 ? '<p>Tax included where applicable</p>' : ''}
     </div>
   </div>
 

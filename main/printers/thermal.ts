@@ -560,11 +560,13 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
 
-  const itemNameLen = cols === 42 ? 22 : 28;
+  const itemNameLen = cols === 42 ? 28 : 34;
   const amtLen = 10;
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
+  const hasTax = Number(bill.tax_amount) !== 0
+    || resolveTaxComponents({ ...bill, items: order.items }).some((component) => component.amount !== 0);
 
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
@@ -575,12 +577,12 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push('Bill #: ' + (bill.bill_number || order.order_number));
   lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
   lines.push(dash);
-  lines.push(itemHeader(itemNameLen, amtLen, cols));
+  lines.push(itemHeader(itemNameLen, amtLen));
   lines.push(dash);
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(itemRow(item, itemNameLen, amtLen, cols, prefix, locale));
+      lines.push(itemRow(item, itemNameLen, amtLen, prefix, locale));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -597,7 +599,9 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (bill.discount_amount > 0) {
     lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale), cols - 8));
   }
-  lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
+  if (Number(bill.tax_amount) !== 0) {
+    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
+  }
   lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale), cols - 5) + '{/BOLD}');
 
   if (bill.payment_details) {
@@ -617,7 +621,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push(bar);
   if (biz.address) lines.push(biz.address);
   if (biz.phone) lines.push('Ph: ' + biz.phone);
-  if (biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
+  if (hasTax && biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
   lines.push('{CENTER}Thank you!{/CENTER}');
   lines.push('{CUT}');
 
@@ -630,7 +634,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   const dash = '-'.repeat(cols);
 
-  const itemNameLen = cols === 42 ? 22 : 28;
+  const itemNameLen = cols === 42 ? 28 : 34;
   const amtLen = 10;
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
@@ -651,12 +655,12 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push('{CENTER}' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
   lines.push(dash);
 
-  lines.push(itemHeader(itemNameLen, amtLen, cols));
+  lines.push(itemHeader(itemNameLen, amtLen));
   lines.push(dash);
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(itemRow(item, itemNameLen, amtLen, cols, prefix, locale));
+      lines.push(itemRow(item, itemNameLen, amtLen, prefix, locale));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -680,7 +684,9 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   }
 
   lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale), cols - 8));
-  lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
+  if (Number(bill.tax_amount) !== 0) {
+    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
+  }
   lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale), cols - 5) + '{/BOLD}');
 
   if (bill.payment_details) {
@@ -727,10 +733,13 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
 
-  const itemNameLen = cols === 42 ? 22 : 28;
+  const itemNameLen = cols === 42 ? 28 : 34;
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
+  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
+  const hasTax = Number(bill.tax_amount) !== 0
+    || taxComponents.some((component) => component.amount !== 0);
 
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
@@ -738,18 +747,18 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
   lines.push('{CENTER}{BOLD}' + (biz.name || 'Store').toUpperCase() + '{/BOLD}{/CENTER}');
   lines.push(bar);
-  lines.push('{CENTER}TAX INVOICE{/CENTER}');
+  lines.push(`{CENTER}${hasTax ? 'TAX INVOICE' : 'INVOICE'}{/CENTER}`);
   lines.push(bar);
   lines.push('Invoice #: ' + (bill.bill_number || order.order_number));
   lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
   lines.push('Time: ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
   lines.push(dash);
-  lines.push(itemHeader(itemNameLen, 10, cols));
+  lines.push(itemHeader(itemNameLen, 10));
   lines.push(dash);
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(itemRow(item, itemNameLen, 10, cols, prefix, locale));
+      lines.push(itemRow(item, itemNameLen, 10, prefix, locale));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
@@ -767,7 +776,6 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
     lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale), cols - 8));
   }
 
-  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
   if (taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
@@ -798,35 +806,31 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   lines.push(bar);
   if (biz.address) lines.push('Address: ' + biz.address);
   if (biz.phone) lines.push('Phone: ' + biz.phone);
-  if (biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
+  if (hasTax && biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
   lines.push('{CENTER}Thank you for your business!{/CENTER}');
   lines.push('{CUT}');
 
   return buildEscPos(lines, useUnicode, { cutMode });
 }
 
-// Item row layout: [ name (nameLen) ][ qty (4) ][ tax (5) ][ amount right-aligned (amtLen) ]
-// All four segments sum to `cols`, so columns line up between header and rows.
-function itemHeader(nameLen: number, amtLen: number, cols: number): string {
+// Item row layout: [ name (nameLen) ][ qty (4) ][ amount right-aligned (amtLen) ].
+// Tax components belong in the document-level breakdown, not a redundant
+// per-item column derived from deprecated product tax fields.
+function itemHeader(nameLen: number, amtLen: number): string {
   const qtyW = 4;
-  const taxW = cols - nameLen - qtyW - amtLen;
   return (
     'Item'.padEnd(nameLen) +
     'Qty'.padEnd(qtyW) +
-    'Tax'.padEnd(taxW) +
     rightAlign('Amount', amtLen)
   );
 }
 
-function itemRow(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US'): string {
+function itemRow(item: any, nameLen: number, amtLen: number, prefix: string, locale: string = 'en-US'): string {
   const qtyW = 4;
-  const taxW = cols - nameLen - qtyW - amtLen;
   const name = truncate(item.product_name, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
-  const taxRate = getTaxRate(item);
-  const taxStr = (taxRate > 0 ? taxRate + '%' : '').padEnd(taxW);
   const amt = rightAlign(formatCurrency(item.total, prefix, locale), amtLen);
-  return name + qty + taxStr + amt;
+  return name + qty + amt;
 }
 
 function addonRow(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US'): string {
@@ -847,19 +851,6 @@ function formatCurrency(amount: number, prefix: string, locale: string = 'en-US'
 
 function rightAlign(text: string, width: number = 24): string {
   return ' '.repeat(Math.max(1, width - text.length)) + text;
-}
-
-function getTaxRate(item: any): number {
-  if (item.tax_rate !== undefined && item.tax_rate !== null) return Number(item.tax_rate);
-  if (item.tax_type && item.tax_type !== 'none') {
-    const match = item.tax_type.match(/(\d+)/);
-    if (match) return parseInt(match[1]);
-  }
-  if (item.unit_price && item.tax_amount) {
-    const rate = (item.tax_amount / item.unit_price / item.quantity) * 100;
-    return Math.round(rate);
-  }
-  return 0;
 }
 
 function truncate(text: string, length: number): string {

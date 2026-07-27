@@ -193,9 +193,8 @@ async function runArgentinaTaxAndCustomers(baseUrl, db) {
     100,
     null,
   );
-  assert(result.tax_breakdown.length > 0, 'AR IVA path emits a tax breakdown line');
-  assertEqual(result.tax_breakdown[0].title, 'IVA', 'AR breakdown title is IVA');
-  assert(Math.abs(result.tax_amount - 17.36) < 0.01, `AR IVA 21% inclusive on 100 ≈ 17.36 (got ${result.tax_amount})`);
+  assertEqual(result.tax_amount, 0, 'uncategorized AR product is tax-free');
+  assertEqual(result.tax_breakdown.length, 0, 'uncategorized AR product emits no tax breakdown');
 
   const cRes = await api(baseUrl + '/api', '/customers', {
     method: 'POST',

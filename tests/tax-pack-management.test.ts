@@ -47,7 +47,10 @@ async function main() {
   const owner = seedOwnerUser(db);
   const manager = seedManagerUser(db);
   seedCategory(db, 'tax-pack-products', 'Tax Pack Products');
-  seedProduct(db, 'override-product', 'tax-pack-products', 'Override Product', 100, { tax_type: 'none' });
+  seedProduct(db, 'override-product', 'tax-pack-products', 'Override Product', 100, {
+    tax_type: 'none',
+    tax_category_id: null,
+  });
 
   const app = createApp({});
   registerRoutes(app);
@@ -145,7 +148,7 @@ async function main() {
       },
       headers: owner.authHeader,
     });
-    assertEqual(orderWithOverride.status, 201, 'legacy product checks out through its merchant override');
+    assertEqual(orderWithOverride.status, 201, 'uncategorized product checks out through its merchant override');
     assertEqual(orderWithOverride.data.order.tax_amount, 5, 'override assigns the standard 5% category');
     const rawItemSnapshot = orderWithOverride.data.order.items[0].tax_snapshot;
     const itemSnapshot =
@@ -180,9 +183,9 @@ async function main() {
       },
       headers: owner.authHeader,
     });
-    assertEqual(orderWithoutOverride.status, 201, 'legacy checkout remains available after reset');
+    assertEqual(orderWithoutOverride.status, 201, 'uncategorized checkout remains available after reset');
     assertEqual(orderWithoutOverride.data.order.tax_amount, 0, 'reset removes merchant category assignment');
-    assert(!orderWithoutOverride.data.order.items[0].tax_snapshot, 'reset returns the product to untouched legacy behavior');
+    assert(!orderWithoutOverride.data.order.items[0].tax_snapshot, 'reset returns the product to the no-tax path');
 
     console.log('\n5. Charge categories persist and stay stable across every recompute path');
     db.prepare(
@@ -231,7 +234,7 @@ async function main() {
     const chargeOrderId = chargeOrder.data.order.id;
     const firstChargeItemId = chargeOrder.data.order.items[0].id;
     assertEqual(chargeOrder.data.order.tax_amount, 2, 'two ₹20 charges add ₹2 tax');
-    assertEqual(chargeOrder.data.order.total, 142, 'legacy item plus charges and charge tax total correctly');
+    assertEqual(chargeOrder.data.order.total, 142, 'untaxed item plus configured charge tax total correctly');
     assertEqual(chargeOrder.data.order.packaging_tax_category_id, 'standard', 'packaging category is frozen on the order');
     assertEqual(chargeOrder.data.order.delivery_tax_category_id, 'standard', 'delivery category is frozen on the order');
     assertEqual(chargeOrder.data.order.service_charge_tax_category_id, 'standard', 'service category is frozen even when its amount is zero');
@@ -325,9 +328,9 @@ async function main() {
         method: 'DELETE',
         headers: owner.authHeader,
       });
-      assertEqual(resetCharge.status, 200, 'charge category can return to legacy behavior');
+      assertEqual(resetCharge.status, 200, 'charge category can return to the no-tax default');
     }
-    const legacyChargeOrder = await api(baseUrl, '/api/orders', {
+    const unconfiguredChargeOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {
         type: 'takeaway',
@@ -337,9 +340,9 @@ async function main() {
       },
       headers: owner.authHeader,
     });
-    assertEqual(legacyChargeOrder.status, 201, 'unconfigured charge order remains valid');
-    assertEqual(legacyChargeOrder.data.order.tax_amount, 0, 'unconfigured charges retain legacy untaxed behavior');
-    assertEqual(legacyChargeOrder.data.order.total, 140, 'legacy charge total is unchanged');
+    assertEqual(unconfiguredChargeOrder.status, 201, 'unconfigured charge order remains valid');
+    assertEqual(unconfiguredChargeOrder.data.order.tax_amount, 0, 'unconfigured charges remain untaxed');
+    assertEqual(unconfiguredChargeOrder.data.order.total, 140, 'unconfigured charge total is unchanged');
 
     console.log('\n6. Activation/rollback are owner-gated and installed-only');
     const versionId = india.active_version_id;

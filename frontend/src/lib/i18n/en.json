@@ -1273,7 +1273,7 @@
   "products.csvImporting": "Importing…",
   "products.csvMissingFields": "Some rows had missing fields — imported with defaults",
   "products.csvModalTitle": "CSV Import / Export — {type}",
-  "products.csvProductsHelp": "Columns: id (leave blank for new items), sku, name, category, price, description, cost, tax_type (none/inclusive/exclusive), tax_rate, cashback_percent, tags (veg/non_veg/...), is_active (yes/no) — download \"Current data\" to get item IDs, edit, then re-upload to update existing items",
+  "products.csvProductsHelp": "Columns: id (leave blank for new items), sku, name, category, price, description, cost, tax_category, tax_behavior, cashback_percent, tags (veg/non_veg/...), is_active (yes/no). Leave tax_category blank for no tax — download \"Current data\" to get item IDs, edit, then re-upload to update existing items",
   "products.csvSkippedErrors": "Rows skipped due to errors",
   "products.defaultCategoryTag": "{name} (default)",
   "products.deleteAddonGroupConfirm": "Delete this addon group?",

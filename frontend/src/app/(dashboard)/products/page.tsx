@@ -74,7 +74,7 @@ export default function ProductsPage() {
   const [addonList, setAddonList] = useState<{ id?: number | string; name: string; price: number; is_active?: boolean }[]>([]);
   const [form, setForm] = useState({
     name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '', barcode: '',
-    tax_type: 'inclusive', tax_rate: '5', tax_category_id: '', tax_behavior: 'country_default', description: '',
+    tax_category_id: '', tax_behavior: 'country_default', description: '',
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
     customTag: '',
@@ -202,7 +202,7 @@ export default function ProductsPage() {
   const resetForm = () => {
     setForm({
       name: '', category_id: '', price: '', cost_price: '', cb_percent: '0', sku: '', barcode: '',
-      tax_type: 'inclusive', tax_rate: '5', tax_category_id: '', tax_behavior: 'country_default', description: '',
+      tax_category_id: '', tax_behavior: 'country_default', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
     });
@@ -221,8 +221,6 @@ export default function ProductsPage() {
       cb_percent: String(product.cb_percent ?? 0),
       sku: product.sku || '',
       barcode: product.barcode || '',
-      tax_type: product.tax_type || 'inclusive',
-      tax_rate: String(product.tax_rate || '5'),
       tax_category_id: product.tax_category_id || '',
       tax_behavior: product.tax_behavior || 'country_default',
       description: product.description || '',
@@ -249,8 +247,6 @@ export default function ProductsPage() {
         cb_percent: Number(form.cb_percent) || 0,
         sku: form.sku || null,
         barcode: form.barcode || null,
-        tax_type: form.tax_type,
-        tax_rate: Number(form.tax_rate),
         tax_category_id: form.tax_category_id || null,
         tax_behavior: form.tax_category_id ? form.tax_behavior : 'country_default',
         description: form.description || null,
@@ -486,9 +482,7 @@ export default function ProductsPage() {
               const taxCategoryLabel = taxCategories.find((tc) => tc.id === product.tax_category_id)?.label;
               const taxLabel = product.tax_category_id
                 ? (taxCategoryLabel || product.tax_category_id)
-                : product.tax_type === 'none' || !product.tax_type
-                  ? '—'
-                  : `${product.tax_type === 'inclusive' ? t('products.taxInclusiveShort') : t('products.taxExclusiveShort')} ${product.tax_rate}%`;
+                : '—';
               return (
               <tr key={product.id} className="hover:bg-gray-50">
                 <td className="p-4 max-w-[220px]">
@@ -669,11 +663,11 @@ export default function ProductsPage() {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Tax category</label>
                 <select value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
-                  <option value="">— Legacy (manual tax rate below) —</option>
+                  <option value="">— {t('products.taxNone')} —</option>
                   {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
                 </select>
                 {taxCategories.length === 0 && (
-                  <p className="text-xs text-gray-400 mt-1">No tax categories available — using the manual tax rate below.</p>
+                  <p className="text-xs text-gray-400 mt-1">No tax categories available. Products remain tax-free until a category is configured.</p>
                 )}
               </div>
               {form.tax_category_id ? (
@@ -689,22 +683,9 @@ export default function ProductsPage() {
                   <p className="text-xs text-gray-400 mt-1">The rate is resolved from the active tax profile for this category, not entered manually.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldTaxType')}</label>
-                    <select value={form.tax_type} onChange={(e) => setForm({ ...form, tax_type: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
-                      <option value="none">{t('products.taxNone')}</option>
-                      <option value="inclusive">{t('products.taxInclusive')}</option>
-                      <option value="exclusive">{t('products.taxExclusive')}</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.taxRateLabel')}</label>
-                    <input type="number" step="0.01" value={form.tax_rate} onChange={(e) => setForm({ ...form, tax_rate: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                  </div>
-                </div>
+                <p className="text-xs text-gray-400 -mt-2">
+                  No tax will be calculated or printed until a tax category is selected.
+                </p>
               )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">{t('products.fieldTags')}</label>

@@ -31,9 +31,11 @@ async function main() {
 
     const { authHeader } = seedOwnerUser(db);
     seedCategory(db, 'cat-tax', 'Tax Test Menu');
-    // Seed inclusive product (5% tax, price 1000 inclusive)
-    db.prepare("INSERT INTO products (id, category_id, name, price, tax_type, track_inventory, stock_quantity) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .run('prod-incl', 'cat-tax', 'Inclusive Coffee', 1000, 'inclusive', 0, 0);
+    // Seed an explicitly categorized inclusive product (5% tax, price 1000 inclusive).
+    seedProduct(db, 'prod-incl', 'cat-tax', 'Inclusive Coffee', 1000, {
+        tax_category_id: 'standard',
+        tax_behavior: 'inclusive',
+    });
 
     const app = createApp({
         '/api/orders': orderRoutes,

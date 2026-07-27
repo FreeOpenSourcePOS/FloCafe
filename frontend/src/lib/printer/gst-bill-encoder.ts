@@ -55,6 +55,9 @@ export function buildGstBillBytes(
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
+  const taxComponents = resolveTaxComponents(bill);
+  const hasTax = Number(bill.tax_amount) !== 0
+    || taxComponents.some((component) => Number(component.amount) !== 0);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -69,7 +72,7 @@ export function buildGstBillBytes(
   if (phone) {
     enc.text(`Ph: ${phone}`).newline();
   }
-  if (gstin) {
+  if (hasTax && gstin) {
     enc.text(`${taxIdLabel}: ${gstin}`).newline();
   }
 
@@ -125,7 +128,6 @@ export function buildGstBillBytes(
   enc.rule({ style: 'single' });
 
   // ── Tax Breakdown ───────────────────────────────────────────────────────
-  const taxComponents = resolveTaxComponents(bill);
   if (taxComponents.length > 0) {
     enc.text('Tax Details:').newline();
     for (const component of taxComponents) {
@@ -180,7 +182,9 @@ export function buildGstBillBytes(
     enc.newline().align('center');
     enc.text('Thank you for your visit!').newline();
     enc.text('Please come again').newline();
-    enc.text('Tax included where applicable').newline();
+    if (taxComponents.length > 0) {
+      enc.text('Tax included where applicable').newline();
+    }
   }
 
   enc.newline().newline().newline().cut();

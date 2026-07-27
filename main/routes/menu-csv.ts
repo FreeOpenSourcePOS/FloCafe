@@ -78,13 +78,13 @@ const TEMPLATES: Record<string, string> = {
   ].join('\n'),
 
   products: [
-    'id,sku,name,category,price,description,cost,tax_type,tax_rate,tax_category,tax_behavior,cashback_percent,tags,is_active',
-    ',,Cappuccino,Beverages,150,Rich espresso with steamed milk,50,inclusive,5,,,0,"veg,bestseller",yes',
-    ',,Espresso,Beverages,100,,40,inclusive,5,,,0,veg,yes',
-    ',,Cold Coffee,Beverages,130,Chilled blended coffee,45,inclusive,5,,,0,"veg,new_arrival",yes',
-    ',,Classic Burger,Food,250,Juicy patty with lettuce and tomato,100,exclusive,5,,,0,non_veg,yes',
-    ',,Veg Sandwich,Food,180,Fresh vegetables in toasted bread,60,none,0,,,0,"veg,new_arrival",yes',
-    ',,Chocolate Cake,Desserts,120,Rich chocolate slice,,none,0,,,0,veg,yes',
+    'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active',
+    ',,Cappuccino,Beverages,150,Rich espresso with steamed milk,50,,,0,"veg,bestseller",yes',
+    ',,Espresso,Beverages,100,,40,,,0,veg,yes',
+    ',,Cold Coffee,Beverages,130,Chilled blended coffee,45,,,0,"veg,new_arrival",yes',
+    ',,Classic Burger,Food,250,Juicy patty with lettuce and tomato,100,,,0,non_veg,yes',
+    ',,Veg Sandwich,Food,180,Fresh vegetables in toasted bread,60,,,0,"veg,new_arrival",yes',
+    ',,Chocolate Cake,Desserts,120,Rich chocolate slice,,,,0,veg,yes',
   ].join('\n'),
 
   addons: [
@@ -143,7 +143,7 @@ router.get('/export/products', requireRole('owner', 'manager'), (_req: Request, 
          ORDER BY c.sort_order, p.sort_order, p.name`
       )
       .all() as any[];
-    const lines = ['id,sku,name,category,price,description,cost,tax_type,tax_rate,tax_category,tax_behavior,cashback_percent,tags,is_active'];
+    const lines = ['id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active'];
     for (const p of rows) {
       let tags = '';
       if (p.tags) {
@@ -152,7 +152,7 @@ router.get('/export/products', requireRole('owner', 'manager'), (_req: Request, 
       }
       lines.push(
         toCsvRow([p.id, p.sku, p.name, p.category_name, p.price, p.description, p.cost,
-          p.tax_type, p.tax_rate, p.tax_category_id ?? '', p.tax_behavior ?? '',
+          p.tax_category_id ?? '', p.tax_behavior ?? '',
           p.cb_percent ?? 0, tags, p.is_active ? 'yes' : 'no'])
       );
     }
@@ -278,10 +278,8 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
         if (arr.length) tagsJson = JSON.stringify(arr);
       }
 
-      const taxType = ['none', 'inclusive', 'exclusive'].includes(r.tax_type) ? r.tax_type : 'none';
       const isActive = !r.is_active || isTruthy(r.is_active) ? 1 : 0;
       const cost = parseFloat(r.cost) || 0;
-      const taxRate = parseFloat(r.tax_rate) || 0;
       const cbPercent = parseFloat(r.cashback_percent) || 0;
       const sku = r.sku || null;
 
@@ -323,7 +321,7 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
            cb_percent=?, tags=?, is_active=?, sku=?, updated_at=?
            WHERE id=?`
         ).run(r.name, categoryId, price, r.description || null, cost,
-          taxType, taxRate, hasTaxCategoryColumn ? 1 : 0, taxCategoryId,
+          'none', 0, hasTaxCategoryColumn ? 1 : 0, taxCategoryId,
           hasTaxBehaviorColumn ? 1 : 0, taxBehavior,
           cbPercent, tagsJson, isActive, sku, now(), r.id);
         updated++;
@@ -341,7 +339,7 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
          tax_category_id, tax_behavior, cb_percent, tags, is_active, sku, sort_order, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`
       ).run(generateShortId('products'), r.name, categoryId, price, r.description || null,
-        cost, taxType, taxRate, taxCategoryId, taxBehavior || 'country_default', cbPercent, tagsJson, isActive, sku, now(), now());
+        cost, 'none', 0, taxCategoryId, taxBehavior || 'country_default', cbPercent, tagsJson, isActive, sku, now(), now());
       created++;
     }
 

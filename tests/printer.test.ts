@@ -187,6 +187,7 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   const cheeseLine = rowLines.find((l) => l.startsWith('Cheeseburger') && l.includes('₹540'));
   assert('item row columns are aligned (no smashed qty)', !!cheeseLine && !/Cheeseburger\d/.test(cheeseLine), cheeseLine);
   assert('item row right-edge total lines up at col 48', !!cheeseLine && cheeseLine.length <= 48);
+  assert('item table has no redundant tax column', !rowLines.some((line) => /\bQty\s+Tax\s+Amount\b/.test(line)));
 
   console.log('\n   — Rendered compact (80mm) —');
   console.log(visiblePreview(buf, 48));
@@ -336,8 +337,22 @@ console.log('\n✅ Test 8: Edge cases');
     total: 0,
   };
   const buf = formatReceipt(emptyOrder, emptyBill, fixtureBusiness, 'compact', 48, true);
+  const emptyText = buf.toString('utf8');
   assert('handles empty item list without throwing', buf.length > 0);
-  assert('renders zero total', buf.toString('utf8').includes('₹0.00'));
+  assert('renders zero total', emptyText.includes('₹0.00'));
+  assert('omits tax label when tax amount and breakdown are empty', !emptyText.split('\n').some((line) => line.trimStart().startsWith('Tax')));
+  assert('omits tax identifier when tax amount and breakdown are empty', !emptyText.includes('29AAAAA0000A1Z5'));
+
+  const detailedNoTaxText = formatReceipt(
+    emptyOrder,
+    emptyBill,
+    fixtureBusiness,
+    'detailed',
+    48,
+    true,
+  ).toString('utf8');
+  assert('zero-tax detailed receipt is an invoice, not a tax invoice', detailedNoTaxText.includes('INVOICE') && !detailedNoTaxText.includes('TAX INVOICE'));
+  assert('zero-tax detailed receipt omits tax identifier', !detailedNoTaxText.includes('29AAAAA0000A1Z5'));
 
   const noDiscountBill = { ...fixtureBill, discount_amount: 0 };
   const buf2 = formatReceipt(fixtureOrder, noDiscountBill, fixtureBusiness, 'compact', 48, true);

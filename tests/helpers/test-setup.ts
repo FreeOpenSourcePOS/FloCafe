@@ -222,16 +222,28 @@ function seedCategory(db: any, id: string, name: string) {
 
 function seedProduct(db: any, id: string, categoryId: string, name: string, price: number, options?: {
   tax_type?: string;
+  tax_category_id?: string | null;
+  tax_behavior?: string;
   cb_percent?: number;
   track_inventory?: boolean;
   stock_quantity?: number;
 }) {
+  // Most integration fixtures represent taxable menu products. Assign the
+  // bundled India standard category by default; pass null explicitly when a
+  // test needs to exercise the uncategorized/no-tax path.
+  const taxCategoryId = options && Object.prototype.hasOwnProperty.call(options, 'tax_category_id')
+    ? options.tax_category_id
+    : 'standard';
   db.prepare(
-    `INSERT OR IGNORE INTO products (id, category_id, name, price, tax_type, cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT OR IGNORE INTO products (
+       id, category_id, name, price, tax_type, tax_category_id, tax_behavior,
+       cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, categoryId, name, price,
-    options?.tax_type || 'gst',
+    options?.tax_type || 'none',
+    taxCategoryId,
+    options?.tax_behavior || 'country_default',
     options?.cb_percent || 0,
     options?.track_inventory ? 1 : 0,
     options?.stock_quantity ?? 999,

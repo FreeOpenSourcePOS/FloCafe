@@ -1273,7 +1273,7 @@
   "products.csvImporting": "Importando…",
   "products.csvMissingFields": "Algunas filas tenían campos vacíos — se importaron con valores por defecto",
   "products.csvModalTitle": "Importar/Exportar CSV — {type}",
-  "products.csvProductsHelp": "Columnas: id (dejar vacío para nuevos), sku, nombre, categoría, precio, descripción, costo, tipo_imp (none/inclusive/exclusive), tasa_imp, cashback_porc, etiquetas (veg/non_veg/…), activo (yes/no) — descargá \"Datos actuales\" para obtener los IDs de los ítems, editá y volvé a subir para actualizar los existentes",
+  "products.csvProductsHelp": "Columnas: id (dejar vacío para nuevos), sku, nombre, categoría, precio, descripción, costo, tax_category, tax_behavior, cashback_porc, etiquetas (veg/non_veg/…), activo (yes/no). Dejá tax_category vacío para no aplicar impuestos — descargá \"Datos actuales\" para obtener los IDs de los ítems, editá y volvé a subir para actualizar los existentes",
   "products.csvSkippedErrors": "Filas omitidas por errores",
   "products.defaultCategoryTag": "{name} (predeterminada)",
   "products.deleteAddonGroupConfirm": "¿Eliminar este grupo de adicionales?",

@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
-import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash } from 'lucide-react';
+import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, Download } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -658,6 +658,13 @@ export default function SettingsPage() {
   const handleCheckUpdates = () => {
     if (typeof window !== 'undefined' && window.electronAPI) {
       window.electronAPI.checkForUpdates();
+    }
+  };
+
+  const handleDownloadUpdate = () => {
+    if (typeof window !== 'undefined' && window.electronAPI) {
+      setUpdateStatus((prev) => (prev ? { ...prev, status: 'downloading' } : prev));
+      window.electronAPI.downloadUpdate();
     }
   };
 
@@ -3898,14 +3905,29 @@ export default function SettingsPage() {
             )}
 
             {updateStatus?.status !== 'store' && updateStatus?.status !== 'unsupported' && (
-              <button
-                onClick={handleCheckUpdates}
-                disabled={updateStatus?.status === 'checking' || updateStatus?.status === 'downloading'}
-                className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 text-sm font-medium flex items-center gap-2"
-              >
-                <RefreshCw size={16} className={updateStatus?.status === 'checking' ? 'animate-spin' : ''} />
-                {updateStatus?.status === 'checking' ? t('settings.checking') : t('settings.checkForUpdates')}
-              </button>
+              <div className="flex items-center gap-2">
+                {updateStatus?.status === 'available' && (
+                  <button
+                    onClick={handleDownloadUpdate}
+                    className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 text-sm font-medium flex items-center gap-2"
+                  >
+                    <Download size={16} />
+                    {t('settings.downloadUpdate')}
+                  </button>
+                )}
+                <button
+                  onClick={handleCheckUpdates}
+                  disabled={updateStatus?.status === 'checking' || updateStatus?.status === 'downloading'}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 ${
+                    updateStatus?.status === 'available'
+                      ? 'border border-gray-200 text-gray-700 hover:bg-gray-50'
+                      : 'bg-brand text-white hover:opacity-90'
+                  }`}
+                >
+                  <RefreshCw size={16} className={updateStatus?.status === 'checking' ? 'animate-spin' : ''} />
+                  {updateStatus?.status === 'checking' ? t('settings.checking') : t('settings.checkForUpdates')}
+                </button>
+              </div>
             )}
           </div>
           </div>

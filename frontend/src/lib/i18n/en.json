@@ -492,6 +492,7 @@
   "settings.discountPercentageOnly": "Percentage only",
   "settings.downloadForAndroid": "Download for Android",
   "settings.downloadForIos": "Download for iOS",
+  "settings.downloadUpdate": "Download Update",
   "settings.edit": "Edit",
   "settings.editPrinter": "Edit Printer",
   "settings.editStation": "Edit Station",

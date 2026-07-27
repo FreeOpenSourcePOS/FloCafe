@@ -36,6 +36,7 @@ export interface ElectronAPI {
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
   getUpdateStatus: () => Promise<UpdateStatus>;
   checkForUpdates: () => Promise<void>;
+  downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
 
   // Platform
   platform: string;

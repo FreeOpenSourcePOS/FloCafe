@@ -56,6 +56,24 @@ console.log('[Log] Log files location:', logPath);
 let updateAvailable = false;
 let updateDownloaded = false;
 
+// Attaches the dialog to mainWindow so it stays focused/on top instead of
+// silently opening behind the app or on another display.
+function showUpdateDialog(options: Electron.MessageBoxOptions) {
+  return mainWindow
+    ? dialog.showMessageBox(mainWindow, options)
+    : dialog.showMessageBox(options);
+}
+
+function triggerDownload(): Promise<{ success: boolean; error?: string }> {
+  return autoUpdater.downloadUpdate()
+    .then(() => ({ success: true }))
+    .catch((err) => {
+      log.error('[Update] Download failed:', err);
+      mainWindow?.webContents.send('update-status', { status: 'error', error: err.message });
+      return { success: false, error: err.message };
+    });
+}
+
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
   autoUpdater.autoDownload = false;
@@ -69,13 +87,13 @@ function setupAutoUpdater(): void {
   autoUpdater.on('update-available', (info) => {
     console.log('[Update] Update available:', info.version);
     updateAvailable = true;
-    mainWindow?.webContents.send('update-status', { 
-      status: 'available', 
+    mainWindow?.webContents.send('update-status', {
+      status: 'available',
       version: info.version,
       releaseDate: info.releaseDate,
-      releaseNotes: info.releaseNotes 
+      releaseNotes: info.releaseNotes
     });
-    dialog.showMessageBox({
+    showUpdateDialog({
       type: 'info',
       title: 'Update Available',
       message: `Flo ${info.version} is available!`,
@@ -84,7 +102,7 @@ function setupAutoUpdater(): void {
       defaultId: 0,
     }).then((result) => {
       if (result.response === 0) {
-        autoUpdater.downloadUpdate();
+        triggerDownload();
       }
     });
   });
@@ -109,7 +127,7 @@ function setupAutoUpdater(): void {
       status: 'ready-to-install',
       version: info.version
     });
-    dialog.showMessageBox({
+    showUpdateDialog({
       type: 'info',
       title: 'Update Ready',
       message: 'Update downloaded successfully!',
@@ -616,6 +634,8 @@ async function initialize(): Promise<void> {
     ipcMain.handle('check-for-updates', () => {
       checkForUpdates();
     });
+
+    ipcMain.handle('download-update', () => triggerDownload());
 
     ipcMain.handle('get-status', () => {
       const mem = process.memoryUsage();

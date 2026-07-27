@@ -66,6 +66,8 @@ async function main() {
 
   const db = initTestDb();
   const ownerAuth = seedUser(db, 'issue133-owner', 'owner', 'issue133-owner@test.local');
+  const cashierAuth = seedUser(db, 'issue133-cashier', 'cashier', 'issue133-cashier@test.local');
+  const waiterAuth = seedUser(db, 'issue133-waiter', 'waiter', 'issue133-waiter@test.local');
   const chefAuth = seedUser(db, 'issue133-chef', 'chef', 'issue133-chef@test.local');
 
   const app = createApp({
@@ -86,6 +88,50 @@ async function main() {
     const kotDefault = await request(app).get('/api/settings/kot_printing_enabled').set(ownerAuth);
     assertEqual(kotDefault.status, 200, 'GET /api/settings/kot_printing_enabled succeeds');
     assertEqual(kotDefault.body.setting?.value, 'true', 'kot_printing_enabled defaults to "true"');
+
+    // ── Checkout print authorization ────────────────────────────────────
+    console.log('\n1b. Cashiers can reach checkout print handlers, but not printer management');
+    // No default printer is configured in this test DB. A 400 from inside each
+    // handler proves the cashier passed authentication and role authorization.
+    const cashierBillRes = await request(app)
+      .post('/api/printers/print-bill')
+      .set(cashierAuth)
+      .send({ billId: 999999 });
+    assertEqual(cashierBillRes.status, 400, 'cashier reaches POST /api/printers/print-bill handler');
+    assertEqual(cashierBillRes.body.error, 'No default printer configured. Add a printer in Settings.', 'cashier print-bill fails at printer validation, not role gating');
+
+    const cashierKotRes = await request(app)
+      .post('/api/printers/print-kot')
+      .set(cashierAuth)
+      .send({ orderId: 999999 });
+    assertEqual(cashierKotRes.status, 400, 'cashier reaches POST /api/printers/print-kot handler');
+    assertEqual(cashierKotRes.body.error, 'No default printer configured. Add a printer in Settings.', 'cashier print-kot fails at printer validation, not role gating');
+
+    assertEqual(
+      (await request(app).post('/api/printers/print-bill').set(waiterAuth).send({ billId: 999999 })).status,
+      403,
+      'waiter remains forbidden from POST /api/printers/print-bill',
+    );
+    assertEqual(
+      (await request(app).post('/api/printers/print-kot').set(waiterAuth).send({ orderId: 999999 })).status,
+      403,
+      'waiter remains forbidden from POST /api/printers/print-kot',
+    );
+    assertEqual(
+      (await request(app).post('/api/printers/print-bill').send({ billId: 999999 })).status,
+      401,
+      'unauthenticated POST /api/printers/print-bill remains rejected',
+    );
+    assertEqual(
+      (await request(app).post('/api/printers/print-kot').send({ orderId: 999999 })).status,
+      401,
+      'unauthenticated POST /api/printers/print-kot remains rejected',
+    );
+    assertEqual(
+      (await request(app).post('/api/printers').set(cashierAuth).send({})).status,
+      403,
+      'cashier remains forbidden from printer management',
+    );
 
     // ── Both features on: existing KDS endpoints work normally ─────────────
     console.log('\n2. KDS enabled — endpoints reachable');

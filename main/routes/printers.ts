@@ -228,7 +228,7 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
 });
 
 // POST /api/printers/print-bill — print bill via backend (desktop app)
-router.post('/print-bill', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
   try {
     const { billId, orderId, useUnicode = false, isReprint = false } = req.body;
     console.log('[Print Bill] Request:', { billId, orderId, useUnicode, isReprint });
@@ -409,7 +409,7 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
 }
 
 // POST /api/printers/print-kot — print KOT via backend (desktop app)
-router.post('/print-kot', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
   // Coarser than auto_print_kot — when this is off, no KOT print command
   // should ever be sent, automatic or manual (issue #133).
   if (!isKotPrintingEnabled()) {

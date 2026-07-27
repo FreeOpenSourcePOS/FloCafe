@@ -14,7 +14,7 @@ Module._load = function (requestName: string, parent: unknown, isMain: boolean) 
   return originalLoad.apply(this, arguments as any);
 };
 
-import { startServer, stopServer } from '../main/server';
+import { startServer, stopServer, getServerPort } from '../main/server';
 import { startKdsServer, stopKdsServer, getKdsPort } from '../main/kds-server';
 import { initDatabase, closeDatabase, getDatabase } from '../main/db';
 
@@ -33,7 +33,8 @@ async function run() {
 
   try {
     // 1. Health checks on both ports
-    const res1 = await request('http://127.0.0.1:3001').get('/api/health');
+    const mainPort = getServerPort();
+    const res1 = await request(`http://127.0.0.1:${mainPort}`).get('/api/health');
     assert(res1.status === 200, 'Primary API health check responds with 200');
     assert(res1.body.status === 'ok', 'Primary API health check body is ok');
 
@@ -51,7 +52,7 @@ async function run() {
       VALUES ('user-owner-1', 'Owner User', 'owner@flo.local', ?, 'owner', 1)
     `).run(hashed);
 
-    const loginRes = await request('http://127.0.0.1:3001')
+    const loginRes = await request(`http://127.0.0.1:${mainPort}`)
       .post('/api/auth/login')
       .send({ email: 'owner@flo.local', password: 'OwnerPass123!' });
     assert(loginRes.status === 200, 'Main API owner login succeeds with token');

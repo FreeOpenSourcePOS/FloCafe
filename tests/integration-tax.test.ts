@@ -255,7 +255,9 @@ async function main() {
     });
     assertEqual(inclusiveDiscountRes.status, 200, 'discount applied to inclusive-tax bill');
     assertEqual(inclusiveDiscountRes.data.bill.tax_amount, 4.5, 'inclusive tax scales to ₹4.50 after discount');
-    assertEqual(inclusiveDiscountRes.data.bill.total, 95, 'inclusive tax is not added again after discount');
+    // #170: the bill's payable total must reflect the pack's configured payableRounding
+    // (0.01 for the bundled IN pack) rather than being force-rounded to a whole rupee.
+    assertEqual(inclusiveDiscountRes.data.bill.total, 94.5, 'inclusive tax is not added again after discount, and total is not force-rounded to a whole unit');
 
     // ── Step 9: category writes validate and allow explicit no-tax fallback ──
     console.log('\n9. Product/add-on tax category writes are validated and reversible');

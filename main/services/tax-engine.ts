@@ -471,3 +471,16 @@ export class TaxEngine {
     };
   }
 }
+
+export function applyPayableRounding(
+  exactTotal: number,
+  pack: CountryPack,
+): { total: number; adjustment: number } {
+  const places = pack.taxRounding.decimalPlaces;
+  const cleaned = new TaxDecimal(exactTotal).toDecimalPlaces(places, Decimal.ROUND_HALF_UP);
+  const rounded = roundIncrement(cleaned, pack.payableRounding.increment, pack.payableRounding.method);
+  return {
+    total: rounded.toNumber(),
+    adjustment: rounded.minus(cleaned).toNumber(),
+  };
+}

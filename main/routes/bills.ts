@@ -16,7 +16,9 @@ import { requireRole } from '../middleware/security';
 import {
   calculateConfiguredChargeTaxes,
   combineItemAndChargeTaxes,
+  getActiveCountryPack,
 } from '../services/tax';
+import { applyPayableRounding } from '../services/tax-engine';
 
 const router = Router();
 
@@ -148,18 +150,20 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
       const orderDiscountAmt   = order.discount_amount || 0;
       const orderDelivery      = order.delivery_charge || 0;
       const orderPackaging     = order.packaging_charge|| 0;
-      const orderRoundOff      = order.round_off       || 0;
       const orderTotal         = order.total           || 0;
+
+      const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
+      const { total: roundedOrderTotal, adjustment: orderRoundOff } = applyPayableRounding(orderTotal, pack);
 
       const totalsChanged =
         existingBill.payment_status !== 'paid' && (
           existingBill.discount_amount !== orderDiscountAmt ||
           existingBill.subtotal        !== orderSubtotal    ||
-          existingBill.total           !== orderTotal
+          existingBill.total           !== roundedOrderTotal
         );
 
       if (totalsChanged) {
-        const newBalance = Math.max(0, orderTotal - (existingBill.paid_amount || 0));
+        const newBalance = Math.max(0, roundedOrderTotal - (existingBill.paid_amount || 0));
         db.prepare(`
           UPDATE bills
           SET subtotal       = ?,
@@ -181,7 +185,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
           orderSubtotal, orderTaxAmount, order.tax_breakdown, order.tax_snapshot,
           orderDiscountAmt, order.discount_type, order.discount_value, order.discount_reason,
           orderDelivery, orderPackaging, orderRoundOff,
-          orderTotal, newBalance, now(),
+          roundedOrderTotal, newBalance, now(),
           existingBill.id
         );
 
@@ -200,8 +204,8 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
       const discountAmount = order.discount_amount || 0;
       const deliveryCharge = order.delivery_charge || 0;
       const packagingCharge = order.packaging_charge || 0;
-      const roundOff = order.round_off || 0;
-      const total = order.total || 0;
+      const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
+      const { total, adjustment: roundOff } = applyPayableRounding(order.total || 0, pack);
 
       return db.prepare(`
         INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
@@ -561,8 +565,9 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
 
     const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
       + (bill.delivery_charge || 0) + (bill.packaging_charge || 0) + (bill.service_charge || 0);
-    const newTotal = Math.round(preRoundTotal);
-    const newRoundOff = newTotal - preRoundTotal;
+    const exactTotal = Number(preRoundTotal.toFixed(2));
+    const pack = getActiveCountryPack(tenantInfo.country);
+    const { total: newTotal, adjustment: newRoundOff } = applyPayableRounding(exactTotal, pack);
     const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));
 
     const updatedBill = withTxn(() => {
@@ -576,6 +581,8 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
         taxRollup.snapshotJson, newTotal, newRoundOff, newBalance, now(), req.params.id,
       );
 
+      // orders.total stays the exact, unrounded amount — only the bill (the
+      // settlement boundary) holds the pack-rounded payable total (#170).
       db.prepare(`
         UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
           discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?,
@@ -583,7 +590,7 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
         WHERE id = ?
       `).run(
         discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
-        taxRollup.snapshotJson, newTotal, newRoundOff, now(), bill.order_id,
+        taxRollup.snapshotJson, exactTotal, 0, now(), bill.order_id,
       );
 
       return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TaxEngine, resolveTaxCategory, type TaxEngineLine } from '../main/services/tax-engine';
+import { TaxEngine, applyPayableRounding, resolveTaxCategory, type TaxEngineLine } from '../main/services/tax-engine';
 import { calculateItemTax } from '../main/services/tax';
 import type {
   CountryPack,
@@ -275,6 +275,37 @@ test('payable rounding is independent and implements all four methods', () => {
     const result = calculate(pack, [line({ unitPrice: '1.025', taxBehavior: 'exempt' })]);
     assert.equal(result.payableTotal, expected[method]);
   }
+});
+
+test('applyPayableRounding (#170): fractional totals are not force-rounded to a whole unit', () => {
+  // Default bundled-pack-style increment (0.01) must leave an already-2dp total untouched —
+  // this is the exact scenario issue #170 reports as broken (USD/GBP $12.47 becoming $12.00).
+  const centsPack = packWith([], {}, { increment: '0.01', method: 'half_up' });
+  const centsResult = applyPayableRounding(12.47, centsPack);
+  assert.equal(centsResult.total, 12.47);
+  assert.equal(centsResult.adjustment, 0);
+
+  // A pack that explicitly configures whole-unit rounding still rounds correctly (and only
+  // when actually configured to, not unconditionally) — proving parity with the old behavior
+  // when that behavior is a deliberate business choice rather than a hardcoded assumption.
+  const wholeUnitPack = packWith([], {}, { increment: '1', method: 'half_up' });
+  const wholeUnitResult = applyPayableRounding(19.99, wholeUnitPack);
+  assert.equal(wholeUnitResult.total, 20);
+  assert.equal(wholeUnitResult.adjustment, 0.01);
+
+  // A coarser increment (e.g. rounding to the nearest ₹1/$0.05) rounds correctly too, and the
+  // adjustment always equals total - exactTotal.
+  const nickelPack = packWith([], {}, { increment: '0.05', method: 'half_up' });
+  const nickelResult = applyPayableRounding(19.97, nickelPack);
+  assert.equal(nickelResult.total, 19.95);
+  assert.equal(nickelResult.adjustment, -0.02);
+
+  // JS float dust from upstream plain-number arithmetic (e.g. 0.1 + 0.2) must be absorbed
+  // before the increment is applied, not leak into the stored total/adjustment.
+  const dustyPack = packWith([], {}, { increment: '0.01', method: 'half_up' });
+  const dustyResult = applyPayableRounding(0.1 + 0.2, dustyPack);
+  assert.equal(dustyResult.total, 0.3);
+  assert.equal(dustyResult.adjustment, 0);
 });
 
 test('bundled India and Thailand packs reproduce current fixed behavior as data', () => {

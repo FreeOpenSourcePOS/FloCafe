@@ -4,8 +4,10 @@ import {
   calculateConfiguredChargeTaxes,
   calculateItemTax,
   combineItemAndChargeTaxes,
+  getActiveCountryPack,
   getConfiguredChargeTaxCategories,
 } from '../services/tax';
+import { applyPayableRounding } from '../services/tax-engine';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
@@ -360,8 +362,8 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       });
       const preRoundTotal = subtotal + taxRollup.exclusiveTaxAmount
         + (delivery_charge || 0) + (packaging_charge || 0);
-      const total = Math.round(preRoundTotal);
-      const roundOff = total - preRoundTotal;
+      const total = Number(preRoundTotal.toFixed(2));
+      const roundOff = 0;
 
       db.prepare(`
         UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?,
@@ -568,8 +570,8 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + ((order as any).delivery_charge || 0) + ((order as any).packaging_charge || 0);
-      const total = Math.round(preRoundTotal);
-      const roundOff = total - preRoundTotal;
+      const total = Number(preRoundTotal.toFixed(2));
+      const roundOff = 0;
 
       // Update order totals and optionally update order-level notes
       if (special_instructions !== undefined) {
@@ -585,9 +587,11 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       // BUG #4 FIX: Sync bill if it exists (add-items didn't update the bill)
       const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
       if (existingBill) {
-        const newBillBalance = Math.max(0, total - (existingBill.paid_amount || 0));
+        const pack = getActiveCountryPack(tenantInfo.country);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack);
+        const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-          .run(total, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, roundOff, now(), existingBill.id);
+          .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, billRoundOff, now(), existingBill.id);
       }
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
@@ -954,8 +958,8 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
         + (order.packaging_charge || 0) + (order.delivery_charge || 0);
-      const newTotal = Math.round(preRoundTotal);
-      const roundOff = newTotal - preRoundTotal;
+      const newTotal = Number(preRoundTotal.toFixed(2));
+      const roundOff = 0;
 
       db.prepare(`
         UPDATE orders SET discount_amount = ?, discount_type = ?, discount_value = ?,
@@ -972,7 +976,9 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
       const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ? AND payment_status != ?')
         .get(req.params.id, 'paid') as any;
       if (existingBill) {
-        const newBillBalance = Math.max(0, newTotal - (existingBill.paid_amount || 0));
+        const pack = getActiveCountryPack(tenantInfo.country);
+        const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(newTotal, pack);
+        const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
         db.prepare(`
           UPDATE bills SET discount_amount = ?, discount_type = ?, discount_value = ?,
             discount_reason = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ?, round_off = ?, updated_at = ?
@@ -982,7 +988,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
           discount_value > 0 ? discount_type : null,
           discount_value > 0 ? discount_value : null,
           discount_value > 0 ? (discount_reason || null) : null,
-          taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newTotal, newBillBalance, roundOff, now(), existingBill.id
+          taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, billTotal, newBillBalance, billRoundOff, now(), existingBill.id
         );
       }
 
@@ -1171,8 +1177,8 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
     });
     const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
       + (order.packaging_charge || 0) + (order.delivery_charge || 0);
-    const orderTotal = Math.round(preRoundTotal);
-    const roundOff = orderTotal - preRoundTotal;
+    const orderTotal = Number(preRoundTotal.toFixed(2));
+    const roundOff = 0;
 
     db.prepare(`
       UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
@@ -1181,9 +1187,11 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
     // BUG #15 FIX: Sync item-level discount to bill
     const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
     if (existingBill) {
-      const newBillBalance = Math.max(0, orderTotal - (existingBill.paid_amount || 0));
+      const pack = getActiveCountryPack(tenantInfo.country);
+      const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(orderTotal, pack);
+      const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
       db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-        .run(orderTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, roundOff, now(), existingBill.id);
+        .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newOrderDiscount, billRoundOff, now(), existingBill.id);
     }
 
     const updatedItem = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.itemId) as any;

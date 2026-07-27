@@ -31,9 +31,11 @@ import { checkPinRateLimit } from './orders';
 import {
   calculateConfiguredChargeTaxes,
   combineItemAndChargeTaxes,
+  getActiveCountryPack,
   invertTaxBreakdown,
   invertTaxSnapshot,
 } from '../services/tax';
+import { applyPayableRounding } from '../services/tax-engine';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 
@@ -372,8 +374,8 @@ export function registerRoutes(app: Express): void {
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
         const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
           + (order.delivery_charge || 0) + (order.packaging_charge || 0);
-        const roundOff = Math.round(preRoundTotal) - preRoundTotal;
-        const total = Math.round(preRoundTotal);
+        const roundOff = 0;
+        const total = Number(preRoundTotal.toFixed(2));
 
         // #132 FIX: cancelling the last active item leaves nothing to serve or
         // bill — treat it as the whole order being cancelled, the same way the
@@ -409,9 +411,11 @@ export function registerRoutes(app: Express): void {
         // Sync bill if it exists
         const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
         if (existingBill) {
-          const newBillBalance = Math.max(0, total - (existingBill.paid_amount || 0));
+          const pack = getActiveCountryPack(tenantInfo.country);
+          const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack);
+          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
           db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-            .run(total, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, roundOff, now(), existingBill.id);
+            .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, billRoundOff, now(), existingBill.id);
         }
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
@@ -536,8 +540,8 @@ export function registerRoutes(app: Express): void {
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
         const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
           + (order.delivery_charge || 0) + (order.packaging_charge || 0);
-        const roundOff = Math.round(preRoundTotal) - preRoundTotal;
-        const total = Math.round(preRoundTotal);
+        const roundOff = 0;
+        const total = Number(preRoundTotal.toFixed(2));
 
         db.prepare(`
           UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
@@ -546,9 +550,11 @@ export function registerRoutes(app: Express): void {
         // Sync bill if it exists
         const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
         if (existingBill) {
-          const newBillBalance = Math.max(0, total - (existingBill.paid_amount || 0));
+          const pack = getActiveCountryPack(tenantInfo.country);
+          const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack);
+          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
           db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-            .run(total, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, roundOff, now(), existingBill.id);
+            .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, billRoundOff, now(), existingBill.id);
         }
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;

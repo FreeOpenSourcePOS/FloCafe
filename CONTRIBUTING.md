@@ -24,6 +24,33 @@ npm run dev
 
 This launches both the Next.js dev server (port 3002) and the Electron app (port 3001 API).
 
+### macOS Gatekeeper & the Electron dev binary
+
+`npm install` runs a check (`npm run verify:electron`) against the Electron
+binary it just downloaded into `node_modules/electron/dist`. Two things are
+worth knowing about this:
+
+- **`codesign --verify --deep --strict` failing against
+  `node_modules/electron/dist/Electron.app` is expected and harmless.** The
+  `electron` npm package ships an ad-hoc-signed dev binary with no sealed
+  resources — this is true of every install, on every machine, for every
+  recent Electron version we've checked. It is *not* what end users receive:
+  `npm run build:mac` / `release:mac` re-sign the packaged app from scratch
+  with the real Developer ID certificate, and that signed-and-notarized build
+  is what CI verifies with `codesign --deep --strict`, `spctl`, and
+  `stapler validate` (see `.github/workflows/release.yml`). Don't try to "fix"
+  the dev binary's signature — there's nothing wrong with it.
+- **If macOS shows an "Electron has been blocked" / "may reduce your
+  privacy" dialog, or `npm run verify:electron` reports a
+  `com.apple.quarantine` flag, do not run `spctl --master-disable` or
+  otherwise disable Gatekeeper system-wide.** A plain `npm install` shouldn't
+  quarantine anything; if it did, something in your download path (a proxy,
+  an AV tool, a non-npm copy step) tagged it, and that's worth fixing at the
+  source rather than papering over. The approved remediation is a clean
+  reinstall: `rm -rf node_modules/electron && npm install`. If
+  `verify:electron` still fails after that, it's a real problem — open an
+  issue rather than bypassing Gatekeeper.
+
 ### Useful Commands
 
 | Command | What it does |

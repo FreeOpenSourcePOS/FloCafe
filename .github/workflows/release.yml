@@ -163,6 +163,11 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Verify Electron dev runtime
+        # npm ci already runs this via package.json's postinstall — repeated
+        # here as an explicit, visible gate before the build below relies on it.
+        run: npm run verify:electron
+
       - name: Verify macOS signing credentials
         # Fail loudly rather than let electron-builder silently emit an
         # unsigned/unnotarized build — that shipped for every release before
@@ -225,6 +230,34 @@ jobs:
             release/*.zip.blockmap \
             release/latest-mac.yml \
             --repo FreeOpenSourcePOS/FloCafe --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Verify freshly downloaded macOS release artifact
+        # The "Verify macOS release assets" step above only checks the local
+        # electron-builder output directory — it can't catch anything that
+        # goes wrong between build and publish (upload corruption, the
+        # `--clobber` overwrite, GitHub's own storage). Re-download what was
+        # just published and run the same signature/Gatekeeper/notarization
+        # checks against that, so a "clean" local build can't mask a broken
+        # published release.
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          DOWNLOAD_DIR=$(mktemp -d)
+          VERIFY_DIR=$(mktemp -d)
+          trap 'rm -rf "$DOWNLOAD_DIR" "$VERIFY_DIR"' EXIT
+          gh release download "v${VERSION}" --repo FreeOpenSourcePOS/FloCafe --pattern '*.zip' --dir "$DOWNLOAD_DIR"
+          ls "$DOWNLOAD_DIR"/*.zip >/dev/null 2>&1 || { echo "::error::no .zip downloaded from the published release"; exit 1; }
+          for ZIP in "$DOWNLOAD_DIR"/*.zip; do
+            APP_DIR="$VERIFY_DIR/$(basename "$ZIP" .zip)"
+            mkdir -p "$APP_DIR"
+            ditto -x -k "$ZIP" "$APP_DIR"
+            APP=$(find "$APP_DIR" -maxdepth 2 -type d -name '*.app' -print -quit)
+            [ -n "$APP" ] || { echo "::error::no app bundle in downloaded $ZIP"; exit 1; }
+            codesign --verify --deep --strict --verbose=2 "$APP"
+            spctl --assess --type execute --verbose=4 "$APP"
+            xcrun stapler validate "$APP"
+          done
         env:
           GH_TOKEN: ${{ github.token }}
 

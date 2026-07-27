@@ -544,8 +544,8 @@ export default function ProductsPage() {
                   <div className="flex flex-col gap-0.5">
                     <span>{taxLabel}</span>
                     {!product.tax_category_id && taxCategories.length > 0 && (
-                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title="Not assigned to a tax category — using the manually entered rate">
-                        <AlertTriangle size={11} className="shrink-0" /> Legacy rate
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title={t('products.notTaxedTooltip')}>
+                        <AlertTriangle size={11} className="shrink-0" /> {t('products.notTaxedBadge')}
                       </span>
                     )}
                   </div>

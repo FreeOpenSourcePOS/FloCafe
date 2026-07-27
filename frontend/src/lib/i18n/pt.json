@@ -399,6 +399,8 @@
   "products.taxExclusive": "Exclusivo",
   "products.taxInclusive": "Inclusivo",
   "products.taxNone": "Sem Imposto",
+  "products.notTaxedBadge": "Sem imposto",
+  "products.notTaxedTooltip": "Nenhuma categoria de imposto atribuída — este produto não cobra imposto nem imprime uma linha de imposto.",
   "products.title": "Produtos",
   "products.update": "Atualizar",
   "products.uploadCsv": "Enviar CSV",

@@ -14,7 +14,7 @@ const ports = process.argv.slice(2)
   .map((p) => parseInt(p, 10))
   .filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535);
 
-if (ports.length === 0) {
+if (ports.length === 0 && require.main === module) {
   console.log('[kill-ports] No valid ports specified. Usage: node kill-ports.js 3001 3002');
   process.exit(0);
 }
@@ -31,9 +31,10 @@ const isLinux = os.platform() === 'linux';
 //   - Mac/Windows: productName "Flo Cafe"
 const FLO_PATTERNS = [
   /flo[_\-]?desktop/i,  // legacy Linux app.name (kept for dev backward compat)
-  /flocafe/i,           // Linux executableName (snap/AppImage/deb)
+  /flocafe/i,           // Linux executableName (snap/AppImage/deb) or project directory
   /Flo\s*Cafe/i,        // macOS/Windows productName
   /com\.flo\.desktop/i, // macOS bundle ID
+  /flo[_\-]?pos/i,      // dev title fallback
 ];
 
 function isFloProcess(cmdline) {
@@ -206,9 +207,9 @@ async function killPort(port) {
 
   // Report what we found but won't touch
   for (const p of otherProcs) {
-    const name = p.cmdline.split(/\s/)[0] || 'unknown';
+    const cmd = p.cmdline || 'unknown process';
     console.log(
-      `[kill-ports] Port ${port}: SKIP — PID ${p.pid} (${name}) is not a Flo process.`
+      `[kill-ports] Port ${port}: SKIP — PID ${p.pid} (${cmd}) is not a Flo process.`
     );
   }
 
@@ -221,8 +222,8 @@ async function killPort(port) {
 
   // Kill Flo processes
   for (const p of floProcs) {
-    const name = p.cmdline.split(/\s/)[0] || 'electron';
-    console.log(`[kill-ports] Port ${port}: killing Flo process PID ${p.pid} (${name})...`);
+    const cmd = p.cmdline || 'electron';
+    console.log(`[kill-ports] Port ${port}: killing Flo process PID ${p.pid} (${cmd})...`);
     if (isWindows) {
       await gracefulKillWindows(p.pid);
     } else {
@@ -232,9 +233,18 @@ async function killPort(port) {
   }
 }
 
-// ── Main ────────────────────────────────────────────────────────────────────
-(async () => {
-  for (const port of ports) {
-    await killPort(port);
-  }
-})();
+// ── Main / Export ───────────────────────────────────────────────────────────
+if (require.main === module) {
+  (async () => {
+    for (const port of ports) {
+      await killPort(port);
+    }
+  })();
+} else {
+  module.exports = {
+    isFloProcess,
+    FLO_PATTERNS,
+    getProcessesOnPort,
+    killPort,
+  };
+}

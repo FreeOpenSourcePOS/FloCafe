@@ -12,31 +12,10 @@ echo -e "${BLUE}    Flo POS - Clean Restart            ${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-# Function to kill processes on a port
-kill_port() {
-    local port=$1
-    echo -e "${YELLOW}Checking port $port...${NC}"
-    
-    if lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
-        echo -e "${RED}Killing processes on port $port...${NC}"
-        lsof -Pi :$port -sTCP:LISTEN -t | xargs kill -9 2>/dev/null || true
-        sleep 1
-        echo -e "${GREEN}Port $port freed${NC}"
-    else
-        echo -e "${GREEN}Port $port is already free${NC}"
-    fi
-}
-
-echo -e "${BLUE}Step 1: Killing existing processes${NC}"
+echo -e "${BLUE}Step 1: Killing existing Flo processes${NC}"
 echo "----------------------------------------"
 
-kill_port 3000
-kill_port 3001
-kill_port 3088
-
-# Kill Electron and Node processes
-pkill -9 -f "electron" 2>/dev/null || true
-pkill -9 -f "next" 2>/dev/null || true
+node kill-ports.js 3000 3001 3002 3088
 
 echo ""
 echo -e "${BLUE}Step 2: Clearing caches${NC}"

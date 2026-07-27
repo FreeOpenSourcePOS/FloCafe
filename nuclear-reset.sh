@@ -7,30 +7,45 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+CONFIRMED=false
+for arg in "$@"; do
+  case $arg in
+    -y|--yes)
+      CONFIRMED=true
+      ;;
+  esac
+done
+
+if [ "$FORCE" = "1" ] || [ "$CI" = "true" ]; then
+  CONFIRMED=true
+fi
+
+if [ "$CONFIRMED" = "false" ]; then
+  if [ -t 0 ]; then
+    read -p "WARNING: This will stop Flo processes, clear build/app caches, and rebuild. Continue? (y/N) " -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+      echo "Nuclear reset cancelled."
+      exit 0
+    fi
+  else
+    echo -e "${RED}Error: Non-interactive shell detected. Use -y or --yes flag or set FORCE=1 to confirm nuclear reset.${NC}"
+    exit 1
+  fi
+fi
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}    Flo POS - Nuclear Reset             ${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-echo -e "${BLUE}Step 1: Killing all processes${NC}"
+echo -e "${BLUE}Step 1: Killing Flo processes${NC}"
 echo "----------------------------------------"
 
-# Kill everything
-sudo pkill -9 -f "electron" 2>/dev/null || true
-sudo pkill -9 -f "node" 2>/dev/null || true
-sudo pkill -9 -f "flo" 2>/dev/null || true
-sleep 2
+node kill-ports.js 3000 3001 3002 3088
+sleep 1
 
-# Force kill any remaining on ports
-for port in 3000 3001 3088; do
-    pid=$(lsof -ti:$port 2>/dev/null)
-    if [ ! -z "$pid" ]; then
-        echo -e "${RED}Killing process $pid on port $port${NC}"
-        sudo kill -9 $pid 2>/dev/null || true
-    fi
-done
-
-echo -e "${GREEN}All processes killed${NC}"
+echo -e "${GREEN}Flo processes stopped${NC}"
 
 echo ""
 echo -e "${BLUE}Step 2: Clearing ALL caches${NC}"

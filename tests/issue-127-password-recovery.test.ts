@@ -201,11 +201,11 @@ async function runTests() {
   // ── Test 7: rate limiting kicks in after repeated wrong-PIN attempts ─────
   console.log('\nTest 7: rate limiting kicks in after repeated wrong-PIN attempts');
   {
-    // Budget so far consumed against the recover-password rate-limit key
-    // (IP-scoped, 5 attempts per window): Test 3 (1) + Test 4 (1) = 2 used.
-    // 3 attempts remain before the 6th trips the 429.
+    // A successful Master PIN verification resets the failed-attempt counter.
+    // Five consecutive wrong PINs therefore produce four 403 responses, then
+    // a 429 on the fifth failure.
     let lastStatus = 0;
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 4; i++) {
       const res = await request(app).post('/api/auth/recover-password').send({
         email: 'owner@example.com', master_pin: '9999', new_password: 'AnotherNewPass123',
       });
@@ -215,7 +215,7 @@ async function runTests() {
     const blocked = await request(app).post('/api/auth/recover-password').send({
       email: 'owner@example.com', master_pin: '9999', new_password: 'AnotherNewPass123',
     });
-    assert(blocked.status === 429, `the 6th attempt in the window is rate-limited (got ${blocked.status})`);
+    assert(blocked.status === 429, `the 5th failed attempt in the window is rate-limited (got ${blocked.status})`);
     assert(lastStatus === 403, 'sanity: the attempts immediately before the block were still plain wrong-PIN rejections');
   }
 

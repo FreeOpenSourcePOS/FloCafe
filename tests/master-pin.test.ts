@@ -81,6 +81,30 @@ function main() {
   if (!result.ok) assert.equal(result.status, 403, 'wrong PIN returns 403');
   console.log('   ✓ authorizeMasterPin() authorizes correct PIN, rejects wrong PIN with 403');
 
+  // Missing and malformed PINs must NOT consume rate limit attempts
+  const missingKey = 'test:missing-pin';
+  for (let i = 0; i < 10; i++) {
+    const r = authorizeMasterPin(undefined, missingKey);
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.status, 403, 'missing PIN returns 403');
+  }
+  // Now 1 valid PIN attempt on the same key should succeed
+  const validRes = authorizeMasterPin('4321', missingKey);
+  assert.equal(validRes.ok, true, 'missing PIN calls did not consume rate limit attempts');
+  console.log('   ✓ missing/malformed PIN does not consume rate limit attempts');
+
+  // 5 wrong attempts lock out key with 429
+  const lockoutKey = 'test:lockout';
+  for (let i = 0; i < 4; i++) {
+    const r = authorizeMasterPin('0000', lockoutKey);
+    assert.equal(r.ok, false);
+    if (!r.ok) assert.equal(r.status, 403, 'wrong PIN attempt 1-4 returns 403');
+  }
+  const r5 = authorizeMasterPin('0000', lockoutKey);
+  assert.equal(r5.ok, false);
+  if (!r5.ok) assert.equal(r5.status, 429, '5th wrong PIN attempt returns 429 lockout');
+  console.log('   ✓ 5th wrong attempt triggers 429 lockout');
+
   // ── fallback when encryption is unavailable ──────────────────────────
   encryptionAvailable = false;
   result = authorizeMasterPin('anything-or-nothing', 'test:no-encryption');

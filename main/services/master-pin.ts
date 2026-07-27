@@ -81,7 +81,18 @@ export function verifyMasterPin(pin: string): boolean {
 
 const pinAttempts = new Map<string, { count: number; resetAt: number }>();
 
-export function checkMasterPinRateLimit(key: string): boolean {
+export function isMasterPinRateLimited(key: string): boolean {
+  const nowMs = Date.now();
+  const entry = pinAttempts.get(key);
+  if (!entry) return false;
+  if (nowMs > entry.resetAt) {
+    pinAttempts.delete(key);
+    return false;
+  }
+  return entry.count >= RATE_LIMIT_MAX_ATTEMPTS;
+}
+
+export function recordMasterPinFailedAttempt(key: string): boolean {
   const nowMs = Date.now();
   const entry = pinAttempts.get(key);
   if (!entry || nowMs > entry.resetAt) {
@@ -93,8 +104,16 @@ export function checkMasterPinRateLimit(key: string): boolean {
   return true;
 }
 
+export function resetMasterPinRateLimit(key: string): void {
+  pinAttempts.delete(key);
+}
+
+export function checkMasterPinRateLimit(key: string): boolean {
+  return recordMasterPinFailedAttempt(key);
+}
+
 export type MasterPinAuthResult =
-  | { ok: true }
+  | { ok: true; status?: undefined; error?: undefined }
   | { ok: false; status: number; error: string };
 
 /**
@@ -118,13 +137,22 @@ export function authorizeMasterPin(pin: string | undefined, rateLimitKey: string
     return { ok: false, status: 409, error: 'Master PIN is not set on this device yet. Set one in Settings first.' };
   }
 
-  if (!checkMasterPinRateLimit(rateLimitKey)) {
+  if (isMasterPinRateLimited(rateLimitKey)) {
     return { ok: false, status: 429, error: 'Too many incorrect Master PIN attempts. Try again later.' };
   }
 
-  if (!pin || !verifyMasterPin(pin)) {
+  if (!pin || typeof pin !== 'string' || !PIN_REGEX.test(pin)) {
     return { ok: false, status: 403, error: 'Invalid Master PIN' };
   }
 
+  if (!verifyMasterPin(pin)) {
+    recordMasterPinFailedAttempt(rateLimitKey);
+    if (isMasterPinRateLimited(rateLimitKey)) {
+      return { ok: false, status: 429, error: 'Too many incorrect Master PIN attempts. Try again later.' };
+    }
+    return { ok: false, status: 403, error: 'Invalid Master PIN' };
+  }
+
+  resetMasterPinRateLimit(rateLimitKey);
   return { ok: true };
 }

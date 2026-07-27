@@ -140,6 +140,23 @@ export function invalidateUserAuthCache(userId: string): void {
   userAuthCache.delete(userId);
 }
 
+const revokedTokens = new Set<string>();
+
+export function revokeToken(token: string): void {
+  if (token && typeof token === 'string') {
+    revokedTokens.add(token);
+  }
+}
+
+export function isTokenRevoked(token: string): boolean {
+  if (!token || typeof token !== 'string') return true;
+  return revokedTokens.has(token);
+}
+
+export function clearRevokedTokens(): void {
+  revokedTokens.clear();
+}
+
 /**
  * Role-based authorization middleware.
  * Must be used after requireAuth.

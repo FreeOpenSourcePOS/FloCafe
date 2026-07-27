@@ -474,9 +474,23 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
-      const user = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-        .all()
-        .find((u: any) => verifyPin(u.pin_hash, override_pin));
+      const managerId = req.body.manager_id || req.body.user_id;
+      let user: any = null;
+      if (managerId) {
+        const candidate = db.prepare("SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").get(managerId) as any;
+        if (candidate && verifyPin(candidate.pin_hash, override_pin)) {
+          user = candidate;
+        }
+      }
+      if (!user) {
+        const managers = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").all() as any[];
+        for (const u of managers) {
+          if (verifyPin(u.pin_hash, override_pin)) {
+            user = u;
+            break;
+          }
+        }
+      }
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });
       }

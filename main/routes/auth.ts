@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
-import { authRateLimit, validatePassword } from '../middleware/security';
+import { authRateLimit, validatePassword, revokeToken, isTokenRevoked } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode } from '../countries';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 
@@ -331,7 +331,8 @@ router.post('/login', authRateLimit(), (req: Request, res: Response) => {
       return res.status(429).json({ error: `Too many failed attempts. Try again in ${rateLimit.waitMinutes} minutes.` });
     }
 
-    const { email, password, rememberMe } = req.body;
+    const email = normalizeEmail(req.body?.email);
+    const { password, rememberMe } = req.body || {};
 
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password required' });
@@ -392,6 +393,9 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
+    if (isTokenRevoked(token)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
@@ -420,7 +424,11 @@ router.post('/tenants/select', (req: Request, res: Response) => {
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────
 
-router.post('/logout', (_req: Request, res: Response) => {
+router.post('/logout', (req: Request, res: Response) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    revokeToken(authHeader.split(' ')[1]);
+  }
   res.json({ message: 'Logged out successfully' });
 });
 
@@ -434,10 +442,13 @@ router.post('/refresh', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
+    if (isTokenRevoked(token)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
     const decoded = jwt.verify(token, getJWTSecret()) as any;
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId, remember },
+      { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId, remember, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -462,6 +473,9 @@ router.get('/me', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
+    if (isTokenRevoked(token)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
@@ -491,6 +505,9 @@ router.post('/password/change', (req: Request, res: Response) => {
     }
 
     const token = authHeader.split(' ')[1];
+    if (isTokenRevoked(token)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();

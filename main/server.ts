@@ -10,7 +10,7 @@ import { registerRoutes } from './routes';
 import { getJWTSecret } from './routes/auth';
 import { getDbHealth, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
-import { rateLimit, corsOptions, getUserAuthStatus } from './middleware/security';
+import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 
 let server: http.Server | null = null;
@@ -41,7 +41,12 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     return;
   }
   try {
-    const decoded = jwt.verify(authHeader.split(' ')[1], getJWTSecret()) as any;
+    const token = authHeader.split(' ')[1];
+    if (isTokenRevoked(token)) {
+      res.status(401).json({ error: 'Invalid or expired token' });
+      return;
+    }
+    const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     // Reject tokens for users deactivated (or deleted) since the token was
     // issued, instead of trusting the JWT's signature/expiry alone (vuln-0001).

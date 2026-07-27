@@ -105,7 +105,19 @@ export const useAuthStore = create<AuthState>((set) => ({
     }
     const token = localStorage.getItem('token');
     const tenantStr = localStorage.getItem('tenant');
-    const currentTenant = tenantStr ? JSON.parse(tenantStr) : null;
+    let currentTenant: Tenant | null = null;
+    if (tenantStr) {
+      try {
+        const parsed = JSON.parse(tenantStr);
+        if (parsed && typeof parsed === 'object' && typeof parsed.id === 'number') {
+          currentTenant = parsed as Tenant;
+        } else {
+          localStorage.removeItem('tenant');
+        }
+      } catch {
+        localStorage.removeItem('tenant');
+      }
+    }
 
     if (token) {
       api.get('/auth/me')

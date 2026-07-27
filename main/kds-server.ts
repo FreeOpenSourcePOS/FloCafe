@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret } from './routes/auth';
-import { rateLimit, authRateLimit, corsOptions } from './middleware/security';
+import { rateLimit, authRateLimit, corsOptions, isTokenRevoked } from './middleware/security';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -100,6 +100,9 @@ export function startKdsServer(): Promise<void> {
       }
 
       const token = authHeader.split(' ')[1];
+      if (isTokenRevoked(token)) {
+        return res.status(401).json({ error: 'Invalid token' });
+      }
       try {
         const decoded = jwt.verify(token, getJWTSecret()) as any;
         const db = getDatabase();

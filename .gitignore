@@ -35,3 +35,6 @@ build/flo.provisionprofile
 
 .next/
 brain/
+
+# Private code-review reports and remediation notes — never commit
+code-review/

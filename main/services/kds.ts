@@ -2,6 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret } from '../routes/auth';
+import { getUserAuthStatus, isTokenRevoked } from '../middleware/security';
 
 interface KdsClient {
   ws: WebSocket;
@@ -97,8 +98,8 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
   const { token } = message;
 
   // JWT-only authentication — plaintext password auth removed for security
-  if (!token) {
-    ws.send(JSON.stringify({ type: 'auth_error', message: 'Token required' }));
+  if (!token || isTokenRevoked(token)) {
+    ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid or revoked token' }));
     return;
   }
 
@@ -142,8 +143,20 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
 }
 
 function handleStatusUpdate(client: KdsClient, message: any): void {
-  if (!client.userId) {
-    client.ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated' }));
+  if (!client.userId || !client.token || isTokenRevoked(client.token)) {
+    client.ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated or session revoked' }));
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(client.token, getJWTSecret()) as any;
+    const userStatus = getUserAuthStatus(decoded.userId);
+    if (!userStatus || !userStatus.isActive || !['chef', 'owner', 'manager'].includes(userStatus.role)) {
+      client.ws.send(JSON.stringify({ type: 'error', message: 'User deactivated or unauthorized' }));
+      return;
+    }
+  } catch {
+    client.ws.send(JSON.stringify({ type: 'error', message: 'Session expired or invalid' }));
     return;
   }
 

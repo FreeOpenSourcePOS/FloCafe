@@ -265,9 +265,23 @@ export function registerRoutes(app: Express): void {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
 
-        const pinUser = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-          .all()
-          .find((u: any) => verifyPin(u.pin_hash, override_pin));
+        const managerId = req.body.manager_id || req.body.user_id;
+        let pinUser: any = null;
+        if (managerId) {
+          const candidate = db.prepare("SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").get(managerId) as any;
+          if (candidate && verifyPin(candidate.pin_hash, override_pin)) {
+            pinUser = candidate;
+          }
+        }
+        if (!pinUser) {
+          const managers = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").all() as any[];
+          for (const u of managers) {
+            if (verifyPin(u.pin_hash, override_pin)) {
+              pinUser = u;
+              break;
+            }
+          }
+        }
         if (!pinUser) {
           return res.status(403).json({ error: 'Invalid manager PIN' });
         }

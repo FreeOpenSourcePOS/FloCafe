@@ -14,6 +14,7 @@ import { registerIpcHandlers } from './ipc';
 import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
+import { isAllowedLocalWindowUrl } from './security/url-allowlist';
 
 // ── GPU compatibility ────────────────────────────────────────────────────────
 // On Windows, some systems hit "GPU process exited unexpectedly" (exit code
@@ -271,9 +272,7 @@ function createWindow(): void {
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page).
   // External URLs are sent to the system browser instead.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    const isLocal = url.startsWith(`http://localhost:${PORT}`) ||
-                    url.startsWith(`http://127.0.0.1:${PORT}`) ||
-                    url.startsWith(`http://${getLocalIP()}:${PORT}`);
+    const isLocal = isAllowedLocalWindowUrl(url, PORT, getLocalIP());
     if (isLocal) {
       return {
         action: 'allow',

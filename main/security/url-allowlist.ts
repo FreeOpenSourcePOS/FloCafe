@@ -1,0 +1,22 @@
+function originFor(hostname: string, port: number): string {
+  const host = hostname.includes(':') ? `[${hostname}]` : hostname;
+  return `http://${host}:${port}`;
+}
+
+export function isAllowedLocalWindowUrl(rawUrl: string, port: number, localIp?: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    if (parsed.protocol !== 'http:' || parsed.username || parsed.password) return false;
+
+    const allowedOrigins = new Set([
+      originFor('localhost', port),
+      originFor('127.0.0.1', port),
+      originFor('::1', port),
+      ...(localIp ? [originFor(localIp, port)] : []),
+    ]);
+
+    return allowedOrigins.has(parsed.origin);
+  } catch {
+    return false;
+  }
+}

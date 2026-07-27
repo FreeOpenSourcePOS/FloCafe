@@ -148,6 +148,7 @@ export interface Order {
   packaging_charge?: number;
   round_off?: number;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
+  tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;
   total: number;
   guest_count: number | null;
   special_instructions: string | null;
@@ -170,6 +171,8 @@ export interface OrderItem {
   subtotal: number;
   tax_amount: number;
   total: number;
+  tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
+  tax_snapshot?: TaxSnapshot | null;
   addons: { id?: number | string | null; name: string; price?: number; quantity?: number }[] | null;
   special_instructions: string | null;
   status: 'pending' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided' | 'void_adjustment';
@@ -196,9 +199,25 @@ export interface Bill {
   payment_status: 'unpaid' | 'partial' | 'paid';
   payment_details: { method: string; amount: number; timestamp: string }[] | null;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
+  tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;
   order?: Order;
   /** Loyalty points credited for this bill (sum of loyalty_ledger credits). Only populated by /orders endpoints. */
   points_earned?: number;
+}
+
+export interface TaxSnapshot {
+  lines: Array<{
+    lineId?: string;
+    components: Array<{
+      ruleId?: string;
+      label?: string;
+      title?: string;
+      type?: string;
+      rate?: string | number;
+      amount: string | number;
+    }>;
+  }>;
+  [key: string]: unknown;
 }
 
 export interface Staff {

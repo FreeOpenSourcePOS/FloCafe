@@ -4,6 +4,7 @@ import { execSync, exec, execFileSync } from 'child_process';
 import { getDatabase } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
+import { resolveTaxComponents } from '../services/tax-components';
 
 const isMasBuild =
   process.env.MAS_BUILD === '1' ||
@@ -563,6 +564,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   const amtLen = 10;
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
+  const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
 
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
@@ -615,7 +617,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push(bar);
   if (biz.address) lines.push(biz.address);
   if (biz.phone) lines.push('Ph: ' + biz.phone);
-  if (biz.gstin) lines.push('GSTIN: ' + biz.gstin);
+  if (biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
   lines.push('{CENTER}Thank you!{/CENTER}');
   lines.push('{CUT}');
 
@@ -728,6 +730,7 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   const itemNameLen = cols === 42 ? 22 : 28;
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
+  const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
 
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
@@ -764,20 +767,14 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
     lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale), cols - 8));
   }
 
-  if (bill.tax_breakdown) {
-    try {
-      const taxBreakdown = typeof bill.tax_breakdown === 'string' ? JSON.parse(bill.tax_breakdown) : bill.tax_breakdown;
-      if (Array.isArray(taxBreakdown) && taxBreakdown.length > 0) {
-        for (const tax of taxBreakdown) {
-          if (tax.amount > 0) {
-            lines.push((tax.name || 'Tax') + ' @' + tax.rate + '%' + rightAlign(formatCurrency(tax.amount, prefix, locale), cols - 16));
-          }
-        }
-      }
-    } catch {
-      lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
+  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
+  if (taxComponents.length > 0) {
+    for (const tax of taxComponents) {
+      if (tax.amount === 0) continue;
+      const label = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
+      lines.push(label + rightAlign(formatCurrency(tax.amount, prefix, locale), cols - label.length));
     }
-  } else {
+  } else if (bill.tax_amount) {
     lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
   }
 
@@ -801,7 +798,7 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   lines.push(bar);
   if (biz.address) lines.push('Address: ' + biz.address);
   if (biz.phone) lines.push('Phone: ' + biz.phone);
-  if (biz.gstin) lines.push('GSTIN: ' + biz.gstin);
+  if (biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
   lines.push('{CENTER}Thank you for your business!{/CENTER}');
   lines.push('{CUT}');
 

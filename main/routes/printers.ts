@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceipt, printKOT, detectConnectedPrinters } from '../printers/thermal';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
@@ -269,7 +269,11 @@ router.post('/print-bill', requireRole('owner', 'manager'), async (req: Request,
     console.log('[Print Bill] Order:', order.order_number);
 
     // Fetch order items
-    const items: any[] = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(bill.order_id) as any[]);
+    const items: any[] = attachEffectiveAddons(
+      db,
+      (db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(bill.order_id) as any[])
+        .map(parseItemJson),
+    );
     order.items = items;
     console.log('[Print Bill] Items count:', items.length);
 

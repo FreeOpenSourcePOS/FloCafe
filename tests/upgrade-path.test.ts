@@ -133,6 +133,17 @@ function main() {
     }
   }
   console.log('   ✓ old installs receive every Phase 1 tax table and guarded additive column');
+  assert.equal(
+    (db.prepare('SELECT COUNT(*) AS count FROM country_packs').get() as { count: number }).count,
+    3,
+    'old installs register all bundled tax packs during upgrade',
+  );
+  assert.equal(
+    (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
+    3,
+    'old installs register all bundled pack versions during upgrade',
+  );
+  console.log('   ✓ old installs receive the bundled tax pack registry without replacing legacy tax data');
 
   assert.equal((db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count, 10);
   const preservedOrder = db.prepare(`

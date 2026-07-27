@@ -4,6 +4,7 @@ import { app } from 'electron';
 import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
+import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -1346,6 +1347,116 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 38,
+    name: 'register_bundled_tax_pack_versions',
+    up: () => {
+      createTaxPackSchema();
+      const insertPack = db.prepare(`
+        INSERT INTO country_packs (
+          id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          publisher = excluded.publisher,
+          country = excluded.country,
+          jurisdiction = excluded.jurisdiction,
+          active_version_id = COALESCE(country_packs.active_version_id, excluded.active_version_id),
+          updated_at = excluded.updated_at
+      `);
+      const insertVersion = db.prepare(`
+        INSERT OR IGNORE INTO country_pack_versions (
+          id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
+          effective_from, effective_to, min_flo_version, published_at, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', ?)
+      `);
+      const insertCategory = db.prepare(`
+        INSERT OR IGNORE INTO tax_categories (
+          id, pack_version_id, category_id, label, default_behavior, definition_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      const insertRule = db.prepare(`
+        INSERT OR IGNORE INTO tax_rules (
+          id, pack_version_id, rule_id, label, calculation_type, rate, amount,
+          applies_per, base_rule_ids, definition_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const pack of BUNDLED_COUNTRY_PACKS) {
+        const versionId = bundledPackVersionId(pack);
+        const packJson = JSON.stringify(pack);
+        const installedAt = now();
+        const alreadyInstalled = db.prepare(
+          'SELECT 1 FROM country_pack_versions WHERE id = ?'
+        ).get(versionId);
+
+        insertPack.run(
+          pack.id, pack.publisher, pack.country, pack.jurisdiction,
+          versionId, installedAt, installedAt,
+        );
+        insertVersion.run(
+          versionId,
+          pack.id,
+          pack.version,
+          pack.schemaVersion,
+          JSON.stringify({
+            id: pack.id,
+            publisher: pack.publisher,
+            country: pack.country,
+            jurisdiction: pack.jurisdiction,
+            version: pack.version,
+            publishedAt: pack.publishedAt,
+          }),
+          packJson,
+          sha256Hex(packJson),
+          pack.effectiveFrom,
+          pack.effectiveTo || null,
+          pack.minFloVersion,
+          pack.publishedAt,
+          installedAt,
+        );
+
+        for (const category of pack.categories) {
+          insertCategory.run(
+            `${versionId}:category:${category.id}`,
+            versionId,
+            category.id,
+            category.label,
+            category.defaultBehavior || null,
+            JSON.stringify(category),
+            installedAt,
+          );
+        }
+        for (const rule of pack.rules) {
+          insertRule.run(
+            `${versionId}:rule:${rule.id}`,
+            versionId,
+            rule.id,
+            rule.label,
+            rule.type,
+            rule.rate || null,
+            rule.amount || null,
+            rule.appliesPer || null,
+            JSON.stringify(rule.baseRuleIds || []),
+            JSON.stringify(rule),
+            installedAt,
+          );
+        }
+
+        if (!alreadyInstalled) {
+          db.prepare(`
+            INSERT INTO tax_config_audit (
+              action, pack_id, pack_version_id, details_json, created_at
+            ) VALUES ('install_bundled_pack', ?, ?, ?, ?)
+          `).run(
+            pack.id,
+            versionId,
+            JSON.stringify({ source: 'application_bundle', version: pack.version }),
+            installedAt,
+          );
+        }
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -2215,6 +2326,7 @@ export function parseItemJson(item: any): any {
     variant_selection: tryParse(item.variant_selection),
     modifier_selection: tryParse(item.modifier_selection),
     tax_breakdown: tryParse(item.tax_breakdown),
+    tax_snapshot: tryParse(item.tax_snapshot),
   };
 }
 
@@ -2279,6 +2391,7 @@ export function parseRowJson(row: any): any {
   return {
     ...row,
     tax_breakdown: taxBreakdown,
+    tax_snapshot: tryParse(row.tax_snapshot),
     payment_details: tryParse(row.payment_details),
   };
 }

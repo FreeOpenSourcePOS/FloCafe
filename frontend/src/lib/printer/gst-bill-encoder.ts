@@ -1,9 +1,9 @@
 /**
  * gst-bill-encoder.ts
  *
- * Indian GST-compliant billing receipt encoder for ESC/POS thermal printers.
+ * Detailed tax billing receipt encoder for ESC/POS thermal printers.
  * Supports both 58mm (2.5") and 80mm (3.5") paper widths.
- * Includes: GSTIN, HSN codes, CGST/SGST or IGST breakdown, item-wise tax.
+ * Includes: tax registration number, HSN/reference codes, and item tax details.
  */
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
@@ -11,13 +11,14 @@ import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
+import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 
 export interface GstBillOptions {
   /** 58 mm (2.5", 32 chars) or 80 mm (3.5", 48 chars). Default: 58 */
   paperWidth?: 58 | 80;
   /** Show "Thank you" footer. Default: true */
   showFooter?: boolean;
-  /** Business GSTIN number */
+  /** Business tax registration number */
   gstin?: string;
   /** Business address */
   address?: string;
@@ -40,7 +41,7 @@ function maskPhoneOnReceipt(phone: string): string {
 }
 
 /**
- * Build a GST-compliant bill byte array from a Bill object.
+ * Build a detailed tax bill byte array from a Bill object.
  */
 export function buildGstBillBytes(
   bill: Bill,
@@ -52,6 +53,7 @@ export function buildGstBillBytes(
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
@@ -68,7 +70,7 @@ export function buildGstBillBytes(
     enc.text(`Ph: ${phone}`).newline();
   }
   if (gstin) {
-    enc.text(`GSTIN: ${gstin}`).newline();
+    enc.text(`${taxIdLabel}: ${gstin}`).newline();
   }
 
   enc.newline();
@@ -122,29 +124,14 @@ export function buildGstBillBytes(
 
   enc.rule({ style: 'single' });
 
-  // ── Tax Breakdown (GST) ─────────────────────────────────────────────────
-  const taxBreakdown = bill.tax_breakdown || [];
-  if (taxBreakdown.length > 0) {
+  // ── Tax Breakdown ───────────────────────────────────────────────────────
+  const taxComponents = resolveTaxComponents(bill);
+  if (taxComponents.length > 0) {
     enc.text('Tax Details:').newline();
-
-    let cgst = 0, sgst = 0, igst = 0;
-    for (const tax of taxBreakdown) {
-      if (tax.title === 'CGST') cgst += tax.amount;
-      else if (tax.title === 'SGST') sgst += tax.amount;
-      else if (tax.title === 'IGST') igst += tax.amount;
-    }
-
-    if (igst > 0) {
-      // Inter-state - IGST
-      enc.text(padRow('IGST @12%', formatAmount(igst, currency, locale), cols)).newline();
-    } else {
-      // Intra-state - CGST + SGST
-      if (cgst > 0) {
-        enc.text(padRow('CGST @6%', formatAmount(cgst, currency, locale), cols)).newline();
-      }
-      if (sgst > 0) {
-        enc.text(padRow('SGST @6%', formatAmount(sgst, currency, locale), cols)).newline();
-      }
+    for (const component of taxComponents) {
+      enc.text(
+        padRow(formatTaxComponentLabel(component), formatAmount(component.amount, currency, locale), cols),
+      ).newline();
     }
   }
 
@@ -193,7 +180,7 @@ export function buildGstBillBytes(
     enc.newline().align('center');
     enc.text('Thank you for your visit!').newline();
     enc.text('Please come again').newline();
-    enc.text('Rates inclusive of GST').newline();
+    enc.text('Tax included where applicable').newline();
   }
 
   enc.newline().newline().newline().cut();

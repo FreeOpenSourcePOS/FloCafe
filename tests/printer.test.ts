@@ -248,6 +248,45 @@ console.log('\n✅ Test 5b: Template labels normalize to backend templates');
   assert('Detailed (GST) label renders detailed template', detailed.includes('TAX INVOICE'));
 }
 
+console.log('\n✅ Test 5c: Detailed receipt resolves mixed legacy + categorized tax');
+{
+  const mixedOrder = {
+    ...fixtureOrder,
+    items: [
+      {
+        ...fixtureOrder.items[0],
+        tax_snapshot: JSON.stringify({
+          lines: [{
+            lineId: 'categorized',
+            components: [{ ruleId: 'thai-vat', label: 'VAT', rate: '7', amount: '17.50' }],
+          }],
+        }),
+        tax_breakdown: JSON.stringify([{ title: 'CGST', rate: 2.5, amount: 99 }]),
+      },
+      {
+        ...fixtureOrder.items[1],
+        tax_snapshot: null,
+        tax_breakdown: JSON.stringify([{ title: 'Local Levy', rate: 1, amount: 0.7 }]),
+      },
+    ],
+  };
+  const mixedBill = {
+    ...fixtureBill,
+    tax_snapshot: JSON.stringify([]),
+    tax_breakdown: JSON.stringify([
+      { title: 'VAT', rate: 7, amount: 17.5 },
+      { title: 'Local Levy', rate: 1, amount: 0.7 },
+    ]),
+  };
+  const thaiBusiness = { ...fixtureBusiness, country: 'TH' };
+  const text = formatReceipt(mixedOrder, mixedBill, thaiBusiness, 'detailed', 48, true).toString('utf8');
+
+  assert('renders categorized VAT component and rate', text.includes('VAT @7%'));
+  assert('renders legacy Local Levy component and rate', text.includes('Local Levy @1%'));
+  assert('does not render categorized item legacy copy', !text.includes('CGST'));
+  assert('uses country tax identifier label', text.includes('Tax ID: 29AAAAA0000A1Z5'));
+}
+
 console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
 {
   const buf = formatKOT(fixtureOrder, fixtureOrder.items, 'Main Kitchen', 48);

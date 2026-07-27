@@ -1,11 +1,34 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateBillNumber, now, withTxn, getSettingValue, parseRowJson, verifyPin } from '../db';
+import {
+  attachEffectiveAddons,
+  generateBillNumber,
+  getDatabase,
+  getSettingValue,
+  now,
+  parseItemJson,
+  parseRowJson,
+  verifyPin,
+  withTxn,
+} from '../db';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { requireRole } from '../middleware/security';
-import { aggregateTaxSnapshots, scaleTaxBreakdowns } from '../services/tax';
+import {
+  calculateConfiguredChargeTaxes,
+  combineItemAndChargeTaxes,
+} from '../services/tax';
 
 const router = Router();
+
+function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number): any {
+  const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
+  if (!order) return order;
+  const itemRows = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[];
+  return {
+    ...order,
+    items: attachEffectiveAddons(db, itemRows.map(parseItemJson)),
+  };
+}
 
 // Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
 const LOYALTY_REDEMPTION_RATE = 100;
@@ -72,7 +95,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, re
       return res.status(404).json({ error: 'Bill not found' });
     }
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get((bill as any).order_id);
+    const order = getOrderWithItems(db, (bill as any).order_id);
     const customer = (bill as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id) : null;
 
     res.json({ bill: { ...bill, order, customer } });
@@ -91,7 +114,7 @@ router.get('/order/:orderId', requireRole('owner', 'manager', 'cashier'), (req: 
       return res.status(404).json({ error: 'Bill not found for this order' });
     }
 
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get((bill as any).order_id);
+    const order = getOrderWithItems(db, (bill as any).order_id);
     const customer = (bill as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id) : null;
 
     res.json({ bill: { ...bill, order, customer } });
@@ -430,6 +453,10 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     if (bill.payment_status === 'paid') {
       return res.status(400).json({ error: 'Cannot apply discount to a paid bill' });
     }
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id) as any;
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
 
     // Check if approval is required
     const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
@@ -508,11 +535,32 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
     const taxRatio = bill.subtotal > 0 ? discountedSubtotal / bill.subtotal : 1;
     const newTaxAmount = Math.round(itemTaxAmount * taxRatio * 100) / 100;
     const newExclusiveTax = Math.round(itemExclusiveTax * taxRatio * 100) / 100;
-    const scaledBreakdowns = scaleTaxBreakdowns(itemBreakdowns, taxRatio, newTaxAmount);
-    const taxBreakdownJson = JSON.stringify(scaledBreakdowns);
-    const taxSnapshotJson = aggregateTaxSnapshots(itemSnapshots);
+    const tenantInfo = {
+      country: getSettingValue('country') || 'IN',
+      business_type: getSettingValue('business_type') || 'restaurant',
+      state_code: getSettingValue('state_code') || '',
+    };
+    const customer = bill.customer_id
+      ? db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id) as any
+      : null;
+    const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
+      ...order,
+      packaging_charge: bill.packaging_charge || 0,
+      delivery_charge: bill.delivery_charge || 0,
+      service_charge: bill.service_charge || 0,
+    }, customer);
+    const taxRollup = combineItemAndChargeTaxes({
+      itemTaxAmount: newTaxAmount,
+      itemExclusiveTaxAmount: newExclusiveTax,
+      itemBreakdowns,
+      itemSnapshots,
+      itemTaxRatio: taxRatio,
+      chargeTaxes,
+    });
+    const taxBreakdownJson = JSON.stringify(taxRollup.breakdowns);
 
-    const preRoundTotal = discountedSubtotal + newExclusiveTax + (bill.delivery_charge || 0) + (bill.packaging_charge || 0);
+    const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
+      + (bill.delivery_charge || 0) + (bill.packaging_charge || 0) + (bill.service_charge || 0);
     const newTotal = Math.round(preRoundTotal);
     const newRoundOff = newTotal - preRoundTotal;
     const newBalance = Math.max(0, newTotal - (bill.paid_amount || 0));
@@ -524,8 +572,8 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
           total = ?, round_off = ?, balance = ?, updated_at = ?
         WHERE id = ?
       `).run(
-        discountAmount, type, value, reason || null, newTaxAmount, taxBreakdownJson,
-        taxSnapshotJson, newTotal, newRoundOff, newBalance, now(), req.params.id,
+        discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
+        taxRollup.snapshotJson, newTotal, newRoundOff, newBalance, now(), req.params.id,
       );
 
       db.prepare(`
@@ -534,8 +582,8 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
           total = ?, round_off = ?, updated_at = ?
         WHERE id = ?
       `).run(
-        discountAmount, type, value, reason || null, newTaxAmount, taxBreakdownJson,
-        taxSnapshotJson, newTotal, newRoundOff, now(), bill.order_id,
+        discountAmount, type, value, reason || null, taxRollup.taxAmount, taxBreakdownJson,
+        taxRollup.snapshotJson, newTotal, newRoundOff, now(), bill.order_id,
       );
 
       return parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));

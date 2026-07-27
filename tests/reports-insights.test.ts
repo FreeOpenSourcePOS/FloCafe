@@ -189,6 +189,30 @@ async function main() {
     VALUES (?, ?, 200, 200, 0, 'paid', ?, ?, ?)
   `).run('BILL-INS-2', billOrderId2, now(), now(), now());
 
+  const categorizedSnapshot = JSON.stringify({
+    lines: [{
+      lineId: 'burger',
+      components: [
+        { ruleId: 'state-tax', label: 'State Tax', rate: '2.5', amount: '5' },
+        { ruleId: 'local-tax', label: 'Local Tax', rate: '2.5', amount: '5' },
+      ],
+    }],
+  });
+  db.prepare(`UPDATE order_items SET tax_amount = 10, tax_snapshot = ?, tax_breakdown = ? WHERE order_id = ? AND product_id = ?`)
+    .run(categorizedSnapshot, JSON.stringify([{ title: 'WRONG', rate: 99, amount: 99 }]), billOrderId1, 'prod-burger');
+  db.prepare(`UPDATE order_items SET tax_amount = 1.4, tax_snapshot = NULL, tax_breakdown = ? WHERE order_id = ? AND product_id = ?`)
+    .run(JSON.stringify([{ title: 'VAT', rate: 7, amount: 1.4 }]), billOrderId1, 'prod-tea');
+  db.prepare(`UPDATE bills SET tax_amount = 11.4, tax_snapshot = ?, tax_breakdown = ? WHERE bill_number = ?`)
+    .run(
+      JSON.stringify([JSON.parse(categorizedSnapshot)]),
+      JSON.stringify([
+        { title: 'State Tax', rate: 2.5, amount: 5 },
+        { title: 'Local Tax', rate: 2.5, amount: 5 },
+        { title: 'VAT', rate: 7, amount: 1.4 },
+      ]),
+      'BILL-INS-1',
+    );
+
   const app = express();
   app.use(express.json());
   app.use((req: any, res: any, next: any) => {
@@ -259,6 +283,26 @@ async function main() {
       const undated = await request(app).get('/api/reports/recentOrders?limit=1').set('Authorization', `Bearer ${ownerToken}`);
       assertEqual(undated.status, 200, `omitting date still works — most-recent-overall behavior preserved (got ${undated.status})`);
       assert(Array.isArray(undated.body.recentOrders) && undated.body.recentOrders.length === 1, 'no date param still returns most-recent-overall, unaffected by the new filter');
+    }
+
+    console.log('\n10. Dynamic tax component report handles mixed categorized + legacy items');
+    {
+      const today = new Date().toISOString().slice(0, 10);
+      const forbidden = await request(app)
+        .get(`/api/reports/tax-components?start_date=${today}&end_date=${today}`)
+        .set('Authorization', `Bearer ${waiterToken}`);
+      assertEqual(forbidden.status, 403, 'tax component report retains reports role gating');
+
+      const taxReport = await request(app)
+        .get(`/api/reports/tax-components?start_date=${today}&end_date=${today}`)
+        .set('Authorization', `Bearer ${ownerToken}`);
+      assertEqual(taxReport.status, 200, `owner gets tax report (got ${taxReport.status})`);
+      assertEqual(taxReport.body.taxComponents?.taxAmount, 11.4, 'tax total is summed across bills in range');
+      const components = taxReport.body.taxComponents?.components ?? [];
+      assertEqual(components.find((part: any) => part.title === 'State Tax')?.amount, 5, 'categorized State Tax is read from snapshot');
+      assertEqual(components.find((part: any) => part.title === 'Local Tax')?.amount, 5, 'categorized Local Tax is read from snapshot');
+      assertEqual(components.find((part: any) => part.title === 'VAT')?.amount, 1.4, 'legacy VAT is included once');
+      assert(!components.some((part: any) => part.title === 'WRONG'), 'categorized legacy copy is not double-counted');
     }
 
   } finally {

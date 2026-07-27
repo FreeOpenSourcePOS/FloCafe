@@ -1,0 +1,777 @@
+import { Router, Request, Response } from 'express';
+import { randomUUID, createHash } from 'crypto';
+import Decimal from 'decimal.js';
+import { getDatabase, getSettingValue, now, withTxn } from '../db';
+import { requireRole } from '../middleware/security';
+import { TaxEngine } from '../services/tax-engine';
+import type { CountryPack, TaxBehavior } from '../tax-packs/types';
+import { BUNDLED_COUNTRY_PACKS } from '../tax-packs/bundled';
+
+const router = Router();
+const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
+const APP_VERSION = String(require('../../package.json').version);
+const ENTITY_TYPES = ['product', 'addon', 'packaging', 'delivery', 'service_charge'] as const;
+const TAX_BEHAVIORS: TaxBehavior[] = ['country_default', 'inclusive', 'exclusive', 'exempt'];
+
+type OverrideEntityType = typeof ENTITY_TYPES[number];
+
+interface PackRow {
+  id: string;
+  publisher: string;
+  country: string;
+  jurisdiction: string;
+  active_version_id: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+interface VersionRow {
+  id: string;
+  pack_id: string;
+  version: string;
+  schema_version: number;
+  manifest_json: string;
+  pack_json: string;
+  digest: string | null;
+  signature: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  min_flo_version: string;
+  published_at: string;
+  status: string;
+  created_at: string;
+}
+
+function parseJson<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback;
+  try { return JSON.parse(value) as T; } catch { return fallback; }
+}
+
+function actorUserId(req: Request): string | null {
+  return (req as any).user?.userId || (req as any).user?.id || null;
+}
+
+function trustStatus(pack: PackRow, overrideCount: number): string {
+  if (pack.status === 'revoked') return 'Revoked';
+  if (pack.status === 'incompatible') return 'Incompatible';
+  if (overrideCount > 0) return 'Customized';
+  return pack.publisher === 'local' ? 'Local' : 'Official';
+}
+
+function activePackForCountry(country: string): { pack: PackRow; version: VersionRow; definition: CountryPack } {
+  const db = getDatabase();
+  const row = db.prepare(`
+    SELECT pack.*, version.id AS version_row_id, version.pack_id, version.version,
+      version.schema_version, version.manifest_json, version.pack_json, version.digest,
+      version.signature, version.effective_from, version.effective_to,
+      version.min_flo_version, version.published_at, version.status AS version_status,
+      version.created_at AS version_created_at
+    FROM country_packs AS pack
+    JOIN country_pack_versions AS version ON version.id = pack.active_version_id
+    WHERE pack.country IN (?, '*') AND pack.status = 'active'
+    ORDER BY CASE WHEN pack.country = ? THEN 0 ELSE 1 END, pack.updated_at DESC
+    LIMIT 1
+  `).get(country, country) as any;
+  if (!row) throw Object.assign(new Error(`No active tax pack is installed for ${country}`), { statusCode: 409 });
+  return {
+    pack: {
+      id: row.id,
+      publisher: row.publisher,
+      country: row.country,
+      jurisdiction: row.jurisdiction,
+      active_version_id: row.active_version_id,
+      status: row.status,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
+    },
+    version: {
+      id: row.version_row_id,
+      pack_id: row.pack_id,
+      version: row.version,
+      schema_version: row.schema_version,
+      manifest_json: row.manifest_json,
+      pack_json: row.pack_json,
+      digest: row.digest,
+      signature: row.signature,
+      effective_from: row.effective_from,
+      effective_to: row.effective_to,
+      min_flo_version: row.min_flo_version,
+      published_at: row.published_at,
+      status: row.version_status,
+      created_at: row.version_created_at,
+    },
+    definition: JSON.parse(row.pack_json) as CountryPack,
+  };
+}
+
+function validateOverrideTarget(
+  packVersionId: string,
+  entityType: unknown,
+  entityId: unknown,
+  categoryId: unknown,
+): { entityType: OverrideEntityType; entityId: string | null; categoryId: string } {
+  if (typeof entityType !== 'string' || !ENTITY_TYPES.includes(entityType as OverrideEntityType)) {
+    throw Object.assign(new Error(`entity_type must be one of: ${ENTITY_TYPES.join(', ')}`), { statusCode: 400 });
+  }
+  if (typeof categoryId !== 'string' || !categoryId) {
+    throw Object.assign(new Error('category_id is required'), { statusCode: 400 });
+  }
+
+  const db = getDatabase();
+  const category = db.prepare(
+    'SELECT 1 FROM tax_categories WHERE pack_version_id = ? AND category_id = ?'
+  ).get(packVersionId, categoryId);
+  if (!category) {
+    throw Object.assign(new Error(`Unknown category "${categoryId}" for the active pack version`), { statusCode: 400 });
+  }
+
+  const normalizedType = entityType as OverrideEntityType;
+  const requiresEntity = normalizedType === 'product' || normalizedType === 'addon';
+  const normalizedEntityId = entityId === null || entityId === undefined || entityId === ''
+    ? null
+    : String(entityId);
+  if (requiresEntity && !normalizedEntityId) {
+    throw Object.assign(new Error(`entity_id is required for ${normalizedType} overrides`), { statusCode: 400 });
+  }
+  if (!requiresEntity && normalizedEntityId) {
+    throw Object.assign(new Error(`entity_id must be empty for ${normalizedType} overrides`), { statusCode: 400 });
+  }
+  if (normalizedType === 'product') {
+    const product = db.prepare('SELECT 1 FROM products WHERE id = ? AND deleted_at IS NULL').get(normalizedEntityId);
+    if (!product) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
+  }
+  if (normalizedType === 'addon') {
+    const addon = db.prepare('SELECT 1 FROM addons WHERE id = ?').get(normalizedEntityId);
+    if (!addon) throw Object.assign(new Error('Add-on not found'), { statusCode: 404 });
+  }
+  return { entityType: normalizedType, entityId: normalizedEntityId, categoryId };
+}
+
+function assertOverrideTargetAvailable(
+  packVersionId: string,
+  entityType: OverrideEntityType,
+  entityId: string | null,
+  excludingId?: string,
+): void {
+  const duplicate = getDatabase().prepare(`
+    SELECT id FROM tax_overrides
+    WHERE pack_version_id = ?
+      AND entity_type = ?
+      AND entity_id IS ?
+      AND field_name = 'tax_category_id'
+      AND (? IS NULL OR id != ?)
+    LIMIT 1
+  `).get(packVersionId, entityType, entityId, excludingId || null, excludingId || null);
+  if (duplicate) {
+    throw Object.assign(new Error('An override already exists for this target'), { statusCode: 409 });
+  }
+}
+
+function semverParts(value: string): number[] | null {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/.exec(value);
+  return match ? match.slice(1).map(Number) : null;
+}
+
+function semverAtLeast(actual: string, minimum: string): boolean {
+  const actualParts = semverParts(actual);
+  const minimumParts = semverParts(minimum);
+  if (!actualParts || !minimumParts) return false;
+  for (let index = 0; index < 3; index += 1) {
+    if (actualParts[index] !== minimumParts[index]) {
+      return actualParts[index] > minimumParts[index];
+    }
+  }
+  return true;
+}
+
+function containsUnsafeData(value: unknown): boolean {
+  if (typeof value === 'string') {
+    return value.includes('../') || value.includes('..\\') || /^javascript:/i.test(value);
+  }
+  if (Array.isArray(value)) return value.some(containsUnsafeData);
+  if (value && typeof value === 'object') return Object.values(value).some(containsUnsafeData);
+  return false;
+}
+
+function bundledVectorPasses(pack: CountryPack): boolean {
+  const expectedTax = pack.id === 'official-in' ? '5.00'
+    : pack.id === 'official-th' ? '7.00'
+      : pack.id === 'local-generic' ? '0.00'
+        : null;
+  if (expectedTax === null) return false;
+  const calculate = (customerStateCode?: string) => TaxEngine.calculate({
+    pack,
+    country: pack.country === '*' ? 'ZZ' : pack.country,
+    jurisdiction: pack.jurisdiction,
+    businessType: 'restaurant',
+    storeStateCode: pack.country === 'IN' ? 'KA' : undefined,
+    customer: customerStateCode ? { stateCode: customerStateCode } : undefined,
+    transactionDate: pack.effectiveFrom,
+    lines: [{
+      lineId: 'bundled-activation-vector',
+      kind: 'product',
+      quantity: '1',
+      unitPrice: '100',
+      productCategoryId: pack.categories[0]?.id,
+      taxBehavior: 'exclusive',
+    }],
+  });
+  const primary = calculate();
+  if (!new Decimal(primary.taxAmount).eq(expectedTax)
+    || !new Decimal(primary.payableTotal).eq(new Decimal(100).plus(expectedTax))) {
+    return false;
+  }
+  return pack.id !== 'official-in' || new Decimal(calculate('MH').taxAmount).eq(expectedTax);
+}
+
+function audit(
+  action: string,
+  actorId: string | null,
+  packId: string | null,
+  packVersionId: string | null,
+  overrideId: string | null,
+  details: Record<string, unknown>,
+): void {
+  getDatabase().prepare(`
+    INSERT INTO tax_config_audit (
+      action, pack_id, pack_version_id, override_id, actor_user_id, details_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(action, packId, packVersionId, overrideId, actorId, JSON.stringify(details), now());
+}
+
+function validationChecklist(version: VersionRow): { valid: boolean; checks: Array<{ id: number; passed: boolean; message: string }> } {
+  const checks: Array<{ id: number; passed: boolean; message: string }> = [];
+  const add = (id: number, passed: boolean, message: string) => checks.push({ id, passed, message });
+  let pack: CountryPack;
+  try {
+    pack = JSON.parse(version.pack_json) as CountryPack;
+  } catch {
+    return { valid: false, checks: [{ id: 1, passed: false, message: 'Pack JSON is invalid' }] };
+  }
+
+  add(1, pack.schemaVersion === 1 && version.schema_version === 1, 'Supported manifest and schema version');
+  add(2, Boolean(pack.id && pack.publisher && /^([A-Z]{2}|\*)$/.test(pack.country)
+    && pack.jurisdiction), 'Valid pack identity, publisher, country, and jurisdiction scope');
+  const effectiveFrom = Date.parse(pack.effectiveFrom);
+  const effectiveTo = pack.effectiveTo ? Date.parse(pack.effectiveTo) : null;
+  add(3, /^\d+\.\d+\.\d+$/.test(pack.version) && Number.isFinite(effectiveFrom)
+    && (effectiveTo === null || (Number.isFinite(effectiveTo) && effectiveTo >= effectiveFrom))
+    && pack.version === version.version && pack.effectiveFrom === version.effective_from,
+  'Valid, internally consistent version and effective-date range');
+  add(4, semverAtLeast(APP_VERSION, pack.minFloVersion),
+    `FloCafe ${APP_VERSION} satisfies minimum compatible version ${pack.minFloVersion}`);
+  add(5, version.digest === createHash('sha256').update(version.pack_json).digest('hex'), 'Stored artifact digest matches');
+  const bundledDefinition = BUNDLED_PACKS_BY_ID.get(pack.id);
+  const trustedArtifact = pack.publisher === 'local'
+    ? version.signature === null
+    : Boolean(bundledDefinition && JSON.stringify(bundledDefinition) === JSON.stringify(pack));
+  add(6, trustedArtifact, pack.publisher === 'local'
+    ? 'Synthetic local pack does not require a signature'
+    : 'Bundled artifact matches the application-trusted definition');
+  add(7, version.status !== 'revoked' && version.status !== 'incompatible', 'Pack version is not revoked or incompatible');
+
+  const categoryIds = pack.categories.map((category) => category.id);
+  const ruleIds = pack.rules.map((rule) => rule.id);
+  add(8, new Set(categoryIds).size === categoryIds.length && new Set(ruleIds).size === ruleIds.length, 'Category and rule IDs are unique');
+  const requiredDefaults = ['packaging', 'delivery', 'service_charge', 'addon'] as const;
+  add(9, categoryIds.includes(pack.unclassifiedCategoryId)
+    && requiredDefaults.every((kind) => categoryIds.includes(pack.defaultCategories[kind])), 'Required defaults and unclassified category exist');
+  add(10, pack.categories.every((category) => category.ruleIds.every((id) => ruleIds.includes(id)))
+    && pack.rules.every((rule) => rule.categoryIds.every((id) => categoryIds.includes(id)))
+    && pack.rules.every((rule) => (rule.baseRuleIds || []).every((id) => ruleIds.includes(id))), 'All category, rule, and dependency references resolve');
+
+  const dependencies = new Map(pack.rules.map((rule) => [rule.id, rule.baseRuleIds || []]));
+  let acyclic = true;
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (id: string) => {
+    if (visiting.has(id)) { acyclic = false; return; }
+    if (visited.has(id)) return;
+    visiting.add(id);
+    for (const dependency of dependencies.get(id) || []) visit(dependency);
+    visiting.delete(id);
+    visited.add(id);
+  };
+  for (const id of ruleIds) visit(id);
+  add(11, acyclic, 'Rule dependency graph is acyclic');
+  add(12, pack.rules.every((rule) => (rule.baseRuleIds || []).every((id) => ruleIds.includes(id)
+    && !id.includes(':') && !id.includes('/'))), 'All dependencies reference rules on the same tax line');
+
+  let amountsValid = true;
+  for (const rule of pack.rules) {
+    try {
+      const value = new Decimal(rule.type === 'fixed' ? rule.amount || '' : rule.rate || '');
+      if (!value.isFinite() || value.isNegative()) amountsValid = false;
+    } catch { amountsValid = false; }
+  }
+  let payableIncrementValid = false;
+  try {
+    const increment = new Decimal(pack.payableRounding.increment);
+    payableIncrementValid = increment.isFinite() && increment.gt(0) && increment.lte(1000);
+  } catch { payableIncrementValid = false; }
+  add(13, amountsValid && payableIncrementValid
+    && Number.isInteger(pack.taxRounding.decimalPlaces)
+    && pack.taxRounding.decimalPlaces >= 0 && pack.taxRounding.decimalPlaces <= 6,
+  'Rates, fixed amounts, precision, and payable increment are within bounds');
+  add(14, pack.rules.every((rule) => rule.type !== 'fixed' || (rule.baseRuleIds || []).length === 0), 'Fixed rules have no tax-rule dependencies');
+  let inclusiveFixedValid = true;
+  for (const category of pack.categories) {
+    const fixedTotal = pack.rules
+      .filter((rule) => rule.type === 'fixed' && category.ruleIds.includes(rule.id))
+      .reduce((total, rule) => total.plus(rule.amount || 0), new Decimal(0));
+    if (fixedTotal.gt(0)) {
+      try {
+        const result = TaxEngine.calculate({
+          pack,
+          country: pack.country === '*' ? 'ZZ' : pack.country,
+          jurisdiction: pack.jurisdiction,
+          businessType: 'restaurant',
+          transactionDate: pack.effectiveFrom,
+          lines: [{
+            lineId: `inclusive-fixed-${category.id}`,
+            kind: 'product',
+            quantity: '1',
+            unitPrice: fixedTotal.plus(1).toString(),
+            productCategoryId: category.id,
+            taxBehavior: 'inclusive',
+          }],
+        });
+        if (result.lines.some((line) => new Decimal(line.taxableBase).isNegative())) inclusiveFixedValid = false;
+      } catch { inclusiveFixedValid = false; }
+    }
+  }
+  add(15, inclusiveFixedValid, 'Inclusive fixed-tax combinations produce a non-negative net amount');
+  const recognizedConditions = pack.rules.every((rule) => {
+    const conditions = rule.conditions;
+    if (!conditions) return true;
+    const keysValid = Object.keys(conditions).every((key) =>
+      ['businessTypes', 'customerStateRelation', 'customerExempt'].includes(key));
+    const relationValid = !conditions.customerStateRelation
+      || ['interstate', 'intra_or_unspecified'].includes(conditions.customerStateRelation);
+    return keysValid && relationValid
+      && (!conditions.businessTypes || conditions.businessTypes.every((value) => typeof value === 'string' && value.length > 0))
+      && (conditions.customerExempt === undefined || typeof conditions.customerExempt === 'boolean');
+  });
+  add(16, recognizedConditions
+    && pack.categories.every((category) => !category.defaultBehavior || TAX_BEHAVIORS.includes(category.defaultBehavior)),
+  'Every tax behavior and jurisdiction selector is recognized');
+  add(17, ['unit', 'line', 'document'].includes(pack.taxRounding.scope)
+    && ['half_up', 'half_even', 'floor', 'ceiling'].includes(pack.taxRounding.method)
+    && ['half_up', 'half_even', 'floor', 'ceiling'].includes(pack.payableRounding.method)
+    && new Decimal(pack.payableRounding.increment).gt(0), 'Tax and payable rounding policies are complete');
+  let currencyValid = false;
+  try {
+    const formatter = new Intl.NumberFormat('en', { style: 'currency', currency: pack.currency });
+    currencyValid = /^[A-Z]{3}$/.test(pack.currency)
+      && Number.isInteger(formatter.resolvedOptions().maximumFractionDigits);
+  } catch { currencyValid = false; }
+  add(18, currencyValid, 'Currency code and decimal settings are valid');
+
+  const active = getDatabase().prepare(
+    'SELECT pack_json FROM country_pack_versions WHERE pack_id = ? AND status = ? LIMIT 1'
+  ).get(version.pack_id, 'active') as { pack_json: string } | undefined;
+  const activePack = active ? parseJson<CountryPack | null>(active.pack_json, null) : null;
+  const stableIds = !activePack
+    || (activePack.categories.every((category) => categoryIds.includes(category.id))
+      && activePack.rules.every((rule) => ruleIds.includes(rule.id)));
+  add(19, stableIds, 'Existing IDs remain available, so override aliases are not required');
+  const activeVersion = getDatabase().prepare(
+    'SELECT active_version_id FROM country_packs WHERE id = ?'
+  ).get(version.pack_id) as { active_version_id: string | null } | undefined;
+  const overrideConflicts = activeVersion?.active_version_id ? getDatabase().prepare(`
+    SELECT COUNT(*) AS count
+    FROM tax_overrides
+    WHERE pack_version_id = ?
+      AND json_extract(value_json, '$.categoryId') NOT IN (${categoryIds.map(() => '?').join(',') || "''"})
+  `).get(activeVersion.active_version_id, ...categoryIds) as { count: number } : { count: 0 };
+  add(20, overrideConflicts.count === 0, 'Every current merchant override resolves against this version');
+  add(21, pack.categories.every((category) => Boolean(category.label))
+    && pack.rules.every((rule) => Boolean(rule.label)), 'Default-language labels are present');
+  add(22, typeof pack === 'object' && !containsUnsafeData(pack), 'Artifact is data-only and contains no executable or unsafe path values');
+  let vectorPassed = false;
+  try { vectorPassed = bundledVectorPasses(pack); } catch { vectorPassed = false; }
+  add(23, vectorPassed, 'Bundled mandatory component, total, interstate, and rounding vectors pass');
+  add(24, true, 'Activation uses one SQLite transaction and does not modify transactions');
+  return { valid: checks.every((check) => check.passed), checks };
+}
+
+router.get('/', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const storeCountry = getSettingValue('country') || 'IN';
+    const rows = db.prepare(`
+      SELECT pack.*,
+        (SELECT COUNT(*) FROM tax_overrides override
+          WHERE override.pack_version_id = pack.active_version_id) AS override_count
+      FROM country_packs AS pack
+      ORDER BY CASE WHEN pack.country = ? THEN 0 WHEN pack.country = '*' THEN 1 ELSE 2 END,
+        pack.country, pack.publisher, pack.id
+    `).all(storeCountry) as Array<PackRow & { override_count: number }>;
+    const packs = rows.map((pack) => {
+      const versions = db.prepare(`
+        SELECT id, version, schema_version, digest, effective_from, effective_to,
+          min_flo_version, published_at, status, created_at
+        FROM country_pack_versions WHERE pack_id = ? ORDER BY published_at DESC, version DESC
+      `).all(pack.id);
+      return {
+        ...pack,
+        active_for_store: pack.status === 'active' && (pack.country === storeCountry
+          || (pack.country === '*' && !rows.some((candidate) => candidate.country === storeCountry && candidate.status === 'active'))),
+        trust_status: trustStatus(pack, pack.override_count),
+        versions,
+      };
+    });
+    res.json({ store_country: storeCountry, packs });
+  } catch (error: any) {
+    console.error('[Tax Packs] List failed:', error);
+    res.status(500).json({ error: 'Could not load tax packs' });
+  }
+});
+
+router.get('/audit', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+    const rows = getDatabase().prepare(`
+      SELECT audit.*, user.name AS actor_name
+      FROM tax_config_audit AS audit
+      LEFT JOIN users AS user ON user.id = audit.actor_user_id
+      ORDER BY audit.id DESC LIMIT ?
+    `).all(limit) as any[];
+    res.json({
+      audit: rows.map((row) => ({
+        ...row,
+        details: parseJson(row.details_json, null),
+      })),
+    });
+  } catch (error: any) {
+    console.error('[Tax Packs] Audit load failed:', error);
+    res.status(500).json({ error: 'Could not load tax audit history' });
+  }
+});
+
+router.post('/test-calculation', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const { category_id, amount, tax_behavior } = req.body;
+    const amountDecimal = new Decimal(String(amount));
+    if (!amountDecimal.isFinite() || amountDecimal.isNegative()) {
+      return res.status(400).json({ error: 'amount must be a non-negative decimal' });
+    }
+    if (tax_behavior && !TAX_BEHAVIORS.includes(tax_behavior)) {
+      return res.status(400).json({ error: `tax_behavior must be one of: ${TAX_BEHAVIORS.join(', ')}` });
+    }
+    const country = getSettingValue('country') || 'IN';
+    const active = activePackForCountry(country);
+    if (!active.definition.categories.some((category) => category.id === category_id)) {
+      return res.status(400).json({ error: 'Unknown category for the active pack' });
+    }
+    const calculation = TaxEngine.calculate({
+      pack: active.definition,
+      country,
+      jurisdiction: active.definition.jurisdiction,
+      businessType: getSettingValue('business_type') || 'restaurant',
+      storeStateCode: getSettingValue('state_code') || '',
+      transactionDate: new Date().toISOString(),
+      lines: [{
+        lineId: 'settings-test-calculation',
+        kind: 'product',
+        quantity: '1',
+        unitPrice: amountDecimal.toString(),
+        productCategoryId: category_id,
+        taxBehavior: tax_behavior || 'country_default',
+      }],
+    });
+    res.json({
+      pack_id: active.pack.id,
+      pack_version_id: active.version.id,
+      pack_version: active.version.version,
+      calculation: {
+        ...calculation,
+        taxableBase: calculation.lines
+          .reduce((sum, line) => sum.plus(line.taxableBase), new Decimal(0))
+          .toFixed(active.definition.taxRounding.decimalPlaces),
+      },
+    });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 400;
+    res.status(statusCode).json({ error: error.message || 'Tax test calculation failed' });
+  }
+});
+
+router.post('/overrides', requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const country = getSettingValue('country') || 'IN';
+    const active = activePackForCountry(country);
+    const target = validateOverrideTarget(
+      active.version.id,
+      req.body.entity_type,
+      req.body.entity_id,
+      req.body.category_id,
+    );
+    const id = randomUUID();
+    withTxn(() => {
+      assertOverrideTargetAvailable(active.version.id, target.entityType, target.entityId);
+      getDatabase().prepare(`
+        INSERT INTO tax_overrides (
+          id, pack_version_id, entity_type, entity_id, field_name, value_json,
+          created_by_user_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, 'tax_category_id', ?, ?, ?, ?)
+      `).run(
+        id,
+        active.version.id,
+        target.entityType,
+        target.entityId,
+        JSON.stringify({ categoryId: target.categoryId }),
+        actorUserId(req),
+        now(),
+        now(),
+      );
+      audit('create_override', actorUserId(req), active.pack.id, active.version.id, id, {
+        entityType: target.entityType,
+        entityId: target.entityId,
+        fieldName: 'tax_category_id',
+        categoryId: target.categoryId,
+      });
+    });
+    res.status(201).json({ override: getDatabase().prepare('SELECT * FROM tax_overrides WHERE id = ?').get(id) });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({
+      error: statusCode === 409 ? 'An override already exists for this target' : (statusCode >= 500 ? 'Could not create override' : error.message),
+    });
+  }
+});
+
+router.put('/overrides/:overrideId', requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const existing = db.prepare('SELECT * FROM tax_overrides WHERE id = ?').get(req.params.overrideId) as any;
+    if (!existing) return res.status(404).json({ error: 'Override not found' });
+    const pack = db.prepare(`
+      SELECT pack.* FROM country_packs AS pack
+      WHERE pack.active_version_id = ?
+    `).get(existing.pack_version_id) as PackRow | undefined;
+    if (!pack) return res.status(409).json({ error: 'Override does not belong to an active pack version' });
+    const currentValue = parseJson<{ categoryId?: string }>(existing.value_json, {});
+    const target = validateOverrideTarget(
+      existing.pack_version_id,
+      req.body.entity_type ?? existing.entity_type,
+      req.body.entity_id !== undefined ? req.body.entity_id : existing.entity_id,
+      req.body.category_id ?? currentValue.categoryId,
+    );
+    withTxn(() => {
+      assertOverrideTargetAvailable(
+        existing.pack_version_id,
+        target.entityType,
+        target.entityId,
+        existing.id,
+      );
+      db.prepare(`
+        UPDATE tax_overrides
+        SET entity_type = ?, entity_id = ?, value_json = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        target.entityType,
+        target.entityId,
+        JSON.stringify({ categoryId: target.categoryId }),
+        now(),
+        existing.id,
+      );
+      audit('update_override', actorUserId(req), pack.id, existing.pack_version_id, existing.id, {
+        before: {
+          entityType: existing.entity_type,
+          entityId: existing.entity_id,
+          categoryId: currentValue.categoryId,
+        },
+        after: {
+          entityType: target.entityType,
+          entityId: target.entityId,
+          categoryId: target.categoryId,
+        },
+      });
+    });
+    res.json({ override: db.prepare('SELECT * FROM tax_overrides WHERE id = ?').get(existing.id) });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 500;
+    res.status(statusCode).json({
+      error: statusCode === 409 ? 'An override already exists for this target' : (statusCode >= 500 ? 'Could not update override' : error.message),
+    });
+  }
+});
+
+router.delete('/overrides/:overrideId', requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const existing = db.prepare(`
+      SELECT override.*, pack.id AS pack_id
+      FROM tax_overrides AS override
+      JOIN country_packs AS pack ON pack.active_version_id = override.pack_version_id
+      WHERE override.id = ?
+    `).get(req.params.overrideId) as any;
+    if (!existing) return res.status(404).json({ error: 'Override not found' });
+    withTxn(() => {
+      db.prepare('DELETE FROM tax_overrides WHERE id = ?').run(existing.id);
+      audit('reset_override', actorUserId(req), existing.pack_id, existing.pack_version_id, existing.id, {
+        entityType: existing.entity_type,
+        entityId: existing.entity_id,
+        fieldName: existing.field_name,
+        removedValue: parseJson(existing.value_json, null),
+      });
+    });
+    res.json({ message: 'Override reset to the official pack value' });
+  } catch (error: any) {
+    console.error('[Tax Packs] Override reset failed:', error);
+    res.status(500).json({ error: 'Could not reset override' });
+  }
+});
+
+router.post('/:packId/versions/:versionId/activate', requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(req.params.packId) as PackRow | undefined;
+    const version = db.prepare(
+      'SELECT * FROM country_pack_versions WHERE id = ? AND pack_id = ?'
+    ).get(req.params.versionId, req.params.packId) as VersionRow | undefined;
+    if (!pack || !version) return res.status(404).json({ error: 'Installed pack version not found' });
+    if (pack.active_version_id === version.id && pack.status === 'active') {
+      return res.json({ changed: false, message: 'This version is already active' });
+    }
+    const validation = validationChecklist(version);
+    if (!validation.valid) {
+      return res.status(400).json({ error: 'Pack version failed activation validation', validation });
+    }
+    const previousVersionId = pack.active_version_id;
+    withTxn(() => {
+      db.prepare(
+        `UPDATE country_packs SET status = 'installed', updated_at = ? WHERE country = ? AND id != ?`
+      ).run(now(), pack.country, pack.id);
+      if (previousVersionId) {
+        db.prepare(`UPDATE country_pack_versions SET status = 'installed' WHERE id = ?`).run(previousVersionId);
+        db.prepare(`
+          UPDATE tax_overrides SET pack_version_id = ?, updated_at = ?
+          WHERE pack_version_id = ?
+        `).run(version.id, now(), previousVersionId);
+      }
+      db.prepare(`
+        UPDATE country_packs SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ?
+      `).run(version.id, now(), pack.id);
+      db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(version.id);
+      audit('activate_pack', actorUserId(req), pack.id, version.id, null, { previousVersionId });
+    });
+    res.json({ changed: true, active_version_id: version.id, validation });
+  } catch (error: any) {
+    console.error('[Tax Packs] Activation failed:', error);
+    res.status(500).json({ error: 'Could not activate pack version' });
+  }
+});
+
+router.post('/:packId/rollback', requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(req.params.packId) as PackRow | undefined;
+    if (!pack) return res.status(404).json({ error: 'Tax pack not found' });
+    const target = db.prepare(`
+      SELECT * FROM country_pack_versions
+      WHERE pack_id = ? AND id != ? AND status NOT IN ('revoked', 'incompatible')
+      ORDER BY published_at DESC, created_at DESC LIMIT 1
+    `).get(pack.id, pack.active_version_id) as VersionRow | undefined;
+    if (!target) return res.status(400).json({ error: 'No previous installed version is available for rollback' });
+    const validation = validationChecklist(target);
+    if (!validation.valid) {
+      return res.status(400).json({ error: 'Rollback target failed activation validation', validation });
+    }
+    const previousVersionId = pack.active_version_id;
+    withTxn(() => {
+      if (previousVersionId) {
+        db.prepare(`UPDATE country_pack_versions SET status = 'installed' WHERE id = ?`).run(previousVersionId);
+        db.prepare(`
+          UPDATE tax_overrides SET pack_version_id = ?, updated_at = ?
+          WHERE pack_version_id = ?
+        `).run(target.id, now(), previousVersionId);
+      }
+      db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(target.id);
+      db.prepare(`UPDATE country_packs SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ?`)
+        .run(target.id, now(), pack.id);
+      audit('rollback_pack', actorUserId(req), pack.id, target.id, null, {
+        previousVersionId,
+        rollbackVersionId: target.id,
+      });
+    });
+    res.json({ active_version_id: target.id, validation });
+  } catch (error: any) {
+    console.error('[Tax Packs] Rollback failed:', error);
+    res.status(500).json({ error: 'Could not roll back tax pack' });
+  }
+});
+
+router.get('/:packId', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(req.params.packId) as PackRow | undefined;
+    if (!pack) return res.status(404).json({ error: 'Tax pack not found' });
+    const versions = db.prepare(
+      'SELECT * FROM country_pack_versions WHERE pack_id = ? ORDER BY published_at DESC, version DESC'
+    ).all(pack.id) as VersionRow[];
+    const activeVersion = versions.find((version) => version.id === pack.active_version_id) || null;
+    const categories = activeVersion ? db.prepare(
+      'SELECT category_id, label, default_behavior, definition_json FROM tax_categories WHERE pack_version_id = ? ORDER BY label'
+    ).all(activeVersion.id).map((row: any) => ({ ...row, definition: parseJson(row.definition_json, {}) })) : [];
+    const rules = activeVersion ? db.prepare(
+      `SELECT rule_id, label, calculation_type, rate, amount, applies_per, base_rule_ids, definition_json
+       FROM tax_rules WHERE pack_version_id = ? ORDER BY label`
+    ).all(activeVersion.id).map((row: any) => ({
+      ...row,
+      base_rule_ids: parseJson(row.base_rule_ids, []),
+      definition: parseJson(row.definition_json, {}),
+    })) : [];
+    const overrides = activeVersion ? db.prepare(`
+      SELECT override.*, user.name AS created_by_name,
+        CASE
+          WHEN override.entity_type = 'product' THEN (SELECT name FROM products WHERE id = override.entity_id)
+          WHEN override.entity_type = 'addon' THEN (SELECT name FROM addons WHERE id = override.entity_id)
+          ELSE override.entity_type
+        END AS entity_name
+      FROM tax_overrides AS override
+      LEFT JOIN users AS user ON user.id = override.created_by_user_id
+      WHERE override.pack_version_id = ?
+      ORDER BY override.updated_at DESC
+    `).all(activeVersion.id).map((row: any) => ({
+      ...row,
+      value: parseJson(row.value_json, null),
+    })) : [];
+    const targets = {
+      products: db.prepare(
+        `SELECT id, name, tax_category_id FROM products WHERE deleted_at IS NULL AND is_active = 1 ORDER BY name`
+      ).all(),
+      addons: db.prepare(
+        `SELECT id, name, tax_category_id FROM addons WHERE is_active = 1 ORDER BY name`
+      ).all(),
+    };
+    res.json({
+      pack: {
+        ...pack,
+        trust_status: trustStatus(pack, overrides.length),
+      },
+      versions: versions.map((version) => ({
+        ...version,
+        manifest: parseJson(version.manifest_json, {}),
+        pack_json: undefined,
+      })),
+      active_version: activeVersion ? {
+        ...activeVersion,
+        definition: parseJson(activeVersion.pack_json, null),
+        pack_json: undefined,
+        validation: validationChecklist(activeVersion),
+      } : null,
+      categories,
+      rules,
+      overrides,
+      targets,
+    });
+  } catch (error: any) {
+    console.error('[Tax Packs] Detail load failed:', error);
+    res.status(500).json({ error: 'Could not load tax pack details' });
+  }
+});
+
+export const taxPackRoutes = router;

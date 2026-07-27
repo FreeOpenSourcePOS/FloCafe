@@ -19,6 +19,7 @@ import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
+import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import type { HealthCheckReport } from '@/types/electron';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatDate } from '@/hooks/useFormatDate';
@@ -60,7 +61,7 @@ Cash             99
   Thank you!`;
 
 const DETAILED_PREVIEW = `  [STORE NAME]
-GSTIN: 22XXXXX
+Tax ID: XXXXX
   TAX INVOICE
 -----------
 Bill#1   1 Jan 24
@@ -70,8 +71,8 @@ Item   Qty Rate Amt
 Burger   1  99  99
 -----------
 Subtotal (excl.)  93
-CGST @3%           3
-SGST @3%           3
+State Tax @3%      3
+Local Tax @3%      3
 ===============
 TOTAL            99`;
 
@@ -228,6 +229,7 @@ export default function SettingsPage() {
   const { t, language, setLanguage } = useI18n();
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
   const isAdmin = currentTenant?.role === 'admin' || currentTenant?.role === 'owner';
+  const canViewTaxConfiguration = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
   const { confirm, ConfirmDialog } = useConfirm();
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
@@ -1738,6 +1740,9 @@ export default function SettingsPage() {
             <SettingsNavItem label={t('settings.storeDetails')} value="store" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabPrinters')} value="receipts-printers" active={activeTab} onClick={setActiveTab} indent />
             <SettingsNavItem label={t('settings.tabPrinting')} value="receipts-printing" active={activeTab} onClick={setActiveTab} indent />
+            {canViewTaxConfiguration && (
+              <SettingsNavItem label={t('settings.taxConfiguration')} value="tax" active={activeTab} onClick={setActiveTab} indent />
+            )}
 
             {/* Operations group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
@@ -2082,6 +2087,12 @@ export default function SettingsPage() {
             
           </div>
         </TabsContent>
+
+        {canViewTaxConfiguration && (
+          <TabsContent value="tax">
+            <TaxConfigurationPanel isOwner={currentTenant?.role === 'owner'} />
+          </TabsContent>
+        )}
 
         <TabsContent value="pos">
           <div className="pb-6 max-w-3xl space-y-6">

@@ -11,6 +11,7 @@ import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
 import { shareBillViaWhatsApp, getWhatsAppMessage } from '@/lib/whatsapp-share';
 import { formatCurrencyForTenant, getCountryByCode } from '@/lib/countries';
 import { formatDate } from '@/lib/printer/format-date';
+import { formatTaxComponentLabel, resolveTaxComponents } from '@/lib/printer/tax-components';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/hooks/useI18n';
 type TestMode = 'receipt' | 'gst' | 'kot' | 'web-a4' | 'web-a5' | 'whatsapp';
@@ -138,7 +139,7 @@ export default function PrintTestPage() {
 
   const testOptions: { value: TestMode; label: string; icon: React.ElementType }[] = [
     { value: 'receipt', label: 'Basic Receipt (Thermal)', icon: Printer },
-    { value: 'gst', label: 'GST Bill (Thermal)', icon: Printer },
+    { value: 'gst', label: 'Detailed Tax Bill (Thermal)', icon: Printer },
     // Hidden entirely when KOT printing is disabled — this is a manual
     // "Print KOT" action, which must never be reachable in that state (#133).
     ...(kotPrintingEnabled ? [{ value: 'kot' as TestMode, label: 'KOT (Kitchen Ticket)', icon: Printer }] : []),
@@ -331,15 +332,21 @@ function generateThermalReceiptHtml(
     </tr>
   `).join('');
 
-  const cgst = bill.tax_breakdown?.find(t => t.title === 'CGST')?.amount || 0;
-  const sgst = bill.tax_breakdown?.find(t => t.title === 'SGST')?.amount || 0;
+  const taxComponents = resolveTaxComponents(bill);
+  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
+  const taxRows = taxComponents.map((component) => `
+        <tr>
+          <td style="padding:${padding};">${formatTaxComponentLabel(component)}</td>
+          <td style="text-align:right;padding:${padding};">${fmtCurrency(component.amount)}</td>
+        </tr>
+  `).join('');
 
   return `
     <div style="text-align:center;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
       <h2 style="margin:0;font-size:${paperWidth === 58 ? '14px' : '16px'};">${tenant.business_name}</h2>
       ${options?.address ? `<p style="margin:2px 0;font-size:${fontSize};">${options.address}</p>` : ''}
       ${options?.phone ? `<p style="margin:2px 0;font-size:${fontSize};">${options.phone}</p>` : ''}
-      ${options?.gstin ? `<p style="margin:2px 0;font-size:${fontSize};">GSTIN: ${options.gstin}</p>` : ''}
+      ${options?.gstin ? `<p style="margin:2px 0;font-size:${fontSize};">${taxIdLabel}: ${options.gstin}</p>` : ''}
       <hr style="border:1px dashed #000;margin:4px 0;">
       <p style="margin:2px 0;">Bill #: ${bill.bill_number}</p>
       <p style="margin:2px 0;">${formatDate(new Date().toISOString(), getCountryByCode(tenant.country ?? 'IN')?.locale)}</p>
@@ -369,14 +376,7 @@ function generateThermalReceiptHtml(
           <td style="text-align:right;padding:${padding};">-${fmtCurrency(bill.discount_amount)}</td>
         </tr>
         ` : ''}
-        <tr>
-          <td style="padding:${padding};">CGST</td>
-          <td style="text-align:right;padding:${padding};">${fmtCurrency(cgst)}</td>
-        </tr>
-        <tr>
-          <td style="padding:${padding};">SGST</td>
-          <td style="text-align:right;padding:${padding};">${fmtCurrency(sgst)}</td>
-        </tr>
+        ${taxRows}
         <tr style="font-weight:bold;">
           <td style="padding:${padding};">${t('common.total')}</td>
           <td style="text-align:right;padding:${padding};">${fmtCurrency(bill.total)}</td>

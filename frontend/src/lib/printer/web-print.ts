@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import { normalizeCurrencyToAscii } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
+import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 
 export type PaperSize = 'a4' | 'a5' | 'thermal58' | 'thermal80';
 
@@ -80,18 +81,11 @@ export function generateBillHtml(
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
 
   const styles = getPaperStyles(paperSize);
-  const taxBreakdown = bill.tax_breakdown || [];
-
-  // Calculate GST components
-  let cgst = 0, sgst = 0, igst = 0;
-  for (const tax of taxBreakdown) {
-    if (tax.title === 'CGST') cgst += tax.amount;
-    else if (tax.title === 'SGST') sgst += tax.amount;
-    else if (tax.title === 'IGST') igst += tax.amount;
-  }
+  const taxComponents = resolveTaxComponents(bill);
 
   const items = order?.items ?? [];
 
@@ -117,7 +111,7 @@ export function generateBillHtml(
       ${displayName ? `<h1>${escapeHtml(displayName)}</h1>` : ''}
       ${address ? `<p>${escapeHtml(address).replace(/\n/g, '<br>')}</p>` : ''}
       ${phone ? `<p>Ph: ${escapeHtml(phone)}</p>` : ''}
-      ${gstin ? `<p>GSTIN: ${escapeHtml(gstin)}</p>` : ''}
+      ${gstin ? `<p>${escapeHtml(taxIdLabel)}: ${escapeHtml(gstin)}</p>` : ''}
     </div>
 
     <!-- Bill Details -->
@@ -158,19 +152,16 @@ export function generateBillHtml(
       </tbody>
     </table>
 
-    <!-- Tax Breakdown (GST) -->
-    ${includeGst && taxBreakdown.length > 0 ? `
+    <!-- Tax Breakdown -->
+    ${includeGst && taxComponents.length > 0 ? `
     <table class="tax-table">
       <thead>
         <tr><th colspan="2">Tax Details</th></tr>
       </thead>
       <tbody>
-        ${igst > 0 ? `
-          <tr><td>IGST @${taxBreakdown.find(t => t.title === 'IGST')?.rate || 12}%</td><td class="text-right">${formatAmount(igst, currency, locale)}</td></tr>
-        ` : `
-          ${cgst > 0 ? `<tr><td>CGST @${taxBreakdown.find(t => t.title === 'CGST')?.rate || 6}%</td><td class="text-right">${formatAmount(cgst, currency, locale)}</td></tr>` : ''}
-          ${sgst > 0 ? `<tr><td>SGST @${taxBreakdown.find(t => t.title === 'SGST')?.rate || 6}%</td><td class="text-right">${formatAmount(sgst, currency, locale)}</td></tr>` : ''}
-        `}
+        ${taxComponents.map((component) => `
+          <tr><td>${escapeHtml(formatTaxComponentLabel(component))}</td><td class="text-right">${formatAmount(component.amount, currency, locale)}</td></tr>
+        `).join('')}
       </tbody>
     </table>
     ` : ''}
@@ -202,7 +193,7 @@ export function generateBillHtml(
     <!-- Footer -->
     <div class="footer">
       ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : '<p>Thank you for your visit!</p>'}
-      ${includeGst ? '<p>Rates inclusive of GST</p>' : ''}
+      ${includeGst ? '<p>Tax included where applicable</p>' : ''}
     </div>
   </div>
 

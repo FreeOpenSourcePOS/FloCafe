@@ -1,10 +1,16 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, getSettingValue } from '../db';
+import Decimal from 'decimal.js';
+import { getDatabase, getSettingValue, parseItemJson } from '../db';
 import { requireRole } from '../middleware/security';
+import { aggregateTaxComponents } from '../services/tax-components';
 
 const router = Router();
 
 const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+function reportDate(value: unknown, fallback: string): string {
+  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : fallback;
+}
 
 /**
  * Buckets order timestamps into local hour-of-day (0-23) and local
@@ -138,6 +144,70 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Dynamic tax-component report for receipt/report consumers. Components are
+// derived item by item so mixed legacy + categorized bills cannot double-count
+// the categorized portion already present in the bill-level tax_breakdown.
+router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const today = new Date().toISOString().slice(0, 10);
+    const startDate = reportDate(req.query.start_date, today);
+    const endDate = reportDate(req.query.end_date, today);
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be on or before end_date' });
+    }
+
+    const bills = db.prepare(`
+      SELECT b.*
+      FROM bills b
+      JOIN orders o ON o.id = b.order_id
+      WHERE date(b.created_at) BETWEEN date(?) AND date(?)
+        AND o.status != 'cancelled'
+      ORDER BY b.created_at, b.id
+    `).all(startDate, endDate) as any[];
+
+    const itemsByOrder = new Map<number, any[]>();
+    if (bills.length > 0) {
+      const orderIds = Array.from(new Set(bills.map((bill) => Number(bill.order_id))));
+      const placeholders = orderIds.map(() => '?').join(',');
+      const items = db.prepare(`
+        SELECT * FROM order_items
+        WHERE order_id IN (${placeholders})
+        ORDER BY order_id, id
+      `).all(...orderIds).map(parseItemJson) as any[];
+      for (const item of items) {
+        const list = itemsByOrder.get(item.order_id) || [];
+        list.push(item);
+        itemsByOrder.set(item.order_id, list);
+      }
+    }
+
+    const documents = bills.map((bill) => ({
+      tax_amount: bill.tax_amount,
+      tax_snapshot: bill.tax_snapshot,
+      tax_breakdown: bill.tax_breakdown,
+      items: itemsByOrder.get(bill.order_id) || [],
+    }));
+    const taxAmount = bills.reduce(
+      (sum, bill) => sum.plus(bill.tax_amount || 0),
+      new Decimal(0),
+    );
+
+    res.json({
+      taxComponents: {
+        startDate,
+        endDate,
+        billCount: bills.length,
+        taxAmount: taxAmount.toDecimalPlaces(6).toNumber(),
+        components: aggregateTaxComponents(documents),
+      },
+    });
+  } catch (error: any) {
+    console.error('[API] Tax component report failed:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 

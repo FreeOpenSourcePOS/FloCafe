@@ -7,7 +7,7 @@
  * Three templates are available:
  *   buildClassicReceiptBytes  — rich legacy-style (default)
  *   buildCompactReceiptBytes  — minimal, fast
- *   buildDetailedReceiptBytes — full GST compliance
+ *   buildDetailedReceiptBytes — detailed tax invoice
  *
  * `buildReceiptBytes` is kept as a re-export of the classic builder
  * for backward compatibility.
@@ -18,6 +18,7 @@ import type { Bill, Tenant } from '@/lib/types';
 import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
+import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 
 export interface ReceiptOptions {
   /** 58 mm (32 chars) or 80 mm (48 chars). Default: 58 */
@@ -26,7 +27,7 @@ export interface ReceiptOptions {
   showFooter?: boolean;
   /** Extra line of custom text printed below the footer. */
   footerNote?: string;
-  /** GSTIN to print in footer / header */
+  /** Tax registration number to print in footer / header */
   gstin?: string;
   /** Business address to print */
   address?: string;
@@ -129,7 +130,9 @@ export function buildClassicReceiptBytes(
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
+  const taxComponents = resolveTaxComponents(bill);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -232,10 +235,10 @@ export function buildClassicReceiptBytes(
   enc.newline();
 
   // Tax breakdown (optional)
-  if (showTaxBreakdown && bill.tax_breakdown && bill.tax_breakdown.length > 0) {
-    for (const t of bill.tax_breakdown) {
+  if (showTaxBreakdown && taxComponents.length > 0) {
+    for (const component of taxComponents) {
       enc
-        .text(padRow(` ${t.title}@${t.rate}%`, formatAmount(t.amount, currency, locale), cols))
+        .text(padRow(` ${formatTaxComponentLabel(component)}`, formatAmount(component.amount, currency, locale), cols))
         .newline();
     }
   }
@@ -244,7 +247,7 @@ export function buildClassicReceiptBytes(
   if (showFooter) {
     if (gstin) {
       enc
-        .text(padRow(`GSTIN: ${gstin}`, `Bill #${bill.bill_number}`, cols))
+        .text(padRow(`${taxIdLabel}: ${gstin}`, `Bill #${bill.bill_number}`, cols))
         .newline();
     }
     if (address) {
@@ -365,7 +368,7 @@ export function buildCompactReceiptBytes(
 }
 
 // ---------------------------------------------------------------------------
-// Detailed (GST) template
+// Detailed tax template
 // ---------------------------------------------------------------------------
 
 export function buildDetailedReceiptBytes(
@@ -378,7 +381,9 @@ export function buildDetailedReceiptBytes(
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
+  const taxComponents = resolveTaxComponents(bill);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -398,7 +403,7 @@ export function buildDetailedReceiptBytes(
     .newline();
 
   if (gstin) {
-    enc.bold(true).text(`GSTIN: ${gstin}`).bold(false).newline();
+    enc.bold(true).text(`${taxIdLabel}: ${gstin}`).bold(false).newline();
   }
 
   enc.bold(true).text('TAX INVOICE').bold(false).newline();
@@ -472,10 +477,10 @@ export function buildDetailedReceiptBytes(
   enc.rule({ style: 'single' });
 
   // Tax breakdown — always shown in detailed mode
-  if (bill.tax_breakdown && bill.tax_breakdown.length > 0) {
-    for (const t of bill.tax_breakdown) {
+  if (taxComponents.length > 0) {
+    for (const component of taxComponents) {
       enc
-        .text(padRow(` ${t.title} @${t.rate}%`, formatAmount(t.amount, currency, locale), cols))
+        .text(padRow(` ${formatTaxComponentLabel(component)}`, formatAmount(component.amount, currency, locale), cols))
         .newline();
     }
   } else if (Number(bill.tax_amount) > 0) {

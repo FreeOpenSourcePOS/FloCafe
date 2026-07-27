@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "id": "official-br",
+  "publisher": "FreeOpenSourcePOS",
+  "version": "1.0.0",
+  "country": "BR",
+  "jurisdiction": "*",
+  "currency": "BRL",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-01-01",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": true,
+  "registrationNumberLabel": "CNPJ / CPF",
+  "categories": [
+    { "id": "standard", "label": "Standard", "ruleIds": ["icms-18", "pis-065", "cofins-3", "iss-5"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "standard",
+    "delivery": "standard",
+    "service_charge": "standard",
+    "addon": "standard"
+  },
+  "unclassifiedCategoryId": "standard",
+  "rules": [
+    {
+      "id": "icms-18",
+      "label": "ICMS",
+      "type": "percent",
+      "categoryIds": ["standard"],
+      "rate": "18"
+    },
+    {
+      "id": "pis-065",
+      "label": "PIS",
+      "type": "percent",
+      "categoryIds": ["standard"],
+      "rate": "0.65"
+    },
+    {
+      "id": "cofins-3",
+      "label": "COFINS",
+      "type": "percent",
+      "categoryIds": ["standard"],
+      "rate": "3"
+    },
+    {
+      "id": "iss-5",
+      "label": "ISS",
+      "type": "percent",
+      "categoryIds": ["standard"],
+      "rate": "5"
+    }
+  ],
+  "taxRounding": {
+    "scope": "line",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  },
+  "activationVectors": [
+    {
+      "label": "standard-exclusive-100-icms-pis-cofins-iss",
+      "categoryId": "standard",
+      "taxBehavior": "exclusive",
+      "unitPrice": "100",
+      "expectedTaxAmount": "26.65",
+      "expectedPayableTotal": "126.65"
+    },
+    {
+      "label": "standard-default-inclusive-100",
+      "categoryId": "standard",
+      "unitPrice": "100",
+      "expectedTaxAmount": "21.04",
+      "expectedPayableTotal": "100"
+    }
+  ]
+}

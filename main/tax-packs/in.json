@@ -72,5 +72,24 @@
   "payableRounding": {
     "increment": "0.01",
     "method": "half_up"
-  }
+  },
+  "activationVectors": [
+    {
+      "label": "standard-intra-exclusive-100",
+      "categoryId": "standard",
+      "taxBehavior": "exclusive",
+      "unitPrice": "100",
+      "expectedTaxAmount": "5.00",
+      "expectedPayableTotal": "105.00"
+    },
+    {
+      "label": "standard-interstate-exclusive-100",
+      "categoryId": "standard",
+      "taxBehavior": "exclusive",
+      "unitPrice": "100",
+      "customerStateCode": "MH",
+      "expectedTaxAmount": "5.00",
+      "expectedPayableTotal": "105.00"
+    }
+  ]
 }

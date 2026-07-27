@@ -1457,6 +1457,21 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 39,
+    name: 'add_bill_charge_columns',
+    up: () => {
+      // ponytail: bill-side service_charge support. Delivery and packaging
+      // charges were already stored on orders; the bill route read them from
+      // the order. service_charge had no column and was always treated as
+      // 0 by the bill-side compute — same gap the country-pack engine has
+      // now exposed. Add the column once, schema-only.
+      const billColumns = getColumns(db, 'bills');
+      if (!billColumns.includes('service_charge')) {
+        db.exec(`ALTER TABLE bills ADD COLUMN service_charge REAL DEFAULT 0`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -1789,6 +1804,7 @@ function createSchema(): void {
       discount_reason TEXT,
       delivery_charge REAL DEFAULT 0,
       packaging_charge REAL DEFAULT 0,
+      service_charge REAL DEFAULT 0,
       round_off REAL DEFAULT 0,
       total REAL DEFAULT 0,
       paid_amount REAL DEFAULT 0,

@@ -135,12 +135,12 @@ function main() {
   console.log('   ✓ old installs receive every Phase 1 tax table and guarded additive column');
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM country_packs').get() as { count: number }).count,
-    3,
-    'old installs register all bundled tax packs during upgrade',
+    5,
+    'old installs register all bundled tax packs (IN, TH, AR, BR, generic) during upgrade',
   );
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
-    3,
+    5,
     'old installs register all bundled pack versions during upgrade',
   );
   console.log('   ✓ old installs receive the bundled tax pack registry without replacing legacy tax data');

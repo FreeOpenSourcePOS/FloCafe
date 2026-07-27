@@ -60,7 +60,7 @@ async function main() {
     console.log('\n1. Bundled packs are registered and readable');
     const listRes = await api(baseUrl, '/api/tax-packs', { headers: manager.authHeader });
     assertEqual(listRes.status, 200, 'manager can view installed packs');
-    assertEqual(listRes.data.packs.length, 3, 'all three bundled packs are installed');
+    assertEqual(listRes.data.packs.length, 5, 'all bundled packs (IN, TH, AR, BR, generic) are installed');
     const india = listRes.data.packs.find((pack: any) => pack.id === 'official-in');
     assert(!!india, 'India pack is listed');
     assertEqual(india.versions[0].version, '1.0.0', 'India pack version is shown');
@@ -78,7 +78,7 @@ async function main() {
         detailRes.data.active_version.validation.checks.filter((check: any) => !check.passed),
       )}`,
     );
-    for (const packId of ['official-th', 'local-generic']) {
+    for (const packId of ['official-th', 'official-ar', 'official-br', 'local-generic']) {
       const bundledDetail = await api(baseUrl, `/api/tax-packs/${packId}`, { headers: manager.authHeader });
       assertEqual(bundledDetail.status, 200, `${packId} details are readable`);
       assertEqual(
@@ -323,6 +323,48 @@ async function main() {
     assertEqual(chargeBillDiscount.data.bill.tax_amount, 2, 'bill discount leaves charge tax unscaled');
     assertEqual(chargeBillDiscount.data.bill.total, 137, 'bill discount scales items but not charges');
 
+    console.log('\n6. Bill generation keeps order-frozen charge categories after settings change');
+    const frozenChargeOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        packaging_charge: 20,
+        items: [{ product_id: 'override-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(frozenChargeOrder.status, 201, 'order with packaging freezes the configured category');
+    assertEqual(frozenChargeOrder.data.order.packaging_tax_category_id, 'standard', 'packaging category frozen as standard');
+    assertEqual(frozenChargeOrder.data.order.tax_amount, 1, '₹20 packaging adds ₹1 tax at creation');
+    assertEqual(frozenChargeOrder.data.order.total, 121, 'order total includes frozen charge tax');
+    const frozenChargeOrderId = frozenChargeOrder.data.order.id;
+
+    // Merchant unconfigures packaging AFTER the order froze its category.
+    const packagingOverrideId = chargeOverrideIds.shift();
+    const resetPackaging = await api(baseUrl, `/api/tax-packs/overrides/${packagingOverrideId}`, {
+      method: 'DELETE',
+      headers: owner.authHeader,
+    });
+    assertEqual(resetPackaging.status, 200, 'packaging category can be unconfigured after the order');
+
+    const frozenBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: frozenChargeOrderId },
+      headers: owner.authHeader,
+    });
+    assertEqual(frozenBill.status, 201, 'bill generation succeeds after the category change');
+    assertEqual(frozenBill.data.bill.tax_amount, 1, 'bill keeps the order-frozen 5% packaging tax');
+    assertEqual(frozenBill.data.bill.total, 121, 'bill total ignores the settings change');
+
+    const overriddenBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: frozenChargeOrderId, packaging_charge: 40 },
+      headers: owner.authHeader,
+    });
+    assertEqual(overriddenBill.status, 200, 'bill-time charge override re-syncs the existing bill');
+    assertEqual(overriddenBill.data.bill.tax_amount, 2, 'override is taxed at the order-frozen 5% rate');
+    assertEqual(overriddenBill.data.bill.total, 142, 'override total uses the frozen rate on the new amount');
+
     for (const overrideIdToRemove of chargeOverrideIds) {
       const resetCharge = await api(baseUrl, `/api/tax-packs/overrides/${overrideIdToRemove}`, {
         method: 'DELETE',
@@ -344,7 +386,7 @@ async function main() {
     assertEqual(unconfiguredChargeOrder.data.order.tax_amount, 0, 'unconfigured charges remain untaxed');
     assertEqual(unconfiguredChargeOrder.data.order.total, 140, 'unconfigured charge total is unchanged');
 
-    console.log('\n6. Activation/rollback are owner-gated and installed-only');
+    console.log('\n7. Activation/rollback are owner-gated and installed-only');
     const versionId = india.active_version_id;
     const managerActivate = await api(
       baseUrl,
@@ -368,7 +410,7 @@ async function main() {
     });
     assertEqual(rollbackRes.status, 400, 'rollback is blocked when no previous installed version exists');
 
-    console.log('\n7. Every override mutation is audited');
+    console.log('\n8. Every override mutation is audited');
     const auditRes = await api(baseUrl, '/api/tax-packs/audit', { headers: manager.authHeader });
     assertEqual(auditRes.status, 200, 'manager can view tax audit history');
     const actions = auditRes.data.audit.map((entry: any) => entry.action);

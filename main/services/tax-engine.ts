@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import type {
+  ActivationVector,
   CountryPack,
   RoundingMethod,
   TaxBehavior,
@@ -182,9 +183,11 @@ function matchesRule(
     return false;
   }
 
+  // Interstate is a place-of-supply fact: state codes alone decide it. A
+  // registration number (GSTIN) changes credit eligibility, not the tax head —
+  // unregistered out-of-state buyers still get IGST, not CGST+SGST.
   const isInterstate = Boolean(
-    input.customer?.registrationNumber
-      && input.customer.stateCode
+    input.customer?.stateCode
       && input.storeStateCode
       && input.customer.stateCode !== input.storeStateCode,
   );
@@ -483,4 +486,26 @@ export function applyPayableRounding(
     total: rounded.toNumber(),
     adjustment: rounded.minus(cleaned).toNumber(),
   };
+}
+
+export function runActivationVector(pack: CountryPack, vector: ActivationVector): boolean {
+  const result = TaxEngine.calculate({
+    pack,
+    country: pack.country === '*' ? 'ZZ' : pack.country,
+    jurisdiction: pack.jurisdiction,
+    businessType: 'restaurant',
+    storeStateCode: vector.customerStateCode ? 'KA' : undefined,
+    customer: vector.customerStateCode ? { stateCode: vector.customerStateCode } : undefined,
+    transactionDate: pack.effectiveFrom,
+    lines: [{
+      lineId: `vector:${vector.label}`,
+      kind: 'product',
+      quantity: '1',
+      unitPrice: vector.unitPrice,
+      productCategoryId: vector.categoryId,
+      taxBehavior: vector.taxBehavior,
+    }],
+  });
+  return new TaxDecimal(result.taxAmount).eq(vector.expectedTaxAmount)
+    && new TaxDecimal(result.payableTotal).eq(vector.expectedPayableTotal);
 }

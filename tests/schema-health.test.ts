@@ -99,12 +99,12 @@ function main() {
   console.log('   ✓ fresh installs include every Phase 1 tax table and column');
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM country_packs').get() as { count: number }).count,
-    3,
-    'fresh installs register all bundled tax packs',
+    5,
+    'fresh installs register all bundled tax packs (IN, TH, AR, BR, generic)',
   );
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
-    3,
+    5,
     'fresh installs register all bundled tax pack versions',
   );
   assert.ok(

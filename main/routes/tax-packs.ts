@@ -3,7 +3,7 @@ import { randomUUID, createHash } from 'crypto';
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue, now, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
-import { TaxEngine } from '../services/tax-engine';
+import { TaxEngine, runActivationVector } from '../services/tax-engine';
 import type { CountryPack, TaxBehavior } from '../tax-packs/types';
 import { BUNDLED_COUNTRY_PACKS } from '../tax-packs/bundled';
 
@@ -195,34 +195,9 @@ function containsUnsafeData(value: unknown): boolean {
 }
 
 function bundledVectorPasses(pack: CountryPack): boolean {
-  const expectedTax = pack.id === 'official-in' ? '5.00'
-    : pack.id === 'official-th' ? '7.00'
-      : pack.id === 'local-generic' ? '0.00'
-        : null;
-  if (expectedTax === null) return false;
-  const calculate = (customerStateCode?: string) => TaxEngine.calculate({
-    pack,
-    country: pack.country === '*' ? 'ZZ' : pack.country,
-    jurisdiction: pack.jurisdiction,
-    businessType: 'restaurant',
-    storeStateCode: pack.country === 'IN' ? 'KA' : undefined,
-    customer: customerStateCode ? { stateCode: customerStateCode } : undefined,
-    transactionDate: pack.effectiveFrom,
-    lines: [{
-      lineId: 'bundled-activation-vector',
-      kind: 'product',
-      quantity: '1',
-      unitPrice: '100',
-      productCategoryId: pack.categories[0]?.id,
-      taxBehavior: 'exclusive',
-    }],
-  });
-  const primary = calculate();
-  if (!new Decimal(primary.taxAmount).eq(expectedTax)
-    || !new Decimal(primary.payableTotal).eq(new Decimal(100).plus(expectedTax))) {
-    return false;
-  }
-  return pack.id !== 'official-in' || new Decimal(calculate('MH').taxAmount).eq(expectedTax);
+  const vectors = pack.activationVectors;
+  if (!vectors || vectors.length === 0) return false;
+  return vectors.every((vector) => runActivationVector(pack, vector));
 }
 
 function audit(

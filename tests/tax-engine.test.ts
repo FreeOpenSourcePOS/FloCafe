@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { TaxEngine, applyPayableRounding, resolveTaxCategory, type TaxEngineLine } from '../main/services/tax-engine';
+import { TaxEngine, applyPayableRounding, resolveTaxCategory, runActivationVector, type TaxEngineLine } from '../main/services/tax-engine';
 import { calculateItemTax } from '../main/services/tax';
 import type {
   CountryPack,
@@ -11,9 +11,15 @@ import type {
 } from '../main/tax-packs/types';
 import indiaPackData from '../main/tax-packs/in.json';
 import thailandPackData from '../main/tax-packs/th.json';
+import argentinaPackData from '../main/tax-packs/ar.json';
+import brazilPackData from '../main/tax-packs/br.json';
+import genericPackData from '../main/tax-packs/generic.json';
 
 const indiaPack = indiaPackData as CountryPack;
 const thailandPack = thailandPackData as CountryPack;
+const argentinaPack = argentinaPackData as CountryPack;
+const brazilPack = brazilPackData as CountryPack;
+const genericPack = genericPackData as CountryPack;
 
 function packWith(
   rules: TaxRule[],
@@ -340,6 +346,18 @@ test('bundled India and Thailand packs reproduce current fixed behavior as data'
   );
   assert.deepEqual(inter.tax_breakdown, [{ title: 'IGST', rate: 5, amount: 5 }]);
 
+  // Interstate is decided by state codes alone — an unregistered out-of-state
+  // buyer (no GSTIN) is still IGST, not CGST+SGST.
+  const interB2C = calculateItemTax(
+    { country: 'IN', business_type: 'salon', state_code: 'KA' },
+    {
+      tax_type: 'exclusive', tax_rate: 99, tax_category_id: 'standard', tax_behavior: 'exclusive',
+    },
+    100,
+    { customer_state_code: 'MH' },
+  );
+  assert.deepEqual(interB2C.tax_breakdown, [{ title: 'IGST', rate: 5, amount: 5 }]);
+
   const thai = calculateItemTax(
     { country: 'TH', business_type: 'restaurant', state_code: '' },
     {
@@ -409,4 +427,68 @@ test('products without a resolved tax category preserve legacy tax configuration
     tax_type: 'inclusive',
     tax_snapshot: null,
   });
+});
+
+test('Argentina pack defaults to inclusive pricing (the merchant types the final price)', () => {
+  assert.equal(argentinaPack.inclusivePricingDefault, true,
+    'AR pack declares inclusive pricing as the country default');
+
+  const explicit = calculateItemTax(
+    { country: 'AR', business_type: 'restaurant', state_code: '' },
+    { tax_type: 'none', tax_rate: 0, tax_category_id: 'standard', tax_behavior: 'country_default' },
+    1000,
+    null,
+  );
+  assert.equal(explicit.tax_type, 'inclusive', 'country_default resolves to inclusive on AR');
+  assert.equal(explicit.tax_amount, 173.55, '21% IVA extracted from the 1000 gross');
+  assert.equal(explicit.tax_breakdown[0].title, 'IVA');
+
+  const exclusive = calculateItemTax(
+    { country: 'AR', business_type: 'restaurant', state_code: '' },
+    { tax_type: 'none', tax_rate: 0, tax_category_id: 'standard', tax_behavior: 'exclusive' },
+    1000,
+    null,
+  );
+  assert.equal(exclusive.tax_type, 'exclusive', 'explicit exclusive stays exclusive on AR');
+  assert.equal(exclusive.tax_amount, 210, '21% IVA added on top of the 1000 net');
+});
+
+test('Brazil pack splits ICMS + PIS + COFINS + ISS on the standard category', () => {
+  assert.equal(brazilPack.inclusivePricingDefault, true);
+
+  const explicit = calculateItemTax(
+    { country: 'BR', business_type: 'restaurant', state_code: 'SP' },
+    { tax_type: 'none', tax_rate: 0, tax_category_id: 'standard', tax_behavior: 'exclusive' },
+    1000,
+    null,
+  );
+  assert.equal(explicit.tax_type, 'exclusive', 'explicit exclusive stays exclusive on BR');
+  const byTitle = Object.fromEntries(explicit.tax_breakdown.map((entry) => [entry.title, entry]));
+  assert.equal(byTitle.ICMS.rate, 18);
+  assert.equal(byTitle.ICMS.amount, 180);
+  assert.equal(byTitle.PIS.rate, 0.65);
+  assert.equal(byTitle.PIS.amount, 6.5);
+  assert.equal(byTitle.COFINS.rate, 3);
+  assert.equal(byTitle.COFINS.amount, 30);
+  assert.equal(byTitle.ISS.rate, 5);
+  assert.equal(byTitle.ISS.amount, 50);
+  assert.equal(explicit.tax_amount, 266.5, 'all four components summed');
+});
+
+test('every bundled pack ships its own activation vectors that the engine reproduces', () => {
+  const packs: Array<{ label: string; pack: CountryPack; customerStateCode?: string }> = [
+    { label: 'IN', pack: indiaPack },
+    { label: 'TH', pack: thailandPack },
+    { label: 'AR', pack: argentinaPack },
+    { label: 'BR', pack: brazilPack },
+    { label: 'generic', pack: genericPack },
+  ];
+  for (const { label, pack } of packs) {
+    assert.ok(pack.activationVectors && pack.activationVectors.length > 0,
+      `${label} pack declares at least one activation vector`);
+    for (const vector of pack.activationVectors || []) {
+      assert.ok(runActivationVector(pack, vector),
+        `${label} vector ${vector.label} reproduces expected amounts`);
+    }
+  }
 });

@@ -66,7 +66,7 @@ export interface TaxRollup {
   snapshotJson: string | null;
 }
 
-import { TaxEngine } from './tax-engine';
+import { TaxEngine, applyPayableRounding } from './tax-engine';
 import type { CountryPack } from '../tax-packs/types';
 
 function round(value: number, decimals: number = 2): number {
@@ -666,11 +666,6 @@ export function combineItemAndChargeTaxes(args: {
   };
 }
 
-export function calculateRoundOff(total: number): number {
-  const rounded = Math.round(total);
-  return round(rounded - total, 2);
-}
-
 // Tax preview endpoint handler
 export async function calculateTaxPreview(req: any, res: any): Promise<void> {
   try {
@@ -709,6 +704,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     const allBreakdowns: any[] = [];
     let totalSubtotal = 0;
     let totalTax = 0;
+    let totalExclusiveTax = 0;
 
     for (const itemData of items) {
       const product = db.prepare('SELECT * FROM products WHERE id = ?').get(itemData.product_id) as any;
@@ -727,6 +723,9 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       subtotal = Math.max(0, subtotal - itemDiscount);
 
       const taxResult = calculateItemTax(tenantInfo, product as Product, subtotal, customer || null);
+      const lineTotal = taxResult.tax_type === 'inclusive'
+        ? subtotal
+        : round(subtotal + taxResult.tax_amount, 2);
 
       itemResults.push({
         product_id: product.id,
@@ -738,14 +737,20 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         tax_amount: taxResult.tax_amount,
         tax_breakdown: taxResult.tax_breakdown,
         tax_type: taxResult.tax_type,
-        total: round(subtotal + taxResult.tax_amount, 2),
+        total: lineTotal,
       });
 
       if (taxResult.tax_breakdown) {
         allBreakdowns.push(taxResult.tax_breakdown);
       }
       totalSubtotal += subtotal;
+      // ponytail: only exclusive tax adds to the customer's total. Inclusive
+      // tax is already inside the listed subtotal — extracting it and adding
+      // it back double-counts.
       totalTax += taxResult.tax_amount;
+      if (taxResult.tax_type === 'exclusive') {
+        totalExclusiveTax += taxResult.tax_amount;
+      }
     }
 
     const packaging = packaging_charge || 0;
@@ -765,12 +770,16 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       ...chargeTaxes.breakdowns,
     ]);
     const previewTax = new Decimal(totalTax).plus(chargeTaxes.taxAmount).toNumber();
-    // Preserve the legacy preview's item-tax total behavior. Configured charge
-    // tax follows its pack behavior, so only exclusive charge tax increases
-    // the payable amount.
-    const preRoundTotal = totalSubtotal + totalTax + chargeTaxes.exclusiveTaxAmount
+    // The customer pays subtotal + only the exclusive tax (inclusive tax is
+    // already inside the subtotal). Configured charge taxes follow their
+    // pack behavior, so only their exclusive portion adds to the total.
+    const preRoundTotal = totalSubtotal + totalExclusiveTax + chargeTaxes.exclusiveTaxAmount
       + packaging + delivery + service;
-    const roundOff = calculateRoundOff(preRoundTotal);
+    // Same boundary policy as the real bill (#170): pack payable rounding.
+    const { total: payableTotal, adjustment: roundOff } = applyPayableRounding(
+      Number(preRoundTotal.toFixed(2)),
+      getActiveCountryPack(tenantInfo.country),
+    );
 
     res.json({
       items: itemResults,
@@ -782,7 +791,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         delivery_charge: delivery,
         service_charge: service,
         round_off: roundOff,
-        total: round(preRoundTotal + roundOff, 2),
+        total: payableTotal,
       },
     });
   } catch (error: any) {

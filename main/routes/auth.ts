@@ -9,6 +9,7 @@ import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../servi
 import { authRateLimit, validatePassword } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode } from '../countries';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
+import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 
 const router = Router();
 
@@ -130,11 +131,11 @@ function insertCategory(db: ReturnType<typeof getDatabase>, id: string, name: st
   `).run(id, name, color, icon, sortOrder, now(), now());
 }
 
-function insertProduct(db: ReturnType<typeof getDatabase>, id: string, categoryId: string, name: string, price: number, sortOrder: number): void {
+function insertProduct(db: ReturnType<typeof getDatabase>, id: string, categoryId: string, name: string, price: number, sortOrder: number, taxCategoryId?: string): void {
   db.prepare(`
-    INSERT OR IGNORE INTO products (id, category_id, name, price, sort_order, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-  `).run(id, categoryId, name, price, sortOrder, now(), now());
+    INSERT OR IGNORE INTO products (id, category_id, name, price, tax_category_id, sort_order, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)
+  `).run(id, categoryId, name, price, taxCategoryId ?? null, sortOrder, now(), now());
 }
 
 function insertTable(db: ReturnType<typeof getDatabase>, id: string, number: string, capacity: number): void {
@@ -232,7 +233,14 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
         ['prod-demo-lemon-soda', 'cat-demo-beverages', 'Lemon Soda', 70, 2],
         ['prod-demo-gulab-jamun', 'cat-demo-desserts', 'Gulab Jamun', 80, 1],
       ] as const;
-  for (const [id, categoryId, name, price, sort] of products) insertProduct(db, id, categoryId, name, price, sort);
+  // Tax follows the country's pack, not the UI language. The generic pack has
+  // no rules — categorized items would be rejected at checkout there (tax.ts).
+  const demoTaxCategory = hasConfiguredTaxCategories(getActiveCountryPack(country || 'IN'), 'restaurant')
+    ? 'standard'
+    : undefined;
+  for (const [id, categoryId, name, price, sort] of products) {
+    insertProduct(db, id, categoryId, name, price, sort, demoTaxCategory);
+  }
 
   if (serviceModel === 'finedine') {
     const tableLabel = lang === 'es' ? 'M' : lang === 'pt' ? 'M' : 'T';

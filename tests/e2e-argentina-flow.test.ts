@@ -187,14 +187,28 @@ async function runArgentinaTaxAndCustomers(baseUrl, db) {
   assertEqual(settingsTax.value, 'AR', 'settings.country = AR after first-run setup');
 
   const { calculateItemTax } = require('../main/services/tax');
-  const result = calculateItemTax(
+  // Products without a tax category preserve their legacy tax_type/tax_rate
+  // until an explicit category is assigned. AR with inclusive 21% on a
+  // 100-unit price extracts 17.36 (the gross stays 100, tax extracted from it).
+  const legacyResult = calculateItemTax(
     { country: 'AR', business_type: 'restaurant', state_code: '' },
     { tax_type: 'inclusive', tax_rate: 21 },
     100,
     null,
   );
-  assertEqual(result.tax_amount, 0, 'uncategorized AR product is tax-free');
-  assertEqual(result.tax_breakdown.length, 0, 'uncategorized AR product emits no tax breakdown');
+  assertEqual(legacyResult.tax_amount, 17.36, 'uncategorized AR product with legacy tax_type still applies legacy IVA');
+  assertEqual(legacyResult.tax_breakdown.length, 1, 'legacy fallback emits one tax breakdown line');
+
+  // Same product with a tax category moves to the pack engine: 21% exclusive
+  // on 100 gives exactly 21.00 tax / 121.00 total.
+  const packResult = calculateItemTax(
+    { country: 'AR', business_type: 'restaurant', state_code: '' },
+    { tax_type: 'inclusive', tax_rate: 21, tax_category_id: 'standard', tax_behavior: 'exclusive' },
+    100,
+    null,
+  );
+  assertEqual(packResult.tax_amount, 21, 'pack-driven AR product uses the pack rate, not the legacy field');
+  assertEqual(packResult.tax_breakdown[0].title, 'IVA', 'AR pack labels the line IVA');
 
   const cRes = await api(baseUrl + '/api', '/customers', {
     method: 'POST',

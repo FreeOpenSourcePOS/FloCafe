@@ -38,5 +38,15 @@
   "payableRounding": {
     "increment": "0.01",
     "method": "half_up"
-  }
+  },
+  "activationVectors": [
+    {
+      "label": "standard-exclusive-100-no-rules",
+      "categoryId": "standard",
+      "taxBehavior": "exclusive",
+      "unitPrice": "100",
+      "expectedTaxAmount": "0.00",
+      "expectedPayableTotal": "100.00"
+    }
+  ]
 }

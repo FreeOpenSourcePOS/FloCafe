@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "id": "official-ar",
+  "publisher": "FreeOpenSourcePOS",
+  "version": "1.0.0",
+  "country": "AR",
+  "jurisdiction": "*",
+  "currency": "ARS",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-01-01",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": true,
+  "registrationNumberLabel": "CUIT",
+  "categories": [
+    { "id": "standard", "label": "Standard", "ruleIds": ["iva-21"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "standard",
+    "delivery": "standard",
+    "service_charge": "standard",
+    "addon": "standard"
+  },
+  "unclassifiedCategoryId": "standard",
+  "rules": [
+    {
+      "id": "iva-21",
+      "label": "IVA",
+      "type": "percent",
+      "categoryIds": ["standard"],
+      "rate": "21"
+    }
+  ],
+  "taxRounding": {
+    "scope": "line",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  },
+  "activationVectors": [
+    {
+      "label": "standard-exclusive-100-iva-21",
+      "categoryId": "standard",
+      "taxBehavior": "exclusive",
+      "unitPrice": "100",
+      "expectedTaxAmount": "21.00",
+      "expectedPayableTotal": "121.00"
+    },
+    {
+      "label": "standard-default-inclusive-1000",
+      "categoryId": "standard",
+      "unitPrice": "1000",
+      "expectedTaxAmount": "173.55",
+      "expectedPayableTotal": "1000"
+    }
+  ]
+}

@@ -98,8 +98,17 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
     const orderBy = allowedSortFields[sortField] || 'c.name COLLATE NOCASE';
     query += ` ORDER BY ${orderBy} ${sortOrder}`;
 
-    if (req.query.per_page) {
-      query += ` LIMIT ${parseInt(req.query.per_page as string)}`;
+    if (req.query.per_page !== undefined) {
+      const rawPerPage = String(req.query.per_page).trim();
+      if (!/^\d+$/.test(rawPerPage)) {
+        return res.status(400).json({ error: 'Invalid per_page parameter. Must be a positive integer.' });
+      }
+      const parsed = parseInt(rawPerPage, 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return res.status(400).json({ error: 'Invalid per_page parameter. Must be a positive integer.' });
+      }
+      const limit = Math.min(parsed, 500);
+      query += ` LIMIT ${limit}`;
     }
 
     const customers = db.prepare(query).all(...params);

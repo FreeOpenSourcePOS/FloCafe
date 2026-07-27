@@ -170,6 +170,7 @@ router.get('/loyalty', requireRole('owner', 'manager', 'cashier', 'waiter', 'che
     const s = getAllSettings(getDatabase());
     res.json({
       loyalty_enabled: s.loyalty_enabled === 'true' || s.loyalty_enabled === '1',
+      global_cashback_percent: parseFloat(s.global_cashback_percent || '0'),
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -179,12 +180,25 @@ router.get('/loyalty', requireRole('owner', 'manager', 'cashier', 'waiter', 'che
 
 router.put('/loyalty', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { loyalty_enabled } = req.body;
+    const { loyalty_enabled, global_cashback_percent } = req.body;
+
+    let finalGlobalCb: number | undefined = undefined;
+    if (global_cashback_percent !== undefined) {
+      if (typeof global_cashback_percent !== 'number' || !Number.isFinite(global_cashback_percent) || global_cashback_percent < 0 || global_cashback_percent > 100) {
+        return res.status(400).json({ error: 'Global cashback percent must be a number between 0 and 100' });
+      }
+      finalGlobalCb = global_cashback_percent;
+    }
+
     const db = getDatabase();
-    upsertSettings(db, { loyalty_enabled });
+    upsertSettings(db, {
+      loyalty_enabled,
+      ...(finalGlobalCb !== undefined && { global_cashback_percent: String(finalGlobalCb) })
+    });
     const s = getAllSettings(db);
     res.json({
       loyalty_enabled: s.loyalty_enabled === 'true' || s.loyalty_enabled === '1',
+      global_cashback_percent: parseFloat(s.global_cashback_percent || '0'),
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);

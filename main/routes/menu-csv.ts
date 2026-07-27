@@ -87,12 +87,12 @@ const TEMPLATES: Record<string, string> = {
 
   products: [
     'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active',
-    ',,Cappuccino,Beverages,150,Rich espresso with steamed milk,50,,,0,"veg,bestseller",yes',
-    ',,Espresso,Beverages,100,,40,,,0,veg,yes',
-    ',,Cold Coffee,Beverages,130,Chilled blended coffee,45,,,0,"veg,new_arrival",yes',
-    ',,Classic Burger,Food,250,Juicy patty with lettuce and tomato,100,,,0,non_veg,yes',
-    ',,Veg Sandwich,Food,180,Fresh vegetables in toasted bread,60,,,0,"veg,new_arrival",yes',
-    ',,Chocolate Cake,Desserts,120,Rich chocolate slice,,,,0,veg,yes',
+    ',,Cappuccino,Beverages,150,Rich espresso with steamed milk,50,,,,"veg,bestseller",yes',
+    ',,Espresso,Beverages,100,,40,,,,veg,yes',
+    ',,Cold Coffee,Beverages,130,Chilled blended coffee,45,,,,"veg,new_arrival",yes',
+    ',,Classic Burger,Food,250,Juicy patty with lettuce and tomato,100,,,,non_veg,yes',
+    ',,Veg Sandwich,Food,180,Fresh vegetables in toasted bread,60,,,,"veg,new_arrival",yes',
+    ',,Chocolate Cake,Desserts,120,Rich chocolate slice,,,,,veg,yes',
   ].join('\n'),
 
   addons: [
@@ -161,7 +161,7 @@ router.get('/export/products', requireRole('owner', 'manager'), (_req: Request, 
       lines.push(
         toCsvRow([p.id, p.sku, p.name, p.category_name, p.price, p.description, p.cost,
           p.tax_category_id ?? '', p.tax_behavior ?? '',
-          p.cb_percent ?? 0, tags, p.is_active ? 'yes' : 'no'])
+          p.cb_percent !== null ? p.cb_percent : '', tags, p.is_active ? 'yes' : 'no'])
       );
     }
     res.setHeader('Content-Type', 'text/csv');
@@ -288,7 +288,15 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
 
       const isActive = !r.is_active || isTruthy(r.is_active) ? 1 : 0;
       const cost = parseFloat(r.cost) || 0;
-      const cbPercent = parseFloat(r.cashback_percent) || 0;
+      let cbPercent: number | null = null;
+      if (r.cashback_percent !== undefined && r.cashback_percent !== null && r.cashback_percent.trim() !== '') {
+        const parsed = Number(r.cashback_percent);
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+          errors.push(`Row ${i + 2} (${r.name}): invalid cashback_percent "${r.cashback_percent}"`);
+          continue;
+        }
+        cbPercent = parsed;
+      }
       const sku = r.sku || null;
 
       let taxCategoryId: string | null = null;

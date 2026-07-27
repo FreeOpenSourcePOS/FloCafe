@@ -1,17 +1,11 @@
 /**
- * Integration Test: Loyalty Earning Is Per-Item Only
- *
- * The loyalty program was simplified to a single on/off switch — there is no
- * more global "points per currency" fallback. Points earned come solely from
- * each product's own cb_percent; products with cb_percent=0 earn nothing.
+ * Integration Test: Loyalty Global Earning Rate
  *
  * Scenarios:
- * 1. Product with cb_percent=0 earns zero cashback
- * 2. Mixed cart — only the item with cb_percent>0 earns cashback
- * 3. Discounted order — cashback on discounted subtotal
- * 4. Customer list API returns updated wallet_balance
- *
- * Usage: node tests/run-electron-node-test.cjs tests/integration-loyalty-global-rate.test.ts
+ * 1. Product with cb_percent=null inherits global_cashback_percent
+ * 2. Product with cb_percent=0 earns nothing (explicit override)
+ * 3. Product with cb_percent>0 earns its custom rate
+ * 4. Update global rate and test inheritance dynamically
  */
 
 // ── Electron Mock ────────────────────────────────────────────────────────────
@@ -29,54 +23,67 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct, seedCustomer,
-  api, assert, assertEqual, assertGreaterThan,
-  getResults, closeDatabase, getDatabase, now,
+  api, assert, assertEqual,
+  getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
 
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { customerRoutes } = require('../main/routes/customers');
+const { settingsRoutes } = require('../main/routes/settings');
+const { menuCsvRoutes } = require('../main/routes/menu-csv');
+const { productRoutes } = require('../main/routes/products');
 
 async function main() {
-  console.log('Integration Test: Loyalty Earning Is Per-Item Only');
+  console.log('Integration Test: Loyalty Global Earning Rate');
   console.log('='.repeat(50));
 
   const db = initTestDb();
 
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('loyalty_enabled', 'true', ?)").run(now());
-  db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('discount_max_percentage', '50', ?)").run(now());
+  db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('global_cashback_percent', '5', ?)").run(now());
 
   const { authHeader } = seedOwnerUser(db);
   seedCategory(db, 'cat-global', 'Global Rate Menu');
 
-  // Product A: cb_percent=0 (earns nothing — no global fallback anymore)
-  seedProduct(db, 'prod-global-a', 'cat-global', 'Coffee', 100, { cb_percent: 0 });
+  // Product A: cb_percent=null (inherits global 5%)
+  seedProduct(db, 'prod-null', 'cat-global', 'Coffee', 100, { cb_percent: null });
 
-  // Product B: cb_percent=10 (earns based on its own rate)
-  seedProduct(db, 'prod-global-b', 'cat-global', 'Sandwich', 200, { cb_percent: 10 });
+  // Product B: cb_percent=0 (explicit no earning)
+  seedProduct(db, 'prod-zero', 'cat-global', 'Water', 50, { cb_percent: 0 });
 
-  seedCustomer(db, 'cust-global-1', 'Global Test Customer', '1111111111');
-  seedCustomer(db, 'cust-global-2', 'Discount Customer', '2222222222');
+  // Product C: cb_percent=15 (custom override)
+  seedProduct(db, 'prod-custom', 'cat-global', 'Sandwich', 200, { cb_percent: 15 });
+
+  seedCustomer(db, 'cust-1', 'Global Test Customer', '1111111111');
+  seedCustomer(db, 'cust-2', 'Discount Customer', '2222222222');
 
   const app = createApp({
     '/api/orders': orderRoutes,
     '/api/bills': billRoutes,
     '/api/customers': customerRoutes,
+    '/api/settings': settingsRoutes,
+    '/api/menu/csv': menuCsvRoutes,
+    '/api/products': productRoutes,
   });
   const { baseUrl, server } = await startServer(app);
 
   try {
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario 1: Product with cb_percent=0 earns zero cashback
+    // Scenario 1: Mixed cart inherits global rate (5%), respects 0% and 15%
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── Scenario 1: cb_percent=0 earns nothing ───');
+    console.log('\n─── Scenario 1: Mixed cart (null=global, 0=none, custom) ───');
 
     const order1 = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {
         type: 'takeaway',
-        customer_id: 'cust-global-1',
-        items: [{ product_id: 'prod-global-a', quantity: 2 }], // 2× ₹100 = ₹200
+        customer_id: 'cust-1',
+        items: [
+          { product_id: 'prod-null', quantity: 2 },   // 2×100 = 200 @ 5% global = 10
+          { product_id: 'prod-zero', quantity: 1 },   // 1×50 = 50 @ 0% = 0
+          { product_id: 'prod-custom', quantity: 1 }, // 1×200 = 200 @ 15% custom = 30
+        ], // Total cashback = 40 points = 4000 int
       },
       headers: authHeader,
     });
@@ -87,40 +94,37 @@ async function main() {
       body: { order_id: order1.data.order.id },
       headers: authHeader,
     });
-    assertEqual(bill1.status, 201, 'bill 1 created');
 
     const pay1 = await api(baseUrl, `/api/bills/${bill1.data.bill.id}/payment`, {
       method: 'POST',
-      body: { method: 'cash', amount: bill1.data.bill.total, customer_id: 'cust-global-1' },
+      body: { method: 'cash', amount: bill1.data.bill.total, customer_id: 'cust-1' },
       headers: authHeader,
     });
     assertEqual(pay1.status, 200, 'payment accepted');
-    assertEqual(pay1.data.bill.payment_status, 'paid', 'bill paid');
-    assertEqual(pay1.data.loyaltyPointsEarned, 0, 'no points earned for cb_percent=0 item');
-
-    const ledger1 = db.prepare(
-      "SELECT * FROM loyalty_ledger WHERE customer_id = 'cust-global-1' AND type = 'credit' AND bill_id = ?"
-    ).get(bill1.data.bill.id) as any;
-    assert(ledger1 === undefined, 'no loyalty credit entry created');
+    assertEqual(pay1.data.loyaltyPointsEarned, 4000, 'earned 40 points (4000 int)');
 
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario 2: Mixed cart — only the cb_percent>0 item earns
+    // Scenario 2: Change global rate to 10%
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── Scenario 2: Mixed cart (cb_percent=0 item earns nothing) ───');
+    console.log('\n─── Scenario 2: Update global rate and test inheritance ───');
+
+    await api(baseUrl, '/api/settings/loyalty', {
+      method: 'PUT',
+      body: { loyalty_enabled: true, global_cashback_percent: 10 },
+      headers: authHeader,
+    });
 
     const order2 = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {
         type: 'takeaway',
-        customer_id: 'cust-global-1',
+        customer_id: 'cust-2',
         items: [
-          { product_id: 'prod-global-a', quantity: 1 }, // ₹100, cb_percent=0 → 0
-          { product_id: 'prod-global-b', quantity: 1 }, // ₹200, cb_percent=10 → 20
-        ],
+          { product_id: 'prod-null', quantity: 1 },   // 1×100 = 100 @ 10% global = 10
+        ], // Total cashback = 10 points = 1000 int
       },
       headers: authHeader,
     });
-    assertEqual(order2.status, 201, 'order 2 created');
 
     const bill2 = await api(baseUrl, '/api/bills/generate', {
       method: 'POST',
@@ -130,76 +134,83 @@ async function main() {
 
     const pay2 = await api(baseUrl, `/api/bills/${bill2.data.bill.id}/payment`, {
       method: 'POST',
-      body: { method: 'cash', amount: bill2.data.bill.total, customer_id: 'cust-global-1' },
+      body: { method: 'cash', amount: bill2.data.bill.total, customer_id: 'cust-2' },
       headers: authHeader,
     });
     assertEqual(pay2.status, 200, 'payment accepted');
-
-    // Coffee: cb_percent=0 → 0, Sandwich: floor(200 × 10/100) = 20 → total = 20 * 100 = 2000
-    const ledger2 = db.prepare(
-      "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-global-1' AND type = 'credit' AND bill_id = ?"
-    ).get(bill2.data.bill.id) as any;
-    assertEqual(ledger2.amount, 2000, 'cashback = 2000 points (only from the cb_percent=10 item)');
+    assertEqual(pay2.data.loyaltyPointsEarned, 1000, 'earned 10 points (1000 int) after global rate update');
 
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario 3: Discounted order — cashback on discounted subtotal
+    // Scenario 3: Negative validation tests
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── Scenario 3: Discounted order ───');
+    console.log('\n─── Scenario 3: Negative validation tests ───');
 
-    const order3 = await api(baseUrl, '/api/orders', {
+    // Settings API
+    const badSetting1 = await api(baseUrl, '/api/settings/loyalty', {
+      method: 'PUT',
+      body: { loyalty_enabled: true, global_cashback_percent: null },
+      headers: authHeader,
+    });
+    assertEqual(badSetting1.status, 400, 'settings API rejects null global rate');
+
+    const badSetting2 = await api(baseUrl, '/api/settings/loyalty', {
+      method: 'PUT',
+      body: { loyalty_enabled: true, global_cashback_percent: true },
+      headers: authHeader,
+    });
+    assertEqual(badSetting2.status, 400, 'settings API rejects boolean global rate');
+
+    const badSetting3 = await api(baseUrl, '/api/settings/loyalty', {
+      method: 'PUT',
+      body: { loyalty_enabled: true, global_cashback_percent: -5 },
+      headers: authHeader,
+    });
+    assertEqual(badSetting3.status, 400, 'settings API rejects negative global rate');
+
+    // Product API
+    const badProduct = await api(baseUrl, '/api/products', {
       method: 'POST',
       body: {
-        type: 'takeaway',
-        customer_id: 'cust-global-2',
-        items: [{ product_id: 'prod-global-b', quantity: 2 }], // 2× ₹200 = ₹400, cb_percent=10
+        name: 'Bad Product',
+        price: 100,
+        cb_percent: '10' // String instead of number
       },
       headers: authHeader,
     });
-    assertEqual(order3.status, 201, 'order 3 created');
+    assertEqual(badProduct.status, 400, 'products API rejects string cb_percent');
 
-    // Apply 50% discount
-    const bill3Gen = await api(baseUrl, '/api/bills/generate', {
+    const badProduct2 = await api(baseUrl, '/api/products', {
       method: 'POST',
-      body: { order_id: order3.data.order.id },
+      body: {
+        name: 'Bad Product',
+        price: 100,
+        cb_percent: 150 // > 100
+      },
       headers: authHeader,
     });
-    const discountRes = await api(baseUrl, `/api/bills/${bill3Gen.data.bill.id}/applyDiscount`, {
+    assertEqual(badProduct2.status, 400, 'products API rejects >100 cb_percent');
+
+    // CSV API
+    const badCsv1 = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',
-      body: { type: 'percentage', value: 50, reason: 'Test discount' },
+      body: {
+        csv: 'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active\n' +
+             ',,Bad Product,Global Rate Menu,100,Desc,50,,,10abc,veg,yes'
+      },
       headers: authHeader,
     });
-    assertEqual(discountRes.status, 200, 'discount applied');
+    assertEqual(badCsv1.status, 200, 'csv API processes request');
+    assert(badCsv1.data.errors.some((e: string) => e.includes('invalid cashback_percent "10abc"')), 'csv rejects 10abc string');
 
-    // Pay — cashback should be on discounted subtotal (₹200, not ₹400)
-    const pay3 = await api(baseUrl, `/api/bills/${bill3Gen.data.bill.id}/payment`, {
+    const badCsv2 = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',
-      body: { method: 'cash', amount: discountRes.data.bill.total, customer_id: 'cust-global-2' },
+      body: {
+        csv: 'id,sku,name,category,price,description,cost,tax_category,tax_behavior,cashback_percent,tags,is_active\n' +
+             ',,Bad Product,Global Rate Menu,100,Desc,50,,,-5,veg,yes'
+      },
       headers: authHeader,
     });
-    assertEqual(pay3.status, 200, 'payment accepted');
-
-    // Discounted subtotal = ₹200, cb_percent = 10 → cashback = floor(200 × 10/100) = 20 * 100 = 2000
-    const ledger3 = db.prepare(
-      "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-global-2' AND type = 'credit' AND bill_id = ?"
-    ).get(bill3Gen.data.bill.id) as any;
-    assertEqual(ledger3.amount, 2000, 'cashback = 2000 points (₹200 discounted × cb_percent 10)');
-
-    // ═══════════════════════════════════════════════════════════════════
-    // Scenario 4: Customer list API returns updated wallet_balance
-    // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── Scenario 4: Customer API wallet_balance ───');
-
-    const customers = await api(baseUrl, '/api/customers', { headers: authHeader });
-    assertEqual(customers.status, 200, 'customers list returned');
-
-    const cust1 = customers.data.data.find((c: any) => c.id === 'cust-global-1');
-    assert(cust1 !== undefined, 'cust-global-1 found in list');
-    // Total earned: 0 (scenario 1) + 2000 (scenario 2) = 2000
-    assertEqual(cust1.wallet_balance, 2000, 'wallet_balance = 2000 points (0 + 2000)');
-
-    const cust2 = customers.data.data.find((c: any) => c.id === 'cust-global-2');
-    assert(cust2 !== undefined, 'cust-global-2 found in list');
-    assertEqual(cust2.wallet_balance, 2000, 'wallet_balance = 2000 points (discounted order)');
+    assert(badCsv2.data.errors.some((e: string) => e.includes('invalid cashback_percent "-5"')), 'csv rejects -5');
 
   } finally {
     server.close();

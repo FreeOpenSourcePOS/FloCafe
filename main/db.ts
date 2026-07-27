@@ -1473,6 +1473,18 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 40,
+    name: 'add_global_cashback_percent',
+    up: () => {
+      const existing = db.prepare("SELECT value FROM settings WHERE key = 'global_cashback_percent'").get();
+      if (!existing) {
+        db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('global_cashback_percent', '0')").run();
+      }
+      // Migrate legacy default cb_percent = 0 to NULL so existing products inherit global cashback rate
+      db.prepare("UPDATE products SET cb_percent = NULL WHERE cb_percent = 0").run();
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -1610,7 +1622,7 @@ function createSchema(): void {
       tax_rate REAL DEFAULT 0,
       tax_category_id TEXT DEFAULT NULL,
       tax_behavior TEXT DEFAULT 'country_default',
-      cb_percent REAL DEFAULT 0,
+      cb_percent REAL DEFAULT NULL,
       tags TEXT,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,

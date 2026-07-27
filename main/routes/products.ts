@@ -532,6 +532,12 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const numericError = validateProductNumericFields(req.body, true);
     if (numericError) return res.status(400).json({ error: numericError });
 
+    if (cb_percent !== undefined && cb_percent !== null) {
+      if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
+        return res.status(400).json({ error: 'cb_percent must be a number between 0 and 100' });
+      }
+    }
+
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
     }
@@ -574,7 +580,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
         'none', 0, tax_category_id || null, tax_behavior || 'country_default',
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, image_url || null,
-        sort_order || 0, cb_percent || 0, JSON.stringify(tags || []),
+        sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
         now(), now()
       );
 
@@ -615,6 +621,12 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
     }
+
+    if (cb_percent !== undefined && cb_percent !== null) {
+      if (typeof cb_percent !== 'number' || !Number.isFinite(cb_percent) || cb_percent < 0 || cb_percent > 100) {
+        return res.status(400).json({ error: 'cb_percent must be a number between 0 and 100' });
+      }
+    }
     const taxCategoryError = validateTaxCategoryId(tax_category_id);
     if (taxCategoryError) {
       return res.status(400).json({ error: taxCategoryError });
@@ -641,6 +653,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     // so we can distinguish "don't touch image_url" from "clear image_url"
     const hasImageUrl = 'image_url' in req.body;
     const hasTaxCategoryId = 'tax_category_id' in req.body;
+    const hasCbPercent = 'cb_percent' in req.body;
 
     db.prepare(`
       UPDATE products SET
@@ -661,7 +674,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         is_active = COALESCE(@is_active, is_active),
         image_url = CASE WHEN @has_image_url = 1 THEN @image_url ELSE image_url END,
         sort_order = COALESCE(@sort_order, sort_order),
-        cb_percent = COALESCE(@cb_percent, cb_percent),
+        cb_percent = CASE WHEN @has_cb_percent = 1 THEN @cb_percent ELSE cb_percent END,
         tags = COALESCE(@tags, tags),
         updated_at = @updated_at
       WHERE id = @id
@@ -674,7 +687,9 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,
       has_image_url: hasImageUrl ? 1 : 0,
       image_url: hasImageUrl ? image_url : null,
-      sort_order, cb_percent,
+      sort_order,
+      has_cb_percent: hasCbPercent ? 1 : 0,
+      cb_percent: hasCbPercent ? cb_percent : null,
       tags: tags ? JSON.stringify(tags) : null,
       updated_at: now(),
       id: req.params.id

@@ -235,6 +235,8 @@ export default function SettingsPage() {
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [savedLoyaltyEnabled, setSavedLoyaltyEnabled] = useState(false);
+  const [globalCashbackPercent, setGlobalCashbackPercent] = useState(0);
+  const [savedGlobalCashbackPercent, setSavedGlobalCashbackPercent] = useState(0);
   const [savingLoyalty, setSavingLoyalty] = useState(false);
 
   // Discount settings
@@ -1103,6 +1105,8 @@ export default function SettingsPage() {
 
       setLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
+      setGlobalCashbackPercent(loyaltyRes.data.global_cashback_percent || 0);
+      setSavedGlobalCashbackPercent(loyaltyRes.data.global_cashback_percent || 0);
 
       if (discountRes.data.discount_max_percentage !== undefined) {
         const value = normalizeDiscountPercentage(discountRes.data.discount_max_percentage);
@@ -1184,6 +1188,8 @@ export default function SettingsPage() {
     api.get('/settings/loyalty').then((res) => {
       setLoyaltyEnabled(!!res.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!res.data.loyalty_enabled);
+      setGlobalCashbackPercent(res.data.global_cashback_percent || 0);
+      setSavedGlobalCashbackPercent(res.data.global_cashback_percent || 0);
     }).catch(() => {});
 
     api.get('/settings/discount').then((res) => {
@@ -1491,8 +1497,10 @@ export default function SettingsPage() {
     try {
       await api.put('/settings/loyalty', {
         loyalty_enabled: loyaltyEnabled,
+        global_cashback_percent: globalCashbackPercent,
       });
       setSavedLoyaltyEnabled(loyaltyEnabled);
+      setSavedGlobalCashbackPercent(globalCashbackPercent);
       if (!silent) toast.success(t('settings.loyaltySaved'));
     } catch (err) {
       if (!silent) toast.error(t('settings.saveFailed'));
@@ -1653,6 +1661,7 @@ export default function SettingsPage() {
     JSON.stringify(printingForm) !== JSON.stringify(savedPrinting) ||
     JSON.stringify(billForm) !== JSON.stringify(savedBillForm) ||
     loyaltyEnabled !== savedLoyaltyEnabled ||
+    globalCashbackPercent !== savedGlobalCashbackPercent ||
     discountMaxPct !== savedDiscountMaxPct ||
     discountMaxAmount !== savedDiscountMaxAmount ||
     discountMode !== savedDiscountMode ||
@@ -2513,6 +2522,28 @@ export default function SettingsPage() {
                     }`} />
                   </button>
                 </div>
+                {/* Global Cashback Input */}
+                {loyaltyEnabled && (
+                  <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">{t('settings.globalLoyaltyRate')}</p>
+                      <p className="text-sm text-gray-500">{t('settings.globalLoyaltyRateHint')}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="1"
+                        value={globalCashbackPercent === 0 ? '' : globalCashbackPercent}
+                        onChange={(e) => setGlobalCashbackPercent(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                        placeholder="0"
+                        className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-right"
+                      />
+                      <span className="text-gray-500 font-medium">%</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 

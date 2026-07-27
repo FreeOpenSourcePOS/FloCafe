@@ -57,7 +57,7 @@ export interface Product {
   description: string | null;
   price: number;
   cost_price: number | null;
-  cb_percent?: number;
+  cb_percent?: number | null;
   tax_type: 'none' | 'inclusive' | 'exclusive';
   tax_rate: number;
   tax_category_id?: string | null;

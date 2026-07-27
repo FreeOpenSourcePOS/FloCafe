@@ -198,6 +198,18 @@ jobs:
           test -f release/latest-mac.yml || { echo "::error::release/latest-mac.yml is missing — macOS auto-update would be broken for this release"; exit 1; }
           ls release/*.zip >/dev/null 2>&1 || { echo "::error::no .zip in release/ — macOS auto-update would be broken for this release"; exit 1; }
           ls release/*.zip.blockmap >/dev/null 2>&1 || { echo "::error::no .zip.blockmap in release/ — macOS auto-update would be broken for this release"; exit 1; }
+          VERIFY_DIR=$(mktemp -d)
+          trap 'rm -rf "$VERIFY_DIR"' EXIT
+          for ZIP in release/*.zip; do
+            APP_DIR="$VERIFY_DIR/$(basename "$ZIP" .zip)"
+            mkdir -p "$APP_DIR"
+            ditto -x -k "$ZIP" "$APP_DIR"
+            APP=$(find "$APP_DIR" -maxdepth 2 -type d -name '*.app' -print -quit)
+            [ -n "$APP" ] || { echo "::error::no app bundle in $ZIP"; exit 1; }
+            codesign --verify --deep --strict --verbose=2 "$APP"
+            spctl --assess --type execute --verbose=4 "$APP"
+            xcrun stapler validate "$APP"
+          done
 
       - name: Upload macOS assets to GitHub release
         # latest-mac.yml (+ the .zip/.blockmap it points at) is what

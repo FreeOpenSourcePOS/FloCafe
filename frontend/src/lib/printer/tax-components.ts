@@ -176,6 +176,9 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
       ) / 1_000_000;
     }
   }
+  if (result.length === 0 && target !== null && target !== 0) {
+    return [{ title: 'Tax', rate: null, amount: target }];
+  }
   return result;
 }
 

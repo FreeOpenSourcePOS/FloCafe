@@ -57,7 +57,11 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
       const items = attachEffectiveAddons(db, visibleItems);
 
-      return { ...order, items };
+      return {
+        ...order,
+        items,
+        table: order.table_name ? { name: order.table_name } : null,
+      };
     });
 
     res.json({ orders: ordersWithItems });
@@ -181,6 +185,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
           order_number: (item as any).order_number,
           table_id: (item as any).table_id,
           table_name: (item as any).table_name,
+          table: (item as any).table_name ? { name: (item as any).table_name } : null,
           type: (item as any).type,
           order_status: (item as any).order_status,
           order_notes: (item as any).order_notes,

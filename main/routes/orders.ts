@@ -606,7 +606,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
   }
 });
 
-router.patch('/:id/status', requireRole('owner', 'manager', 'chef', 'waiter'), (req: Request, res: Response) => {
+router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', 'waiter'), (req: Request, res: Response) => {
   try {
     const { status, reason, override_pin, free_table } = req.body;
 

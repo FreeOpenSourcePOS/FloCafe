@@ -82,6 +82,13 @@ test('document-level legacy data remains the fallback when item tax fields are u
   ]);
 });
 
+test('legacy bills with tax_amount but no breakdown expose a generic tax component', () => {
+  const document = { tax_amount: 12.5, tax_breakdown: [] };
+  const expected = [{ title: 'Tax', rate: null, amount: 12.5 }];
+  assert.deepEqual(resolveBackendTaxComponents(document), expected);
+  assert.deepEqual(resolveFrontendTaxComponents(document), expected);
+});
+
 test('frontend and backend receipt resolution agree for mixed data', () => {
   const bill = {
     order: {

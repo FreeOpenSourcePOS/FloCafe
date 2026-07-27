@@ -45,10 +45,10 @@ jobs:
         id: filter
         with:
           filters: |
-            frontend: ['frontend/**']
-            backend: ['main/**']
-            kds: ['main/kds-server.ts', 'main/services/kds.ts']
-            db: ['main/db.ts', 'main/migrations/**']
+            frontend: ['frontend/**', 'package.json', 'package-lock.json']
+            backend: ['main/**', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig.json']
+            kds: ['main/kds-server.ts', 'main/services/kds.ts', 'main/routes/kds.ts', 'tests/kds-*.test.ts']
+            db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
 
   # 3. Linux Baseline
   linux-baseline:

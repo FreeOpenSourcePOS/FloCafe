@@ -227,9 +227,7 @@ export function registerRoutes(app: Express): void {
       // requireAuth (main/server.ts) already verified the token and attached
       // the user's current DB role to req.user — use that, not the JWT claim.
       const userRole = (req as any).user?.role;
-      if (!userRole || !['owner', 'manager'].includes(userRole)) {
-        return res.status(403).json({ error: 'Only owner or manager can cancel items' });
-      }
+      if (!userRole) return res.status(403).json({ error: 'Authentication required' });
 
       const db = getDatabase();
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
@@ -249,6 +247,11 @@ export function registerRoutes(app: Express): void {
       // ~L580-609), and leaves a negative bill line so the removal stays
       // visible on the bill rather than the item just vanishing.
       const isInProgressVoid = ['preparing', 'ready'].includes(item.status);
+      const isPrivilegedRole = ['owner', 'manager'].includes(userRole);
+      const canUseOverride = ['cashier', 'waiter'].includes(userRole) && isInProgressVoid;
+      if (!isPrivilegedRole && !canUseOverride) {
+        return res.status(403).json({ error: 'Only owner or manager can cancel this item' });
+      }
       if (isInProgressVoid) {
         if (!override_pin) {
           return res.status(400).json({ error: 'Manager PIN required to void an item already in progress' });

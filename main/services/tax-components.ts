@@ -129,7 +129,10 @@ function reconcileTotal(
   targetValue: unknown,
 ): DisplayTaxComponent[] {
   const target = decimalOrNull(targetValue);
-  if (!target || components.length === 0) return components;
+  if (!target) return components;
+  if (components.length === 0) {
+    return target.isZero() ? [] : [{ title: 'Tax', rate: null, amount: target.toDecimalPlaces(6).toNumber() }];
+  }
   const current = components.reduce(
     (sum, component) => sum.plus(component.amount),
     new Decimal(0),
@@ -201,11 +204,12 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   }
 
   const snapshot = flattenSnapshots(document.tax_snapshot);
+  const components = mergeComponents(
+    snapshot.present ? snapshot.components : flattenLegacyBreakdown(document.tax_breakdown),
+  );
   return reconcileTotal(
-    mergeComponents(
-      snapshot.present ? snapshot.components : flattenLegacyBreakdown(document.tax_breakdown),
-    ),
-    snapshot.present ? document.tax_amount : undefined,
+    components,
+    snapshot.present || components.length === 0 ? document.tax_amount : undefined,
   );
 }
 

@@ -146,6 +146,25 @@ function main() {
   console.log('   ✓ old installs receive the bundled tax pack registry without replacing legacy tax data');
 
   assert.equal((db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count, 10);
+  // A product originating in this pre-tax-engine fixture can still carry the
+  // old columns after Phase 1. New checkout calculations must preserve that
+  // tax until an operator deliberately assigns a tax category.
+  const legacyProduct = db.prepare('SELECT * FROM products LIMIT 1').get() as any;
+  db.prepare(`UPDATE products SET tax_category_id = NULL, tax_type = 'exclusive', tax_rate = 18 WHERE id = ?`)
+    .run(legacyProduct.id);
+  const { calculateItemTax } = require('../main/services/tax');
+  const legacyTax = calculateItemTax(
+    { country: 'IN', business_type: 'restaurant', state_code: 'KA' },
+    db.prepare('SELECT * FROM products WHERE id = ?').get(legacyProduct.id),
+    100,
+    null,
+  );
+  assert.equal(legacyTax.tax_amount, 5, 'an upgraded legacy product still calculates tax before categorization');
+  assert.deepEqual(legacyTax.tax_breakdown, [
+    { title: 'CGST', rate: 2.5, amount: 2.5 },
+    { title: 'SGST', rate: 2.5, amount: 2.5 },
+  ]);
+  console.log('   ✓ legacy product tax continues to calculate after upgrade until categorized');
   const preservedOrder = db.prepare(`
     SELECT tax_amount, tax_breakdown, tax_snapshot FROM orders WHERE order_number = 'ORD-LEGACY-TAX'
   `).get() as any;

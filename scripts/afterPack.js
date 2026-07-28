@@ -35,9 +35,15 @@ module.exports = async function afterPack(context) {
     const metainfoSrc = path.join(packager.projectDir, 'assets/com.flo.desktop.metainfo.xml');
     const metainfoDest = path.join(appOutDir, 'share/metainfo/com.flo.desktop.metainfo.xml');
     if (fs.existsSync(metainfoSrc)) {
-      fs.mkdirSync(path.dirname(metainfoDest), { recursive: true });
-      fs.copyFileSync(metainfoSrc, metainfoDest);
-      console.log(`→ afterPack: ✓ copied AppStream metainfo.xml`);
+      try {
+        fs.mkdirSync(path.dirname(metainfoDest), { recursive: true });
+        fs.copyFileSync(metainfoSrc, metainfoDest);
+        console.log(`→ afterPack: ✓ copied AppStream metainfo.xml`);
+      } catch (error) {
+        throw new Error(
+          `afterPack: failed to copy metainfo from ${metainfoSrc} to ${metainfoDest}: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
     }
     return;
   }

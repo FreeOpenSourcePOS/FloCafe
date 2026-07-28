@@ -207,6 +207,28 @@ const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exemp
 
 const router = Router();
 
+const PRODUCT_NUMERIC_FIELDS = [
+  ['price', 0, Number.POSITIVE_INFINITY],
+  ['cost_price', 0, Number.POSITIVE_INFINITY],
+  ['cb_percent', 0, 100],
+  ['stock_quantity', 0, Number.POSITIVE_INFINITY],
+  ['low_stock_threshold', 0, Number.POSITIVE_INFINITY],
+] as const;
+
+function validateProductNumericFields(values: Record<string, unknown>, requirePrice: boolean): string | null {
+  if (requirePrice && (typeof values.price !== 'number' || !Number.isFinite(values.price))) {
+    return 'price must be a finite non-negative number';
+  }
+  for (const [field, minimum, maximum] of PRODUCT_NUMERIC_FIELDS) {
+    const value = values[field];
+    if (value === undefined || value === null) continue;
+    if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
+      return `${field} must be a finite number between ${minimum} and ${maximum === Number.POSITIVE_INFINITY ? 'the maximum supported value' : maximum}`;
+    }
+  }
+  return null;
+}
+
 function validateTaxCategoryId(categoryId: unknown): string | null {
   if (categoryId === null || categoryId === undefined || categoryId === '') return null;
   if (typeof categoryId !== 'string') return 'tax_category_id must be a string or null';
@@ -507,6 +529,8 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     if (!name || price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
     }
+    const numericError = validateProductNumericFields(req.body, true);
+    if (numericError) return res.status(400).json({ error: numericError });
 
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });
@@ -584,6 +608,9 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
+
+    const numericError = validateProductNumericFields(req.body, false);
+    if (numericError) return res.status(400).json({ error: numericError });
 
     if (tax_behavior !== undefined && tax_behavior !== null && !VALID_TAX_BEHAVIORS.includes(tax_behavior)) {
       return res.status(400).json({ error: `tax_behavior must be one of: ${VALID_TAX_BEHAVIORS.join(', ')}` });

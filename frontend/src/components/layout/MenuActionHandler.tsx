@@ -17,28 +17,40 @@ export default function MenuActionHandler() {
     if (!window.electronAPI?.backupDatabase) return { success: false, error: t('common.notAvailable') };
 
     toast.loading(t('backup.creating'), { id: 'backup' });
-    const result = await window.electronAPI.backupDatabase(pin);
-    toast.remove('backup');
-
-    if (result.success) {
-      toast.success(t('backup.savedTo', { path: result.path ?? '' }));
-    } else if (result.error !== 'Cancelled') {
-      toast.error(t('backup.failedWith', { error: result.error ?? '' }));
+    try {
+      const result = await window.electronAPI.backupDatabase(pin);
+      if (result.success) {
+        toast.success(t('backup.savedTo', { path: result.path ?? '' }));
+      } else if (result.error !== 'Cancelled') {
+        toast.error(t('backup.failedWith', { error: result.error ?? '' }));
+      }
+      return result;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('common.notAvailable');
+      toast.error(t('backup.failedWith', { error: message }));
+      return { success: false, error: message };
+    } finally {
+      toast.remove('backup');
     }
-    return result;
   }
 
   async function runRestore(pin: string) {
     if (!window.electronAPI?.restoreBackup) return { success: false, error: t('common.notAvailable') };
 
-    const result = await window.electronAPI.restoreBackup(pin);
-    if (result.success) {
-      toast.success(t('restore.success'));
-      setTimeout(() => window.location.reload(), 1500);
-    } else if (result.error !== 'Cancelled') {
-      toast.error(t('restore.failedWith', { error: result.error ?? '' }));
+    try {
+      const result = await window.electronAPI.restoreBackup(pin);
+      if (result.success) {
+        toast.success(t('restore.success'));
+        setTimeout(() => window.location.reload(), 1500);
+      } else if (result.error !== 'Cancelled') {
+        toast.error(t('restore.failedWith', { error: result.error ?? '' }));
+      }
+      return result;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('common.notAvailable');
+      toast.error(t('restore.failedWith', { error: message }));
+      return { success: false, error: message };
     }
-    return result;
   }
 
   async function handlePinSubmit(pin: string) {
@@ -50,22 +62,27 @@ export default function MenuActionHandler() {
   }
 
   async function beginPinGatedAction(action: 'backup' | 'restore') {
-    const status = await window.electronAPI?.getMasterPinStatus?.();
+    try {
+      const status = await window.electronAPI?.getMasterPinStatus?.();
 
-    if (!status?.available) {
-      // No OS-backed encryption on this machine — the gate is inert, proceed directly.
-      if (action === 'backup') runBackup('');
-      else runRestore('');
-      return;
+      if (!status?.available) {
+        // No OS-backed encryption on this machine — the gate is inert, proceed directly.
+        if (action === 'backup') await runBackup('');
+        else await runRestore('');
+        return;
+      }
+
+      if (!status.isSet) {
+        toast.error(t('settings.setMasterPinFirst'));
+        router.push('/settings?tab=data&action=master-pin');
+        return;
+      }
+
+      setPendingPinAction(action);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('common.notAvailable');
+      toast.error(t(action === 'backup' ? 'backup.failedWith' : 'restore.failedWith', { error: message }));
     }
-
-    if (!status.isSet) {
-      toast.error(t('settings.setMasterPinFirst'));
-      router.push('/settings?tab=data&action=master-pin');
-      return;
-    }
-
-    setPendingPinAction(action);
   }
 
   useEffect(() => {

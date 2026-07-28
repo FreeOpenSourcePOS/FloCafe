@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.4] - 2026-07-28
+
+### Fixed
+- Verification-only release: no user-facing changes. v2.4.1–v2.4.3's `release-mac` failures traced back to a real `MAC_CERTS` problem, not a CI environment issue: the secret only ever contained a Mac App Distribution certificate (for the Mac App Store channel), never a Developer ID Application certificate, so electron-builder silently skipped code signing on every direct-distribution (DMG/zip) build — including every prior "successful" release. `MAC_CERTS`/`MAC_CERTS_PASSWORD` now hold a freshly issued Developer ID Application certificate for Codify Apps Private Limited (BKDY677XJA). This release exists to confirm the `release-mac` pipeline — real signing, notarization, and stapling — finally passes end-to-end against a published artifact (#168).
+
 ## [2.4.3] - 2026-07-28
 
 ### Fixed

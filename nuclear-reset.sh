@@ -1,4 +1,22 @@
 #!/bin/bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+if [ ! -f "$SCRIPT_DIR/package.json" ]; then
+  echo "Error: nuclear-reset.sh must run from a FloCafe checkout." >&2
+  exit 1
+fi
+
+clear_path() {
+  local target=$1
+  local label=$2
+  if [ -e "$target" ]; then
+    rm -rf -- "$target"
+    echo -e "${GREEN}Cleared: ${label}${NC}"
+  fi
+}
 
 # Colors for output
 RED='\033[0;31m'
@@ -16,7 +34,7 @@ for arg in "$@"; do
   esac
 done
 
-if [ "$FORCE" = "1" ] || [ "$CI" = "true" ]; then
+if [ "${FORCE:-}" = "1" ] || [ "${CI:-}" = "true" ]; then
   CONFIRMED=true
 fi
 
@@ -52,29 +70,27 @@ echo -e "${BLUE}Step 2: Clearing ALL caches${NC}"
 echo "----------------------------------------"
 
 # Project caches
-rm -rf frontend/.next 2>/dev/null && echo -e "${GREEN}Cleared: frontend/.next${NC}"
-rm -rf frontend/node_modules/.cache 2>/dev/null && echo -e "${GREEN}Cleared: frontend/node_modules/.cache${NC}"
-rm -rf dist 2>/dev/null && echo -e "${GREEN}Cleared: dist/${NC}"
+clear_path "$SCRIPT_DIR/frontend/.next" "frontend/.next"
+clear_path "$SCRIPT_DIR/frontend/node_modules/.cache" "frontend/node_modules/.cache"
+clear_path "$SCRIPT_DIR/dist" "dist/"
 
 # Electron caches
-rm -rf ~/Library/Application\ Support/flo-desktop/Cache 2>/dev/null && echo -e "${GREEN}Cleared: Electron app cache${NC}"
-rm -rf ~/Library/Application\ Support/flo-desktop/Code\ Cache 2>/dev/null && echo -e "${GREEN}Cleared: Electron code cache${NC}"
-rm -rf ~/Library/Caches/flo-desktop 2>/dev/null && echo -e "${GREEN}Cleared: Electron system cache${NC}"
+clear_path "$HOME/Library/Application Support/flo-desktop/Cache" "Electron app cache"
+clear_path "$HOME/Library/Application Support/flo-desktop/Code Cache" "Electron code cache"
+clear_path "$HOME/Library/Caches/flo-desktop" "Electron system cache"
 
 # TypeScript incremental build cache
-rm -f tsconfig.tsbuildinfo 2>/dev/null && echo -e "${GREEN}Cleared: TS build info${NC}"
+if [ -e "$SCRIPT_DIR/tsconfig.tsbuildinfo" ]; then
+  rm -f -- "$SCRIPT_DIR/tsconfig.tsbuildinfo"
+  echo -e "${GREEN}Cleared: TS build info${NC}"
+fi
 
 echo ""
 echo -e "${BLUE}Step 3: Rebuilding TypeScript${NC}"
 echo "----------------------------------------"
 
 npm run build 2>&1
-if [ $? -eq 0 ]; then
-    echo -e "${GREEN}Build successful${NC}"
-else
-    echo -e "${RED}Build failed!${NC}"
-    exit 1
-fi
+echo -e "${GREEN}Build successful${NC}"
 
 echo ""
 echo -e "${BLUE}Step 4: Verify routes are compiled${NC}"

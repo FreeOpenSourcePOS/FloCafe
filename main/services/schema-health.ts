@@ -69,6 +69,9 @@ function snapshotSchema(dbInstance: Database.Database): DbSchemaSnapshot {
   const tables: Record<string, TableSchema> = {};
 
   for (const name of getTables(dbInstance)) {
+    // SQLite metadata can contain arbitrary object names in a damaged or
+    // user-supplied database. Never interpolate an unsafe name into PRAGMA.
+    if (!isSafeIdentifier(name)) continue;
     const createRow = dbInstance.prepare(
       `SELECT sql FROM sqlite_master WHERE type='table' AND name = ?`
     ).get(name) as { sql: string | null } | undefined;
@@ -86,6 +89,7 @@ function snapshotSchema(dbInstance: Database.Database): DbSchemaSnapshot {
       // sqlite_autoindex_* are implicit indexes backing PRIMARY KEY/UNIQUE column
       // constraints already captured by ColumnDef.pk — skip to avoid double-reporting.
       .filter((i) => !String(i.name).startsWith('sqlite_autoindex_'))
+      .filter((i) => isSafeIdentifier(String(i.name)))
       .map((i) => {
         const cols = (dbInstance.prepare(`PRAGMA index_info(${i.name})`).all() as any[]).map((c) => c.name);
         const sqlRow = dbInstance.prepare(`SELECT sql FROM sqlite_master WHERE type='index' AND name = ?`).get(i.name) as { sql: string | null } | undefined;

@@ -721,7 +721,26 @@ export interface SendResult {
     | 'send_failed';
 }
 
+const sendLocks = new Map<string, Promise<void>>();
+
+// Serialize sends per recipient. The rate-limit and duplicate-body checks are
+// synchronous, but sendMessage yields while resolving the JID and sending;
+// without this lock two requests could both pass those checks.
 export async function sendMessage(req: QueuedSend): Promise<SendResult> {
+  const previous = sendLocks.get(req.phoneE164) ?? Promise.resolve();
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => { release = resolve; });
+  sendLocks.set(req.phoneE164, current);
+  await previous;
+  try {
+    return await sendMessageInternal(req);
+  } finally {
+    release();
+    if (sendLocks.get(req.phoneE164) === current) sendLocks.delete(req.phoneE164);
+  }
+}
+
+async function sendMessageInternal(req: QueuedSend): Promise<SendResult> {
   if (!state.enabled) return { ok: false, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
   if (!req.phoneE164) return { ok: false, error: 'Phone number required.', reason: 'no_phone' };
   if (state.state !== 'connected' || !state.socket) {

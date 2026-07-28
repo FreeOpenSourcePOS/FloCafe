@@ -309,26 +309,34 @@ router.put('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req: R
       return res.status(404).json({ error: 'Addon not found' });
     }
 
-    if (is_active === false && addon.is_active) {
-      const boundsError = wouldBreakMinSelection(db, req.params.groupId as string, req.params.addonId as string);
-      if (boundsError) {
-        return res.status(400).json({ errors: boundsError });
-      }
-    }
-
     const hasTaxCategoryId = 'tax_category_id' in req.body;
-    db.prepare(`
-      UPDATE addons SET name = COALESCE(?, name), price = COALESCE(?, price),
-        tax_category_id = CASE WHEN ? = 1 THEN ? ELSE tax_category_id END,
-        tax_behavior = COALESCE(?, tax_behavior),
-        inherit_parent_tax_category = COALESCE(?, inherit_parent_tax_category),
-        is_active = COALESCE(?, is_active), sort_order = COALESCE(?, sort_order)
-      WHERE id = ?
-    `).run(
-      name, price, hasTaxCategoryId ? 1 : 0, tax_category_id, tax_behavior,
-      inherit_parent_tax_category === undefined ? null : (inherit_parent_tax_category ? 1 : 0),
-      is_active, sort_order, req.params.addonId,
-    );
+    const updatedAtomically = withTxn(() => {
+      const current = db.prepare('SELECT is_active FROM addons WHERE id = ? AND addon_group_id = ?')
+        .get(req.params.addonId, req.params.groupId) as { is_active: number } | undefined;
+      if (!current) return false;
+      if (is_active === false && current.is_active) {
+        const boundsError = wouldBreakMinSelection(db, req.params.groupId as string, req.params.addonId as string);
+        if (boundsError) return boundsError;
+      }
+
+      db.prepare(`
+        UPDATE addons SET name = COALESCE(?, name), price = COALESCE(?, price),
+          tax_category_id = CASE WHEN ? = 1 THEN ? ELSE tax_category_id END,
+          tax_behavior = COALESCE(?, tax_behavior),
+          inherit_parent_tax_category = COALESCE(?, inherit_parent_tax_category),
+          is_active = COALESCE(?, is_active), sort_order = COALESCE(?, sort_order)
+        WHERE id = ?
+      `).run(
+        name, price, hasTaxCategoryId ? 1 : 0, tax_category_id, tax_behavior,
+        inherit_parent_tax_category === undefined ? null : (inherit_parent_tax_category ? 1 : 0),
+        is_active, sort_order, req.params.addonId,
+      );
+      return true;
+    });
+    if (updatedAtomically !== true) {
+      if (updatedAtomically === false) return res.status(404).json({ error: 'Addon not found' });
+      return res.status(400).json({ errors: updatedAtomically });
+    }
 
     const updated = db.prepare('SELECT * FROM addons WHERE id = ?').get(req.params.addonId);
     res.json({ addon: updated });
@@ -346,14 +354,21 @@ router.delete('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req
       return res.status(404).json({ error: 'Addon not found' });
     }
 
-    if (addon.is_active) {
-      const boundsError = wouldBreakMinSelection(db, req.params.groupId as string, req.params.addonId as string);
-      if (boundsError) {
-        return res.status(400).json({ errors: boundsError });
+    const deletedAtomically = withTxn(() => {
+      const current = db.prepare('SELECT is_active FROM addons WHERE id = ? AND addon_group_id = ?')
+        .get(req.params.addonId, req.params.groupId) as { is_active: number } | undefined;
+      if (!current) return false;
+      if (current.is_active) {
+        const boundsError = wouldBreakMinSelection(db, req.params.groupId as string, req.params.addonId as string);
+        if (boundsError) return boundsError;
       }
+      db.prepare('UPDATE addons SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.addonId);
+      return true;
+    });
+    if (deletedAtomically !== true) {
+      if (deletedAtomically === false) return res.status(404).json({ error: 'Addon not found' });
+      return res.status(400).json({ errors: deletedAtomically });
     }
-
-    db.prepare('UPDATE addons SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.addonId);
     res.json({ message: 'Addon deleted' });
   } catch (error: any) {
     console.error("[API] Internal error:", error);

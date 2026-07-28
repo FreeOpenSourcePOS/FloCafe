@@ -187,6 +187,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const updatingIdsRef = useRef(new Set<number>());
   // Holds the latest tryWebSocket so its own reconnect timer can call it recursively without
   // referencing the useCallback-bound identifier before it's declared (which the compiler
   // can't safely memoize). Kept in sync via the unconditional assignment right after the
@@ -225,6 +226,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const updateItemStatus = useCallback(
     async (itemId: number, status: KitchenStatus, opts: { silent?: boolean } = {}) => {
+      updatingIdsRef.current.add(itemId);
       setUpdating(itemId);
       try {
         await api.patch(itemStatusPath.replace(':itemId', String(itemId)), { status });
@@ -232,7 +234,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       } catch {
         if (!opts.silent) toast.error(t('kds.failedToUpdateItem'));
       } finally {
-        setUpdating(null);
+        updatingIdsRef.current.delete(itemId);
+        setUpdating(updatingIdsRef.current.values().next().value ?? null);
       }
     },
     // statusLabel is derived from `t` (already in deps), so omit it.

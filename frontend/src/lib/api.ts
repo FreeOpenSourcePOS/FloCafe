@@ -1,5 +1,7 @@
 import axios from 'axios';
 
+let authRedirectInProgress = false;
+
 // Derived from the page's own origin (not a build-time env var) so LAN
 // clients that load the app via the server's IP — e.g. http://192.168.1.5:3001 —
 // talk back to that same host instead of a hardcoded "localhost", which would
@@ -39,7 +41,8 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       if (isKdsPath) return Promise.reject(error);
       // Don't redirect when already on the login page — let the login handler show the error
-      if (!window.location.pathname.includes('/auth/login')) {
+      if (!window.location.pathname.includes('/auth/login') && !authRedirectInProgress) {
+        authRedirectInProgress = true;
         localStorage.removeItem('tenant');
         window.location.href = '/auth/login';
       }

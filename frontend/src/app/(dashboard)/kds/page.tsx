@@ -54,6 +54,13 @@ export default function KdsPage() {
   const kdsDefaultView = useDashboardKdsDefault();
   const kdsEnabled = useKdsEnabledCheck();
 
+  if (kdsEnabled === null) {
+    return (
+      <div className="flex items-center justify-center h-full min-h-[60vh]">
+        <div className="w-10 h-10 border-4 border-brand border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
   if (kdsEnabled === false) {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-3 text-center px-6">

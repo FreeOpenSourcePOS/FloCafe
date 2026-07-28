@@ -52,13 +52,16 @@ export function useConfirm() {
       },
     ): Promise<boolean> => {
       return new Promise((resolve) => {
-        setState({
-          open: true,
-          message,
-          title: options?.title,
-          confirmLabel: options?.confirmLabel,
-          destructive: options?.destructive,
-          resolve,
+        setState((previous) => {
+          previous?.resolve(false);
+          return {
+            open: true,
+            message,
+            title: options?.title,
+            confirmLabel: options?.confirmLabel,
+            destructive: options?.destructive,
+            resolve,
+          };
         });
       });
     },

@@ -120,22 +120,28 @@ export default function ProductsPage() {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
     const requests: Promise<{ data: Record<string, unknown> }>[] = [
-      api.get('/products'),
-      api.get('/categories'),
+      api.get('/products', { signal: controller.signal }),
+      api.get('/categories', { signal: controller.signal }),
     ];
-    if (isRestaurant) requests.push(api.get('/addon-groups'));
+    if (isRestaurant) requests.push(api.get('/addon-groups', { signal: controller.signal }));
     Promise.all(requests)
       .then(([prodRes, catRes, agRes]) => {
         setProducts((prodRes.data.products as Product[]) || []);
         setCategories((catRes.data.categories as Category[]) || []);
         if (agRes) setAddonGroups((agRes.data.addon_groups as AddonGroup[]) || []);
       })
-      .catch(() => toast.error(t('products.failedToLoad')))
-      .finally(() => setLoading(false));
-    api.get('/tax/categories')
+      .catch((err: unknown) => {
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('products.failedToLoad'));
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    api.get('/tax/categories', { signal: controller.signal })
       .then((res) => setTaxCategories((res.data as { categories?: { id: string; label: string }[] }).categories || []))
-      .catch(() => setTaxCategories([]));
+      .catch((err: unknown) => {
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) setTaxCategories([]);
+      });
+    return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

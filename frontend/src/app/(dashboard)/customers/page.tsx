@@ -81,15 +81,21 @@ export default function CustomersPage() {
   };
 
   useEffect(() => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
     const params: Record<string, string> = {};
     if (search) params.search = search;
     if (filter) params.filter = filter;
     if (sortField) params.sort = sortField;
     if (sortOrder) params.order = sortOrder;
-    api.get('/customers', { params })
+    api.get('/customers', { params, signal: controller.signal })
       .then(({ data }) => setCustomers(data.data || []))
-      .catch(() => toast.error(t('customer.loadFailed')))
-      .finally(() => setLoading(false));
+      .catch((err: unknown) => {
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('customer.loadFailed'));
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search, filter, sortField, sortOrder]);
 

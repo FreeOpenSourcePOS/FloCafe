@@ -160,11 +160,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!isOwner) return;
+    const controller = new AbortController();
     Promise.all([
-      isToday ? api.get('/reports/daily-stats') : api.get('/reports/summary', { params: { date: selectedDate } }),
-      api.get('/reports/topProducts', { params: { start_date: selectedDate, end_date: selectedDate, limit: 5 } }),
-      api.get('/reports/recentOrders', { params: { date: selectedDate, limit: 6 } }),
-      api.get('/reports/insights', { params: { days: 30 } }),
+      isToday ? api.get('/reports/daily-stats', { signal: controller.signal }) : api.get('/reports/summary', { params: { date: selectedDate }, signal: controller.signal }),
+      api.get('/reports/topProducts', { params: { start_date: selectedDate, end_date: selectedDate, limit: 5 }, signal: controller.signal }),
+      api.get('/reports/recentOrders', { params: { date: selectedDate, limit: 6 }, signal: controller.signal }),
+      api.get('/reports/insights', { params: { days: 30 }, signal: controller.signal }),
     ])
       .then(([statsRes, topRes, recentRes, insightsRes]) => {
         setStats(isToday ? statsRes.data : null);
@@ -173,8 +174,13 @@ export default function DashboardPage() {
         setRecentOrders(recentRes.data.recentOrders || []);
         setInsights(insightsRes.data);
       })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      .catch((err: unknown) => {
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) return;
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOwner, selectedDate]);
 

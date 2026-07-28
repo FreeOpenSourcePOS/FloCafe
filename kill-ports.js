@@ -66,16 +66,24 @@ function getProcessesOnPort(port) {
       }
       for (const pid of pids) {
         if (!isValidPid(pid)) continue;
+        let cmdline = '';
         try {
           const cmdOut = execSync(
             `wmic process where "ProcessId=${pid}" get CommandLine / value 2>nul`,
             { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
           );
           const m = cmdOut.match(/CommandLine=(.*)/i);
-          results.push({ pid, cmdline: m?.[1]?.trim() || '' });
-        } catch {
-          results.push({ pid, cmdline: '' });
+          cmdline = m?.[1]?.trim() || '';
+        } catch { /* WMIC is absent on newer Windows installations. */ }
+        if (!cmdline) {
+          try {
+            cmdline = execSync(
+              `powershell.exe -NoProfile -NonInteractive -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').CommandLine"`,
+              { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
+            ).trim();
+          } catch { /* process metadata is unavailable; fail closed below */ }
         }
+        results.push({ pid, cmdline });
       }
     } catch { /* port is free */ }
     return results;
@@ -172,7 +180,7 @@ const hasFuser = !isWindows && hasCommand('fuser');
 // ── Graceful kill: SIGTERM → wait → SIGKILL ─────────────────────────────────
 function gracefulKill(pid) {
   return new Promise((resolve) => {
-    if (!isValidPid(pid)) return resolve();
+    if (!isValidPid(pid)) return resolve(false);
     // Try SIGTERM first
     exec(`kill ${pid} 2>/dev/null`, { shell: '/bin/sh' }, () => {
       // Wait 2 seconds for graceful shutdown
@@ -181,9 +189,12 @@ function gracefulKill(pid) {
         exec(`kill -0 ${pid} 2>/dev/null`, { shell: '/bin/sh' }, (err) => {
           if (!err) {
             // Still alive — escalate to SIGKILL
-            exec(`kill -9 ${pid} 2>/dev/null`, { shell: '/bin/sh' }, () => resolve());
+            exec(`kill -9 ${pid} 2>/dev/null`, { shell: '/bin/sh' }, (killError) => {
+              if (killError) return resolve(false);
+              exec(`kill -0 ${pid} 2>/dev/null`, { shell: '/bin/sh' }, (stillAlive) => resolve(Boolean(stillAlive)));
+            });
           } else {
-            resolve();
+            resolve(true);
           }
         });
       }, 2000);
@@ -193,11 +204,19 @@ function gracefulKill(pid) {
 
 function gracefulKillWindows(pid) {
   return new Promise((resolve) => {
-    if (!isValidPid(pid)) return resolve();
+    if (!isValidPid(pid)) return resolve(false);
     // taskkill without /F sends WM_CLOSE (graceful)
     exec(`taskkill /PID ${pid} 2>nul`, { shell: 'cmd.exe' }, () => {
       setTimeout(() => {
-        exec(`taskkill /F /PID ${pid} 2>nul`, { shell: 'cmd.exe' }, () => resolve());
+        exec(`tasklist /FI "PID eq ${pid}" /NH`, { shell: 'cmd.exe' }, (checkError, stdout) => {
+          if (checkError || !new RegExp(`\\b${pid}\\b`).test(stdout)) return resolve(true);
+          exec(`taskkill /F /PID ${pid} 2>nul`, { shell: 'cmd.exe' }, (killError) => {
+            if (killError) return resolve(false);
+            exec(`tasklist /FI "PID eq ${pid}" /NH`, { shell: 'cmd.exe' }, (afterError, afterStdout) => {
+              resolve(Boolean(afterError) || !new RegExp(`\\b${pid}\\b`).test(afterStdout));
+            });
+          });
+        });
       }, 2000);
     });
   });
@@ -234,12 +253,14 @@ async function killPort(port) {
   for (const p of floProcs) {
     const cmd = p.cmdline || 'electron';
     console.log(`[kill-ports] Port ${port}: killing Flo process PID ${p.pid} (${cmd})...`);
-    if (isWindows) {
-      await gracefulKillWindows(p.pid);
+    const stopped = isWindows
+      ? await gracefulKillWindows(p.pid)
+      : await gracefulKill(p.pid);
+    if (stopped) {
+      console.log(`[kill-ports] Port ${port}: PID ${p.pid} stopped.`);
     } else {
-      await gracefulKill(p.pid);
+      console.warn(`[kill-ports] Port ${port}: could not stop PID ${p.pid}.`);
     }
-    console.log(`[kill-ports] Port ${port}: PID ${p.pid} stopped.`);
   }
 }
 

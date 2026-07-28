@@ -44,6 +44,10 @@ module.exports = async function afterPack(context) {
     'node_modules/better-sqlite3/build/Release/better_sqlite3.node'
   );
 
+  if (!fs.existsSync(srcBinary)) {
+    throw new Error(`better-sqlite3 rebuild completed without producing ${srcBinary}`);
+  }
+
   const destBinary = path.join(
     appOutDir,
     'Flo Cafe.app',
@@ -51,8 +55,7 @@ module.exports = async function afterPack(context) {
   );
 
   if (!fs.existsSync(destBinary)) {
-    console.warn(`→ afterPack: dest binary not found at ${destBinary}, skipping copy`);
-    return;
+    throw new Error(`packaged better-sqlite3 binary not found at ${destBinary}`);
   }
 
   fs.copyFileSync(srcBinary, destBinary);

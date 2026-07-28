@@ -40,6 +40,9 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: Install platform dependencies
         run: ${{ matrix.extra-deps }}
@@ -48,14 +51,6 @@ jobs:
         run: npm ci
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
-
-      - name: Cache frontend node_modules
-        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
-        with:
-          path: frontend/node_modules
-          key: ${{ runner.os }}-frontend-${{ hashFiles('frontend/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-frontend-
 
       - name: Build frontend
         run: npm run build:frontend

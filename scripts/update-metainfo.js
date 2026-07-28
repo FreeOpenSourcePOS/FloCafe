@@ -25,10 +25,15 @@ const notes = execFileSync(NOTES_HELPER, [version], { encoding: 'utf8' })
   .replace(/>/g, '&gt;');
 
 const xml = readFileSync(META_FILE, 'utf8');
+const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-if (xml.includes(`version="${version}"`)) {
+if (new RegExp(`<release\\b[^>]*\\bversion="${escapedVersion}"`).test(xml)) {
   console.log(`release ${version} already present in ${path.basename(META_FILE)} — skipping`);
   process.exit(0);
+}
+
+if (!/<releases\b[^>]*>/.test(xml)) {
+  throw new Error(`${path.basename(META_FILE)} is missing its <releases> element`);
 }
 
 const entry = `
@@ -39,5 +44,8 @@ const entry = `
     </release>`;
 
 const updated = xml.replace(/(\s*<releases>)/, `$1${entry}`);
+if (updated === xml) {
+  throw new Error(`could not insert release ${version}: <releases> element was not recognized`);
+}
 writeFileSync(META_FILE, updated);
 console.log(`prepended <release version="${version}" date="${date}"> to ${path.basename(META_FILE)}`);

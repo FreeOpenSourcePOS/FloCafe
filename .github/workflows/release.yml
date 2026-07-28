@@ -16,6 +16,7 @@ concurrency:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -69,6 +70,7 @@ jobs:
   release-linux:
     runs-on: ${{ matrix.runner }}
     needs: create-release
+    timeout-minutes: 60
     # Each matrix entry builds AppImage + deb + rpm + snap for its host
     # architecture.electron-builder doesn't cross-compile, so x64 hosts
     # produce x86_64 / amd64 artifacts and arm64 hosts produce arm64 ones.
@@ -157,6 +159,7 @@ jobs:
   release-mac:
     runs-on: macos-latest
     needs: create-release
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -292,6 +295,7 @@ jobs:
   release-windows:
     runs-on: windows-latest
     needs: create-release
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 

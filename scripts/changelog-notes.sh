@@ -14,7 +14,8 @@ awk -v ver="$VERSION" '
   BEGIN { found = 0; printing = 0 }
   /^## \[/ {
     if (printing) exit
-    if ($0 ~ "^## \\[" ver "\\]") { found = 1; printing = 1 }
+    prefix = "## [" ver "]"
+    if (index($0, prefix) == 1 && substr($0, length(prefix) + 1, 1) == " ") { found = 1; printing = 1 }
     next
   }
   printing { print }

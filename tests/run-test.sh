@@ -3,6 +3,11 @@
 # Exit 77 = ABI mismatch skip (GNU convention), exit 0 = pass, exit 1 = fail.
 # Usage: tests/run-test.sh npm run test:integration-happy
 
+if [ "$#" -eq 0 ]; then
+  echo "Usage: tests/run-test.sh <test command> [args...]" >&2
+  exit 2
+fi
+
 "$@"
 exit_code=$?
 

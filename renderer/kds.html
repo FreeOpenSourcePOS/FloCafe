@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' ws://localhost:* http://localhost:*">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' ws://localhost:* http://localhost:*">
   <title>FloPos - Kitchen Display System</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -128,6 +128,15 @@
       };
     }
 
+    function escapeHtml(str) {
+      return String(str ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function renderOrders(orders) {
       const container = document.getElementById('orders');
       
@@ -137,27 +146,38 @@
       }
       
       container.innerHTML = orders.map(order => `
-        <div class="order ${order.status}">
+        <div class="order ${escapeHtml(order.status)}">
           <div class="order-header">
-            <span class="order-number">#${order.order_number}</span>
-            <span class="order-time">${formatTime(order.created_at)}</span>
+            <span class="order-number">#${escapeHtml(order.order_number)}</span>
+            <span class="order-time">${escapeHtml(formatTime(order.created_at))}</span>
           </div>
           <div class="order-items">
-            ${order.items.map(item => `
+            ${(order.items || []).map(item => `
               <div class="item">
-                <span><span class="qty">${item.quantity}x</span> ${item.product_name}</span>
-                ${item.notes ? `<span style="color:#ffc107;font-size:0.85rem">• ${item.notes}</span>` : ''}
+                <span><span class="qty">${escapeHtml(item.quantity)}x</span> ${escapeHtml(item.product_name)}</span>
+                ${item.notes ? `<span style="color:#ffc107;font-size:0.85rem">• ${escapeHtml(item.notes)}</span>` : ''}
               </div>
             `).join('')}
           </div>
           <div class="actions">
-            ${order.status === 'pending' ? `<button class="btn btn-prepare" onclick="updateStatus('${order.id}', 'preparing')">Prepare</button>` : ''}
-            ${order.status === 'preparing' ? `<button class="btn btn-ready" onclick="updateStatus('${order.id}', 'ready')">Ready</button>` : ''}
-            ${order.status === 'ready' ? `<button class="btn btn-serve" onclick="updateStatus('${order.id}', 'served')">Served</button>` : ''}
+            ${order.status === 'pending' ? `<button class="btn btn-prepare" data-action="update-status" data-item-id="${escapeHtml(order.id)}" data-target-status="preparing">Prepare</button>` : ''}
+            ${order.status === 'preparing' ? `<button class="btn btn-ready" data-action="update-status" data-item-id="${escapeHtml(order.id)}" data-target-status="ready">Ready</button>` : ''}
+            ${order.status === 'ready' ? `<button class="btn btn-serve" data-action="update-status" data-item-id="${escapeHtml(order.id)}" data-target-status="served">Served</button>` : ''}
           </div>
         </div>
       `).join('');
     }
+
+    document.getElementById('orders').addEventListener('click', (e) => {
+      const target = e.target.closest('[data-action="update-status"]');
+      if (target) {
+        const itemId = target.getAttribute('data-item-id');
+        const status = target.getAttribute('data-target-status');
+        if (itemId && status) {
+          updateStatus(itemId, status);
+        }
+      }
+    });
 
     function formatTime(dateStr) {
       const date = new Date(dateStr);

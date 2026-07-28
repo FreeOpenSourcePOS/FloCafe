@@ -63,6 +63,18 @@ async function main() {
   console.log('Security Hardening Regression Tests');
   console.log('='.repeat(60));
 
+  const legacyKdsHtml = fs.readFileSync(path.join(__dirname, '../renderer/kds.html'), 'utf8');
+  assert(legacyKdsHtml.includes('function escapeHtml'), 'legacy KDS defines HTML escaping');
+  assert(!/\bonclick\s*=/.test(legacyKdsHtml), 'legacy KDS does not use inline click handlers');
+  assert(!legacyKdsHtml.includes("'unsafe-eval'"), 'legacy KDS CSP does not allow eval');
+  assert(legacyKdsHtml.includes('escapeHtml(order.order_number)'), 'legacy KDS escapes order numbers');
+  assert(legacyKdsHtml.includes('escapeHtml(item.product_name)'), 'legacy KDS escapes product names');
+  assert(legacyKdsHtml.includes('escapeHtml(item.notes)'), 'legacy KDS escapes item notes');
+  assert(legacyKdsHtml.includes('escapeHtml(order.id)'), 'legacy KDS escapes action identifiers');
+
+  const legacyLoaderHtml = fs.readFileSync(path.join(__dirname, '../renderer/index.html'), 'utf8');
+  assert(!legacyLoaderHtml.includes("'unsafe-eval'"), 'legacy loader CSP does not allow eval');
+
   const db = initTestDb();
   const ownerAuth   = seedUser(db, 'security-owner',   'owner',   'security-owner@test.local');
   const managerAuth = seedUser(db, 'security-manager', 'manager', 'security-manager@test.local');

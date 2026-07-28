@@ -306,18 +306,22 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Verify Windows signing credentials
+      - name: Check Windows signing credentials
+        # Shipping unsigned for now: a new WINDOWS_CERTS cert isn't a simple
+        # portable .pfx anymore (post-2023 CA/Browser Forum rules put new
+        # code-signing keys on a hardware token or cloud HSM), so this needs a
+        # real signing-service integration (e.g. SignPath Foundation's free
+        # OSS program), not just two secrets. Log which case we're in but
+        # never fail the build — remove this whole step once that's wired up.
         shell: pwsh
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
         run: |
-          $missing = @()
-          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) { $missing += 'WINDOWS_CERTS' }
-          if ([string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) { $missing += 'WINDOWS_CERTS_PASSWORD' }
-          if ($missing.Count -gt 0) {
-            Write-Error "Missing required secret(s) for signed Windows build: $($missing -join ', ')"
-            exit 1
+          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK) -or [string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) {
+            Write-Warning "WINDOWS_CERTS/WINDOWS_CERTS_PASSWORD not set — building an UNSIGNED Windows installer. Users will see a SmartScreen 'Windows protected your PC' prompt until this is wired up."
+          } else {
+            Write-Host "Windows signing credentials present — building a signed installer."
           }
 
       - name: Build Windows
@@ -325,11 +329,10 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
-          # Explicit creds are provided above; disable electron-builder's own
-          # keychain/cert auto-discovery so it can't pick up an unrelated
-          # identity. Scoped to this job only — release-mac relies on
-          # electron-builder resolving mac.identity by name (see #168), which
-          # this flag can suppress entirely (electron-userland/electron-builder#7515).
+          # Empty when the secrets above aren't set — electron-builder just
+          # builds unsigned in that case. CSC_IDENTITY_AUTO_DISCOVERY stays
+          # disabled either way so it never picks up an unrelated identity
+          # (mirrors release-mac; see #168, electron-userland/electron-builder#7515).
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Verify Windows release assets

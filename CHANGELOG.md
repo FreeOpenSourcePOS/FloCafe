@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.7] - 2026-07-29
+
+### Fixed
+- `release-windows` was hard-failing every release at "Verify Windows signing credentials" since no `WINDOWS_CERTS`/`WINDOWS_CERTS_PASSWORD` secret has ever been configured — v2.4.1 through v2.4.6 all shipped without a Windows installer as a result. Since June 2023 CA/Browser Forum rules require new code-signing keys to live on a hardware token or cloud HSM, a portable `.pfx` isn't something to just go buy anymore; this needs a real signing-service integration (a free option for OSS projects like this one is the SignPath Foundation) before Windows builds can be signed. Until then, `release-windows` now logs a warning and ships an unsigned installer instead of failing outright — users will see a SmartScreen "Windows protected your PC" prompt on first run.
+
 ## [2.4.6] - 2026-07-28
 
 ### Fixed

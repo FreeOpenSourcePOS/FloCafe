@@ -323,7 +323,7 @@ function resetSuccessfulLogin(ip: string) {
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
-router.post('/login', authRateLimit(), (req: Request, res: Response) => {
+router.post('/login', authRateLimit(), async (req: Request, res: Response) => {
   try {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const rateLimit = checkRateLimit(ip);
@@ -341,7 +341,7 @@ router.post('/login', authRateLimit(), (req: Request, res: Response) => {
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
 
-    if (!user || !bcrypt.compareSync(password, user.password)) {
+    if (!user || !(await bcrypt.compare(password, user.password))) {
       const attemptsRemaining = incrementFailedLogin(ip);
       return res.status(401).json({
         error: 'Invalid credentials',

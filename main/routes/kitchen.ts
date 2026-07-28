@@ -7,53 +7,66 @@ const router = Router();
 router.use(requireRole('chef', 'manager', 'owner'));
 router.use(requireKdsEnabled);
 
+const ACTIVE_KITCHEN_ORDERS_CONDITION = `
+  status != 'cancelled'
+  AND (
+    status != 'completed'
+    OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id AND oi.status NOT IN ('served', 'cancelled'))
+  )
+`;
+
 // GET /api/kitchen/orders — returns active orders with items for KDS display
 router.get('/orders', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
 
-    // A prepaid order is marked 'completed' the moment its bill is fully
-    // paid, which can happen before the kitchen has prepared anything — so
-    // a completed order still belongs here if it has items the kitchen
-    // hasn't served yet (see main/services/kds.ts's activeOrdersCondition
-    // for the WebSocket-side equivalent of this same rule).
     const orders = db.prepare(`
-      SELECT o.*
-      FROM orders o
-      WHERE o.status != 'cancelled'
-        AND (
-          o.status != 'completed'
-          OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.status NOT IN ('served', 'cancelled'))
-        )
-      ORDER BY o.created_at ASC
-    `).all();
+      SELECT *
+      FROM orders
+      WHERE ${ACTIVE_KITCHEN_ORDERS_CONDITION}
+      ORDER BY created_at ASC
+    `).all() as any[];
 
-    const ordersWithItems = orders.map((order: any) => {
-      const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
-      // #150: the void reversal line (product_id/name mirrored with negated
-      // amounts) is a bill adjustment, never a kitchen item — always hide it
-      // here. A voided item itself stays visible, struck through, for a
-      // grace period before dropping off like a served item would.
-      const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
-      const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
-      const tableRow = order.table_id
-        ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
-        : null;
-      // Normalize: frontend expects table.name, schema column is `number`
-      const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
+    if (orders.length === 0) {
+      return res.json({ orders: [], counts: {} });
+    }
+
+    const orderIds = orders.map((o) => o.id);
+    const tableIds = Array.from(new Set(orders.map((o) => o.table_id).filter(Boolean)));
+
+    // Batch query order items and tables
+    const placeholders = orderIds.map(() => '?').join(',');
+    const rawItems = db.prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders})`).all(...orderIds) as any[];
+
+    const itemsByOrder: Record<string, any[]> = {};
+    for (const item of rawItems) {
+      if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
+      itemsByOrder[item.order_id].push(item);
+    }
+
+    const tablesMap: Record<string, any> = {};
+    if (tableIds.length > 0) {
+      const tablePlaceholders = tableIds.map(() => '?').join(',');
+      const tableRows = db.prepare(`SELECT * FROM tables WHERE id IN (${tablePlaceholders})`).all(...tableIds) as any[];
+      for (const t of tableRows) {
+        tablesMap[t.id] = { ...t, name: t.number };
+      }
+    }
+
+    const ordersWithItems = orders.map((order) => {
+      const orderRawItems = itemsByOrder[order.id] || [];
+      const visibleItems = orderRawItems.filter(
+        (i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+      );
+      const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson));
+      const table = order.table_id ? tablesMap[order.table_id] || null : null;
       return { ...order, items, table };
     });
 
     const counts = db.prepare(`
       SELECT status, COUNT(*) as count
       FROM order_items
-      WHERE order_id IN (
-        SELECT id FROM orders o WHERE o.status != 'cancelled'
-          AND (
-            o.status != 'completed'
-            OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.status NOT IN ('served', 'cancelled'))
-          )
-      )
+      WHERE order_id IN (SELECT id FROM orders WHERE ${ACTIVE_KITCHEN_ORDERS_CONDITION})
       GROUP BY status
     `).all() as { status: string; count: number }[];
 
@@ -63,8 +76,7 @@ router.get('/orders', (req: Request, res: Response) => {
     res.json({ orders: ordersWithItems, counts: countMap });
   } catch (error: any) {
     console.error('[Kitchen] Orders fetch error:', error);
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Could not fetch kitchen orders" });
   }
 });
 

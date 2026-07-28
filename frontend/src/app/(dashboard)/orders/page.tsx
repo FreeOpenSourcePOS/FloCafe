@@ -599,6 +599,7 @@ export default function OrdersPage() {
       toast.error(axiosErr.response?.data?.error || t('orders.discountFailed'));
     } finally {
       setDiscountModal(null);
+      setDiscountPin('');
     }
   };
 
@@ -622,15 +623,11 @@ export default function OrdersPage() {
     }
   };
 
-  // Add Item modal: reset the selection the moment it opens/closes for a (new) order, read
-  // directly during render (React's recommended pattern for "adjusting state when a prop
-  // changes") so the effect below only needs to own the product fetch.
-  const [syncedAddItemsOrder, setSyncedAddItemsOrder] = useState(addItemsOrder);
-  if (addItemsOrder !== syncedAddItemsOrder) {
-    setSyncedAddItemsOrder(addItemsOrder);
+  const openAddItemsModal = (order: Order | null) => {
     setSelectedItems([]);
     setProductSearch('');
-  }
+    setAddItemsOrder(order);
+  };
 
   useEffect(() => {
     if (!addItemsOrder) return;
@@ -674,7 +671,7 @@ export default function OrdersPage() {
         })),
       });
       toast.success(t('orders.itemsAdded', { count: selectedItems.length }));
-      setAddItemsOrder(null);
+      openAddItemsModal(null);
       fetchOrders();
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { error?: string } } };
@@ -1123,7 +1120,6 @@ export default function OrdersPage() {
                     </div>
                   )}
 
-                  {t('orders.printHistory')}
                   {order.bill && printHistory[order.bill.id]?.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-100">
                       <button
@@ -1165,12 +1161,12 @@ export default function OrdersPage() {
                     {!['completed', 'cancelled'].includes(order.status) && (
                       <Button
                         variant="outline"
-                        onClick={() => setAddItemsOrder(order)}
+                        onClick={() => openAddItemsModal(order)}
                         size="sm"
                         className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
                       >
                         <Plus size={14} className="mr-1.5" />
-                        Add Item
+                        {t('orders.addItem', 'Add Item')}
                       </Button>
                     )}
                     {order.type === 'dine_in' && !['completed', 'cancelled'].includes(order.status) && (
@@ -1607,7 +1603,7 @@ placeholder={t('orders.managerPin')}
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setAddItemsOrder(null)}
+                onClick={() => openAddItemsModal(null)}
               >
                 {t('common.cancel')}
               </Button>

@@ -8,24 +8,23 @@
  * interface) to stay dependency-free and testable with node:sqlite or better-sqlite3.
  */
 
-export function validateOrderNotes(db: any, notes: string | null | undefined): void {
+const DEFAULT_MAX_ORDER_NOTES_LENGTH = 200;
+const DEFAULT_MAX_ITEM_NOTES_LENGTH = 100;
+
+function validateNoteLength(db: any, settingKey: string, defaultLimit: number, notes: string | null | undefined, label: string): void {
   if (!notes) return;
-  const maxLength = parseInt(
-    (db.prepare('SELECT value FROM settings WHERE key = ?').get('max_order_notes_length') as any)?.value || '200',
-    10,
-  );
+  const rawValue = (db.prepare('SELECT value FROM settings WHERE key = ?').get(settingKey) as { value?: string } | undefined)?.value;
+  const parsed = parseInt(rawValue || '', 10);
+  const maxLength = Number.isFinite(parsed) && parsed > 0 ? parsed : defaultLimit;
   if (notes.length > maxLength) {
-    throw new Error(`Order notes exceed maximum length of ${maxLength} characters`);
+    throw new Error(`${label} exceed maximum length of ${maxLength} characters`);
   }
 }
 
+export function validateOrderNotes(db: any, notes: string | null | undefined): void {
+  validateNoteLength(db, 'max_order_notes_length', DEFAULT_MAX_ORDER_NOTES_LENGTH, notes, 'Order notes');
+}
+
 export function validateItemNotes(db: any, notes: string | null | undefined): void {
-  if (!notes) return;
-  const maxLength = parseInt(
-    (db.prepare('SELECT value FROM settings WHERE key = ?').get('max_item_notes_length') as any)?.value || '100',
-    10,
-  );
-  if (notes.length > maxLength) {
-    throw new Error(`Item notes exceed maximum length of ${maxLength} characters`);
-  }
+  validateNoteLength(db, 'max_item_notes_length', DEFAULT_MAX_ITEM_NOTES_LENGTH, notes, 'Item notes');
 }

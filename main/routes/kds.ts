@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
@@ -220,28 +220,36 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     }
 
     const db = getDatabase();
-    const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id) as any;
-    if (!item) {
+
+    const updatedItem = withTxn(() => {
+      const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id) as any;
+      if (!item) {
+        return null;
+      }
+
+      if (item.status === 'voided') {
+        throw new Error('VOIDED_ITEM');
+      }
+
+      db.prepare(`
+        UPDATE order_items SET status = ?, updated_at = ?
+        WHERE id = ?
+      `).run(status, now(), req.params.id);
+
+      return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
+    });
+
+    if (!updatedItem) {
       return res.status(404).json({ error: 'Order item not found' });
     }
 
-    // #150: locked once voided — see routes/order-items.ts for the same rule.
-    if (item.status === 'voided') {
-      return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
-    }
-
-    const nowStr = now();
-
-    db.prepare(`
-      UPDATE order_items SET status = ?, updated_at = ?
-      WHERE id = ?
-    `).run(status, nowStr, req.params.id);
-
-    const updatedItem = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
     res.json({ item: updatedItem });
   } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    if (error.message === 'VOIDED_ITEM') {
+      return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
+    }
+    console.error("[API] KDS item status update error:", error);
+    res.status(500).json({ error: "Could not update item status" });
   }
 });
 

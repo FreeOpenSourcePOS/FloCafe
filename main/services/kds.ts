@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked } from '../middleware/security';
@@ -11,6 +11,7 @@ interface KdsClient {
   role: string | null;
   categoryIds: string[];
   token: string | null;
+  isAlive: boolean;
 }
 
 const clients: Map<WebSocket, KdsClient> = new Map();
@@ -26,6 +27,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
       role: null,
       categoryIds: [],
       token: null,
+      isAlive: true,
     };
     clients.set(ws, client);
 
@@ -48,6 +50,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
     });
 
     ws.on('pong', () => {
+      client.isAlive = true;
     });
 
     ws.send(JSON.stringify({
@@ -59,7 +62,13 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
 
   const heartbeat = setInterval(() => {
     clients.forEach((client, ws) => {
-      if (client.userId && ws.readyState === WebSocket.OPEN) {
+      if (ws.readyState === WebSocket.OPEN) {
+        if (client.isAlive === false) {
+          ws.terminate();
+          clients.delete(ws);
+          return;
+        }
+        client.isAlive = false;
         ws.ping();
       }
     });
@@ -174,44 +183,51 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
     return;
   }
 
-  const db = getDatabase();
-  const nowStr = now();
+  try {
+    const db = getDatabase();
 
-  const existingItem = db.prepare(`
-    SELECT oi.*, p.category_id
-    FROM order_items oi
-    JOIN products p ON oi.product_id = p.id
-    WHERE oi.id = ?
-  `).get(order_item_id) as any;
+    const result = withTxn(() => {
+      const existingItem = db.prepare(`
+        SELECT oi.*, p.category_id
+        FROM order_items oi
+        JOIN products p ON oi.product_id = p.id
+        WHERE oi.id = ?
+      `).get(order_item_id) as any;
 
-  if (!existingItem) {
-    client.ws.send(JSON.stringify({ type: 'error', message: 'Item not found' }));
-    return;
+      if (!existingItem) {
+        return { error: 'Item not found' };
+      }
+
+      if (existingItem.status === 'voided') {
+        return { error: 'This item has been voided and can no longer be updated' };
+      }
+
+      if (client.categoryIds.length > 0 && !client.categoryIds.includes(existingItem.category_id)) {
+        return { error: 'Not authorized to update this item' };
+      }
+
+      db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?')
+        .run(status, now(), order_item_id);
+
+      return { success: true };
+    });
+
+    if (result.error) {
+      client.ws.send(JSON.stringify({ type: 'error', message: result.error }));
+      return;
+    }
+
+    broadcastOrderUpdate();
+
+    client.ws.send(JSON.stringify({
+      type: 'status_updated',
+      order_item_id,
+      status,
+    }));
+  } catch (error: any) {
+    console.error('[KDS] Status update error:', error);
+    client.ws.send(JSON.stringify({ type: 'error', message: 'Could not update item status' }));
   }
-
-  // #150: locked once voided — see main/routes/order-items.ts for the same rule.
-  if (existingItem.status === 'voided') {
-    client.ws.send(JSON.stringify({ type: 'error', message: 'This item has been voided and can no longer be updated' }));
-    return;
-  }
-
-  // Verify the item belongs to a category this user manages
-  if (client.categoryIds.length > 0 && !client.categoryIds.includes(existingItem.category_id)) {
-    client.ws.send(JSON.stringify({ type: 'error', message: 'Not authorized to update this item' }));
-    return;
-  }
-
-  // Update item status
-  db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?')
-    .run(status, nowStr, order_item_id);
-
-  broadcastOrderUpdate();
-
-  client.ws.send(JSON.stringify({
-    type: 'status_updated',
-    order_item_id,
-    status,
-  }));
 }
 
 /**
@@ -302,7 +318,11 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
 function broadcastOrderUpdate(): void {
   clients.forEach((client) => {
     if (client.userId) {
-      sendActiveOrders(client.ws, client.categoryIds);
+      try {
+        sendActiveOrders(client.ws, client.categoryIds);
+      } catch (err) {
+        console.error('[KDS] Broadcast error for client:', err);
+      }
     }
   });
 }

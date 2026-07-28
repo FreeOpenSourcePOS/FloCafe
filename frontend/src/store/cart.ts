@@ -121,14 +121,14 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, customerId: null, customer: null, guestCount: 1, deliveryAddress: '', orderNotes: '' });
+    set({ items: [], tableId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', orderNotes: '' });
   },
 
   loadItems: (items, tableId, customerId, guestCount, orderNotes) => {
     set({ items, tableId, customerId, guestCount, orderNotes: orderNotes || '' });
   },
 
-  setOrderType: (type) => set({ orderType: type, deliveryAddress: type !== 'delivery' ? '' : undefined }),
+  setOrderType: (type) => set((state) => ({ orderType: type, deliveryAddress: type !== 'delivery' ? '' : state.deliveryAddress })),
   setTableId: (id) => set({ tableId: id }),
   setCustomerId: (id) => set({ customerId: id }),
   setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null }),
@@ -138,8 +138,10 @@ export const useCartStore = create<CartState>((set, get) => ({
 
   subtotal: () => {
     return get().items.reduce((sum, item) => {
-      const addonTotal = item.addons.reduce((a, addon) => a + Number(addon.price) * (Number(addon.quantity) || 1), 0);
-      return sum + (Number(item.product.price) + addonTotal) * item.quantity;
+      const itemPrice = Number(item.product?.price) || 0;
+      const itemQty = Number(item.quantity) || 1;
+      const addonTotal = (item.addons || []).reduce((a, addon) => a + (Number(addon.price) || 0) * (Number(addon.quantity) || 1), 0);
+      return sum + (itemPrice + addonTotal) * itemQty;
     }, 0);
   },
 

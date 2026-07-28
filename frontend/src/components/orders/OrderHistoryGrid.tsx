@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -201,11 +200,12 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
 }
 
 export default function OrderHistoryGrid() {
-  const [orders] = useState<HistoryOrder[]>(MOCK_HISTORY);
   const { t } = useI18n();
   const currentTenant = useAuthStore((s) => s.currentTenant);
-  const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
-  const locale = getCountryByCode(currentTenant?.country ?? 'IN')?.locale ?? 'en-IN';
+  const country = getCountryByCode(currentTenant?.country ?? 'IN');
+  const currency = getCurrencySymbol(currentTenant?.currency || 'INR', country?.locale);
+  const locale = country?.locale ?? 'en-IN';
+  const orders = MOCK_HISTORY;
 
   return (
     <div className="p-4">

@@ -33,7 +33,8 @@ export function WhatsAppEnableCard() {
       setWhatsappEnabled(true);
       setAck(false);
       toast.success(t('whatsapp.enable.success'));
-    } catch {
+    } catch (err: unknown) {
+      console.warn('[WhatsAppEnable] Enable failed:', (err as Error)?.message || err);
       toast.error(t('whatsapp.enable.failed'));
     } finally {
       setSubmitting(false);

@@ -611,7 +611,8 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
-            lines.push(payment.method + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - payment.method.length));
+            const methodLabel = truncate(String(payment.method), cols - 12);
+            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - methodLabel.length));
           }
         }
       }
@@ -697,7 +698,8 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
-            lines.push(payment.method + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - payment.method.length));
+            const methodLabel = truncate(String(payment.method), cols - 12);
+            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - methodLabel.length));
           }
         }
       }
@@ -783,7 +785,8 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   if (taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
-      const label = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
+      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
+      const label = truncate(rawLabel, cols - 12);
       lines.push(label + rightAlign(formatCurrency(tax.amount, prefix, locale), cols - label.length));
     }
   } else if (bill.tax_amount) {
@@ -800,7 +803,8 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
-            lines.push(payment.method + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - payment.method.length));
+            const methodLabel = truncate(String(payment.method), cols - 12);
+            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - methodLabel.length));
           }
         }
       }

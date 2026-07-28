@@ -392,7 +392,7 @@ export function startKdsServer(): Promise<void> {
     let currentKdsPort = KDS_PORT;
     let attempts = 0;
 
-    kdsServer = app.listen(currentKdsPort, '0.0.0.0', () => {
+    const onListening = () => {
       activeKdsPort = currentKdsPort;
       console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
 
@@ -423,7 +423,9 @@ export function startKdsServer(): Promise<void> {
       }
 
       resolve();
-    });
+    };
+
+    kdsServer = app.listen(currentKdsPort, '0.0.0.0', onListening);
 
     kdsServer?.on('error', (err: NodeJS.ErrnoException) => {
       if (err.code === 'EADDRINUSE') {
@@ -436,7 +438,7 @@ export function startKdsServer(): Promise<void> {
         }
         currentKdsPort++;
         console.log(`[KDS Server] Port ${currentKdsPort - 1} in use, trying ${currentKdsPort}`);
-        kdsServer?.listen(currentKdsPort, '0.0.0.0');
+        kdsServer?.listen(currentKdsPort, '0.0.0.0', onListening);
       } else {
         reject(err);
       }

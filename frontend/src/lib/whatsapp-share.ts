@@ -98,7 +98,7 @@ export function getWhatsAppMessage(
   opts: WhatsAppShareOptions = {}
 ): string {
   const { pointsEarned = 0, walletBalance } = opts;
-  const currency = tenant.currency ?? '₹';
+  const currency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
 
   const lines: string[] = [];
@@ -135,7 +135,8 @@ export function getWhatsAppMessage(
 // ---------------------------------------------------------------------------
 
 function formatAmount(value: number | string, currency: string, locale: string): string {
-  return `${currency}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const amount = Number(value);
+  return `${currency}${(Number.isFinite(amount) ? amount : 0).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 /** One line per ordered item (skipping cancelled ones), e.g. "2x Chicken Biryani - ₹360.00". */

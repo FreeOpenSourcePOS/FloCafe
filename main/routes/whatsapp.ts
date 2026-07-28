@@ -7,6 +7,13 @@ import * as QRCode from 'qrcode';
 
 const router = Router();
 
+function parsePaginationParam(value: unknown, fallback: number, max?: number): number | null {
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || (max !== undefined && parsed > max)) return null;
+  return parsed;
+}
+
 router.get('/status', requireRole('owner', 'manager', 'cashier'), (_req: Request, res: Response) => {
   const s = whatsapp.getStatus();
   // Don't expose the raw QR string via /status; the QR endpoint returns a rendered image.
@@ -108,18 +115,35 @@ router.post('/send', requireRole('owner', 'manager', 'cashier'), asyncHandler(as
 }));
 
 router.get('/messages', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
-  const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50)));
-  const offset = Math.max(0, Number(req.query.offset ?? 0));
+  const limitValue = parsePaginationParam(req.query.limit, 50, 200);
+  const offset = parsePaginationParam(req.query.offset, 0);
+  if (limitValue === null || limitValue < 1) {
+    return res.status(400).json({ error: 'limit must be an integer between 1 and 200' });
+  }
+  if (offset === null) {
+    return res.status(400).json({ error: 'offset must be a non-negative integer' });
+  }
+  const limit = limitValue;
   const direction = req.query.direction === 'inbound' || req.query.direction === 'outbound' ? req.query.direction : undefined;
   const status = typeof req.query.status === 'string' ? req.query.status : undefined;
   const phone = typeof req.query.phone === 'string' ? req.query.phone : undefined;
-  const billId = req.query.bill_id != null ? Number(req.query.bill_id) : undefined;
+  const billId = req.query.bill_id != null ? parsePaginationParam(req.query.bill_id, 0) : undefined;
+  if (billId === null) {
+    return res.status(400).json({ error: 'bill_id must be a non-negative integer' });
+  }
   res.json({ messages: whatsapp.listMessages({ direction, status, phone, billId, limit, offset }) });
 });
 
 router.get('/inbox', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
-  const limit = Math.min(200, Math.max(1, Number(req.query.limit ?? 50)));
-  const offset = Math.max(0, Number(req.query.offset ?? 0));
+  const limitValue = parsePaginationParam(req.query.limit, 50, 200);
+  const offset = parsePaginationParam(req.query.offset, 0);
+  if (limitValue === null || limitValue < 1) {
+    return res.status(400).json({ error: 'limit must be an integer between 1 and 200' });
+  }
+  if (offset === null) {
+    return res.status(400).json({ error: 'offset must be a non-negative integer' });
+  }
+  const limit = limitValue;
   res.json({ messages: whatsapp.listInbox(limit, offset) });
 });
 

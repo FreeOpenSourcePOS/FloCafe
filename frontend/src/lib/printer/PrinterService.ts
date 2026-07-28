@@ -31,6 +31,7 @@ const PRINTER_INTERFACE = 0;
 class PrinterService {
   private device: USBDevice | null = null;
   private interfaceClaimed = false;
+  private claimedInterface: number | null = null;
   private endpointOut = 0x01; // discovered dynamically on connect()
   private _status: PrinterStatus = 'disconnected';
   private _printMode: PrintMode = 'escpos';
@@ -131,6 +132,7 @@ class PrinterService {
         if (alt?.interfaceClass === ESCPOS_USB_CLASS) {
           await this.device.claimInterface(iface.interfaceNumber);
           this.interfaceClaimed = true;
+          this.claimedInterface = iface.interfaceNumber;
           // Discover the bulk-OUT endpoint number from the descriptor
           const outEndpoint = alt.endpoints.find(
             (ep) => ep.type === 'bulk' && ep.direction === 'out'
@@ -143,6 +145,7 @@ class PrinterService {
       if (!this.interfaceClaimed) {
         await this.device.claimInterface(PRINTER_INTERFACE);
         this.interfaceClaimed = true;
+        this.claimedInterface = PRINTER_INTERFACE;
       }
     } catch (err) {
       await this.disconnect();
@@ -159,8 +162,8 @@ class PrinterService {
 
     if (this.device) {
       try {
-        if (this.interfaceClaimed) {
-          await this.device.releaseInterface(PRINTER_INTERFACE).catch(() => {});
+        if (this.interfaceClaimed && this.claimedInterface !== null) {
+          await this.device.releaseInterface(this.claimedInterface).catch(() => {});
         }
       } catch {}
 
@@ -170,6 +173,7 @@ class PrinterService {
 
       this.device = null;
       this.interfaceClaimed = false;
+      this.claimedInterface = null;
       this.endpointOut = 0x01;
     }
 
@@ -262,7 +266,13 @@ class PrinterService {
 
   private setStatus(status: PrinterStatus, info?: PrinterInfo): void {
     this._status = status;
-    this.listeners.forEach((l) => l(status, info));
+    this.listeners.forEach((listener) => {
+      try {
+        listener(status, info);
+      } catch (error) {
+        console.warn('[PrinterService] Status listener failed:', error);
+      }
+    });
   }
 
   private handleDisconnect = (event: Event): void => {
@@ -270,6 +280,7 @@ class PrinterService {
     if (e.device === this.device) {
       this.device = null;
       this.interfaceClaimed = false;
+      this.claimedInterface = null;
       this.setStatus('disconnected');
     }
   };

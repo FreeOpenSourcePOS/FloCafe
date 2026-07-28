@@ -197,8 +197,9 @@ export function buildGstBillBytes(
 // ---------------------------------------------------------------------------
 
 function padRow(left: string, right: string, cols: number): string {
-  const gap = cols - left.length - right.length;
-  return gap > 0 ? left + ' '.repeat(gap) + right : left.slice(0, cols - right.length - 1) + ' ' + right;
+  const safeRight = right.length > cols ? right.slice(-cols) : right;
+  const leftWidth = Math.max(0, cols - safeRight.length - 1);
+  return left.slice(0, leftWidth) + (leftWidth > 0 ? ' ' : '') + safeRight;
 }
 
 function truncate(str: string, max: number): string {
@@ -206,7 +207,8 @@ function truncate(str: string, max: number): string {
 }
 
 function formatAmount(value: number | string, currency: string, locale: string): string {
-  return `${currency}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const amount = Number(value);
+  return `${currency}${(Number.isFinite(amount) ? amount : 0).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function capitalize(str: string): string {

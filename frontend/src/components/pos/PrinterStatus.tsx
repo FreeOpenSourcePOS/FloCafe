@@ -77,20 +77,28 @@ export default function PrinterStatus() {
 
   const handleConnect = async () => {
     clearError();
-    await connect();
-    if (usePrinterStore.getState().status === 'connected') {
-      toast.success(t('pos.printerConnected'));
-    } else if (usePrinterStore.getState().lastError) {
-      toast.error(usePrinterStore.getState().lastError!);
+    try {
+      await connect();
+      if (usePrinterStore.getState().status === 'connected') {
+        toast.success(t('pos.printerConnected'));
+      } else if (usePrinterStore.getState().lastError) {
+        toast.error(usePrinterStore.getState().lastError!);
+      }
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('pos.printerError'));
     }
   };
 
   const handleDisconnect = async () => {
-    await disconnect();
-    toast(t('pos.printerDisconnected'));
+    try {
+      await disconnect();
+      toast(t('pos.printerDisconnected'));
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : t('pos.printerError'));
+    }
   };
 
-  const isConnected = status === 'connected';
+  const isConnected = !hardwarePrinter && status === 'connected';
   const isConnecting = status === 'connecting';
 
   return (
@@ -150,7 +158,7 @@ export default function PrinterStatus() {
 
         <DropdownMenuSeparator />
 
-        {printMethod === 'escpos' && (
+        {printMethod === 'escpos' && !hardwarePrinter && (
           <>
             {!isConnected && !isConnecting && (
               <DropdownMenuItem

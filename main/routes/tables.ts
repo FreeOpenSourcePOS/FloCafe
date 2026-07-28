@@ -256,7 +256,7 @@ router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'waite
 
       const nowStr = now();
       db.prepare('UPDATE orders SET table_id = ?, type = ?, updated_at = ? WHERE id = ?')
-        .run(target_table_id, 'dine_in', nowStr, order.id);
+        .run(target_table_id, order.type, nowStr, order.id);
       db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
         .run(nowStr, sourceTableId);
       db.prepare("UPDATE tables SET status = 'occupied', updated_at = ? WHERE id = ?")

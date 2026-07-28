@@ -87,6 +87,9 @@ export default function TableCheckoutModal({
     setAddingItems(true);
     try {
       await onAddCartToOrder(table, order);
+    } catch (err: unknown) {
+      const error = err as { response?: { data?: { message?: string; error?: string } }; message?: string };
+      toast.error(error.response?.data?.message || error.response?.data?.error || error.message || t('pos.addItemsFailed'));
     } finally {
       setAddingItems(false);
     }

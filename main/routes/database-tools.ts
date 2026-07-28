@@ -58,17 +58,18 @@ router.get('/master-pin/status', requireRole('owner'), (_req: Request, res: Resp
 
 router.post('/master-pin/reset', requireRole('owner'), (req: Request, res: Response) => {
   const { pin, confirm_pin } = req.body as { pin?: string; confirm_pin?: string };
-  if (!/^\d{4}$/.test(String(pin || ''))) {
+  const cleanPin = String(pin || '').trim();
+  if (!/^\d{4}$/.test(cleanPin)) {
     return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
   }
-  if (pin !== confirm_pin) {
+  if (cleanPin !== confirm_pin) {
     return res.status(400).json({ error: 'PINs do not match' });
   }
   if (!isMasterPinAvailable()) {
     return res.status(409).json({ error: 'Master PIN is not available on this device' });
   }
   try {
-    resetMasterPin(pin!);
+    resetMasterPin(cleanPin);
     res.json({ success: true });
   } catch (error: any) {
     console.error('[DB Tools] set Master PIN error:', error);
@@ -87,12 +88,20 @@ router.post('/initialize', requireRole('owner'), requireMasterPin, async (req: R
 
     closeDatabase();
     const dbPath = getDbPath();
-    for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-      if (fs.existsSync(p)) fs.unlinkSync(p);
+    try {
+      for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+        if (fs.existsSync(p)) {
+          try {
+            fs.unlinkSync(p);
+          } catch (unlinkErr) {
+            console.warn(`[DB Tools] Warning: Could not remove ${p}:`, unlinkErr);
+          }
+        }
+      }
+    } finally {
+      // Always re-open and run migrations on the database so the application is not left uninitialized
+      initDatabase();
     }
-    // master-pin.enc lives in userData/, separate from flo.db — untouched by design,
-    // so a locked-out owner can still authorize this even after the wipe.
-    initDatabase();
 
     res.json({ success: true, backupPath });
   } catch (error: any) {

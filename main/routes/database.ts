@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { getDatabase, getDbPath, createBackup, getCurrentSchemaVersion, isSafeIdentifier } from '../db';
+import { getDatabase, getDbPath, createBackup, getCurrentSchemaVersion, isSafeIdentifier, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import * as fs from 'fs';
@@ -26,44 +26,53 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
 
-    const tables = db.prepare(`
-      SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_flo_meta'
-    `).all() as { name: string }[];
+    const result = withTxn(() => {
+      const tables = db.prepare(`
+        SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_flo_meta'
+      `).all() as { name: string }[];
 
-    const exportData: Record<string, any[]> = {};
-    const redactedFields: string[] = [];
+      const exportData: Record<string, any[]> = {};
+      const redactedFields: string[] = [];
 
-    for (const { name: tableName } of tables) {
-      if (EXPORT_EXCLUDE_TABLES.has(tableName)) {
-        redactedFields.push(`table:${tableName}`);
-        continue;
-      }
+      for (const { name: tableName } of tables) {
+        if (!isSafeIdentifier(tableName)) {
+          console.warn(`[DB Export] Skipping unsafe table name: ${tableName}`);
+          continue;
+        }
 
-      const rows = db.prepare(`SELECT * FROM ${tableName}`).all() as Record<string, any>[];
+        if (EXPORT_EXCLUDE_TABLES.has(tableName)) {
+          redactedFields.push(`table:${tableName}`);
+          continue;
+        }
 
-      if (tableName === 'settings') {
-        exportData[tableName] = rows.map((row) => {
-          if (EXPORT_SETTINGS_REDACT.has(row.key)) {
-            redactedFields.push(`settings.${row.key}`);
-            return { ...row, value: '[REDACTED]' };
-          }
-          return row;
-        });
-      } else if (tableName === 'users') {
-        exportData[tableName] = rows.map((row) => {
-          const sanitized = { ...row };
-          for (const col of USER_REDACT_COLS) {
-            if (col in sanitized) {
-              delete sanitized[col];
-              if (!redactedFields.includes(`users.${col}`)) redactedFields.push(`users.${col}`);
+        const rows = db.prepare(`SELECT * FROM ${tableName}`).all() as Record<string, any>[];
+
+        if (tableName === 'settings') {
+          exportData[tableName] = rows.map((row) => {
+            if (EXPORT_SETTINGS_REDACT.has(row.key)) {
+              redactedFields.push(`settings.${row.key}`);
+              return { ...row, value: '[REDACTED]' };
             }
-          }
-          return sanitized;
-        });
-      } else {
-        exportData[tableName] = rows;
+            return row;
+          });
+        } else if (tableName === 'users') {
+          exportData[tableName] = rows.map((row) => {
+            const sanitized = { ...row };
+            for (const col of USER_REDACT_COLS) {
+              if (col in sanitized) {
+                delete sanitized[col];
+                if (!redactedFields.includes(`users.${col}`)) redactedFields.push(`users.${col}`);
+              }
+            }
+            return sanitized;
+          });
+        } else {
+          exportData[tableName] = rows;
+        }
       }
-    }
+
+      return { exportData, redactedFields };
+    });
 
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `flo-export-${timestamp}.json`;
@@ -75,8 +84,8 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
       app: 'FloDesktop',
       exported_at: new Date().toISOString(),
       schema_version: String(getCurrentSchemaVersion()),
-      redacted_fields: redactedFields,
-      data: exportData,
+      redacted_fields: result.redactedFields,
+      data: result.exportData,
     });
   } catch (error: any) {
     console.error('[DB Export] Error:', error);
@@ -176,6 +185,10 @@ router.post('/import', requireRole('owner'),
 });
 
 function getTableColumns(db: Database.Database, tableName: string): string[] {
+  if (!isSafeIdentifier(tableName)) {
+    console.warn(`[DB Columns] Unsafe table name rejected: ${tableName}`);
+    return [];
+  }
   try {
     const columns = db.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[];
     return columns.map(col => col.name);
@@ -220,16 +233,17 @@ router.get('/tables', requireRole('owner'), (req: Request, res: Response) => {
       ORDER BY name
     `).all() as { name: string }[];
 
-    const tableInfo = tables.map(({ name: tableName }) => {
-      const count = db.prepare(`SELECT COUNT(*) as count FROM ${tableName}`).get() as { count: number };
-      return { name: tableName, rows: count.count };
-    });
+    const tableInfo = tables
+      .filter(({ name: tableName }) => isSafeIdentifier(tableName))
+      .map(({ name: tableName }) => {
+        const count = db.prepare(`SELECT COUNT(*) as count FROM ${tableName}`).get() as { count: number };
+        return { name: tableName, rows: count.count };
+      });
 
     res.json({ tables: tableInfo });
   } catch (error: any) {
     console.error('[DB Tables] Error:', error);
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: 'Could not fetch database tables' });
   }
 });
 

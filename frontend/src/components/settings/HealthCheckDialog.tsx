@@ -27,7 +27,7 @@ function FindingRow({ finding }: { finding: HealthFinding }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <span className="font-mono text-gray-900">
-            {finding.table}{finding.column ? `.${finding.column}` : ''}{finding.index ? ` (index: ${finding.index})` : ''}
+            {finding.table}{finding.column ? `.${finding.column}` : ''}{finding.index !== undefined ? ` (index: ${finding.index})` : ''}
           </span>
           <p className="text-gray-500 mt-0.5">{finding.description}</p>
           {(finding.currentState || finding.idealState) && (

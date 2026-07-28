@@ -41,13 +41,18 @@ export function InitializeDatabaseDialog({ open, onOpenChange, onConfirm, onSucc
   };
 
   const handlePinSubmit = async (pin: string) => {
-    const result = await onConfirm(pin);
-    if (result.success) {
-      setShowPinPrompt(false);
-      onOpenChange(false);
-      onSuccess(result.backupPath);
+    try {
+      const result = await onConfirm(pin);
+      if (result.success) {
+        reset();
+        onOpenChange(false);
+        onSuccess(result.backupPath);
+      }
+      return result;
+    } catch (err: unknown) {
+      const errorMsg = (err as Error)?.message || 'Initialization failed';
+      return { success: false, error: errorMsg };
     }
-    return result;
   };
 
   return (

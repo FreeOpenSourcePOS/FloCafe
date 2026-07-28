@@ -145,17 +145,20 @@ Fedora / RHEL / Nobara users: substitute the `.rpm` asset from the same release 
 
 ### Core POS
 - Fast order entry with product search
+- Barcode scanning for quick product lookup
 - Multiple order types: Dine-in, Takeaway, Delivery
 - Cart with modifiers and addons
 - Multiple payment methods (Cash, UPI, Card)
 - GST-compliant invoice generation
+- Pair a second cashier device via QR code or LAN IP (Settings → POS Workflow)
 
 ### Restaurant & Cafe
 - Kitchen Display System (KDS) with real-time updates
 - Kitchen Order Tickets (KOT) printing
+- Settings toggle for KDS-first or printer/KOT-first kitchen workflow
 - Table management with status tracking
 - Multi-station kitchen support
-- Addon groups for modifiers (extras, toppings, variants)
+- Addon groups for modifiers (extras, toppings, variants), with optional multi-quantity per addon
 
 ### Thermal Printing
 - ESC/POS protocol (USB, Network, Bluetooth)
@@ -172,15 +175,18 @@ Fedora / RHEL / Nobara users: substitute the `.rpm` asset from the same release 
 - Local database backups with history/restore, plus optional automated
   off-device backups to Google Drive (opt-in — see
   [`docs/google-drive-setup.md`](docs/google-drive-setup.md))
+- WhatsApp e-billing (opt-in) — share bills with customers via a `wa.me` link
 
 ### Localization (i18n)
-- Native multi-language support (English and Spanish included)
+- Native multi-language support (English, Spanish, and Brazilian Portuguese included)
 - Easily extensible translation system for adding new locales
 - Fully localized user interfaces, printed receipts, and POS interactions
 
 ### Order Management
 - Bill-style order cards for intuitive layout and fast management
 - Cancel orders with status-based rules (pending = free, preparing+ = manager PIN)
+- Void individual in-progress items via manager PIN — leaves a visible mirrored refund line instead of deleting it
+- Configurable order number format (custom prefix, optional date segment, daily reset or continuous sequence)
 - Loyalty points toggle per order (configurable earn/redeem rates)
 - Discount system (order + item level, percentage + amount)
 - Extra notes per item and order (configurable character limits)
@@ -214,30 +220,28 @@ For deeper repository analytics, see [Pulse](https://github.com/FreeOpenSourcePO
 
 ## 🗺️ Public Roadmap
 
-FloCafe is actively evolving. This roadmap reflects the current public issue discussions as of July 21, 2026.
+FloCafe is actively evolving. This roadmap reflects the current public issue discussions as of July 28, 2026.
 
 ### Active Priorities
 
-- **KDS and KOT workflow controls:** Add a settings toggle so operators can choose KDS-first or printer/KOT-first kitchen workflows ([#133](https://github.com/FreeOpenSourcePOS/FloCafe/issues/133)).
-- **Backup, recovery, and restore confidence:** Add automated Google Drive database backups ([#129](https://github.com/FreeOpenSourcePOS/FloCafe/issues/129)), backup history management ([#120](https://github.com/FreeOpenSourcePOS/FloCafe/issues/120)), clearer signup recovery guidance ([#128](https://github.com/FreeOpenSourcePOS/FloCafe/issues/128)), and a secure password recovery/database reinitialization flow ([#127](https://github.com/FreeOpenSourcePOS/FloCafe/issues/127)).
-- **Menu and add-on experience:** Improve add-on configuration UX and support multi-quantity add-ons ([#83](https://github.com/FreeOpenSourcePOS/FloCafe/issues/83)).
-- **Loyalty program polish:** Refine loyalty onboarding and labels so staff understand earn/redeem behavior faster ([#81](https://github.com/FreeOpenSourcePOS/FloCafe/issues/81)).
 - **Desktop update experience:** Add in-app auto-update support with a notification badge ([#58](https://github.com/FreeOpenSourcePOS/FloCafe/issues/58)).
+- **Loyalty program polish:** Refine loyalty onboarding and labels so staff understand earn/redeem behavior faster ([#81](https://github.com/FreeOpenSourcePOS/FloCafe/issues/81)).
+- **In-app feedback:** Let users without a GitHub account submit feedback directly from the app instead of needing to file an issue ([#141](https://github.com/FreeOpenSourcePOS/FloCafe/issues/141)).
 
 ### Longer-Term Direction
 
 - **Android/iOS tablet client + free e-billing:** A thin-client order-taking + billing surface for tablets on the same local network as the desktop install — same pattern KDS already uses (LAN, no install required), not an Electron port (not possible on mobile). No printer access on the tablet itself; printing routes through the existing desktop install. Bundled: how bills reach customers for free (the already-shipped `wa.me` share link today, richer automated WhatsApp messaging as a possible future step) ([#135](https://github.com/FreeOpenSourcePOS/FloCafe/issues/135)).
-- **Barcode scanning:** Scan a product's barcode at POS to look it up and add it to the cart, for packaged goods (bottled drinks, snacks) sold alongside prepared food. Built here first as a reusable pattern for two upcoming products in the same ecosystem that need it as a core capability — FloRetail and FloSalon (salons/spas also sell retail inventory) ([#137](https://github.com/FreeOpenSourcePOS/FloCafe/issues/137)).
-- **Modular Plugin Architecture:** Support for custom plugins, third-party integrations, and UI themes without modifying core code.
+- **Universal tax engine:** Move beyond India-specific GST to configurable surcharges, per-category rates/discounts, and more countries' tax rules ([#143](https://github.com/FreeOpenSourcePOS/FloCafe/issues/143)).
+- **Country & provider plugin architecture:** A plugin system for country- and payment-provider-specific behavior, so tax/provider variants don't require touching core code ([#142](https://github.com/FreeOpenSourcePOS/FloCafe/issues/142)).
 - **Advanced Inventory Management:** Low stock alerts, supplier purchase orders, and ingredient-level tracking.
 - **Enhanced Cloud Sync:** Opt-in multi-device synchronization across different branches or franchises.
-- **Expanded Translations (i18n):** Add more community-contributed languages to the native English and Spanish support.
+- **Expanded Translations (i18n):** Add more community-contributed languages beyond the native English, Spanish, and Brazilian Portuguese support.
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Electron 31 |
+| Runtime | Electron 43 |
 | Backend | Express.js + TypeScript |
 | Frontend | Next.js 16 + React 19 |
 | Database | SQLite (better-sqlite3, WAL mode) |
@@ -259,12 +263,12 @@ Optional:
 
 | Requirement | Minimum |
 |-------------|---------|
-| OS | Windows 10+, macOS 11+, Ubuntu 20.04+ |
+| OS | Windows 10+, macOS 12 (Monterey)+, Ubuntu 20.04+ |
 | RAM | 4 GB |
 | Disk | 500 MB free |
 | Node.js | >= 22.0.0 (development only) |
 
-> **Note:** OS and RAM requirements are based on Electron 31 defaults. The app itself is lightweight.
+> **Note:** OS and RAM requirements are based on Electron 43 defaults. The app itself is lightweight.
 
 ## Quick Start
 
@@ -372,7 +376,7 @@ FloCafe/
 │   ├── db.ts               # SQLite database & migrations
 │   ├── ipc.ts              # Electron IPC handlers
 │   ├── preload.ts          # Context bridge
-│   ├── routes/             # 20 API route modules
+│   ├── routes/             # 27 API route modules
 │   ├── services/           # Business logic (cloud-sync, KDS, tax)
 │   └── printers/           # ESC/POS thermal printing
 ├── frontend/               # Next.js frontend
@@ -401,7 +405,7 @@ Master PIN all live in the OS user-data directory (`app.getPath('userData')`) �
 completely separate location from the application binary that gets replaced. This holds
 regardless of *how* you update: automatic background update, manually re-downloading and
 reinstalling from [GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases),
-or (once available) via the Mac App Store / Microsoft Store.
+or via the Mac App Store / Microsoft Store.
 
 **Schema migrations run automatically and safely on every startup:**
 - Pending migrations apply in order, wrapped in a transaction each, tracked via SQLite's

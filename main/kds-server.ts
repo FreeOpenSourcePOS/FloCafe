@@ -373,8 +373,9 @@ export function startKdsServer(): Promise<void> {
       // SPA fallback - serve the standalone KDS for any unmatched routes
       app.get('/*splat', (req: Request, res: Response) => {
         // Try to serve the specific route first
-        const routePath = path.join(staticDir, req.path, 'index.html');
-        if (fs.existsSync(routePath)) {
+        const staticRoot = path.resolve(staticDir);
+        const routePath = path.resolve(staticRoot, `.${req.path}`, 'index.html');
+        if (routePath.startsWith(`${staticRoot}${path.sep}`) && fs.existsSync(routePath)) {
           res.sendFile(routePath);
         } else {
           res.sendFile(path.join(staticDir, 'kds-standalone', 'index.html'));

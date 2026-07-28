@@ -72,8 +72,11 @@ if ($proc) {
     # Wait for it to actually exit so the SQLite db/log files below aren't
     # still locked when we try to delete them a moment later.
     $proc | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue
+    if (Get-Process -Name "Flo Cafe" -ErrorAction SilentlyContinue) {
+      Write-Warn "Flo Cafe is still running; some files may remain locked."
+    }
   }
-  Write-Log "closed running instance"
+  if ($DryRun) { Write-Log "[dry-run] would close running instance" } else { Write-Log "closed running instance" }
 } else {
   Write-Log "not running"
 }
@@ -86,22 +89,38 @@ $uninstallRoots = @(
   'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*',
   'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
 )
-$entry = Get-ItemProperty -Path $uninstallRoots -ErrorAction SilentlyContinue |
-  Where-Object { $_.DisplayName -eq $AppName } |
-  Select-Object -First 1
+$entries = @()
+try {
+  $entries = @(Get-ItemProperty -Path $uninstallRoots -ErrorAction Stop)
+} catch {
+  Write-Warn "Could not read one or more uninstall registry locations: $($_.Exception.Message)"
+}
+$entry = $entries | Where-Object { $_.DisplayName -eq $AppName } | Select-Object -First 1
 
 $installLocation = $null
 if ($entry) {
   $installLocation = $entry.InstallLocation
   Write-Log "found registry entry: $($entry.PSChildName)"
 
-  if ($entry.UninstallString -and (Test-Path ($entry.UninstallString -replace '"', ''))) {
-    $uninstallerExe = ($entry.UninstallString -replace '"', '')
+  if ($entry.UninstallString) {
+    $uninstallerCommand = ([string]$entry.UninstallString).Trim()
+    if ($uninstallerCommand -match '^\s*"([^"]+)"(.*)$') {
+      $uninstallerExe = $Matches[1]
+      $uninstallerArgs = $Matches[2].Trim()
+    } elseif ($uninstallerCommand -match '^\s*(\S+)(.*)$') {
+      $uninstallerExe = $Matches[1]
+      $uninstallerArgs = $Matches[2].Trim()
+    }
+  }
+  if ($uninstallerExe -and (Test-Path -LiteralPath $uninstallerExe -PathType Leaf)) {
     Write-Step "Running the app's own uninstaller silently..."
     if ($DryRun) {
-      Write-Log "[dry-run] would run: `"$uninstallerExe`" /S"
+      Write-Log "[dry-run] would run: `"$uninstallerExe`" $uninstallerArgs /S"
     } else {
-      Start-Process -FilePath $uninstallerExe -ArgumentList '/S' -Wait -ErrorAction SilentlyContinue
+      $uninstallerArgumentList = @()
+      if ($uninstallerArgs) { $uninstallerArgumentList += $uninstallerArgs }
+      $uninstallerArgumentList += '/S'
+      Start-Process -FilePath $uninstallerExe -ArgumentList $uninstallerArgumentList -Wait -ErrorAction Stop
       Write-Log "ran $uninstallerExe /S"
     }
   }

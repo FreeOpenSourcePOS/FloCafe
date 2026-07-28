@@ -281,8 +281,25 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Verify Windows signing credentials
+        shell: pwsh
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
+        run: |
+          $missing = @()
+          if ([string]::IsNullOrWhiteSpace($env:CSC_LINK)) { $missing += 'WINDOWS_CERTS' }
+          if ([string]::IsNullOrWhiteSpace($env:CSC_KEY_PASSWORD)) { $missing += 'WINDOWS_CERTS_PASSWORD' }
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing required secret(s) for signed Windows build: $($missing -join ', ')"
+            exit 1
+          }
+
       - name: Build Windows
         run: npm run build:frontend && npm run build && npx electron-builder --win --publish never
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
 
       - name: Verify Windows release assets
         # Same class of bug as macOS's missing latest-mac.yml: electron-updater's

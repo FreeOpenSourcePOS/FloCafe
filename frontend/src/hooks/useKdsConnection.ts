@@ -186,6 +186,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Holds the latest tryWebSocket so its own reconnect timer can call it recursively without
   // referencing the useCallback-bound identifier before it's declared (which the compiler
   // can't safely memoize). Kept in sync via the unconditional assignment right after the
@@ -262,16 +263,18 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       const wsUrl = `${protocol}//${wsHost}/kds`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
-      let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
       let connectionTimeout: ReturnType<typeof setTimeout> | null = null;
 
       const cleanup = () => {
-        if (reconnectTimeout) clearTimeout(reconnectTimeout);
         if (connectionTimeout) clearTimeout(connectionTimeout);
       };
 
       ws.onopen = () => {
         cleanup();
+        if (wsRef.current === ws && reconnectTimerRef.current) {
+          clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = null;
+        }
         setConnectionMode('websocket');
         setConnected(true);
         ws.send(JSON.stringify({ type: 'auth', token }));
@@ -279,14 +282,15 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
       ws.onclose = () => {
         cleanup();
+        if (wsRef.current !== ws) return;
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
         setConnected(false);
-        if (wsRef.current === ws) {
-          reconnectTimeout = setTimeout(() => {
-            if (wsRef.current === ws) {
-              tryWebSocketRef.current(token);
-            }
-          }, 3000);
-        }
+        reconnectTimerRef.current = setTimeout(() => {
+          if (wsRef.current === ws) {
+            tryWebSocketRef.current(token);
+          }
+        }, 3000);
       };
 
       ws.onerror = () => {
@@ -345,28 +349,35 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           rememberMe,
         });
 
+        const token = data.access_token ?? data.token;
         const loggedInUser: KdsUser = {
           id: data.user.id,
           name: data.user.name,
           role: data.user.role,
-          token: data.access_token,
+          token,
         };
 
         setUser(loggedInUser);
-        window.localStorage.setItem('token', data.access_token);
-        tryWebSocket(data.access_token);
+        window.localStorage.setItem('token', token);
+        tryWebSocket(token);
       } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        setLoginError(error.response?.data?.error || t('auth.loginFailed'));
-        setLoading(false);
+        const axiosErr = err as { response?: { data?: { error?: string } } };
+        const msg = axiosErr.response?.data?.error || t('kds.loginFailed');
+        setLoginError(msg);
+      } finally {
         setLoginLoading(false);
+        setLoading(false);
       }
     },
-    [api, loginEmail, loginPassword, loginPath, rememberMe, t, tryWebSocket],
+    [loginEmail, loginPassword, rememberMe, loginPath, api, t, tryWebSocket],
   );
 
   const handleLogout = useCallback(async () => {
     if (!await confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) return;
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     if (wsRef.current) {
       wsRef.current.close();
     }
@@ -400,6 +411,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       });
 
     return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;

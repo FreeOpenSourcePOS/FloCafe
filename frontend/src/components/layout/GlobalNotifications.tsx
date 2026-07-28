@@ -14,7 +14,9 @@ export default function GlobalNotifications() {
         .then(res => {
           setInvalidPhonesCount(res.data?.invalidPhonesCount || 0);
         })
-        .catch(() => {});
+        .catch(err => {
+          console.warn('[Notifications] Failed to fetch customer alerts:', err?.message);
+        });
     };
 
     fetchAlerts();
@@ -24,12 +26,16 @@ export default function GlobalNotifications() {
 
   if (invalidPhonesCount === 0) return null;
 
+  const fallbackMsg = invalidPhonesCount === 1 ? '1 customer has an invalid or legacy phone number format.' : `${invalidPhonesCount} customers have an invalid or legacy phone number format.`;
+  const translatedMsg = invalidPhonesCount === 1 ? t('customers.invalidPhoneSingular', { count: invalidPhonesCount }) : t('customers.invalidPhonePlural', { count: invalidPhonesCount });
+  const displayMsg = translatedMsg ? `${invalidPhonesCount} ${translatedMsg}` : fallbackMsg;
+
   return (
     <div className="bg-red-50 border-b border-red-100 px-4 py-2 flex items-center justify-between shrink-0">
       <div className="flex items-center gap-3">
         <AlertCircle className="text-red-500 w-5 h-5 shrink-0" />
         <p className="text-sm text-red-800 font-medium">
-          {invalidPhonesCount} {invalidPhonesCount === 1 ? t('customers.invalidPhoneSingular', { count: invalidPhonesCount }) : t('customers.invalidPhonePlural', { count: invalidPhonesCount }) || `${invalidPhonesCount === 1 ? 'customer has' : 'customers have'} an invalid or legacy phone number format.`}
+          {displayMsg}
         </p>
         <Link 
           href="/customers?filter=invalid_phones" 

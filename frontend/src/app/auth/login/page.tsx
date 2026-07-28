@@ -23,23 +23,22 @@ function LoginContent() {
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [showTenantSelect, setShowTenantSelect] = useState(false);
   const [dbError, setDbError] = useState<string | null>(null);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     fetch('/api/auth/setup/status')
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data.needsSetup) router.replace('/setup');
+        if (data?.needsSetup) router.replace('/setup');
       })
       .catch(() => {});
 
     fetch('/api/health')
-      .then(r => r.json())
+      .then(r => r.ok ? r.json() : null)
       .then(data => {
-        if (data.status !== 'ok') {
+        if (data && data.status !== 'ok') {
           setDbError(data.db || t('auth.dbErrorPrefix'));
         }
       })
@@ -62,33 +61,16 @@ function LoginContent() {
     }
   }, [selectTenant, t]);
 
-  // Flip the loading spinner on the moment we're about to auto-select the sole tenant, read
-  // directly during render (React's recommended pattern for "adjusting state when a prop
-  // changes") so the effect below only needs to own the actual async selectTenant call.
-  const autoSelecting = !!(user && !currentTenant && tenants.length === 1);
-  const [wasAutoSelecting, setWasAutoSelecting] = useState(autoSelecting);
-  if (autoSelecting !== wasAutoSelecting) {
-    setWasAutoSelecting(autoSelecting);
-    if (autoSelecting) setLoading(true);
-  }
-
-  // Sticky latch — once shown, stays shown. Setting the same `true` value on every
-  // qualifying render is a no-op for React, so this needs no previous-value tracking.
-  if (user && (tenants.length > 1 || searchParams.get('select_tenant') === 'true')) {
-    setShowTenantSelect(true);
-  }
-
   useEffect(() => {
+    let active = true;
     if (user && currentTenant) {
       router.push(getLandingPage());
     } else if (user && tenants.length === 1) {
-      // Only one business — auto-select it. Inlined rather than calling
-      // handleTenantSelect() (used by the manual tenant-select button too), whose async
-      // body can't be called directly from an effect.
       selectTenant(tenants[0].id)
-        .catch(() => toast.error(t('auth.selectBusinessFailed')))
-        .finally(() => setLoading(false));
+        .catch(() => { if (active) toast.error(t('auth.selectBusinessFailed')); })
+        .finally(() => { if (active) setLoading(false); });
     }
+    return () => { active = false; };
   }, [user, tenants, currentTenant, router, selectTenant, t]);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -133,7 +115,9 @@ function LoginContent() {
 
 
 
-  if (showTenantSelect) {
+  const shouldShowTenantSelect = !!(user && (tenants.length > 1 || searchParams.get('select_tenant') === 'true'));
+
+  if (shouldShowTenantSelect) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background px-4">
         <div className="w-full max-w-md">

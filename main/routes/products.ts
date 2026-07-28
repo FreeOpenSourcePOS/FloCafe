@@ -702,6 +702,9 @@ router.post('/:id/stock', requireRole('owner', 'manager'), (req: Request, res: R
     if (!['set', 'increase', 'decrease'].includes(action)) {
       return res.status(400).json({ error: 'Invalid action. Use: set, increase, decrease' });
     }
+    if (typeof quantity !== 'number' || !Number.isFinite(quantity) || quantity < 0) {
+      return res.status(400).json({ error: 'quantity must be a non-negative number' });
+    }
 
     const db = getDatabase();
     const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -709,23 +712,20 @@ router.post('/:id/stock', requireRole('owner', 'manager'), (req: Request, res: R
       return res.status(404).json({ error: 'Product not found' });
     }
 
-    let newQuantity = 0;
-    switch (action) {
-      case 'set':
-        newQuantity = quantity;
-        break;
-      case 'increase':
-        newQuantity = (product as any).stock_quantity + quantity;
-        break;
-      case 'decrease':
-        newQuantity = (product as any).stock_quantity - quantity;
-        if (newQuantity < 0) {
-          return res.status(400).json({ error: 'Insufficient stock' });
-        }
-        break;
+    let result;
+    if (action === 'set') {
+      result = db.prepare('UPDATE products SET stock_quantity = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
+        .run(quantity, now(), req.params.id);
+    } else if (action === 'increase') {
+      result = db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL')
+        .run(quantity, now(), req.params.id);
+    } else {
+      result = db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL AND stock_quantity >= ?')
+        .run(quantity, now(), req.params.id, quantity);
     }
-
-    db.prepare('UPDATE products SET stock_quantity = ?, updated_at = ? WHERE id = ?').run(newQuantity, now(), req.params.id);
+    if (result.changes === 0) {
+      return res.status(400).json({ error: action === 'decrease' ? 'Insufficient stock' : 'Product not found' });
+    }
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
     res.json({ product: updated });
   } catch (error: any) {

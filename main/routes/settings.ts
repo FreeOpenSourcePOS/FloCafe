@@ -20,9 +20,21 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `);
-  for (const [key, val] of Object.entries(entries)) {
-    if (val !== undefined) stmt.run(key, val === null ? '' : String(val), now());
+  db.transaction(() => {
+    for (const [key, val] of Object.entries(entries)) {
+      if (val !== undefined) stmt.run(key, val === null ? '' : String(val), now());
+    }
+  })();
+}
+
+function validBusinessLocation(timezone: unknown, currency: unknown, country: unknown): boolean {
+  if (timezone !== undefined) {
+    if (typeof timezone !== 'string' || timezone.length > 100) return false;
+    try { new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(); } catch { return false; }
   }
+  if (currency !== undefined && (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency))) return false;
+  if (country !== undefined && (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country))) return false;
+  return true;
 }
 
 const SENSITIVE_SETTING_KEYS = new Set([
@@ -106,6 +118,10 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       gstin, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn } = req.body;
+
+    if (!validBusinessLocation(timezone, currency, country)) {
+      return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
+    }
 
     const db = getDatabase();
     upsertSettings(db, {

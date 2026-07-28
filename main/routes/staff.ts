@@ -43,6 +43,9 @@ router.get('/', requireRole('owner', 'manager'), (req: Request, res: Response) =
     const params: any[] = [];
 
     if (req.query.role) {
+      if (typeof req.query.role !== 'string' || !VALID_ROLES.includes(req.query.role)) {
+        return res.status(400).json({ error: `role must be one of: ${VALID_ROLES.join(', ')}` });
+      }
       query += ' AND role = ?';
       params.push(req.query.role);
     }
@@ -247,15 +250,14 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
       return res.status(403).json({ error: 'Managers cannot deactivate or reactivate owner or manager accounts' });
     }
 
-    // Prevent deactivating the last owner
-    if (member.role === 'owner') {
-      const ownerCount = (db.prepare('SELECT COUNT(*) as c FROM users WHERE role = ? AND is_active = 1').get('owner') as any).c;
-      if (ownerCount <= 1) {
-        return res.status(400).json({ error: 'Cannot deactivate the last owner account' });
-      }
+    const result = db.prepare(`
+      UPDATE users SET is_active = 0, updated_at = ?
+      WHERE id = ? AND is_active = 1
+        AND (role != 'owner' OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1)
+    `).run(now(), req.params.id);
+    if (result.changes === 0) {
+      return res.status(400).json({ error: 'Cannot deactivate the last owner account' });
     }
-
-    db.prepare('UPDATE users SET is_active = 0, updated_at = ? WHERE id = ?').run(now(), req.params.id);
     invalidateUserAuthCache(req.params.id as string);
     const updated = db.prepare(
       `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE id = ?`

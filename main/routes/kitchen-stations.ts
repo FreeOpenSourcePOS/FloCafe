@@ -130,6 +130,9 @@ router.put('/:id/users', requireRole('owner', 'manager'), (req: Request, res: Re
     if (!Array.isArray(user_ids)) {
       return res.status(400).json({ error: 'user_ids must be an array' });
     }
+    if (user_ids.length > 100 || user_ids.some((id) => typeof id !== 'string' || id.length === 0 || id.length > 128)) {
+      return res.status(400).json({ error: 'user_ids must contain at most 100 valid user IDs' });
+    }
 
     const db = getDatabase();
     const station = db.prepare('SELECT id FROM kitchen_stations WHERE id = ?').get(req.params.id);

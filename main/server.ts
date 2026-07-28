@@ -137,13 +137,14 @@ export function startServer(): Promise<void> {
     // Blocks eval() and remote code. 'unsafe-inline' is required for
     // Next.js RSC hydration scripts and Tailwind-generated style tags.
     app.use((_req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
       res.setHeader('Content-Security-Policy',
         "default-src 'self'; " +
         "script-src 'self' 'unsafe-inline'; " +
         "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data:; " +
         "font-src 'self' data:; " +
-        "connect-src 'self' http://localhost:* ws://localhost:*; " +
+        "connect-src 'self' http://localhost:3000 http://localhost:3001 http://localhost:3002 ws://localhost:3001 ws://localhost:3002; " +
         "frame-ancestors 'none'"
       );
       next();
@@ -193,7 +194,7 @@ export function startServer(): Promise<void> {
         });
       }
 
-      app.use(express.static(frontendDir));
+      app.use(express.static(frontendDir, { dotfiles: 'deny', index: false }));
 
       // SPA fallback: any unknown path returns index.html so Next.js
       // client-side routing works. Exclude /api (API routes) and /kds.

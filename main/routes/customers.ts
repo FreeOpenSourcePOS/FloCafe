@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { randomUUID } from 'crypto';
 import { getDatabase, now, getSettingValue } from '../db';
 import { requireRole } from '../middleware/security';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
@@ -218,7 +219,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       }
     }
 
-    const id = 'cust-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+    const id = `cust-${randomUUID()}`;
     db.prepare(`
       INSERT INTO customers (id, phone, name, email, country_code, address, notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)

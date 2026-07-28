@@ -132,25 +132,26 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
       });
     }
 
-    if (action === 'reassign') {
-      if (!reassign_to) {
-        return res.status(400).json({ error: 'reassign_to is required for reassign action' });
+    const deleteCategory = db.transaction(() => {
+      if (action === 'reassign') {
+        if (!reassign_to) throw new Error('reassign_to is required for reassign action');
+        const targetCategory = db.prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL').get(reassign_to);
+        if (!targetCategory) throw new Error('Target category not found or deleted');
+        db.prepare('UPDATE products SET category_id = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL')
+          .run(reassign_to, now(), req.params.id);
+      } else if (action === 'delete_all') {
+        db.prepare('UPDATE products SET deleted_at = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL')
+          .run(now(), now(), req.params.id);
+      } else {
+        throw new Error('Invalid action. Must be reassign or delete_all.');
       }
-      const targetCategory = db.prepare('SELECT * FROM categories WHERE id = ? AND deleted_at IS NULL').get(reassign_to);
-      if (!targetCategory) {
-        return res.status(400).json({ error: 'Target category not found or deleted' });
-      }
-      db.prepare('UPDATE products SET category_id = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL')
-        .run(reassign_to, now(), req.params.id);
-    } else if (action === 'delete_all') {
-      db.prepare('UPDATE products SET deleted_at = ?, updated_at = ? WHERE category_id = ? AND deleted_at IS NULL')
-        .run(now(), now(), req.params.id);
-    } else {
-      return res.status(400).json({ error: 'Invalid action. Must be reassign or delete_all.' });
+      db.prepare('UPDATE categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now(), now(), req.params.id);
+    });
+    try {
+      deleteCategory();
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
     }
-
-    // Soft delete the category
-    db.prepare('UPDATE categories SET deleted_at = ? WHERE id = ?').run(now(), req.params.id);
     res.json({ message: 'Category deleted' });
   } catch (error: any) {
     console.error("[API] Internal error:", error);

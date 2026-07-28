@@ -206,6 +206,9 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('set-setting', async (event, key: string, value: string) => {
     try {
+      if (typeof key !== 'string' || typeof value !== 'string' || value.length > 10_000) {
+        return { success: false, error: 'Invalid setting value' };
+      }
       if (!ALLOWED_IPC_KEYS.has(key)) {
         return { success: false, error: 'Setting not allowed via IPC' };
       }

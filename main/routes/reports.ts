@@ -111,7 +111,7 @@ router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: 
 router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const date = req.query.date as string || new Date().toISOString().slice(0, 10);
+    const date = reportDate(req.query.date, new Date().toISOString().slice(0, 10));
 
     const ordersToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total
@@ -214,8 +214,12 @@ router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, re
 router.get('/sales', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const startDate = req.query.start_date as string || new Date().toISOString().slice(0, 10);
-    const endDate = req.query.end_date as string || new Date().toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    const startDate = reportDate(req.query.start_date, today);
+    const endDate = reportDate(req.query.end_date, today);
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be on or before end_date' });
+    }
 
     const dailySales = db.prepare(`
       SELECT date(created_at) as date, COUNT(*) as orders, SUM(total) as sales
@@ -259,9 +263,14 @@ router.get('/sales', requireRole('owner', 'manager'), (req: Request, res: Respon
 router.get('/topProducts', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const startDate = req.query.start_date as string || new Date().toISOString().slice(0, 10);
-    const endDate = req.query.end_date as string || new Date().toISOString().slice(0, 10);
-    const limit = parseInt(req.query.limit as string) || 10;
+    const today = new Date().toISOString().slice(0, 10);
+    const startDate = reportDate(req.query.start_date, today);
+    const endDate = reportDate(req.query.end_date, today);
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'start_date must be on or before end_date' });
+    }
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 10;
 
     const topProducts = db.prepare(`
       SELECT oi.product_id, oi.product_name,
@@ -286,8 +295,12 @@ router.get('/topProducts', requireRole('owner', 'manager'), (req: Request, res: 
 router.get('/recentOrders', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const limit = parseInt(req.query.limit as string) || 20;
-    const date = req.query.date as string | undefined;
+    const requestedLimit = Number(req.query.limit);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 20;
+    const date = req.query.date === undefined ? undefined : reportDate(req.query.date, '');
+    if (req.query.date !== undefined && !date) {
+      return res.status(400).json({ error: 'date must use YYYY-MM-DD format' });
+    }
 
     // Without a date, "most recent overall" (dashboard live view). With one,
     // scoped to that day — lets the dashboard show a past day's orders

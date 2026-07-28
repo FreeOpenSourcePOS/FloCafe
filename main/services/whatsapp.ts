@@ -5,15 +5,17 @@ import type { WASocket as BaileysSocket, WAMessageKey } from '@whiskeysockets/ba
 import { parsePhoneNumber } from 'libphonenumber-js';
 import { getDatabase, getSettingValue, now } from '../db';
 
+const { loadBaileys: loadBaileysModule } = require('../baileys-loader.cjs') as {
+  loadBaileys: () => Promise<typeof import('@whiskeysockets/baileys')>;
+};
+
 // Baileys is ESM-only; CommonJS `require()` blows up with ERR_REQUIRE_ESM.
 // Lazy-load via dynamic import() and cache the module reference for the
 // lifetime of the process.
 let baileysModule: typeof import('@whiskeysockets/baileys') | null = null;
 async function loadBaileys(): Promise<typeof import('@whiskeysockets/baileys')> {
   if (!baileysModule) {
-    // Prevent TypeScript from transpiling dynamic import() to require() in CJS mode
-    const dynamicImport = new Function('specifier', 'return import(specifier)');
-    baileysModule = (await dynamicImport('@whiskeysockets/baileys')) as typeof import('@whiskeysockets/baileys');
+    baileysModule = await loadBaileysModule();
   }
   return baileysModule;
 }
@@ -358,6 +360,8 @@ function recordMessageRow(row: {
   return Number(result.lastInsertRowid);
 }
 
+const ALLOWED_TIMESTAMP_FIELDS = new Set(['seen_at', 'typing_at', 'sent_at', 'delivered_at', 'read_at', 'failed_at']);
+
 function updateMessageRow(id: number, patch: {
   status?: string;
   external_message_id?: string | null;
@@ -370,7 +374,7 @@ function updateMessageRow(id: number, patch: {
   if (patch.status !== undefined) { fields.push('status = ?'); values.push(patch.status); }
   if (patch.external_message_id !== undefined) { fields.push('external_message_id = ?'); values.push(patch.external_message_id); }
   if (patch.error !== undefined) { fields.push('error = ?'); values.push(patch.error); }
-  if (patch.timestamp_field) {
+  if (patch.timestamp_field && ALLOWED_TIMESTAMP_FIELDS.has(patch.timestamp_field)) {
     fields.push(`${patch.timestamp_field} = ?`);
     values.push(now());
   }
@@ -527,7 +531,6 @@ function attachSocketHandlers(socket: BaileysSocket): void {
       if (!stored) continue;
       const status = u.update?.status;
       if (status === undefined) continue;
-      let field: 'sent_at' | 'delivered_at' | 'read_at' | null = null;
       // Baileys WAProto: PENDING=1, SERVER_ACK=2, DELIVERED=3, READ=4, PLAYED=5.
       // SERVER_ACK is the first server-side confirmation that WhatsApp
       // accepted the payload — that's the truthful 'sent' mark. Earlier
@@ -787,7 +790,6 @@ export async function sendMessage(req: QueuedSend): Promise<SendResult> {
   try {
     if (resolvedKind === 'manual_reply') {
       try {
-        await socket.readMessages([{ remoteJid: jid, id: req.phoneE164 } as any]);
         updateMessageRow(messageId, { status: 'seen', timestamp_field: 'seen_at' });
       } catch { /* best-effort */ }
     }
@@ -817,9 +819,12 @@ export async function sendMessage(req: QueuedSend): Promise<SendResult> {
       }
     }
     state.lastSendByPhone.set(req.phoneE164, Date.now());
+    if (state.lastSendByPhone.size > 1000) {
+      const oldestKey = state.lastSendByPhone.keys().next().value;
+      if (oldestKey) state.lastSendByPhone.delete(oldestKey);
+    }
     return { ok: true, messageId };
   } catch (err: any) {
-    const status = err?.output?.statusCode;
     updateMessageRow(messageId, {
       status: 'failed',
       error: err?.message ?? 'Send failed',

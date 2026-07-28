@@ -11,7 +11,7 @@
     "predev": "",
     "dev": "npm run clean && npm run build:frontend && npm run build && electron .",
     "dev:frontend": "cd frontend && npm run dev",
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-runtime-assets.cjs",
     "lint:backend": "eslint main/",
     "lint": "npm run lint:backend && cd frontend && npm run lint",
     "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop npm run build",

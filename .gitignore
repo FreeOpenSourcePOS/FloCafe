@@ -11,6 +11,7 @@ mas-build-output/
 backups/
 .env
 .env.local
+.env.*.local
 .DS_Store
 .claude/
 .agents/
@@ -29,6 +30,8 @@ build/flo.provisionprofile
 *.cer
 *.p12
 *.p8
+*.key
+*.pem
 *.certSigningRequest
 *.provisionprofile
 *.mobileprovision

@@ -212,48 +212,47 @@ class PrinterService {
 
     const mmWidth = paperWidth === 58 ? '58mm' : '80mm';
 
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Receipt</title>
-          <style>
-            @page {
-              size: ${mmWidth} auto;
-              margin: 0;
-            }
-            * {
-              margin: 0;
-              padding: 0;
-              box-sizing: border-box;
-            }
-            body {
-              font-family: 'Courier New', monospace;
-              font-size: 12px;
-              line-height: 1.2;
-              width: ${mmWidth};
-              max-width: ${mmWidth};
-              margin: 0 auto;
-              padding: 4px;
-              text-align: left;
-            }
-            @media print {
-              body {
-                width: ${mmWidth} !important;
-                max-width: ${mmWidth} !important;
-              }
-              @page {
-                size: ${mmWidth} auto;
-                margin: 0;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          ${htmlContent}
-        </body>
-      </html>
-    `);
+    const style = printWindow.document.createElement('style');
+    style.textContent = `
+      @page { size: ${mmWidth} auto; margin: 0; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      body {
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        line-height: 1.2;
+        width: ${mmWidth};
+        max-width: ${mmWidth};
+        margin: 0 auto;
+        padding: 4px;
+        text-align: left;
+      }
+      @media print {
+        body { width: ${mmWidth} !important; max-width: ${mmWidth} !important; }
+        @page { size: ${mmWidth} auto; margin: 0; }
+      }
+    `;
+    printWindow.document.head.appendChild(style);
+
+    // Parse receipt markup in an inert document, then remove executable and
+    // javascript-bearing nodes before importing it into the print window.
+    const parsed = new DOMParser().parseFromString(htmlContent, 'text/html');
+    parsed.querySelectorAll('script, style, link, meta, base, iframe, object, embed, form').forEach((node) => node.remove());
+    parsed.querySelectorAll('*').forEach((element) => {
+      for (const attribute of Array.from(element.attributes)) {
+        const name = attribute.name.toLowerCase();
+        if (name.startsWith('on')) {
+          element.removeAttribute(attribute.name);
+        } else if (
+          ['href', 'src', 'action'].includes(name) &&
+          /^(?:javascript|data):/i.test(attribute.value.trim())
+        ) {
+          element.removeAttribute(attribute.name);
+        }
+      }
+    });
+    printWindow.document.body.replaceChildren(
+      ...Array.from(parsed.body.childNodes).map((node) => printWindow.document.importNode(node, true)),
+    );
     printWindow.document.close();
     printWindow.onload = () => {
       printWindow.print();

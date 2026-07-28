@@ -86,7 +86,7 @@ export function shareBillViaWhatsApp(
   opts: WhatsAppShareOptions = {}
 ): void {
   const url = getWhatsAppShareUrl(bill, tenant, customerInfo, opts);
-  window.open(url, '_blank');
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 /**

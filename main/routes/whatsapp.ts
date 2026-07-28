@@ -183,12 +183,13 @@ router.get('/blocklist', requireRole('owner', 'manager'), (_req: Request, res: R
 
 router.post('/blocklist', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   const { phone_e164, reason } = req.body ?? {};
-  if (!phone_e164) {
+  const normalizedPhone = typeof phone_e164 === 'string' ? phone_e164.trim() : '';
+  if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
     res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
     return;
   }
   const userId = (req as any).user?.userId ?? null;
-  whatsapp.addToBlocklist(String(phone_e164), String(reason ?? ''), userId ?? 'unknown');
+  whatsapp.addToBlocklist(normalizedPhone, String(reason ?? ''), userId ?? 'unknown');
   res.json({ ok: true });
 });
 

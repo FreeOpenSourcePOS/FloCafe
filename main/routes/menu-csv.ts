@@ -12,31 +12,39 @@ const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exemp
 
 function parseCSV(text: string): string[][] {
   const rows: string[][] = [];
-  const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    const fields: string[] = [];
-    let i = 0;
-    while (i <= line.length) {
-      if (i === line.length) { fields.push(''); break; }
-      if (line[i] === '"') {
-        let val = '';
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let fields: string[] = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < normalized.length; i++) {
+    const char = normalized[i];
+    if (inQuotes) {
+      if (char === '"' && normalized[i + 1] === '"') {
+        field += '"';
         i++;
-        while (i < line.length) {
-          if (line[i] === '"' && line[i + 1] === '"') { val += '"'; i += 2; }
-          else if (line[i] === '"') { i++; break; }
-          else { val += line[i++]; }
-        }
-        if (i < line.length && line[i] === ',') i++;
-        fields.push(val);
+      } else if (char === '"') {
+        inQuotes = false;
       } else {
-        const end = line.indexOf(',', i);
-        if (end === -1) { fields.push(line.slice(i)); break; }
-        fields.push(line.slice(i, end));
-        i = end + 1;
+        field += char;
       }
+    } else if (char === '"' && field.length === 0) {
+      inQuotes = true;
+    } else if (char === ',') {
+      fields.push(field);
+      field = '';
+    } else if (char === '\n') {
+      fields.push(field);
+      if (fields.some((value) => value.trim())) rows.push(fields);
+      fields = [];
+      field = '';
+    } else {
+      field += char;
     }
-    rows.push(fields);
+  }
+  if (field.length > 0 || fields.length > 0) {
+    fields.push(field);
+    if (fields.some((value) => value.trim())) rows.push(fields);
   }
   return rows;
 }
@@ -202,7 +210,7 @@ router.post('/import/categories', requireRole('owner', 'manager'), (req: Request
     let created = 0, skipped = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < rows.length; i++) {
+    db.transaction(() => { for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r.name) { errors.push(`Row ${i + 2}: missing name`); continue; }
 
@@ -218,7 +226,7 @@ router.post('/import/categories', requireRole('owner', 'manager'), (req: Request
       ).run(uuidv4(), r.name, slug, r.description || null, r.color || null, r.icon || null,
         parseInt(r.sort_order) || 0, now(), now());
       created++;
-    }
+    } })();
 
     res.json({ created, skipped, errors });
   } catch (err: any) {
@@ -256,7 +264,7 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
     let created = 0, updated = 0, skipped = 0;
     const errors: string[] = [];
 
-    for (let i = 0; i < rows.length; i++) {
+    db.transaction(() => { for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r.name) { errors.push(`Row ${i + 2}: missing name`); continue; }
 
@@ -341,7 +349,7 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
       ).run(generateShortId('products'), r.name, categoryId, price, r.description || null,
         cost, 'none', 0, taxCategoryId, taxBehavior || 'country_default', cbPercent, tagsJson, isActive, sku, now(), now());
       created++;
-    }
+    } })();
 
     res.json({ created, updated, skipped, errors });
   } catch (err: any) {
@@ -363,7 +371,7 @@ router.post('/import/addons', requireRole('owner', 'manager'), (req: Request, re
     const errors: string[] = [];
     const groupCache: Record<string, string> = {};
 
-    for (let i = 0; i < rows.length; i++) {
+    db.transaction(() => { for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r.group_name || !r.addon_name) {
         errors.push(`Row ${i + 2}: missing group_name or addon_name`); continue;
@@ -413,7 +421,7 @@ router.post('/import/addons', requireRole('owner', 'manager'), (req: Request, re
          VALUES (?, ?, ?, ?, 1, 0, ?, ?)`
       ).run(uuidv4(), groupId, r.addon_name, price, now(), now());
       addonsCreated++;
-    }
+    } })();
 
     res.json({ groups_created: groupsCreated, addons_created: addonsCreated, skipped, errors });
   } catch (err: any) {

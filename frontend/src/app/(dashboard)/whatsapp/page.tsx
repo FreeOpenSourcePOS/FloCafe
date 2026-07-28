@@ -348,7 +348,7 @@ export default function WhatsAppPage() {
   };
 
   const addBlock = async () => {
-    if (!blockPhone.trim()) {
+    if (!/^\+[1-9]\d{7,14}$/.test(blockPhone.trim())) {
       toast.error(t('whatsapp.blocklist.phoneRequired'));
       return;
     }
@@ -363,6 +363,10 @@ export default function WhatsAppPage() {
   };
 
   const removeBlock = async (phone: string) => {
+    if (!await confirm(t('whatsapp.blocklist.removeConfirm', { phone }), {
+      confirmLabel: t('whatsapp.blocklist.removeCta'),
+      destructive: true,
+    })) return;
     try {
       await api.delete(`/whatsapp/blocklist/${encodeURIComponent(phone)}`);
       void refreshBlocklist();

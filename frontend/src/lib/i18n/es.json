@@ -1505,6 +1505,7 @@
   "whatsapp.blocklist.colReason": "Motivo",
   "whatsapp.blocklist.colWhen": "Cuándo",
   "whatsapp.blocklist.removeCta": "Quitar",
+  "whatsapp.blocklist.removeConfirm": "¿Quitar {phone} de la lista de bloqueados?",
   "whatsapp.blocklist.addCta": "Agregar",
   "whatsapp.blocklist.phoneRequired": "Ingresá un número de teléfono.",
   "whatsapp.blocklist.addedSuccess": "Agregado a la lista de bloqueo.",

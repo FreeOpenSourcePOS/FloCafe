@@ -2,6 +2,30 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 
+function findNativeBinaries(root) {
+  const matches = [];
+  const visit = (current) => {
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      const candidate = path.join(current, entry.name);
+      if (entry.isFile() && entry.name === 'better_sqlite3.node') {
+        matches.push(candidate);
+      } else if (entry.isDirectory() && !entry.isSymbolicLink()) {
+        visit(candidate);
+      }
+    }
+  };
+
+  if (fs.existsSync(root)) visit(root);
+  return matches;
+}
+
 // Arch enum from builder-util: ia32=0, x64=1, armv7l=2, arm64=3, universal=4
 module.exports = async function afterPack(context) {
   const { appOutDir, packager, arch } = context;
@@ -18,46 +42,36 @@ module.exports = async function afterPack(context) {
     return;
   }
 
-  // ── Mac: rebuild better-sqlite3 for arm64 ─────────────────────
+  // ── Mac: validate better-sqlite3 in the packaged app ──────────
   if (packager.platform.name !== 'mac') return;
   if (arch === 4) return; // skip the universal merge step
   if (arch !== 1 && arch !== 3) return; // only x64 and arm64
 
   const archName = arch === 1 ? 'x64' : 'arm64';
-  const electronVersion = packager.electronVersion || require('electron/package.json').version;
-  const projectDir = packager.projectDir;
-
-  console.log(`\n→ afterPack: rebuilding better-sqlite3 for darwin-${archName} (electron ${electronVersion})...`);
-
-  const result = spawnSync(
-    'npx',
-    ['@electron/rebuild', '-f', '-w', 'better-sqlite3', '--arch', archName, '--version', electronVersion],
-    { cwd: projectDir, stdio: 'inherit', shell: true }
+  const packagedBinaries = findNativeBinaries(appOutDir);
+  const packagedBinary = packagedBinaries.find((candidate) =>
+    candidate.includes(`${path.sep}app.asar.unpacked${path.sep}`)
   );
 
-  if (result.status !== 0) {
-    throw new Error(`better-sqlite3 rebuild failed for darwin-${archName} (exit ${result.status})`);
+  if (packagedBinary && fs.statSync(packagedBinary).size > 0) {
+    const expectedMachArch = arch === 1 ? 'x86_64' : 'arm64';
+    const inspection = spawnSync('file', [packagedBinary], { encoding: 'utf8' });
+    if (inspection.status !== 0 || !inspection.stdout.includes(expectedMachArch)) {
+      throw new Error(
+        `packaged better-sqlite3 binary has unexpected architecture for darwin-${archName}: ${inspection.stdout || inspection.stderr}`
+      );
+    }
+    console.log(`→ afterPack: ✓ validated darwin-${archName} better-sqlite3 binary at ${packagedBinary}`);
+    return;
   }
 
-  const srcBinary = path.join(
-    projectDir,
-    'node_modules/better-sqlite3/build/Release/better_sqlite3.node'
+  // Temporary diagnostics: preserve evidence when a runner packages a
+  // prebuild under a different path. Do not accept a host binary silently.
+  const sourceRoot = path.join(packager.projectDir, 'node_modules', 'better-sqlite3');
+  const sourceBinaries = findNativeBinaries(sourceRoot);
+  console.error(`→ afterPack: packaged better-sqlite3 binary search (${appOutDir}):`, packagedBinaries);
+  console.error(`→ afterPack: project better-sqlite3 binary search (${sourceRoot}):`, sourceBinaries);
+  throw new Error(
+    `packaged better-sqlite3 native binary not found for darwin-${archName} under ${appOutDir}`
   );
-
-  if (!fs.existsSync(srcBinary)) {
-    throw new Error(`better-sqlite3 rebuild completed without producing ${srcBinary}`);
-  }
-
-  const destBinary = path.join(
-    appOutDir,
-    'Flo Cafe.app',
-    'Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node'
-  );
-
-  if (!fs.existsSync(destBinary)) {
-    throw new Error(`packaged better-sqlite3 binary not found at ${destBinary}`);
-  }
-
-  fs.copyFileSync(srcBinary, destBinary);
-  console.log(`→ afterPack: ✓ installed darwin-${archName} better-sqlite3 binary`);
 };

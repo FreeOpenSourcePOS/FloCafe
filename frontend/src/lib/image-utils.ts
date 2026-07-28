@@ -38,19 +38,24 @@ export function compressImage(file: File, quality = 0.8): Promise<string | null>
       ctx.drawImage(img, offsetX, offsetY, size, size, 0, 0, size, size);
 
       // Try compression with retry at lower quality
-      const qualities = [quality, 0.6, 0.4];
-      for (const q of qualities) {
-        const dataUri = canvas.toDataURL('image/webp', q);
-        if (dataUri.length <= MAX_BASE64_LENGTH) {
-          resolve(dataUri);
+      const qualities = [Math.min(1, Math.max(0, quality)), 0.6, 0.4];
+      try {
+        for (const q of qualities) {
+          const dataUri = canvas.toDataURL('image/webp', q);
+          if (dataUri.length <= MAX_BASE64_LENGTH) {
+            resolve(dataUri);
+            return;
+          }
+        }
+
+        // All qualities too large — try PNG as fallback (smaller than original)
+        const pngUri = canvas.toDataURL('image/png');
+        if (pngUri.length <= MAX_BASE64_LENGTH) {
+          resolve(pngUri);
           return;
         }
-      }
-
-      // All qualities too large — try PNG as fallback (smaller than original)
-      const pngUri = canvas.toDataURL('image/png');
-      if (pngUri.length <= MAX_BASE64_LENGTH) {
-        resolve(pngUri);
+      } catch {
+        resolve(null);
         return;
       }
 
@@ -75,8 +80,9 @@ export function compressImage(file: File, quality = 0.8): Promise<string | null>
  */
 export function nameToColor(name: string): string {
   let hash = 0;
-  for (let i = 0; i < name.length; i++) {
-    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  for (const character of name) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    hash = codePoint + ((hash << 5) - hash);
   }
   const hue = Math.abs(hash) % 360;
   return `hsl(${hue}, 45%, 65%)`;

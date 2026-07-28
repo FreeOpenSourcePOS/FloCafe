@@ -39,9 +39,13 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled: boole
         // defer to it instead of also firing here, or a real scanner typing
         // into a focused field would trigger both.
         const target = e.target as HTMLElement | null;
-        const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA';
+        const isTextInput = target?.tagName === 'INPUT' || target?.tagName === 'TEXTAREA' || target?.isContentEditable;
         if (!isTextInput && code.length >= MIN_CODE_LENGTH) {
-          onScanRef.current(code);
+          try {
+            onScanRef.current(code);
+          } catch (error) {
+            console.error('[useBarcodeScanner] Scan handler failed:', error);
+          }
         }
         return;
       }
@@ -59,6 +63,10 @@ export function useBarcodeScanner(onScan: (code: string) => void, enabled: boole
     };
 
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      bufferRef.current = '';
+      lastKeyTimeRef.current = 0;
+    };
   }, [enabled]);
 }

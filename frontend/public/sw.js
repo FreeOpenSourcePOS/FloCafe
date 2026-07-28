@@ -10,18 +10,22 @@ const PRECACHE_URLS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
+    caches.open(CACHE_NAME)
+      .then((cache) => Promise.all(
+        PRECACHE_URLS.map((url) => cache.add(url).catch(() => undefined))
+      ))
+      .then(() => self.skipWaiting())
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
+      Promise.all(keys
+        .filter((k) => k !== CACHE_NAME)
+        .map((k) => caches.delete(k).catch(() => false)))
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -41,9 +45,17 @@ self.addEventListener('fetch', (event) => {
     fetch(event.request)
       .then((response) => {
         const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+        event.waitUntil(
+          caches.open(CACHE_NAME)
+            .then((cache) => cache.put(event.request, clone))
+            .catch(() => undefined)
+        );
         return response;
       })
-      .catch(() => caches.match(event.request).then((cached) => cached || new Response('', { status: 503, statusText: 'Offline' })))
+      .catch(() => caches.match(event.request).then((cached) =>
+        cached || (event.request.mode === 'navigate'
+          ? caches.match('/dashboard')
+          : Promise.resolve(undefined))
+      ).then((cached) => cached || new Response('Offline', { status: 503, statusText: 'Offline' })))
   );
 });

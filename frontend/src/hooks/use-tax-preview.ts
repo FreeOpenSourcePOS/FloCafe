@@ -99,7 +99,9 @@ export function useTaxPreview(
         setError('Failed to calculate tax');
         setTax(null);
       } finally {
-        setLoading(false);
+        if (abortRef.current === controller) {
+          setLoading(false);
+        }
       }
     }, 300);
 

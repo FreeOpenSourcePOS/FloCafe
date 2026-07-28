@@ -274,19 +274,27 @@ for (const dbPath of targets) {
 
   section('JSON field sanity (order_items)');
   if (tableExists('order_items')) {
-    const rows = db.prepare(`
-      SELECT id, addons, variant_selection, modifier_selection, tax_breakdown
-      FROM order_items
-    `).all() as any[];
+    // Migration v30 removed the legacy addons column after normalizing it.
+    // Keep the audit compatible with both pre- and post-migration databases.
+    const orderItemColumns = columns('order_items');
+    const jsonColumns = ['addons', 'variant_selection', 'modifier_selection', 'tax_breakdown']
+      .filter((column) => orderItemColumns.includes(column));
+    const rows = jsonColumns.length > 0
+      ? db.prepare(`SELECT id, ${jsonColumns.join(', ')} FROM order_items`).all() as any[]
+      : [];
     let badJson = 0;
     for (const r of rows) {
-      for (const col of ['addons', 'variant_selection', 'modifier_selection', 'tax_breakdown']) {
+      for (const col of jsonColumns) {
         const val = r[col];
         if (val == null || val === '') continue;
         try { JSON.parse(val); } catch { badJson++; fail(`order_items.${r.id}.${col}: invalid JSON`); }
       }
     }
-    if (badJson === 0) ok('all JSON fields parse cleanly');
+    if (badJson === 0) {
+      ok(jsonColumns.length > 0
+        ? 'all available JSON fields parse cleanly'
+        : 'no JSON fields present');
+    }
   }
 
   section('KDS pairing tokens');

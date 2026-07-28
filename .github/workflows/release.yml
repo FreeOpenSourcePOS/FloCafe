@@ -13,9 +13,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CSC_IDENTITY_AUTO_DISCOVERY: false
-
 jobs:
   create-release:
     runs-on: ubuntu-latest
@@ -300,6 +297,12 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
+          # Explicit creds are provided above; disable electron-builder's own
+          # keychain/cert auto-discovery so it can't pick up an unrelated
+          # identity. Scoped to this job only — release-mac relies on
+          # electron-builder resolving mac.identity by name (see #168), which
+          # this flag can suppress entirely (electron-userland/electron-builder#7515).
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
       - name: Verify Windows release assets
         # Same class of bug as macOS's missing latest-mac.yml: electron-updater's

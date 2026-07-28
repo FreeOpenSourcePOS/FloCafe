@@ -2,6 +2,12 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.5] - 2026-07-28
+
+### Fixed
+- Verification-only release: no user-facing changes. v2.4.4's `release-mac` got past code signing (confirmed: it actually signed with the new Developer ID Application cert) but failed at notarization with an Apple ID lock (401) — now resolved, with a fresh app-specific password in `APPLE_APP_SPECIFIC_PASSWORD`.
+- Scoped `CSC_IDENTITY_AUTO_DISCOVERY: false` (added workflow-wide in `bbc0470`, apparently intended for the new Windows signing step alongside it) down to just the `release-windows` job's "Build Windows" step. Left workflow-wide, it risked silently skipping macOS code signing again — electron-builder still exhibits this even with `CSC_LINK`/`CSC_KEY_PASSWORD` explicitly set (electron-userland/electron-builder#7515) — which would have undone the fix this release is trying to prove (#168).
+
 ## [2.4.4] - 2026-07-28
 
 ### Fixed

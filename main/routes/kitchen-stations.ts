@@ -8,12 +8,7 @@ const router = Router();
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    let query = 'SELECT * FROM kitchen_stations WHERE is_active = 1';
-    const params: any[] = [];
-
-    query += ' ORDER BY sort_order, name';
-
-    const stations = db.prepare(query).all(...params);
+    const stations = db.prepare('SELECT * FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_order, name').all();
     res.json({ kitchenStations: stations });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -68,7 +63,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       id, name, description || null,
       category_ids ? JSON.stringify(category_ids) : null,
       printer_id || null,
-      printer_ip || null, printer_port || 9100, printer_name || null,
+      printer_ip || null, printer_port ?? 9100, printer_name || null,
       sort_order || 0, now(), now()
     );
 

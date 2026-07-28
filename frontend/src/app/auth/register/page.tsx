@@ -45,7 +45,11 @@ export default function RegisterPage() {
       // Auto-select the newly created tenant
       const newTenants = useAuthStore.getState().tenants;
       if (newTenants.length > 0) {
-        await selectTenant(newTenants[0].id);
+        try {
+          await selectTenant(newTenants[0].id);
+        } catch {
+          // ignore tenant auto-select errors, router.push proceeds
+        }
       }
       toast.success(t('auth.accountCreated'));
       router.push('/dashboard');

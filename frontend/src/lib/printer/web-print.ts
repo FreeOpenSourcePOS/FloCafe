@@ -263,7 +263,9 @@ function getPaperStyles(size: PaperSize): string {
 }
 
 function formatAmount(value: number | string, currency: string, locale: string): string {
-  return `${currency}${Number(value).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const num = Number(value);
+  if (isNaN(num)) return `${currency}0.00`;
+  return `${currency}${num.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function capitalize(str: string): string {

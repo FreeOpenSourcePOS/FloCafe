@@ -6,12 +6,22 @@ import pt from './i18n/pt.json';
 const translations: Record<Language, Record<string, string>> = { en, es, pt };
 
 const PLURAL_RE = /\{(\w+),\s*plural,\s*((?:\s*(?:zero|one|two|few|many|other)\s*\{[^}]*\})+)\s*\}/g;
+const pluralRulesCache = new Map<string, Intl.PluralRules>();
+
+function getPluralRules(locale: string): Intl.PluralRules {
+  let pr = pluralRulesCache.get(locale);
+  if (!pr) {
+    pr = new Intl.PluralRules(locale);
+    pluralRulesCache.set(locale, pr);
+  }
+  return pr;
+}
 
 function formatIcuPlural(template: string, params: Record<string, string | number>, lang: Language): string {
   return template.replace(PLURAL_RE, (_match, name: string, cases: string) => {
     const raw = Number(params[name] ?? 0);
     const locale = lang === 'es' ? 'es-AR' : lang === 'pt' ? 'pt-BR' : 'en';
-    const pr = new Intl.PluralRules(locale).select(raw);
+    const pr = getPluralRules(locale).select(raw);
     const ordered = ['zero', 'one', 'two', 'few', 'many', 'other'];
     const seen: Record<string, string> = {};
     const caseRe = /(zero|one|two|few|many|other)\s*\{([^}]*)\}/g;

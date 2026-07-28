@@ -29,6 +29,8 @@ export function useServerKdsInfo(baseUrl = ''): ServerKdsInfo {
         country: server.country,
         kdsDefaultView: server.kdsDefaultView,
       });
+    }).catch(() => {
+      if (!cancelled) setInfo(EMPTY);
     });
     return () => {
       cancelled = true;

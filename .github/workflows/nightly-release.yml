@@ -24,8 +24,11 @@ jobs:
           - os: ubuntu-latest
             target: --linux
             extra-deps: sudo apt-get update -qq && sudo apt-get install -y fakeroot dpkg
+          - os: macos-15-intel
+            target: --mac --x64
+            extra-deps: echo "No extra deps needed"
           - os: macos-latest
-            target: --mac
+            target: --mac --arm64
             extra-deps: echo "No extra deps needed"
           - os: windows-latest
             target: --win

@@ -157,9 +157,20 @@ jobs:
           snapcraft upload "$SNAP" --release=stable
 
   release-mac:
-    runs-on: macos-latest
+    runs-on: ${{ matrix.runner }}
     needs: create-release
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: macos-15-intel
+          - arch: arm64
+            runner: macos-latest
+    concurrency:
+      group: release-mac-${{ github.ref }}-${{ matrix.arch }}
+      cancel-in-progress: true
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -220,7 +231,7 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
 
       - name: Build macOS
-        run: npm run build:frontend && npm run build && npx electron-builder --mac --publish never
+        run: npm run build:frontend && npm run build && npx electron-builder --mac --${{ matrix.arch }} --publish never
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}

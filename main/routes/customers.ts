@@ -220,6 +220,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
     }
 
     const id = `cust-${randomUUID()}`;
+    const timestamp = now();
     db.prepare(`
       INSERT INTO customers (id, phone, name, email, country_code, address, notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -231,8 +232,8 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       finalCountryCode,
       address ? String(address).trim() : null,
       notes ? String(notes).trim() : null,
-      now(),
-      now()
+      timestamp,
+      timestamp
     );
 
     const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(id);

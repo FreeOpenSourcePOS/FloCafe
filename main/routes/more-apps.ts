@@ -57,14 +57,24 @@ async function toAppResponse(app: AppEntry) {
 }
 
 router.get('/', async (_req: Request, res: Response) => {
-  const apps = await Promise.all(MORE_APPS.map(toAppResponse));
-  res.json({ apps });
+  try {
+    const apps = await Promise.all(MORE_APPS.map(toAppResponse));
+    res.json({ apps });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 // GET /api/more-apps/revflo — backs the consolidated RevFlo card in
 // Settings → Integrations (see AppEntry note above).
 router.get('/revflo', async (_req: Request, res: Response) => {
-  res.json({ app: await toAppResponse(REVFLO_APP) });
+  try {
+    res.json({ app: await toAppResponse(REVFLO_APP) });
+  } catch (error: any) {
+    console.error('[API] Internal error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 export const moreAppsRoutes = router;

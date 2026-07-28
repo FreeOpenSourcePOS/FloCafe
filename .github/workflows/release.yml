@@ -177,12 +177,21 @@ jobs:
         # unsigned/unnotarized build — that shipped for every release before
         # this check existed and is exactly what gets the app Gatekeeper-blocked
         # ("...should move it to the Bin") for anyone who downloads it.
+        #
+        # Notarization uses an App Store Connect API key rather than
+        # Apple ID + app-specific password (#168): the password-based flow
+        # works fine run interactively from a trusted Mac but was reliably
+        # rejected by Apple with a misleading "Your Apple ID has been locked"
+        # 401 when run from GitHub Actions — a known limitation of
+        # password-based auth from automated/CI contexts. API keys don't
+        # expire and sidestep this entirely; see electron.build/docs/notarization.
         run: |
           missing=()
           [ -z "$CSC_LINK" ] && missing+=("MAC_CERTS")
           [ -z "$CSC_KEY_PASSWORD" ] && missing+=("MAC_CERTS_PASSWORD")
-          [ -z "$APPLE_ID" ] && missing+=("APPLE_ID")
-          [ -z "$APPLE_APP_SPECIFIC_PASSWORD" ] && missing+=("APPLE_APP_SPECIFIC_PASSWORD")
+          [ -z "$APPLE_API_KEY" ] && missing+=("APPLE_API_KEY")
+          [ -z "$APPLE_API_KEY_ID" ] && missing+=("APPLE_API_KEY_ID")
+          [ -z "$APPLE_API_ISSUER" ] && missing+=("APPLE_API_ISSUER")
           if [ ${#missing[@]} -gt 0 ]; then
             echo "::error::Missing required secret(s) for signed/notarized macOS build: ${missing[*]}"
             exit 1
@@ -190,16 +199,31 @@ jobs:
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+
+      - name: Write App Store Connect API key to disk
+        # @electron/notarize's notarytool strategy expects APPLE_API_KEY to be
+        # a *file path* to the .p8, not its contents — unlike CSC_LINK, which
+        # electron-builder accepts as base64. The secret holds the base64 of
+        # the .p8 (see CONTRIBUTING.md); decode it to a temp file per run.
+        run: |
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          echo "$APPLE_API_KEY" | base64 --decode > "$KEY_PATH"
+          echo "APPLE_API_KEY_PATH=$KEY_PATH" >> "$GITHUB_ENV"
+        env:
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
 
       - name: Build macOS
         run: npm run build:frontend && npm run build && npx electron-builder --mac --publish never
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_API_KEY: ${{ env.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
           APPLE_TEAM_ID: BKDY677XJA
 
       - name: Verify macOS release assets

@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.6] - 2026-07-28
+
+### Fixed
+- Verification-only release: no user-facing changes. v2.4.4/v2.4.5's `release-mac` signed correctly but failed notarization with a misleading `HTTP 401: Your Apple ID has been locked` — confirmed via `xcrun notarytool history` that the same Apple ID/password/team combination works fine run interactively from a trusted Mac, meaning this was Apple-side fraud/automation detection on password-based auth from CI, not a real credential problem. Switched `release-mac` notarization to an App Store Connect API key (`APPLE_API_KEY`/`APPLE_API_KEY_ID`/`APPLE_API_ISSUER`), which is Apple's and electron-builder's own recommended approach for CI and doesn't hit this failure mode. Documented in CONTRIBUTING.md (#168).
+
 ## [2.4.5] - 2026-07-28
 
 ### Fixed

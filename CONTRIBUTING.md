@@ -56,6 +56,28 @@ then runs a check (`npm run verify:electron`) against what landed in
   `verify:electron` still fails after that, it's a real problem — open an
   issue rather than bypassing Gatekeeper.
 
+### macOS notarization credentials (#168)
+
+`release-mac` notarizes via an App Store Connect **API key**, not Apple ID +
+app-specific password. We switched after the password-based flow reliably
+failed from GitHub Actions with a misleading `HTTP 401: Your Apple ID has
+been locked` — `xcrun notarytool` with the identical credentials worked fine
+run interactively from a trusted Mac, confirming it was CI/automation
+fraud-detection on Apple's end, not an actual account or credential problem.
+API keys don't expire and avoid this class of issue entirely (this is
+Apple's and electron-builder's own recommended approach for CI, not a
+workaround).
+
+`APPLE_API_KEY` must be an **absolute file path** to the `.p8` key
+(`@electron/notarize` reads it from disk, unlike `CSC_LINK` which
+electron-builder accepts as base64 directly) — so the `APPLE_API_KEY` GitHub
+secret holds the `.p8` file's contents base64-encoded, and a workflow step
+decodes it to a runner temp path before `Build macOS` runs. To rotate the
+key: generate a new one in **App Store Connect → Users and Access →
+Integrations → App Store Connect API**, then update all three secrets
+(`APPLE_API_KEY`, `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`) — Apple only lets
+you download the `.p8` once, so save it before navigating away.
+
 ### Useful Commands
 
 | Command | What it does |

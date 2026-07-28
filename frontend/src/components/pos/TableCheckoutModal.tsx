@@ -31,6 +31,12 @@ export default function TableCheckoutModal({
 }: Props) {
   const { t } = useI18n();
   const fmt = useFormatCurrency();
+  const formatItemTotal = (value: unknown, fallback: unknown) => {
+    const total = Number(value);
+    if (Number.isFinite(total)) return fmt(total);
+    const subtotal = Number(fallback);
+    return fmt(Number.isFinite(subtotal) ? subtotal : 0);
+  };
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -148,7 +154,7 @@ export default function TableCheckoutModal({
                     )}
                   </div>
                   <span className="text-xs text-gray-600 ml-2 font-medium">
-                    {fmt(Number(item.total))}
+                    {formatItemTotal(item.total, item.subtotal)}
                   </span>
                 </div>
               ))}

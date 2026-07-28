@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Printer, FileText, MessageCircle, Download, Usb, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePrinterStore } from '@/hooks/usePrinter';
@@ -25,20 +25,17 @@ export default function PrintTestPage() {
   const { printBill, printGstBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
   const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
   const { t } = useI18n();
-  // Bail out of the now-unavailable KOT test mode. Read directly during render (React's
-  // recommended pattern for "adjusting state when a prop changes") — this is self-limiting,
-  // since setting testMode to 'receipt' makes the condition false on the next render.
-  if (!kotPrintingEnabled && testMode === 'kot') setTestMode('receipt');
+  const effectiveTestMode: TestMode = !kotPrintingEnabled && testMode === 'kot' ? 'receipt' : testMode;
 
-  const testBill = createTestBill();
-  const testOrder = createTestOrder();
-  const testTenant = createTestTenant();
-  const testCustomer = createTestCustomer();
+  const testBill = useMemo(() => createTestBill(), []);
+  const testOrder = useMemo(() => createTestOrder(), []);
+  const testTenant = useMemo(() => createTestTenant(), []);
+  const testCustomer = useMemo(() => createTestCustomer(), []);
 
   const handlePrint = async () => {
     setTesting(true);
     try {
-      switch (testMode) {
+      switch (effectiveTestMode) {
         case 'receipt':
           if (printMethod === 'browser') {
             const html = generateThermalReceiptHtml(testBill, testTenant, paperWidth, { t });
@@ -166,7 +163,7 @@ export default function PrintTestPage() {
                   key={opt.value}
                   onClick={() => setTestMode(opt.value)}
                   className={`flex items-center gap-2 p-3 rounded-lg border transition-colors ${
-                    testMode === opt.value
+                    effectiveTestMode === opt.value
                       ? 'border-brand bg-brand/5 text-brand'
                       : 'border-gray-200 hover:border-gray-300'
                   }`}
@@ -272,7 +269,7 @@ export default function PrintTestPage() {
             {testing ? t('printTest.printing') : t('printTest.runTest')}
           </Button>
 
-          {(testMode === 'web-a4' || testMode === 'web-a5') && (
+          {(effectiveTestMode === 'web-a4' || effectiveTestMode === 'web-a5') && (
             <Button
               onClick={handleDownloadHtml}
               variant="outline"
@@ -283,7 +280,7 @@ export default function PrintTestPage() {
             </Button>
           )}
 
-          {testMode === 'whatsapp' && (
+          {effectiveTestMode === 'whatsapp' && (
             <Button
               onClick={handleCopyWhatsappText}
               variant="outline"

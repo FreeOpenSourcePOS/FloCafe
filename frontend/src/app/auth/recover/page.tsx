@@ -31,7 +31,10 @@ export default function RecoverAccessPage() {
   useEffect(() => {
     api.get('/auth/setup/status')
       .then(({ data }) => setPinAvailable(!!data.masterPinAvailable))
-      .catch(() => setPinAvailable(true)); // unknown — don't block the form on a network hiccup, let submit surface the real error instead
+      .catch(() => {
+        console.warn('[RecoverAccess] Could not verify Master PIN availability');
+        setPinAvailable(false);
+      });
   }, []);
 
   const passwordsEntered = newPassword.length > 0 && confirmPassword.length > 0;

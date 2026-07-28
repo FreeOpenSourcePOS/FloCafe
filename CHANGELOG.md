@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.1] - 2026-07-28
+
+### Fixed
+- Verification-only release: no user-facing changes. Cut specifically to run the `release-mac` pipeline end-to-end on a real macOS GitHub Actions runner with live signing credentials, exercising the `verify-electron-runtime.sh` gate and the post-upload `codesign --verify --deep --strict` / `spctl --assess` / `xcrun stapler validate` checks against the actual published artifact added in `e2d4cd0` (#168).
+
 ## [2.4.0] - 2026-07-26
 
 ### Fixed

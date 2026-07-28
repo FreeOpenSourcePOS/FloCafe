@@ -18,6 +18,7 @@ function runTest() {
     '/usr/bin/flocafe --no-sandbox',
     'electron . --appName=flo-desktop',
     'node /path/to/FloCafe/dev-server.js',
+    'node /path/to/FloCafe/dist/index.js',
     'com.flo.desktop.helper',
     'flo-pos-service',
   ];
@@ -36,6 +37,8 @@ function runTest() {
     'node /Users/other-project/dist/index.js',
     'node /Users/other-project/dev-server.js',
     'node /home/user/app/dev-server.js',
+    'node /Users/dev/FloCafe/other-server.js',
+    'node /Users/dev/FloCafe-tools/dev-server.js',
     'python3 -m http.server 3000',
     'nginx: master process',
     'postgres -D /data',

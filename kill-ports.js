@@ -30,11 +30,12 @@ const isLinux = os.platform() === 'linux';
 //   - Linux: executableName "flocafe" (snap/AppImage/deb binary path)
 //   - Mac/Windows: productName "Flo Cafe"
 const FLO_PATTERNS = [
-  /flo[_\-]?desktop/i,  // legacy Linux app.name (kept for dev backward compat)
-  /flocafe/i,           // Linux executableName (snap/AppImage/deb) or project directory
-  /Flo\s*Cafe/i,        // macOS/Windows productName
-  /com\.flo\.desktop/i, // macOS bundle ID
-  /flo[_\-]?pos/i,      // dev title fallback
+  /(?:^|[\s\\/])flocafe(?:\.exe)?(?:$|\s)/i,
+  /(?:^|[\s\\/])Flo Cafe\.app(?:[\\/]Contents[\\/]MacOS[\\/]Flo Cafe)?(?:$|\s)/i,
+  /(?:^|\s)com\.flo\.desktop(?:\.\S*)?(?:$|\s)/i,
+  /(?:^|\s)flo[_\-]?pos(?:-service)?(?:\.exe)?(?:$|\s)/i,
+  /(?:^|\s)electron(?:\s+\S+)*\s+--appName=flo[_\-]?desktop(?:$|\s)/i,
+  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]FloCafe[\\/](?:dev-server\.js|dist[\\/]index\.js)(?:$|\s)/i,
 ];
 
 function isFloProcess(cmdline) {

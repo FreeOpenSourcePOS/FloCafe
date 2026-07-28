@@ -113,7 +113,9 @@ if ($entry) {
 # ── sweep, in case it left anything behind) ──────────────────────────────
 Write-Step "Cleaning up install directory, shortcuts, and shims..."
 $candidatePaths = New-Object System.Collections.Generic.List[string]
-if ($installLocation) { $candidatePaths.Add($installLocation) }
+# Never recursively delete an arbitrary registry-supplied path. The app's own
+# uninstaller handles custom install locations; fallback cleanup is restricted
+# to the known Flo install roots below.
 $candidatePaths.Add("$env:LOCALAPPDATA\Programs\$AppName")
 $candidatePaths.Add("$env:LOCALAPPDATA\Programs\flo-desktop")
 if ($env:ProgramFiles) { $candidatePaths.Add("$env:ProgramFiles\$AppName") }

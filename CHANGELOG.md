@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.3] - 2026-07-28
+
+### Fixed
+- Root cause of the `release-mac` failures in v2.4.1/v2.4.2, found via v2.4.2's diagnostics (#168): Electron 43 removed its automatic postinstall download as a supply-chain hardening measure ([electron/electron#49328](https://github.com/electron/electron/pull/49328)) — it now only fetches its binary lazily, the first time the `electron` CLI is actually launched. `npm ci` in CI never launches `electron`, so `node_modules/electron/dist` stayed empty and `verify-electron-runtime.sh` correctly failed. `postinstall` now runs the replacement `install-electron` bin script first to force an eager download, matching what happens locally once you've ever run `npm run dev`. Reverted v2.4.2's temporary `--foreground-scripts` CI diagnostics now that the cause is known.
+
 ## [2.4.2] - 2026-07-28
 
 ### Fixed

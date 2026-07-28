@@ -26,9 +26,14 @@ This launches both the Next.js dev server (port 3002) and the Electron app (port
 
 ### macOS Gatekeeper & the Electron dev binary
 
-`npm install` runs a check (`npm run verify:electron`) against the Electron
-binary it just downloaded into `node_modules/electron/dist`. Two things are
-worth knowing about this:
+Electron 43 removed the old automatic postinstall download (a supply-chain
+hardening change — see [electron/electron#49328](https://github.com/electron/electron/pull/49328)):
+by default it now only fetches its binary lazily, the first time the
+`electron` CLI itself is launched. Since nothing in `npm ci` (including CI)
+launches `electron` directly, our `postinstall` explicitly runs the
+replacement `install-electron` bin script first to force an eager download,
+then runs a check (`npm run verify:electron`) against what landed in
+`node_modules/electron/dist`. Two things are worth knowing about this:
 
 - **`codesign --verify --deep --strict` failing against
   `node_modules/electron/dist/Electron.app` is expected and harmless.** The

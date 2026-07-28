@@ -98,8 +98,10 @@ interface UserAuthCacheEntry {
 // after the DB is updated (vuln-0001). Kept short so requireAuth doesn't need
 // a DB hit on every single request.
 const USER_AUTH_CACHE_TTL_MS = 30 * 1000;
+const USER_AUTH_CACHE_PRUNE_INTERVAL_MS = USER_AUTH_CACHE_TTL_MS;
 
 const userAuthCache = new Map<string, UserAuthCacheEntry>();
+let lastUserAuthCachePruneAt = 0;
 
 /**
  * Looks up (and caches) whether a JWT's subject is still an active user, and
@@ -108,6 +110,16 @@ const userAuthCache = new Map<string, UserAuthCacheEntry>();
  */
 export function getUserAuthStatus(userId: string): { isActive: boolean; role: string } | null {
   const now = Date.now();
+  if (
+    userAuthCache.size > 1000 &&
+    now - lastUserAuthCachePruneAt >= USER_AUTH_CACHE_PRUNE_INTERVAL_MS
+  ) {
+    for (const [k, v] of userAuthCache.entries()) {
+      if (v.expiresAt <= now) userAuthCache.delete(k);
+    }
+    lastUserAuthCachePruneAt = now;
+  }
+
   const cached = userAuthCache.get(userId);
   if (cached && cached.expiresAt > now) {
     return { isActive: cached.isActive, role: cached.role };
@@ -144,6 +156,12 @@ const revokedTokens = new Set<string>();
 
 export function revokeToken(token: string): void {
   if (token && typeof token === 'string') {
+    if (revokedTokens.has(token)) return;
+    if (revokedTokens.size >= 5000) {
+      // Keep set bounded to prevent unbounded memory growth over long server uptime
+      const firstToken = revokedTokens.values().next().value;
+      if (firstToken !== undefined) revokedTokens.delete(firstToken);
+    }
     revokedTokens.add(token);
   }
 }

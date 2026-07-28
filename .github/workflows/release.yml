@@ -161,7 +161,28 @@ jobs:
           node-version: '22'
 
       - name: Install npm dependencies
-        run: npm ci
+        # TEMPORARY: --foreground-scripts + a post-mortem directory dump,
+        # investigating why node_modules/electron/dist has no *.app on this
+        # runner (#168) — verify-electron-runtime.sh's postinstall hook
+        # normally hides the electron package's own install-script output,
+        # so this surfaces it instead of failing blind. Revert once diagnosed.
+        run: |
+          set +e
+          npm ci --foreground-scripts
+          status=$?
+          echo "::group::npm ci exit status: $status"
+          echo "::endgroup::"
+          echo "::group::node_modules/electron contents"
+          find node_modules/electron -maxdepth 3 2>&1
+          echo "::endgroup::"
+          echo "::group::electron package.json (version/postinstall)"
+          cat node_modules/electron/package.json 2>&1
+          echo "::endgroup::"
+          echo "::group::@electron/get cache dirs"
+          find "$HOME/.cache/electron" -maxdepth 3 2>&1
+          find "$HOME/Library/Caches/electron" -maxdepth 3 2>&1
+          echo "::endgroup::"
+          exit $status
 
       - name: Verify Electron dev runtime
         # npm ci already runs this via package.json's postinstall — repeated

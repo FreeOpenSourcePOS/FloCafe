@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.4.2] - 2026-07-28
+
+### Fixed
+- Verification-only release: no user-facing changes. v2.4.1's `release-mac` job failed at `verify-electron-runtime.sh` — `node_modules/electron/dist` had no `*.app` bundle after `npm ci` on the GitHub-hosted macOS runner, reproduced identically on a second attempt. This release adds temporary `--foreground-scripts` diagnostics to the `release-mac` "Install npm dependencies" step to see what the `electron` package's own postinstall actually did (#168).
+
 ## [2.4.1] - 2026-07-28
 
 ### Fixed

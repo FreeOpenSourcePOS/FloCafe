@@ -371,16 +371,22 @@ class GoogleDriveService {
 
   private async applyRetention(drive: ReturnType<typeof google.drive>, folderId: string): Promise<void> {
     const retention = this.retentionFromSettings(this.readSettings());
-    const res = await drive.files.list({
-      q: `'${folderId}' in parents and trashed=false`,
-      fields: 'files(id, name, createdTime)',
-      orderBy: 'createdTime',
-      pageSize: 1000,
-      spaces: 'drive',
-    });
-    const files = (res.data.files || [])
-      .filter((f): f is { id: string; name?: string | null; createdTime: string } => Boolean(f.id && f.createdTime))
-      .map((f) => ({ id: f.id, createdTime: f.createdTime }));
+    const files: { id: string; createdTime: string }[] = [];
+    let pageToken: string | undefined;
+    do {
+      const res = await drive.files.list({
+        q: `'${folderId}' in parents and trashed=false`,
+        fields: 'nextPageToken, files(id, name, createdTime)',
+        orderBy: 'createdTime',
+        pageSize: 1000,
+        pageToken,
+        spaces: 'drive',
+      });
+      files.push(...(res.data.files || [])
+        .filter((f): f is { id: string; name?: string | null; createdTime: string } => Boolean(f.id && f.createdTime))
+        .map((f) => ({ id: f.id, createdTime: f.createdTime })));
+      pageToken = res.data.nextPageToken || undefined;
+    } while (pageToken);
     const toDelete = computeFilesToDelete(files, retention);
     // Keep a small bounded concurrency window: retention can involve many
     // files, but serial deletion needlessly prolongs backup completion.

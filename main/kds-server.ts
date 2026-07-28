@@ -8,7 +8,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
-import { getJWTSecret } from './routes/auth';
+import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked } from './middleware/security';
 
 let kdsServer: http.Server | null = null;
@@ -22,16 +22,6 @@ type KdsRequestUser = {
   role: string;
   categoryIds: string[];
 };
-
-function parseCategoryIds(value: unknown): string[] {
-  if (!value || typeof value !== 'string') return [];
-  try {
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.map(String) : [];
-  } catch {
-    return [];
-  }
-}
 
 export function isKdsServerRunning(): boolean {
   return kdsServer !== null;
@@ -198,7 +188,7 @@ export function startKdsServer(): Promise<void> {
             name: user.name,
             email: user.email,
             role: user.role,
-            category_ids: user.category_ids ? JSON.parse(user.category_ids) : [],
+            category_ids: parseCategoryIds(user.category_ids),
           },
         });
       } catch (error: any) {

@@ -1,7 +1,7 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
-import { getJWTSecret } from '../routes/auth';
+import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked } from '../middleware/security';
 
 interface KdsClient {
@@ -127,7 +127,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
       return;
     }
 
-    const categoryIds = user.category_ids ? JSON.parse(user.category_ids) : [];
+    const categoryIds = parseCategoryIds(user.category_ids);
 
     client.userId = user.id;
     client.userName = user.name;

@@ -107,6 +107,16 @@ function normalizeEmail(email: unknown): string {
   return String(email || '').trim().toLowerCase();
 }
 
+export function parseCategoryIds(value: unknown): string[] {
+  if (typeof value !== 'string' || value.length === 0) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -370,7 +380,7 @@ router.post('/login', authRateLimit(), async (req: Request, res: Response) => {
         name: user.name,
         email: user.email,
         role: user.role,
-        category_ids: user.category_ids ? JSON.parse(user.category_ids) : [],
+        category_ids: parseCategoryIds(user.category_ids),
       },
       // Single tenant — frontend auto-selects when tenants.length === 1
       tenants: [tenant],

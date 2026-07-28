@@ -1,4 +1,4 @@
-import { isAllowedLocalWindowUrl } from '../main/security/url-allowlist';
+import { isAllowedLocalWindowUrl, isSafeExternalUrl } from '../main/security/url-allowlist';
 
 function assertEqual(actual: boolean, expected: boolean, message: string): void {
   if (actual !== expected) throw new Error(`${message}: expected ${expected}, got ${actual}`);
@@ -20,5 +20,14 @@ assertEqual(isAllowedLocalWindowUrl(`https://localhost:${port}/kds`, port, local
 assertEqual(isAllowedLocalWindowUrl('not a URL', port, localIp), false, 'malformed URL denied');
 assertEqual(isAllowedLocalWindowUrl(`http://localhost:${port}@attacker.com/kds`, port, localIp), false, 'userinfo lookalike denied');
 assertEqual(isAllowedLocalWindowUrl(`http://192.168.1.26:${port}/kds`, port, localIp), false, 'unconfigured local IP denied');
+
+// ── openExternal protocol validation ──────────────────────────────────────────
+assertEqual(isSafeExternalUrl('https://accounts.google.com/o/oauth2/v2/auth'), true, 'https scheme allowed for openExternal');
+assertEqual(isSafeExternalUrl('http://example.com/docs'), true, 'http scheme allowed for openExternal');
+assertEqual(isSafeExternalUrl('file:///etc/passwd'), false, 'file scheme rejected for openExternal');
+assertEqual(isSafeExternalUrl('javascript:alert(1)'), false, 'javascript scheme rejected for openExternal');
+assertEqual(isSafeExternalUrl('data:text/html,<h1>test</h1>'), false, 'data scheme rejected for openExternal');
+assertEqual(isSafeExternalUrl('custom-protocol://action'), false, 'custom scheme rejected for openExternal');
+assertEqual(isSafeExternalUrl('invalid-url'), false, 'malformed URL rejected for openExternal');
 
 console.log('URL allowlist tests passed');

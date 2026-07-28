@@ -276,6 +276,20 @@ async function main() {
     });
     assertEqual(res.status, 502, 'E4: Non-existent server returns 502');
 
+    // E5: Userinfo in URL rejected
+    res = await api(baseUrl, '/api/products/fetch-url', {
+      method: 'POST', headers: authHeader,
+      body: { url: 'https://user:pass@example.com/photo.jpg' },
+    });
+    assertEqual(res.status, 400, 'E5: Userinfo URL rejected');
+
+    // E6: Non-standard port rejected
+    res = await api(baseUrl, '/api/products/fetch-url', {
+      method: 'POST', headers: authHeader,
+      body: { url: 'https://example.com:8443/photo.jpg' },
+    });
+    assertEqual(res.status, 400, 'E6: Non-standard port rejected');
+
     // ── F) POST / — create product with image validation ───────────────────
     console.log('\n─── F) POST / — create with image validation ───');
 

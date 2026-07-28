@@ -21,6 +21,7 @@
  */
 
 import { app, shell, safeStorage } from 'electron';
+import { isSafeExternalUrl } from '../security/url-allowlist';
 import * as http from 'http';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -460,6 +461,9 @@ class GoogleDriveService {
           state,
         });
 
+        if (!isSafeExternalUrl(authUrl)) {
+          return finish(() => reject(new Error('Generated OAuth URL uses an unsafe protocol')));
+        }
         shell.openExternal(authUrl).catch((err) => finish(() => reject(err)));
       });
     });

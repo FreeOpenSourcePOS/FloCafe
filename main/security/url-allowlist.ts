@@ -20,3 +20,12 @@ export function isAllowedLocalWindowUrl(rawUrl: string, port: number, localIp?: 
     return false;
   }
 }
+
+export function isSafeExternalUrl(rawUrl: string): boolean {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}

@@ -14,7 +14,7 @@ import { registerIpcHandlers } from './ipc';
 import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
-import { isAllowedLocalWindowUrl } from './security/url-allowlist';
+import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
 
 // ── GPU compatibility ────────────────────────────────────────────────────────
 // On Windows, some systems hit "GPU process exited unexpectedly" (exit code
@@ -287,7 +287,11 @@ function createWindow(): void {
         },
       };
     }
-    shell.openExternal(url).catch((err) => console.warn('[Flo] Failed to open external URL:', err?.message || err));
+    if (isSafeExternalUrl(url)) {
+      shell.openExternal(url).catch((err) => console.warn('[Flo] Failed to open external URL:', err?.message || err));
+    } else {
+      console.warn('[Flo] Blocked unsafe external URL scheme:', url);
+    }
     return { action: 'deny' };
   });
 

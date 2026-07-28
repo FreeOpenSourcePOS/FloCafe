@@ -4,12 +4,16 @@ import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
+import * as https from 'https';
+import * as net from 'net';
+
+const MAX_FETCH_BYTES = 10 * 1024 * 1024;
 
 /**
  * Resolves a hostname and rejects it if any resolved address is a
  * loopback/private/link-local/metadata/reserved IP (vuln-0003 SSRF guard).
  */
-async function assertPublicHostname(hostname: string): Promise<void> {
+async function resolvePublicHostname(hostname: string): Promise<string> {
   let addresses: dns.LookupAddress[];
   try {
     addresses = await dns.promises.lookup(hostname, { all: true, verbatim: true });
@@ -27,6 +31,61 @@ async function assertPublicHostname(hostname: string): Promise<void> {
       throw new Error('URL resolves to a disallowed address');
     }
   }
+  return addresses[0].address;
+}
+
+function fetchPinnedHttps(
+  rawUrl: string,
+  resolvedAddress: string,
+  signal: AbortSignal,
+): Promise<{ status: number; headers: Headers; body: Buffer }> {
+  const parsedUrl = new URL(rawUrl);
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error?: Error, result?: { status: number; headers: Headers; body: Buffer }) => {
+      if (settled) return;
+      settled = true;
+      if (error) reject(error);
+      else resolve(result!);
+    };
+
+    const request = https.request({
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || 443,
+      path: `${parsedUrl.pathname}${parsedUrl.search}`,
+      method: 'GET',
+      headers: { 'User-Agent': 'FloCafe-ImageProxy/1.0' },
+      servername: parsedUrl.hostname,
+      signal,
+      lookup: (_hostname, _options, callback) => {
+        callback(null, resolvedAddress, net.isIP(resolvedAddress));
+      },
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      let totalBytes = 0;
+
+      response.on('data', (chunk: Buffer) => {
+        totalBytes += chunk.length;
+        if (totalBytes > MAX_FETCH_BYTES) {
+          response.destroy();
+          request.destroy();
+          finish(new Error('Image too large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      response.on('end', () => finish(undefined, {
+        status: response.statusCode || 502,
+        headers: new Headers(response.headers as Record<string, string>),
+        body: Buffer.concat(chunks),
+      }));
+      response.on('error', (error) => finish(error));
+    });
+
+    request.on('error', (error) => finish(error));
+    request.end();
+  });
 }
 
 /**
@@ -336,7 +395,7 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
     const MAX_REDIRECTS = 5;
     let currentUrl = url;
     // Named to avoid colliding with Express's Response type imported above.
-    let response: Awaited<ReturnType<typeof fetch>> | undefined;
+    let response: { status: number; headers: Headers; body: Buffer } | undefined;
 
     for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       let parsedUrl: URL;
@@ -348,9 +407,16 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
       if (parsedUrl.protocol !== 'https:') {
         return res.status(400).json({ error: 'Only HTTPS URLs are supported' });
       }
+      if (parsedUrl.username || parsedUrl.password) {
+        return res.status(400).json({ error: 'URLs with user credentials are not allowed' });
+      }
+      if (parsedUrl.port && parsedUrl.port !== '443') {
+        return res.status(400).json({ error: 'Non-standard ports are not allowed' });
+      }
 
+      let resolvedAddress: string;
       try {
-        await assertPublicHostname(parsedUrl.hostname);
+        resolvedAddress = await resolvePublicHostname(parsedUrl.hostname);
       } catch (error: any) {
         if (error?.code === 'ENOTFOUND') {
           return res.status(502).json({ error: 'Could not resolve hostname' });
@@ -361,17 +427,16 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
 
-      let hopResponse: Awaited<ReturnType<typeof fetch>>;
+      let hopResponse: { status: number; headers: Headers; body: Buffer };
       try {
-        hopResponse = await fetch(currentUrl, {
-          signal: controller.signal,
-          redirect: 'manual',
-          headers: { 'User-Agent': 'FloCafe-ImageProxy/1.0' },
-        });
+        hopResponse = await fetchPinnedHttps(currentUrl, resolvedAddress, controller.signal);
       } catch (fetchError: any) {
         clearTimeout(timeout);
         if (fetchError.name === 'AbortError') {
           return res.status(504).json({ error: 'Request timed out' });
+        }
+        if (fetchError.message === 'Image too large') {
+          return res.status(413).json({ error: 'Image too large (max 10 MB)' });
         }
         return res.status(502).json({ error: 'Could not fetch the image' });
       }
@@ -400,7 +465,7 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
     }
 
     try {
-      if (!response.ok) {
+      if (response.status < 200 || response.status >= 300) {
         return res.status(502).json({ error: 'Could not fetch the image' });
       }
 
@@ -412,34 +477,12 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
 
       // Size limit (header) — fast rejection of obviously huge files
       const contentLength = parseInt(response.headers.get('content-length') || '0', 10);
-      if (contentLength > 10 * 1024 * 1024) {
+      if (contentLength > MAX_FETCH_BYTES) {
         return res.status(413).json({ error: 'Image too large (max 10 MB)' });
       }
 
-      // Stream with cumulative size tracking (handles chunked responses)
-      const reader = response.body?.getReader();
-      if (!reader) {
-        return res.status(502).json({ error: 'Could not read image data' });
-      }
-
-      const chunks: Uint8Array[] = [];
-      let totalBytes = 0;
-      const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        totalBytes += value.length;
-        if (totalBytes > MAX_BYTES) {
-          reader.cancel();
-          return res.status(413).json({ error: 'Image too large (max 10 MB)' });
-        }
-        chunks.push(value);
-      }
-
       // Convert to Base64 data URI
-      const buffer = Buffer.concat(chunks);
-      const base64 = buffer.toString('base64');
+      const base64 = response.body.toString('base64');
       const detectedType = contentType.split(';')[0].trim(); // e.g., "image/jpeg"
       const dataUri = `data:${detectedType};base64,${base64}`;
 

@@ -173,3 +173,10 @@ body {
 .animate-shake {
   animation: shake 0.4s ease-in-out;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-shake,
+  .animate-shake-centered {
+    animation: none;
+  }
+}

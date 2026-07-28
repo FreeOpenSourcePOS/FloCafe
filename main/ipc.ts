@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, createBackup, restoreBackup, restoreBackup as restoreFn, now, getDbPath, getCurrentSchemaVersion, getSchemaVersionFromBackup, closeDatabase, initDatabase } from './db';
 import { getLocalIP } from './server';
+import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus } from './services/whatsapp';
@@ -226,10 +227,13 @@ export function registerIpcHandlers(): void {
     }
   });
 
+  // Module-level reference to ensure single instance
+  let activeKdsWindow: BrowserWindow | null = null;
+
   // KDS info
   ipcMain.handle('get-kds-info', async () => {
     const localIP = getLocalIP();
-    const port = 3001;
+    const port = getKdsPort();
     return {
       url: `http://${localIP}:${port}/kds`,
       wsUrl: `ws://${localIP}:${port}/kds`,
@@ -240,7 +244,13 @@ export function registerIpcHandlers(): void {
 
   // Window management
   ipcMain.handle('open-kds-window', async () => {
-    const kdsWindow = new BrowserWindow({
+    if (activeKdsWindow && !activeKdsWindow.isDestroyed()) {
+      activeKdsWindow.focus();
+      return;
+    }
+
+    const port = getKdsPort();
+    activeKdsWindow = new BrowserWindow({
       width: 1200,
       height: 800,
       title: 'Flo - Kitchen Display',
@@ -251,8 +261,12 @@ export function registerIpcHandlers(): void {
       },
     });
 
+    activeKdsWindow.on('closed', () => {
+      activeKdsWindow = null;
+    });
+
     const localIP = getLocalIP();
-    kdsWindow.loadURL(`http://${localIP}:3001/kds`);
+    activeKdsWindow.loadURL(`http://${localIP}:${port}/kds`);
   });
 
   ipcMain.handle('get-app-info', async () => {

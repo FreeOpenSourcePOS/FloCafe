@@ -244,6 +244,15 @@ export function startKdsServer(): Promise<void> {
 
         const orders = db.prepare(query).all();
 
+        // Pre-fetch allowed product IDs once if category restrictions apply to eliminate N+1 queries
+        let allowedProductIds: Set<string> | null = null;
+        if (categoryIds.length > 0) {
+          const productRows = db.prepare(`
+            SELECT id FROM products WHERE category_id IN (${categoryIds.map(() => '?').join(',')})
+          `).all(...categoryIds) as { id: string }[];
+          allowedProductIds = new Set(productRows.map((p) => p.id));
+        }
+
         const ordersWithItems = orders.map((order: any) => {
           const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
           // #150: hide the void reversal line (bill adjustment, not a kitchen
@@ -252,12 +261,8 @@ export function startKdsServer(): Promise<void> {
           let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
           // Filter by category if provided
-          if (categoryIds.length > 0) {
-            const productIds = db.prepare(`
-              SELECT id FROM products WHERE category_id IN (${categoryIds.map(() => '?').join(',')})
-            `).all(...categoryIds).map((p: any) => p.id);
-
-            items = items.filter((item: any) => productIds.includes(item.product_id));
+          if (allowedProductIds) {
+            items = items.filter((item: any) => allowedProductIds!.has(item.product_id));
           }
 
           return {

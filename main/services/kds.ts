@@ -265,6 +265,15 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
 
   const orders = db.prepare(query).all();
 
+  // Pre-fetch allowed product IDs once if category restrictions apply to eliminate N+1 queries
+  let allowedProductIds: Set<string> | null = null;
+  if (categoryIds.length > 0) {
+    const productRows = db.prepare(`
+      SELECT id FROM products WHERE category_id IN (${categoryIds.map(() => '?').join(',')})
+    `).all(...categoryIds) as { id: string }[];
+    allowedProductIds = new Set(productRows.map((p) => p.id));
+  }
+
   // Filter and attach items
   const ordersWithItems = orders.map((order: any) => {
     const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
@@ -274,11 +283,8 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
     // Filter items by category if user has category restrictions
-    if (categoryIds.length > 0) {
-      items = items.filter((item: any) => {
-        const product = db.prepare('SELECT category_id FROM products WHERE id = ?').get(item.product_id) as any;
-        return product && categoryIds.includes(product.category_id);
-      });
+    if (allowedProductIds) {
+      items = items.filter((item: any) => allowedProductIds!.has(item.product_id));
     }
 
     // Normalize: frontend expects table.name, query aliases the join as table_name.

@@ -54,6 +54,9 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       setCrop({ x: 0, y: 0 });
       setZoom(1);
     };
+    reader.onerror = () => {
+      toast.error('Failed to read image file');
+    };
     reader.readAsDataURL(file);
   }, []);
 
@@ -69,53 +72,79 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
   const handleCropSave = useCallback(async () => {
     if (!cropSrc) return;
 
-    const img = new Image();
-    img.src = cropSrc;
-    await new Promise<void>((resolve) => { img.onload = () => resolve(); });
+    try {
+      const img = new Image();
+      img.src = cropSrc;
+      await new Promise<void>((resolve, reject) => {
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('Failed to load image for cropping'));
+      });
 
-    // Use the actual pixel coordinates from react-easy-crop
-    const { x, y, width, height } = cropAreaRef.current;
+      // Use the actual pixel coordinates from react-easy-crop, or fall back to full natural size
+      const width = cropAreaRef.current.width || img.width;
+      const height = cropAreaRef.current.height || img.height;
+      const x = cropAreaRef.current.x || 0;
+      const y = cropAreaRef.current.y || 0;
 
-    const TARGET_SIZE = 400; // Fixed max dimension for product images
-    const canvas = document.createElement('canvas');
-    canvas.width = TARGET_SIZE;
-    canvas.height = TARGET_SIZE;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+      const TARGET_SIZE = 400; // Fixed max dimension for product images
+      const canvas = document.createElement('canvas');
+      canvas.width = TARGET_SIZE;
+      canvas.height = TARGET_SIZE;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
 
-    // Draw ONLY the cropped region — scaled down to TARGET_SIZE
-    ctx.drawImage(
-      img,
-      x, y, width, height,   // source: cropped area from original
-      0, 0, TARGET_SIZE, TARGET_SIZE // destination: scaled down
-    );
+      // Draw ONLY the cropped region — scaled down to TARGET_SIZE
+      ctx.drawImage(
+        img,
+        x, y, width, height,   // source: cropped area from original
+        0, 0, TARGET_SIZE, TARGET_SIZE // destination: scaled down
+      );
 
-    const dataUri = canvas.toDataURL('image/webp', 0.8);
+      let dataUri: string;
+      try {
+        dataUri = canvas.toDataURL('image/webp', 0.8);
+      } catch {
+        toast.error('Failed to process image canvas.');
+        setMode('idle');
+        setCropSrc(null);
+        return;
+      }
 
-    if (dataUri === 'data:,') {
-      toast.error('Failed to process image. Try a different file.');
+      if (dataUri === 'data:,') {
+        toast.error('Failed to process image. Try a different file.');
+        setMode('idle');
+        setCropSrc(null);
+        return;
+      }
+
+      if (dataUri.length > MAX_IMAGE_LENGTH) {
+        toast.error('Compressed image still too large. Try a simpler image.');
+        return;
+      }
+
+      onChange(dataUri);
       setMode('idle');
       setCropSrc(null);
-      return;
+      toast.success('Image ready');
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Failed to crop image';
+      toast.error(errorMsg);
+      setMode('idle');
+      setCropSrc(null);
     }
-
-    if (dataUri.length > MAX_IMAGE_LENGTH) {
-      toast.error('Compressed image still too large. Try a simpler image.');
-      return;
-    }
-
-    onChange(dataUri);
-    setMode('idle');
-    setCropSrc(null);
-    toast.success('Image ready');
   }, [cropSrc, onChange]);
 
   const handleUrlFetch = useCallback(async () => {
-    if (!urlInput.trim()) return;
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    if (!trimmed.toLowerCase().startsWith('https://')) {
+      toast.error('Only HTTPS URLs are supported');
+      return;
+    }
     setFetching(true);
 
     try {
-      const res = await api.post('/products/fetch-url', { url: urlInput.trim() });
+      const res = await api.post('/products/fetch-url', { url: trimmed });
       const dataUri = res.data.data;
 
       if (!dataUri) {

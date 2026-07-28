@@ -75,8 +75,10 @@ export default function SetupPage() {
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
 
   useEffect(() => {
+    let mounted = true;
     api.get('/auth/setup/status')
       .then(({ data }) => {
+        if (!mounted) return;
         setMasterPinAvailable(!!data.masterPinAvailable);
         // An owner already exists — /auth/setup/initialize is disabled server-side,
         // so bail out immediately instead of letting the user fill the whole wizard
@@ -86,7 +88,12 @@ export default function SetupPage() {
           window.location.replace('/auth/login');
         }
       })
-      .catch(() => setMasterPinAvailable(false));
+      .catch((err: unknown) => {
+        if (!mounted) return;
+        console.warn('[Setup] Failed to check setup status:', err);
+        setMasterPinAvailable(false);
+      });
+    return () => { mounted = false; };
   }, []);
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
@@ -107,7 +114,9 @@ export default function SetupPage() {
   const completeSetup = () => {
     usePosSettingsStore.getState().setLanguage(language);
     // Persist language server-side so the standalone KDS inherits it.
-    api.put(`/settings/language`, { value: language }).catch(() => {});
+    api.put(`/settings/language`, { value: language }).catch((err: unknown) => {
+      console.warn('[Setup] Failed to persist language setting:', err);
+    });
     logout();
     toast.success(t('setup.completeSetupSuccess'));
     window.location.replace('/auth/login');
@@ -119,7 +128,7 @@ export default function SetupPage() {
       return false;
     }
     if (!isPasswordValid(form.password)) {
-      toast.error('Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.');
+      toast.error(t('setup.errorPasswordRequirementsNotMet'));
       return false;
     }
     if (form.password !== form.confirmPassword) {
@@ -139,6 +148,7 @@ export default function SetupPage() {
   };
 
   const handleCompleteSetup = async () => {
+    if (loading) return;
     if (!validateOwner()) {
       setStep(3);
       return;
@@ -147,6 +157,23 @@ export default function SetupPage() {
       toast.error(t('setup.masterPinRequired'));
       setStep(2);
       return;
+    }
+
+    if (cloudEnabled && cloudServerUrl.trim()) {
+      try {
+        const parsed = new URL(cloudServerUrl.trim());
+        const localHttp = parsed.protocol === 'http:'
+          && ['localhost', '127.0.0.1', '::1', '[::1]'].includes(parsed.hostname);
+        if (parsed.protocol !== 'https:' && !localHttp) {
+          toast.error('Cloud server URL must use HTTPS (or local HTTP for development)');
+          setStep(5);
+          return;
+        }
+      } catch {
+        toast.error('Please enter a valid Cloud server URL');
+        setStep(5);
+        return;
+      }
     }
 
     setLoading(true);
@@ -177,8 +204,8 @@ export default function SetupPage() {
       });
       completeSetup();
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('setup.errorGeneric'));
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      toast.error(axiosErr.response?.data?.error || t('setup.errorGeneric'));
     } finally {
       setLoading(false);
     }

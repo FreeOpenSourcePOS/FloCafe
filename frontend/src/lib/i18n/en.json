@@ -1550,5 +1550,6 @@
   "whatsapp.send.error.notOnWhatsapp": "This phone isn’t registered on WhatsApp. Double-check the number with the customer.",
   "whatsapp.send.error.blocked": "This customer asked to stop receiving messages. Manage blocklist in WhatsApp → Connection.",
   "whatsapp.send.error.rateLimited": "Too many messages sent to this number recently.",
-  "whatsapp.send.customerPhoneRequired": "Add this customer’s phone number before sending."
+  "whatsapp.send.customerPhoneRequired": "Add this customer’s phone number before sending.",
+  "setup.errorPasswordRequirementsNotMet": "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number."
 }

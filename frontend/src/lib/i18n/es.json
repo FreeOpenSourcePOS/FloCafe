@@ -1549,6 +1549,7 @@
   "whatsapp.send.error.notConnected": "Flo no está conectado a WhatsApp. Reconectá en WhatsApp → Conexión.",
   "whatsapp.send.error.notOnWhatsapp": "Este número no está registrado en WhatsApp. Verificá el número con el cliente.",
   "whatsapp.send.error.blocked": "Este cliente pidió no recibir más mensajes. Gestioná la lista de bloqueo en WhatsApp → Conexión.",
-  "whatsapp.send.error.rateLimited": "Demasiados mensajes enviados a este número recientemente.",
-  "whatsapp.send.customerPhoneRequired": "Agregá el teléfono del cliente antes de enviar."
+  "whatsapp.send.error.rateLimited": "Se enviaron demasiados mensajes a este número recientemente.",
+  "whatsapp.send.customerPhoneRequired": "Agrega el número de teléfono del cliente antes de enviar.",
+  "setup.errorPasswordRequirementsNotMet": "La contraseña debe tener al menos 8 caracteres y contener al menos una mayúscula, una minúscula y un número."
 }

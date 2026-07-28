@@ -1550,5 +1550,6 @@
   "whatsapp.send.error.notOnWhatsapp": "Este telefone não está registrado no WhatsApp. Confira o número com o cliente.",
   "whatsapp.send.error.blocked": "Este cliente pediu para parar de receber mensagens. Gerencie a lista de bloqueio em WhatsApp → Conexão.",
   "whatsapp.send.error.rateLimited": "Muitas mensagens enviadas para este número recentemente.",
-  "whatsapp.send.customerPhoneRequired": "Adicione o número de telefone deste cliente antes de enviar."
+  "whatsapp.send.customerPhoneRequired": "Adicione o número de telefone do cliente antes de enviar.",
+  "setup.errorPasswordRequirementsNotMet": "A senha deve ter pelo menos 8 caracteres e conter pelo menos uma letra maiúscula, uma minúscula e um número."
 }

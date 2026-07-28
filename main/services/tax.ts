@@ -1,6 +1,5 @@
 import Decimal from 'decimal.js';
 import { getDatabase } from '../db';
-import { COUNTRIES } from '../countries';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 
 interface TenantInfo {
@@ -72,69 +71,6 @@ import type { CountryPack } from '../tax-packs/types';
 function round(value: number, decimals: number = 2): number {
   if (typeof value !== 'number' || isNaN(value) || !isFinite(value)) return 0;
   return Number(Math.round(Number(value + 'e' + decimals)) + 'e-' + decimals);
-}
-
-const INDIA_LEGACY_FIXED_RATES: Record<string, number> = {
-  restaurant: 5,
-  salon: 5,
-};
-
-function legacyTaxAmount(taxType: string, amount: number, rate: number): number {
-  return taxType === 'inclusive'
-    ? amount - (amount / (1 + rate / 100))
-    : amount * rate / 100;
-}
-
-function calculateLegacyItemTax(
-  tenant: TenantInfo,
-  product: Product,
-  taxableAmount: number,
-  customer: Customer | null,
-): TaxResult {
-  const taxType = product.tax_type || 'none';
-  if (taxType === 'none') return { tax_amount: 0, tax_breakdown: [], tax_type: 'none', tax_snapshot: null };
-
-  const rate = tenant.country === 'IN'
-    ? INDIA_LEGACY_FIXED_RATES[tenant.business_type] ?? Number(product.tax_rate || 0)
-    : tenant.country === 'TH'
-      ? 7
-      : Number(product.tax_rate || 0);
-  if (!Number.isFinite(rate) || rate <= 0) {
-    return { tax_amount: 0, tax_breakdown: [], tax_type: taxType, tax_snapshot: null };
-  }
-
-  const taxAmount = round(legacyTaxAmount(taxType, taxableAmount, rate));
-  if (tenant.country === 'IN') {
-    if (customer?.gstin && customer.customer_state_code && tenant.state_code
-      && customer.customer_state_code !== tenant.state_code) {
-      return {
-        tax_amount: taxAmount,
-        tax_breakdown: [{ title: 'IGST', rate, amount: taxAmount }],
-        tax_type: taxType,
-        tax_snapshot: null,
-      };
-    }
-    const halfAmount = round(taxAmount / 2);
-    return {
-      tax_amount: taxAmount,
-      tax_breakdown: [
-        { title: 'CGST', rate: round(rate / 2), amount: halfAmount },
-        { title: 'SGST', rate: round(rate / 2), amount: round(taxAmount - halfAmount) },
-      ],
-      tax_type: taxType,
-      tax_snapshot: null,
-    };
-  }
-
-  const title = tenant.country === 'TH'
-    ? 'VAT'
-    : COUNTRIES.find((country) => country.code === tenant.country)?.taxName || 'Tax';
-  return {
-    tax_amount: taxAmount,
-    tax_breakdown: [{ title, rate, amount: taxAmount }],
-    tax_type: taxType,
-    tax_snapshot: null,
-  };
 }
 
 // Same country -> bundled-pack selection used by calculateItemTax below and
@@ -270,11 +206,10 @@ export function calculateItemTax(
     };
   }
 
-  // Products created before the category migration retain their legacy tax
-  // configuration until an explicit category is assigned. This adapter is
-  // intentionally unreachable for category-based products, so new sales use
-  // the pack engine while upgrades never silently become tax-free.
-  return calculateLegacyItemTax(tenant, product, taxableAmount, customer);
+  // Tax is opt-in through a resolved category. Legacy product.tax_type and
+  // product.tax_rate columns remain in the schema only for non-destructive
+  // upgrade compatibility; they are not authoritative for new transactions.
+  return { tax_amount: 0, tax_breakdown: [], tax_type: 'none', tax_snapshot: null };
 }
 
 const CHARGE_KINDS: ChargeTaxKind[] = ['packaging', 'delivery', 'service_charge'];

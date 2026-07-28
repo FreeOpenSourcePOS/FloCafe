@@ -147,8 +147,10 @@ function main() {
 
   assert.equal((db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count, 10);
   // A product originating in this pre-tax-engine fixture can still carry the
-  // old columns after Phase 1. New checkout calculations must preserve that
-  // tax until an operator deliberately assigns a tax category.
+  // old tax_type/tax_rate columns after Phase 1, but those columns are not
+  // authoritative for new calculations — tax is opt-in through an explicitly
+  // resolved category only. An upgraded install must not silently start
+  // charging tax again based on stale legacy columns.
   const legacyProduct = db.prepare('SELECT * FROM products LIMIT 1').get() as any;
   db.prepare(`UPDATE products SET tax_category_id = NULL, tax_type = 'exclusive', tax_rate = 18 WHERE id = ?`)
     .run(legacyProduct.id);
@@ -159,12 +161,9 @@ function main() {
     100,
     null,
   );
-  assert.equal(legacyTax.tax_amount, 5, 'an upgraded legacy product still calculates tax before categorization');
-  assert.deepEqual(legacyTax.tax_breakdown, [
-    { title: 'CGST', rate: 2.5, amount: 2.5 },
-    { title: 'SGST', rate: 2.5, amount: 2.5 },
-  ]);
-  console.log('   ✓ legacy product tax continues to calculate after upgrade until categorized');
+  assert.equal(legacyTax.tax_amount, 0, 'an upgraded product with no resolved tax category charges no tax');
+  assert.deepEqual(legacyTax.tax_breakdown, []);
+  console.log('   ✓ an upgraded product with stale legacy tax_type/tax_rate charges no tax until categorized');
   const preservedOrder = db.prepare(`
     SELECT tax_amount, tax_breakdown, tax_snapshot FROM orders WHERE order_number = 'ORD-LEGACY-TAX'
   `).get() as any;

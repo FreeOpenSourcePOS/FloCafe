@@ -380,7 +380,7 @@ test('unclassified products are taxed at the standard rate, never silently zero'
   assert.ok(thailandUnclassified.ruleIds.length > 0, 'Thailand unclassified category must carry real tax rules');
 });
 
-test('products without a resolved tax category preserve legacy tax configuration', () => {
+test('products without a resolved tax category charge no tax, regardless of legacy tax_type/tax_rate', () => {
   const uncategorizedIndia = calculateItemTax(
     { country: 'IN', business_type: 'restaurant', state_code: 'KA' },
     { tax_type: 'exclusive', tax_rate: 18 },
@@ -388,12 +388,9 @@ test('products without a resolved tax category preserve legacy tax configuration
     null,
   );
   assert.deepEqual(uncategorizedIndia, {
-    tax_amount: 0.51,
-    tax_breakdown: [
-      { title: 'CGST', rate: 2.5, amount: 0.26 },
-      { title: 'SGST', rate: 2.5, amount: 0.25 },
-    ],
-    tax_type: 'exclusive',
+    tax_amount: 0,
+    tax_breakdown: [],
+    tax_type: 'none',
     tax_snapshot: null,
   });
 
@@ -404,9 +401,9 @@ test('products without a resolved tax category preserve legacy tax configuration
     null,
   );
   assert.deepEqual(uncategorizedFallback, {
-    tax_amount: 10,
-    tax_breakdown: [{ title: 'Sales Tax', rate: 10, amount: 10 }],
-    tax_type: 'inclusive',
+    tax_amount: 0,
+    tax_breakdown: [],
+    tax_type: 'none',
     tax_snapshot: null,
   });
 });

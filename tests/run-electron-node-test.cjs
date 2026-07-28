@@ -21,6 +21,7 @@ function runElectronNode(extraArgs, stdio = 'inherit') {
         ELECTRON_RUN_AS_NODE: '1',
       },
       encoding: stdio === 'pipe' ? 'utf8' : undefined,
+      timeout: 600_000,
     },
   );
 }
@@ -28,7 +29,7 @@ function runElectronNode(extraArgs, stdio = 'inherit') {
 function verifyBetterSqlite3() {
   const result = runElectronNode(['-e', "const Database = require('better-sqlite3'); const db = new Database(':memory:'); db.close();"], 'pipe');
   return {
-    ok: result.status === 0 && !result.error,
+    ok: result.status === 0 && !result.error && !result.signal,
     error: result.error || result.stderr || result.stdout,
   };
 }
@@ -41,6 +42,7 @@ function rebuildBetterSqlite3() {
     {
       stdio: 'inherit',
       env: process.env,
+      timeout: 600_000,
     },
   );
 }
@@ -51,7 +53,7 @@ if (!sqliteCheck.ok) {
   if (sqliteCheck.error) console.warn(String(sqliteCheck.error).trim());
 
   const rebuild = rebuildBetterSqlite3();
-  if (rebuild.error || rebuild.status !== 0) {
+  if (rebuild.error || rebuild.signal || rebuild.status !== 0) {
     if (rebuild.error) console.error(rebuild.error);
     process.exit(rebuild.status ?? 1);
   }
@@ -79,10 +81,11 @@ const result = spawnSync(
       ...process.env,
       ELECTRON_RUN_AS_NODE: '1',
     },
+    timeout: 600_000,
   },
 );
 
-if (result.error) {
+if (result.error || result.signal) {
   console.error(result.error);
   process.exit(1);
 }

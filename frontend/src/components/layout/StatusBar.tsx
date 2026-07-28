@@ -16,10 +16,13 @@ export default function StatusBar() {
   const [status, setStatus] = useState<StatusInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     async function fetchStatus() {
       if (typeof window === 'undefined' || !window.electronAPI?.getStatus) return;
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
 
       try {
         const data = await window.electronAPI.getStatus();
@@ -27,6 +30,8 @@ export default function StatusBar() {
         setError(null);
       } catch {
         setError(t('nav.statusError'));
+      } finally {
+        inFlightRef.current = false;
       }
     }
 

@@ -33,16 +33,22 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
     // If we don't know setup status yet, fetch it
     if (!isKdsPath && needsSetup === null) {
-      api.get('/auth/setup/status')
+      const controller = new AbortController();
+      let active = true;
+      api.get('/auth/setup/status', { signal: controller.signal })
         .then(({ data }) => {
-          setNeedsSetup(data.needsSetup);
+          if (active) setNeedsSetup(data.needsSetup);
         })
         .catch((err) => {
+          if (!active || (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) return;
           console.error('[AuthGuard] Failed to check setup status:', err);
-          // On error, assume no setup needed — let login handle it
-          setNeedsSetup(false);
+          // Fail closed: do not allow normal app routes when setup state is unknown.
+          setNeedsSetup(true);
         });
-      return; // wait for the result before redirecting
+      return () => {
+        active = false;
+        controller.abort();
+      }; // wait for the result before redirecting
     }
 
     if (needsSetup && !isSetupPath) {

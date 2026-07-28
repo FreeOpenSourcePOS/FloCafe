@@ -68,6 +68,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const [editingCustomer, setEditingCustomer] = useState(false);
   const [loyaltyPoints, setLoyaltyPoints] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const requestAbortRef = useRef<AbortController | null>(null);
   const nameRef = useRef<HTMLInputElement>(null);
   const autoAdvancedRef = useRef(false);
 
@@ -85,17 +86,24 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
 
   useEffect(() => {
     if (!customer) return;
-    api.get(`/customers/${customer.id}/wallet`)
+    const controller = new AbortController();
+    api.get(`/customers/${customer.id}/wallet`, { signal: controller.signal })
       .then((res) => setLoyaltyPoints(res.data.balance))
-      .catch(() => setLoyaltyPoints(null));
+      .catch((err: unknown) => {
+        if (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')) return;
+        setLoyaltyPoints(null);
+      });
+    return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer?.id]);
 
   useEffect(() => {
     if (cart.customerId && !cart.customer) {
-      api.get(`/customers/${cart.customerId}`)
+      const controller = new AbortController();
+      api.get(`/customers/${cart.customerId}`, { signal: controller.signal })
         .then(res => cart.setCustomer(res.data.customer))
         .catch(() => {});
+      return () => controller.abort();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart.customerId]);
@@ -103,15 +111,19 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   useEffect(() => {
     return () => {
       clearTimeout(debounceRef.current);
+      requestAbortRef.current?.abort();
     };
   }, []);
 
   const searchByPhone = (p: string) => {
     clearTimeout(debounceRef.current);
+    requestAbortRef.current?.abort();
     if (p.length < 3) { setMatched(null); setName(''); setSearched(false); return; }
     debounceRef.current = setTimeout(async () => {
+      const controller = new AbortController();
+      requestAbortRef.current = controller;
       try {
-        const { data } = await api.get(`/customers-search?q=${encodeURIComponent(p)}`);
+        const { data } = await api.get(`/customers-search?q=${encodeURIComponent(p)}`, { signal: controller.signal });
         const results = Array.isArray(data) ? data : (data.customers || []);
         const exactMatch = results.find((result: Customer) => phoneMatchesInput(result.phone_digits, p)) || null;
         const found: Customer | null = exactMatch || results[0] || null;
@@ -119,6 +131,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         setName(found ? found.name : '');
         setSearched(true);
       } catch {
+        if (controller.signal.aborted) return;
         setMatched(null);
         setName('');
         setSearched(true);

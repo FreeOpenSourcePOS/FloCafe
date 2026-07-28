@@ -10,7 +10,16 @@ const envPath = require('path').join(__dirname, '.env');
 if (fs.existsSync(envPath)) {
   for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
     const match = line.match(/^\s*([^#=\s]+)\s*=\s*(.*)$/);
-    if (match) process.env[match[1]] = match[2].trim();
+    if (!match) continue;
+    let value = match[2].trim();
+    if (value.startsWith('"') && value.endsWith('"')) {
+      try { value = JSON.parse(value); } catch { value = value.slice(1, -1); }
+    } else if (value.startsWith("'") && value.endsWith("'")) {
+      value = value.slice(1, -1);
+    } else {
+      value = value.replace(/\s+#.*$/, '').trim();
+    }
+    process.env[match[1]] = value;
   }
   console.log('[DevServer] Loaded .env');
 }
@@ -61,8 +70,32 @@ Module._load = function (request, parent, isMain) {
 
 // ── Now load and start the compiled backend ───────────────────────────────────
 const { initDatabase } = require('./dist/db');
+const { closeDatabase } = require('./dist/db');
 const { startServer } = require('./dist/server');
-const { startKdsServer } = require('./dist/kds-server');
+const { startKdsServer, stopKdsServer } = require('./dist/kds-server');
+const { stopServer } = require('./dist/server');
+
+let shuttingDown = false;
+async function shutdown(exitCode = 0) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  try { await Promise.resolve(stopServer()); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); exitCode = 1; }
+  try { await Promise.resolve(stopKdsServer()); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); exitCode = 1; }
+  try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); exitCode = 1; }
+  Module._load = originalLoad;
+  process.exit(exitCode);
+}
+
+process.once('SIGINT', () => void shutdown(0));
+process.once('SIGTERM', () => void shutdown(0));
+process.once('uncaughtException', (err) => {
+  console.error('[DevServer] Uncaught exception:', err);
+  void shutdown(1);
+});
+process.once('unhandledRejection', (err) => {
+  console.error('[DevServer] Unhandled rejection:', err);
+  void shutdown(1);
+});
 
 (async () => {
   try {
@@ -79,6 +112,6 @@ const { startKdsServer } = require('./dist/kds-server');
     console.log('[DevServer]    API health: http://localhost:3001/api/health');
   } catch (err) {
     console.error('[DevServer] Failed to start:', err);
-    process.exit(1);
+    await shutdown(1);
   }
 })();

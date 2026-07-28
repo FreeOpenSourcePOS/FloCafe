@@ -43,6 +43,10 @@ function isFloProcess(cmdline) {
   return FLO_PATTERNS.some((pat) => pat.test(cmdline));
 }
 
+function isValidPid(pid) {
+  return typeof pid === 'string' && /^\d+$/.test(pid) && Number(pid) > 0;
+}
+
 // ── Find processes on a port (cross-platform) ───────────────────────────────
 // Returns Array<{ pid: string, cmdline: string }>
 function getProcessesOnPort(port) {
@@ -61,6 +65,7 @@ function getProcessesOnPort(port) {
         if (m) pids.add(m[1]);
       }
       for (const pid of pids) {
+        if (!isValidPid(pid)) continue;
         try {
           const cmdOut = execSync(
             `wmic process where "ProcessId=${pid}" get CommandLine / value 2>nul`,
@@ -89,6 +94,7 @@ function getProcessesOnPort(port) {
         if (line.startsWith('p')) pids.add(line.slice(1));
       }
       for (const pid of pids) {
+        if (!isValidPid(pid)) continue;
         const cmdline = getCmdline(pid);
         results.push({ pid, cmdline });
       }
@@ -105,6 +111,7 @@ function getProcessesOnPort(port) {
       const pidMatches = [...out.matchAll(/pid=(\d+)/g)];
       for (const m of pidMatches) {
         const pid = m[1];
+        if (!isValidPid(pid)) continue;
         const cmdline = getCmdline(pid);
         results.push({ pid, cmdline });
       }
@@ -119,7 +126,7 @@ function getProcessesOnPort(port) {
         { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
       );
       for (const pid of out.trim().split(/\s+/)) {
-        if (!pid) continue;
+        if (!isValidPid(pid)) continue;
         const cmdline = getCmdline(pid);
         results.push({ pid, cmdline });
       }
@@ -165,6 +172,7 @@ const hasFuser = !isWindows && hasCommand('fuser');
 // ── Graceful kill: SIGTERM → wait → SIGKILL ─────────────────────────────────
 function gracefulKill(pid) {
   return new Promise((resolve) => {
+    if (!isValidPid(pid)) return resolve();
     // Try SIGTERM first
     exec(`kill ${pid} 2>/dev/null`, { shell: '/bin/sh' }, () => {
       // Wait 2 seconds for graceful shutdown
@@ -185,6 +193,7 @@ function gracefulKill(pid) {
 
 function gracefulKillWindows(pid) {
   return new Promise((resolve) => {
+    if (!isValidPid(pid)) return resolve();
     // taskkill without /F sends WM_CLOSE (graceful)
     exec(`taskkill /PID ${pid} 2>nul`, { shell: 'cmd.exe' }, () => {
       setTimeout(() => {

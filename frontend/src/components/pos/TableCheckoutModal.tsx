@@ -37,22 +37,25 @@ export default function TableCheckoutModal({
   const [addingItems, setAddingItems] = useState(false);
 
   useEffect(() => {
+    const controller = new AbortController();
     const fetchOrder = async () => {
       try {
-        const { data } = await api.get(`/tables/${table.id}`);
+        const { data } = await api.get(`/tables/${table.id}`, { signal: controller.signal });
         const tbl = data.table;
         const activeOrder = tbl.activeOrder || tbl.current_order;
         if (activeOrder) {
-          const orderRes = await api.get(`/orders/${activeOrder.id}`);
+          const orderRes = await api.get(`/orders/${activeOrder.id}`, { signal: controller.signal });
           setOrder(orderRes.data.order);
         }
       } catch {
+        if (controller.signal.aborted) return;
         toast.error(t('pos.loadOrderFailed'));
       } finally {
         setLoading(false);
       }
     };
     fetchOrder();
+    return () => controller.abort();
   }, [table.id, t]);
 
   const handleCheckout = async () => {

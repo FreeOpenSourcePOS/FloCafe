@@ -38,12 +38,29 @@ function seedPosFixture() {
   ).run('e2e-product', 'e2e-category', 'E2E Coffee', 100, 'gst', 0, 0, 999, 1, createdAt, createdAt);
 }
 
-async function stop(exitCode = 0) {
-  stopServer();
-  stopKdsServer();
-  closeDatabase();
-  fs.rmSync(testDir, { recursive: true, force: true });
-  process.exit(exitCode);
+let stopping = false;
+function stop(exitCode = 0) {
+  if (stopping) return;
+  stopping = true;
+  let cleanupFailed = false;
+  try { stopServer(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] Main server cleanup failed:', error);
+  }
+  try { stopKdsServer(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] KDS server cleanup failed:', error);
+  }
+  try { closeDatabase(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] Database cleanup failed:', error);
+  }
+  Module._load = originalLoad;
+  try { fs.rmSync(testDir, { recursive: true, force: true }); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] Fixture cleanup failed:', error);
+  }
+  process.exit(cleanupFailed ? 1 : exitCode);
 }
 
 (async () => {

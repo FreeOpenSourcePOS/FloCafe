@@ -231,10 +231,10 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
 router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
   try {
     const { billId, orderId, useUnicode = false, isReprint = false } = req.body;
-    console.log('[Print Bill] Request:', { billId, orderId, useUnicode, isReprint });
+    console.log('[Print Bill] Request received', { useUnicode, isReprint });
     
     if (!billId && !orderId) {
-      console.log('[Print Bill] Error: No billId or orderId provided');
+      console.log('[Print Bill] Rejected: missing bill or order reference');
       return res.status(400).json({ error: 'billId or orderId is required' });
     }
 
@@ -259,14 +259,12 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
       console.log('[Print Bill] Error: Bill not found');
       return res.status(404).json({ error: 'Bill not found' });
     }
-    console.log('[Print Bill] Bill:', bill.bill_number, 'Total:', bill.total);
 
     const order: any = db.prepare('SELECT * FROM orders WHERE id = ?').get(bill.order_id);
     if (!order) {
-      console.log('[Print Bill] Error: Order not found');
+      console.log('[Print Bill] Rejected: order not found');
       return res.status(404).json({ error: 'Order not found' });
     }
-    console.log('[Print Bill] Order:', order.order_number);
 
     // Fetch order items
     const items: any[] = attachEffectiveAddons(
@@ -275,7 +273,6 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
         .map(parseItemJson),
     );
     order.items = items;
-    console.log('[Print Bill] Items count:', items.length);
 
     // Fetch table info
     if (order.table_id) {
@@ -337,12 +334,12 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
       points_balance: pointsBalance,
     };
     const billTemplate = settings.bill_template;
-    console.log('[Print Bill] Business:', business.name, 'Template:', billTemplate || 'classic');
+    console.log('[Print Bill] Preparing receipt', { template: billTemplate || 'classic' });
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
     const success = await printReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint);
-    console.log('[Print Bill] Print result:', success);
+    console.log('[Print Bill] Print completed', { success });
 
     if (success) {
       res.json({ success: true });
@@ -351,7 +348,6 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     }
   } catch (error: any) {
     console.error('[Print Bill] Error:', error);
-    console.error('[Print Bill] Error stack:', error.stack);
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }

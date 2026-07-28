@@ -382,12 +382,16 @@ class GoogleDriveService {
       .filter((f): f is { id: string; name?: string | null; createdTime: string } => Boolean(f.id && f.createdTime))
       .map((f) => ({ id: f.id, createdTime: f.createdTime }));
     const toDelete = computeFilesToDelete(files, retention);
-    for (const id of toDelete) {
-      try {
-        await drive.files.delete({ fileId: id });
-      } catch (err) {
-        log.warn('[GoogleDrive] retention delete failed', id, (err as Error).message);
-      }
+    // Keep a small bounded concurrency window: retention can involve many
+    // files, but serial deletion needlessly prolongs backup completion.
+    for (let i = 0; i < toDelete.length; i += 5) {
+      await Promise.all(toDelete.slice(i, i + 5).map(async (id) => {
+        try {
+          await drive.files.delete({ fileId: id });
+        } catch (err) {
+          log.warn('[GoogleDrive] retention delete failed', id, (err as Error).message);
+        }
+      }));
     }
   }
 

@@ -7,6 +7,8 @@ const eslintConfig = defineConfig([
   ...nextTs,
   {
     rules: {
+      // Static export uses dynamic data URLs, QR codes, and user-selected
+      // product images; next/image optimization is unavailable in Electron.
       "@next/next/no-img-element": "off"
     }
   },

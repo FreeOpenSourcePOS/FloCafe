@@ -404,11 +404,15 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       toast.error('Select the active store-country pack to run a checkout calculation');
       return;
     }
-    if (!testCategoryId || !testAmount) return;
+    const amountNum = Number(testAmount);
+    if (!testCategoryId || !testAmount || isNaN(amountNum) || amountNum <= 0) {
+      toast.error('Please enter a valid positive test calculation amount');
+      return;
+    }
     try {
       const response = await api.post('/tax-packs/test-calculation', {
         category_id: testCategoryId,
-        amount: testAmount,
+        amount: amountNum,
         tax_behavior: testBehavior,
       });
       setCalculation(response.data.calculation);
@@ -495,7 +499,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                 className="ml-auto flex items-center gap-1 font-medium text-brand"
               >
                 {detail.active_version.validation.valid ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-                {detail.active_version.validation.valid ? '24 activation checks passed' : 'Activation checks failed'}
+                {detail.active_version.validation.valid
+                  ? `${detail.active_version.validation.checks.filter((c) => c.passed).length} of ${detail.active_version.validation.checks.length} activation checks passed`
+                  : 'Activation checks failed'}
                 <ChevronDown size={14} className={expandedChecklist ? 'rotate-180' : ''} />
               </button>
             </div>

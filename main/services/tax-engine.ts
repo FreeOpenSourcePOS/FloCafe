@@ -226,6 +226,9 @@ function fixedAmount(rule: TaxRule, quantity: Decimal): Decimal {
   if (rule.type !== 'fixed' || rule.amount === undefined || !rule.appliesPer) {
     throw new Error(`Fixed tax rule ${rule.id} requires amount and appliesPer`);
   }
+  if (!['unit', 'line'].includes(rule.appliesPer)) {
+    throw new Error(`Fixed tax rule ${rule.id} has invalid appliesPer value: ${rule.appliesPer}`);
+  }
   const amount = decimal(rule.amount);
   if (amount.lt(0)) throw new Error(`Fixed tax rule ${rule.id} cannot be negative`);
   return rule.appliesPer === 'unit' ? amount.mul(quantity) : amount;
@@ -238,7 +241,11 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
   if (quantity.lte(0)) throw new Error(`Line ${line.lineId} quantity must be greater than zero`);
   if (unitPrice.lt(0) || discount.lt(0)) throw new Error(`Line ${line.lineId} has a negative amount`);
 
-  const gross = Decimal.max(new TaxDecimal('0'), unitPrice.mul(quantity).minus(discount));
+  const grossAmount = unitPrice.mul(quantity);
+  if (discount.gt(grossAmount)) {
+    console.warn(`[TaxEngine] Line ${line.lineId} discount (${discount}) exceeds gross amount (${grossAmount}), clamping gross to 0.`);
+  }
+  const gross = Decimal.max(new TaxDecimal('0'), grossAmount.minus(discount));
   const resolution = resolveTaxCategory(input.pack, line);
   const category = resolution.categoryId
     ? input.pack.categories.find((entry) => entry.id === resolution.categoryId)
@@ -286,6 +293,7 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
     for (const rule of percentages) {
       if (rule.rate === undefined) throw new Error(`Percent tax rule ${rule.id} requires rate`);
       const rate = decimal(rule.rate).div('100');
+      if (rate.lt(0)) throw new Error(`Percent tax rule ${rule.id} rate cannot be negative`);
       let coefficientBase = new TaxDecimal('1');
       let interceptBase = new TaxDecimal('0');
       for (const dependencyId of rule.baseRuleIds || []) {
@@ -312,7 +320,9 @@ function calculateRawLine(input: TaxEngineInput, line: TaxEngineLine): RawLine {
       (sum, value) => sum.plus(value),
       new TaxDecimal('0'),
     );
-    taxableBase = remainderGross.minus(interceptTotal).div(coefficientTotal.plus('1'));
+    const divisor = coefficientTotal.plus('1');
+    if (divisor.isZero()) throw new Error(`Inclusive tax calculation divisor is zero on line ${line.lineId}`);
+    taxableBase = remainderGross.minus(interceptTotal).div(divisor);
     if (taxableBase.lt(0)) throw new Error(`Inclusive taxes exceed gross amount on line ${line.lineId}`);
     for (const rule of percentages) {
       rawAmounts.set(
@@ -394,8 +404,9 @@ function applyTaxRounding(pack: CountryPack, lines: RawLine[]): void {
     return ruleOrder !== 0 ? ruleOrder : left.lineId.localeCompare(right.lineId);
   });
   let index = 0;
-  while (units.gt(0)) {
-    ordered[index].rounded = ordered[index].rounded.plus(quantum);
+  while (units.gt(0) && ordered.length > 0) {
+    const item = ordered[index % ordered.length];
+    item.rounded = item.rounded.plus(quantum);
     units = units.minus('1');
     index += 1;
   }

@@ -197,7 +197,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   };
 
   const handlePay = async () => {
-    if (totalPayment < remaining - 0.01) {
+    if (totalPayment < remaining - 0.001) {
       toast.error(t('pos.paymentBelowBalance'));
       return;
     }
@@ -218,11 +218,11 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         const amt = parseFloat(p.amount);
         if (!amt || amt <= 0 || isNaN(amt)) continue;
         const res = await api.post(`/bills/${bill.id}/payment`, { amount: amt, method: p.method, customer_id: effectiveCustomerId });
-        if (res.data?.loyaltyPointsEarned > 0) earned = res.data.loyaltyPointsEarned;
+        if (res.data?.loyaltyPointsEarned > 0) earned += res.data.loyaltyPointsEarned;
       }
       if (walletAmt > 0) {
         const res = await api.post(`/bills/${bill.id}/payment`, { amount: walletAmt, method: 'wallet', customer_id: effectiveCustomerId });
-        if (res.data?.loyaltyPointsEarned > 0) earned = res.data.loyaltyPointsEarned;
+        if (res.data?.loyaltyPointsEarned > 0) earned += res.data.loyaltyPointsEarned;
       }
       setPointsEarned(earned);
       if (earned > 0) {

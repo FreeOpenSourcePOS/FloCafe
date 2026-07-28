@@ -48,12 +48,17 @@ export default function TaxBreakdown({ taxAmount, taxBreakdown, theme = 'dark' }
       </button>
       {expanded && hasBreakdown && (
         <div className="ml-4 mt-1 space-y-0.5">
-          {breakdownArray.map((line, i) => (
-            <div key={i} className={`flex justify-between text-xs ${theme === 'light' ? 'text-gray-400' : 'text-slate-400'}`}>
-              <span>{t('pos.taxLine', { title: line.title, rate: line.rate })}</span>
-              <span>{fmt(line.amount)}</span>
-            </div>
-          ))}
+          {breakdownArray.map((line, i) => {
+            const title = line?.title || 'Tax';
+            const rate = typeof line?.rate === 'number' ? line.rate : 0;
+            const amount = typeof line?.amount === 'number' ? line.amount : 0;
+            return (
+              <div key={`${title}_${rate}_${i}`} className={`flex justify-between text-xs ${theme === 'light' ? 'text-gray-400' : 'text-slate-400'}`}>
+                <span>{t('pos.taxLine', { title, rate })}</span>
+                <span>{fmt(amount)}</span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

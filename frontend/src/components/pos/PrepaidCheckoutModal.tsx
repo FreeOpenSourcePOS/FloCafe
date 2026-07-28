@@ -103,8 +103,9 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const preview = useMemo(() => {
     if (!tax) return null;
     const rawValue = parseFloat(discountValue) || 0;
-    const discountAmount = showDiscount && rawValue > 0
-      ? Math.round((discountType === 'percentage' ? (tax.subtotal * rawValue) / 100 : Math.min(rawValue, tax.subtotal)) * 100) / 100
+    const cappedValue = discountType === 'percentage' ? Math.min(100, Math.max(0, rawValue)) : Math.max(0, rawValue);
+    const discountAmount = showDiscount && cappedValue > 0
+      ? Math.round((discountType === 'percentage' ? (tax.subtotal * cappedValue) / 100 : Math.min(cappedValue, tax.subtotal)) * 100) / 100
       : 0;
     const discountedSubtotal = Math.max(0, tax.subtotal - discountAmount);
     const taxRatio = discountAmount > 0 && tax.subtotal > 0 ? discountedSubtotal / tax.subtotal : 1;
@@ -317,6 +318,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                 checked={showDiscount}
                 onChange={(e) => {
                   setShowDiscount(e.target.checked);
+                  setPaymentsTouched(false);
                   if (!e.target.checked) {
                     setDiscountValue('');
                     setDiscountReason('');
@@ -479,14 +481,20 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     value={walletAmount}
                     onChange={(e) => {
                       const v = e.target.value;
+                      const parsed = parseFloat(v);
+                      const safeV = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
                       const maxWalletCurrency = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
                       const max = Math.min(maxWalletCurrency, remaining);
-                      const clamped = parseFloat(v) > max ? max.toFixed(2) : v;
+                      const clamped = safeV > max ? max.toFixed(2) : Math.max(0, safeV).toFixed(2);
                       setWalletAmount(clamped);
                       const walletUsed = parseFloat(clamped) || 0;
-                      setPayments((prev) => prev.map((p, i) =>
-                        i === 0 ? { ...p, amount: Math.max(0, remaining - walletUsed).toFixed(2) } : p
-                      ));
+                      const cashRemaining = Math.max(0, remaining - walletUsed);
+                      setPayments((prev) => {
+                        if (prev.length === 1) return [{ ...prev[0], amount: cashRemaining.toFixed(2) }];
+                        const currentSum = prev.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+                        if (currentSum === 0) return prev.map((p) => ({ ...p, amount: (cashRemaining / prev.length).toFixed(2) }));
+                        return prev.map((p) => ({ ...p, amount: (cashRemaining * ((parseFloat(p.amount) || 0) / currentSum)).toFixed(2) }));
+                      });
                     }}
                     placeholder={`0 – ${Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)}`}
                     className="flex-1 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"

@@ -42,6 +42,11 @@ const PIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 function checkPinRateLimit(key: string): boolean {
   const nowMs = Date.now();
+  if (pinAttempts.size > 500) {
+    for (const [k, v] of pinAttempts.entries()) {
+      if (nowMs > v.resetAt) pinAttempts.delete(k);
+    }
+  }
   const entry = pinAttempts.get(key);
   if (!entry || nowMs > entry.resetAt) {
     pinAttempts.set(key, { count: 1, resetAt: nowMs + PIN_WINDOW_MS });
@@ -78,7 +83,8 @@ router.get('/', requireRole('owner', 'manager', 'cashier'), (req: Request, res: 
 
     if (req.query.per_page) {
       const perPage = Math.min(Math.max(parseInt(req.query.per_page as string) || 50, 1), 500);
-      query += ` LIMIT ${perPage}`;
+      query += ' LIMIT ?';
+      params.push(perPage);
     }
 
     const bills = db.prepare(query).all(...params).map(parseRowJson);
@@ -140,63 +146,63 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order_id) as any;
-    if (existingBill) {
-      // Re-sync bill totals from the order in case discount/adjustments were applied
-      // after the bill was first generated (e.g. discount applied → then checkout clicked).
-      // Only sync if the bill is still unpaid (partial or full payments must not be changed).
-      const orderSubtotal      = order.subtotal        || 0;
-      const orderTaxAmount     = order.tax_amount      || 0;
-      const orderDiscountAmt   = order.discount_amount || 0;
-      const orderDelivery      = order.delivery_charge || 0;
-      const orderPackaging     = order.packaging_charge|| 0;
-      const orderTotal         = order.total           || 0;
+    const result = withTxn(() => {
+      const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order_id) as any;
+      if (existingBill) {
+        // Re-sync bill totals from the order in case discount/adjustments were applied
+        // after the bill was first generated (e.g. discount applied → then checkout clicked).
+        // Only sync if the bill is still unpaid (partial or full payments must not be changed).
+        const orderSubtotal      = order.subtotal        || 0;
+        const orderTaxAmount     = order.tax_amount      || 0;
+        const orderDiscountAmt   = order.discount_amount || 0;
+        const orderDelivery      = order.delivery_charge || 0;
+        const orderPackaging     = order.packaging_charge|| 0;
+        const orderTotal         = order.total           || 0;
 
-      const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
-      const { total: roundedOrderTotal, adjustment: orderRoundOff } = applyPayableRounding(orderTotal, pack);
+        const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
+        const { total: roundedOrderTotal, adjustment: orderRoundOff } = applyPayableRounding(orderTotal, pack);
 
-      const totalsChanged =
-        existingBill.payment_status !== 'paid' && (
-          existingBill.discount_amount !== orderDiscountAmt ||
-          existingBill.subtotal        !== orderSubtotal    ||
-          existingBill.total           !== roundedOrderTotal
-        );
+        const totalsChanged =
+          existingBill.payment_status !== 'paid' && (
+            existingBill.discount_amount !== orderDiscountAmt ||
+            existingBill.subtotal        !== orderSubtotal    ||
+            existingBill.total           !== roundedOrderTotal
+          );
 
-      if (totalsChanged) {
-        const newBalance = Math.max(0, roundedOrderTotal - (existingBill.paid_amount || 0));
-        db.prepare(`
-          UPDATE bills
-          SET subtotal       = ?,
-              tax_amount     = ?,
-              tax_breakdown  = ?,
-              tax_snapshot   = ?,
-              discount_amount= ?,
-              discount_type  = ?,
-              discount_value = ?,
-              discount_reason= ?,
-              delivery_charge= ?,
-              packaging_charge= ?,
-              round_off      = ?,
-              total          = ?,
-              balance        = ?,
-              updated_at     = ?
-          WHERE id = ?
-        `).run(
-          orderSubtotal, orderTaxAmount, order.tax_breakdown, order.tax_snapshot,
-          orderDiscountAmt, order.discount_type, order.discount_value, order.discount_reason,
-          orderDelivery, orderPackaging, orderRoundOff,
-          roundedOrderTotal, newBalance, now(),
-          existingBill.id
-        );
+        if (totalsChanged) {
+          const newBalance = Math.max(0, roundedOrderTotal - (existingBill.paid_amount || 0));
+          db.prepare(`
+            UPDATE bills
+            SET subtotal       = ?,
+                tax_amount     = ?,
+                tax_breakdown  = ?,
+                tax_snapshot   = ?,
+                discount_amount= ?,
+                discount_type  = ?,
+                discount_value = ?,
+                discount_reason= ?,
+                delivery_charge= ?,
+                packaging_charge= ?,
+                round_off      = ?,
+                total          = ?,
+                balance        = ?,
+                updated_at     = ?
+            WHERE id = ?
+          `).run(
+            orderSubtotal, orderTaxAmount, order.tax_breakdown, order.tax_snapshot,
+            orderDiscountAmt, order.discount_type, order.discount_value, order.discount_reason,
+            orderDelivery, orderPackaging, orderRoundOff,
+            roundedOrderTotal, newBalance, now(),
+            existingBill.id
+          );
 
-        const updatedBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(existingBill.id));
-        return res.json({ bill: updatedBill });
+          const updated = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(existingBill.id));
+          return { bill: updated, isNew: false };
+        }
+
+        return { bill: parseRowJson(existingBill), isNew: false };
       }
 
-      return res.json({ bill: parseRowJson(existingBill) });
-    }
-
-    const result = withTxn(() => {
       // Generate bill number inside transaction to prevent race conditions
       const billNumber = generateBillNumber();
       const subtotal = order.subtotal || 0;
@@ -207,7 +213,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
       const pack = getActiveCountryPack(getSettingValue('country') || 'IN');
       const { total, adjustment: roundOff } = applyPayableRounding(order.total || 0, pack);
 
-      return db.prepare(`
+      const runResult = db.prepare(`
         INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot,
           discount_amount, discount_type, discount_value, discount_reason,
           delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, created_at, updated_at)
@@ -217,11 +223,13 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
         discountAmount, order.discount_type, order.discount_value, order.discount_reason,
         deliveryCharge, packagingCharge, roundOff, total, 0, total, now(), now()
       );
+
+      const newBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(runResult.lastInsertRowid));
+      return { bill: newBill, isNew: true };
     });
 
-    const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(result.lastInsertRowid));
     notifyOrderUpdated();
-    res.status(201).json({ bill });
+    res.status(result.isNew ? 201 : 200).json({ bill: result.bill });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -334,10 +342,12 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
       }
 
       let walletDebited = false;
-      let walletCurrencyAmount = 0; // Track wallet amount in currency for cashback reduction
       let actualLoyaltyPointsEarned = 0; // Track actual cashback credited
 
       if (method === 'wallet') {
+        if (!bill.customer_id) {
+          throw Object.assign(new Error('Customer association is required for wallet payment'), { statusCode: 400 });
+        }
         // Convert currency amount to points using redemption rate
         // e.g., if redemption_rate=100 and customer pays ₹50, debit 5000 points
         const pointsToDebit = Math.ceil(paidAmount * LOYALTY_REDEMPTION_RATE);
@@ -362,7 +372,6 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
           VALUES (?, ?, 'debit', ?, ?, ?, ?)
         `).run(bill.customer_id, bill.id, pointsToDebit, `Payment for bill ${bill.bill_number}`, now(), now());
         walletDebited = true;
-        walletCurrencyAmount = paidAmount; // Track for cashback reduction
       }
 
       db.prepare(`
@@ -444,7 +453,7 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
       return res.status(400).json({ error: 'Valid discount type is required (percentage, amount)' });
     }
 
-    if (value === undefined || value < 0) {
+    if (value === undefined || typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
       return res.status(400).json({ error: 'Valid discount value is required' });
     }
 
@@ -520,9 +529,9 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
 
     let discountAmount = 0;
     if (type === 'percentage') {
-      discountAmount = (bill.subtotal * parseFloat(value)) / 100;
+      discountAmount = (bill.subtotal * Number(value)) / 100;
     } else {
-      discountAmount = parseFloat(value);
+      discountAmount = Number(value);
     }
     discountAmount = Math.round(discountAmount * 100) / 100;
 

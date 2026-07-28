@@ -137,7 +137,10 @@ function reconcileTotal(
     (sum, component) => sum.plus(component.amount),
     new Decimal(0),
   );
-  if (current.isZero() || current.equals(target)) return components;
+  if (current.equals(target)) return components;
+  if (current.isZero()) {
+    return target.isZero() ? components : [{ title: 'Tax', rate: null, amount: target.toDecimalPlaces(6).toNumber() }];
+  }
 
   const ratio = target.dividedBy(current);
   const reconciled = components.map((component) => ({

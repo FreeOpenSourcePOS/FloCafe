@@ -70,7 +70,8 @@ import { TaxEngine } from './tax-engine';
 import type { CountryPack } from '../tax-packs/types';
 
 function round(value: number, decimals: number = 2): number {
-  return Math.round(value * Math.pow(10, decimals)) / Math.pow(10, decimals);
+  if (typeof value !== 'number' || isNaN(value) || !isFinite(value)) return 0;
+  return Number(Math.round(Number(value + 'e' + decimals)) + 'e-' + decimals);
 }
 
 const INDIA_LEGACY_FIXED_RATES: Record<string, number> = {
@@ -411,17 +412,18 @@ export function calculateConfiguredChargeTaxes(
   };
 }
 
-export function aggregateTaxBreakdown(itemBreakdowns: any[]): TaxBreakdown[] {
+export function aggregateTaxBreakdown(itemBreakdowns: TaxBreakdown[][]): TaxBreakdown[] {
   const merged: Record<string, TaxBreakdown> = {};
 
   for (const breakdown of itemBreakdowns) {
     if (!Array.isArray(breakdown)) continue;
     for (const line of breakdown) {
+      if (!line || typeof line.amount !== 'number' || !Number.isFinite(line.amount)) continue;
       const key = `${line.title}_${line.rate}`;
       if (!merged[key]) {
         merged[key] = { title: line.title, rate: line.rate, amount: 0 };
       }
-      merged[key].amount += line.amount;
+      merged[key].amount = round(merged[key].amount + line.amount, 4);
     }
   }
 
@@ -682,12 +684,12 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       service_charge,
     } = req.body;
 
-    if (!items || items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0) {
       res.status(400).json({ error: 'Items are required' });
       return;
     }
 
-    const db = (await import('../db')).getDatabase();
+    const db = getDatabase();
 
     // Get settings
     const settings: Record<string, string> = {};
@@ -711,12 +713,20 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
     let totalTax = 0;
 
     for (const itemData of items) {
+      if (!itemData || typeof itemData !== 'object' || !itemData.product_id) {
+        continue;
+      }
       const product = db.prepare('SELECT * FROM products WHERE id = ?').get(itemData.product_id) as any;
-      if (!product) continue;
+      if (!product) {
+        console.warn(`[TaxPreview] Product with ID ${itemData.product_id} not found in database.`);
+        continue;
+      }
 
       const unitPrice = parseFloat(product.price) || 0;
-      const quantity = itemData.quantity || 1;
-      const itemDiscount = itemData.discount_amount || 0;
+      const rawQty = Number(itemData.quantity);
+      const quantity = Number.isFinite(rawQty) && rawQty > 0 ? rawQty : 1;
+      const rawDisc = Number(itemData.discount_amount);
+      const itemDiscount = Number.isFinite(rawDisc) && rawDisc >= 0 ? rawDisc : 0;
 
       let subtotal = unitPrice * quantity;
       if (itemData.addons) {

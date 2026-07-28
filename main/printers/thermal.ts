@@ -615,7 +615,9 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
           }
         }
       }
-    } catch {}
+    } catch (err: any) {
+      console.warn('[Printer] Failed to parse payment details JSON:', err.message);
+    }
   }
 
   lines.push(bar);
@@ -699,7 +701,9 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
           }
         }
       }
-    } catch {}
+    } catch (err: any) {
+      console.warn('[Printer] Failed to parse payment details JSON:', err.message);
+    }
   }
 
   // Earned points this bill + running balance, each only if it exists.
@@ -800,7 +804,9 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
           }
         }
       }
-    } catch {}
+    } catch (err: any) {
+      console.warn('[Printer] Failed to parse payment details JSON:', err.message);
+    }
   }
 
   lines.push(bar);
@@ -1008,13 +1014,15 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer): P
     const client = new net.Socket();
 
     client.connect(port, ip, () => {
-      client.write(data);
-      client.end();
-      resolve(true);
+      client.write(data, () => {
+        client.end();
+        resolve(true);
+      });
     });
 
     client.on('error', (err) => {
       console.error(`[Printer] Network error: ${err.message}`);
+      client.destroy();
       resolve(false);
     });
 
@@ -1040,7 +1048,7 @@ export async function printViaUSB(data: Buffer, printerName?: string): Promise<b
     return await printViaUSBLinux(data, printerName);
   }
 
-  console.log('[Printer] Unsupported platform:', process.platform);
+  console.warn('[Printer] Unsupported platform:', process.platform);
   return false;
 }
 
@@ -1049,21 +1057,16 @@ async function printViaUSBMacOS(data: Buffer, printerName?: string): Promise<boo
 
   try {
     fs.writeFileSync(tmpFile, data);
-    console.log('[Printer] Data written to:', tmpFile, 'size:', data.length, 'bytes');
-    console.log('[Printer] First 50 bytes:', Array.from(data.slice(0, 50)).map(b => b.toString(16)).join(' '));
 
-    const args = ['-o', 'raw', tmpFile];
     if (printerName) {
-      args.splice(0, 0, '-d', printerName);
+      execFileSync('lp', ['-d', printerName, '-o', 'raw', tmpFile], { encoding: 'utf8' });
+    } else {
+      execFileSync('lp', ['-o', 'raw', tmpFile], { encoding: 'utf8' });
     }
 
-    console.log('[Printer] Executing: lp', args.join(' '));
-    const result = execFileSync('lp', args, { encoding: 'utf8' });
-    console.log('[Printer] Print sent successfully, result:', result);
     return true;
   } catch (err: any) {
     console.error('[Printer] macOS print error:', err.message);
-    console.error('[Printer] Error details:', err);
     return false;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
@@ -1078,7 +1081,7 @@ async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<b
 
     const printer = new ThermalPrinter({
       type: PrinterTypes.EPSON,
-      interface: printerName ? ` printer:${printerName}` : undefined,
+      interface: printerName ? `printer:${printerName}` : undefined,
       width: 48,
     });
 
@@ -1103,8 +1106,8 @@ async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<b
 }
 
 async function printViaWindowsRaw(data: Buffer, printerName?: string): Promise<boolean> {
+  const tmpFile = `C:\\Windows\\Temp\\flo_print_${Date.now()}.bin`;
   try {
-    const tmpFile = `C:\\Windows\\Temp\\flo_print_${Date.now()}.bin`;
     fs.writeFileSync(tmpFile, data);
 
     const name = printerName || 'Microsoft Print to PDF';
@@ -1112,11 +1115,14 @@ async function printViaWindowsRaw(data: Buffer, printerName?: string): Promise<b
     const psCommand = `Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name.replace(/'/g, "''")}' -Wait`;
 
     execFileSync('powershell', ['-Command', psCommand], { encoding: 'utf8' });
-    fs.unlinkSync(tmpFile);
     return true;
   } catch (err: any) {
     console.error('[Printer] Windows raw print error:', err.message);
     return false;
+  } finally {
+    try {
+      if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
+    } catch {}
   }
 }
 

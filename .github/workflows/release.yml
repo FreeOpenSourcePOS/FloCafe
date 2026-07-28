@@ -165,7 +165,7 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: macos-15-intel
+            runner: macos-latest
           - arch: arm64
             runner: macos-latest
     concurrency:

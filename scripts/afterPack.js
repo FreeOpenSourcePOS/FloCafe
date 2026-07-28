@@ -2,6 +2,20 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 
+// better-sqlite3 ≤ v12 ships build/Release/better_sqlite3.node
+// better-sqlite3 ≥ v13 ships prebuilds/darwin-arm64.node, prebuilds/darwin-x64.node, etc.
+const NATIVE_BINARY_NAMES = new Set([
+  'better_sqlite3.node',
+  'darwin-arm64.node',
+  'darwin-x64.node',
+  'linux-arm64.node',
+  'linux-x64.node',
+  'linuxmusl-arm64.node',
+  'linuxmusl-x64.node',
+  'win32-arm64.node',
+  'win32-x64.node',
+]);
+
 function findNativeBinaries(root) {
   const matches = [];
   const visit = (current) => {
@@ -14,7 +28,7 @@ function findNativeBinaries(root) {
 
     for (const entry of entries) {
       const candidate = path.join(current, entry.name);
-      if (entry.isFile() && entry.name === 'better_sqlite3.node') {
+      if (entry.isFile() && NATIVE_BINARY_NAMES.has(entry.name)) {
         matches.push(candidate);
       } else if (entry.isDirectory() && !entry.isSymbolicLink()) {
         visit(candidate);
@@ -54,13 +68,25 @@ module.exports = async function afterPack(context) {
   if (arch !== 1 && arch !== 3) return; // only x64 and arm64
 
   const archName = arch === 1 ? 'x64' : 'arm64';
+  const expectedMachArch = arch === 1 ? 'x86_64' : 'arm64';
+
+  // Expected prebuild filename for better-sqlite3 ≥ v13
+  const expectedPrebuild = `darwin-${archName}.node`;
+
   const packagedBinaries = findNativeBinaries(appOutDir);
-  const packagedBinary = packagedBinaries.find((candidate) =>
+  // Prefer binaries inside app.asar.unpacked (where electron-builder puts them)
+  const unpackedBinaries = packagedBinaries.filter((candidate) =>
     candidate.includes(`${path.sep}app.asar.unpacked${path.sep}`)
   );
 
+  // Pick the best candidate: prefer the platform-specific prebuild, then any
+  // legacy better_sqlite3.node, then anything else we found in the unpacked dir.
+  const packagedBinary =
+    unpackedBinaries.find((p) => path.basename(p) === expectedPrebuild) ||
+    unpackedBinaries.find((p) => path.basename(p) === 'better_sqlite3.node') ||
+    unpackedBinaries[0];
+
   if (packagedBinary && fs.statSync(packagedBinary).size > 0) {
-    const expectedMachArch = arch === 1 ? 'x86_64' : 'arm64';
     const inspection = spawnSync('file', [packagedBinary], { encoding: 'utf8' });
     if (inspection.status !== 0 || !inspection.stdout.includes(expectedMachArch)) {
       throw new Error(

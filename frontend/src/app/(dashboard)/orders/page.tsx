@@ -1166,7 +1166,7 @@ export default function OrdersPage() {
                         className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
                       >
                         <Plus size={14} className="mr-1.5" />
-                        {t('orders.addItem', 'Add Item')}
+                        {t('orders.addItem')}
                       </Button>
                     )}
                     {order.type === 'dine_in' && !['completed', 'cancelled'].includes(order.status) && (

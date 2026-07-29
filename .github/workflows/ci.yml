@@ -50,7 +50,29 @@ jobs:
             kds: ['main/kds-server.ts', 'main/services/kds.ts', 'main/routes/kds.ts', 'tests/kds-*.test.ts']
             db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
 
-  # 3. Linux Baseline
+  # 3. Tax Safety Net
+  # This deliberately runs independently of path filtering so every push to
+  # main gets a visible status for the no-category-means-no-tax invariant.
+  tax-category-invariant:
+    name: Tax invariant — uncategorized products remain zero-tax
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Uncategorized products must never charge legacy fallback tax
+        run: npm run test:tax-engine
+
+  # 4. Linux Baseline
   linux-baseline:
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
@@ -96,7 +118,7 @@ jobs:
       - name: Core test suite (Includes smoke & kds integration)
         run: npm test
 
-  # 4. Playwright E2E
+  # 5. Playwright E2E
   e2e-playwright:
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}

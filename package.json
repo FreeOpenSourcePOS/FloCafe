@@ -111,7 +111,8 @@
   "homepage": "https://flo.local",
   "license": "MIT",
   "overrides": {
-    "node-abi": "^4.33.0"
+    "node-abi": "^4.33.0",
+    "brace-expansion": "^5.0.8"
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",

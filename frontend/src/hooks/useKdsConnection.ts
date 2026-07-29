@@ -267,9 +267,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
       let connectionTimeout: ReturnType<typeof setTimeout> | null = null;
+      let authTimeout: ReturnType<typeof setTimeout> | null = null;
 
       const cleanup = () => {
         if (connectionTimeout) clearTimeout(connectionTimeout);
+        if (authTimeout) clearTimeout(authTimeout);
       };
 
       ws.onopen = () => {
@@ -281,6 +283,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setConnectionMode('websocket');
         setConnected(true);
         ws.send(JSON.stringify({ type: 'auth', token }));
+        authTimeout = setTimeout(() => {
+          ws.close();
+          setConnectionMode('rest');
+          setLoading(false);
+        }, 5000);
       };
 
       ws.onclose = () => {
@@ -304,12 +311,14 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         try {
           const msg: WsMessage = JSON.parse(event.data);
           if (msg.type === 'auth_success' && msg.user) {
+            if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             setUser((prev) => (prev ? { ...prev, ...msg.user, token: prev.token } : null));
             setOrders(msg.orders || []);
             setCounts(msg.counts || {});
             setConnected(true);
             setLoading(false);
           } else if (msg.type === 'auth_error') {
+            if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             setLoginError(msg.message || t('kds.authFailed'));
             ws.close();
             setLoading(false);

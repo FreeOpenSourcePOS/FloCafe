@@ -63,7 +63,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       id, name, description || null,
       category_ids ? JSON.stringify(category_ids) : null,
       printer_id || null,
-      printer_ip || null, printer_port ?? 9100, printer_name || null,
+      printer_ip || null, printer_port || 9100, printer_name || null,
       sort_order || 0, now(), now()
     );
 
@@ -90,25 +90,30 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       if (!printer) return res.status(400).json({ error: 'printer_id does not match an existing printer' });
     }
 
-    db.prepare(`
-      UPDATE kitchen_stations SET
-        name = COALESCE(?, name),
-        description = COALESCE(?, description),
-        category_ids = COALESCE(?, category_ids),
-        printer_id = COALESCE(?, printer_id),
-        printer_ip = COALESCE(?, printer_ip),
-        printer_port = COALESCE(?, printer_port),
-        printer_name = COALESCE(?, printer_name),
-        sort_order = COALESCE(?, sort_order),
-        is_active = COALESCE(?, is_active),
-        updated_at = ?
-      WHERE id = ?
-    `).run(
-      name, description,
-      category_ids ? JSON.stringify(category_ids) : null,
-      printer_id, printer_ip, printer_port, printer_name, sort_order, is_active,
-      now(), req.params.id
-    );
+    const fields: Record<string, unknown> = {
+      name,
+      description,
+      category_ids: category_ids !== undefined ? JSON.stringify(category_ids) : undefined,
+      printer_id,
+      printer_ip,
+      printer_port: printer_port !== undefined ? (printer_port || 9100) : undefined,
+      printer_name,
+      sort_order,
+      is_active,
+    };
+
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) {
+        sets.push(`${key} = ?`);
+        params.push(value);
+      }
+    }
+    sets.push('updated_at = ?');
+    params.push(now(), req.params.id);
+
+    db.prepare(`UPDATE kitchen_stations SET ${sets.join(', ')} WHERE id = ?`).run(...params);
 
     const updated = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(req.params.id);
     res.json({ kitchenStation: updated });

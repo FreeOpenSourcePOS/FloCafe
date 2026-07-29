@@ -33,6 +33,7 @@ export default function CustomersPage() {
   
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState('name');
   const [sortOrder, setSortOrder] = useState<'asc'|'desc'>('asc');
@@ -64,22 +65,6 @@ export default function CustomersPage() {
     catch { return d; }
   };
 
-  const fetchCustomers = async () => {
-    try {
-      const params: Record<string, string> = {};
-      if (search) params.search = search;
-      if (filter) params.filter = filter;
-      if (sortField) params.sort = sortField;
-      if (sortOrder) params.order = sortOrder;
-      const { data } = await api.get('/customers', { params });
-      setCustomers(data.data || []);
-    } catch {
-      toast.error(t('customer.loadFailed'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(() => {
@@ -93,11 +78,11 @@ export default function CustomersPage() {
       .catch((err: unknown) => {
         if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('customer.loadFailed'));
       })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      .finally(() => { setLoading(false); });
     }, 250);
     return () => { clearTimeout(timer); controller.abort(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, filter, sortField, sortOrder]);
+  }, [search, filter, sortField, sortOrder, refreshKey]);
 
   const openAdd = () => {
     setEditingCustomer(null);
@@ -130,7 +115,7 @@ export default function CustomersPage() {
         toast.success(t('customer.added'));
       }
       setShowForm(false);
-      fetchCustomers();
+      setRefreshKey((k) => k + 1);
     } catch (err: unknown) {
       const error = err as { response?: { data?: { error?: string } } };
       toast.error(error.response?.data?.error || t('customer.saveFailed'));

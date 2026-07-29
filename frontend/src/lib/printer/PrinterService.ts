@@ -240,7 +240,7 @@ class PrinterService {
     // Parse receipt markup in an inert document, then remove executable and
     // javascript-bearing nodes before importing it into the print window.
     const parsed = new DOMParser().parseFromString(htmlContent, 'text/html');
-    parsed.querySelectorAll('script, style, link, meta, base, iframe, object, embed, form').forEach((node) => node.remove());
+    parsed.querySelectorAll('script, link, meta, base, iframe, object, embed, form').forEach((node) => node.remove());
     parsed.querySelectorAll('*').forEach((element) => {
       for (const attribute of Array.from(element.attributes)) {
         const name = attribute.name.toLowerCase();
@@ -258,10 +258,8 @@ class PrinterService {
       ...Array.from(parsed.body.childNodes).map((node) => printWindow.document.importNode(node, true)),
     );
     printWindow.document.close();
-    printWindow.onload = () => {
-      printWindow.print();
-      printWindow.close();
-    };
+    printWindow.print();
+    printWindow.close();
   }
 
   private setStatus(status: PrinterStatus, info?: PrinterInfo): void {

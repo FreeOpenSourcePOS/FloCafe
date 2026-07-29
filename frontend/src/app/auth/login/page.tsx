@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, Suspense, useCallback } from 'react';
+import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import { useAuthStore } from '@/store/auth';
@@ -61,11 +61,14 @@ function LoginContent() {
     }
   }, [selectTenant, t]);
 
+  const autoSelectAttempted = useRef(false);
+
   useEffect(() => {
     let active = true;
     if (user && currentTenant) {
       router.push(getLandingPage());
-    } else if (user && tenants.length === 1) {
+    } else if (user && tenants.length === 1 && !autoSelectAttempted.current) {
+      autoSelectAttempted.current = true;
       selectTenant(tenants[0].id)
         .catch(() => { if (active) toast.error(t('auth.selectBusinessFailed')); })
         .finally(() => { if (active) setLoading(false); });

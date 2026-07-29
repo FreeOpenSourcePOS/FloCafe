@@ -643,6 +643,7 @@ export function getCurrentSchemaVersion(): number {
  */
 export function buildIdealSchemaDb(): Database.Database {
   const idealDb = new Database(':memory:');
+  idealDb.pragma('foreign_keys = OFF'); // Off during migrations
   const previousDb = db;
   db = idealDb;
   try {
@@ -650,6 +651,7 @@ export function buildIdealSchemaDb(): Database.Database {
   } finally {
     db = previousDb;
   }
+  idealDb.pragma('foreign_keys = ON');
   return idealDb;
 }
 

@@ -26,9 +26,7 @@ export default function GlobalNotifications() {
 
   if (invalidPhonesCount === 0) return null;
 
-  const fallbackMsg = invalidPhonesCount === 1 ? '1 customer has an invalid or legacy phone number format.' : `${invalidPhonesCount} customers have an invalid or legacy phone number format.`;
-  const translatedMsg = invalidPhonesCount === 1 ? t('customers.invalidPhoneSingular', { count: invalidPhonesCount }) : t('customers.invalidPhonePlural', { count: invalidPhonesCount });
-  const displayMsg = translatedMsg ? `${invalidPhonesCount} ${translatedMsg}` : fallbackMsg;
+  const displayMsg = t('customers.invalidPhoneCount', { count: invalidPhonesCount });
 
   return (
     <div className="bg-red-50 border-b border-red-100 px-4 py-2 flex items-center justify-between shrink-0">

@@ -239,8 +239,8 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     }
 
     const db = getDatabase();
-    const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
-    console.log('[Print Bill] Default printer:', printer);
+    const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as { id?: unknown; name?: unknown } | undefined;
+    console.log('[Print Bill] Default printer:', printer ? { id: printer.id, name: printer.name } : undefined);
     
     if (!printer) {
       console.log('[Print Bill] Error: No default printer');

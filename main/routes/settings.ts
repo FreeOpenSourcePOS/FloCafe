@@ -151,6 +151,11 @@ router.get('/tax', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'),
 router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const { tax_registered, gstin, state_code, tax_scheme, country } = req.body;
+
+    if (!validBusinessLocation(undefined, undefined, country)) {
+      return res.status(400).json({ error: 'Invalid country' });
+    }
+
     const db = getDatabase();
     upsertSettings(db, { tax_registered, gstin, state_code, tax_scheme, country });
     res.json(taxShape(getAllSettings(db)));

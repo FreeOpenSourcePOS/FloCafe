@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet } from 'lucide-react';
 import { useI18n } from '@/hooks/useI18n';
+import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCountryByCode } from '@/lib/countries';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
@@ -175,7 +176,8 @@ export default function DashboardPage() {
         setInsights(insightsRes.data);
       })
       .catch((err: unknown) => {
-        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) return;
+        if (err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError')) return;
+        toast.error(t('common.somethingWrong'));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);

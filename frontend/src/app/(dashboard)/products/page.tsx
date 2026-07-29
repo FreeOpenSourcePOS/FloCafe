@@ -135,7 +135,7 @@ export default function ProductsPage() {
       .catch((err: unknown) => {
         if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('products.failedToLoad'));
       })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      .finally(() => { setLoading(false); });
     api.get('/tax/categories', { signal: controller.signal })
       .then((res) => setTaxCategories((res.data as { categories?: { id: string; label: string }[] }).categories || []))
       .catch((err: unknown) => {

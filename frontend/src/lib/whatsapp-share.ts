@@ -6,7 +6,7 @@
  */
 
 import type { Bill, Tenant, Customer } from '@/lib/types';
-import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
+import { getCountryByCode } from '@/lib/countries';
 import { formatDate } from './printer/format-date';
 import api from './api';
 import toast from 'react-hot-toast';
@@ -30,7 +30,7 @@ export function getWhatsAppShareUrl(
   opts: WhatsAppShareOptions = {}
 ): string {
   const { pointsEarned = 0, walletBalance, businessPhone } = opts;
-  const currency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const currency = tenant.currency ?? 'INR';
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
 
   // Build the message
@@ -98,7 +98,7 @@ export function getWhatsAppMessage(
   opts: WhatsAppShareOptions = {}
 ): string {
   const { pointsEarned = 0, walletBalance } = opts;
-  const currency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
+  const currency = tenant.currency ?? 'INR';
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
 
   const lines: string[] = [];
@@ -134,15 +134,20 @@ export function getWhatsAppMessage(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function formatAmount(value: number | string, currency: string, locale: string): string {
+function formatAmount(value: number | string, currencyCode: string, locale: string): string {
   const amount = Number(value);
-  return `${currency}${(Number.isFinite(amount) ? amount : 0).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return new Intl.NumberFormat(locale, {
+    style: 'currency',
+    currency: currencyCode,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number.isFinite(amount) ? amount : 0);
 }
 
 /** One line per ordered item (skipping cancelled ones), e.g. "2x Chicken Biryani - ₹360.00". */
-function formatItemsList(order: Bill['order'], currency: string, locale: string): string[] {
+function formatItemsList(order: Bill['order'], currencyCode: string, locale: string): string[] {
   const items = order?.items?.filter((item) => item.status !== 'cancelled') ?? [];
-  return items.map((item) => `${item.quantity}x ${item.product_name} - ${formatAmount(item.total, currency, locale)}`);
+  return items.map((item) => `${item.quantity}x ${item.product_name} - ${formatAmount(item.total, currencyCode, locale)}`);
 }
 
 /**

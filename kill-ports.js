@@ -31,6 +31,7 @@ const isLinux = os.platform() === 'linux';
 //   - Mac/Windows: productName "Flo Cafe"
 const FLO_PATTERNS = [
   /(?:^|[\s\\/])flocafe(?:\.exe)?(?:$|\s)/i,
+  /(?:^|[\s\\/])Flo[\s_\-]*Cafe(?:\.exe)?(?:$|\s)/i,
   /(?:^|[\s\\/])Flo Cafe\.app(?:[\\/]Contents[\\/]MacOS[\\/]Flo Cafe)?(?:$|\s)/i,
   /(?:^|\s)com\.flo\.desktop(?:\.\S*)?(?:$|\s)/i,
   /(?:^|\s)flo[_\-]?pos(?:-service)?(?:\.exe)?(?:$|\s)/i,
@@ -79,7 +80,7 @@ function getProcessesOnPort(port) {
           try {
             cmdline = execSync(
               `powershell.exe -NoProfile -NonInteractive -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}').CommandLine"`,
-              { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'] }
+              { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 5000 }
             ).trim();
           } catch { /* process metadata is unavailable; fail closed below */ }
         }

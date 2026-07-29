@@ -346,6 +346,7 @@ export function getDatabase(): Database.Database {
 export function closeDatabase(): void {
   if (db) {
     db.close();
+    db = null as unknown as Database.Database;
     console.log('[DB] Database closed');
   }
 }

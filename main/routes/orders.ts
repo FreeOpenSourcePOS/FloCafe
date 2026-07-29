@@ -828,7 +828,7 @@ router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashie
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table: null }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 

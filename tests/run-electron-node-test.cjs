@@ -55,6 +55,7 @@ if (!sqliteCheck.ok) {
   const rebuild = rebuildBetterSqlite3();
   if (rebuild.error || rebuild.signal || rebuild.status !== 0) {
     if (rebuild.error) console.error(rebuild.error);
+    if (rebuild.signal) console.error('Process killed by signal:', rebuild.signal);
     process.exit(rebuild.status ?? 1);
   }
 

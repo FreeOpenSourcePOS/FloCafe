@@ -235,8 +235,8 @@ export default function SettingsPage() {
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [savedLoyaltyEnabled, setSavedLoyaltyEnabled] = useState(false);
-  const [globalCashbackPercent, setGlobalCashbackPercent] = useState(0);
-  const [savedGlobalCashbackPercent, setSavedGlobalCashbackPercent] = useState(0);
+  const [globalCashbackPercent, setGlobalCashbackPercent] = useState('0');
+  const [savedGlobalCashbackPercent, setSavedGlobalCashbackPercent] = useState('0');
   const [savingLoyalty, setSavingLoyalty] = useState(false);
 
   // Discount settings
@@ -1105,8 +1105,8 @@ export default function SettingsPage() {
 
       setLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
-      setGlobalCashbackPercent(loyaltyRes.data.global_cashback_percent || 0);
-      setSavedGlobalCashbackPercent(loyaltyRes.data.global_cashback_percent || 0);
+      setGlobalCashbackPercent(String(loyaltyRes.data.global_cashback_percent ?? 0));
+      setSavedGlobalCashbackPercent(String(loyaltyRes.data.global_cashback_percent ?? 0));
 
       if (discountRes.data.discount_max_percentage !== undefined) {
         const value = normalizeDiscountPercentage(discountRes.data.discount_max_percentage);
@@ -1188,8 +1188,8 @@ export default function SettingsPage() {
     api.get('/settings/loyalty').then((res) => {
       setLoyaltyEnabled(!!res.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!res.data.loyalty_enabled);
-      setGlobalCashbackPercent(res.data.global_cashback_percent || 0);
-      setSavedGlobalCashbackPercent(res.data.global_cashback_percent || 0);
+      setGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
+      setSavedGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
     }).catch(() => {});
 
     api.get('/settings/discount').then((res) => {
@@ -1495,12 +1495,14 @@ export default function SettingsPage() {
   const saveLoyalty = async (silent = false) => {
     setSavingLoyalty(true);
     try {
+      const parsedRate = Math.min(100, Math.max(0, parseFloat(globalCashbackPercent) || 0));
       await api.put('/settings/loyalty', {
         loyalty_enabled: loyaltyEnabled,
-        global_cashback_percent: globalCashbackPercent,
+        global_cashback_percent: parsedRate,
       });
       setSavedLoyaltyEnabled(loyaltyEnabled);
-      setSavedGlobalCashbackPercent(globalCashbackPercent);
+      setGlobalCashbackPercent(String(parsedRate));
+      setSavedGlobalCashbackPercent(String(parsedRate));
       if (!silent) toast.success(t('settings.loyaltySaved'));
     } catch (err) {
       if (!silent) toast.error(t('settings.saveFailed'));
@@ -2535,8 +2537,8 @@ export default function SettingsPage() {
                         min="0"
                         max="100"
                         step="0.1"
-                        value={globalCashbackPercent === 0 ? '' : globalCashbackPercent}
-                        onChange={(e) => setGlobalCashbackPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
+                        value={globalCashbackPercent}
+                        onChange={(e) => setGlobalCashbackPercent(e.target.value)}
                         placeholder="0"
                         className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-right"
                       />

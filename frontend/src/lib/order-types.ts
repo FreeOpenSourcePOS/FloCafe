@@ -1,4 +1,4 @@
-export const ORDER_TYPE_LABEL_KEYS: Record<'dine_in' | 'takeaway' | 'delivery' | 'online', string> = {
+export const ORDER_TYPE_LABEL_KEYS: Record<string, string> = {
   dine_in: 'orders.dineIn',
   takeaway: 'orders.takeaway',
   delivery: 'orders.delivery',

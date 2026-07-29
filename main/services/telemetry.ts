@@ -52,7 +52,8 @@ function maybeSendDailyPing(): void {
   if (!isTelemetryEnabled()) return;
 
   const lastPingAt = getSettingValue('telemetry_last_ping_at');
-  const elapsed = lastPingAt ? Date.now() - new Date(lastPingAt).getTime() : Infinity;
+  const lastPingMs = lastPingAt ? new Date(lastPingAt).getTime() : NaN;
+  const elapsed = isNaN(lastPingMs) ? Infinity : Date.now() - lastPingMs;
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 
   void sendEvent('daily_ping').then(() => upsertTelemetryLastPing());
@@ -60,6 +61,10 @@ function maybeSendDailyPing(): void {
 
 export const telemetry = {
   start(): void {
+    if (dailyPingTimer) {
+      clearInterval(dailyPingTimer);
+      dailyPingTimer = null;
+    }
     void sendEvent('app_launch');
     maybeSendDailyPing();
     dailyPingTimer = setInterval(maybeSendDailyPing, DAILY_PING_INTERVAL_MS);

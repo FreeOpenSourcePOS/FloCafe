@@ -1,0 +1,63 @@
+name: Publish Tax Pack
+
+on:
+  push:
+    tags:
+      - 'tax-pack-*-v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tax-pack-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  sign-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22'
+
+      - name: Download the newest published catalog
+        id: previous-catalog
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/tax-pack-previous"
+          LATEST_TAG="$(gh api --paginate "repos/FreeOpenSourcePOS/FloCafe/releases?per_page=100" \
+            --jq '.[] | select(.draft == false) | select(.tag_name | test("^tax-pack-[a-z0-9][a-z0-9-]*-v[0-9]+\\.[0-9]+\\.[0-9]+$")) | .tag_name' \
+            | sed -n '1p')"
+          if [ -n "$LATEST_TAG" ]; then
+            gh release download "$LATEST_TAG" \
+              --repo FreeOpenSourcePOS/FloCafe \
+              --pattern catalog.json \
+              --dir "$RUNNER_TEMP/tax-pack-previous"
+            echo "path=$RUNNER_TEMP/tax-pack-previous/catalog.json" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Sign pack and build cumulative catalog
+        env:
+          TAX_PACK_SIGNING_KEY: ${{ secrets.TAX_PACK_SIGNING_KEY }}
+          PREVIOUS_CATALOG: ${{ steps.previous-catalog.outputs.path }}
+        run: |
+          ARGS=(--tag "$GITHUB_REF_NAME" --output "$RUNNER_TEMP/tax-pack-release")
+          if [ -n "$PREVIOUS_CATALOG" ]; then
+            ARGS+=(--catalog "$PREVIOUS_CATALOG")
+          fi
+          node scripts/tax-packs/prepare-release.cjs "${ARGS[@]}"
+
+      - name: Publish immutable release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            "$RUNNER_TEMP"/tax-pack-release/* \
+            --repo FreeOpenSourcePOS/FloCafe \
+            --title "$GITHUB_REF_NAME" \
+            --notes "Signed FloCafe country-pack release. Activation remains an explicit owner action in the app."

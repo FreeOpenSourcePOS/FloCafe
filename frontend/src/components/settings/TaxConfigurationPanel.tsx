@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
+  Download,
   History,
   Lock,
   Plus,
@@ -116,6 +117,17 @@ type Calculation = {
   }>;
 };
 
+type CatalogEntry = {
+  id: string;
+  publisher: string;
+  country: string;
+  jurisdiction: string;
+  version: string;
+  publishedAt: string;
+  minFloVersion: string;
+  digest: string;
+};
+
 const ENTITY_LABELS: Record<OverrideEntityType, string> = {
   product: 'Product',
   addon: 'Add-on',
@@ -127,6 +139,7 @@ const CHARGE_TYPES: OverrideEntityType[] = ['packaging', 'delivery', 'service_ch
 
 const ACTION_LABELS: Record<string, string> = {
   install_bundled_pack: 'Bundled pack installed',
+  install_downloaded_pack: 'Downloaded pack installed',
   activate_pack: 'Pack activated',
   rollback_pack: 'Pack rolled back',
   create_override: 'Override added',
@@ -151,6 +164,7 @@ function categoryIdOf(override: TaxOverride): string {
 function auditDescription(row: AuditRow): string {
   const details = row.details || {};
   if (row.action === 'install_bundled_pack') return `Version ${String(details.version || '')} from the application bundle`;
+  if (row.action === 'install_downloaded_pack') return `Version ${String(details.version || '')} verified and installed from GitHub Releases`;
   if (row.action === 'create_override') {
     return `${String(details.entityType || 'target')} ${String(details.entityId || 'store-wide')} → ${String(details.categoryId || '')}`;
   }
@@ -184,6 +198,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [testAmount, setTestAmount] = useState('100');
   const [testBehavior, setTestBehavior] = useState('country_default');
   const [calculation, setCalculation] = useState<Calculation | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogChecked, setCatalogChecked] = useState(false);
+  const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
 
   const loadList = useCallback(async () => {
     const response = await api.get('/tax-packs');
@@ -399,6 +416,44 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
+  async function checkForUpdates() {
+    setCatalogLoading(true);
+    try {
+      const response = await api.get('/tax-packs/catalog');
+      const available = response.data.available as CatalogEntry[];
+      setCatalogEntries(available);
+      setCatalogChecked(true);
+      if (available.length === 0) toast.success('Installed tax packs are up to date');
+    } catch (error) {
+      setCatalogEntries([]);
+      setCatalogChecked(true);
+      toast.error(apiMessage(error, 'Could not check for tax pack updates'));
+    } finally {
+      setCatalogLoading(false);
+    }
+  }
+
+  async function installCatalogPack(entry: CatalogEntry) {
+    if (!isOwner) return;
+    setSaving(true);
+    try {
+      await api.post('/tax-packs/catalog/install', {
+        pack_id: entry.id,
+        version: entry.version,
+      });
+      toast.success(`Tax pack ${entry.id} v${entry.version} verified and installed`);
+      setCatalogEntries((current) => current.filter(
+        (candidate) => candidate.id !== entry.id || candidate.version !== entry.version,
+      ));
+      setSelectedPackId(entry.id);
+      await Promise.all([loadList(), loadAudit(), loadDetail(entry.id)]);
+    } catch (error) {
+      toast.error(apiMessage(error, 'Could not install tax pack update'));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function calculate() {
     if (!selectedPack?.active_for_store) {
       toast.error('Select the active store-country pack to run a checkout calculation');
@@ -436,8 +491,13 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" disabled title="Remote catalog support is not available yet">
-            Check for updates · Not available yet
+          <Button
+            variant="outline"
+            onClick={() => void checkForUpdates()}
+            disabled={catalogLoading}
+          >
+            <RefreshCw size={15} className={catalogLoading ? 'animate-spin' : ''} />
+            {catalogLoading ? 'Checking…' : 'Check for updates'}
           </Button>
           <Button
             variant="outline"
@@ -457,6 +517,55 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           <Lock size={16} className="mt-0.5 shrink-0" />
           Managers can review packs, overrides, audit history, and run test calculations. Only owners can make changes.
         </div>
+      )}
+
+      {catalogChecked && (
+        <section className="rounded-xl border border-gray-200 bg-white p-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Download size={20} className="text-brand" />
+              <div>
+                <h3 className="font-semibold text-gray-900">Available tax packs</h3>
+                <p className="text-sm text-gray-500">
+                  Downloads are verified with the built-in FloCafe signing key before installation.
+                </p>
+              </div>
+            </div>
+          </div>
+          {catalogEntries.length > 0 ? (
+            <div className="mt-4 space-y-2">
+              {catalogEntries.map((entry) => (
+                <div
+                  key={`${entry.id}@${entry.version}`}
+                  className="flex flex-col gap-3 rounded-lg border border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-gray-800">
+                      {entry.id} · v{entry.version}
+                    </p>
+                    <p className="mt-0.5 text-xs text-gray-500">
+                      {entry.country === '*' ? 'Generic' : entry.country}
+                      {' · '}{entry.publisher}
+                      {' · '}Published {entry.publishedAt}
+                      {' · '}Requires FloCafe {entry.minFloVersion}+
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!isOwner || saving}
+                    onClick={() => void installCatalogPack(entry)}
+                    title={!isOwner ? 'Only owners can install tax packs' : undefined}
+                  >
+                    <Download size={14} /> Verify and install
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-gray-500">No newer tax pack versions are available.</p>
+          )}
+        </section>
       )}
 
       <section className="rounded-xl border border-gray-200 bg-white p-5">

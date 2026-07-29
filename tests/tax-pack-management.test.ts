@@ -8,6 +8,7 @@ const originalLoad = Module._load;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { generateKeyPairSync, sign } = require('crypto');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-tax-pack-manager-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
@@ -38,6 +39,13 @@ const {
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
 const { calculateConfiguredChargeTaxes } = require('../main/services/tax');
+const {
+  installCatalogEntry,
+} = require('../main/routes/tax-packs');
+const {
+  taxPackSha256,
+} = require('../main/tax-packs/catalog');
+const indiaPackDefinition = require('../main/tax-packs/in.json');
 
 async function main() {
   console.log('Tax Pack Management Integration Tests');
@@ -377,6 +385,138 @@ async function main() {
     assert(actions.includes('reset_override'), 'reset override audit exists');
     const createAudit = auditRes.data.audit.find((entry: any) => entry.action === 'create_override');
     assertEqual(createAudit.actor_name, 'Test Owner', 'audit identifies the acting user');
+
+    console.log('\n8. Signed catalog packs install without activating');
+    const managerInstall = await api(baseUrl, '/api/tax-packs/catalog/install', {
+      method: 'POST',
+      body: { pack_id: 'official-in', version: '1.1.0' },
+      headers: manager.authHeader,
+    });
+    assertEqual(managerInstall.status, 403, 'manager cannot install a catalog pack');
+
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const downloadedPack = {
+      ...indiaPackDefinition,
+      version: '1.1.0',
+      publishedAt: '2026-07-30',
+    };
+    const downloadedPackJson = JSON.stringify(downloadedPack, null, 2);
+    const downloadedSignature = sign(
+      null,
+      Buffer.from(downloadedPackJson, 'utf8'),
+      privateKey,
+    ).toString('base64');
+    const releaseTag = 'tax-pack-official-in-v1.1.0';
+    const releaseBase = `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${releaseTag}`;
+    const catalogEntry = {
+      id: downloadedPack.id,
+      publisher: downloadedPack.publisher,
+      country: downloadedPack.country,
+      jurisdiction: downloadedPack.jurisdiction,
+      version: downloadedPack.version,
+      publishedAt: downloadedPack.publishedAt,
+      minFloVersion: downloadedPack.minFloVersion,
+      downloadUrl: `${releaseBase}/official-in-v1.1.0.json`,
+      signatureUrl: `${releaseBase}/official-in-v1.1.0.json.sig`,
+      digest: taxPackSha256(downloadedPackJson),
+    };
+    const fetchImpl = async (input: string | URL | Request) => new Response(
+      String(input) === catalogEntry.downloadUrl ? downloadedPackJson : downloadedSignature,
+      { status: 200 },
+    );
+    const installed = await installCatalogEntry(catalogEntry, {
+      actorUserId: owner.userId,
+      fetchImpl,
+      publicKey,
+    });
+    assertEqual(installed.version, '1.1.0', 'verified downloaded version is installed');
+    assertEqual(installed.validation.checks.length, 24, 'download uses the existing 24-check validation');
+    assertEqual(installed.validation.valid, true, 'signed download passes all activation validation');
+
+    const storedVersion = db.prepare(
+      'SELECT status, digest, signature FROM country_pack_versions WHERE id = ?'
+    ).get(installed.versionId);
+    assertEqual(storedVersion.status, 'installed', 'downloaded version is installed, not active');
+    assertEqual(storedVersion.digest, catalogEntry.digest, 'verified catalog digest is persisted');
+    assertEqual(storedVersion.signature, downloadedSignature, 'detached signature is persisted');
+    const unchangedActiveVersion = db.prepare(
+      'SELECT active_version_id FROM country_packs WHERE id = ?'
+    ).get('official-in');
+    assertEqual(
+      unchangedActiveVersion.active_version_id,
+      versionId,
+      'install does not implicitly activate the downloaded version',
+    );
+    const storedChildren = db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM tax_categories WHERE pack_version_id = ?) AS categories,
+        (SELECT COUNT(*) FROM tax_rules WHERE pack_version_id = ?) AS rules
+    `).get(installed.versionId, installed.versionId);
+    assertEqual(
+      storedChildren.categories,
+      downloadedPack.categories.length,
+      'downloaded categories are installed',
+    );
+    assertEqual(storedChildren.rules, downloadedPack.rules.length, 'downloaded rules are installed');
+    const installAudit = db.prepare(`
+      SELECT audit.action, audit.actor_user_id
+      FROM tax_config_audit AS audit
+      WHERE audit.pack_version_id = ?
+    `).get(installed.versionId);
+    assertEqual(installAudit.action, 'install_downloaded_pack', 'download installation is audited');
+    assertEqual(installAudit.actor_user_id, owner.userId, 'install audit identifies the owner');
+
+    const incompatiblePack = {
+      ...downloadedPack,
+      version: '1.2.0',
+      minFloVersion: '999.0.0',
+    };
+    const incompatiblePackJson = JSON.stringify(incompatiblePack);
+    const incompatibleSignature = sign(
+      null,
+      Buffer.from(incompatiblePackJson, 'utf8'),
+      privateKey,
+    ).toString('base64');
+    const incompatibleTag = 'tax-pack-official-in-v1.2.0';
+    const incompatibleEntry = {
+      ...catalogEntry,
+      version: incompatiblePack.version,
+      minFloVersion: incompatiblePack.minFloVersion,
+      downloadUrl: `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${incompatibleTag}/official-in-v1.2.0.json`,
+      signatureUrl: `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${incompatibleTag}/official-in-v1.2.0.json.sig`,
+      digest: taxPackSha256(incompatiblePackJson),
+    };
+    const incompatibleFetch = async (input: string | URL | Request) => new Response(
+      String(input) === incompatibleEntry.downloadUrl ? incompatiblePackJson : incompatibleSignature,
+      { status: 200 },
+    );
+    let rejectedValidation: any = null;
+    try {
+      await installCatalogEntry(incompatibleEntry, {
+        actorUserId: owner.userId,
+        fetchImpl: incompatibleFetch,
+        publicKey,
+      });
+    } catch (error) {
+      rejectedValidation = error;
+    }
+    assertEqual(
+      rejectedValidation?.statusCode,
+      400,
+      'a correctly signed pack still fails when the 24-check validation rejects it',
+    );
+    assert(
+      rejectedValidation?.validation?.checks.some(
+        (check: any) => check.id === 4 && check.passed === false,
+      ),
+      'the failed compatibility check is returned to the caller',
+    );
+    assertEqual(
+      db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions WHERE id = ?')
+        .get('official-in@1.2.0').count,
+      0,
+      'failed validation leaves no installed version behind',
+    );
   } finally {
     server.close();
     closeDatabase();

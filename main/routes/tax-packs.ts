@@ -1,11 +1,18 @@
 import { Router, Request, Response } from 'express';
-import { randomUUID, createHash } from 'crypto';
+import { randomUUID, createHash, type KeyLike } from 'crypto';
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue, now, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { TaxEngine } from '../services/tax-engine';
 import type { CountryPack, TaxBehavior } from '../tax-packs/types';
 import { BUNDLED_COUNTRY_PACKS } from '../tax-packs/bundled';
+import {
+  downloadAndVerifyTaxPack,
+  fetchRemoteTaxPackCatalog,
+  verifyTaxPackSignature,
+  type TaxPackCatalogEntry,
+} from '../tax-packs/catalog';
+import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from '../tax-packs/trusted-signing-key';
 
 const router = Router();
 const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
@@ -240,7 +247,10 @@ function audit(
   `).run(action, packId, packVersionId, overrideId, actorId, JSON.stringify(details), now());
 }
 
-function validationChecklist(version: VersionRow): { valid: boolean; checks: Array<{ id: number; passed: boolean; message: string }> } {
+export function validationChecklist(
+  version: VersionRow,
+  publicKey: KeyLike = TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY,
+): { valid: boolean; checks: Array<{ id: number; passed: boolean; message: string }> } {
   const checks: Array<{ id: number; passed: boolean; message: string }> = [];
   const add = (id: number, passed: boolean, message: string) => checks.push({ id, passed, message });
   let pack: CountryPack;
@@ -265,10 +275,13 @@ function validationChecklist(version: VersionRow): { valid: boolean; checks: Arr
   const bundledDefinition = BUNDLED_PACKS_BY_ID.get(pack.id);
   const trustedArtifact = pack.publisher === 'local'
     ? version.signature === null
-    : Boolean(bundledDefinition && JSON.stringify(bundledDefinition) === JSON.stringify(pack));
+    : Boolean(
+      (bundledDefinition && JSON.stringify(bundledDefinition) === JSON.stringify(pack))
+      || (version.signature && verifyTaxPackSignature(version.pack_json, version.signature, publicKey)),
+    );
   add(6, trustedArtifact, pack.publisher === 'local'
     ? 'Synthetic local pack does not require a signature'
-    : 'Bundled artifact matches the application-trusted definition');
+    : 'Artifact is bundled or has a valid trusted Ed25519 signature');
   add(7, version.status !== 'revoked' && version.status !== 'incompatible', 'Pack version is not revoked or incompatible');
 
   const categoryIds = pack.categories.map((category) => category.id);
@@ -396,6 +409,163 @@ function validationChecklist(version: VersionRow): { valid: boolean; checks: Arr
   return { valid: checks.every((check) => check.passed), checks };
 }
 
+interface InstallCatalogEntryOptions {
+  actorUserId: string | null;
+  fetchImpl?: typeof fetch;
+  publicKey?: KeyLike;
+}
+
+export async function installCatalogEntry(
+  entry: TaxPackCatalogEntry,
+  options: InstallCatalogEntryOptions,
+): Promise<{
+  packId: string;
+  versionId: string;
+  version: string;
+  validation: ReturnType<typeof validationChecklist>;
+}> {
+  const publicKey = options.publicKey || TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY;
+  const artifact = await downloadAndVerifyTaxPack(entry, options.fetchImpl || fetch, publicKey);
+  const db = getDatabase();
+  const existingPack = db.prepare('SELECT * FROM country_packs WHERE id = ?')
+    .get(artifact.pack.id) as PackRow | undefined;
+  if (existingPack && (
+    existingPack.publisher !== artifact.pack.publisher
+    || existingPack.country !== artifact.pack.country
+    || existingPack.jurisdiction !== artifact.pack.jurisdiction
+  )) {
+    throw Object.assign(new Error('Downloaded pack identity conflicts with the installed pack'), { statusCode: 409 });
+  }
+  const duplicate = db.prepare(
+    'SELECT id FROM country_pack_versions WHERE pack_id = ? AND version = ?'
+  ).get(artifact.pack.id, artifact.pack.version);
+  if (duplicate) {
+    throw Object.assign(new Error('This tax pack version is already installed'), { statusCode: 409 });
+  }
+
+  const installedAt = now();
+  const versionId = `${artifact.pack.id}@${artifact.pack.version}`;
+  const version: VersionRow = {
+    id: versionId,
+    pack_id: artifact.pack.id,
+    version: artifact.pack.version,
+    schema_version: artifact.pack.schemaVersion,
+    manifest_json: JSON.stringify(entry),
+    pack_json: artifact.packJson,
+    digest: entry.digest,
+    signature: artifact.signature,
+    effective_from: artifact.pack.effectiveFrom,
+    effective_to: artifact.pack.effectiveTo || null,
+    min_flo_version: artifact.pack.minFloVersion,
+    published_at: artifact.pack.publishedAt,
+    status: 'installed',
+    created_at: installedAt,
+  };
+  const validation = validationChecklist(version, publicKey);
+  if (!validation.valid) {
+    throw Object.assign(new Error('Downloaded pack failed installation validation'), {
+      statusCode: 400,
+      validation,
+    });
+  }
+
+  withTxn(() => {
+    if (!existingPack) {
+      db.prepare(`
+        INSERT INTO country_packs (
+          id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, NULL, 'installed', ?, ?)
+      `).run(
+        artifact.pack.id,
+        artifact.pack.publisher,
+        artifact.pack.country,
+        artifact.pack.jurisdiction,
+        installedAt,
+        installedAt,
+      );
+    } else {
+      db.prepare('UPDATE country_packs SET updated_at = ? WHERE id = ?')
+        .run(installedAt, artifact.pack.id);
+    }
+    const versionExists = db.prepare(
+      'SELECT 1 FROM country_pack_versions WHERE pack_id = ? AND version = ?'
+    ).get(artifact.pack.id, artifact.pack.version);
+    if (versionExists) {
+      throw Object.assign(new Error('This tax pack version is already installed'), { statusCode: 409 });
+    }
+    db.prepare(`
+      INSERT INTO country_pack_versions (
+        id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
+        effective_from, effective_to, min_flo_version, published_at, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installed', ?)
+    `).run(
+      version.id,
+      version.pack_id,
+      version.version,
+      version.schema_version,
+      version.manifest_json,
+      version.pack_json,
+      version.digest,
+      version.signature,
+      version.effective_from,
+      version.effective_to,
+      version.min_flo_version,
+      version.published_at,
+      version.created_at,
+    );
+    const insertCategory = db.prepare(`
+      INSERT INTO tax_categories (
+        id, pack_version_id, category_id, label, default_behavior, definition_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const category of artifact.pack.categories) {
+      insertCategory.run(
+        `${versionId}:category:${category.id}`,
+        versionId,
+        category.id,
+        category.label,
+        category.defaultBehavior || null,
+        JSON.stringify(category),
+        installedAt,
+      );
+    }
+    const insertRule = db.prepare(`
+      INSERT INTO tax_rules (
+        id, pack_version_id, rule_id, label, calculation_type, rate, amount,
+        applies_per, base_rule_ids, definition_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const rule of artifact.pack.rules) {
+      insertRule.run(
+        `${versionId}:rule:${rule.id}`,
+        versionId,
+        rule.id,
+        rule.label,
+        rule.type,
+        rule.rate || null,
+        rule.amount || null,
+        rule.appliesPer || null,
+        JSON.stringify(rule.baseRuleIds || []),
+        JSON.stringify(rule),
+        installedAt,
+      );
+    }
+    audit('install_downloaded_pack', options.actorUserId, artifact.pack.id, versionId, null, {
+      source: 'github_release',
+      version: artifact.pack.version,
+      digest: entry.digest,
+      downloadUrl: entry.downloadUrl,
+    });
+  });
+
+  return {
+    packId: artifact.pack.id,
+    versionId,
+    version: artifact.pack.version,
+    validation,
+  };
+}
+
 router.get('/', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -447,6 +617,48 @@ router.get('/audit', requireRole('owner', 'manager'), (req: Request, res: Respon
   } catch (error: any) {
     console.error('[Tax Packs] Audit load failed:', error);
     res.status(500).json({ error: 'Could not load tax audit history' });
+  }
+});
+
+router.get('/catalog', requireRole('owner', 'manager'), async (_req: Request, res: Response) => {
+  try {
+    const remote = await fetchRemoteTaxPackCatalog();
+    const installedRows = getDatabase().prepare(
+      'SELECT pack_id, version FROM country_pack_versions'
+    ).all() as Array<{ pack_id: string; version: string }>;
+    const installed = new Set(installedRows.map((row) => `${row.pack_id}@${row.version}`));
+    res.json({
+      release_tag: remote.releaseTag,
+      release_url: remote.releaseUrl,
+      generated_at: remote.catalog.generatedAt,
+      available: remote.catalog.packs.filter((entry) => !installed.has(`${entry.id}@${entry.version}`)),
+    });
+  } catch (error: any) {
+    console.error('[Tax Packs] Catalog fetch failed:', error);
+    res.status(502).json({ error: error.message || 'Could not check the tax pack catalog' });
+  }
+});
+
+router.post('/catalog/install', requireRole('owner'), async (req: Request, res: Response) => {
+  try {
+    const packId = typeof req.body.pack_id === 'string' ? req.body.pack_id : '';
+    const version = typeof req.body.version === 'string' ? req.body.version : '';
+    if (!packId || !version) {
+      return res.status(400).json({ error: 'pack_id and version are required' });
+    }
+    const remote = await fetchRemoteTaxPackCatalog();
+    const entry = remote.catalog.packs.find(
+      (candidate) => candidate.id === packId && candidate.version === version,
+    );
+    if (!entry) return res.status(404).json({ error: 'Tax pack version is not in the current catalog' });
+    const installed = await installCatalogEntry(entry, { actorUserId: actorUserId(req) });
+    res.status(201).json({ installed });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 502;
+    res.status(statusCode).json({
+      error: error.message || 'Could not install tax pack version',
+      ...(error.validation ? { validation: error.validation } : {}),
+    });
   }
 });
 

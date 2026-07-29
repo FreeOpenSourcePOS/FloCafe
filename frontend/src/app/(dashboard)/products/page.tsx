@@ -249,13 +249,27 @@ export default function ProductsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loyaltyEnabled && form.cb_percent_mode === 'custom') {
+      const parsed = Number(form.cb_percent);
+      if (!form.cb_percent || isNaN(parsed) || parsed <= 0 || parsed > 100) {
+        toast.error('Please enter a valid custom loyalty earning rate (0.1–100%)');
+        return;
+      }
+    }
     try {
+      let cbPercentVal: number | null = null;
+      if (form.cb_percent_mode === 'none') {
+        cbPercentVal = 0;
+      } else if (form.cb_percent_mode === 'custom') {
+        cbPercentVal = Number(form.cb_percent);
+      }
+
       const payload: Record<string, unknown> = {
         name: form.name,
         category_id: form.category_id || null,
         price: Number(form.price),
         cost_price: form.cost_price ? Number(form.cost_price) : null,
-        cb_percent: form.cb_percent_mode === 'global' ? null : (form.cb_percent_mode === 'none' ? 0 : (Number(form.cb_percent) || 0)),
+        cb_percent: cbPercentVal,
         sku: form.sku || null,
         barcode: form.barcode || null,
         tax_category_id: form.tax_category_id || null,

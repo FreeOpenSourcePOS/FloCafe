@@ -33,6 +33,7 @@ const { customerRoutes } = require('../main/routes/customers');
 const { settingsRoutes } = require('../main/routes/settings');
 const { menuCsvRoutes } = require('../main/routes/menu-csv');
 const { productRoutes } = require('../main/routes/products');
+const { MIGRATIONS } = require('../main/db');
 
 async function main() {
   console.log('Integration Test: Loyalty Global Earning Rate');
@@ -210,6 +211,9 @@ async function main() {
       },
       headers: authHeader,
     });
+    assertEqual(badCsv2.status, 200, 'csv API processes negative-rate row');
+    assert(badCsv2.data.errors.some((e: string) => e.includes('invalid cashback_percent "-5"')), 'csv rejects negative cashback percent');
+
     // ═══════════════════════════════════════════════════════════════════
     // Scenario 4: Legacy migration test (cb_percent=0 converted to NULL)
     // ═══════════════════════════════════════════════════════════════════
@@ -218,13 +222,13 @@ async function main() {
     // Simulate a legacy product inserted before v39 with cb_percent = 0
     db.prepare("INSERT INTO products (id, name, price, cb_percent, is_active, created_at, updated_at) VALUES ('prod-legacy', 'Legacy Product', 100, 0, 1, ?, ?)").run(now(), now());
 
-    // Re-run migration v39 logic (or check result if migration v39 already ran on db init)
-    // Note: initTestDb() runs migrations up to v39, but we inserted with 0 above to simulate pre-migration state.
-    // Let's execute the migration v39 update query explicitly:
-    db.prepare("UPDATE products SET cb_percent = NULL WHERE cb_percent = 0 AND id = 'prod-legacy'").run();
+    // Execute the actual migration v39 up() handler exported from main/db.ts
+    const migration39 = MIGRATIONS.find((m: any) => m.version === 39);
+    assert(migration39 !== undefined, 'migration v39 registered in db.ts');
+    migration39.up();
 
     const legacyProd = db.prepare("SELECT cb_percent FROM products WHERE id = 'prod-legacy'").get() as any;
-    assertEqual(legacyProd.cb_percent, null, 'legacy product with cb_percent=0 converted to NULL by migration v39');
+    assertEqual(legacyProd.cb_percent, null, 'legacy product with cb_percent=0 converted to NULL by migration v39 up()');
 
   } finally {
     server.close();

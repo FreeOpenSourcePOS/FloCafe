@@ -509,12 +509,9 @@ class CloudSyncService {
         payload: safeJsonParse(row.payload),
       }));
 
-      db.prepare(`
-        UPDATE cloud_sync_outbox SET status = 'sending', updated_at = ? WHERE id = ?
-      `);
-
+      const updateStmt = db.prepare(`UPDATE cloud_sync_outbox SET status = 'sending', updated_at = ? WHERE id = ?`);
       for (const row of rows) {
-        db.prepare(`UPDATE cloud_sync_outbox SET status = 'sending', updated_at = ? WHERE id = ?`).run(now(), row.id);
+        updateStmt.run(now(), row.id);
       }
 
       const res = await this.signedFetch('/api/pos/events', {

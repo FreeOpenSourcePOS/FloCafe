@@ -160,7 +160,7 @@ export function startServer(): Promise<void> {
         status: db.ok ? 'ok' : 'error',
         db: db.ok ? 'ok' : db.error,
         service: 'Flo Local API',
-        version: '1.0.0',
+        version: process.env.npm_package_version || '2.4.7',
         timestamp: new Date().toISOString(),
       });
     });

@@ -3438,14 +3438,17 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                <label className="flex items-center gap-3 cursor-pointer">
+                <label className="flex items-start gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={cloudSettings.cloud_sync_enabled}
                     onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_sync_enabled: e.target.checked })}
-                    className="rounded border-gray-300 text-brand focus:ring-brand"
+                    className="mt-0.5 rounded border-gray-300 text-brand focus:ring-brand"
                   />
-                  <span className="text-sm text-gray-700">{t('settings.enableBillSync')}</span>
+                  <div>
+                    <span className="text-sm font-medium text-gray-900 block">{t('settings.enableBillSync')}</span>
+                    <p className="text-xs text-gray-500 mt-1">{t('settings.enableBillSyncHint')}</p>
+                  </div>
                 </label>
 
                     {cloudSettings.cloud_last_sync && (

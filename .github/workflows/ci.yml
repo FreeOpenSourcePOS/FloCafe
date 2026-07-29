@@ -53,6 +53,7 @@ jobs:
   # 3. Linux Baseline
   linux-baseline:
     needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -71,7 +72,7 @@ jobs:
         run: npm ci
 
       - name: Rebuild native modules
-        run: npx @electron/rebuild -f -w better-sqlite3 || npm rebuild better-sqlite3
+        run: npx @electron/rebuild -f -w better-sqlite3
 
       - name: Backend lint
         run: npm run lint:backend

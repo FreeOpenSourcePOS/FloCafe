@@ -109,11 +109,13 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario 2: Update global rate and test inheritance ───');
 
-    await api(baseUrl, '/api/settings/loyalty', {
+    const updateRes = await api(baseUrl, '/api/settings/loyalty', {
       method: 'PUT',
-      body: { loyalty_enabled: true, global_cashback_percent: 10 },
+      body: { loyalty_enabled: true, global_cashback_percent: 2.5 },
       headers: authHeader,
     });
+    assertEqual(updateRes.status, 200, 'updated global cashback percent to fractional value 2.5');
+    assertEqual(updateRes.data.global_cashback_percent, 2.5, 'API returns fractional rate 2.5');
 
     const order2 = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -121,8 +123,8 @@ async function main() {
         type: 'takeaway',
         customer_id: 'cust-2',
         items: [
-          { product_id: 'prod-null', quantity: 1 },   // 1×100 = 100 @ 10% global = 10
-        ], // Total cashback = 10 points = 1000 int
+          { product_id: 'prod-null', quantity: 2 },   // 2×100 = 200 @ 2.5% global = 5
+        ], // Total cashback = 5 points = 500 int
       },
       headers: authHeader,
     });
@@ -139,7 +141,7 @@ async function main() {
       headers: authHeader,
     });
     assertEqual(pay2.status, 200, 'payment accepted');
-    assertEqual(pay2.data.loyaltyPointsEarned, 1000, 'earned 10 points (1000 int) after global rate update');
+    assertEqual(pay2.data.loyaltyPointsEarned, 500, 'earned 5 points (500 int) after fractional global rate update (2.5%)');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario 3: Negative validation tests

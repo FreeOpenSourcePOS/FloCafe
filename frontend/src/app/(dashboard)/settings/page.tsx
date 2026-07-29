@@ -2534,9 +2534,9 @@ export default function SettingsPage() {
                         type="number"
                         min="0"
                         max="100"
-                        step="1"
+                        step="0.1"
                         value={globalCashbackPercent === 0 ? '' : globalCashbackPercent}
-                        onChange={(e) => setGlobalCashbackPercent(Math.min(100, Math.max(0, parseInt(e.target.value) || 0)))}
+                        onChange={(e) => setGlobalCashbackPercent(Math.min(100, Math.max(0, parseFloat(e.target.value) || 0)))}
                         placeholder="0"
                         className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-right"
                       />

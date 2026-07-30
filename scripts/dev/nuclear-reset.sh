@@ -2,9 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
+ROOT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$ROOT_DIR"
 
-if [ ! -f "$SCRIPT_DIR/package.json" ]; then
+if [ ! -f "$ROOT_DIR/package.json" ]; then
   echo "Error: nuclear-reset.sh must run from a FloCafe checkout." >&2
   exit 1
 fi
@@ -53,7 +54,7 @@ if [ "$CONFIRMED" = "false" ]; then
 fi
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}    Flo POS - Nuclear Reset             ${NC}"
+echo -e "${BLUE}    FloCafe - Development Reset         ${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -70,9 +71,9 @@ echo -e "${BLUE}Step 2: Clearing ALL caches${NC}"
 echo "----------------------------------------"
 
 # Project caches
-clear_path "$SCRIPT_DIR/frontend/.next" "frontend/.next"
-clear_path "$SCRIPT_DIR/frontend/node_modules/.cache" "frontend/node_modules/.cache"
-clear_path "$SCRIPT_DIR/dist" "dist/"
+clear_path "$ROOT_DIR/frontend/.next" "frontend/.next"
+clear_path "$ROOT_DIR/frontend/node_modules/.cache" "frontend/node_modules/.cache"
+clear_path "$ROOT_DIR/dist" "dist/"
 
 # Electron caches
 clear_path "$HOME/Library/Application Support/flo-desktop/Cache" "Electron app cache"
@@ -80,8 +81,8 @@ clear_path "$HOME/Library/Application Support/flo-desktop/Code Cache" "Electron 
 clear_path "$HOME/Library/Caches/flo-desktop" "Electron system cache"
 
 # TypeScript incremental build cache
-if [ -e "$SCRIPT_DIR/tsconfig.tsbuildinfo" ]; then
-  rm -f -- "$SCRIPT_DIR/tsconfig.tsbuildinfo"
+if [ -e "$ROOT_DIR/tsconfig.tsbuildinfo" ]; then
+  rm -f -- "$ROOT_DIR/tsconfig.tsbuildinfo"
   echo -e "${GREEN}Cleared: TS build info${NC}"
 fi
 

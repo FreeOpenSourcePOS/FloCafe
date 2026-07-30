@@ -781,29 +781,79 @@ Update discount limits (owner/manager only).
 
 ## Printers
 
-### GET `/api/printers`
-List configured printers.
+Printer configuration is available to owners and managers. Receipt and KOT print endpoints also allow cashiers. See [Printer setup](printers.md) for the operational guide.
 
----
+### GET `/api/printers`
+
+List configured printers, with their resolved printer profile.
+
+### GET `/api/printers/detect`
+
+Detect available USB and network printers.
+
+### GET `/api/printers/supported`
+
+List FloCafe's known printer profiles.
+
+### GET `/api/printers/:id`
+
+Get one configured printer.
 
 ### POST `/api/printers`
-Add printer.
 
-**Request:**
+Create a printer. `connection_type` must be `network`, `usb`, or `webusb`. Network printers require `ip_address`.
+
 ```json
 {
   "name": "Kitchen Printer",
   "connection_type": "network",
   "ip_address": "192.168.1.100",
   "port": 9100,
-  "paper_width": "80mm"
+  "paper_width": "80mm",
+  "is_default": true
 }
 ```
 
----
+USB configurations may include `usb_device_path`. A WebUSB entry stores the paper-width preference; the browser selects the physical device.
+
+### PUT `/api/printers/:id`
+
+Update printer configuration. The request accepts the same fields as creation.
+
+### DELETE `/api/printers/:id`
+
+Delete a configured printer.
+
+### POST `/api/printers/:id/set-default`
+
+Make a printer the default for regular receipt printing.
 
 ### POST `/api/printers/:id/test`
-Send test print.
+
+Send a test page. For WebUSB, the response contains the ESC/POS bytes for the browser to send.
+
+### POST `/api/printers/print-bill`
+
+Print the bill identified by `billId` or the bill associated with `orderId`.
+
+```json
+{
+  "billId": 123,
+  "useUnicode": false,
+  "isReprint": false
+}
+```
+
+### POST `/api/printers/print-kot`
+
+Print a kitchen order ticket for `orderId`. A caller may provide `stationName` and `items`; otherwise FloCafe routes items to configured kitchen stations. This endpoint returns `403` when KOT printing is disabled.
+
+```json
+{
+  "orderId": 123,
+  "useUnicode": false
+}
+```
 
 ---
 

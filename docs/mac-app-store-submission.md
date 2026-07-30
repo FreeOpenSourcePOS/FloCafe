@@ -1,6 +1,6 @@
-# Mac App Store Submission — Flo Desktop
+# Mac App Store submission
 
-This document is the full plan for shipping Flo to the Mac App Store (MAS). It
+This maintainer guide covers shipping FloCafe to the Mac App Store (MAS). It
 covers what Apple requires, what features of Flo conflict with MAS rules, what
 certificates/profiles to create in the Apple Developer portal, and the end-to-end
 build + upload flow.

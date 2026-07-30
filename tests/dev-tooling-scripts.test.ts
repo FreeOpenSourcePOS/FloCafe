@@ -55,10 +55,10 @@ function runTest() {
 
   console.log('✓ kill-ports.js pattern matching verified');
 
-  console.log('Testing nuclear-reset.sh confirmation guard...');
+  console.log('Testing scripts/dev/nuclear-reset.sh confirmation guard...');
 
-  // Running nuclear-reset.sh in non-interactive mode without -y should fail
-  const nonInteractiveResult = spawnSync('bash', [path.join(rootDir, 'nuclear-reset.sh')], {
+  // Running the reset script in non-interactive mode without -y should fail.
+  const nonInteractiveResult = spawnSync('bash', [path.join(rootDir, 'scripts/dev/nuclear-reset.sh')], {
     encoding: 'utf8',
     env: { ...process.env, FORCE: '', CI: '' },
   });
@@ -66,7 +66,7 @@ function runTest() {
   assert.strictEqual(
     nonInteractiveResult.status,
     1,
-    'Expected non-interactive nuclear-reset.sh without -y flag to fail with exit code 1',
+    'Expected non-interactive reset without -y flag to fail with exit code 1',
   );
   assert.match(
     nonInteractiveResult.stdout + nonInteractiveResult.stderr,
@@ -74,7 +74,7 @@ function runTest() {
     'Expected output to warn about non-interactive shell',
   );
 
-  console.log('✓ nuclear-reset.sh non-interactive confirmation guard verified');
+  console.log('✓ development reset non-interactive confirmation guard verified');
 
   console.log('All dev tooling script tests passed cleanly!');
 }

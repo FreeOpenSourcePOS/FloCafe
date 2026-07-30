@@ -10,6 +10,8 @@
     "clean": "node kill-ports.js 3001 3002",
     "predev": "",
     "dev": "npm run clean && npm run build:frontend && npm run build && electron .",
+    "dev:restart": "bash scripts/dev/restart.sh",
+    "dev:reset": "bash scripts/dev/nuclear-reset.sh",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "tsc && node scripts/copy-runtime-assets.cjs",
     "lint:backend": "eslint main/",

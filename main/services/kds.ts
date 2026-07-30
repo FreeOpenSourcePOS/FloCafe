@@ -2,7 +2,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
-import { getUserAuthStatus, isTokenRevoked } from '../middleware/security';
+import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
 
 interface KdsClient {
   ws: WebSocket;
@@ -122,6 +122,11 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
       return;
     }
 
+    if (isTokenStale(decoded.iat, user.tokens_valid_after)) {
+      ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid or revoked token' }));
+      return;
+    }
+
     if (user.role !== 'chef' && user.role !== 'owner' && user.role !== 'manager') {
       ws.send(JSON.stringify({ type: 'auth_error', message: 'Only kitchen staff can access KDS' }));
       return;
@@ -162,6 +167,10 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
     const userStatus = getUserAuthStatus(decoded.userId);
     if (!userStatus || !userStatus.isActive || !['chef', 'owner', 'manager'].includes(userStatus.role)) {
       client.ws.send(JSON.stringify({ type: 'error', message: 'User deactivated or unauthorized' }));
+      return;
+    }
+    if (isTokenStale(decoded.iat, userStatus.tokensValidAfter)) {
+      client.ws.send(JSON.stringify({ type: 'error', message: 'Session revoked' }));
       return;
     }
   } catch {

@@ -91,6 +91,7 @@ export function authRateLimit() {
 interface UserAuthCacheEntry {
   isActive: boolean;
   role: string;
+  tokensValidAfter: string | null;
   expiresAt: number;
 }
 
@@ -104,11 +105,13 @@ const userAuthCache = new Map<string, UserAuthCacheEntry>();
 let lastUserAuthCachePruneAt = 0;
 
 /**
- * Looks up (and caches) whether a JWT's subject is still an active user, and
- * their current role. requireAuth uses this to reject tokens for deactivated
- * users instead of trusting the JWT's signature/expiry alone.
+ * Looks up (and caches) whether a JWT's subject is still an active user, their
+ * current role, and the earliest `iat` a token for them may still carry.
+ * requireAuth uses this to reject tokens for deactivated users, and tokens
+ * issued before a password/PIN change (#173), instead of trusting the JWT's
+ * signature/expiry alone.
  */
-export function getUserAuthStatus(userId: string): { isActive: boolean; role: string } | null {
+export function getUserAuthStatus(userId: string): { isActive: boolean; role: string; tokensValidAfter: string | null } | null {
   const now = Date.now();
   if (
     userAuthCache.size > 1000 &&
@@ -122,12 +125,12 @@ export function getUserAuthStatus(userId: string): { isActive: boolean; role: st
 
   const cached = userAuthCache.get(userId);
   if (cached && cached.expiresAt > now) {
-    return { isActive: cached.isActive, role: cached.role };
+    return { isActive: cached.isActive, role: cached.role, tokensValidAfter: cached.tokensValidAfter };
   }
 
   const db = getDatabase();
-  const user = db.prepare('SELECT is_active, role FROM users WHERE id = ?').get(userId) as
-    | { is_active: number; role: string }
+  const user = db.prepare('SELECT is_active, role, tokens_valid_after FROM users WHERE id = ?').get(userId) as
+    | { is_active: number; role: string; tokens_valid_after: string | null }
     | undefined;
 
   if (!user) {
@@ -138,18 +141,39 @@ export function getUserAuthStatus(userId: string): { isActive: boolean; role: st
   const entry: UserAuthCacheEntry = {
     isActive: user.is_active === 1,
     role: user.role,
+    tokensValidAfter: user.tokens_valid_after,
     expiresAt: now + USER_AUTH_CACHE_TTL_MS,
   };
   userAuthCache.set(userId, entry);
-  return { isActive: entry.isActive, role: entry.role };
+  return { isActive: entry.isActive, role: entry.role, tokensValidAfter: entry.tokensValidAfter };
 }
 
 /**
  * Forces the next requireAuth check for this user to re-read the DB instead
- * of serving a stale cache entry. Call after deactivate/reactivate/role changes.
+ * of serving a stale cache entry. Call after deactivate/reactivate/role changes,
+ * or after bumping tokens_valid_after (password/PIN change, #173).
  */
 export function invalidateUserAuthCache(userId: string): void {
   userAuthCache.delete(userId);
+}
+
+/**
+ * True if a JWT's `iat` (issued-at, seconds since epoch) predates the user's
+ * `tokens_valid_after` — i.e. the credentials were changed after this token was
+ * issued, so it must be rejected even though its signature and expiry are fine.
+ * A stateless per-token blocklist (see revokeToken below) can't do this: it only
+ * knows about the one token used to log out, not every other session a user may
+ * have open on other devices at the time of a password/PIN change (#173).
+ */
+export function isTokenStale(iat: number | undefined, tokensValidAfter: string | null | undefined): boolean {
+  if (!tokensValidAfter || typeof iat !== 'number') return false;
+  // JWT `iat` only has whole-second resolution, but tokens_valid_after is written with
+  // millisecond precision — comparing them directly would flag a token minted in the
+  // very same second as the change (e.g. the fresh login right after a password reset)
+  // as stale, even though it was actually issued after. Floor tokens_valid_after to
+  // seconds too so both sides compare at the same resolution.
+  const tokensValidAfterSeconds = Math.floor(new Date(tokensValidAfter).getTime() / 1000);
+  return iat < tokensValidAfterSeconds;
 }
 
 const revokedTokens = new Set<string>();

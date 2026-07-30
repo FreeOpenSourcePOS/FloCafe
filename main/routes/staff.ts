@@ -207,6 +207,12 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
         ? (hasNonEmptyPin(pin) ? bcrypt.hashSync(String(pin), 10) : null)
         : member.pin_hash;
 
+    // Revoke this user's outstanding sessions only when a credential actually
+    // changed (not on a bare name/email/role edit) — matches auth.ts's
+    // password/change and recover-password (#173).
+    const credentialsChanged = hashedPassword !== member.password || hashedPin !== member.pin_hash;
+    const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
+
     db.prepare(`
       UPDATE users SET
         name       = COALESCE(?, name),
@@ -214,11 +220,12 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
         password   = ?,
         role       = COALESCE(?, role),
         pin_hash   = ?,
+        tokens_valid_after = ?,
         updated_at = ?
       WHERE id = ?
     `).run(
       name || null, email || null, hashedPassword,
-      role || null, hashedPin,
+      role || null, hashedPin, tokensValidAfter,
       now(), req.params.id
     );
     invalidateUserAuthCache(req.params.id as string);

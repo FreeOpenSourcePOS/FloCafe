@@ -236,202 +236,225 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
   }
 });
 
-router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
-  try {
-    const { method, amount, transaction_id, notes, customer_id: bodyCustomerId } = req.body;
+interface PaymentInput {
+  method: string;
+  amount?: number | string;
+  transaction_id?: string;
+  notes?: string;
+}
 
-    if (!method) {
-      return res.status(400).json({ error: 'Payment method is required' });
+// Applies one payment line to a bill: validates it, debits wallet points if needed,
+// updates paid_amount/balance/payment_status, and — once the bill is fully paid —
+// completes the order, frees the table, and credits loyalty cashback.
+//
+// Must always be called from inside a withTxn() block. It re-reads the bill fresh
+// on every call (rather than accepting it as a parameter), so that calling this
+// repeatedly inside a single transaction for a multi-line split payment (#177) has
+// each line see the balance left by the previous one, and a validation failure on
+// any line throws — rolling back every payment applied so far in that transaction,
+// not just the failing one.
+function applyPayment(
+  db: ReturnType<typeof getDatabase>,
+  billId: string,
+  payment: PaymentInput,
+  bodyCustomerId?: string | number,
+): { bill: any; walletDebited: boolean; loyaltyPointsEarned: number } {
+  const { method, amount, transaction_id, notes } = payment;
+
+  if (!method) {
+    throw Object.assign(new Error('Payment method is required'), { statusCode: 400 });
+  }
+
+  // Re-read bill inside transaction — gets current state even under concurrent access
+  const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
+  if (!bill) {
+    throw Object.assign(new Error('Bill not found'), { statusCode: 404 });
+  }
+
+  if (bill.payment_status === 'paid') {
+    throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
+  }
+
+  // Compute cashback eligibility inside the transaction so it reads the
+  // same consistent snapshot the payment itself commits against —
+  // computing this outside withTxn left a TOCTOU gap where concurrent
+  // discount/order changes could produce stale cashback (vuln-0006).
+  let loyaltyCashbackToCredit = 0;
+  {
+    const effectiveCustomerIdForCashback = bill.customer_id || (bodyCustomerId ? String(bodyCustomerId) : null);
+    const loyaltySetting = (db.prepare(
+      `SELECT value FROM settings WHERE key = 'loyalty_enabled'`
+    ).get() as any)?.value;
+    if ((loyaltySetting === 'true' || loyaltySetting === '1') && effectiveCustomerIdForCashback) {
+      // BUG #20 FIX: Calculate cashback on discounted subtotal (proportional)
+      const order = db.prepare('SELECT subtotal, discount_amount FROM orders WHERE id = ?').get(bill.order_id) as any;
+      const orderDiscount = order?.discount_amount || 0;
+      const orderSubtotal = order?.subtotal || 0;
+
+      const items = db.prepare(`
+        SELECT oi.subtotal, p.cb_percent
+        FROM order_items oi
+        JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = ? AND oi.status != 'cancelled'
+      `).all(bill.order_id) as { subtotal: number; cb_percent: number }[];
+      for (const item of items) {
+        let effectiveSubtotal = item.subtotal;
+        // Apply proportional discount to each item's subtotal
+        if (orderDiscount > 0 && orderSubtotal > 0) {
+          const itemDiscountShare = orderDiscount * (item.subtotal / orderSubtotal);
+          effectiveSubtotal = Math.max(0, item.subtotal - itemDiscountShare);
+        }
+        // Points earned come solely from each item's own cashback percentage
+        if (item.cb_percent > 0) {
+          loyaltyCashbackToCredit += Math.floor(effectiveSubtotal * item.cb_percent / 100) * 100; // Multiply by LOYALTY_REDEMPTION_RATE (100) to store as points instead of raw currency
+        }
+      }
+    }
+  }
+
+  // BUG #8 FIX: Default to remaining balance (not full total)
+  const remainingBalance = Math.max(0, bill.total - bill.paid_amount);
+
+  // BUG #1 + #7 FIX: Validate amount is a finite positive number
+  let paidAmount: number;
+  if (amount !== undefined && amount !== null) {
+    const parsed = parseFloat(String(amount));
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw Object.assign(new Error('Payment amount must be a finite number greater than zero'), { statusCode: 400 });
+    }
+    // BUG #9 FIX: Cap at remaining balance (prevents overpayment)
+    paidAmount = Math.min(parsed, remainingBalance);
+  } else {
+    // No amount specified — pay the remaining balance
+    paidAmount = remainingBalance;
+  }
+
+  if (paidAmount <= 0) {
+    throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
+  }
+
+  const newPaidAmount = bill.paid_amount + paidAmount;
+  const newBalance = Math.max(0, bill.total - newPaidAmount);
+  const paymentStatus = newBalance <= 0.01 ? 'paid' : 'partial';
+
+  // BUG #10 FIX: Handle malformed payment_details gracefully
+  const existingPayments: any[] = (() => {
+    if (!bill.payment_details) return [];
+    try {
+      const parsed = JSON.parse(bill.payment_details);
+      return Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      return [];
+    }
+  })();
+  existingPayments.push({ method, amount: paidAmount, transaction_id, notes, timestamp: now() });
+
+  const effectiveCustomerId = bill.customer_id || (bodyCustomerId ? String(bodyCustomerId) : null);
+
+  // Update bill's customer_id if it was missing and one was provided
+  if (!bill.customer_id && effectiveCustomerId) {
+    db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?')
+      .run(effectiveCustomerId, now(), billId);
+    bill.customer_id = effectiveCustomerId;
+  }
+
+  let walletDebited = false;
+  let actualLoyaltyPointsEarned = 0; // Track actual cashback credited
+
+  if (method === 'wallet') {
+    if (!bill.customer_id) {
+      throw Object.assign(new Error('Customer association is required for wallet payment'), { statusCode: 400 });
+    }
+    // Convert currency amount to points using redemption rate
+    // e.g., if redemption_rate=100 and customer pays ₹50, debit 5000 points
+    const pointsToDebit = Math.ceil(paidAmount * LOYALTY_REDEMPTION_RATE);
+
+    // Check wallet balance INSIDE transaction to prevent double-spend
+    const credits = db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger
+      WHERE customer_id = ? AND type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))
+    `).get(bill.customer_id) as { total: number };
+    const debits = db.prepare(`
+      SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger
+      WHERE customer_id = ? AND type = 'debit'
+    `).get(bill.customer_id) as { total: number };
+    const walletBalance = Math.max(0, credits.total - debits.total);
+    if (walletBalance < pointsToDebit) {
+      const availableCurrency = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+      throw Object.assign(new Error(`Insufficient wallet balance. Available: ${availableCurrency} (${walletBalance} points), Required: ${paidAmount}`), { statusCode: 400 });
     }
 
+    db.prepare(`
+      INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
+      VALUES (?, ?, 'debit', ?, ?, ?, ?)
+    `).run(bill.customer_id, bill.id, pointsToDebit, `Payment for bill ${bill.bill_number}`, now(), now());
+    walletDebited = true;
+  }
+
+  db.prepare(`
+    UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?,
+      payment_details = ?,
+      paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END,
+      updated_at = ?
+    WHERE id = ?
+  `).run(
+    newPaidAmount, newBalance, paymentStatus,
+    JSON.stringify(existingPayments),
+    paymentStatus, paymentStatus === 'paid' ? now() : null,
+    now(), billId
+  );
+
+  if (paymentStatus === 'paid') {
+    db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?")
+      .run(now(), now(), bill.order_id);
+
+    const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(bill.order_id) as any;
+    if (order && order.table_id) {
+      db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
+        .run(now(), order.table_id);
+    }
+
+    // Credit per-item cashback (idempotent — skip if already credited for this bill)
+    // Reduce cashback proportionally for wallet-paid portion (no cashback on points spent)
+    if (loyaltyCashbackToCredit > 0 && effectiveCustomerId) {
+      const alreadyCredited = db.prepare(
+        `SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`
+      ).get(bill.id);
+      if (!alreadyCredited) {
+        let finalCashback = loyaltyCashbackToCredit;
+        // Calculate total wallet amount from ALL payments (current + prior)
+        // This handles split payments where wallet was used in an earlier call
+        const totalWalletPaid = existingPayments
+          .filter((p: any) => p.method === 'wallet')
+          .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
+        if (totalWalletPaid > 0 && bill.total > 0) {
+          const walletProportion = Math.min(1, totalWalletPaid / bill.total);
+          finalCashback = Math.floor(loyaltyCashbackToCredit * (1 - walletProportion));
+        }
+        if (finalCashback > 0) {
+          db.prepare(`
+            INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
+            VALUES (?, ?, 'credit', ?, ?, ?, ?)
+          `).run(
+            effectiveCustomerId, bill.id, finalCashback,
+            `Cashback on bill ${bill.bill_number}`,
+            now(), now()
+          );
+          actualLoyaltyPointsEarned = finalCashback;
+        }
+      }
+    }
+  }
+
+  const updatedBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId));
+  return { bill: updatedBill, walletDebited, loyaltyPointsEarned: actualLoyaltyPointsEarned };
+}
+
+router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+  try {
     const db = getDatabase();
-
     // BUG #2 FIX: Entire payment logic inside transaction to prevent race conditions
-    const result = withTxn(() => {
-      // Re-read bill inside transaction — gets current state even under concurrent access
-      const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
-      if (!bill) {
-        throw Object.assign(new Error('Bill not found'), { statusCode: 404 });
-      }
-
-      if (bill.payment_status === 'paid') {
-        throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
-      }
-
-      // Compute cashback eligibility inside the transaction so it reads the
-      // same consistent snapshot the payment itself commits against —
-      // computing this outside withTxn left a TOCTOU gap where concurrent
-      // discount/order changes could produce stale cashback (vuln-0006).
-      let loyaltyCashbackToCredit = 0;
-      {
-        const effectiveCustomerIdForCashback = bill.customer_id || (bodyCustomerId ? String(bodyCustomerId) : null);
-        const loyaltySetting = (db.prepare(
-          `SELECT value FROM settings WHERE key = 'loyalty_enabled'`
-        ).get() as any)?.value;
-        if ((loyaltySetting === 'true' || loyaltySetting === '1') && effectiveCustomerIdForCashback) {
-          // BUG #20 FIX: Calculate cashback on discounted subtotal (proportional)
-          const order = db.prepare('SELECT subtotal, discount_amount FROM orders WHERE id = ?').get(bill.order_id) as any;
-          const orderDiscount = order?.discount_amount || 0;
-          const orderSubtotal = order?.subtotal || 0;
-
-          const items = db.prepare(`
-            SELECT oi.subtotal, p.cb_percent
-            FROM order_items oi
-            JOIN products p ON p.id = oi.product_id
-            WHERE oi.order_id = ? AND oi.status != 'cancelled'
-          `).all(bill.order_id) as { subtotal: number; cb_percent: number }[];
-          for (const item of items) {
-            let effectiveSubtotal = item.subtotal;
-            // Apply proportional discount to each item's subtotal
-            if (orderDiscount > 0 && orderSubtotal > 0) {
-              const itemDiscountShare = orderDiscount * (item.subtotal / orderSubtotal);
-              effectiveSubtotal = Math.max(0, item.subtotal - itemDiscountShare);
-            }
-            // Points earned come solely from each item's own cashback percentage
-            if (item.cb_percent > 0) {
-              loyaltyCashbackToCredit += Math.floor(effectiveSubtotal * item.cb_percent / 100) * 100; // Multiply by LOYALTY_REDEMPTION_RATE (100) to store as points instead of raw currency
-            }
-          }
-        }
-      }
-
-      // BUG #8 FIX: Default to remaining balance (not full total)
-      const remainingBalance = Math.max(0, bill.total - bill.paid_amount);
-
-      // BUG #1 + #7 FIX: Validate amount is a finite positive number
-      let paidAmount: number;
-      if (amount !== undefined && amount !== null) {
-        const parsed = parseFloat(amount);
-        if (!Number.isFinite(parsed) || parsed <= 0) {
-          throw Object.assign(new Error('Payment amount must be a finite number greater than zero'), { statusCode: 400 });
-        }
-        // BUG #9 FIX: Cap at remaining balance (prevents overpayment)
-        paidAmount = Math.min(parsed, remainingBalance);
-      } else {
-        // No amount specified — pay the remaining balance
-        paidAmount = remainingBalance;
-      }
-
-      if (paidAmount <= 0) {
-        throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
-      }
-
-      const newPaidAmount = bill.paid_amount + paidAmount;
-      const newBalance = Math.max(0, bill.total - newPaidAmount);
-      const paymentStatus = newBalance <= 0.01 ? 'paid' : 'partial';
-
-      // BUG #10 FIX: Handle malformed payment_details gracefully
-      const existingPayments: any[] = (() => {
-        if (!bill.payment_details) return [];
-        try {
-          const parsed = JSON.parse(bill.payment_details);
-          return Array.isArray(parsed) ? parsed : [parsed];
-        } catch {
-          return [];
-        }
-      })();
-      existingPayments.push({ method, amount: paidAmount, transaction_id, notes, timestamp: now() });
-
-      const effectiveCustomerId = bill.customer_id || (bodyCustomerId ? String(bodyCustomerId) : null);
-
-      // Update bill's customer_id if it was missing and one was provided
-      if (!bill.customer_id && effectiveCustomerId) {
-        db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?')
-          .run(effectiveCustomerId, now(), req.params.id);
-        bill.customer_id = effectiveCustomerId;
-      }
-
-      let walletDebited = false;
-      let actualLoyaltyPointsEarned = 0; // Track actual cashback credited
-
-      if (method === 'wallet') {
-        if (!bill.customer_id) {
-          throw Object.assign(new Error('Customer association is required for wallet payment'), { statusCode: 400 });
-        }
-        // Convert currency amount to points using redemption rate
-        // e.g., if redemption_rate=100 and customer pays ₹50, debit 5000 points
-        const pointsToDebit = Math.ceil(paidAmount * LOYALTY_REDEMPTION_RATE);
-
-        // Check wallet balance INSIDE transaction to prevent double-spend
-        const credits = db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger
-          WHERE customer_id = ? AND type = 'credit' AND (expires_at IS NULL OR expires_at > datetime('now'))
-        `).get(bill.customer_id) as { total: number };
-        const debits = db.prepare(`
-          SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger
-          WHERE customer_id = ? AND type = 'debit'
-        `).get(bill.customer_id) as { total: number };
-        const walletBalance = Math.max(0, credits.total - debits.total);
-        if (walletBalance < pointsToDebit) {
-          const availableCurrency = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-          throw Object.assign(new Error(`Insufficient wallet balance. Available: ${availableCurrency} (${walletBalance} points), Required: ${paidAmount}`), { statusCode: 400 });
-        }
-
-        db.prepare(`
-          INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
-          VALUES (?, ?, 'debit', ?, ?, ?, ?)
-        `).run(bill.customer_id, bill.id, pointsToDebit, `Payment for bill ${bill.bill_number}`, now(), now());
-        walletDebited = true;
-      }
-
-      db.prepare(`
-        UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?,
-          payment_details = ?,
-          paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END,
-          updated_at = ?
-        WHERE id = ?
-      `).run(
-        newPaidAmount, newBalance, paymentStatus,
-        JSON.stringify(existingPayments),
-        paymentStatus, paymentStatus === 'paid' ? now() : null,
-        now(), req.params.id
-      );
-
-      if (paymentStatus === 'paid') {
-        db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?")
-          .run(now(), now(), bill.order_id);
-
-        const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(bill.order_id) as any;
-        if (order && order.table_id) {
-          db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-            .run(now(), order.table_id);
-        }
-
-        // Credit per-item cashback (idempotent — skip if already credited for this bill)
-        // Reduce cashback proportionally for wallet-paid portion (no cashback on points spent)
-        if (loyaltyCashbackToCredit > 0 && effectiveCustomerId) {
-          const alreadyCredited = db.prepare(
-            `SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`
-          ).get(bill.id);
-          if (!alreadyCredited) {
-            let finalCashback = loyaltyCashbackToCredit;
-            // Calculate total wallet amount from ALL payments (current + prior)
-            // This handles split payments where wallet was used in an earlier call
-            const totalWalletPaid = existingPayments
-              .filter((p: any) => p.method === 'wallet')
-              .reduce((sum: number, p: any) => sum + (p.amount || 0), 0);
-            if (totalWalletPaid > 0 && bill.total > 0) {
-              const walletProportion = Math.min(1, totalWalletPaid / bill.total);
-              finalCashback = Math.floor(loyaltyCashbackToCredit * (1 - walletProportion));
-            }
-            if (finalCashback > 0) {
-              db.prepare(`
-                INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
-                VALUES (?, ?, 'credit', ?, ?, ?, ?)
-              `).run(
-                effectiveCustomerId, bill.id, finalCashback,
-                `Cashback on bill ${bill.bill_number}`,
-                now(), now()
-              );
-              actualLoyaltyPointsEarned = finalCashback;
-            }
-          }
-        }
-      }
-
-      const updatedBill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
-      return { bill: updatedBill, walletDebited, loyaltyPointsEarned: actualLoyaltyPointsEarned };
-    });
+    const result = withTxn(() => applyPayment(db, req.params.id as string, req.body, req.body.customer_id));
 
     const billStatus = (result.bill as any)?.payment_status;
     if (billStatus === 'paid') notifyKdsUpdate();
@@ -441,6 +464,42 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
   } catch (error: any) {
     const statusCode = error.statusCode || 500;
     console.error('[API] Bill payment failed:', error);
+    res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });
+  }
+});
+
+// POST /:id/payments — atomic split-payment batch endpoint (#177). Applies every
+// payment line in the array within a single transaction, so a failure partway
+// through (insufficient wallet balance, an invalid amount, etc.) rolls back every
+// line already applied instead of leaving the bill partially paid.
+router.post('/:id/payments', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+  try {
+    const { payments, customer_id: bodyCustomerId } = req.body;
+    if (!Array.isArray(payments) || payments.length === 0) {
+      return res.status(400).json({ error: 'payments must be a non-empty array' });
+    }
+
+    const db = getDatabase();
+    const result = withTxn(() => {
+      let last: { bill: any; walletDebited: boolean; loyaltyPointsEarned: number } | null = null;
+      let anyWalletDebited = false;
+      let totalLoyaltyPointsEarned = 0;
+      for (const payment of payments) {
+        last = applyPayment(db, req.params.id as string, payment, bodyCustomerId);
+        anyWalletDebited = anyWalletDebited || last.walletDebited;
+        totalLoyaltyPointsEarned += last.loyaltyPointsEarned;
+      }
+      return { bill: last!.bill, walletDebited: anyWalletDebited, loyaltyPointsEarned: totalLoyaltyPointsEarned };
+    });
+
+    const billStatus = (result.bill as any)?.payment_status;
+    if (billStatus === 'paid') notifyKdsUpdate();
+    notifyOrderUpdated();
+
+    res.json(result);
+  } catch (error: any) {
+    const statusCode = error.statusCode || 500;
+    console.error('[API] Batch bill payment failed:', error);
     res.status(statusCode).json({ error: statusCode >= 500 ? 'Bill payment failed' : error.message });
   }
 });

@@ -29,6 +29,17 @@ interface Payment {
   amount: string;
 }
 
+// Splits `total` evenly across `count` slots as 2-decimal strings that sum to exactly
+// `total` (to the cent) — a plain `(total / count).toFixed(2)` per slot loses a cent or
+// two to independent rounding (e.g. 100 / 3 = 33.33 x 3 = 99.99). Any leftover cent(s)
+// from the floor division go to the first slot.
+function distributeEvenly(total: number, count: number): string[] {
+  const totalCents = Math.round(total * 100);
+  const baseCents = Math.floor(totalCents / count);
+  const remainderCents = totalCents - baseCents * count;
+  return Array.from({ length: count }, (_, i) => ((baseCents + (i === 0 ? remainderCents : 0)) / 100).toFixed(2));
+}
+
 // Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
 // Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
 const LOYALTY_REDEMPTION_RATE = 100;
@@ -101,8 +112,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           return { ...p, amount: (remaining * ratio).toFixed(2) };
         }));
       } else {
-        const perSplit = remaining / payments.length;
-        setPayments(payments.map(p => ({ ...p, amount: perSplit.toFixed(2) })));
+        const amounts = distributeEvenly(remaining, payments.length);
+        setPayments(payments.map((p, i) => ({ ...p, amount: amounts[i] })));
       }
     }
   }
@@ -131,9 +142,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
   const addSplit = () => {
     const newPayments = [...payments, { method: 'card' as const, amount: '0' }];
-    // Split amount equally among all splits
-    const perSplit = remaining / newPayments.length;
-    setPayments(newPayments.map(p => ({ ...p, amount: perSplit.toFixed(2) })));
+    const amounts = distributeEvenly(remaining, newPayments.length);
+    setPayments(newPayments.map((p, i) => ({ ...p, amount: amounts[i] })));
   };
 
   const removeSplit = (idx: number) => {
@@ -197,7 +207,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   };
 
   const handlePay = async () => {
-    if (totalPayment < remaining - 0.001) {
+    if (totalPayment < remaining - 0.01) {
       toast.error(t('pos.paymentBelowBalance'));
       return;
     }
@@ -213,17 +223,16 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     }
     setProcessing(true);
     try {
-      let earned = 0;
-      for (const p of payments) {
-        const amt = parseFloat(p.amount);
-        if (!amt || amt <= 0 || isNaN(amt)) continue;
-        const res = await api.post(`/bills/${bill.id}/payment`, { amount: amt, method: p.method, customer_id: effectiveCustomerId });
-        if (res.data?.loyaltyPointsEarned > 0) earned += res.data.loyaltyPointsEarned;
-      }
-      if (walletAmt > 0) {
-        const res = await api.post(`/bills/${bill.id}/payment`, { amount: walletAmt, method: 'wallet', customer_id: effectiveCustomerId });
-        if (res.data?.loyaltyPointsEarned > 0) earned += res.data.loyaltyPointsEarned;
-      }
+      const splitLines = payments
+        .map((p) => ({ method: p.method, amount: parseFloat(p.amount) }))
+        .filter((p) => p.amount > 0 && !isNaN(p.amount));
+      if (walletAmt > 0) splitLines.push({ method: 'wallet', amount: walletAmt });
+
+      // Single atomic call (#177) — either every split line is applied, or none are.
+      // Sequential per-line requests would leave the bill partially paid if a later
+      // line failed (e.g. network drop) after an earlier one had already committed.
+      const res = await api.post(`/bills/${bill.id}/payments`, { payments: splitLines, customer_id: effectiveCustomerId });
+      const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
       setPointsEarned(earned);
       if (earned > 0) {
         toast.success(t('pos.paymentRecordedWithPoints', { points: earned }));

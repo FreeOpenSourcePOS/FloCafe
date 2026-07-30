@@ -1460,6 +1460,19 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 39,
+    name: 'add_users_tokens_valid_after',
+    up: () => {
+      // Backs the JWT-revocation-on-credential-change fix (#173): requireAuth
+      // rejects any token whose `iat` predates this timestamp, so changing a
+      // password/PIN can invalidate every outstanding session for that user
+      // without maintaining a per-token blocklist across devices.
+      if (!getColumns(db, 'users').includes('tokens_valid_after')) {
+        db.exec(`ALTER TABLE users ADD COLUMN tokens_valid_after TEXT DEFAULT NULL`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -10,7 +10,7 @@ import { registerRoutes } from './routes';
 import { getJWTSecret } from './routes/auth';
 import { getDbHealth, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
-import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked } from './middleware/security';
+import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 
 let server: http.Server | null = null;
@@ -52,6 +52,12 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     // issued, instead of trusting the JWT's signature/expiry alone (vuln-0001).
     const status = getUserAuthStatus(decoded.userId);
     if (!status || !status.isActive) {
+      res.status(401).json({ error: 'Invalid or expired token' });
+      return;
+    }
+
+    // Reject tokens issued before the user's password/PIN was last changed (#173).
+    if (isTokenStale(decoded.iat, status.tokensValidAfter)) {
       res.status(401).json({ error: 'Invalid or expired token' });
       return;
     }

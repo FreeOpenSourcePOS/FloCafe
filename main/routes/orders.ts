@@ -454,9 +454,20 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       state_code: settings.state_code || '',
     };
 
-    const customer = (order as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((order as any).customer_id) as any : null;
-
     const { updatedOrder, updatedItems } = withTxn(() => {
+      // Re-fetch and re-validate under the transaction lock: another request (e.g. a
+      // cashier completing/cancelling the order) can race the checks above, which run
+      // before this lock is acquired (#175).
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
+      }
+
+      const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;
+
       const insertItem = db.prepare(`
         INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
@@ -547,11 +558,11 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       }
 
       // BUG #12 FIX: Preserve order-level discount (scale percentage proportionally)
-      const existingDiscountAmount = (order as any).discount_amount || 0;
+      const existingDiscountAmount = currentOrder.discount_amount || 0;
       let newDiscountAmount = existingDiscountAmount;
-      if (existingDiscountAmount > 0 && (order as any).subtotal > 0) {
-        if ((order as any).discount_type === 'percentage') {
-          const pct = (order as any).discount_value || 0;
+      if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
+        if (currentOrder.discount_type === 'percentage') {
+          const pct = currentOrder.discount_value || 0;
           newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
         }
         // amount type: keep same value
@@ -568,7 +579,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       }
 
       const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
-        ...(order as any),
+        ...currentOrder,
         service_charge: 0,
       }, customer);
       const taxRollup = combineItemAndChargeTaxes({
@@ -580,7 +591,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
         chargeTaxes,
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + ((order as any).delivery_charge || 0) + ((order as any).packaging_charge || 0);
+        + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0);
       const total = Number(preRoundTotal.toFixed(2));
       const roundOff = 0;
 
@@ -909,19 +920,30 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
       business_type: getSettingValue('business_type') || 'restaurant',
       state_code: getSettingValue('state_code') || '',
     };
-    const customer = order.customer_id
-      ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any
-      : null;
-
     // BUG #6 FIX: Wrap discount + tax + bill sync in a transaction
     const result = withTxn(() => {
+      // Re-fetch and re-validate under the transaction lock: another request (e.g. a
+      // concurrent item add/void, or the order being completed/cancelled) can race the
+      // checks above and change status/subtotal before this lock is acquired (#175).
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        throw Object.assign(new Error('Cannot apply discount to a completed or cancelled order'), { statusCode: 400 });
+      }
+
+      const customer = currentOrder.customer_id
+        ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
+        : null;
+
       // Calculate discount amount
       let discountAmount = 0;
       if (discount_value > 0) {
         if (discount_type === 'percentage') {
-          discountAmount = (order.subtotal * discount_value) / 100;
+          discountAmount = (currentOrder.subtotal * discount_value) / 100;
         } else {
-          discountAmount = Math.min(discount_value, order.subtotal);
+          discountAmount = Math.min(discount_value, currentOrder.subtotal);
         }
         discountAmount = Math.round(discountAmount * 100) / 100;
       }
@@ -950,16 +972,16 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
       let newTaxAmount = freshTax;
       let newExclusiveTax = exclusiveTax;
       let taxRatio = 1;
-      if (discountAmount > 0 && order.subtotal > 0) {
-        const discountedSubtotal = Math.max(0, order.subtotal - discountAmount);
-        taxRatio = discountedSubtotal / order.subtotal;
+      if (discountAmount > 0 && currentOrder.subtotal > 0) {
+        const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
+        taxRatio = discountedSubtotal / currentOrder.subtotal;
         newTaxAmount = Math.round(freshTax * taxRatio * 100) / 100;
         newExclusiveTax = Math.round(exclusiveTax * taxRatio * 100) / 100;
       }
 
-      const discountedSubtotal = Math.max(0, order.subtotal - discountAmount);
+      const discountedSubtotal = Math.max(0, currentOrder.subtotal - discountAmount);
       const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
-        ...order,
+        ...currentOrder,
         service_charge: 0,
       }, customer);
       const taxRollup = combineItemAndChargeTaxes({
@@ -971,7 +993,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
         chargeTaxes,
       });
       const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-        + (order.packaging_charge || 0) + (order.delivery_charge || 0);
+        + (currentOrder.packaging_charge || 0) + (currentOrder.delivery_charge || 0);
       const newTotal = Number(preRoundTotal.toFixed(2));
       const roundOff = 0;
 

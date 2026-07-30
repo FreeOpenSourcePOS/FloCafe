@@ -6,7 +6,7 @@ import { randomBytes } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
-import { authRateLimit, validatePassword, revokeToken, isTokenRevoked } from '../middleware/security';
+import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode } from '../countries';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 
@@ -409,8 +409,11 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db.prepare('SELECT id, name, email, role, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if (isTokenStale(decoded.iat, user.tokens_valid_after)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
 
     const tenant = buildLocalTenant(db, user.role);
 
@@ -456,6 +459,15 @@ router.post('/refresh', (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid token' });
     }
     const decoded = jwt.verify(token, getJWTSecret()) as any;
+
+    // Without this, a token minted before a password/PIN change (#173) could
+    // keep refreshing itself into new tokens forever, bypassing revocation entirely.
+    const db = getDatabase();
+    const user = db.prepare('SELECT tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
       { userId: decoded.userId, email: decoded.email, role: decoded.role, tenantId: decoded.tenantId, remember, jti: uuidv4() },
@@ -489,13 +501,16 @@ router.get('/me', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db.prepare('SELECT id, name, email, role, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if (isTokenStale(decoded.iat, user.tokens_valid_after)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
 
     const tenant = buildLocalTenant(db, user.role);
 
     res.json({
-      user,
+      user: { id: user.id, name: user.name, email: user.email, role: user.role },
       tenants: [tenant],
     });
   } catch {
@@ -523,6 +538,9 @@ router.post('/password/change', (req: Request, res: Response) => {
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
+    if (isTokenStale(decoded.iat, user.tokens_valid_after)) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
 
     if (!bcrypt.compareSync(current_password, user.password)) {
       return res.status(400).json({ error: 'Current password is incorrect' });
@@ -536,7 +554,10 @@ router.post('/password/change', (req: Request, res: Response) => {
     }
 
     const hashedPassword = bcrypt.hashSync(password, 10);
-    db.prepare('UPDATE users SET password = ?, updated_at = ? WHERE id = ?').run(hashedPassword, now(), decoded.userId);
+    const changedAt = now();
+    db.prepare('UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?')
+      .run(hashedPassword, changedAt, changedAt, decoded.userId);
+    invalidateUserAuthCache(decoded.userId);
 
     res.json({ message: 'Password changed successfully' });
   } catch (error: any) {
@@ -598,7 +619,10 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     }
 
     const hashedPassword = bcrypt.hashSync(new_password, 10);
-    db.prepare('UPDATE users SET password = ?, updated_at = ? WHERE id = ?').run(hashedPassword, now(), user.id);
+    const changedAt = now();
+    db.prepare('UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?')
+      .run(hashedPassword, changedAt, changedAt, user.id);
+    invalidateUserAuthCache(user.id);
 
     // Local audit trail — this codebase has no dedicated audit-events table,
     // so we follow its existing convention: a tagged console log (grep-able

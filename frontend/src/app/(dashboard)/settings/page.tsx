@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
-import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, Download } from 'lucide-react';
+import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -23,6 +23,7 @@ import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPan
 import type { HealthCheckReport } from '@/types/electron';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatDate } from '@/hooks/useFormatDate';
+import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 
 const CLASSIC_PREVIEW = `   STORE NAME
@@ -634,41 +635,7 @@ export default function SettingsPage() {
   }, []);
 
   // ── Updates ─────────────────────────────────────────────────────────────────
-  type UpdateStatus = {
-    status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready-to-install' | 'error' | 'dev-mode' | 'store' | 'unsupported';
-    version?: string;
-    percent?: number;
-    error?: string;
-  };
-
-  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null);
-  const [appVersion, setAppVersion] = useState<string>('');
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      window.electronAPI.getAppInfo().then(info => setAppVersion(info.version));
-      const unsubscribe = window.electronAPI.onUpdateStatus((status) => {
-        setUpdateStatus(status as UpdateStatus);
-      });
-      window.electronAPI.getUpdateStatus().then((status) => {
-        if (status) setUpdateStatus({ status: status.status as UpdateStatus['status'], version: status.info?.version });
-      });
-      return () => { unsubscribe?.(); };
-    }
-  }, []);
-
-  const handleCheckUpdates = () => {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      window.electronAPI.checkForUpdates();
-    }
-  };
-
-  const handleDownloadUpdate = () => {
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      setUpdateStatus((prev) => (prev ? { ...prev, status: 'downloading' } : prev));
-      window.electronAPI.downloadUpdate();
-    }
-  };
+  const { updateStatus, appVersion, checkForUpdates: handleCheckUpdates } = useUpdateStatus();
 
   // ── Printers ─────────────────────────────────────────────────────────────
   type HwPrinter = {
@@ -3859,12 +3826,12 @@ export default function SettingsPage() {
             <p className="text-sm text-gray-500 mb-6">
               {updateStatus?.status === 'store'
                 ? t('settings.softwareUpdatesHintStore')
-                : updateStatus?.status === 'unsupported'
-                ? t('settings.softwareUpdatesHintUnsupported')
+                : updateStatus?.status === 'linux-managed'
+                ? t('settings.softwareUpdatesHintLinuxManaged')
                 : t('settings.softwareUpdatesHintDefault')}
             </p>
 
-            {updateStatus && updateStatus.status !== 'store' && updateStatus.status !== 'unsupported' && (
+            {updateStatus && updateStatus.status !== 'store' && updateStatus.status !== 'linux-managed' && (
               <div className={`p-4 rounded-lg mb-4 ${
                 updateStatus.status === 'available' || updateStatus.status === 'ready-to-install'
                   ? 'bg-green-50 border border-green-200'
@@ -3918,25 +3885,12 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {updateStatus?.status !== 'store' && updateStatus?.status !== 'unsupported' && (
+            {updateStatus?.status !== 'store' && updateStatus?.status !== 'linux-managed' && (
               <div className="flex items-center gap-2">
-                {updateStatus?.status === 'available' && (
-                  <button
-                    onClick={handleDownloadUpdate}
-                    className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 text-sm font-medium flex items-center gap-2"
-                  >
-                    <Download size={16} />
-                    {t('settings.downloadUpdate')}
-                  </button>
-                )}
                 <button
                   onClick={handleCheckUpdates}
                   disabled={updateStatus?.status === 'checking' || updateStatus?.status === 'downloading'}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 ${
-                    updateStatus?.status === 'available'
-                      ? 'border border-gray-200 text-gray-700 hover:bg-gray-50'
-                      : 'bg-brand text-white hover:opacity-90'
-                  }`}
+                  className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 bg-brand text-white hover:opacity-90"
                 >
                   <RefreshCw size={16} className={updateStatus?.status === 'checking' ? 'animate-spin' : ''} />
                   {updateStatus?.status === 'checking' ? t('settings.checking') : t('settings.checkForUpdates')}

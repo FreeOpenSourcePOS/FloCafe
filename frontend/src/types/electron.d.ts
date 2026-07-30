@@ -34,9 +34,9 @@ export interface ElectronAPI {
 
   // Updates
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
-  getUpdateStatus: () => Promise<UpdateStatus>;
+  getUpdateStatus: () => Promise<{ status: UpdateStatus['status']; info: { version: string } }>;
   checkForUpdates: () => Promise<void>;
-  downloadUpdate: () => Promise<{ success: boolean; error?: string }>;
+  restartAndInstall: () => Promise<void>;
 
   // Platform
   platform: string;
@@ -67,12 +67,11 @@ export interface HealthCheckReport {
 }
 
 export interface UpdateStatus {
-  status: 'checking' | 'available' | 'downloading' | 'installing' | 'up-to-date' | 'error' | 'dev-mode';
-  info?: {
-    version?: string;
-    releaseDate?: string;
-  };
-  progress?: number;
+  status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready-to-install' | 'error' | 'dev-mode' | 'store' | 'linux-managed';
+  version?: string;
+  releaseDate?: string;
+  releaseNotes?: string;
+  percent?: number;
   error?: string;
 }
 

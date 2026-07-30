@@ -494,7 +494,6 @@
   "settings.discountPercentageOnly": "Percentage only",
   "settings.downloadForAndroid": "Download for Android",
   "settings.downloadForIos": "Download for iOS",
-  "settings.downloadUpdate": "Download Update",
   "settings.edit": "Edit",
   "settings.editPrinter": "Edit Printer",
   "settings.editStation": "Edit Station",
@@ -736,7 +735,7 @@
   "settings.softwareUpdates": "Software Updates",
   "settings.softwareUpdatesHintDefault": "Flo Desktop checks for updates automatically. You can also check manually below.",
   "settings.softwareUpdatesHintStore": "This version is distributed via the App Store. Updates are managed by the store.",
-  "settings.softwareUpdatesHintUnsupported": "Auto-updates aren't supported on Linux (AppImage/deb are outside electron-updater's reach). Download the latest AppImage or .deb from GitHub Releases when a new version is out.",
+  "settings.softwareUpdatesHintLinuxManaged": "This install is managed by your Linux package manager (deb/rpm) or the Snap Store, not Flo's in-app updater. AppImage builds update automatically.",
   "settings.stationCategories": "Categories routed here",
   "settings.stationDeleteConfirm": "Delete this kitchen station? Items routed to it will fall back to the default printer.",
   "settings.stationDeleted": "Station deleted",
@@ -1552,5 +1551,12 @@
   "whatsapp.send.error.blocked": "This customer asked to stop receiving messages. Manage blocklist in WhatsApp → Connection.",
   "whatsapp.send.error.rateLimited": "Too many messages sent to this number recently.",
   "whatsapp.send.customerPhoneRequired": "Add this customer’s phone number before sending.",
-  "setup.errorPasswordRequirementsNotMet": "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number."
+  "setup.errorPasswordRequirementsNotMet": "Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.",
+  "update.sectionLabel": "App Update",
+  "update.downloadingBadge": "↓ {percent}%",
+  "update.readyBadge": "Update ready",
+  "update.downloadingDetail": "Downloading version {version}...",
+  "update.versionReady": "Version {version} is ready to install",
+  "update.currentVersion": "Current version: {version}",
+  "update.restartNow": "Restart Now"
 }

@@ -494,7 +494,6 @@
   "settings.discountPercentageOnly": "Somente porcentagem",
   "settings.downloadForAndroid": "Baixar para Android",
   "settings.downloadForIos": "Baixar para iOS",
-  "settings.downloadUpdate": "Baixar Atualização",
   "settings.edit": "Editar",
   "settings.editPrinter": "Editar Impressora",
   "settings.editStation": "Editar Estação",
@@ -736,7 +735,7 @@
   "settings.softwareUpdates": "Atualizações de Software",
   "settings.softwareUpdatesHintDefault": "O Flo Desktop verifica atualizações automaticamente. Você também pode verificar manualmente abaixo.",
   "settings.softwareUpdatesHintStore": "Esta versão é distribuída pela App Store. As atualizações são gerenciadas pela loja.",
-  "settings.softwareUpdatesHintUnsupported": "As atualizações automáticas não são suportadas no Linux (AppImage/deb estão fora do alcance do electron-updater). Baixe o AppImage ou .deb mais recente do GitHub Releases quando uma nova versão sair.",
+  "settings.softwareUpdatesHintLinuxManaged": "Esta instalação é gerenciada pelo seu gerenciador de pacotes Linux (deb/rpm) ou pela Snap Store, não pelo atualizador integrado do Flo. As compilações AppImage são atualizadas automaticamente.",
   "settings.stationCategories": "Categorias direcionadas para cá",
   "settings.stationDeleteConfirm": "Excluir esta estação de cozinha? Os itens direcionados a ela voltarão para a impressora padrão.",
   "settings.stationDeleted": "Estação excluída",
@@ -1552,5 +1551,12 @@
   "whatsapp.send.error.blocked": "Este cliente pediu para parar de receber mensagens. Gerencie a lista de bloqueio em WhatsApp → Conexão.",
   "whatsapp.send.error.rateLimited": "Muitas mensagens enviadas para este número recentemente.",
   "whatsapp.send.customerPhoneRequired": "Adicione o número de telefone do cliente antes de enviar.",
-  "setup.errorPasswordRequirementsNotMet": "A senha deve ter pelo menos 8 caracteres e conter pelo menos uma letra maiúscula, uma minúscula e um número."
+  "setup.errorPasswordRequirementsNotMet": "A senha deve ter pelo menos 8 caracteres e conter pelo menos uma letra maiúscula, uma minúscula e um número.",
+  "update.sectionLabel": "Atualização do app",
+  "update.downloadingBadge": "↓ {percent}%",
+  "update.readyBadge": "Atualização pronta",
+  "update.downloadingDetail": "Baixando a versão {version}...",
+  "update.versionReady": "A versão {version} está pronta para instalar",
+  "update.currentVersion": "Versão atual: {version}",
+  "update.restartNow": "Reiniciar agora"
 }

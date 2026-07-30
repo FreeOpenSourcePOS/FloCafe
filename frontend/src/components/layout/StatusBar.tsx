@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { Server, HardDrive, Clock, AlertCircle, CheckCircle } from 'lucide-react';
 import { useI18n } from '@/hooks/useI18n';
+import UpdateBadge from './UpdateBadge';
 
 interface StatusInfo {
   server: string;
@@ -89,6 +90,10 @@ export default function StatusBar() {
           <span>{error}</span>
         </div>
       )}
+
+      <div className="ml-auto">
+        <UpdateBadge />
+      </div>
     </div>
   );
 }

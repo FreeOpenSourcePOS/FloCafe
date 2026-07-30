@@ -57,27 +57,9 @@ console.log('[Log] Log files location:', logPath);
 let updateAvailable = false;
 let updateDownloaded = false;
 
-// Attaches the dialog to mainWindow so it stays focused/on top instead of
-// silently opening behind the app or on another display.
-function showUpdateDialog(options: Electron.MessageBoxOptions) {
-  return mainWindow
-    ? dialog.showMessageBox(mainWindow, options)
-    : dialog.showMessageBox(options);
-}
-
-function triggerDownload(): Promise<{ success: boolean; error?: string }> {
-  return autoUpdater.downloadUpdate()
-    .then(() => ({ success: true }))
-    .catch((err) => {
-      log.error('[Update] Download failed:', err);
-      mainWindow?.webContents.send('update-status', { status: 'error', error: err.message });
-      return { success: false, error: err.message };
-    });
-}
-
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
-  autoUpdater.autoDownload = false;
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('checking-for-update', () => {
@@ -86,25 +68,15 @@ function setupAutoUpdater(): void {
   });
 
   autoUpdater.on('update-available', (info) => {
-    console.log('[Update] Update available:', info.version);
+    // autoDownload is true, so electron-updater starts downloading right after
+    // this fires on its own — no dialog, no manual download-update call needed.
+    console.log('[Update] Update available, downloading silently:', info.version);
     updateAvailable = true;
     mainWindow?.webContents.send('update-status', {
       status: 'available',
       version: info.version,
       releaseDate: info.releaseDate,
       releaseNotes: info.releaseNotes
-    });
-    showUpdateDialog({
-      type: 'info',
-      title: 'Update Available',
-      message: `Flo ${info.version} is available!`,
-      detail: `Release date: ${info.releaseDate}\n\nWould you like to download it now?`,
-      buttons: ['Download', 'Later'],
-      defaultId: 0,
-    }).then((result) => {
-      if (result.response === 0) {
-        triggerDownload();
-      }
     });
   });
 
@@ -122,24 +94,13 @@ function setupAutoUpdater(): void {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
+    // No dialog — the renderer's update badge shows a "Restart Now" prompt and
+    // calls the restart-and-install IPC handler below when the user clicks it.
     console.log('[Update] Download complete:', info.version);
     updateDownloaded = true;
-    mainWindow?.webContents.send('update-status', { 
+    mainWindow?.webContents.send('update-status', {
       status: 'ready-to-install',
       version: info.version
-    });
-    showUpdateDialog({
-      type: 'info',
-      title: 'Update Ready',
-      message: 'Update downloaded successfully!',
-      detail: `Version ${info.version} is ready to install.\n\nThe update will be installed when you quit the app.`,
-      buttons: ['Restart Now', 'Later'],
-      defaultId: 0,
-    }).then((result) => {
-      if (result.response === 0) {
-        isQuitting = true;
-        autoUpdater.quitAndInstall();
-      }
     });
   });
 
@@ -161,13 +122,13 @@ function setupAutoUpdater(): void {
 }
 
 function checkForUpdates(): void {
-  // Linux: auto-updater is not supported.
-  // AppImage requires the APPIMAGE env var (not always set) and the deb
-  // package is managed by apt — electron-updater cannot update either.
-  // Still tell the renderer so "Check for Updates" doesn't sit there doing
-  // nothing forever when clicked.
-  if (process.platform === 'linux') {
-    mainWindow?.webContents.send('update-status', { status: 'unsupported' });
+  // Linux: only AppImage supports self-update via electron-updater (it sets
+  // the APPIMAGE env var at launch). deb/rpm/snap are managed by their
+  // package manager / the snap daemon instead — electron-updater can't
+  // update those, so tell the renderer and stop instead of letting
+  // "Check for Updates" sit there doing nothing forever when clicked.
+  if (process.platform === 'linux' && !process.env.APPIMAGE) {
+    mainWindow?.webContents.send('update-status', { status: 'linux-managed' });
     return;
   }
 
@@ -638,7 +599,10 @@ async function initialize(): Promise<void> {
       checkForUpdates();
     });
 
-    ipcMain.handle('download-update', () => triggerDownload());
+    ipcMain.handle('restart-and-install', () => {
+      isQuitting = true;
+      autoUpdater.quitAndInstall();
+    });
 
     ipcMain.handle('get-status', () => {
       const mem = process.memoryUsage();
@@ -658,13 +622,11 @@ async function initialize(): Promise<void> {
     createWindow();
     createTray();
     createMenu();
-    // Auto-updater: not supported on Linux (AppImage needs APPIMAGE env var;
-    // deb is managed by apt), so only wire up electron-updater's listeners
-    // there. checkForUpdates() itself already no-ops safely on Linux (with
-    // an 'unsupported' status sent to the renderer), so still run the
-    // initial check on Linux to surface that status without requiring a click.
+    // Auto-updater: wired up on every non-store platform, including Linux now
+    // (#58) — checkForUpdates() itself decides whether Linux's build format
+    // (AppImage vs deb/rpm/snap) actually supports self-update.
     if (!isStoreBuild) {
-      if (process.platform !== 'linux') setupAutoUpdater();
+      setupAutoUpdater();
       setTimeout(() => checkForUpdates(), 5000);
     }
 

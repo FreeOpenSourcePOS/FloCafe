@@ -571,8 +571,8 @@ router.post('/password/change', (req: Request, res: Response) => {
 //
 // Deliberately does NOT require a JWT/session — that's the whole point: the
 // owner has no working credentials. Local proof of ownership is the Master
-// PIN instead (see main/services/master-pin.ts). This endpoint only ever
-// updates one existing owner's password column; it can never create,
+// PIN instead (see main/services/master-pin.ts). When no active owner remains,
+// this endpoint restores owner role to one active account. It can never create,
 // reinitialize, or wipe anything — that stays behind /api/db-tools/initialize
 // (owner session + Master PIN + explicit confirmation phrase).
 //
@@ -585,6 +585,7 @@ router.post('/password/change', (req: Request, res: Response) => {
 
 router.post('/recover-password', authRateLimit(), (req: Request, res: Response) => {
   try {
+    if (!requireLocalSetup(req, res)) return;
     const db = getDatabase();
 
     // First-run setup is the only recovery path when there is no owner yet —
@@ -612,16 +613,34 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
       return res.status(pinResult.status).json({ error: pinResult.error });
     }
 
-    const user = db.prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1')
-      .get(email, INITIAL_ADMIN_ROLE) as any;
+    const activeOwnerCount = (db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'owner' AND is_active = 1").get() as { count: number }).count;
+    const user = activeOwnerCount === 0
+      ? db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any
+      : db.prepare('SELECT * FROM users WHERE email = ? AND role = ? AND is_active = 1').get(email, INITIAL_ADMIN_ROLE) as any;
     if (!user) {
       return res.status(404).json({ error: 'No active owner account found with that email on this install' });
     }
 
     const hashedPassword = bcrypt.hashSync(new_password, 10);
     const changedAt = now();
-    db.prepare('UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ?')
-      .run(hashedPassword, changedAt, changedAt, user.id);
+    let restoredOwnerAccess = false;
+    const updated = db.transaction(() => {
+      const currentOwnerCount = (db.prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'owner' AND is_active = 1").get() as { count: number }).count;
+      if (currentOwnerCount > 0) {
+        return db.prepare('UPDATE users SET password = ?, tokens_valid_after = ?, updated_at = ? WHERE id = ? AND role = ? AND is_active = 1')
+          .run(hashedPassword, changedAt, changedAt, user.id, INITIAL_ADMIN_ROLE);
+      }
+
+      restoredOwnerAccess = true;
+      return db.prepare(`
+        UPDATE users SET password = ?, role = ?, tokens_valid_after = ?, updated_at = ?
+        WHERE id = ? AND is_active = 1
+          AND NOT EXISTS (SELECT 1 FROM users WHERE role = 'owner' AND is_active = 1)
+      `).run(hashedPassword, INITIAL_ADMIN_ROLE, changedAt, changedAt, user.id);
+    })();
+    if (updated.changes === 0) {
+      return res.status(409).json({ error: 'Owner access changed during recovery. Try again.' });
+    }
     invalidateUserAuthCache(user.id);
 
     // Local audit trail — this codebase has no dedicated audit-events table,
@@ -632,10 +651,16 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     upsertSettings(db, {
       last_password_recovery_at: now(),
       last_password_recovery_email: email,
+      ...(restoredOwnerAccess ? {
+        last_owner_recovery_at: now(),
+        last_owner_recovery_email: email,
+      } : {}),
     });
-    console.warn(`[Auth] Password recovery: owner password for ${email} was reset locally via Master PIN`);
+    console.warn(`[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access for' : 'owner password for'} ${email} was reset locally via Master PIN`);
 
-    res.json({ message: 'Password reset successfully. You can now log in with your new password.' });
+    res.json({ message: restoredOwnerAccess
+      ? 'Owner access restored. You can now log in with your new password.'
+      : 'Password reset successfully. You can now log in with your new password.' });
   } catch (error: any) {
     console.error('[Auth] Password recovery error:', error);
     console.error("[API] Internal error:", error);

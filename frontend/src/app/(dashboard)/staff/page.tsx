@@ -161,6 +161,10 @@ export default function StaffPage() {
     }
   };
 
+  const editingLastActiveOwner = Boolean(editingStaff?.is_active)
+    && editingStaff?.role === 'owner'
+    && staff.filter((s) => s.role === 'owner' && Boolean(s.is_active)).length === 1;
+
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
@@ -250,7 +254,7 @@ export default function StaffPage() {
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               >
                 {VALID_ROLES.map((r) => (
-                  <option key={r} value={r}>{roleColorKey[r] ? t(roleColorKey[r]) : r}</option>
+                  <option key={r} value={r} disabled={editingLastActiveOwner && r !== 'owner'}>{roleColorKey[r] ? t(roleColorKey[r]) : r}</option>
                 ))}
               </select>
               {['owner', 'manager'].includes(form.role) && (

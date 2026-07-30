@@ -150,6 +150,15 @@ async function main() {
   result = await request(app).post('/api/staff/owner-145/deactivate').set(ownerAuth);
   assertEqual(result.status, 400, 'cannot deactivate the last active owner');
 
+  result = await request(app).put('/api/staff/owner-145').set(ownerAuth).send({ role: 'cashier' });
+  assertEqual(result.status, 400, 'cannot demote the last active owner');
+  const lastOwner = db.prepare('SELECT role FROM users WHERE id = ?').get('owner-145') as any;
+  assertEqual(lastOwner.role, 'owner', 'last active owner keeps the owner role after a rejected demotion');
+
+  seedUser(db, 'owner-145-second', 'owner');
+  result = await request(app).put('/api/staff/owner-145').set(ownerAuth).send({ role: 'cashier' });
+  assertEqual(result.status, 200, 'owner can demote after another active owner exists');
+
   console.log('\n── Owner full access ───────────────────────────────────────────');
   result = await request(app).post('/api/staff').set(ownerAuth).send({
     name: 'Owner-created manager', email: 'owner-created-manager@test.local', password: 'StrongPass1', role: 'manager', pin: '9876',

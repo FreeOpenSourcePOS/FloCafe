@@ -199,7 +199,19 @@ async function runTests() {
   }
 
   // ── Test 7: rate limiting kicks in after repeated wrong-PIN attempts ─────
-  console.log('\nTest 7: rate limiting kicks in after repeated wrong-PIN attempts');
+  console.log('\nTest 7: recovery restores an owner role when none remain');
+  {
+    db.prepare("UPDATE users SET role = 'cashier' WHERE id = 'owner-1'").run();
+    const res = await request(app).post('/api/auth/recover-password').send({
+      email: 'owner@example.com', master_pin: '1234', new_password: 'RecoveredOwnerPass123',
+    });
+    assert(res.status === 200, `recovery restores owner access when no active owner remains (got ${res.status}, ${JSON.stringify(res.body)})`);
+    const recovered = db.prepare('SELECT role FROM users WHERE id = ?').get('owner-1') as { role: string };
+    assert(recovered.role === 'owner', 'recovery promotes the active account back to owner');
+  }
+
+  // ── Test 8: rate limiting kicks in after repeated wrong-PIN attempts ─────
+  console.log('\nTest 8: rate limiting kicks in after repeated wrong-PIN attempts');
   {
     // A successful Master PIN verification resets the failed-attempt counter.
     // Five consecutive wrong PINs therefore produce four 403 responses, then

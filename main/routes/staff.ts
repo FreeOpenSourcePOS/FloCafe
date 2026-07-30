@@ -213,7 +213,8 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
     const credentialsChanged = hashedPassword !== member.password || hashedPin !== member.pin_hash;
     const tokensValidAfter = credentialsChanged ? now() : member.tokens_valid_after;
 
-    db.prepare(`
+    const demotesActiveOwner = member.role === 'owner' && member.is_active === 1 && targetRole !== 'owner';
+    const result = db.prepare(`
       UPDATE users SET
         name       = COALESCE(?, name),
         email      = COALESCE(?, email),
@@ -223,11 +224,18 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
         tokens_valid_after = ?,
         updated_at = ?
       WHERE id = ?
+        AND (
+          ? = 0
+          OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1
+        )
     `).run(
       name || null, email || null, hashedPassword,
       role || null, hashedPin, tokensValidAfter,
-      now(), req.params.id
+      now(), req.params.id, demotesActiveOwner ? 1 : 0,
     );
+    if (result.changes === 0) {
+      return res.status(400).json({ error: 'Cannot change the role of the last active owner. Create or promote another active owner first.' });
+    }
     invalidateUserAuthCache(req.params.id as string);
 
     const updated = db.prepare(

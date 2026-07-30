@@ -71,7 +71,7 @@ async function main() {
     assertEqual(listRes.data.packs.length, 3, 'all three bundled packs are installed');
     const india = listRes.data.packs.find((pack: any) => pack.id === 'official-in');
     assert(!!india, 'India pack is listed');
-    assertEqual(india.versions[0].version, '1.0.0', 'India pack version is shown');
+    assertEqual(india.versions[0].version, indiaPackDefinition.version, 'India pack version is shown');
     assertEqual(india.active_for_store, true, 'India pack is active for the India store');
 
     const detailRes = await api(baseUrl, '/api/tax-packs/official-in', { headers: manager.authHeader });

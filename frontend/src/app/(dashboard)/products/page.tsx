@@ -651,11 +651,13 @@ export default function ProductsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.priceLabel', { currency })}<span className="text-red-500 ml-1">*</span></label>
                   <input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldCostPrice')}</label>
                   <input type="number" step="0.01" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
+                    onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
               </div>
@@ -1011,7 +1013,7 @@ export default function ProductsPage() {
                       {addonList.map((addon, idx) => (
                         <div key={idx} className="grid grid-cols-[minmax(0,1fr)_6rem_1.5rem] gap-2 items-center">
                           <input type="text" value={addon.name} onChange={(e) => updateAddonItem(idx, 'name', e.target.value)} placeholder={t('common.namePlaceholder')} className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
-                          <input type="number" step="0.01" value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} placeholder={t('common.pricePlaceholder')} aria-label={t('products.columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                          <input type="number" step="0.01" value={addon.price} onChange={(e) => updateAddonItem(idx, 'price', Number(e.target.value))} onWheel={(e) => e.currentTarget.blur()} placeholder={t('common.pricePlaceholder')} aria-label={t('products.columnPrice')} className="w-24 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                           <button type="button" onClick={() => removeAddonItem(idx)} className="text-gray-400 hover:text-red-500"><X size={16} /></button>
                         </div>
                       ))}

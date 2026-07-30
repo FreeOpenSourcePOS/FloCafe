@@ -235,7 +235,7 @@ export default function AddonGroupsPage() {
                             </label>
                             <label className="w-24">
                               <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('products.columnPrice')}</span>
-                              <input type="number" step="0.01" value={addonForm.price} onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })}
+                              <input type="number" step="0.01" value={addonForm.price} onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })} onWheel={(e) => e.currentTarget.blur()}
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-brand" />
                             </label>
                             <button onClick={handleUpdateAddon} className="text-xs text-brand font-medium hover:underline">{t('common.save')}</button>
@@ -272,6 +272,7 @@ export default function AddonGroupsPage() {
                         <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('products.columnPrice')}</span>
                         <input type="number" step="0.01" placeholder={t('products.addonPricePlaceholder')} value={addonForm.price}
                           onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })}
+                          onWheel={(e) => e.currentTarget.blur()}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       </label>
                       <button onClick={() => handleAddAddon(group.id)}

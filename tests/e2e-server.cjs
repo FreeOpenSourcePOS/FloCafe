@@ -29,13 +29,28 @@ function seedUser(id, email, role) {
 function seedPosFixture() {
   const db = getDatabase();
   const createdAt = now();
+  for (const [key, value] of [
+    ['country', 'TH'],
+    ['currency', 'THB'],
+    ['billing_type', 'prepaid'],
+    ['business_type', 'restaurant'],
+    ['tables_required', 'false'],
+  ]) {
+    db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+      .run(key, value, createdAt);
+  }
   db.prepare(
     'INSERT INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)'
   ).run('e2e-category', 'E2E Menu', 1, createdAt, createdAt);
   db.prepare(
-    `INSERT INTO products (id, category_id, name, price, tax_type, cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
-  ).run('e2e-product', 'e2e-category', 'E2E Coffee', 100, 'gst', 0, 0, 999, 1, createdAt, createdAt);
+    `INSERT INTO products (
+       id, category_id, name, price, tax_type, tax_category_id, tax_behavior,
+       cb_percent, track_inventory, stock_quantity, is_active, sort_order, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`
+  ).run(
+    'e2e-product', 'e2e-category', 'E2E Coffee', 60, 'none', 'standard', 'exclusive',
+    0, 0, 999, 1, createdAt, createdAt,
+  );
 }
 
 let stopping = false;

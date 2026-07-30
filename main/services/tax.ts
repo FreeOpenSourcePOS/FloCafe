@@ -65,7 +65,7 @@ export interface TaxRollup {
   snapshotJson: string | null;
 }
 
-import { TaxEngine } from './tax-engine';
+import { TaxEngine, applyPayableRounding } from './tax-engine';
 import type { CountryPack } from '../tax-packs/types';
 
 function round(value: number, decimals: number = 2): number {
@@ -603,11 +603,6 @@ export function combineItemAndChargeTaxes(args: {
   };
 }
 
-export function calculateRoundOff(total: number): number {
-  const rounded = Math.round(total);
-  return round(rounded - total, 2);
-}
-
 // Tax preview endpoint handler
 export async function calculateTaxPreview(req: any, res: any): Promise<void> {
   try {
@@ -617,6 +612,8 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       packaging_charge,
       delivery_charge,
       service_charge,
+      discount_type,
+      discount_value,
     } = req.body;
 
     if (!Array.isArray(items) || items.length === 0) {
@@ -644,8 +641,10 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
 
     const itemResults: any[] = [];
     const allBreakdowns: any[] = [];
+    const allTaxSnapshots: (string | null)[] = [];
     let totalSubtotal = 0;
     let totalTax = 0;
+    let totalExclusiveTax = 0;
 
     for (const itemData of items) {
       if (!itemData || typeof itemData !== 'object' || !itemData.product_id) {
@@ -683,19 +682,66 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
         tax_amount: taxResult.tax_amount,
         tax_breakdown: taxResult.tax_breakdown,
         tax_type: taxResult.tax_type,
-        total: round(subtotal + taxResult.tax_amount, 2),
+        total: round(subtotal + (taxResult.tax_type === 'inclusive' ? 0 : taxResult.tax_amount), 2),
       });
 
       if (taxResult.tax_breakdown) {
         allBreakdowns.push(taxResult.tax_breakdown);
       }
+      allTaxSnapshots.push(taxResult.tax_snapshot ? JSON.stringify(taxResult.tax_snapshot) : null);
       totalSubtotal += subtotal;
       totalTax += taxResult.tax_amount;
+      if (taxResult.tax_type !== 'inclusive') {
+        totalExclusiveTax += taxResult.tax_amount;
+      }
     }
 
-    const packaging = packaging_charge || 0;
-    const delivery = delivery_charge || 0;
-    const service = service_charge || 0;
+    const normalizeCharge = (value: unknown): number => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+    };
+    const packaging = normalizeCharge(packaging_charge);
+    const delivery = normalizeCharge(delivery_charge);
+    const service = normalizeCharge(service_charge);
+
+    let discountAmount = new Decimal(0);
+    if (discount_type !== undefined || discount_value !== undefined) {
+      if (!['percentage', 'amount'].includes(discount_type)) {
+        res.status(400).json({ error: 'discount_type must be percentage or amount' });
+        return;
+      }
+      const parsedDiscount = Number(discount_value);
+      if (!Number.isFinite(parsedDiscount) || parsedDiscount < 0) {
+        res.status(400).json({ error: 'discount_value must be a finite non-negative number' });
+        return;
+      }
+      const subtotalDecimal = new Decimal(totalSubtotal);
+      if (discount_type === 'percentage') {
+        if (parsedDiscount > 100) {
+          res.status(400).json({ error: 'discount_value must not exceed 100 percent' });
+          return;
+        }
+        discountAmount = subtotalDecimal.mul(parsedDiscount).div(100);
+      } else {
+        discountAmount = Decimal.min(new Decimal(parsedDiscount), subtotalDecimal);
+      }
+      discountAmount = discountAmount.toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    }
+
+    const subtotalDecimal = new Decimal(totalSubtotal);
+    const discountedSubtotal = Decimal.max(0, subtotalDecimal.minus(discountAmount));
+    const taxRatio = discountAmount.gt(0) && subtotalDecimal.gt(0)
+      ? discountedSubtotal.div(subtotalDecimal)
+      : new Decimal(1);
+    const discountedItemTax = new Decimal(totalTax)
+      .mul(taxRatio)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+      .toNumber();
+    const discountedExclusiveTax = new Decimal(totalExclusiveTax)
+      .mul(taxRatio)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+      .toNumber();
+
     const chargeCategories = getConfiguredChargeTaxCategories(tenantInfo.country);
     const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
       packaging_charge: packaging,
@@ -705,29 +751,38 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       delivery_tax_category_id: chargeCategories.delivery?.categoryId || null,
       service_charge_tax_category_id: chargeCategories.service_charge?.categoryId || null,
     }, customer || null);
-    const aggregatedBreakdown = aggregateTaxBreakdown([
-      ...allBreakdowns,
-      ...chargeTaxes.breakdowns,
-    ]);
-    const previewTax = new Decimal(totalTax).plus(chargeTaxes.taxAmount).toNumber();
-    // Preserve the legacy preview's item-tax total behavior. Configured charge
-    // tax follows its pack behavior, so only exclusive charge tax increases
-    // the payable amount.
-    const preRoundTotal = totalSubtotal + totalTax + chargeTaxes.exclusiveTaxAmount
-      + packaging + delivery + service;
-    const roundOff = calculateRoundOff(preRoundTotal);
+    const taxRollup = combineItemAndChargeTaxes({
+      itemTaxAmount: discountedItemTax,
+      itemExclusiveTaxAmount: discountedExclusiveTax,
+      itemBreakdowns: allBreakdowns,
+      itemSnapshots: allTaxSnapshots,
+      itemTaxRatio: taxRatio.toNumber(),
+      chargeTaxes,
+    });
+    const aggregatedBreakdown = aggregateTaxBreakdown(taxRollup.breakdowns);
+    const exactTotal = discountedSubtotal
+      .plus(taxRollup.exclusiveTaxAmount)
+      .plus(packaging)
+      .plus(delivery)
+      .plus(service)
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP)
+      .toNumber();
+    const pack = getActiveCountryPack(tenantInfo.country);
+    const { total, adjustment: roundOff } = applyPayableRounding(exactTotal, pack);
 
     res.json({
       items: itemResults,
       summary: {
         subtotal: round(totalSubtotal, 2),
-        tax_amount: round(previewTax, 2),
+        discount_amount: discountAmount.toNumber(),
+        discounted_subtotal: discountedSubtotal.toNumber(),
+        tax_amount: round(taxRollup.taxAmount, 2),
         tax_breakdown: aggregatedBreakdown,
         packaging_charge: packaging,
         delivery_charge: delivery,
         service_charge: service,
         round_off: roundOff,
-        total: round(preRoundTotal + roundOff, 2),
+        total,
       },
     });
   } catch (error: any) {

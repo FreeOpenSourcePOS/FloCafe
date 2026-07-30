@@ -6,11 +6,20 @@ import type { CartItem } from '@/lib/types';
 
 export interface TaxPreview {
   subtotal: number;
+  discount_amount: number;
+  discounted_subtotal: number;
   tax_amount: number;
   tax_breakdown: { title: string; rate: number; amount: number }[];
   packaging_charge: number;
+  delivery_charge: number;
+  service_charge: number;
   round_off: number;
   total: number;
+}
+
+export interface TaxPreviewDiscount {
+  type: 'percentage' | 'amount';
+  value: number;
 }
 
 interface TaxPreviewItem {
@@ -31,10 +40,12 @@ interface TaxPreviewResponse {
 export function useTaxPreview(
   items: CartItem[],
   customerId: number | string | null,
-  packagingCharge?: number
+  packagingCharge?: number,
+  discount?: TaxPreviewDiscount | null,
 ): { tax: TaxPreview | null; loading: boolean; error: string | null } {
+  const isEmpty = !items || items.length === 0;
   const [tax, setTax] = useState<TaxPreview | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(!isEmpty);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,13 +53,38 @@ export function useTaxPreview(
   // Reset immediately when the cart becomes empty, read directly during render (React's
   // recommended pattern for "adjusting state when a prop changes") rather than an effect —
   // any in-flight request is still cancelled by the previous effect run's cleanup below.
-  const isEmpty = !items || items.length === 0;
   const [wasEmpty, setWasEmpty] = useState(isEmpty);
   if (isEmpty !== wasEmpty) {
     setWasEmpty(isEmpty);
     if (isEmpty) {
       setTax(null);
       setLoading(false);
+    }
+  }
+  const [syncedRequest, setSyncedRequest] = useState({
+    items,
+    customerId,
+    packagingCharge,
+    discountType: discount?.type,
+    discountValue: discount?.value,
+  });
+  if (
+    items !== syncedRequest.items
+    || customerId !== syncedRequest.customerId
+    || packagingCharge !== syncedRequest.packagingCharge
+    || discount?.type !== syncedRequest.discountType
+    || discount?.value !== syncedRequest.discountValue
+  ) {
+    setSyncedRequest({
+      items,
+      customerId,
+      packagingCharge,
+      discountType: discount?.type,
+      discountValue: discount?.value,
+    });
+    if (!isEmpty) {
+      setLoading(true);
+      setError(null);
     }
   }
 
@@ -71,9 +107,6 @@ export function useTaxPreview(
     abortRef.current = controller;
 
     debounceRef.current = setTimeout(async () => {
-      setLoading(true);
-      setError(null);
-
       try {
         const payload = {
           items: items.map((item) => ({
@@ -84,6 +117,8 @@ export function useTaxPreview(
           })),
           customer_id: customerId || null,
           packaging_charge: packagingCharge || 0,
+          discount_type: discount?.type,
+          discount_value: discount?.value,
         };
 
         const { data } = await api.post<TaxPreviewResponse>('/tax/preview', payload, {
@@ -111,7 +146,7 @@ export function useTaxPreview(
       }
       controller.abort();
     };
-  }, [items, customerId, packagingCharge, isEmpty]);
+  }, [items, customerId, packagingCharge, discount?.type, discount?.value, isEmpty]);
 
   return { tax, loading, error };
 }

@@ -27,6 +27,7 @@ import PosTopbar from '@/components/pos/PosTopbar';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useI18n } from '@/hooks/useI18n';
+import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 
 export default function POSPage() {
@@ -37,6 +38,7 @@ export default function POSPage() {
   const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
   const { t } = useI18n();
+  const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -308,6 +310,12 @@ export default function POSPage() {
         if (res.data?.loyaltyPointsEarned > 0) pointsEarned = res.data.loyaltyPointsEarned;
       }
 
+      if (paidBill.payment_status !== 'paid') {
+        throw new Error(t('pos.paymentIncomplete', {
+          amount: currencyFmt(Number(paidBill.balance) || 0),
+        }));
+      }
+
       const successMsg = pointsEarned > 0
         ? t('pos.orderPaidWithPoints', { number: orderData.order.order_number, points: pointsEarned })
         : t('pos.orderPaid', { number: orderData.order.order_number });
@@ -321,8 +329,8 @@ export default function POSPage() {
 
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string; error?: string } } };
-      toast.error(error.response?.data?.message || error.response?.data?.error || t('pos.processOrderFailed'));
+      const error = err as { response?: { data?: { message?: string; error?: string } }; message?: string };
+      toast.error(error.response?.data?.message || error.response?.data?.error || error.message || t('pos.processOrderFailed'));
     } finally {
       setSubmitting(false);
     }

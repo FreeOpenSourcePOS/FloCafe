@@ -590,38 +590,46 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           )}
         </div>
 
-        {selectedPack && detail?.active_version ? (
+        {selectedPack && detail ? (
           <>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Info label="Store country" value={storeCountry} />
-              <Info label="Jurisdiction" value={selectedPack.jurisdiction} />
-              <Info label="Active version" value={detail.active_version.version} />
-              <Info label="Trust status" value={detail.pack.trust_status} />
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
-              <span>Effective {detail.active_version.effective_from}</span>
-              <span>Published {detail.active_version.published_at}</span>
-              <span>{detail.active_version.definition.currency}</span>
-              <button
-                type="button"
-                onClick={() => setExpandedChecklist((value) => !value)}
-                className="ml-auto flex items-center gap-1 font-medium text-brand"
-              >
-                {detail.active_version.validation.valid ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
-                {detail.active_version.validation.valid
-                  ? `${detail.active_version.validation.checks.filter((c) => c.passed).length} of ${detail.active_version.validation.checks.length} activation checks passed`
-                  : 'Activation checks failed'}
-                <ChevronDown size={14} className={expandedChecklist ? 'rotate-180' : ''} />
-              </button>
-            </div>
-            {expandedChecklist && (
-              <ol className="mt-3 grid gap-1 rounded-lg border border-gray-100 p-3 text-xs sm:grid-cols-2">
-                {detail.active_version.validation.checks.map((check) => (
-                  <li key={check.id} className={check.passed ? 'text-gray-600' : 'text-red-700'}>
-                    {check.passed ? '✓' : '✕'} {check.id}. {check.message}
-                  </li>
-                ))}
-              </ol>
+            {detail.active_version ? (
+              <>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <Info label="Store country" value={storeCountry} />
+                  <Info label="Jurisdiction" value={selectedPack.jurisdiction} />
+                  <Info label="Active version" value={detail.active_version.version} />
+                  <Info label="Trust status" value={detail.pack.trust_status} />
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
+                  <span>Effective {detail.active_version.effective_from}</span>
+                  <span>Published {detail.active_version.published_at}</span>
+                  <span>{detail.active_version.definition.currency}</span>
+                  <button
+                    type="button"
+                    onClick={() => setExpandedChecklist((value) => !value)}
+                    className="ml-auto flex items-center gap-1 font-medium text-brand"
+                  >
+                    {detail.active_version.validation.valid ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
+                    {detail.active_version.validation.valid
+                      ? `${detail.active_version.validation.checks.filter((c) => c.passed).length} of ${detail.active_version.validation.checks.length} activation checks passed`
+                      : 'Activation checks failed'}
+                    <ChevronDown size={14} className={expandedChecklist ? 'rotate-180' : ''} />
+                  </button>
+                </div>
+                {expandedChecklist && (
+                  <ol className="mt-3 grid gap-1 rounded-lg border border-gray-100 p-3 text-xs sm:grid-cols-2">
+                    {detail.active_version.validation.checks.map((check) => (
+                      <li key={check.id} className={check.passed ? 'text-gray-600' : 'text-red-700'}>
+                        {check.passed ? '✓' : '✕'} {check.id}. {check.message}
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </>
+            ) : (
+              <p className="mt-4 text-sm text-gray-500">
+                This pack has no active version yet — activate an installed version below.
+              </p>
             )}
             <div className="mt-5 border-t border-gray-100 pt-4">
               <div className="mb-2 flex items-center justify-between">

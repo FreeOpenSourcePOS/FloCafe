@@ -1,505 +1,195 @@
-<h1 align="center">FloCafe</h1>
+<div align="center">
+  <h1>FloCafe</h1>
+  <p><strong>Free, open-source, offline-first point of sale for cafés, restaurants, and small kitchens.</strong></p>
+  <p>
+    <a href="https://flopos.com">Website</a> ·
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases">Download</a> ·
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/issues">Report a bug</a> ·
+    <a href="https://www.reddit.com/r/FloPOS/">Community</a>
+  </p>
+  <p>
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases"><img src="https://img.shields.io/github/v/release/FreeOpenSourcePOS/FloCafe?label=latest%20release" alt="Latest release"></a>
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases"><img src="https://img.shields.io/github/downloads/FreeOpenSourcePOS/FloCafe/total?label=release%20downloads" alt="Total release downloads"></a>
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/blob/main/LICENSE"><img src="https://img.shields.io/github/license/FreeOpenSourcePOS/FloCafe" alt="MIT License"></a>
+    <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Windows, macOS, and Linux">
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/actions/workflows/ci.yml"><img src="https://github.com/FreeOpenSourcePOS/FloCafe/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+    <br>
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/stargazers"><img src="https://img.shields.io/github/stars/FreeOpenSourcePOS/FloCafe?style=social" alt="GitHub stars"></a>
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/network/members"><img src="https://img.shields.io/github/forks/FreeOpenSourcePOS/FloCafe?style=social" alt="GitHub forks"></a>
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/issues"><img src="https://img.shields.io/github/issues/FreeOpenSourcePOS/FloCafe" alt="Open issues"></a>
+    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/pulls"><img src="https://img.shields.io/github/issues-pr/FreeOpenSourcePOS/FloCafe" alt="Open pull requests"></a>
+    <a href="https://www.reddit.com/r/FloPOS/"><img src="https://img.shields.io/badge/Reddit-r%2FFloPOS-FF4500?logo=reddit&logoColor=white" alt="Reddit community"></a>
+  </p>
+</div>
 
 <p align="center">
-  <strong>Free, open-source, offline-first Point of Sale for cafes, restaurants, and food businesses.</strong>
+  <img src="docs/images/flo-cafe-pos.webp" alt="FloCafe POS screen showing product selection and an active dine-in order" width="100%">
 </p>
 
-<p align="center">
-  <a href="https://flopos.com"><img src="https://img.shields.io/badge/website-flopos.com-2ea44f" alt="Website"></a>
-  <a href="https://github.com/FreeOpenSourcePOS/FloCafe/releases"><img src="https://img.shields.io/github/v/release/FreeOpenSourcePOS/FloCafe" alt="GitHub release"></a>
-  <a href="https://github.com/FreeOpenSourcePOS/FloCafe/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License"></a>
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Platform">
-  <img src="https://img.shields.io/badge/Node-%3E%3D22.0.0-brightgreen" alt="Node.js">
-  <br>
-  <a href="https://github.com/FreeOpenSourcePOS/FloCafe/stargazers"><img src="https://img.shields.io/github/stars/FreeOpenSourcePOS/FloCafe?style=social" alt="GitHub stars"></a>
-  <a href="https://github.com/FreeOpenSourcePOS/FloCafe/network/members"><img src="https://img.shields.io/github/forks/FreeOpenSourcePOS/FloCafe?style=social" alt="GitHub forks"></a>
-  <a href="https://github.com/FreeOpenSourcePOS/FloCafe/issues"><img src="https://img.shields.io/github/issues/FreeOpenSourcePOS/FloCafe" alt="Open issues"></a>
-  <a href="https://github.com/FreeOpenSourcePOS/FloCafe/pulls"><img src="https://img.shields.io/github/issues-pr/FreeOpenSourcePOS/FloCafe" alt="Open pull requests"></a>
-  <a href="https://www.reddit.com/r/FloPOS/"><img src="https://img.shields.io/badge/Reddit-r%2FFloPOS-FF4500?logo=reddit&logoColor=white" alt="Reddit community"></a>
-</p>
+FloCafe runs on the business's own computer. Orders, customers, receipts, and backups stay in a local SQLite database, so the counter keeps working when the internet does not. Google Drive backup, WhatsApp bill delivery, and cloud-connected reporting are optional.
 
----
+## Get FloCafe
 
-FloCafe runs entirely on your own machine — no internet, no subscriptions, no cloud dependency. Your data stays local, your business stays private.
-
-**FloCafe is free.** Every feature, in every app across the ecosystem — FloCafe, FloRetail, FloSalon, and RevFlo (our companion mobile reporting app, short for *Revenue Flow*) — has no tiers, no subscriptions, and no paywalled features.
-
-## Table of Contents
-
-- [Why FloCafe](#why-flocafe)
-- [Downloads](#downloads)
-- [Install on Linux](#install-on-linux)
-- [Features](#features)
-- [Project Stats](#project-stats)
-- [Public Roadmap](#public-roadmap)
-- [Tech Stack](#tech-stack)
-- [Prerequisites](#prerequisites)
-- [Quick Start](#quick-start)
-- [Development Setup](#development-setup)
-- [Architecture](#architecture)
-- [Updates & Database Integrity](#updates--database-integrity)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
-
-## Why FloCafe
-
-| | |
-|---|---|
-| **Completely Free** | No subscriptions, no licenses, no hidden costs |
-| **Works Offline** | Full functionality without internet |
-| **Your Data** | Self-hosted on your own machine |
-| **Restaurant Ready** | Table management, KDS, thermal printing |
-| **Cafe Ready** | Fast counter billing, takeaway, delivery orders |
-| **Cross-Platform** | Windows, macOS, Linux |
-
-## Downloads
+Download the latest installer from [GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases), or use the app store for macOS and Windows.
 
 <p>
   <a href="https://apps.apple.com/in/app/flo-cafe/id6763136018">
     <img src="https://img.shields.io/badge/Mac_App_Store-Download-black?logo=apple&style=for-the-badge" alt="Download on the Mac App Store">
   </a>
-  &nbsp;
   <a href="https://apps.microsoft.com/detail/9n1md6585p4q">
-    <img src="https://img.shields.io/badge/Microsoft_Store-Download-0078D4?logo=microsoft&style=for-the-badge" alt="Download on Microsoft Store">
+    <img src="https://img.shields.io/badge/Microsoft_Store-Download-0078D4?logo=microsoft&style=for-the-badge" alt="Download from Microsoft Store">
   </a>
 </p>
 
-Or grab the latest build directly from [Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases) — always the top-most release, filenames are versioned (e.g. `Flo.Cafe-<version>.dmg`):
-
-| Platform | Asset | Description |
-|----------|------|-------------|
-| **macOS** | [Mac App Store](https://apps.apple.com/in/app/flo-cafe/id6763136018) | Recommended — auto-updates |
-| **macOS (Intel DMG)** | `Flo.Cafe-<version>.dmg` | Direct download for Intel Macs |
-| **macOS (Apple Silicon DMG)** | `Flo.Cafe-<version>-arm64.dmg` | Direct download for M1/M2/M3/M4 |
-| **Windows** | [Microsoft Store](https://apps.microsoft.com/detail/9n1md6585p4q) | Recommended — auto-updates |
-| **Windows (EXE)** | `Flo.Cafe.Setup.<version>.exe` | Direct download installer |
-| **Linux (Snap)** | [`sudo snap install flocafe`](#install-on-linux) | Recommended for Ubuntu, Fedora (via snapd), Mint, elementary — auto-updates via snapd |
-| **Linux (AppImage)** | `flocafe-<version>-x86_64.AppImage` | Portable, glibc ≥ 2.34 (Ubuntu 22.04+, Fedora 36+, Debian 12+) — [install](#install-on-linux) |
-| **Linux (AppImage arm64)** | `flocafe-<version>-arm64.AppImage` | Raspberry Pi 4/5, ARM servers, Apple-Silicon Linux VMs — [install](#install-on-linux) |
-| **Linux (Debian)** | `flocafe_<version>_amd64.deb` | Debian / Ubuntu / Pop!_OS / Mint |
-| **Linux (Debian arm64)** | `flocafe_<version>_arm64.deb` | Same as above on arm64 distros |
-
-**Uninstalling:** standalone uninstaller scripts for macOS and Windows are attached to every [release](https://github.com/FreeOpenSourcePOS/FloCafe/releases) — useful if the packaged uninstaller is missing or a reinstall needs a clean slate. They always remove the app and its support files; for your database/backups/Master PIN, run interactively and you'll be asked Delete or Keep, or pass `--purge-data` / `-PurgeData` upfront to delete without asking (add `--dry-run` / `-DryRun` to preview first).
+Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`, `.rpm`, and Snap packages. On Linux:
 
 ```sh
-# macOS
-curl -fsSL https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-macos.sh -o uninstall-macos.sh && chmod +x uninstall-macos.sh && ./uninstall-macos.sh
-```
-```powershell
-# Windows (PowerShell)
-irm https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-windows.ps1 -OutFile uninstall-windows.ps1; powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
-```
+# AppImage
+chmod +x flocafe-*.AppImage
+./flocafe-*.AppImage
 
-## Install on Linux
+# Debian or Ubuntu
+sudo apt install ./flocafe-*.deb
 
-Three official channels: Snap (auto-updates), AppImage (any distro, no install), `.deb` (Debian/Ubuntu and derivatives).
-
-### Snap
-
-```bash
+# Snap
 sudo snap install flocafe
 ```
 
-Stable channel is `latest/stable`; pre-releases are on `edge` (`sudo snap install flocafe --edge`). Auto-update is on by default — every new tag from this repo lands on `latest/stable` automatically. To pin a specific version: `sudo snap refresh flocafe --channel=2.0.5/stable`.
+If the Snap build cannot see a USB receipt printer:
 
-For tails that need a receipt printer over USB without `sudo`, grant the snap a confined-usb override:
-
-```bash
+```sh
 sudo snap connect flocafe:raw-usb
 ```
 
-### AppImage (any distro)
+On first launch, create the owner account, then add products, tables, staff, and printers in Settings.
 
-Both architectures are signed and bundled in the latest release's assets. From the [Releases page](https://github.com/FreeOpenSourcePOS/FloCafe/releases), expand `Assets` at the bottom, download the AppImage matching your CPU, then:
-
-```bash
-# x86_64 — most desktops, servers, Steam Deck, most VMs
-curl -L -O https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/flocafe-x86_64.AppImage
-chmod +x flocafe-x86_64.AppImage
-./flocafe-x86_64.AppImage
-
-# arm64 — Raspberry Pi 4/5, ARM servers, Apple-Silicon Linux VMs
-curl -L -O https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/flocafe-arm64.AppImage
-chmod +x flocafe-arm64.AppImage
-./flocafe-arm64.AppImage
-```
-
-If the AppImage doesn't launch on an older distro, `sudo apt install libfuse2` first (Ubuntu 22.04 ships libfuse3 by default; earlier releases like 20.04 still need `libfuse2`). Your data lives under `~/.config/flo-desktop` once running.
-
-### Debian / Ubuntu (`.deb`)
-
-```bash
-# x86_64
-curl -L -O https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/flocafe_amd64.deb
-sudo apt install ./flocafe_amd64.deb
-
-# arm64 (Raspberry Pi OS arm64, etc.)
-curl -L -O https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/flocafe_arm64.deb
-sudo apt install ./flocafe_arm64.deb
-```
-
-Fedora / RHEL / Nobara users: substitute the `.rpm` asset from the same release (filename pattern `flocafe-<version>-<arch>.rpm`) and install with `sudo rpm -i ./flocafe-<arch>.rpm`.
-
-## 🚀 Features
-
-### Core POS
-- Fast order entry with product search
-- Barcode scanning for quick product lookup
-- Multiple order types: Dine-in, Takeaway, Delivery
-- Cart with modifiers and addons
-- Multiple payment methods (Cash, UPI, Card)
-- GST-compliant invoice generation
-- Pair a second cashier device via QR code or LAN IP (Settings → POS Workflow)
-
-### Restaurant & Cafe
-- Kitchen Display System (KDS) with real-time updates
-- Kitchen Order Tickets (KOT) printing
-- Settings toggle for KDS-first or printer/KOT-first kitchen workflow
-- Table management with status tracking
-- Multi-station kitchen support
-- Addon groups for modifiers (extras, toppings, variants), with optional multi-quantity per addon
-
-### Thermal Printing
-- ESC/POS protocol (USB, Network, Bluetooth)
-- Auto-detect printers (Epson, Xprinter, Star, etc.)
-- Multiple bill templates (Classic, Compact, Detailed)
-- Configurable paper widths (58mm/80mm)
-
-### Business Management
-- Menu catalog with categories
-- Staff management with roles
-- Customer database
-- Dashboard insights and owner-restricted analytics
-- Sales reports
-- Local database backups with history/restore, plus optional automated
-  off-device backups to Google Drive (opt-in — see
-  [`docs/google-drive-setup.md`](docs/google-drive-setup.md))
-- WhatsApp e-billing (opt-in) — share bills with customers via a `wa.me` link
-
-### Localization (i18n)
-- Native multi-language support (English, Spanish, and Brazilian Portuguese included)
-- Easily extensible translation system for adding new locales
-- Fully localized user interfaces, printed receipts, and POS interactions
-
-### Order Management
-- Bill-style order cards for intuitive layout and fast management
-- Cancel orders with status-based rules (pending = free, preparing+ = manager PIN)
-- Void individual in-progress items via manager PIN — leaves a visible mirrored refund line instead of deleting it
-- Configurable order number format (custom prefix, optional date segment, daily reset or continuous sequence)
-- Loyalty points toggle per order (configurable earn/redeem rates)
-- Discount system (order + item level, percentage + amount)
-- Extra notes per item and order (configurable character limits)
-- Receipt reprinting with print logging
-- Add-on items after order placement
-- Filter bar with search, table, type, and status filters
-- Cross-device held orders synchronization
-
-### Kitchen Display System (KDS)
-- Real-time order updates via WebSocket
-- Dynamic IP detection for easy pairing via VPN/Mesh networks (Tailscale, ZeroTier, etc.)
-- "NEW" badge for items added after initial order
-- Table name always visible
-
-## Project Stats
-
-FloCafe's public GitHub activity is visible through live badges and GitHub Insights:
-
-| Signal | Live status |
-|--------|-------------|
-| Latest release | [![Latest release](https://img.shields.io/github/v/release/FreeOpenSourcePOS/FloCafe?label=release)](https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest) |
-| Total release downloads | [![Downloads](https://img.shields.io/github/downloads/FreeOpenSourcePOS/FloCafe/total?label=release%20downloads)](https://github.com/FreeOpenSourcePOS/FloCafe/releases) |
-| Stars | [![Stars](https://img.shields.io/github/stars/FreeOpenSourcePOS/FloCafe?label=stars)](https://github.com/FreeOpenSourcePOS/FloCafe/stargazers) |
-| Forks | [![Forks](https://img.shields.io/github/forks/FreeOpenSourcePOS/FloCafe?label=forks)](https://github.com/FreeOpenSourcePOS/FloCafe/network/members) |
-| Open issues | [![Open issues](https://img.shields.io/github/issues/FreeOpenSourcePOS/FloCafe?label=open%20issues)](https://github.com/FreeOpenSourcePOS/FloCafe/issues) |
-| Open pull requests | [![Open PRs](https://img.shields.io/github/issues-pr/FreeOpenSourcePOS/FloCafe?label=open%20PRs)](https://github.com/FreeOpenSourcePOS/FloCafe/pulls) |
-| Commit activity | [![Commit activity](https://img.shields.io/github/commit-activity/m/FreeOpenSourcePOS/FloCafe?label=commits%2Fmonth)](https://github.com/FreeOpenSourcePOS/FloCafe/pulse) |
-| Last commit | [![Last commit](https://img.shields.io/github/last-commit/FreeOpenSourcePOS/FloCafe)](https://github.com/FreeOpenSourcePOS/FloCafe/commits/main) |
-
-For deeper repository analytics, see [Pulse](https://github.com/FreeOpenSourcePOS/FloCafe/pulse), [Contributors](https://github.com/FreeOpenSourcePOS/FloCafe/graphs/contributors), [Traffic](https://github.com/FreeOpenSourcePOS/FloCafe/graphs/traffic), and [Community Standards](https://github.com/FreeOpenSourcePOS/FloCafe/community). GitHub traffic, clones, and referrers require repository access, so they are linked instead of embedded.
-
-## 🗺️ Public Roadmap
-
-FloCafe is actively evolving. This roadmap reflects the current public issue discussions as of July 28, 2026.
-
-### Active Priorities
-
-- **Desktop update experience:** Add in-app auto-update support with a notification badge ([#58](https://github.com/FreeOpenSourcePOS/FloCafe/issues/58)).
-- **Loyalty program polish:** Refine loyalty onboarding and labels so staff understand earn/redeem behavior faster ([#81](https://github.com/FreeOpenSourcePOS/FloCafe/issues/81)).
-- **In-app feedback:** Let users without a GitHub account submit feedback directly from the app instead of needing to file an issue ([#141](https://github.com/FreeOpenSourcePOS/FloCafe/issues/141)).
-
-### Longer-Term Direction
-
-- **Android/iOS tablet client + free e-billing:** A thin-client order-taking + billing surface for tablets on the same local network as the desktop install — same pattern KDS already uses (LAN, no install required), not an Electron port (not possible on mobile). No printer access on the tablet itself; printing routes through the existing desktop install. Bundled: how bills reach customers for free (the already-shipped `wa.me` share link today, richer automated WhatsApp messaging as a possible future step) ([#135](https://github.com/FreeOpenSourcePOS/FloCafe/issues/135)).
-- **Universal tax engine:** Move beyond India-specific GST to configurable surcharges, per-category rates/discounts, and more countries' tax rules ([#143](https://github.com/FreeOpenSourcePOS/FloCafe/issues/143)).
-- **Country & provider plugin architecture:** A plugin system for country- and payment-provider-specific behavior, so tax/provider variants don't require touching core code ([#142](https://github.com/FreeOpenSourcePOS/FloCafe/issues/142)).
-- **Advanced Inventory Management:** Low stock alerts, supplier purchase orders, and ingredient-level tracking.
-- **Enhanced Cloud Sync:** Opt-in multi-device synchronization across different branches or franchises.
-- **Expanded Translations (i18n):** Add more community-contributed languages beyond the native English, Spanish, and Brazilian Portuguese support.
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Runtime | Electron 43 |
-| Backend | Express.js + TypeScript |
-| Frontend | Next.js 16 + React 19 |
-| Database | SQLite (better-sqlite3, WAL mode) |
-| State | Zustand |
-| Styling | Tailwind CSS v4 + shadcn/ui |
-| Realtime | WebSocket (KDS) |
-| Printing | ESC/POS (node-thermal-printer) |
-
-## Prerequisites
-
-- **Node.js** >= 22.0.0
-- **npm** (comes with Node)
-- **Git** (for cloning)
-
-Optional:
-- Thermal printer (ESC/POS compatible)
-
-### System Requirements
+### System requirements
 
 | Requirement | Minimum |
-|-------------|---------|
-| OS | Windows 10+, macOS 12 (Monterey)+, Ubuntu 20.04+ |
-| RAM | 4 GB |
-| Disk | 500 MB free |
-| Node.js | >= 22.0.0 (development only) |
+| --- | --- |
+| Operating system | Windows 10+, macOS 12+, or a current supported Linux distribution |
+| Memory | 4 GB RAM |
+| Storage | 500 MB free space, plus room for local backups |
 
-> **Note:** OS and RAM requirements are based on Electron 43 defaults. The app itself is lightweight.
+Node.js is only required to develop FloCafe, not to run a packaged release.
 
-## Quick Start
+<details>
+<summary>Uninstall a direct-download build</summary>
 
-### 1. Download & Install
+App Store and Microsoft Store installs should be removed through the relevant store or operating system.
 
-Download the installer for your platform from [Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases) or the app stores above.
+```sh
+# macOS
+curl -fsSL https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-macos.sh -o uninstall-macos.sh
+chmod +x uninstall-macos.sh
+./uninstall-macos.sh
+```
 
-### 2. First Launch
+```powershell
+# Windows PowerShell
+irm https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-windows.ps1 -OutFile uninstall-windows.ps1
+powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
+```
 
-On first run, the app initializes the SQLite database and asks you to create the first owner account.
+Both scripts ask whether to keep application data. Do not choose their data-purge options unless you intend to remove the local database and backups.
 
-### 3. Login
+</details>
 
-Use the owner email and password created during first launch.
+## Why FloCafe
 
-### 4. Configure Printer (Optional)
+FloCafe combines counter service and table service in one desktop app. A kitchen display can receive live orders while receipt printers and kitchen tickets use the same local setup. There is no hosted account required for the core POS.
 
-1. Go to **Settings** → **Printers**
-2. Click **Detect Printers**
-3. Select your thermal printer
-4. Test the connection
+It is free software. FloCafe has no tiers or paywalled features, and the code is available under the [MIT License](LICENSE).
 
-## Development Setup
+## What it handles
 
-```bash
-# Clone the repo
+- Counter, dine-in, takeaway, and delivery orders
+- Tables, held orders, modifiers, add-ons, discounts, and loyalty points
+- ESC/POS receipt printing over USB, network, and Bluetooth
+- Kitchen display, kitchen stations, and kitchen order tickets
+- Product images, barcode lookup, and CSV menu import/export
+- Customer records, staff roles, sales reporting, and receipt history
+- Configurable tax packs and local overrides
+- English, Spanish, and Brazilian Portuguese
+
+Backups and restores are built in. Optional [Google Drive backup](docs/google-drive-setup.md) stores backup copies in the owner’s Drive. WhatsApp bill delivery can be enabled for businesses that use a paired phone.
+
+## Direction
+
+FloCafe will remain local-first and free. Current work focuses on making the desktop POS easier to operate, expanding tax and country support, improving inventory and loyalty workflows, and allowing companion devices to work with the existing local install. Public discussions and planned work live in [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues).
+
+## Data, updates, and recovery
+
+The database and backups live in the operating system's user-data directory, separate from the installed application. Updating or reinstalling through the same distribution channel does not remove them.
+
+Before a pending migration runs, FloCafe creates a timestamped local backup. Migrations are additive and tracked with SQLite's `user_version` pragma. Use Settings → Database Tools → Backup before moving to another computer or switching distribution channels.
+
+For printer problems, check the cable or network address, then use Settings → Printers → Test Print. If the app cannot start, do not delete the database first. Restore the latest backup from Settings → Database Tools, then [open an issue](https://github.com/FreeOpenSourcePOS/FloCafe/issues) with the app version, operating system, and logs.
+
+## Development
+
+Development requires Node.js 22 or later.
+
+```sh
 git clone https://github.com/FreeOpenSourcePOS/FloCafe.git
 cd FloCafe
-
-# Install dependencies
 npm install
-
-# Start development
 npm run dev
 ```
 
-### Available Commands
+`npm run dev` builds the frontend and backend, then starts Electron. For backend-only work:
 
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Full app (Electron + backend + frontend) |
-| `node dev-server.js` | Backend-only (mocks Electron, faster iteration) |
-| `npm run build` | Compile TypeScript (main/ → dist/) |
-| `npm run build:frontend` | Static export via Next.js |
-| `npm run build:mac` | macOS DMG |
-| `npm run build:win` | Windows NSIS installer |
-| `npm run build:linux` | Linux AppImage + deb |
-| `npm test` | Run all tests |
-| `npm run test:upgrade-path` | Migrate a real old-release DB fixture through today's schema — see [Database migrations](specs/DatabaseMigrations.md) |
-| `npm run clean` | Kill dev servers on ports 3001/3002 |
-
-> **Adding a column to the database?** If it goes into `createSchema()` in `main/db.ts`, it only reaches *new* installs automatically — existing installs need a paired, guarded migration in `MIGRATIONS`, or they'll crash on upgrade the first time something touches that column. This bit us for real (`customers.country_code`/`tag_counts`, fixed in `9c92409`). See [specs/DatabaseMigrations.md](specs/DatabaseMigrations.md) for the rule and the regression test (`npm run test:upgrade-path`) that guards against it.
-
-### Environment Variables
-
-Create a `.env` file in the project root for custom configuration:
-
-```env
-# Server
-PORT=3001                    # API server port (default: 3001)
-KDS_PORT=3002                # KDS server port (default: 3002)
-
-# Authentication
-JWT_SECRET=your-secret-key   # JWT signing secret (default: built-in dev secret)
-ADMIN_PASSWORD=admin123      # Initial admin password (standalone server.js only)
-
-# Google Drive backups (optional — off unless both are set, see docs/google-drive-setup.md)
-GOOGLE_DRIVE_CLIENT_ID=your-client-id.apps.googleusercontent.com
-GOOGLE_DRIVE_CLIENT_SECRET=your-client-secret
+```sh
+node dev-server.js
 ```
 
-> **Security:** Never commit `.env` files. The default JWT secret is for development only — change it in production.
-
-> **Google Drive backups:** `GOOGLE_DRIVE_CLIENT_ID`/`GOOGLE_DRIVE_CLIENT_SECRET` are only needed if you want the optional
-> "back up to Google Drive" feature to be usable in your build. Without them, `Settings > Integrations > Google Drive`
-> simply shows "Google Drive integration is not configured for this build" — everything else works normally. See
-> [`docs/google-drive-setup.md`](docs/google-drive-setup.md) for how to create these credentials in Google Cloud Console.
-
-## Architecture
-
-```
-┌─────────────────────────────────────────┐
-│ Electron Main Process                    │
-│  main/index.ts → orchestrator            │
-│  main/server.ts → Express :3001 (API)    │
-│  main/kds-server.ts → Express :3002 (KDS)│
-│  main/db.ts → SQLite (WAL mode)          │
-└──────────────┬──────────────────────────┘
-               │ HTTP + WebSocket
-┌──────────────▼──────────────────────────┐
-│ Renderer (Next.js static export)         │
-│  frontend/src/app/ → pages               │
-│  frontend/src/store/ → Zustand           │
-└─────────────────────────────────────────┘
+```sh
+npm run lint             # backend and frontend lint
+npm run build            # compile main/ to dist/
+npm run build:frontend   # export the Next.js frontend
+npm test                 # complete test suite
 ```
 
-### Project Structure
+### Architecture
 
-```
-FloCafe/
-├── main/                    # Electron main process (TypeScript)
-│   ├── index.ts            # Entry point, orchestrates everything
-│   ├── server.ts           # Express API server (:3001)
-│   ├── kds-server.ts       # KDS server (:3002)
-│   ├── db.ts               # SQLite database & migrations
-│   ├── ipc.ts              # Electron IPC handlers
-│   ├── preload.ts          # Context bridge
-│   ├── routes/             # 27 API route modules
-│   ├── services/           # Business logic (cloud-sync, KDS, tax)
-│   └── printers/           # ESC/POS thermal printing
-├── frontend/               # Next.js frontend
-│   └── src/
-│       ├── app/            # App Router pages
-│       ├── components/     # React components
-│       ├── store/          # Zustand stores
-│       ├── lib/            # Utilities & printer encoders
-│       └── hooks/          # Custom React hooks
-├── tests/                  # Integration tests
-├── dev-server.js           # Headless backend for dev
-└── server.js               # Standalone Express server
+```text
+Electron main process
+├── Express API and WebSocket server       :3001
+├── Standalone kitchen-display server      :3002
+└── SQLite database, migrations, and printing
+                 ↕ HTTP and WebSocket
+Next.js renderer
+└── React UI and Zustand client state
 ```
 
-## Updates & Database Integrity
+| Layer | Technology |
+| --- | --- |
+| Desktop runtime | Electron |
+| Backend | Express and TypeScript |
+| Frontend | Next.js, React, Tailwind CSS, and shadcn/ui |
+| Database | SQLite via better-sqlite3 in WAL mode |
+| Realtime | WebSocket |
+| Printing | ESC/POS via node-thermal-printer |
 
-FloCafe auto-updates in the background on macOS and Windows (checks a few seconds after
-launch, downloads silently, applies on quit). This relies on `electron-updater` fetching
-a manifest (`latest-mac.yml` / `latest.yml`) from the latest GitHub release — every
-release build verifies these files exist before publishing (see
-`.github/workflows/release.yml` and `tests/release-config.test.ts`), so a release can't
-silently ship without a working update path again.
+```text
+main/          Electron process, Express servers, SQLite, printing, and services
+frontend/src/  Next.js pages, components, client state, and translations
+tests/         Backend, integration, and release checks
+docs/          API, release, and integration notes
+```
 
-**Your data is never touched by an update.** The SQLite database, local backups, and
-Master PIN all live in the OS user-data directory (`app.getPath('userData')`) — a
-completely separate location from the application binary that gets replaced. This holds
-regardless of *how* you update: automatic background update, manually re-downloading and
-reinstalling from [GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases),
-or via the Mac App Store / Microsoft Store.
+Both servers use the same local SQLite database. The renderer is a statically exported Next.js application using React and Zustand.
 
-**Schema migrations run automatically and safely on every startup:**
-- Pending migrations apply in order, wrapped in a transaction each, tracked via SQLite's
-  `user_version` pragma.
-- Before running *any* pending migration batch, the app takes a full timestamped backup
-  to the local `backups/` folder — not just for specific migrations, but for the whole
-  batch, so an install that's been offline or stuck for a long time and jumps through many
-  migrations at once is just as protected as one applying a single routine update.
-- If a database's schema is *newer* than the running app version understands (e.g. a
-  stale install sharing a database with an already-updated device), the app refuses to
-  start and shows a clear message asking you to update, instead of silently running
-  queries against columns that no longer exist.
-- Startup failures — including that schema-mismatch case — are reported through the
-  existing anonymous telemetry pipe (on by default, opt-out anytime in Settings →
-  Integrations → Privacy) with the relevant version numbers attached, so installs stuck on
-  a stale build can be caught proactively.
-- A built-in health check (Settings → Database Tools) diffs your live schema against what
-  the current app version expects and can safely apply additive fixes.
+## Contribute
 
-**Mac App Store / Microsoft Store note:** those channels are sandboxed and manage their
-own updates entirely outside `electron-updater` — Apple and Microsoft's store policies
-prohibit in-app auto-update mechanisms. Updates *within* a store channel are safe by
-construction. Switching *between* channels (e.g. a direct-download install to a future
-store install) does not carry data over automatically, since sandboxed apps use an
-OS-isolated storage location — use Settings → Database Tools → Backup/Restore to move
-data across a channel switch.
+Start with [open issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues). For substantial work, open an issue first so the change can be discussed before implementation.
 
-### Cutting a release
+Database migrations must be non-destructive. Add a migration for existing installations instead of replacing or dropping schema. Before opening a pull request, run:
 
-Bump `version` in `package.json` (and `package-lock.json`'s two matching `version`
-fields), add a matching `## [x.y.z] - YYYY-MM-DD` entry to `CHANGELOG.md`, commit, and
-push a `vX.Y.Z` tag. That tag push is the only trigger — `.github/workflows/release.yml`
-picks it up automatically from there:
+```sh
+npm run lint
+npm run build
+npm test
+```
 
-1. Creates the GitHub release. **Release notes ("what's new") are pulled straight from
-   that `CHANGELOG.md` entry** (`scripts/changelog-notes.sh`), not GitHub's PR-based
-   `--generate-notes` — this repo pushes straight to `main` instead of merging PRs, so
-   PR-based notes would come back empty. A `## [x.y.z]` entry in `CHANGELOG.md` is
-   **mandatory**: this step fails the workflow loudly instead of publishing a release
-   with no notes if one is missing.
-2. Builds and uploads installers for Linux (AppImage/deb/rpm/snap), macOS (dmg/zip +
-   the `latest-mac.yml` auto-update manifest), and Windows (nsis + the
-   `latest.yml` manifest) — each platform job verifies its own auto-update assets exist
-   before uploading, so a release can't silently ship without a working update path.
-3. Uploads `scripts/uninstallers/uninstall-macos.sh` and `uninstall-windows.ps1` as
-   standalone assets on the same release (see [Uninstalling](#downloads) above).
-
-## Troubleshooting
-
-### Printer not detected
-
-- Ensure the printer is powered on and connected (USB or network)
-- For USB: try a different port or cable
-- For network printers: confirm they're on the same subnet
-- On macOS, check **System Preferences → Printers & Scanners**
-- On Windows, check **Device Manager** for USB printer entries
-- On Linux, ensure your user is in the `lp` group: `sudo usermod -aG lp $USER`
-
-### App crashes on startup
-
-- The SQLite database may be corrupted. Check logs in:
-  - macOS: `~/Library/Logs/Flo Cafe/`
-  - Windows: `%APPDATA%/Flo Cafe/logs/`
-  - Linux: `~/.config/Flo Cafe/logs/`
-- Delete the database file to reset (data will be lost)
-- Run `npm run clean` to kill any stuck processes on ports 3001/3002
-
-### Printing issues
-
-- Verify the printer supports **ESC/POS** protocol
-- Test with **Settings → Printers → Test Print**
-- For network printers: check the IP address and port in printer settings
-- Ensure paper is loaded and the thermal head is clean
-- Check printer status via the **Printer Status** indicator in the POS topbar
-
-## Contributing
-
-Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-
-- Development setup and available commands
-- Branch naming and commit conventions
-- PR process and checklist
-- Database migration guidelines
-- Code style and testing expectations
-
-Discussion, questions, and feedback also happen over on [r/FloPOS](https://www.reddit.com/r/FloPOS/).
-
-## License
-
-This project is open source under the [MIT License](LICENSE).
-
----
-
-<p align="center">
-  <strong>Bringing professional POS software to every cafe and restaurant.</strong><br>
-  <sub>⭐ Star us on GitHub if you find this useful!</sub>
-</p>
+Project activity is also available through [Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases), [Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues), and [Pulse](https://github.com/FreeOpenSourcePOS/FloCafe/pulse).

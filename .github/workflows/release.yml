@@ -11,7 +11,13 @@ permissions:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # false, not true (#178): a release tag doesn't move, so a second trigger on
+  # the same ref is a re-run of the same release, not new work superseding it.
+  # Cancelling mid-flight can leave a release with some platforms' assets
+  # uploaded and others missing/corrupt, with no clear signal that happened.
+  # A duplicate run queues behind the first and completing it re-uploads the
+  # same tagged version's assets with --clobber, which is a harmless no-op.
+  cancel-in-progress: false
 
 jobs:
   create-release:
@@ -86,9 +92,12 @@ jobs:
           - arch: arm64
             runner: ubuntu-24.04-arm
     concurrency:
-      # Independent per-arch so an arm64 build doesn't cancel x64 (or vice versa).
+      # Scoped per-arch so x64 and arm64 (distinct group keys) never contend with
+      # each other — each only queues behind a previous run of that *same* arch on
+      # this ref. cancel-in-progress is false for the same reason as the
+      # top-level group above (#178): don't kill a mid-upload job on re-trigger.
       group: release-linux-${{ github.ref }}-${{ matrix.arch }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -157,20 +166,16 @@ jobs:
           snapcraft upload "$SNAP" --release=stable
 
   release-mac:
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
     needs: create-release
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x64
-            runner: macos-latest
-          - arch: arm64
-            runner: macos-latest
+    # Was two parallel 60-minute matrix jobs (one per arch); now one job builds,
+    # signs, and notarizes both — packaging + notarizing arch #2 no longer
+    # overlaps arch #1's wall-clock time, so this needs real headroom over the
+    # old single-arch budget.
+    timeout-minutes: 100
     concurrency:
-      group: release-mac-${{ github.ref }}-${{ matrix.arch }}
-      cancel-in-progress: true
+      group: release-mac-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
@@ -231,7 +236,18 @@ jobs:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
 
       - name: Build macOS
-        run: npm run build:frontend && npm run build && npx electron-builder --mac --${{ matrix.arch }} --publish never
+        # Both archs in one electron-builder invocation (#199, #178): package.json's
+        # build.mac.target already declares arch: [x64, arm64] for dmg/zip, and
+        # npmRebuild defaults to true, so electron-builder rebuilds native deps
+        # (better-sqlite3) per arch on its own — the same machinery the existing
+        # `build:mas --universal` script already relies on. This is what actually
+        # fixes the latest-mac.yml race: electron-builder's own updateInfoBuilder
+        # only omits an arch suffix from the mac update-manifest filename (unlike
+        # Linux), and merges same-named update-info tasks by concatenating their
+        # `files` entries — so one process building both archs produces a single
+        # correctly-merged latest-mac.yml instead of two per-arch ones stepping on
+        # each other via --clobber.
+        run: npm run build:frontend && npm run build && npx electron-builder --mac --x64 --arm64 --publish never
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
@@ -245,6 +261,14 @@ jobs:
           test -f release/latest-mac.yml || { echo "::error::release/latest-mac.yml is missing — macOS auto-update would be broken for this release"; exit 1; }
           ls release/*.zip >/dev/null 2>&1 || { echo "::error::no .zip in release/ — macOS auto-update would be broken for this release"; exit 1; }
           ls release/*.zip.blockmap >/dev/null 2>&1 || { echo "::error::no .zip.blockmap in release/ — macOS auto-update would be broken for this release"; exit 1; }
+          # Guards against a regression back to #199/#178: this should list one
+          # `files:` entry per .zip built (both archs), not just exist.
+          ZIP_COUNT=$(ls release/*.zip | wc -l | tr -d ' ')
+          MANIFEST_COUNT=$(grep -c '^\s*- url:' release/latest-mac.yml || true)
+          if [ "$MANIFEST_COUNT" -ne "$ZIP_COUNT" ]; then
+            echo "::error::latest-mac.yml lists $MANIFEST_COUNT file(s) but $ZIP_COUNT .zip(s) were built — auto-update would be broken for whichever architecture's entry is missing"
+            exit 1
+          fi
           VERIFY_DIR=$(mktemp -d)
           trap 'rm -rf "$VERIFY_DIR"' EXIT
           for ZIP in release/*.zip; do

@@ -114,14 +114,26 @@ if ($entry) {
   }
   if ($uninstallerExe -and (Test-Path -LiteralPath $uninstallerExe -PathType Leaf)) {
     Write-Step "Running the app's own uninstaller silently..."
+    # /S first, then whatever the registry gave us (e.g. /D=C:\Program Files\Flo Cafe):
+    # NSIS requires /D=<path> to be the LAST parameter and takes everything after
+    # it, unquoted, as the literal install path -- putting /S after it would get
+    # swallowed into that path instead of being read as a flag.
+    #
+    # One joined string, not an array, for -ArgumentList: Start-Process re-tokenizes
+    # an array's elements when building the child process's command line, so a path
+    # already containing spaces (like the one above) would get split into multiple
+    # arguments. A single string is passed through close to verbatim instead.
+    $fullArgs = if ($uninstallerArgs) { "/S $uninstallerArgs" } else { "/S" }
     if ($DryRun) {
-      Write-Log "[dry-run] would run: `"$uninstallerExe`" $uninstallerArgs /S"
+      Write-Log "[dry-run] would run: `"$uninstallerExe`" $fullArgs"
     } else {
-      $uninstallerArgumentList = @()
-      if ($uninstallerArgs) { $uninstallerArgumentList += $uninstallerArgs }
-      $uninstallerArgumentList += '/S'
-      Start-Process -FilePath $uninstallerExe -ArgumentList $uninstallerArgumentList -Wait -ErrorAction Stop
-      Write-Log "ran $uninstallerExe /S"
+      try {
+        Start-Process -FilePath $uninstallerExe -ArgumentList $fullArgs -Wait -ErrorAction Stop
+        Write-Log "ran $uninstallerExe $fullArgs"
+      } catch {
+        Write-Warn "the app's own uninstaller failed to run: $($_.Exception.Message)"
+        Write-Warn "falling back to manual cleanup below"
+      }
     }
   }
 } else {

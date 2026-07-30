@@ -201,35 +201,58 @@ function containsUnsafeData(value: unknown): boolean {
   return false;
 }
 
-function bundledVectorPasses(pack: CountryPack): boolean {
-  const expectedTax = pack.id === 'official-in' ? '5.00'
-    : pack.id === 'official-th' ? '7.00'
-      : pack.id === 'local-generic' ? '0.00'
-        : null;
-  if (expectedTax === null) return false;
-  const calculate = (customerStateCode?: string) => TaxEngine.calculate({
+// Pack-agnostic activation vector: verifies self-consistency of the engine's
+// output against the PACK'S OWN declared data (never a hardcoded expected
+// rate keyed by a known pack id), so this works identically for the bundled
+// packs and for any legitimately new pack installed from the signed catalog.
+function activationVectorPasses(pack: CountryPack): boolean {
+  const primaryCategory = pack.categories[0];
+  if (!primaryCategory) return false;
+  const calculate = (customer?: { stateCode: string; registrationNumber: string }) => TaxEngine.calculate({
     pack,
     country: pack.country === '*' ? 'ZZ' : pack.country,
     jurisdiction: pack.jurisdiction,
     businessType: 'restaurant',
-    storeStateCode: pack.country === 'IN' ? 'KA' : undefined,
-    customer: customerStateCode ? { stateCode: customerStateCode } : undefined,
+    storeStateCode: 'ACTIVATION-VECTOR-HOME',
+    customer,
     transactionDate: pack.effectiveFrom,
     lines: [{
-      lineId: 'bundled-activation-vector',
+      lineId: 'activation-vector',
       kind: 'product',
       quantity: '1',
       unitPrice: '100',
-      productCategoryId: pack.categories[0]?.id,
+      productCategoryId: primaryCategory.id,
       taxBehavior: 'exclusive',
     }],
   });
-  const primary = calculate();
-  if (!new Decimal(primary.taxAmount).eq(expectedTax)
-    || !new Decimal(primary.payableTotal).eq(new Decimal(100).plus(expectedTax))) {
+
+  const intra = calculate();
+  const line = intra.lines[0];
+  const taxAmount = new Decimal(intra.taxAmount);
+  const payableTotal = new Decimal(intra.payableTotal);
+  if (!taxAmount.isFinite() || taxAmount.isNegative()) return false;
+  // A category that DECLARES rules but produces zero applied components is a
+  // real bug signature (e.g. a broken bidirectional category<->rule link).
+  // A category with no declared rules at all (a blank manual/local template)
+  // legitimately produces zero tax -- that is not a failure.
+  if (primaryCategory.ruleIds.length > 0 && line.components.length === 0 && line.taxBehavior !== 'exempt') {
     return false;
   }
-  return pack.id !== 'official-in' || new Decimal(calculate('MH').taxAmount).eq(expectedTax);
+  const expectedBeforeRounding = new Decimal(100).plus(taxAmount);
+  if (!new Decimal(intra.totalBeforePayableRounding).eq(expectedBeforeRounding)) return false;
+  if (!payableTotal.eq(expectedBeforeRounding.plus(intra.payableRoundingAdjustment))) return false;
+
+  const hasInterstateCondition = pack.rules.some(
+    (rule) => primaryCategory.ruleIds.includes(rule.id) && rule.conditions?.customerStateRelation,
+  );
+  if (hasInterstateCondition) {
+    try {
+      calculate({ stateCode: 'ACTIVATION-VECTOR-AWAY', registrationNumber: 'ACTIVATION-VECTOR-REG' });
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 function audit(
@@ -403,8 +426,8 @@ export function validationChecklist(
     && pack.rules.every((rule) => Boolean(rule.label)), 'Default-language labels are present');
   add(22, typeof pack === 'object' && !containsUnsafeData(pack), 'Artifact is data-only and contains no executable or unsafe path values');
   let vectorPassed = false;
-  try { vectorPassed = bundledVectorPasses(pack); } catch { vectorPassed = false; }
-  add(23, vectorPassed, 'Bundled mandatory component, total, interstate, and rounding vectors pass');
+  try { vectorPassed = activationVectorPasses(pack); } catch { vectorPassed = false; }
+  add(23, vectorPassed, 'Mandatory component, total, interstate, and rounding vectors are self-consistent');
   add(24, true, 'Activation uses one SQLite transaction and does not modify transactions');
   return { valid: checks.every((check) => check.passed), checks };
 }

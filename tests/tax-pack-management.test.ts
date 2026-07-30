@@ -466,6 +466,54 @@ async function main() {
     assertEqual(installAudit.action, 'install_downloaded_pack', 'download installation is audited');
     assertEqual(installAudit.actor_user_id, owner.userId, 'install audit identifies the owner');
 
+    // Regression: the activation vector check must never be keyed off a
+    // hardcoded list of known pack ids -- a genuinely new pack (a real
+    // country never bundled with the app) must be able to pass activation
+    // validation on its own declared data, or the entire signed-catalog
+    // download feature can only ever "install" versions of packs that
+    // already shipped in the app.
+    const newCountryPack = {
+      ...indiaPackDefinition,
+      id: 'brand-new-country-pack',
+      publisher: 'some-third-party',
+      version: '1.0.0',
+      publishedAt: '2026-07-30',
+    };
+    const newCountryPackJson = JSON.stringify(newCountryPack, null, 2);
+    const newCountrySignature = sign(
+      null,
+      Buffer.from(newCountryPackJson, 'utf8'),
+      privateKey,
+    ).toString('base64');
+    const newCountryTag = 'tax-pack-brand-new-country-pack-v1.0.0';
+    const newCountryBase = `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${newCountryTag}`;
+    const newCountryEntry = {
+      id: newCountryPack.id,
+      publisher: newCountryPack.publisher,
+      country: newCountryPack.country,
+      jurisdiction: newCountryPack.jurisdiction,
+      version: newCountryPack.version,
+      publishedAt: newCountryPack.publishedAt,
+      minFloVersion: newCountryPack.minFloVersion,
+      downloadUrl: `${newCountryBase}/brand-new-country-pack-v1.0.0.json`,
+      signatureUrl: `${newCountryBase}/brand-new-country-pack-v1.0.0.json.sig`,
+      digest: taxPackSha256(newCountryPackJson),
+    };
+    const newCountryFetch = async (input: string | URL | Request) => new Response(
+      String(input) === newCountryEntry.downloadUrl ? newCountryPackJson : newCountrySignature,
+      { status: 200 },
+    );
+    const newCountryInstalled = await installCatalogEntry(newCountryEntry, {
+      actorUserId: owner.userId,
+      fetchImpl: newCountryFetch,
+      publicKey,
+    });
+    assertEqual(
+      newCountryInstalled.validation.valid,
+      true,
+      'a genuinely new pack id passes activation validation on its own declared data',
+    );
+
     const incompatiblePack = {
       ...downloadedPack,
       version: '1.2.0',

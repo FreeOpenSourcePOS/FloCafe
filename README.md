@@ -63,6 +63,8 @@ sudo snap connect flocafe:raw-usb
 
 On first launch, create the owner account, then add products, tables, staff, and printers in Settings.
 
+For Linux package choices, updates, FUSE, printing, and tray support, see [Linux installation and support](docs/linux.md).
+
 ### System requirements
 
 | Requirement | Minimum |

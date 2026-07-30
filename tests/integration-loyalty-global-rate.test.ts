@@ -221,16 +221,18 @@ async function main() {
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario 4: Legacy migration test ───');
 
-    // Simulate a legacy product inserted before v39 with cb_percent = 0
+    // Simulate a legacy product inserted before this migration, with cb_percent = 0
     db.prepare("INSERT INTO products (id, name, price, cb_percent, is_active, created_at, updated_at) VALUES ('prod-legacy', 'Legacy Product', 100, 0, 1, ?, ?)").run(now(), now());
 
-    // Execute the actual migration v39 up() handler exported from main/db.ts
-    const migration39 = MIGRATIONS.find((m: any) => m.version === 39);
-    assert(migration39 !== undefined, 'migration v39 registered in db.ts');
-    migration39.up();
+    // Execute the actual add_global_cashback_percent migration's up() handler exported
+    // from main/db.ts — looked up by name, not a hardcoded version number, since the
+    // version this shipped as can shift if it's renumbered past another migration.
+    const cbMigration = MIGRATIONS.find((m: any) => m.name === 'add_global_cashback_percent');
+    assert(cbMigration !== undefined, 'add_global_cashback_percent migration registered in db.ts');
+    cbMigration.up();
 
     const legacyProd = db.prepare("SELECT cb_percent FROM products WHERE id = 'prod-legacy'").get() as any;
-    assertEqual(legacyProd.cb_percent, null, 'legacy product with cb_percent=0 converted to NULL by migration v39 up()');
+    assertEqual(legacyProd.cb_percent, null, 'legacy product with cb_percent=0 converted to NULL by the migration\'s up()');
 
   } finally {
     server.close();

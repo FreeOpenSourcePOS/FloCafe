@@ -1,45 +1,27 @@
-# Security Policy
+# Security policy
 
-## Reporting a Vulnerability
+## Report a vulnerability privately
 
-If you discover a security vulnerability in FloCafe, please report it responsibly. **Do not open a public GitHub issue for security vulnerabilities.**
+Do not open a public issue for a suspected vulnerability. Use a [private GitHub vulnerability report](https://github.com/FreeOpenSourcePOS/FloCafe/security/advisories/new) when possible, or email [support@flopos.com](mailto:support@flopos.com) with `SECURITY` in the subject line.
 
-### How to Report
+Include the affected version, a clear description, reproduction steps or proof of concept, expected impact, and any suggested mitigation. Remove customer data, credentials, access tokens, database files, and private URLs before sending a report.
 
-Email **support@flopos.com** (or open a private vulnerability report via [GitHub's advisory feature](https://github.com/FreeOpenSourcePOS/FloCafe/security/advisories/new)).
+We will confirm receipt, assess the report, and coordinate disclosure for confirmed issues. Please give us a reasonable opportunity to investigate and release a fix before publishing details. Credit is optional and will be given only with your permission.
 
-Include:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+## Supported versions
 
-### What to Expect
-
-- **Acknowledgment** within 48 hours
-- **Assessment** within 1 week
-- **Fix or mitigation** for confirmed vulnerabilities, coordinated with you for disclosure
+| Version | Security fixes |
+| --- | --- |
+| Latest published release | Yes |
+| Older releases | Upgrade to the latest release |
+| Unreleased `main` branch | Best effort |
 
 ## Scope
 
-FloCafe handles:
-- User authentication (JWT tokens, bcrypt password hashing)
-- Payment processing (bill generation, tax calculations)
-- Local data storage (SQLite database)
-- Thermal printing (potential injection via print commands)
+Reports are welcome for FloCafe's desktop application, local API and kitchen-display server, authentication and authorization, data import or export, printing, release artifacts, dependencies, and GitHub Actions workflows.
 
-All of these are in scope for security reports.
+Reports that require social engineering, access to someone else's device or account, or a deliberately insecure local configuration may be closed without a fix. If you are unsure whether something is in scope, report it privately.
 
-## Supported Versions
+## Run FloCafe safely
 
-| Version | Supported |
-|---------|-----------|
-| 1.7.x   | Yes       |
-| < 1.7   | No        |
-
-## Security Best Practices for Deployment
-
-- Change the default admin credentials (`admin@flo.local` / `admin123`) immediately after first run
-- Set a strong `JWT_SECRET` in your `.env` file (or let the app generate one on first launch)
-- Keep the application updated to the latest version
-- FloCafe runs locally — do not expose port 3001 (API) or 3002 (dev) to the public internet
+Keep FloCafe updated and keep its local API and kitchen-display ports off the public internet. Protect the computer and its operating-system user account because they hold the local database and backups. Use a strong owner password, limit access to backups, and revoke optional integration access when it is no longer needed.

@@ -1,52 +1,27 @@
-# Contributor Covenant Code of Conduct
+# Code of Conduct
 
-## Our Pledge
+## Our commitment
 
-We as members, contributors, and leaders pledge to make participation in our
-community a harassment-free experience for everyone, regardless of age, body
-size, visible or invisible disability, ethnicity, sex characteristics, gender
-identity and expression, level of experience, education, socio-economic status,
-nationality, personal appearance, race, religion, or sexual identity
-and orientation.
+FloCafe is a place for people to build and improve software together. We expect members, contributors, and maintainers to make participation free from harassment, discrimination, and intimidation, regardless of experience, identity, background, ability, religion, nationality, or sexual orientation.
 
-## Our Standards
+## Expected behavior
 
-Examples of behavior that contributes to a positive environment:
+Be respectful. Assume good intent, discuss ideas rather than people, give and accept useful feedback, and take responsibility when you cause harm.
 
-* Using welcoming and inclusive language
-* Being respectful of differing viewpoints and experiences
-* Gracefully accepting constructive criticism
-* Focusing on what is best for the community
-* Showing empathy towards other community members
+## Unacceptable behavior
 
-Examples of unacceptable behavior:
+Harassment; threats; hateful, sexualized, insulting, or demeaning language; personal or political attacks; trolling; unwanted sexual attention; and publishing someone else's private information without permission are not acceptable. The same applies to conduct that a reasonable person would consider unprofessional or unsafe.
 
-* The use of sexualized language or imagery, and sexual attention or advances of any kind
-* Trolling, insulting or derogatory comments, and personal or political attacks
-* Public or private harassment
-* Publishing others' private information without explicit permission
-* Other conduct which could reasonably be considered inappropriate in a professional setting
+## Scope and enforcement
 
-## Enforcement Responsibilities
+This policy applies in FloCafe's GitHub repository, discussions, community channels, and any public space where someone represents the project.
 
-Community leaders are responsible for clarifying and enforcing our standards of
-acceptable behavior and will take appropriate and fair corrective action in
-response to any behavior that they deem inappropriate, threatening, offensive,
-or harmful.
+Maintainers may remove, edit, or reject contributions and communications that violate this policy. Depending on the conduct and context, a response may range from a private correction to a warning, temporary ban, or permanent ban. Maintainers will handle reports fairly and protect the reporter's privacy as far as they can.
 
-## Scope
+## Report a concern
 
-This Code of Conduct applies within all community spaces, and also applies when
-an individual is officially representing the community in public spaces.
-
-## Enforcement
-
-Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the project maintainers at **support@flopos.com**. All complaints
-will be reviewed and investigated promptly and fairly.
+Email [support@flopos.com](mailto:support@flopos.com) with `CONDUCT` in the subject line. Do not post reports publicly. Include enough context for maintainers to investigate; screenshots and links are useful when safe to share.
 
 ## Attribution
 
-This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org),
-version 2.0, available at
-https://www.contributor-covenant.org/version/2/0/code_of_conduct.html.
+This policy is adapted from the [Contributor Covenant 2.1](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).

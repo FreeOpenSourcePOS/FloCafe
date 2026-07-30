@@ -182,6 +182,12 @@ docs/          API, release, and integration notes
 
 Both servers use the same local SQLite database. The renderer is a statically exported Next.js application using React and Zustand.
 
+## Tax packs
+
+Country tax rules ship as signed, versioned data files, not code. A generic engine, English/Spanish/Portuguese tax labels, and official packs for India and Thailand are bundled with every installer; more countries can be added as pack data without an app release. Owners install and activate packs from Settings → Tax Configuration, with rollback and an audit trail.
+
+Adding tax support for a new country is usually a pack contribution, not a code change. See [Tax packs: developer guide](docs/tax-packs.md) for the pack schema, how to author and test one, and how signing and publishing work.
+
 ## Contribute
 
 Start with [open issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues). For substantial work, open an issue first so the change can be discussed before implementation.

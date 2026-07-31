@@ -28,6 +28,10 @@
 
 FloCafe runs on the business's own computer. Orders, customers, receipts, and backups stay in a local SQLite database, so the counter keeps working when the internet does not. Google Drive backup, WhatsApp bill delivery, and cloud-connected reporting are optional.
 
+If FloCafe helps your cafe, restaurant, cloud kitchen, bakery, or food truck, please star the repository. GitHub stars help more operators find a free open-source POS instead of assuming every restaurant system must be a paid cloud subscription.
+
+**Best-fit searches:** open-source POS, free restaurant POS, cafe POS, kitchen display system, KDS, self-hosted restaurant POS, offline-first POS, thermal printer POS.
+
 ## Get FloCafe
 
 Download the latest installer from [GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases), or use the app store for macOS and Windows.

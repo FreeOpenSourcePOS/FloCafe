@@ -1,7 +1,7 @@
 {
   "name": "flo-desktop",
   "version": "2.4.7",
-  "description": "Flo - Self-hosted Point of Sale System",
+  "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
     "node": ">=22.0.0"
   },
@@ -111,7 +111,7 @@
     "name": "Flo",
     "email": "support@flo.local"
   },
-  "homepage": "https://flo.local",
+  "homepage": "https://flopos.com",
   "license": "MIT",
   "overrides": {
     "node-abi": "^4.33.0",

@@ -1,6 +1,9 @@
 import * as net from 'net';
 import * as fs from 'fs';
-import { execSync, exec, execFileSync } from 'child_process';
+import * as os from 'os';
+import * as path from 'path';
+import { execSync, exec, execFile, execFileSync } from 'child_process';
+import { promisify } from 'util';
 import { getDatabase } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
@@ -1077,56 +1080,214 @@ async function printViaUSBMacOS(data: Buffer, printerName?: string): Promise<boo
   }
 }
 
-async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<boolean> {
-  try {
-    const printerLib = require('node-thermal-printer');
-    const ThermalPrinter = printerLib.printer;
-    const PrinterTypes = printerLib.types;
+// Raw ESC/POS on Windows has to bypass the print driver: node-thermal-printer's
+// `printer:<name>` interface and PowerShell's `Start-Process -Verb PrintTo` both
+// hand the document to a driver that must already understand it, and a thermal
+// printer's driver does not. Writing to the spooler with datatype RAW is the
+// documented way to get bytes through untouched.
+//
+// Kept as C# compiled at run time by Add-Type rather than a native addon so the
+// app stays free of per-Electron-ABI prebuilds. Uses the *W entry points so
+// printer names outside ASCII survive marshalling.
+//
+// NOTE: no backslash escapes, backticks, or `${` may appear in this source — it
+// is embedded in a TS template literal and then in a single-quoted PowerShell
+// here-string, and both would rewrite it.
+const WINSPOOL_HELPER_SOURCE = `
+using System;
+using System.Runtime.InteropServices;
 
-    const printer = new ThermalPrinter({
-      type: PrinterTypes.EPSON,
-      interface: printerName ? `printer:${printerName}` : undefined,
-      width: 48,
-    });
-
-    const isConnected = await printer.isPrinterConnected();
-    console.log('[Printer] Windows printer connected:', isConnected);
-
-    if (!isConnected) {
-      console.error('[Printer] No USB printer detected');
-      return false;
+public static class FloRawPrinter {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private class DOCINFO {
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;
     }
 
-    printer.printRaw(data);
-    await printer.execute();
-    console.log('[Printer] Windows print sent successfully');
-    return true;
-  } catch (err: any) {
-    console.error('[Printer] Windows print error:', err.message);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct PRINTER_INFO_2 {
+        public IntPtr pServerName;
+        public IntPtr pPrinterName;
+        public IntPtr pShareName;
+        public IntPtr pPortName;
+        public IntPtr pDriverName;
+        public IntPtr pComment;
+        public IntPtr pLocation;
+        public IntPtr pDevMode;
+        public IntPtr pSepFile;
+        public IntPtr pPrintProcessor;
+        public IntPtr pDatatype;
+        public IntPtr pParameters;
+        public IntPtr pSecurityDescriptor;
+        public uint Attributes;
+        public uint Priority;
+        public uint DefaultPriority;
+        public uint StartTime;
+        public uint UntilTime;
+        public uint Status;
+        public uint cJobs;
+        public uint AveragePPM;
+    }
 
-    console.log('[Printer] Trying raw Windows printing...');
-    return await printViaWindowsRaw(data, printerName);
-  }
+    [DllImport("winspool.drv", EntryPoint = "OpenPrinterW", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
+
+    [DllImport("winspool.drv", EntryPoint = "ClosePrinter", SetLastError = true, ExactSpelling = true)]
+    private static extern bool ClosePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", EntryPoint = "GetPrinterW", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern bool GetPrinter(IntPtr hPrinter, int Level, IntPtr pPrinter, uint cbBuf, out uint pcbNeeded);
+
+    [DllImport("winspool.drv", EntryPoint = "StartDocPrinterW", SetLastError = true, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    private static extern uint StartDocPrinter(IntPtr hPrinter, int Level, [In] DOCINFO pDocInfo);
+
+    [DllImport("winspool.drv", EntryPoint = "EndDocPrinter", SetLastError = true, ExactSpelling = true)]
+    private static extern bool EndDocPrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", EntryPoint = "StartPagePrinter", SetLastError = true, ExactSpelling = true)]
+    private static extern bool StartPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", EntryPoint = "EndPagePrinter", SetLastError = true, ExactSpelling = true)]
+    private static extern bool EndPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", EntryPoint = "WritePrinter", SetLastError = true, ExactSpelling = true)]
+    private static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
+
+    private const uint PRINTER_ATTRIBUTE_WORK_OFFLINE = 0x00000400;
+
+    private static string DescribeBlockingState(uint status, uint attributes) {
+        if ((attributes & PRINTER_ATTRIBUTE_WORK_OFFLINE) != 0) return "printer is set to 'Use Printer Offline' in Windows";
+        if ((status & 0x00000080) != 0) return "printer is offline";
+        if ((status & 0x00001000) != 0) return "printer is not available";
+        if ((status & 0x00000010) != 0) return "printer is out of paper";
+        if ((status & 0x00000008) != 0) return "printer has a paper jam";
+        if ((status & 0x00400000) != 0) return "printer cover is open";
+        if ((status & 0x00100000) != 0) return "printer needs attention";
+        if ((status & 0x00000002) != 0) return "printer reported an error";
+        return null;
+    }
+
+    // OpenPrinter succeeds against the queue even when the device is unplugged,
+    // so without this the job would silently spool and we would report success.
+    private static void EnsureReady(IntPtr hPrinter) {
+        uint needed = 0;
+        GetPrinter(hPrinter, 2, IntPtr.Zero, 0, out needed);
+        if (needed == 0) return;
+
+        IntPtr buf = Marshal.AllocHGlobal((int)needed);
+        try {
+            uint unused = 0;
+            if (!GetPrinter(hPrinter, 2, buf, needed, out unused)) return;
+            PRINTER_INFO_2 info = (PRINTER_INFO_2)Marshal.PtrToStructure(buf, typeof(PRINTER_INFO_2));
+            string problem = DescribeBlockingState(info.Status, info.Attributes);
+            if (problem != null) throw new Exception(problem);
+        } finally {
+            Marshal.FreeHGlobal(buf);
+        }
+    }
+
+    public static uint SendRaw(string printerName, byte[] bytes) {
+        IntPtr hPrinter = IntPtr.Zero;
+        if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero))
+            throw new Exception("cannot open printer '" + printerName + "' (Win32 error " + Marshal.GetLastWin32Error() + ")");
+
+        try {
+            EnsureReady(hPrinter);
+
+            DOCINFO docInfo = new DOCINFO();
+            docInfo.pDocName = "FloCafe Receipt";
+            docInfo.pDataType = "RAW";
+
+            uint jobId = StartDocPrinter(hPrinter, 1, docInfo);
+            if (jobId == 0)
+                throw new Exception("StartDocPrinter failed (Win32 error " + Marshal.GetLastWin32Error() + ")");
+
+            try {
+                if (!StartPagePrinter(hPrinter))
+                    throw new Exception("StartPagePrinter failed (Win32 error " + Marshal.GetLastWin32Error() + ")");
+
+                int written = 0;
+                if (!WritePrinter(hPrinter, bytes, bytes.Length, out written))
+                    throw new Exception("WritePrinter failed (Win32 error " + Marshal.GetLastWin32Error() + ")");
+                if (written != bytes.Length)
+                    throw new Exception("WritePrinter accepted " + written + " of " + bytes.Length + " bytes");
+
+                EndPagePrinter(hPrinter);
+            } finally {
+                EndDocPrinter(hPrinter);
+            }
+
+            return jobId;
+        } finally {
+            ClosePrinter(hPrinter);
+        }
+    }
 }
+`;
 
-async function printViaWindowsRaw(data: Buffer, printerName?: string): Promise<boolean> {
-  const tmpFile = `C:\\Windows\\Temp\\flo_print_${Date.now()}.bin`;
+// Delivered as -EncodedCommand rather than a .ps1: ExecutionPolicy governs script
+// files only, and a GPO-set policy silently overrides -ExecutionPolicy Bypass, so
+// a script file would fail on exactly the managed machines a POS runs on.
+// The printer name and payload path travel in the child environment, so neither
+// is ever parsed as script text.
+const WINSPOOL_HELPER_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+try {
+  $name = $env:FLO_PRINTER_NAME
+  $file = $env:FLO_PRINT_FILE
+  if ([string]::IsNullOrEmpty($name)) { throw 'no printer name supplied' }
+  if ([string]::IsNullOrEmpty($file)) { throw 'no payload file supplied' }
+
+  Add-Type -TypeDefinition @'
+${WINSPOOL_HELPER_SOURCE}
+'@
+
+  $bytes = [System.IO.File]::ReadAllBytes($file)
+  $jobId = [FloRawPrinter]::SendRaw($name, $bytes)
+  Write-Output ('FLO_JOB_ID=' + $jobId)
+  exit 0
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}
+`;
+
+const execFileAsync = promisify(execFile);
+
+async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<boolean> {
+  if (!printerName) {
+    console.error('[Printer] No Windows printer configured; refusing to guess a target');
+    return false;
+  }
+
+  // %TEMP%, not C:\Windows\Temp — the latter is not writable by a standard user.
+  const tmpFile = path.join(os.tmpdir(), `flo_print_${process.pid}_${Date.now()}.bin`);
+
   try {
     fs.writeFileSync(tmpFile, data);
 
-    const name = printerName || 'Microsoft Print to PDF';
-    // Use -EncodedCommand or direct args — never interpolate into a shell string
-    const psCommand = `Start-Process -FilePath '${tmpFile}' -Verb PrintTo -ArgumentList '${name.replace(/'/g, "''")}' -Wait`;
+    const encoded = Buffer.from(WINSPOOL_HELPER_SCRIPT, 'utf16le').toString('base64');
 
-    execFileSync('powershell', ['-Command', psCommand], { encoding: 'utf8' });
+    const { stdout } = await execFileAsync(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      {
+        encoding: 'utf8',
+        timeout: 20000,
+        windowsHide: true,
+        env: { ...process.env, FLO_PRINTER_NAME: printerName, FLO_PRINT_FILE: tmpFile },
+      },
+    );
+
+    console.log(`[Printer] Windows raw print accepted for "${printerName}" (${stdout.trim()})`);
     return true;
   } catch (err: any) {
-    console.error('[Printer] Windows raw print error:', err.message);
+    const detail = String(err.stderr || err.message || '').trim();
+    console.error(`[Printer] Windows raw print failed for "${printerName}": ${detail}`);
     return false;
   } finally {
-    try {
-      if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile);
-    } catch {}
+    try { fs.unlinkSync(tmpFile); } catch {}
   }
 }
 

@@ -21,6 +21,25 @@ The key decision is: **country tax packs are versioned, immutable data; merchant
 
 Verified: 280KB translations vs 230MB installer.
 
+### Amendment — 2026-07-31
+
+The distribution and first-run recommendations above are retained as finalized design
+history but are superseded for country-specific packs. New installers bundle and
+auto-activate only the generic/manual no-tax profile. They do not bundle, install, or
+activate an official country profile, including India or Thailand.
+
+Country selection during first-run setup remains an offline locale, currency, and
+timezone choice; setup does not contact the tax-pack catalog or display tax-pack
+availability. An owner who wants official rules explicitly chooses **Enable taxes**
+in Settings → Tax Configuration. FloCafe then checks the signed catalog for the
+store country, downloads and verifies the matching pack, and activates it through
+the existing owner-only flow. Stores may instead remain on the generic profile or
+use manual configuration indefinitely.
+
+This changes only new/default installations. Upgrades must preserve every installed
+pack, active version, override, and historical tax snapshot; startup must never
+delete or deactivate an existing country pack as part of this change.
+
 ## Architecture layering
 
 Core (generic tax engine + translations + manual config + offline fallback) → Country profiles (signed, versioned, bundled + updatable data) → Capability plugins (#142, executable, isolated `utilityProcess`: fiscal auth, payments, delivery, complex jurisdiction lookups) → optional external paid services, never required.
@@ -460,7 +479,7 @@ Reports must use stored transaction snapshots rather than recalculating historic
 
 **Exact rationale:** Real infra decision — I flagged this earlier as something I can't invent for you. Nothing built depends on it yet, but "signed pack" is meaningless without an answer.
 
-**Final decision:** Host the curated catalog and pack artifacts in a dedicated public GitHub repository under `FreeOpenSourcePOS`, using GitHub Releases for immutable artifacts. FloCafe pins offline root public keys. An offline root key authorizes a delegated release-signing key used through a protected GitHub Actions environment with required reviewer approval. Use Ed25519 signatures and SHA-256 artifact digests. The exact repository name and key custodians remain operational setup, not an engine-design blocker.
+**Final decision:** Host curated tax-pack artifacts, and future capability-plugin artifacts, in the public [`FreeOpenSourcePOS/FloCafe-Plugins`](https://github.com/FreeOpenSourcePOS/FloCafe-Plugins) repository using GitHub Releases for immutable assets. Pack source JSON, signing code, and the publishing workflow stay in FloCafe, whose Releases tab remains for application installers. FloCafe pins offline root public keys. An offline root key authorizes a delegated release-signing key used through a protected GitHub Actions environment with required reviewer approval. Use Ed25519 signatures and SHA-256 artifact digests.
 
 ### B — Revocation
 

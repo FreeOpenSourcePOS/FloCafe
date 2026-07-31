@@ -15,8 +15,8 @@ import {
 } from '../main/tax-packs/catalog';
 import indiaPack from '../main/tax-packs/in.json';
 
-const releaseTag = 'tax-pack-official-in-v1.1.0';
-const releaseBase = `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${releaseTag}`;
+const releaseTag = 'tax-pack-official-india-v1.1.0';
+const releaseBase = `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${releaseTag}`;
 
 function response(value: string, status = 200): Response {
   return new Response(value, {
@@ -59,11 +59,11 @@ test('catalog discovery finds the newest tax-pack release and verifies its detac
   const catalogUrl = `${releaseBase}/catalog.json`;
   const fetchImpl: typeof fetch = async (input) => {
     const url = String(input);
-    if (url.startsWith('https://api.github.com/repos/FreeOpenSourcePOS/FloCafe/releases')) {
+    if (url.startsWith('https://api.github.com/repos/FreeOpenSourcePOS/FloCafe-Plugins/releases')) {
       return response(JSON.stringify([
         {
           tag_name: releaseTag,
-          html_url: `https://github.com/FreeOpenSourcePOS/FloCafe/releases/tag/${releaseTag}`,
+          html_url: `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/tag/${releaseTag}`,
           draft: false,
           assets: [{ name: 'catalog.json', browser_download_url: catalogUrl }],
         },
@@ -79,7 +79,7 @@ test('catalog discovery finds the newest tax-pack release and verifies its detac
   assert.equal(remote.releaseTag, releaseTag);
   assert.deepEqual(remote.catalog, fixture.catalog);
   const artifact = await downloadAndVerifyTaxPack(fixture.entry, fetchImpl, fixture.publicKey);
-  assert.equal(artifact.pack.id, 'official-in');
+  assert.equal(artifact.pack.id, 'official-india');
   assert.equal(artifact.pack.version, '1.1.0');
   assert.equal(artifact.signature, fixture.signature);
   assert.equal(verifyTaxPackSignature(fixture.packJson, fixture.signature, fixture.publicKey), true);
@@ -114,6 +114,16 @@ test('download rejects digest mismatches, signature tampering, and non-release U
     }),
     /invalid entry/,
   );
+  assert.throws(
+    () => parseTaxPackCatalog({
+      ...fixture.catalog,
+      packs: [{
+        ...fixture.entry,
+        downloadUrl: `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${releaseTag}/pack.json`,
+      }],
+    }),
+    /invalid entry/,
+  );
 });
 
 test('release builder signs exact pack bytes and preserves other catalog entries', () => {
@@ -129,15 +139,15 @@ test('release builder signs exact pack bytes and preserves other catalog entries
     schemaVersion: 1,
     generatedAt: '2026-07-29T00:00:00.000Z',
     packs: [{
-      id: 'official-th',
+      id: 'official-thailand',
       publisher: 'FreeOpenSourcePOS',
       country: 'TH',
       jurisdiction: '*',
       version: '1.0.0',
       publishedAt: '2026-01-01',
       minFloVersion: '2.4.0',
-      downloadUrl: 'https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/tax-pack-official-th-v1.0.0/official-th-v1.0.0.json',
-      signatureUrl: 'https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/tax-pack-official-th-v1.0.0/official-th-v1.0.0.json.sig',
+      downloadUrl: 'https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/tax-pack-official-thailand-v1.0.0/official-thailand-v1.0.0.json',
+      signatureUrl: 'https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/tax-pack-official-thailand-v1.0.0/official-thailand-v1.0.0.json.sig',
       digest: '0'.repeat(64),
     }],
   }));
@@ -156,13 +166,13 @@ test('release builder signs exact pack bytes and preserves other catalog entries
   const emittedCatalog = JSON.parse(fs.readFileSync(path.join(outputDir, 'catalog.json'), 'utf8'));
   assert.equal(verifyTaxPackSignature(emittedPack, emittedSignature, publicKey), true);
   assert.deepEqual(emittedCatalog.packs.map((entry: TaxPackCatalogEntry) => entry.id), [
-    'official-in',
-    'official-th',
+    'official-india',
+    'official-thailand',
   ]);
   assert.equal(emittedCatalog.packs[0].digest, taxPackSha256(emittedPack));
   assert.throws(
     () => prepareRelease({
-      tag: 'tax-pack-official-in-v9.9.9',
+      tag: 'tax-pack-official-india-v9.9.9',
       packsDirectory: packsDir,
       outputDirectory: outputDir,
       signingKeyValue: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),

@@ -23,15 +23,15 @@ It must not embed scripts, call network endpoints, or introduce a second tax-cal
 ## Authoring a new pack
 
 1. Copy the shape of an existing pack — `main/tax-packs/in.json` (state-split GST) or `main/tax-packs/th.json` (flat VAT) — as your starting point.
-2. Give it a unique `id` (lowercase, hyphenated, e.g. `official-ar`), set `publisher` to your name/org (anything other than `local` — `local` is reserved for the in-app manual/unbundled pack and can never be published), and fill in `country`, `jurisdiction`, `currency`, `taxRounding`, `payableRounding`.
+2. Give it a unique `id` using the lowercase, hyphenated full country name (for example, `official-india`, `official-thailand`, or `official-united-states`). Keep `country` as its ISO alpha-2 code (for example, `IN`, `TH`, or `US`), because FloCafe uses that field to match the store. Set `publisher` to your name/org (anything other than `local` — `local` is reserved for the in-app manual/unbundled pack and can never be published), and fill in `jurisdiction`, `currency`, `taxRounding`, `payableRounding`.
 3. Define `categories` and `rules`. Every category referenced by `defaultCategories` or by a product must exist. `unclassifiedCategoryId` must point at a real category (usually a zero-rate one).
-4. Add the file to `main/tax-packs/` in this repo (not a new repo — see "Where packs live" below) and open a PR. You do **not** need to add it to `main/tax-packs/bundled.ts` unless you want it shipped inside the installer by default (currently only India, Thailand, and the generic/manual pack are bundled, to keep the installer small — verified at 280KB of translations vs. a 230MB installer, the same size discipline applies to bundled packs). An unbundled pack is still fully installable — it just gets fetched from the catalog instead of shipping in every install.
+4. Add the file to `main/tax-packs/` in this repo (not a new repo — see "Where packs live" below) and open a PR. Only the generic/manual no-tax pack is bundled with and auto-activated by a new installation. India, Thailand, and every other official country pack are catalog-only: an owner explicitly enables the matching pack from Settings → Tax Configuration, where FloCafe downloads, verifies, installs, and activates it.
 5. Add test vectors: extend `tests/tax-pack-management.test.ts` (activation validation) and, ideally, `tests/tax-engine.test.ts` / `tests/integration-tax.test.ts` with a scenario proving your rules produce the expected components, totals, and rounding for at least one representative order.
 6. Run `npm run test:tax-engine` and the full `npm test` before opening the PR.
 
 ## Where packs live, how they get signed, and how they're published
 
-There is no separate plugin/pack repository. Everything — the pack JSON, the signing workflow, and the catalog — lives in this repo:
+Pack source and release artifacts have separate homes. Reviewable source, signing code, and the release workflow stay in this repository; signed tax-pack artifacts (and future capability-plugin artifacts) are published to [`FreeOpenSourcePOS/FloCafe-Plugins`](https://github.com/FreeOpenSourcePOS/FloCafe-Plugins), keeping FloCafe's Releases tab for application installers.
 
 - Pack source JSON: `main/tax-packs/*.json`
 - Schema: `main/tax-packs/types.ts`
@@ -51,11 +51,11 @@ git push origin tax-pack-<pack-id>-v<X.Y.Z>
 
 The tag must match the `id` and `version` fields already committed in the pack's JSON file. The workflow then:
 
-1. Downloads the previous cumulative `catalog.json` (if one exists) from the repo's own releases.
+1. Downloads the previous cumulative `catalog.json` (if one exists) from the `FloCafe-Plugins` releases.
 2. Signs the exact pack JSON bytes with the Ed25519 signing key (`scripts/tax-packs/prepare-release.cjs`).
 3. Publishes the pack JSON, a detached `.sig`, and the updated `catalog.json` as immutable release assets under that tag.
 
-At runtime, FloCafe fetches `catalog.json` from this repo's GitHub Releases, downloads any pack a store wants to install, verifies its Ed25519 signature against the hardcoded public key and its SHA-256 digest, and runs it through the same 24-point activation checklist used for bundled packs (`validationChecklist()` in `main/routes/tax-packs.ts`) before an owner can activate it. Downloading can happen automatically or on demand; **activation is always an explicit, owner-only action**, and a previous version stays available for rollback.
+At runtime, FloCafe fetches `catalog.json` from the `FloCafe-Plugins` GitHub Releases when an owner requests a pack or checks for updates. It downloads the selected pack, verifies its Ed25519 signature against the hardcoded public key and its SHA-256 digest, and runs it through the same 24-point activation checklist used for the generic bundled pack (`validationChecklist()` in `main/routes/tax-packs.ts`). The first country-specific installation and activation is an explicit, owner-only action, and a previous version stays available for rollback.
 
 ## Testing your pack locally
 

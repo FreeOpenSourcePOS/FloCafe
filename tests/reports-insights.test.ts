@@ -104,6 +104,21 @@ async function main() {
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
     .run(bucketUserId, 'Bucket Fixtures', 'bucket-insights@test.local', bcrypt.hashSync('pw', 10), 'waiter', now(), now());
 
+  // Keep rolling-window fixtures safely within the insights query window,
+  // while placing them on Wed–Sat at Kolkata hours that cannot affect the
+  // crafted Mon/Tue and 08:00/14:00 bucketing assertions below.
+  const recentWeekdayTimestamp = (weekday: number, utcHour: number) => {
+    const date = new Date();
+    const daysSinceWeekday = (date.getUTCDay() - weekday + 7) % 7;
+    date.setUTCDate(date.getUTCDate() - daysSinceWeekday - 7);
+    date.setUTCHours(utcHour, 0, 0, 0);
+    return date.toISOString();
+  };
+  const prepOneCreatedAt = recentWeekdayTimestamp(3, 4); // Wed, 09:30 Kolkata
+  const prepTwoCreatedAt = recentWeekdayTimestamp(4, 5); // Thu, 10:30 Kolkata
+  const cashierRevenueCreatedAt = recentWeekdayTimestamp(5, 6); // Fri, 11:30 Kolkata
+  const waiterRevenueCreatedAt = recentWeekdayTimestamp(6, 7); // Sat, 12:30 Kolkata
+
   // ── Seed categories + products ───────────────────────────────────────
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)`).run('cat-drinks', 'Drinks', 1);
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)`).run('cat-food', 'Food', 2);
@@ -135,30 +150,27 @@ async function main() {
     insertOrder.run(fixture.id, bucketUserId, fixture.createdAt, fixture.createdAt, null, null);
   }
 
-  // These four use fixed timestamps rather than now() so they land in hour/day
-  // buckets that don't perturb the busiest/idlest fixture above (each is on a
-  // distinct weekday and hour, none matching Monday/Tuesday or hour 8/14) —
-  // otherwise a test run whose real wall-clock happens to fall in the same
-  // Kolkata hour or weekday as the crafted fixtures would flip the result.
+  // These rolling-window fixtures use controlled recent timestamps so they
+  // remain in the 90-day query window without perturbing the bucketing checks.
   // ── Seed prep-time orders: 10 min and 20 min -> avg 15 min ───────────
   db.prepare(`
     INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, cooking_started_at, ready_at)
     VALUES (?, ?, 'takeaway', 'completed', 50, 50, ?, ?, ?, ?)
-  `).run('ORD-PREP-1', cashierId, '2026-05-01T04:00:00.000Z', '2026-05-01T04:00:00.000Z', '2026-07-01T10:00:00.000Z', '2026-07-01T10:10:00.000Z');
+  `).run('ORD-PREP-1', cashierId, prepOneCreatedAt, prepOneCreatedAt, prepOneCreatedAt, new Date(new Date(prepOneCreatedAt).getTime() + 10 * 60 * 1000).toISOString());
   db.prepare(`
     INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at, cooking_started_at, ready_at)
     VALUES (?, ?, 'takeaway', 'completed', 50, 50, ?, ?, ?, ?)
-  `).run('ORD-PREP-2', waiterId, '2026-05-02T05:00:00.000Z', '2026-05-02T05:00:00.000Z', '2026-07-01T11:00:00.000Z', '2026-07-01T11:20:00.000Z');
+  `).run('ORD-PREP-2', waiterId, prepTwoCreatedAt, prepTwoCreatedAt, prepTwoCreatedAt, new Date(new Date(prepTwoCreatedAt).getTime() + 20 * 60 * 1000).toISOString());
 
   // ── Seed top-staff orders: cashier earns more than waiter ────────────
   db.prepare(`
     INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
     VALUES (?, ?, 'takeaway', 'completed', 500, 500, ?, ?)
-  `).run('ORD-STAFF-CASHIER', cashierId, '2026-05-03T06:00:00.000Z', '2026-05-03T06:00:00.000Z');
+  `).run('ORD-STAFF-CASHIER', cashierId, cashierRevenueCreatedAt, cashierRevenueCreatedAt);
   db.prepare(`
     INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
     VALUES (?, ?, 'takeaway', 'completed', 50, 50, ?, ?)
-  `).run('ORD-STAFF-WAITER', waiterId, '2026-05-06T07:00:00.000Z', '2026-05-06T07:00:00.000Z');
+  `).run('ORD-STAFF-WAITER', waiterId, waiterRevenueCreatedAt, waiterRevenueCreatedAt);
 
   // A cancelled order with a huge total must NOT count toward top staff or AOV.
   db.prepare(`

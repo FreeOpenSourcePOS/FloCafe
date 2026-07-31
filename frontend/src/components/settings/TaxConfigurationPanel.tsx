@@ -201,6 +201,8 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogChecked, setCatalogChecked] = useState(false);
   const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
+  const [enablingTaxes, setEnablingTaxes] = useState(false);
+  const [countryPackUnavailable, setCountryPackUnavailable] = useState(false);
 
   const loadList = useCallback(async () => {
     const response = await api.get('/tax-packs');
@@ -288,6 +290,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   }, [selectedPackId]);
 
   const selectedPack = packs.find((pack) => pack.id === selectedPackId);
+  const activeCountryPack = packs.find(
+    (pack) => pack.country === storeCountry && pack.active_for_store,
+  );
   const targetOptions = entityType === 'product'
     ? detail?.targets.products || []
     : entityType === 'addon'
@@ -454,6 +459,60 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
+  async function enableCountryTaxes() {
+    if (!isOwner || !storeCountry) return;
+    setEnablingTaxes(true);
+    setCountryPackUnavailable(false);
+    try {
+      const installedPack = packs.find((pack) => pack.country === storeCountry);
+      const installedVersion = installedPack?.versions
+        .slice()
+        .sort((left, right) => right.published_at.localeCompare(left.published_at))[0];
+
+      let packId = installedPack?.id;
+      let versionId = installedVersion?.id;
+      let version = installedVersion?.version;
+
+      if (!packId || !versionId) {
+        const response = await api.get('/tax-packs/catalog');
+        const available = response.data.available as CatalogEntry[];
+        setCatalogEntries(available);
+        setCatalogChecked(true);
+        const entry = available
+          .filter((candidate) => candidate.country === storeCountry)
+          .sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))[0];
+        if (!entry) {
+          setCountryPackUnavailable(true);
+          return;
+        }
+        const installResponse = await api.post('/tax-packs/catalog/install', {
+          pack_id: entry.id,
+          version: entry.version,
+        });
+        packId = installResponse.data.installed.packId;
+        versionId = installResponse.data.installed.versionId;
+        version = installResponse.data.installed.version;
+        setCatalogEntries((current) => current.filter(
+          (candidate) => candidate.id !== entry.id || candidate.version !== entry.version,
+        ));
+      }
+
+      if (!packId || !versionId || !version) {
+        throw new Error('The selected tax pack has no installable version');
+      }
+      await api.post(
+        `/tax-packs/${encodeURIComponent(packId)}/versions/${encodeURIComponent(versionId)}/activate`,
+      );
+      setSelectedPackId(packId);
+      await Promise.all([loadList(), loadAudit(), loadDetail(packId)]);
+      toast.success(`Taxes enabled with ${packId} v${version}`);
+    } catch (error) {
+      toast.error(apiMessage(error, 'Could not enable taxes for this country'));
+    } finally {
+      setEnablingTaxes(false);
+    }
+  }
+
   async function calculate() {
     if (!selectedPack?.active_for_store) {
       toast.error('Select the active store-country pack to run a checkout calculation');
@@ -517,6 +576,35 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           <Lock size={16} className="mt-0.5 shrink-0" />
           Managers can review packs, overrides, audit history, and run test calculations. Only owners can make changes.
         </div>
+      )}
+
+      {!activeCountryPack && (
+        <section className="rounded-xl border border-blue-200 bg-blue-50 p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h3 className="font-semibold text-gray-900">Country taxes are not enabled</h3>
+              <p className="mt-1 text-sm text-gray-600">
+                FloCafe is using the generic no-tax profile. An owner can download, verify, and
+                activate an official pack for {storeCountry} when internet access is available.
+              </p>
+            </div>
+            <Button
+              onClick={() => void enableCountryTaxes()}
+              disabled={!isOwner || enablingTaxes}
+              title={!isOwner ? 'Only owners can enable taxes' : undefined}
+              className="shrink-0"
+            >
+              <Download size={15} />
+              {enablingTaxes ? 'Enabling…' : 'Enable taxes'}
+            </Button>
+          </div>
+          {countryPackUnavailable && (
+            <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              No official tax pack is currently available for {storeCountry}. Keep taxes disabled,
+              or use the generic/manual configuration below.
+            </p>
+          )}
+        </section>
       )}
 
       {catalogChecked && (

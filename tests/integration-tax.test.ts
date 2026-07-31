@@ -23,6 +23,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct,
+  installAndActivateTestTaxPack,
   api, assert, assertEqual,
   getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
@@ -30,6 +31,8 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { registerRoutes } = require('../main/routes/index');
+const indiaTaxPack = require('../main/tax-packs/in.json');
+const thailandTaxPack = require('../main/tax-packs/th.json');
 
 async function main() {
   console.log('Integration Test: Tax Correctness');
@@ -41,6 +44,8 @@ async function main() {
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?)").run(now());
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_type', 'restaurant', ?)").run(now());
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('state_code', '27', ?)").run(now());
+  installAndActivateTestTaxPack(db, indiaTaxPack);
+  installAndActivateTestTaxPack(db, thailandTaxPack);
 
   // Seed data
   const { authHeader } = seedOwnerUser(db);
@@ -451,7 +456,7 @@ async function main() {
       SELECT version.id, version.pack_json
       FROM country_packs AS pack
       JOIN country_pack_versions AS version ON version.id = pack.active_version_id
-      WHERE pack.id = 'official-th'
+      WHERE pack.id = 'official-thailand'
     `).get() as { id: string; pack_json: string };
     const coarsePack = JSON.parse(activeThailandVersion.pack_json);
     coarsePack.payableRounding = { increment: '1', method: 'half_up' };

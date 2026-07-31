@@ -31,6 +31,7 @@ const {
   seedManagerUser,
   seedCategory,
   seedProduct,
+  installAndActivateTestTaxPack,
   api,
   assert,
   assertEqual,
@@ -46,6 +47,7 @@ const {
   taxPackSha256,
 } = require('../main/tax-packs/catalog');
 const indiaPackDefinition = require('../main/tax-packs/in.json');
+const thailandPackDefinition = require('../main/tax-packs/th.json');
 
 async function main() {
   console.log('Tax Pack Management Integration Tests');
@@ -65,39 +67,52 @@ async function main() {
   const { baseUrl, server } = await startServer(app);
 
   try {
-    console.log('\n1. Bundled packs are registered and readable');
+    console.log('\n1. Fresh installs start generic; explicitly installed packs are readable');
+    const freshListRes = await api(baseUrl, '/api/tax-packs', { headers: manager.authHeader });
+    assertEqual(freshListRes.status, 200, 'manager can view installed packs');
+    assertEqual(freshListRes.data.packs.length, 1, 'only the generic pack is preinstalled');
+    assertEqual(freshListRes.data.packs[0].id, 'local-generic', 'the preinstalled pack is generic');
+    assertEqual(freshListRes.data.packs[0].active_for_store, true, 'generic no-tax behavior is active');
+
+    installAndActivateTestTaxPack(db, indiaPackDefinition);
+    installAndActivateTestTaxPack(db, thailandPackDefinition);
     const listRes = await api(baseUrl, '/api/tax-packs', { headers: manager.authHeader });
-    assertEqual(listRes.status, 200, 'manager can view installed packs');
-    assertEqual(listRes.data.packs.length, 3, 'all three bundled packs are installed');
-    const india = listRes.data.packs.find((pack: any) => pack.id === 'official-in');
+    const india = listRes.data.packs.find((pack: any) => pack.id === 'official-india');
     assert(!!india, 'India pack is listed');
     assertEqual(india.versions[0].version, indiaPackDefinition.version, 'India pack version is shown');
     assertEqual(india.active_for_store, true, 'India pack is active for the India store');
 
-    const detailRes = await api(baseUrl, '/api/tax-packs/official-in', { headers: manager.authHeader });
+    const detailRes = await api(baseUrl, '/api/tax-packs/official-india', { headers: manager.authHeader });
     assertEqual(detailRes.status, 200, 'manager can view active pack details');
     assert(detailRes.data.categories.length > 0, 'categories are available for reference');
     assert(detailRes.data.rules.length > 0, 'rules are available for reference');
     assertEqual(detailRes.data.active_version.validation.checks.length, 24, 'all 24 activation checks are reported');
     assertEqual(
-      detailRes.data.active_version.validation.valid,
-      true,
-      `bundled pack passes activation validation: ${JSON.stringify(
-        detailRes.data.active_version.validation.checks.filter((check: any) => !check.passed),
-      )}`,
+      detailRes.data.active_version.validation.checks
+        .filter((check: any) => !check.passed)
+        .map((check: any) => check.id)
+        .join(','),
+      '6',
+      'the test-seeded India source only lacks its release signature',
     );
-    for (const packId of ['official-th', 'local-generic']) {
-      const bundledDetail = await api(baseUrl, `/api/tax-packs/${packId}`, { headers: manager.authHeader });
-      assertEqual(bundledDetail.status, 200, `${packId} details are readable`);
+    for (const packId of ['official-thailand', 'local-generic']) {
+      const packDetail = await api(baseUrl, `/api/tax-packs/${packId}`, { headers: manager.authHeader });
+      assertEqual(packDetail.status, 200, `${packId} details are readable`);
       assertEqual(
-        bundledDetail.data.active_version.validation.checks.length,
+        packDetail.data.active_version.validation.checks.length,
         24,
         `${packId} reports all 24 activation checks`,
       );
+      const failedCheckIds = packDetail.data.active_version.validation.checks
+        .filter((check: any) => !check.passed)
+        .map((check: any) => check.id)
+        .join(',');
       assertEqual(
-        bundledDetail.data.active_version.validation.valid,
-        true,
-        `${packId} passes its bundled activation vectors`,
+        failedCheckIds,
+        packId === 'local-generic' ? '' : '6',
+        packId === 'local-generic'
+          ? `${packId} passes its activation vectors`
+          : `${packId} test source only lacks its release signature`,
       );
     }
 
@@ -356,20 +371,20 @@ async function main() {
     const versionId = india.active_version_id;
     const managerActivate = await api(
       baseUrl,
-      `/api/tax-packs/official-in/versions/${encodeURIComponent(versionId)}/activate`,
+      `/api/tax-packs/official-india/versions/${encodeURIComponent(versionId)}/activate`,
       { method: 'POST', body: {}, headers: manager.authHeader },
     );
     assertEqual(managerActivate.status, 403, 'manager cannot activate a pack');
 
     const ownerActivate = await api(
       baseUrl,
-      `/api/tax-packs/official-in/versions/${encodeURIComponent(versionId)}/activate`,
+      `/api/tax-packs/official-india/versions/${encodeURIComponent(versionId)}/activate`,
       { method: 'POST', body: {}, headers: owner.authHeader },
     );
     assertEqual(ownerActivate.status, 200, 'owner can select an already-installed version');
     assertEqual(ownerActivate.data.changed, false, 'selecting the active version is a safe no-op');
 
-    const rollbackRes = await api(baseUrl, '/api/tax-packs/official-in/rollback', {
+    const rollbackRes = await api(baseUrl, '/api/tax-packs/official-india/rollback', {
       method: 'POST',
       body: {},
       headers: owner.authHeader,
@@ -389,7 +404,7 @@ async function main() {
     console.log('\n8. Signed catalog packs install without activating');
     const managerInstall = await api(baseUrl, '/api/tax-packs/catalog/install', {
       method: 'POST',
-      body: { pack_id: 'official-in', version: '1.1.0' },
+      body: { pack_id: 'official-india', version: '1.1.0' },
       headers: manager.authHeader,
     });
     assertEqual(managerInstall.status, 403, 'manager cannot install a catalog pack');
@@ -406,8 +421,8 @@ async function main() {
       Buffer.from(downloadedPackJson, 'utf8'),
       privateKey,
     ).toString('base64');
-    const releaseTag = 'tax-pack-official-in-v1.1.0';
-    const releaseBase = `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${releaseTag}`;
+    const releaseTag = 'tax-pack-official-india-v1.1.0';
+    const releaseBase = `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${releaseTag}`;
     const catalogEntry = {
       id: downloadedPack.id,
       publisher: downloadedPack.publisher,
@@ -416,8 +431,8 @@ async function main() {
       version: downloadedPack.version,
       publishedAt: downloadedPack.publishedAt,
       minFloVersion: downloadedPack.minFloVersion,
-      downloadUrl: `${releaseBase}/official-in-v1.1.0.json`,
-      signatureUrl: `${releaseBase}/official-in-v1.1.0.json.sig`,
+      downloadUrl: `${releaseBase}/official-india-v1.1.0.json`,
+      signatureUrl: `${releaseBase}/official-india-v1.1.0.json.sig`,
       digest: taxPackSha256(downloadedPackJson),
     };
     const fetchImpl = async (input: string | URL | Request) => new Response(
@@ -441,7 +456,7 @@ async function main() {
     assertEqual(storedVersion.signature, downloadedSignature, 'detached signature is persisted');
     const unchangedActiveVersion = db.prepare(
       'SELECT active_version_id FROM country_packs WHERE id = ?'
-    ).get('official-in');
+    ).get('official-india');
     assertEqual(
       unchangedActiveVersion.active_version_id,
       versionId,
@@ -486,7 +501,7 @@ async function main() {
       privateKey,
     ).toString('base64');
     const newCountryTag = 'tax-pack-brand-new-country-pack-v1.0.0';
-    const newCountryBase = `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${newCountryTag}`;
+    const newCountryBase = `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${newCountryTag}`;
     const newCountryEntry = {
       id: newCountryPack.id,
       publisher: newCountryPack.publisher,
@@ -525,13 +540,13 @@ async function main() {
       Buffer.from(incompatiblePackJson, 'utf8'),
       privateKey,
     ).toString('base64');
-    const incompatibleTag = 'tax-pack-official-in-v1.2.0';
+    const incompatibleTag = 'tax-pack-official-india-v1.2.0';
     const incompatibleEntry = {
       ...catalogEntry,
       version: incompatiblePack.version,
       minFloVersion: incompatiblePack.minFloVersion,
-      downloadUrl: `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${incompatibleTag}/official-in-v1.2.0.json`,
-      signatureUrl: `https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${incompatibleTag}/official-in-v1.2.0.json.sig`,
+      downloadUrl: `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${incompatibleTag}/official-india-v1.2.0.json`,
+      signatureUrl: `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${incompatibleTag}/official-india-v1.2.0.json.sig`,
       digest: taxPackSha256(incompatiblePackJson),
     };
     const incompatibleFetch = async (input: string | URL | Request) => new Response(
@@ -561,7 +576,7 @@ async function main() {
     );
     assertEqual(
       db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions WHERE id = ?')
-        .get('official-in@1.2.0').count,
+        .get('official-india@1.2.0').count,
       0,
       'failed validation leaves no installed version behind',
     );

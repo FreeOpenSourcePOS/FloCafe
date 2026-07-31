@@ -48,6 +48,7 @@ const {
 } = require('../main/tax-packs/catalog');
 const indiaPackDefinition = require('../main/tax-packs/in.json');
 const thailandPackDefinition = require('../main/tax-packs/th.json');
+const argentinaPackDefinition = require('../main/tax-packs/argentina.json');
 
 async function main() {
   console.log('Tax Pack Management Integration Tests');
@@ -76,6 +77,7 @@ async function main() {
 
     installAndActivateTestTaxPack(db, indiaPackDefinition);
     installAndActivateTestTaxPack(db, thailandPackDefinition);
+    installAndActivateTestTaxPack(db, argentinaPackDefinition);
     const listRes = await api(baseUrl, '/api/tax-packs', { headers: manager.authHeader });
     const india = listRes.data.packs.find((pack: any) => pack.id === 'official-india');
     assert(!!india, 'India pack is listed');
@@ -95,7 +97,7 @@ async function main() {
       '6',
       'the test-seeded India source only lacks its release signature',
     );
-    for (const packId of ['official-thailand', 'local-generic']) {
+    for (const packId of ['official-thailand', 'official-argentina', 'local-generic']) {
       const packDetail = await api(baseUrl, `/api/tax-packs/${packId}`, { headers: manager.authHeader });
       assertEqual(packDetail.status, 200, `${packId} details are readable`);
       assertEqual(

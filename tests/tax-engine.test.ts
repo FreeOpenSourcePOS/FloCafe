@@ -11,9 +11,11 @@ import type {
 } from '../main/tax-packs/types';
 import indiaPackData from '../main/tax-packs/in.json';
 import thailandPackData from '../main/tax-packs/th.json';
+import argentinaPackData from '../main/tax-packs/argentina.json';
 
 const indiaPack = indiaPackData as CountryPack;
 const thailandPack = thailandPackData as CountryPack;
+const argentinaPack = argentinaPackData as CountryPack;
 
 function packWith(
   rules: TaxRule[],
@@ -366,6 +368,69 @@ test('catalog India and Thailand packs reproduce current fixed behavior as data'
   );
   assert.equal(indiaPack.rules.every((rule) => rule.rate !== undefined), true);
   assert.equal(thailandPack.rules[0].rate, '7');
+});
+
+test('catalog Argentina pack reproduces standard 21% IVA as data', () => {
+  // Scope: Responsable Inscripto restaurant merchants, standard supplies only.
+  // No IIBB, no monotributo, no 10.5%/27%, no fiscal-invoice authorization.
+  const exclusive = calculate(argentinaPack, [
+    line({ unitPrice: '100', productCategoryId: 'standard', taxBehavior: 'exclusive' }),
+  ], { businessType: 'restaurant' });
+  assert.deepEqual(
+    exclusive.lines[0].components.map((component) => ({
+      title: component.label,
+      rate: Number(component.rate),
+      amount: Number(component.amount),
+    })),
+    [{ title: 'IVA', rate: 21, amount: 21 }],
+  );
+  assert.equal(exclusive.lines[0].taxableBase, '100.00');
+  assert.equal(exclusive.lines[0].taxAmount, '21.00');
+  assert.equal(exclusive.payableTotal, '121', 'ARS 100 exclusive -> IVA 21 -> total 121');
+
+  const inclusive = calculate(argentinaPack, [
+    line({ unitPrice: '121', productCategoryId: 'standard', taxBehavior: 'inclusive' }),
+  ], { businessType: 'restaurant' });
+  assert.equal(inclusive.lines[0].taxableBase, '100.00', 'ARS 121 inclusive nets to 100');
+  assert.equal(inclusive.lines[0].taxAmount, '21.00', 'ARS 121 inclusive carries 21 IVA');
+  assert.equal(inclusive.payableTotal, '121', 'inclusive payable total keeps the gross price');
+
+  // Category coverage: product / addon / packaging / delivery / service_charge
+  // all resolve to a category with the IVA rule attached (no silent zero).
+  const categoriesByKind = {
+    product: 'standard',
+    addon: 'addon',
+    packaging: 'packaging',
+    delivery: 'delivery',
+    service_charge: 'service_charge',
+  } as const;
+  for (const [kind, categoryId] of Object.entries(categoriesByKind)) {
+    const result = calculate(argentinaPack, [
+      line({ kind: kind as any, productCategoryId: categoryId, taxBehavior: 'exclusive' }),
+    ], { businessType: 'restaurant' });
+    assert.equal(
+      result.lines[0].components.length,
+      1,
+      `${kind}/${categoryId} applies the IVA rule (no silent zero-tax path)`,
+    );
+    assert.equal(result.lines[0].components[0].ruleId, 'iva');
+    assert.equal(result.lines[0].taxAmount, '21.00');
+  }
+
+  // Unclassified must still tax at 21% (never silently zero), proving the
+  // pack would not underreport a misclassified item on a Responsable Inscripto.
+  const unclassified = calculate(argentinaPack, [
+    line({ unitPrice: '100', productCategoryId: 'unclassified', taxBehavior: 'exclusive' }),
+  ], { businessType: 'restaurant' });
+  assert.deepEqual(
+    unclassified.lines[0].components.map((component) => [component.label, component.amount]),
+    [['IVA', '21.00']],
+  );
+  const unclassifiedCat = argentinaPack.categories.find((category) => category.id === 'unclassified')!;
+  assert.ok(unclassifiedCat.ruleIds.length > 0, 'Argentina unclassified category carries the IVA rule');
+
+  // Discount scaling on Argentina inclusive pricing is exercised end-to-end
+  // in tests/integration-tax.test.ts against the live order/bill recompute path.
 });
 
 test('unclassified products are taxed at the standard rate, never silently zero', () => {

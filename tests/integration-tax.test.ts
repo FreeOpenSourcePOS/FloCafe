@@ -33,6 +33,7 @@ const { billRoutes } = require('../main/routes/bills');
 const { registerRoutes } = require('../main/routes/index');
 const indiaTaxPack = require('../main/tax-packs/in.json');
 const thailandTaxPack = require('../main/tax-packs/th.json');
+const argentinaTaxPack = require('../main/tax-packs/argentina.json');
 
 async function main() {
   console.log('Integration Test: Tax Correctness');
@@ -46,6 +47,7 @@ async function main() {
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('state_code', '27', ?)").run(now());
   installAndActivateTestTaxPack(db, indiaTaxPack);
   installAndActivateTestTaxPack(db, thailandTaxPack);
+  installAndActivateTestTaxPack(db, argentinaTaxPack);
 
   // Seed data
   const { authHeader } = seedOwnerUser(db);
@@ -507,6 +509,88 @@ async function main() {
 
     db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?')
       .run(activeThailandVersion.pack_json, activeThailandVersion.id);
+    db.prepare("UPDATE settings SET value = 'IN' WHERE key = 'country'").run();
+
+    // ── Step 11: Argentina standard 21% IVA — exclusive + inclusive + discount — no IIBB ──
+    console.log('\n11. Argentina standard 21% IVA produces no IIBB component and discounts scale correctly');
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'AR', ?)").run(now());
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_type', 'restaurant', ?)").run(now());
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('state_code', '02', ?)").run(now());
+
+    seedProduct(db, 'prod-tax-ar-1', 'cat-tax', 'Argentina Cafe', 1000, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+    seedProduct(db, 'prod-tax-ar-2', 'cat-tax', 'Argentina Cafe Inclusive', 1210, {
+      tax_category_id: 'standard',
+      tax_behavior: 'inclusive',
+    });
+
+    const arExclusiveRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-tax-ar-1', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(arExclusiveRes.status, 201, 'Argentina exclusive order created');
+    assertEqual(arExclusiveRes.data.order.subtotal, 1000, 'AR exclusive subtotal = ARS 1000');
+    assertEqual(arExclusiveRes.data.order.tax_amount, 210, 'AR exclusive tax = ARS 210 (21% of ARS 1000)');
+    assertEqual(arExclusiveRes.data.order.total, 1210, 'AR exclusive total = ARS 1210 (1000 + 210)');
+    const arRawBreakdown = arExclusiveRes.data.order.tax_breakdown;
+    const arParsed = typeof arRawBreakdown === 'string' ? JSON.parse(arRawBreakdown) : arRawBreakdown;
+    const arEntries = Array.isArray(arParsed[0]) ? arParsed.flat() : arParsed;
+    const arIva = arEntries.find((b: any) => b.title === 'IVA');
+    assert(!!arIva, 'Argentina breakdown contains an IVA entry');
+    assert(
+      arEntries.every((b: any) => !/IIBB|ingresos/i.test(b.title)),
+      'Argentina breakdown must NOT contain an IIBB/Ingresos Brutos component (provincial, out of scope)',
+    );
+    assertEqual(arIva.rate, 21, 'Argentina IVA component rate is 21');
+
+    // Discount recompute: 20% off ARS 1000 = ARS 800 base; 21% = ARS 168 tax; total ARS 968.
+    const arDiscountRes = await api(baseUrl, `/api/orders/${arExclusiveRes.data.order.id}/discount`, {
+      method: 'PATCH',
+      body: { discount_type: 'percentage', discount_value: 20 },
+      headers: authHeader,
+    });
+    assertEqual(arDiscountRes.status, 200, 'AR discount applied');
+    assertEqual(arDiscountRes.data.order.discount_amount, 200, 'AR discount = ARS 200 (20% of 1000)');
+    assertEqual(arDiscountRes.data.order.tax_amount, 168, 'AR discounted tax = ARS 168 (21% of 800)');
+    assertEqual(arDiscountRes.data.order.total, 968, 'AR discounted total = ARS 968');
+
+    const arInclusiveRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-tax-ar-2', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(arInclusiveRes.status, 201, 'AR inclusive order created');
+    assertEqual(arInclusiveRes.data.order.tax_amount, 210, 'AR inclusive IVA = ARS 210 (tax inside the displayed price, net of 1000)');
+    assertEqual(arInclusiveRes.data.order.total, 1210, 'AR inclusive total = ARS 1210 (IVA not added again)');
+    assert(!!arInclusiveRes.data.order.items[0].tax_snapshot, 'AR inclusive item carries a tax_snapshot');
+    assertEqual(arInclusiveRes.data.order.items[0].tax_type, 'inclusive', 'AR inclusive behavior persists as inclusive');
+
+    const arBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: arExclusiveRes.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(arBillRes.status, 201, 'AR bill generated from exclusive order');
+    assertEqual(arBillRes.data.bill.tax_amount, 168, 'AR bill copies discounted IVA = ARS 168');
+    assertEqual(arBillRes.data.bill.total, 968, 'AR bill total matches discounted order');
+    const arBillParsed = typeof arBillRes.data.bill.tax_breakdown === 'string'
+      ? JSON.parse(arBillRes.data.bill.tax_breakdown)
+      : arBillRes.data.bill.tax_breakdown;
+    const arBillEntries = Array.isArray(arBillParsed[0]) ? arBillParsed.flat() : arBillParsed;
+    assert(
+      arBillEntries.every((b: any) => !/IIBB|ingresos/i.test(b.title)),
+      'AR bill breakdown contains no IIBB component',
+    );
+
     db.prepare("UPDATE settings SET value = 'IN' WHERE key = 'country'").run();
 
   } finally {

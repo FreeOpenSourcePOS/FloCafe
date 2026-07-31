@@ -19,6 +19,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { useI18n } from '@/hooks/useI18n';
 
 type PackSummary = {
   id: string;
@@ -128,23 +129,25 @@ type CatalogEntry = {
   digest: string;
 };
 
-const ENTITY_LABELS: Record<OverrideEntityType, string> = {
-  product: 'Product',
-  addon: 'Add-on',
-  packaging: 'Packaging charge',
-  delivery: 'Delivery charge',
-  service_charge: 'Service charge',
+const ENTITY_LABEL_KEYS: Record<OverrideEntityType, string> = {
+  product: 'settings.taxEntityProduct',
+  addon: 'settings.taxEntityAddon',
+  packaging: 'settings.taxEntityPackaging',
+  delivery: 'settings.taxEntityDelivery',
+  service_charge: 'settings.taxEntityServiceCharge',
 };
-const CHARGE_TYPES: OverrideEntityType[] = ['packaging', 'delivery', 'service_charge'];
+const STORE_DEFAULT_KINDS: OverrideEntityType[] = [
+  'product', 'addon', 'packaging', 'delivery', 'service_charge',
+];
 
-const ACTION_LABELS: Record<string, string> = {
-  install_bundled_pack: 'Bundled pack installed',
-  install_downloaded_pack: 'Downloaded pack installed',
-  activate_pack: 'Pack activated',
-  rollback_pack: 'Pack rolled back',
-  create_override: 'Override added',
-  update_override: 'Override edited',
-  reset_override: 'Override removed',
+const ACTION_LABEL_KEYS: Record<string, string> = {
+  install_bundled_pack: 'settings.taxAuditBundledInstalled',
+  install_downloaded_pack: 'settings.taxAuditDownloadedInstalled',
+  activate_pack: 'settings.taxAuditPackActivated',
+  rollback_pack: 'settings.taxAuditPackRolledBack',
+  create_override: 'settings.taxAuditOverrideAdded',
+  update_override: 'settings.taxAuditOverrideEdited',
+  reset_override: 'settings.taxAuditOverrideRemoved',
 };
 
 function apiMessage(error: unknown, fallback: string): string {
@@ -161,27 +164,8 @@ function categoryIdOf(override: TaxOverride): string {
   return override.value?.categoryId || '';
 }
 
-function auditDescription(row: AuditRow): string {
-  const details = row.details || {};
-  if (row.action === 'install_bundled_pack') return `Version ${String(details.version || '')} from the application bundle`;
-  if (row.action === 'install_downloaded_pack') return `Version ${String(details.version || '')} verified and installed from GitHub Releases`;
-  if (row.action === 'create_override') {
-    return `${String(details.entityType || 'target')} ${String(details.entityId || 'store-wide')} → ${String(details.categoryId || '')}`;
-  }
-  if (row.action === 'update_override') {
-    const before = (details.before || {}) as Record<string, unknown>;
-    const after = (details.after || {}) as Record<string, unknown>;
-    return `${String(after.entityType || before.entityType || 'target')} ${String(after.entityId || before.entityId || 'store-wide')}: ${String(before.categoryId || '')} → ${String(after.categoryId || '')}`;
-  }
-  if (row.action === 'reset_override') {
-    return `${String(details.entityType || 'target')} ${String(details.entityId || 'store-wide')} reset to official behavior`;
-  }
-  if (row.action === 'activate_pack') return `Previous version: ${String(details.previousVersionId || 'none')}`;
-  if (row.action === 'rollback_pack') return `Rolled back from ${String(details.previousVersionId || 'unknown')}`;
-  return '';
-}
-
 export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
+  const { t } = useI18n();
   const [packs, setPacks] = useState<PackSummary[]>([]);
   const [storeCountry, setStoreCountry] = useState('');
   const [selectedPackId, setSelectedPackId] = useState('');
@@ -201,8 +185,63 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogChecked, setCatalogChecked] = useState(false);
   const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
+  const [applyAllSelect, setApplyAllSelect] = useState('');
+  const [customRate, setCustomRate] = useState('');
+  const [customRateError, setCustomRateError] = useState<string | null>(null);
   const [enablingTaxes, setEnablingTaxes] = useState(false);
   const [countryPackUnavailable, setCountryPackUnavailable] = useState(false);
+
+  const entityLabel = useCallback(
+    (type: OverrideEntityType) => t(ENTITY_LABEL_KEYS[type]),
+    [t],
+  );
+
+  const auditDescription = useCallback(
+    (row: AuditRow): string => {
+      const details = row.details || {};
+      if (row.action === 'install_bundled_pack') {
+        return t('settings.taxAuditDescBundledInstalled', { version: String(details.version || '') });
+      }
+      if (row.action === 'install_downloaded_pack') {
+        return t('settings.taxAuditDescDownloadedInstalled', { version: String(details.version || '') });
+      }
+      if (row.action === 'create_override') {
+        return t('settings.taxAuditDescOverrideAdded', {
+          entityType: String(details.entityType || 'target'),
+          entityId: String(details.entityId || 'store-wide'),
+          categoryId: String(details.categoryId || ''),
+        });
+      }
+      if (row.action === 'update_override') {
+        const before = (details.before || {}) as Record<string, unknown>;
+        const after = (details.after || {}) as Record<string, unknown>;
+        return t('settings.taxAuditDescOverrideEdited', {
+          entityType: String(after.entityType || before.entityType || 'target'),
+          entityId: String(after.entityId || before.entityId || 'store-wide'),
+          before: String(before.categoryId || ''),
+          after: String(after.categoryId || ''),
+        });
+      }
+      if (row.action === 'reset_override') {
+        return t('settings.taxAuditDescOverrideRemoved', {
+          entityType: String(details.entityType || 'target'),
+          entityId: String(details.entityId || 'store-wide'),
+        });
+      }
+      if (row.action === 'activate_pack') {
+        return t('settings.taxAuditDescActivated', {
+          previousVersionId: String(details.previousVersionId || 'none'),
+        });
+      }
+      if (row.action === 'rollback_pack') {
+        return t('settings.taxAuditDescRolledBack', {
+          previousVersionId: String(details.previousVersionId || 'unknown'),
+        });
+      }
+      return '';
+    },
+    [t],
+  );
 
   const loadList = useCallback(async () => {
     const response = await api.get('/tax-packs');
@@ -240,11 +279,11 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         ...(selectedPackId ? [loadDetail(selectedPackId)] : []),
       ]);
     } catch (error) {
-      toast.error(apiMessage(error, 'Could not load tax configuration'));
+      toast.error(apiMessage(error, t('settings.taxLoadFailed')));
     } finally {
       setLoading(false);
     }
-  }, [loadAudit, loadDetail, loadList, selectedPackId]);
+  }, [loadAudit, loadDetail, loadList, selectedPackId, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -260,13 +299,13 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         setAudit(auditResponse.data.audit);
       })
       .catch((error) => {
-        if (!cancelled) toast.error(apiMessage(error, 'Could not load tax configuration'));
+        if (!cancelled) toast.error(apiMessage(error, t('settings.taxLoadFailed')));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!selectedPackId) return;
@@ -281,13 +320,13 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         setCalculation(null);
       })
       .catch((error) => {
-        if (!cancelled) toast.error(apiMessage(error, 'Could not load tax pack details'));
+        if (!cancelled) toast.error(apiMessage(error, t('settings.taxLoadDetailFailed')));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, [selectedPackId]);
+  }, [selectedPackId, t]);
 
   const selectedPack = packs.find((pack) => pack.id === selectedPackId);
   const activeCountryPack = packs.find(
@@ -303,6 +342,65 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     () => new Map((detail?.categories || []).map((category) => [category.category_id, category.label])),
     [detail?.categories],
   );
+
+  // Map category → display label that includes its rate (e.g. "Standard · 21%").
+  // Map category → its rate string. Built once per render so the dispatcher
+  // doesn't re-scan `detail.rules` for every category it considers.
+  const categoryRateById: Map<string, string> = (() => {
+    const map = new Map<string, string>();
+    if (!detail?.categories || !detail?.rules) return map;
+    for (const category of detail.categories) {
+      const categoryEntry = detail.categories.find((entry) => entry.category_id === category.category_id);
+      const ruleIds = Array.isArray(categoryEntry?.definition?.ruleIds) ? categoryEntry!.definition!.ruleIds : [];
+      const rule = detail.rules.find((candidate) => (
+        ruleIds.includes(candidate.rule_id)
+        || (Array.isArray(candidate.definition?.categoryIds) && candidate.definition!.categoryIds!.includes(category.category_id))
+      ));
+      const rate = rule?.rate;
+      map.set(category.category_id, rate !== null && rate !== undefined ? rate : '');
+    }
+    return map;
+  })();
+
+  // Map category → display label that includes its rate (e.g. "Standard · 21%").
+  const categoryRateLabel: Map<string, string> = (() => {
+    const map = new Map<string, string>();
+    if (!detail?.categories) return map;
+    for (const category of detail.categories) {
+      const rate = categoryRateById.get(category.category_id);
+      map.set(category.category_id, rate ? `${category.label} · ${rate}%` : category.label);
+    }
+    return map;
+  })();
+
+  // Pack default category for products (Argentina = "standard"). Used to
+  // pre-select the "Default for all" dropdown so the user sees what value
+  // will be applied without having to pick.
+  const packDefaultCategoryId = (
+    (detail?.active_version?.definition as unknown as { defaultCategories?: Record<string, string> })?.defaultCategories
+  )?.product
+    ?? '';
+
+  // Look up the rate (as a string, e.g. "21" or "10.5") for a given pack
+  // category. Used by the typed-rate input and the dispatcher.
+  function getCategoryRate(categoryId: string): string {
+    return categoryRateById.get(categoryId) ?? '';
+  }
+
+  // Update the input to mirror the selected category's rate when the dropdown
+  // changes, so the user sees what value the picked category actually has.
+  function handleApplyAllSelectChange(nextCategoryId: string) {
+    setApplyAllSelect(nextCategoryId);
+    const rate = getCategoryRate(nextCategoryId);
+    setCustomRate(rate);
+    setCustomRateError(null);
+  }
+
+  // The input shows user input when present; otherwise it reflects the rate
+  // of the currently selected category (or the pack default). Computed so the
+  // user always sees the value that will be applied.
+  const displayedRate = customRate
+    || getCategoryRate(applyAllSelect || packDefaultCategoryId);
 
   function resetOverrideForm() {
     setEditingOverrideId(null);
@@ -321,7 +419,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   async function saveOverride() {
     if (!isOwner) return;
     if (!categoryId || (needsEntity && !entityId)) {
-      toast.error('Choose both a target and a tax category');
+      toast.error(t('settings.taxChooseTargetAndCategory'));
       return;
     }
     setSaving(true);
@@ -333,45 +431,48 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       };
       if (editingOverrideId) {
         await api.put(`/tax-packs/overrides/${editingOverrideId}`, payload);
-        toast.success('Tax override updated');
+        toast.success(t('settings.taxOverrideUpdated'));
       } else {
         await api.post('/tax-packs/overrides', payload);
-        toast.success('Tax override added');
+        toast.success(t('settings.taxOverrideAdded'));
       }
       resetOverrideForm();
       await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
     } catch (error) {
-      toast.error(apiMessage(error, 'Could not save tax override'));
+      toast.error(apiMessage(error, t('settings.taxOverrideSaveFailed')));
     } finally {
       setSaving(false);
     }
   }
 
   async function removeOverride(override: TaxOverride) {
-    if (!isOwner || !window.confirm(`Remove the override for ${override.entity_name || ENTITY_LABELS[override.entity_type]}?`)) return;
+    if (!isOwner) return;
+    const label = override.entity_name || entityLabel(override.entity_type);
+    if (!window.confirm(t('settings.taxRemoveOverrideConfirm', { entity: label }))) return;
     setSaving(true);
     try {
       await api.delete(`/tax-packs/overrides/${override.id}`);
-      toast.success('Tax override removed; official pack behavior restored');
+      toast.success(t('settings.taxOverrideRemoved'));
       if (editingOverrideId === override.id) resetOverrideForm();
       await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
     } catch (error) {
-      toast.error(apiMessage(error, 'Could not remove tax override'));
+      toast.error(apiMessage(error, t('settings.taxOverrideRemoveFailed')));
     } finally {
       setSaving(false);
     }
   }
 
   async function setChargeCategory(entityType: OverrideEntityType, nextCategoryId: string) {
-    if (!isOwner || !selectedPack?.active_for_store || !CHARGE_TYPES.includes(entityType)) return;
+    if (!isOwner || !selectedPack?.active_for_store || !STORE_DEFAULT_KINDS.includes(entityType)) return;
     const current = detail?.overrides.find(
       (override) => override.entity_type === entityType && override.entity_id === null,
     );
+    const label = entityLabel(entityType);
     setSaving(true);
     try {
       if (!nextCategoryId) {
         if (current) await api.delete(`/tax-packs/overrides/${current.id}`);
-        toast.success(`${ENTITY_LABELS[entityType]} restored to legacy behavior`);
+        toast.success(t('settings.taxStoreWideDefaultRestored', { entity: label }));
       } else {
         const payload = {
           entity_type: entityType,
@@ -383,14 +484,94 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         } else {
           await api.post('/tax-packs/overrides', payload);
         }
-        toast.success(`${ENTITY_LABELS[entityType]} tax category saved`);
+        toast.success(t('settings.taxStoreWideDefaultSaved', { entity: label }));
       }
       await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
     } catch (error) {
-      toast.error(apiMessage(error, 'Could not save the charge tax category'));
+      toast.error(apiMessage(error, t('settings.taxStoreWideDefaultSaveFailed')));
     } finally {
       setSaving(false);
     }
+  }
+
+  async function applyToAll() {
+    if (!isOwner || !selectedPack?.active_for_store || !applyAllSelect) return;
+    const categoryLabel = detail?.categories.find((category) => category.category_id === applyAllSelect)?.label;
+    setSaving(true);
+    try {
+      for (const kind of STORE_DEFAULT_KINDS) {
+        const current = detail?.overrides.find(
+          (override) => override.entity_type === kind && override.entity_id === null,
+        );
+        const payload = { entity_type: kind, entity_id: null, category_id: applyAllSelect };
+        if (current) {
+          await api.put(`/tax-packs/overrides/${current.id}`, payload);
+        } else {
+          await api.post('/tax-packs/overrides', payload);
+        }
+      }
+      setApplyAllSelect('');
+      await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
+      toast.success(t('settings.taxApplyToAllSuccess', { category: categoryLabel || applyAllSelect }));
+    } catch (error) {
+      toast.error(apiMessage(error, t('settings.taxStoreWideDefaultSaveFailed')));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function applyCustomRate() {
+    const rateNumber = Number(customRate);
+    if (!customRate || !Number.isFinite(rateNumber) || rateNumber <= 0 || rateNumber > 100) {
+      setCustomRateError(t('settings.taxCustomRateInvalid'));
+      return;
+    }
+    setSaving(true);
+    try {
+      const response = await api.post('/tax-packs/merchant-rate', { rate: customRate });
+      setCustomRate('');
+      setCustomRateError(null);
+      setApplyAllSelect(response.data?.categoryId || '');
+      await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
+      toast.success(t('settings.taxApplyToAllSuccess', { category: `Custom ${response.data?.rate}%` }));
+    } catch (error: unknown) {
+      const errorMessage = (error as { response?: { data?: { error?: string } } })?.response?.data?.error
+        || t('settings.taxStoreWideDefaultSaveFailed');
+      setCustomRateError(errorMessage);
+      toast.error(errorMessage);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function applySelectOrCustom() {
+    const value = (customRate || displayedRate).trim();
+    const selectedCategoryId = applyAllSelect || packDefaultCategoryId;
+    const selectedRate = getCategoryRate(selectedCategoryId);
+
+    // Input matches the selected category's rate → use the selected category.
+    if (value && value === selectedRate) {
+      return applyToAll();
+    }
+
+    // Input matches a different existing category's rate → switch to that
+    // category and apply. Avoids creating a duplicate merchant category when
+    // the typed value already exists in the pack.
+    if (value && detail?.categories) {
+      const match = detail.categories.find((category) => getCategoryRate(category.category_id) === value);
+      if (match) {
+        setApplyAllSelect(match.category_id);
+        return applyToAll();
+      }
+    }
+
+    // Input is a new rate → create a merchant category from the typed value.
+    if (value) {
+      return applyCustomRate();
+    }
+
+    // No input → apply the selected category (or pack default).
+    return applyToAll();
   }
 
   async function activateVersion(versionId: string) {
@@ -398,24 +579,25 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     setSaving(true);
     try {
       await api.post(`/tax-packs/${selectedPackId}/versions/${versionId}/activate`);
-      toast.success('Installed tax pack version activated');
+      toast.success(t('settings.taxVersionActivated'));
       await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
     } catch (error) {
-      toast.error(apiMessage(error, 'Could not activate tax pack version'));
+      toast.error(apiMessage(error, t('settings.taxVersionActivateFailed')));
     } finally {
       setSaving(false);
     }
   }
 
   async function rollback() {
-    if (!isOwner || !selectedPackId || !window.confirm('Roll back to the previous installed version?')) return;
+    if (!isOwner || !selectedPackId) return;
+    if (!window.confirm(t('settings.taxRollbackConfirm'))) return;
     setSaving(true);
     try {
       await api.post(`/tax-packs/${selectedPackId}/rollback`);
-      toast.success('Tax pack rolled back');
+      toast.success(t('settings.taxRolledBack'));
       await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
     } catch (error) {
-      toast.error(apiMessage(error, 'Could not roll back tax pack'));
+      toast.error(apiMessage(error, t('settings.taxRollbackFailed')));
     } finally {
       setSaving(false);
     }
@@ -428,11 +610,11 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       const available = response.data.available as CatalogEntry[];
       setCatalogEntries(available);
       setCatalogChecked(true);
-      if (available.length === 0) toast.success('Installed tax packs are up to date');
+      if (available.length === 0) toast.success(t('settings.taxUpToDate'));
     } catch (error) {
       setCatalogEntries([]);
       setCatalogChecked(true);
-      toast.error(apiMessage(error, 'Could not check for tax pack updates'));
+      toast.error(apiMessage(error, t('settings.taxCheckUpdatesFailed')));
     } finally {
       setCatalogLoading(false);
     }
@@ -446,14 +628,14 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         pack_id: entry.id,
         version: entry.version,
       });
-      toast.success(`Tax pack ${entry.id} v${entry.version} verified and installed`);
+      toast.success(t('settings.taxPackInstalled', { id: entry.id, version: entry.version }));
       setCatalogEntries((current) => current.filter(
         (candidate) => candidate.id !== entry.id || candidate.version !== entry.version,
       ));
       setSelectedPackId(entry.id);
       await Promise.all([loadList(), loadAudit(), loadDetail(entry.id)]);
     } catch (error) {
-      toast.error(apiMessage(error, 'Could not install tax pack update'));
+      toast.error(apiMessage(error, t('settings.taxPackInstallFailed')));
     } finally {
       setSaving(false);
     }
@@ -498,16 +680,16 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       }
 
       if (!packId || !versionId || !version) {
-        throw new Error('The selected tax pack has no installable version');
+        throw new Error(t('settings.taxPackNoInstallable'));
       }
       await api.post(
         `/tax-packs/${encodeURIComponent(packId)}/versions/${encodeURIComponent(versionId)}/activate`,
       );
       setSelectedPackId(packId);
       await Promise.all([loadList(), loadAudit(), loadDetail(packId)]);
-      toast.success(`Taxes enabled with ${packId} v${version}`);
+      toast.success(t('settings.taxEnabledWith', { id: packId, version }));
     } catch (error) {
-      toast.error(apiMessage(error, 'Could not enable taxes for this country'));
+      toast.error(apiMessage(error, t('settings.taxEnableTaxesFailed')));
     } finally {
       setEnablingTaxes(false);
     }
@@ -515,12 +697,12 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
 
   async function calculate() {
     if (!selectedPack?.active_for_store) {
-      toast.error('Select the active store-country pack to run a checkout calculation');
+      toast.error(t('settings.taxNeedActivePack'));
       return;
     }
     const amountNum = Number(testAmount);
     if (!testCategoryId || !testAmount || isNaN(amountNum) || amountNum <= 0) {
-      toast.error('Please enter a valid positive test calculation amount');
+      toast.error(t('settings.taxInvalidAmount'));
       return;
     }
     try {
@@ -532,22 +714,20 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       setCalculation(response.data.calculation);
     } catch (error) {
       setCalculation(null);
-      toast.error(apiMessage(error, 'Could not calculate tax'));
+      toast.error(apiMessage(error, t('settings.taxCalculateFailed')));
     }
   }
 
   if (loading && !detail) {
-    return <div className="py-16 text-center text-sm text-gray-500">Loading tax configuration…</div>;
+    return <div className="py-16 text-center text-sm text-gray-500">{t('settings.taxLoading')}</div>;
   }
 
   return (
     <div className="pb-6 max-w-5xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-gray-900">Tax configuration</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Review installed country packs, apply merchant overrides, and test calculations.
-          </p>
+          <h2 className="text-xl font-semibold text-gray-900">{t('settings.taxConfiguration')}</h2>
+          <p className="mt-1 text-sm text-gray-500">{t('settings.taxConfigSubtitle')}</p>
         </div>
         <div className="flex gap-2">
           <Button
@@ -556,7 +736,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             disabled={catalogLoading}
           >
             <RefreshCw size={15} className={catalogLoading ? 'animate-spin' : ''} />
-            {catalogLoading ? 'Checking…' : 'Check for updates'}
+            {catalogLoading ? t('settings.taxChecking') : t('settings.taxCheckForUpdates')}
           </Button>
           <Button
             variant="outline"
@@ -566,7 +746,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             }}
             disabled={loading}
           >
-            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> Refresh
+            <RefreshCw size={15} className={loading ? 'animate-spin' : ''} /> {t('settings.taxRefresh')}
           </Button>
         </div>
       </div>
@@ -574,7 +754,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       {!isOwner && (
         <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <Lock size={16} className="mt-0.5 shrink-0" />
-          Managers can review packs, overrides, audit history, and run test calculations. Only owners can make changes.
+          {t('settings.taxManagerNotice')}
         </div>
       )}
 
@@ -582,26 +762,24 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         <section className="rounded-xl border border-blue-200 bg-blue-50 p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h3 className="font-semibold text-gray-900">Country taxes are not enabled</h3>
+              <h3 className="font-semibold text-gray-900">{t('settings.taxNotEnabledTitle')}</h3>
               <p className="mt-1 text-sm text-gray-600">
-                FloCafe is using the generic no-tax profile. An owner can download, verify, and
-                activate an official pack for {storeCountry} when internet access is available.
+                {t('settings.taxNotEnabledBody', { country: storeCountry })}
               </p>
             </div>
             <Button
               onClick={() => void enableCountryTaxes()}
               disabled={!isOwner || enablingTaxes}
-              title={!isOwner ? 'Only owners can enable taxes' : undefined}
+              title={!isOwner ? t('settings.taxOwnerOnlyEnable') : undefined}
               className="shrink-0"
             >
               <Download size={15} />
-              {enablingTaxes ? 'Enabling…' : 'Enable taxes'}
+              {enablingTaxes ? t('settings.taxEnabling') : t('settings.taxEnableTaxes')}
             </Button>
           </div>
           {countryPackUnavailable && (
             <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              No official tax pack is currently available for {storeCountry}. Keep taxes disabled,
-              or use the generic/manual configuration below.
+              {t('settings.taxCountryPackUnavailable', { country: storeCountry })}
             </p>
           )}
         </section>
@@ -613,10 +791,8 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             <div className="flex items-center gap-2">
               <Download size={20} className="text-brand" />
               <div>
-                <h3 className="font-semibold text-gray-900">Available tax packs</h3>
-                <p className="text-sm text-gray-500">
-                  Downloads are verified with the built-in FloCafe signing key before installation.
-                </p>
+                <h3 className="font-semibold text-gray-900">{t('settings.taxAvailablePacks')}</h3>
+                <p className="text-sm text-gray-500">{t('settings.taxAvailablePacksHint')}</p>
               </div>
             </div>
           </div>
@@ -632,10 +808,10 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                       {entry.id} · v{entry.version}
                     </p>
                     <p className="mt-0.5 text-xs text-gray-500">
-                      {entry.country === '*' ? 'Generic' : entry.country}
+                      {entry.country === '*' ? t('settings.taxGeneric') : entry.country}
                       {' · '}{entry.publisher}
-                      {' · '}Published {entry.publishedAt}
-                      {' · '}Requires FloCafe {entry.minFloVersion}+
+                      {' · '}{t('settings.taxPublished', { date: entry.publishedAt })}
+                      {' · '}{t('settings.taxRequiresFlo', { version: entry.minFloVersion })}
                     </p>
                   </div>
                   <Button
@@ -643,15 +819,15 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                     variant="outline"
                     disabled={!isOwner || saving}
                     onClick={() => void installCatalogPack(entry)}
-                    title={!isOwner ? 'Only owners can install tax packs' : undefined}
+                    title={!isOwner ? t('settings.taxOwnerOnlyInstall') : undefined}
                   >
-                    <Download size={14} /> Verify and install
+                    <Download size={14} /> {t('settings.taxVerifyAndInstall')}
                   </Button>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="mt-4 text-sm text-gray-500">No newer tax pack versions are available.</p>
+            <p className="mt-4 text-sm text-gray-500">{t('settings.taxNoUpdates')}</p>
           )}
         </section>
       )}
@@ -660,7 +836,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <ShieldCheck size={20} className="text-brand" />
-            <h3 className="font-semibold text-gray-900">Installed country packs</h3>
+            <h3 className="font-semibold text-gray-900">{t('settings.taxInstalledCountryPacks')}</h3>
           </div>
           {packs.length > 1 && (
             <select
@@ -670,8 +846,8 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             >
               {packs.map((pack) => (
                 <option key={pack.id} value={pack.id}>
-                  {pack.country === '*' ? 'Generic' : pack.country} · {pack.publisher}
-                  {pack.active_for_store ? ' (active)' : ''}
+                  {pack.country === '*' ? t('settings.taxGeneric') : pack.country} · {pack.publisher}
+                  {pack.active_for_store ? ` (${t('common.active')})` : ''}
                 </option>
               ))}
             </select>
@@ -683,14 +859,14 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             {detail.active_version ? (
               <>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <Info label="Store country" value={storeCountry} />
-                  <Info label="Jurisdiction" value={selectedPack.jurisdiction} />
-                  <Info label="Active version" value={detail.active_version.version} />
-                  <Info label="Trust status" value={detail.pack.trust_status} />
+                  <Info label={t('settings.taxStoreCountry')} value={storeCountry} />
+                  <Info label={t('settings.taxJurisdiction')} value={selectedPack.jurisdiction} />
+                  <Info label={t('settings.taxActiveVersion')} value={detail.active_version.version} />
+                  <Info label={t('settings.taxTrustStatus')} value={detail.pack.trust_status} />
                 </div>
                 <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
-                  <span>Effective {detail.active_version.effective_from}</span>
-                  <span>Published {detail.active_version.published_at}</span>
+                  <span>{t('settings.taxEffective', { date: detail.active_version.effective_from })}</span>
+                  <span>{t('settings.taxPublished', { date: detail.active_version.published_at })}</span>
                   <span>{detail.active_version.definition.currency}</span>
                   <button
                     type="button"
@@ -699,8 +875,11 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                   >
                     {detail.active_version.validation.valid ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
                     {detail.active_version.validation.valid
-                      ? `${detail.active_version.validation.checks.filter((c) => c.passed).length} of ${detail.active_version.validation.checks.length} activation checks passed`
-                      : 'Activation checks failed'}
+                      ? t('settings.taxActivationChecksPassed', {
+                          passed: detail.active_version.validation.checks.filter((c) => c.passed).length,
+                          total: detail.active_version.validation.checks.length,
+                        })
+                      : t('settings.taxActivationChecksFailed')}
                     <ChevronDown size={14} className={expandedChecklist ? 'rotate-180' : ''} />
                   </button>
                 </div>
@@ -715,21 +894,19 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                 )}
               </>
             ) : (
-              <p className="mt-4 text-sm text-gray-500">
-                This pack has no active version yet — activate an installed version below.
-              </p>
+              <p className="mt-4 text-sm text-gray-500">{t('settings.taxNoActiveVersion')}</p>
             )}
             <div className="mt-5 border-t border-gray-100 pt-4">
               <div className="mb-2 flex items-center justify-between">
-                <p className="text-sm font-medium text-gray-800">Installed versions</p>
+                <p className="text-sm font-medium text-gray-800">{t('settings.taxInstalledVersions')}</p>
                 <Button
                   size="sm"
                   variant="outline"
                   disabled={!isOwner || saving || detail.versions.length < 2}
                   onClick={() => void rollback()}
-                  title={detail.versions.length < 2 ? 'No previous installed version is available' : undefined}
+                  title={detail.versions.length < 2 ? t('settings.taxNoPreviousVersion') : undefined}
                 >
-                  <RotateCcw size={14} /> Roll back
+                  <RotateCcw size={14} /> {t('settings.taxRollback')}
                 </Button>
               </div>
               <div className="space-y-2">
@@ -742,7 +919,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                         <span className="ml-2 text-xs text-gray-400">{version.status}</span>
                       </span>
                       {active ? (
-                        <span className="text-xs font-medium text-emerald-700">Active</span>
+                        <span className="text-xs font-medium text-emerald-700">{t('common.active')}</span>
                       ) : (
                         <Button
                           size="sm"
@@ -750,7 +927,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                           disabled={!isOwner || saving}
                           onClick={() => void activateVersion(version.id)}
                         >
-                          Activate installed version
+                          {t('settings.taxActivateVersion')}
                         </Button>
                       )}
                     </div>
@@ -760,18 +937,18 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             </div>
           </>
         ) : (
-          <p className="mt-4 text-sm text-gray-500">No active installed pack is available.</p>
+          <p className="mt-4 text-sm text-gray-500">{t('settings.taxNoActivePack')}</p>
         )}
       </section>
 
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex items-center gap-2">
           <Calculator size={20} className="text-brand" />
-          <h3 className="font-semibold text-gray-900">Test calculation</h3>
+          <h3 className="font-semibold text-gray-900">{t('settings.taxTestCalculation')}</h3>
         </div>
-        <p className="mt-1 text-sm text-gray-500">Uses the active pack and the same tax engine as checkout. It does not save a transaction.</p>
+        <p className="mt-1 text-sm text-gray-500">{t('settings.taxTestCalculationHint')}</p>
         {!selectedPack?.active_for_store && (
-          <p className="mt-2 text-xs text-amber-700">This installed pack is not active for the current store. Select the active pack to test it.</p>
+          <p className="mt-2 text-xs text-amber-700">{t('settings.taxNotActivePackTest')}</p>
         )}
         <div className="mt-4 grid gap-3 sm:grid-cols-4">
           <select disabled={!selectedPack?.active_for_store} value={testCategoryId} onChange={(event) => setTestCategoryId(event.target.value)} className="rounded-md border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-100">
@@ -781,24 +958,24 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             value={testAmount}
             onChange={(event) => setTestAmount(event.target.value)}
             inputMode="decimal"
-            placeholder="Amount"
+            placeholder={t('settings.taxTaxableBase')}
             disabled={!selectedPack?.active_for_store}
             className="rounded-md border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-100"
           />
           <select disabled={!selectedPack?.active_for_store} value={testBehavior} onChange={(event) => setTestBehavior(event.target.value)} className="rounded-md border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-100">
-            <option value="country_default">Country default</option>
-            <option value="exclusive">Tax exclusive</option>
-            <option value="inclusive">Tax inclusive</option>
-            <option value="exempt">Exempt</option>
+            <option value="country_default">{t('settings.taxCountryDefault')}</option>
+            <option value="exclusive">{t('settings.taxExclusive')}</option>
+            <option value="inclusive">{t('settings.taxInclusive')}</option>
+            <option value="exempt">{t('settings.taxExempt')}</option>
           </select>
-          <Button disabled={!selectedPack?.active_for_store} onClick={() => void calculate()}>Calculate</Button>
+          <Button disabled={!selectedPack?.active_for_store} onClick={() => void calculate()}>{t('settings.taxCalculate')}</Button>
         </div>
         {calculation && (
           <div className="mt-4 rounded-lg bg-gray-50 p-4">
             <div className="grid gap-3 sm:grid-cols-3">
-              <Info label="Taxable base" value={calculation.taxableBase} />
-              <Info label="Tax" value={calculation.taxAmount} />
-              <Info label="Payable total" value={calculation.payableTotal} />
+              <Info label={t('settings.taxTaxableBase')} value={calculation.taxableBase} />
+              <Info label={t('common.tax')} value={calculation.taxAmount} />
+              <Info label={t('settings.taxPayableTotal')} value={calculation.payableTotal} />
             </div>
             {calculation.lines[0]?.components.length > 0 && (
               <div className="mt-3 border-t border-gray-200 pt-3 text-xs text-gray-600">
@@ -817,31 +994,93 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex items-center gap-2">
           <SlidersHorizontal size={20} className="text-brand" />
-          <h3 className="font-semibold text-gray-900">Charge tax categories</h3>
+          <h3 className="font-semibold text-gray-900">{t('settings.taxStoreWideDefaults')}</h3>
         </div>
-        <p className="mt-1 text-sm text-gray-500">
-          Choose the category used for each order-level charge. Unconfigured charges keep the legacy behavior and remain untaxed.
-        </p>
+        <p className="mt-1 text-sm text-gray-500">{t('settings.taxStoreWideDefaultsHint')}</p>
         {!selectedPack?.active_for_store && (
-          <p className="mt-2 text-xs text-amber-700">Select the active store-country pack to change charge categories.</p>
+          <p className="mt-2 text-xs text-amber-700">{t('settings.taxNeedActivePackDefaults')}</p>
         )}
-        <div className="mt-4 grid gap-4 sm:grid-cols-3">
-          {CHARGE_TYPES.map((chargeType) => {
+
+        <div className="mt-4 rounded-lg border border-gray-100 bg-gray-50 p-4">
+          <label className="block">
+            <span className="text-sm font-medium text-gray-800">{t('settings.taxApplyToAll')}</span>
+            <p className="mt-0.5 text-xs text-gray-500">{t('settings.taxApplyToAllHint')}</p>
+            <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <select
+                value={applyAllSelect || packDefaultCategoryId || ''}
+                onChange={(event) => handleApplyAllSelectChange(event.target.value)}
+                disabled={!isOwner || saving || !selectedPack?.active_for_store}
+                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm disabled:bg-gray-100 sm:flex-1"
+              >
+                <option value="">—</option>
+                {detail?.categories
+                  .filter((category) => Boolean(getCategoryRate(category.category_id)))
+                  .map((category) => (
+                    <option key={category.category_id} value={category.category_id}>
+                      {categoryRateLabel.get(category.category_id) || category.label}
+                    </option>
+                  ))}
+              </select>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  min="0.01"
+                  max="100"
+                  step="0.01"
+                  value={customRate || displayedRate}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    setCustomRate(value);
+                    setCustomRateError(null);
+                    // If the typed value matches an existing category's rate,
+                    // switch the dropdown to that category so the user sees
+                    // the canonical pick.
+                    if (value && detail?.categories) {
+                      const match = detail.categories.find((category) => getCategoryRate(category.category_id) === value);
+                      if (match) setApplyAllSelect(match.category_id);
+                    }
+                  }}
+                  placeholder="—"
+                  disabled={!isOwner || saving || !selectedPack?.active_for_store}
+                  aria-label={t('settings.taxCustomRate')}
+                  className="w-24 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm disabled:bg-gray-100"
+                />
+                <span className="text-sm font-medium text-gray-600">%</span>
+              </div>
+              <Button
+                disabled={!isOwner || saving || !selectedPack?.active_for_store || !(customRate || applyAllSelect || packDefaultCategoryId)}
+                onClick={() => void applySelectOrCustom()}
+                className="shrink-0"
+              >
+                {t('settings.taxApplyToAllButton')}
+              </Button>
+            </div>
+            {customRateError && (
+              <p className="mt-2 text-xs text-red-700">{customRateError}</p>
+            )}
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          {STORE_DEFAULT_KINDS.map((kind) => {
             const configured = detail?.overrides.find(
-              (override) => override.entity_type === chargeType && override.entity_id === null,
+              (override) => override.entity_type === kind && override.entity_id === null,
             );
             return (
-              <label key={chargeType} className="block">
-                <span className="text-sm font-medium text-gray-800">{ENTITY_LABELS[chargeType]}</span>
+              <label key={kind} className="block">
+                <span className="text-sm font-medium text-gray-800">{entityLabel(kind)}</span>
                 <select
                   value={configured ? categoryIdOf(configured) : ''}
-                  onChange={(event) => void setChargeCategory(chargeType, event.target.value)}
+                  onChange={(event) => void setChargeCategory(kind, event.target.value)}
                   disabled={!isOwner || saving || !selectedPack?.active_for_store}
                   className="mt-2 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm disabled:bg-gray-100"
                 >
-                  <option value="">Not configured · legacy behavior</option>
+                  <option value="">{t('settings.taxNotConfigured')}</option>
                   {detail?.categories.map((category) => (
-                    <option key={category.category_id} value={category.category_id}>{category.label}</option>
+                    <option key={category.category_id} value={category.category_id}>
+                      {categoryRateLabel.get(category.category_id) || category.label}
+                    </option>
                   ))}
                 </select>
               </label>
@@ -853,11 +1092,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex items-center gap-2">
           <SlidersHorizontal size={20} className="text-brand" />
-          <h3 className="font-semibold text-gray-900">Merchant overrides</h3>
+          <h3 className="font-semibold text-gray-900">{t('settings.taxMerchantOverrides')}</h3>
         </div>
-        <p className="mt-1 text-sm text-gray-500">
-          Overrides take priority over product and category assignments, but transaction exemptions still win.
-        </p>
+        <p className="mt-1 text-sm text-gray-500">{t('settings.taxMerchantOverridesHint')}</p>
 
         {isOwner && (
           <div className="mt-4 grid gap-3 rounded-lg border border-gray-100 bg-gray-50 p-4 sm:grid-cols-3">
@@ -870,24 +1107,24 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
               className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm"
             >
               {(['product', 'addon'] as OverrideEntityType[]).map((value) => (
-                <option key={value} value={value}>{ENTITY_LABELS[value]}</option>
+                <option key={value} value={value}>{entityLabel(value)}</option>
               ))}
             </select>
             {needsEntity ? (
               <select value={entityId} onChange={(event) => setEntityId(event.target.value)} className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
-                <option value="">Choose {ENTITY_LABELS[entityType].toLowerCase()}</option>
+                <option value="">{t('settings.taxChooseTarget', { entity: entityLabel(entityType).toLowerCase() })}</option>
                 {targetOptions.map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
               </select>
             ) : (
-              <div className="rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-500">Store-wide charge</div>
+              <div className="rounded-md border border-gray-200 bg-gray-100 px-3 py-2 text-sm text-gray-500">{t('settings.taxStoreWideCharge')}</div>
             )}
             <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
               {detail?.categories.map((category) => <option key={category.category_id} value={category.category_id}>{category.label}</option>)}
             </select>
             <div className="flex gap-2 sm:col-span-3 sm:justify-end">
-              {editingOverrideId && <Button variant="outline" onClick={resetOverrideForm}>Cancel</Button>}
+              {editingOverrideId && <Button variant="outline" onClick={resetOverrideForm}>{t('common.cancel')}</Button>}
               <Button disabled={saving} onClick={() => void saveOverride()}>
-                <Plus size={14} /> {editingOverrideId ? 'Save override' : 'Add override'}
+                <Plus size={14} /> {editingOverrideId ? t('settings.taxSaveOverride') : t('settings.taxAddOverride')}
               </Button>
             </div>
           </div>
@@ -896,46 +1133,46 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[620px] text-left text-sm">
             <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
-              <tr><th className="py-2 pr-3">Target</th><th className="py-2 pr-3">Category</th><th className="py-2 pr-3">Updated</th><th className="py-2 text-right">Actions</th></tr>
+              <tr><th className="py-2 pr-3">{t('settings.taxTarget')}</th><th className="py-2 pr-3">{t('settings.taxCategory')}</th><th className="py-2 pr-3">{t('settings.taxUpdated')}</th><th className="py-2 text-right">{t('settings.taxActions')}</th></tr>
             </thead>
             <tbody>
               {detail?.overrides.map((override) => (
                 <tr key={override.id} className="border-b border-gray-50">
-                  <td className="py-3 pr-3"><span className="text-xs text-gray-400">{ENTITY_LABELS[override.entity_type]}</span><br />{override.entity_name || 'Store-wide'}</td>
+                  <td className="py-3 pr-3"><span className="text-xs text-gray-400">{entityLabel(override.entity_type)}</span><br />{override.entity_name || t('settings.taxStoreWide')}</td>
                   <td className="py-3 pr-3">{categoriesById.get(categoryIdOf(override)) || categoryIdOf(override)}</td>
                   <td className="py-3 pr-3 text-xs text-gray-500">{dateTime(override.updated_at)}{override.created_by_name ? ` · ${override.created_by_name}` : ''}</td>
                   <td className="py-3 text-right">
                     {isOwner ? (
                       <div className="flex justify-end gap-2">
-                        {!CHARGE_TYPES.includes(override.entity_type) && (
-                          <button className="text-brand hover:underline" onClick={() => editOverride(override)}>Edit</button>
+                        {override.entity_id !== null && (
+                          <button className="text-brand hover:underline" onClick={() => editOverride(override)}>{t('common.edit')}</button>
                         )}
-                        <button className="text-red-600 hover:underline" onClick={() => void removeOverride(override)}>Remove</button>
+                        <button className="text-red-600 hover:underline" onClick={() => void removeOverride(override)}>{t('common.remove')}</button>
                       </div>
-                    ) : <span className="text-xs text-gray-400">Read only</span>}
+                    ) : <span className="text-xs text-gray-400">{t('settings.taxReadOnly')}</span>}
                   </td>
                 </tr>
               ))}
-              {!detail?.overrides.length && <tr><td colSpan={4} className="py-8 text-center text-gray-400">No merchant overrides. Official pack behavior is in use.</td></tr>}
+              {!detail?.overrides.length && <tr><td colSpan={4} className="py-8 text-center text-gray-400">{t('settings.taxNoOverrides')}</td></tr>}
             </tbody>
           </table>
         </div>
       </section>
 
       <section className="rounded-xl border border-gray-200 bg-white p-5">
-        <h3 className="font-semibold text-gray-900">Pack reference</h3>
-        <p className="mt-1 text-sm text-gray-500">Read-only categories and rules from the active installed JSON pack.</p>
+        <h3 className="font-semibold text-gray-900">{t('settings.taxPackReference')}</h3>
+        <p className="mt-1 text-sm text-gray-500">{t('settings.taxPackReferenceHint')}</p>
         <div className="mt-4 overflow-x-auto">
           <table className="w-full min-w-[680px] text-left text-sm">
             <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
-              <tr><th className="py-2 pr-3">Category</th><th className="py-2 pr-3">Default behavior</th><th className="py-2">Rules</th></tr>
+              <tr><th className="py-2 pr-3">{t('settings.taxCategory')}</th><th className="py-2 pr-3">{t('settings.taxDefaultBehavior')}</th><th className="py-2">{t('settings.taxRules')}</th></tr>
             </thead>
             <tbody>
               {detail?.categories.map((category) => (
                 <tr key={category.category_id} className="border-b border-gray-50">
                   <td className="py-3 pr-3"><span className="font-medium">{category.label}</span><br /><code className="text-xs text-gray-400">{category.category_id}</code></td>
-                  <td className="py-3 pr-3">{category.default_behavior || 'Pack default'}</td>
-                  <td className="py-3 text-xs text-gray-600">{category.definition.ruleIds?.join(', ') || 'None'}</td>
+                  <td className="py-3 pr-3">{category.default_behavior || t('settings.taxPackDefault')}</td>
+                  <td className="py-3 text-xs text-gray-600">{category.definition.ruleIds?.join(', ') || t('settings.taxNone')}</td>
                 </tr>
               ))}
             </tbody>
@@ -944,7 +1181,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         <div className="mt-5 overflow-x-auto">
           <table className="w-full min-w-[760px] text-left text-sm">
             <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
-              <tr><th className="py-2 pr-3">Rule</th><th className="py-2 pr-3">Type</th><th className="py-2 pr-3">Value</th><th className="py-2 pr-3">Scope</th><th className="py-2">Depends on</th></tr>
+              <tr><th className="py-2 pr-3">{t('settings.taxRule')}</th><th className="py-2 pr-3">{t('settings.taxType')}</th><th className="py-2 pr-3">{t('settings.taxValue')}</th><th className="py-2 pr-3">{t('settings.taxScope')}</th><th className="py-2">{t('settings.taxDependsOn')}</th></tr>
             </thead>
             <tbody>
               {detail?.rules.map((rule) => (
@@ -953,7 +1190,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                   <td className="py-3 pr-3">{rule.calculation_type}</td>
                   <td className="py-3 pr-3">{rule.rate !== null ? `${rule.rate}%` : rule.amount}</td>
                   <td className="py-3 pr-3">{rule.applies_per}</td>
-                  <td className="py-3 text-xs text-gray-600">{rule.base_rule_ids.join(', ') || 'None'}</td>
+                  <td className="py-3 text-xs text-gray-600">{rule.base_rule_ids.join(', ') || t('settings.taxNone')}</td>
                 </tr>
               ))}
             </tbody>
@@ -964,20 +1201,20 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex items-center gap-2">
           <History size={20} className="text-brand" />
-          <h3 className="font-semibold text-gray-900">Audit history</h3>
+          <h3 className="font-semibold text-gray-900">{t('settings.taxAuditHistory')}</h3>
         </div>
         <div className="mt-4 space-y-2">
           {audit.map((row) => (
             <div key={row.id} className="flex items-start gap-3 rounded-lg border border-gray-100 px-3 py-3">
               <Clock3 size={15} className="mt-0.5 shrink-0 text-gray-400" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-gray-800">{ACTION_LABELS[row.action] || row.action}</p>
+                <p className="text-sm font-medium text-gray-800">{t(ACTION_LABEL_KEYS[row.action] || row.action)}</p>
                 {auditDescription(row) && <p className="truncate text-xs text-gray-600">{auditDescription(row)}</p>}
-                <p className="text-xs text-gray-500">{row.actor_name || (row.actor_user_id ? 'Unknown user' : 'System')} · {dateTime(row.created_at)}</p>
+                <p className="text-xs text-gray-500">{row.actor_name || (row.actor_user_id ? t('settings.taxUnknownUser') : t('settings.taxSystem'))} · {dateTime(row.created_at)}</p>
               </div>
             </div>
           ))}
-          {!audit.length && <p className="py-6 text-center text-sm text-gray-400">No tax configuration changes recorded.</p>}
+          {!audit.length && <p className="py-6 text-center text-sm text-gray-400">{t('settings.taxNoAudit')}</p>}
         </div>
       </section>
     </div>

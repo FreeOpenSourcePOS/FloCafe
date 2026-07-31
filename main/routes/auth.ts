@@ -253,17 +253,17 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   }
 
   if (lang === 'es') {
-    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode);
-    insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '1145678903', dialCode);
+    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', `${dialCode}1145678901`, dialCode);
+    insertCustomer(db, 'cust-demo-2', 'María González', `${dialCode}1145678902`, dialCode);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', `${dialCode}1145678903`, dialCode);
   } else if (lang === 'pt') {
-    insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode);
-    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '1198765434', dialCode);
+    insertCustomer(db, 'cust-demo-1', 'João Silva', `${dialCode}1198765432`, dialCode);
+    insertCustomer(db, 'cust-demo-2', 'Maria Santos', `${dialCode}1198765433`, dialCode);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', `${dialCode}1198765434`, dialCode);
   } else {
-    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode);
-    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode);
-    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '9876543212', dialCode);
+    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', `${dialCode}9876543210`, dialCode);
+    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', `${dialCode}9876543211`, dialCode);
+    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', `${dialCode}9876543212`, dialCode);
   }
 
   const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'pt' ? 'Gerente Demo' : 'Demo Manager';

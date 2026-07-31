@@ -212,6 +212,196 @@ async function main() {
     assertEqual(orderWithoutOverride.data.order.tax_amount, 0, 'reset removes merchant category assignment');
     assert(!orderWithoutOverride.data.order.items[0].tax_snapshot, 'reset returns the product to the no-tax path');
 
+    console.log('\n4b. Store-wide product default resolves at checkout with proper priority');
+    // No per-product override exists now (it was deleted above). Seed a
+    // second product with no own category and no per-product override, then
+    // create a store-wide product override (entity_id null) and verify an
+    // order through it picks up the standard 5% rate.
+    seedProduct(db, 'store-default-product', 'tax-pack-products', 'Store Default Product', 200, {
+      tax_type: 'none',
+      tax_category_id: null,
+    });
+
+    const storeWideCreate = await api(baseUrl, '/api/tax-packs/overrides', {
+      method: 'POST',
+      body: {
+        entity_type: 'product',
+        entity_id: null,
+        category_id: 'standard',
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(storeWideCreate.status, 201, 'owner can create a store-wide product override (entity_id null)');
+
+    const orderWithStoreDefault = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'store-default-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(orderWithStoreDefault.status, 201, 'uncategorized product checks out through the store-wide default');
+    assertEqual(orderWithStoreDefault.data.order.tax_amount, 10, 'store-wide default applies the standard 5% rate on a 200-line subtotal');
+    const storeDefaultSnapshotRaw = orderWithStoreDefault.data.order.items[0].tax_snapshot;
+    const storeDefaultSnapshot = typeof storeDefaultSnapshotRaw === 'string'
+      ? JSON.parse(storeDefaultSnapshotRaw) : storeDefaultSnapshotRaw;
+    assertEqual(storeDefaultSnapshot.lines[0].categorySource, 'explicit', 'store-wide default resolves through the explicit (product-category) slot, not the merchant-override slot');
+
+    // Priority: a per-product override must beat the store-wide default.
+    seedProduct(db, 'priority-product', 'tax-pack-products', 'Priority Product', 100, {
+      tax_type: 'none',
+      tax_category_id: null,
+    });
+    const productOverrideOnTop = await api(baseUrl, '/api/tax-packs/overrides', {
+      method: 'POST',
+      body: {
+        entity_type: 'product',
+        entity_id: 'priority-product',
+        category_id: 'standard',
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(productOverrideOnTop.status, 201, 'per-product override is created on top of the store-wide default');
+    const priorityOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'priority-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(priorityOrder.status, 201, 'per-product override + store-wide default both apply');
+    const prioritySnapshotRaw = priorityOrder.data.order.items[0].tax_snapshot;
+    const prioritySnapshot = typeof prioritySnapshotRaw === 'string' ? JSON.parse(prioritySnapshotRaw) : prioritySnapshotRaw;
+    assertEqual(prioritySnapshot.lines[0].categorySource, 'merchant_override', 'per-product override beats the store-wide default');
+    assertEqual(priorityOrder.data.order.tax_amount, 5, 'per-product override wins (5% on 100)');
+
+    // Priority: a product's own tax_category must beat the store-wide default.
+    seedProduct(db, 'own-category-product', 'tax-pack-products', 'Own Category Product', 100, {
+      tax_type: 'inclusive',
+      tax_category_id: 'standard',
+      tax_behavior: 'inclusive',
+    });
+    const ownCategoryOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'own-category-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(ownCategoryOrder.status, 201, 'a product with its own tax_category still checks out');
+    const ownCategorySnapshotRaw = ownCategoryOrder.data.order.items[0].tax_snapshot;
+    const ownCategorySnapshot = typeof ownCategorySnapshotRaw === 'string' ? JSON.parse(ownCategorySnapshotRaw) : ownCategorySnapshotRaw;
+    assertEqual(ownCategorySnapshot.lines[0].categorySource, 'explicit', 'product owns its own category assignment');
+
+    // Negative: a product with no priority of any kind still gets the store-wide default.
+    const stillStoreDefault = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'store-default-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(stillStoreDefault.data.order.tax_amount, 10, 'a second uncategorized product picks up the same store-wide default');
+
+    console.log('\n4c. Custom merchant rate applies to all kinds with one call');
+    const managerMerchantRate = await api(baseUrl, '/api/tax-packs/merchant-rate', {
+      method: 'POST',
+      body: { rate: '10.5' },
+      headers: manager.authHeader,
+    });
+    assertEqual(managerMerchantRate.status, 403, 'manager cannot create a custom rate');
+
+    const ownerMerchantRate = await api(baseUrl, '/api/tax-packs/merchant-rate', {
+      method: 'POST',
+      body: { rate: '10.5' },
+      headers: owner.authHeader,
+    });
+    assertEqual(ownerMerchantRate.status, 201, 'owner applies a custom merchant rate');
+    assertEqual(ownerMerchantRate.data.categoryId, 'merchant:10.5', 'category id is named after the rate');
+
+    const duplicateMerchantRate = await api(baseUrl, '/api/tax-packs/merchant-rate', {
+      method: 'POST',
+      body: { rate: '10.5' },
+      headers: owner.authHeader,
+    });
+    assertEqual(duplicateMerchantRate.status, 201, 're-applying the same rate is idempotent');
+
+    const invalidMerchantRates = [
+      { rate: '0' },
+      { rate: '101' },
+      { rate: 'abc' },
+      { rate: '' },
+    ];
+    for (const body of invalidMerchantRates) {
+      const response = await api(baseUrl, '/api/tax-packs/merchant-rate', {
+        method: 'POST',
+        body,
+        headers: owner.authHeader,
+      });
+      assertEqual(response.status, 400, `invalid rate "${body.rate}" is rejected`);
+    }
+
+    const merchantRateOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'store-default-product', quantity: 1 }],
+      },
+      headers: owner.authHeader,
+    });
+    assertEqual(merchantRateOrder.status, 201, 'checkout still works after applying a custom rate');
+    const merchantRateItem = merchantRateOrder.data.order.items[0];
+    assertEqual(merchantRateItem.tax_amount, 21, 'a 200-line product is charged 10.5% x 200 = 21 with the merchant rate');
+    const merchantRateSnapshot = typeof merchantRateItem.tax_snapshot === 'string'
+      ? JSON.parse(merchantRateItem.tax_snapshot) : merchantRateItem.tax_snapshot;
+    assertEqual(merchantRateSnapshot.lines[0].categoryId, 'merchant:10.5', 'category id resolves through the merchant-rate path');
+    assertEqual(merchantRateSnapshot.lines[0].components[0].rate, '10.5', 'the rule rate matches the typed value');
+
+    // Clean up the merchant categories + rules so subsequent sections
+    // (charge categories and their assertions) aren't affected.
+    const indiaPackRow = db.prepare(
+      `SELECT active_version_id FROM country_packs WHERE id = 'official-india'`
+    ).get() as { active_version_id: string };
+    db.prepare(
+      `DELETE FROM tax_overrides
+       WHERE pack_version_id = ? AND json_extract(value_json, '$.categoryId') LIKE 'merchant:%'`
+    ).run(indiaPackRow.active_version_id);
+    db.prepare(
+      `DELETE FROM tax_categories WHERE pack_version_id = ? AND category_id LIKE 'merchant:%'`
+    ).run(indiaPackRow.active_version_id);
+    db.prepare(
+      `DELETE FROM tax_rules WHERE pack_version_id = ? AND rule_id LIKE 'merchant:%'`
+    ).run(indiaPackRow.active_version_id);
+
+    // Clean up the store-wide product override so subsequent sections
+    // (which assume a baseline of "no store-wide default") still pass.
+    const storeWideList = await api(baseUrl, '/api/tax-packs', { headers: owner.authHeader });
+    const storeWidePack = storeWideList.data.packs.find((pack: any) => pack.id === 'official-india');
+    const storeWideOverrideRow = db.prepare(
+      `SELECT id FROM tax_overrides
+       WHERE pack_version_id = ? AND entity_type = 'product' AND entity_id IS NULL`
+    ).get(storeWidePack.active_version_id) as { id: string } | undefined;
+    if (storeWideOverrideRow) {
+      await api(baseUrl, `/api/tax-packs/overrides/${storeWideOverrideRow.id}`, {
+        method: 'DELETE',
+        headers: owner.authHeader,
+      });
+    }
+    const productOverrideOnTopRow = db.prepare(
+      `SELECT id FROM tax_overrides
+       WHERE pack_version_id = ? AND entity_type = 'product' AND entity_id = 'priority-product'`
+    ).get(storeWidePack.active_version_id) as { id: string } | undefined;
+    if (productOverrideOnTopRow) {
+      await api(baseUrl, `/api/tax-packs/overrides/${productOverrideOnTopRow.id}`, {
+        method: 'DELETE',
+        headers: owner.authHeader,
+      });
+    }
+
     console.log('\n5. Charge categories persist and stay stable across every recompute path');
     db.prepare(
       "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('discount_max_percentage', '100', datetime('now'))",

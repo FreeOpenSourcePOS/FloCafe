@@ -134,21 +134,19 @@ function validateOverrideTarget(
   }
 
   const normalizedType = entityType as OverrideEntityType;
-  const requiresEntity = normalizedType === 'product' || normalizedType === 'addon';
   const normalizedEntityId = entityId === null || entityId === undefined || entityId === ''
     ? null
     : String(entityId);
-  if (requiresEntity && !normalizedEntityId) {
-    throw Object.assign(new Error(`entity_id is required for ${normalizedType} overrides`), { statusCode: 400 });
-  }
-  if (!requiresEntity && normalizedEntityId) {
-    throw Object.assign(new Error(`entity_id must be empty for ${normalizedType} overrides`), { statusCode: 400 });
-  }
-  if (normalizedType === 'product') {
+  // entity_id is optional for every entity type. A null entity_id means the
+  // override is the store-wide default for that kind (used by calculateItemTax
+  // as the fallback when a product/addon has no per-item override and no own
+  // tax_category). The unique-target check (entity_id IS ?) prevents two
+  // store-wide rows per kind.
+  if (normalizedType === 'product' && normalizedEntityId) {
     const product = db.prepare('SELECT 1 FROM products WHERE id = ? AND deleted_at IS NULL').get(normalizedEntityId);
     if (!product) throw Object.assign(new Error('Product not found'), { statusCode: 404 });
   }
-  if (normalizedType === 'addon') {
+  if (normalizedType === 'addon' && normalizedEntityId) {
     const addon = db.prepare('SELECT 1 FROM addons WHERE id = ?').get(normalizedEntityId);
     if (!addon) throw Object.assign(new Error('Add-on not found'), { statusCode: 404 });
   }
@@ -420,6 +418,7 @@ export function validationChecklist(
     FROM tax_overrides
     WHERE pack_version_id = ?
       AND json_extract(value_json, '$.categoryId') NOT IN (${categoryIds.map(() => '?').join(',') || "''"})
+      AND json_extract(value_json, '$.categoryId') NOT LIKE 'merchant:%'
   `).get(activeVersion.active_version_id, ...categoryIds) as { count: number } : { count: 0 };
   add(20, overrideConflicts.count === 0, 'Every current merchant override resolves against this version');
   add(21, pack.categories.every((category) => Boolean(category.label))
@@ -733,6 +732,88 @@ router.post('/test-calculation', requireRole('owner', 'manager'), (req: Request,
   }
 });
 
+// Onboard a merchant-defined rate as a category + rule that the engine can
+// resolve, then point every store-wide default at it. Idempotent: reapplying
+// the same rate reuses the existing row. The merchant rows are tagged with
+// the "merchant:" prefix so activation can migrate them and the install
+// validator can ignore them.
+router.post('/merchant-rate', requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const country = getSettingValue('country') || 'IN';
+    const active = activePackForCountry(country);
+    const rawRate = typeof req.body?.rate === 'string' ? req.body.rate.trim() : '';
+    if (!rawRate) {
+      throw Object.assign(new Error('rate is required'), { statusCode: 400 });
+    }
+    const rateNumber = Number(rawRate);
+    if (!Number.isFinite(rateNumber) || rateNumber <= 0 || rateNumber > 100) {
+      throw Object.assign(new Error('rate must be a number between 0 and 100'), { statusCode: 400 });
+    }
+    const rateText = rawRate.replace(/[^\d.]/g, '');
+    const categoryId = `merchant:${rateText}`;
+    const ruleId = `merchant:rate-${rateText}`;
+
+    const db = getDatabase();
+    withTxn(() => {
+      db.prepare(`
+        INSERT OR IGNORE INTO tax_rules
+          (id, pack_version_id, rule_id, label, calculation_type, rate, amount, applies_per, base_rule_ids, definition_json)
+        VALUES (?, ?, ?, ?, 'percent', ?, NULL, 'line', NULL, '{}')
+      `).run(`rule-${ruleId}-${active.version.id}`, active.version.id, ruleId, `Custom ${rateText}%`, rateText);
+
+      // Category row stores ruleIds in definition_json so the engine's
+      // category→ruleIds walk picks the rule up. INSERT OR REPLACE is
+      // idempotent: reapplying the same rate reuses the same row.
+      db.prepare(`
+        INSERT OR REPLACE INTO tax_categories
+          (id, pack_version_id, category_id, label, default_behavior, definition_json)
+        VALUES (?, ?, ?, ?, NULL, ?)
+      `).run(
+        `cat-${categoryId}-${active.version.id}`,
+        active.version.id,
+        categoryId,
+        `Custom ${rateText}%`,
+        JSON.stringify({ ruleIds: [ruleId] }),
+      );
+
+      const valueJson = JSON.stringify({ categoryId });
+      for (const entityType of ENTITY_TYPES) {
+        const existing = db.prepare(`
+          SELECT id FROM tax_overrides
+          WHERE pack_version_id = ? AND entity_type = ? AND entity_id IS NULL
+            AND field_name = 'tax_category_id'
+        `).get(active.version.id, entityType) as { id: string } | undefined;
+        if (existing) {
+          db.prepare(`
+            UPDATE tax_overrides SET value_json = ?, updated_at = ?
+            WHERE id = ?
+          `).run(valueJson, now(), existing.id);
+        } else {
+          db.prepare(`
+            INSERT INTO tax_overrides (
+              id, pack_version_id, entity_type, entity_id, field_name, value_json,
+              created_by_user_id, created_at, updated_at
+            ) VALUES (?, ?, ?, NULL, 'tax_category_id', ?, ?, ?, ?)
+          `).run(
+            randomUUID(),
+            active.version.id,
+            entityType,
+            valueJson,
+            actorUserId(req),
+            now(),
+            now(),
+          );
+        }
+      }
+    });
+
+    res.status(201).json({ categoryId, rate: rateText });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 400;
+    res.status(statusCode).json({ error: error.message || 'Could not apply merchant rate' });
+  }
+});
+
 router.post('/overrides', requireRole('owner'), (req: Request, res: Response) => {
   try {
     const country = getSettingValue('country') || 'IN';
@@ -882,6 +963,21 @@ router.post('/:packId/versions/:versionId/activate', requireRole('owner'), (req:
       ).run(now(), pack.country, pack.id);
       if (previousVersionId) {
         db.prepare(`UPDATE country_pack_versions SET status = 'installed' WHERE id = ?`).run(previousVersionId);
+        // Migrate merchant-defined categories and rules to the new version so
+        // store-wide overrides pointing at them keep resolving. Official
+        // categories/rules are loaded from the new pack_json on demand.
+        db.prepare(`
+          INSERT OR IGNORE INTO tax_categories
+            (id, pack_version_id, category_id, label, default_behavior, definition_json)
+          SELECT id, ?, category_id, label, default_behavior, definition_json
+          FROM tax_categories WHERE pack_version_id = ? AND category_id LIKE 'merchant:%'
+        `).run(version.id, previousVersionId);
+        db.prepare(`
+          INSERT OR IGNORE INTO tax_rules
+            (id, pack_version_id, rule_id, label, calculation_type, rate, amount, applies_per, base_rule_ids, definition_json)
+          SELECT id, ?, rule_id, label, calculation_type, rate, amount, applies_per, base_rule_ids, definition_json
+          FROM tax_rules WHERE pack_version_id = ? AND rule_id LIKE 'merchant:%'
+        `).run(version.id, previousVersionId);
         db.prepare(`
           UPDATE tax_overrides SET pack_version_id = ?, updated_at = ?
           WHERE pack_version_id = ?

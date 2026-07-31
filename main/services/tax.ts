@@ -77,22 +77,71 @@ function round(value: number, decimals: number = 2): number {
 // by the GET /api/tax/categories endpoint (routes/index.ts) — kept as one
 // function so the two never drift apart on which pack is "active".
 export function getActiveCountryPack(country: string): CountryPack {
+  let pack: CountryPack | null = null;
   try {
     const db = getDatabase();
     const row = db.prepare(`
-      SELECT version.pack_json
+      SELECT version.id AS version_id, version.pack_json
       FROM country_packs AS pack
       JOIN country_pack_versions AS version ON version.id = pack.active_version_id
       WHERE pack.country IN (?, '*') AND pack.status = 'active'
       ORDER BY CASE WHEN pack.country = ? THEN 0 ELSE 1 END, pack.updated_at DESC
       LIMIT 1
-    `).get(country, country) as { pack_json: string } | undefined;
-    if (row) return JSON.parse(row.pack_json) as CountryPack;
+    `).get(country, country) as { version_id: string; pack_json: string } | undefined;
+    if (row) {
+      pack = JSON.parse(row.pack_json) as CountryPack;
+      // Merge merchant-defined categories and rules so the engine can resolve
+      // them. They are tagged with the "merchant:" prefix and were created by
+      // POST /tax-packs/merchant-rate. The category row stores ruleIds in
+      // definition_json (the schema this code uses elsewhere on the panel).
+      const merchantCategories = db.prepare(`
+        SELECT category_id, label, default_behavior, definition_json
+        FROM tax_categories WHERE pack_version_id = ? AND category_id LIKE 'merchant:%'
+      `).all(row.version_id) as Array<{ category_id: string; label: string; default_behavior: string | null; definition_json: string }>;
+      const merchantRules = db.prepare(`
+        SELECT rule_id, label, calculation_type, rate, amount
+        FROM tax_rules WHERE pack_version_id = ? AND rule_id LIKE 'merchant:%'
+      `).all(row.version_id) as Array<{ rule_id: string; label: string; calculation_type: string; rate: string | null; amount: string | null }>;
+      if (merchantCategories.length || merchantRules.length) {
+        const ruleIdByCategory = new Map<string, string[]>();
+        for (const row of merchantCategories) {
+          try {
+            const def = JSON.parse(row.definition_json || '{}') as { ruleIds?: string[] };
+            if (Array.isArray(def.ruleIds)) ruleIdByCategory.set(row.category_id, def.ruleIds);
+          } catch { /* ignore */ }
+        }
+        pack = {
+          ...pack,
+          categories: [
+            ...pack.categories,
+            ...merchantCategories.map((c) => ({
+              id: c.category_id,
+              label: c.label,
+              ruleIds: ruleIdByCategory.get(c.category_id) || [],
+              ...(c.default_behavior ? { defaultBehavior: c.default_behavior as never } : {}),
+            })),
+          ],
+          rules: [
+            ...pack.rules,
+            ...merchantRules.map((r) => ({
+              id: r.rule_id,
+              label: r.label,
+              type: r.calculation_type as 'percent' | 'fixed',
+              categoryIds: merchantCategories.filter((c) => ruleIdByCategory.get(c.category_id)?.includes(r.rule_id)).map((c) => c.category_id),
+              ...(r.rate !== null ? { rate: r.rate } : {}),
+              ...(r.amount !== null ? { amount: r.amount } : {}),
+              appliesPer: 'line' as const,
+            })),
+          ],
+        };
+      }
+    }
   } catch {
     // Database initialization and isolated unit tests can call this before the
     // migration runner has registered bundled packs. The immutable bundled
     // JSON remains the required offline fallback.
   }
+  if (pack) return pack;
   return getBundledCountryPack(country);
 }
 
@@ -110,13 +159,14 @@ export function calculateItemTax(
   taxableAmount: number,
   customer: Customer | null
 ): TaxResult {
-  const taxCategoryId = product.tax_category_id || product.tax_category;
+  const ownCategoryId = product.tax_category_id || product.tax_category;
   const pack = getActiveCountryPack(tenant.country);
   let merchantOverride: { id: string; categoryId: string } | null = null;
-  if (product.id !== undefined && product.id !== null) {
-    try {
-      const db = getDatabase();
-      const row = db.prepare(`
+  let storeWideCategoryId: string | null = null;
+  try {
+    const db = getDatabase();
+    if (product.id !== undefined && product.id !== null) {
+      const overrideRow = db.prepare(`
         SELECT override.id, override.value_json
         FROM tax_overrides AS override
         JOIN country_packs AS pack ON pack.active_version_id = override.pack_version_id
@@ -127,18 +177,44 @@ export function calculateItemTax(
         ORDER BY override.updated_at DESC
         LIMIT 1
       `).get(pack.id, String(product.id)) as { id: string; value_json: string } | undefined;
-      if (row) {
-        const value = JSON.parse(row.value_json);
+      if (overrideRow) {
+        const value = JSON.parse(overrideRow.value_json);
         const categoryId = typeof value === 'string' ? value : value?.categoryId;
         if (typeof categoryId === 'string' && categoryId) {
-          merchantOverride = { id: row.id, categoryId };
+          merchantOverride = { id: overrideRow.id, categoryId };
         }
       }
-    } catch {
-      // An unavailable override table is possible only before migrations or
-      // in isolated unit tests; normal checkout databases always have it.
     }
+    if (!ownCategoryId && !merchantOverride) {
+      // Store-wide default: consulted only when the product has no own
+      // category and no per-product override. Priority (matches the engine's
+      // resolveTaxCategory chain): per-product override > product's own
+      // tax_category > store-wide default > untaxed.
+      const storeWideRow = db.prepare(`
+        SELECT override.id, override.value_json
+        FROM tax_overrides AS override
+        JOIN country_packs AS pack ON pack.active_version_id = override.pack_version_id
+        WHERE pack.id = ?
+          AND override.entity_type = 'product'
+          AND override.entity_id IS NULL
+          AND override.field_name = 'tax_category_id'
+        ORDER BY override.updated_at DESC
+        LIMIT 1
+      `).get(pack.id) as { id: string; value_json: string } | undefined;
+      if (storeWideRow) {
+        const value = JSON.parse(storeWideRow.value_json);
+        const categoryId = typeof value === 'string' ? value : value?.categoryId;
+        if (typeof categoryId === 'string' && categoryId) {
+          storeWideCategoryId = categoryId;
+        }
+      }
+    }
+  } catch {
+    // An unavailable override table is possible only before migrations or
+    // in isolated unit tests; normal checkout databases always have it.
   }
+
+  const taxCategoryId = ownCategoryId || storeWideCategoryId;
 
   if (taxCategoryId || merchantOverride) {
     let calculation;
@@ -161,7 +237,7 @@ export function calculateItemTax(
           quantity: '1',
           unitPrice: String(taxableAmount),
           merchantCategoryId: merchantOverride?.categoryId,
-          productCategoryId: taxCategoryId,
+          productCategoryId: taxCategoryId ?? undefined,
           taxBehavior: product.tax_behavior || 'country_default',
         }],
       });

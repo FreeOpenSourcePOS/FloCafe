@@ -1043,37 +1043,76 @@ export async function printViaNetwork(ip: string, port: number, data: Buffer): P
 export async function printViaUSB(data: Buffer, printerName?: string): Promise<boolean> {
   console.log('[Printer] printViaUSB called, platform:', process.platform, 'printer:', printerName);
 
-  if (process.platform === 'darwin') {
-    return await printViaUSBMacOS(data, printerName);
+  if (process.platform === 'darwin' || process.platform === 'linux') {
+    return await printViaCups(data, printerName);
   }
 
   if (process.platform === 'win32') {
     return await printViaUSBWindows(data, printerName);
   }
 
-  if (process.platform === 'linux') {
-    return await printViaUSBLinux(data, printerName);
-  }
-
   console.warn('[Printer] Unsupported platform:', process.platform);
   return false;
 }
 
-async function printViaUSBMacOS(data: Buffer, printerName?: string): Promise<boolean> {
-  const tmpFile = `/tmp/flo_print_${Date.now()}.bin`;
+// `lp` exits 0 as soon as CUPS accepts the job into the queue, so a queue that
+// is disabled — which is what CUPS does once the backend fails, e.g. after the
+// printer is unplugged — would otherwise be reported to the cashier as a
+// successful print. Mirrors the GetPrinter pre-flight on the Windows path.
+//
+// Returns a human-readable problem, or null to proceed. Anything unexpected
+// (no CUPS, unknown queue) returns null so `lp` still gets its chance: this
+// check only ever turns a silent failure into a visible one.
+async function describeCupsQueueProblem(printerName?: string): Promise<string | null> {
+  if (!printerName) return null;
+
+  // LC_ALL=C — the state words below are matched in English, and lpstat is localised.
+  const opts = { encoding: 'utf8' as const, timeout: 5000, env: { ...process.env, LC_ALL: 'C' } };
+
+  try {
+    const { stdout } = await execFileAsync('lpstat', ['-p', printerName], opts);
+    if (/\bdisabled\b/i.test(stdout)) {
+      const since = stdout.match(/disabled since [^\n]*/i);
+      return since ? since[0].trim().replace(/\s+-\s*$/, '') : 'print queue is disabled';
+    }
+  } catch {
+    return null;
+  }
+
+  try {
+    const { stdout } = await execFileAsync('lpstat', ['-a', printerName], opts);
+    if (/not accepting/i.test(stdout)) return 'print queue is not accepting jobs';
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function printViaCups(data: Buffer, printerName?: string): Promise<boolean> {
+  const label = printerName || 'default';
+
+  const problem = await describeCupsQueueProblem(printerName);
+  if (problem) {
+    console.error(`[Printer] CUPS print aborted for "${label}": ${problem}`);
+    return false;
+  }
+
+  const tmpFile = path.join(os.tmpdir(), `flo_print_${process.pid}_${Date.now()}.bin`);
 
   try {
     fs.writeFileSync(tmpFile, data);
 
-    if (printerName) {
-      execFileSync('lp', ['-d', printerName, '-o', 'raw', tmpFile], { encoding: 'utf8' });
-    } else {
-      execFileSync('lp', ['-o', 'raw', tmpFile], { encoding: 'utf8' });
-    }
+    const args = printerName
+      ? ['-d', printerName, '-o', 'raw', tmpFile]
+      : ['-o', 'raw', tmpFile];
+    const { stdout } = await execFileAsync('lp', args, { encoding: 'utf8', timeout: 20000 });
 
+    console.log(`[Printer] CUPS print queued for "${label}" (${stdout.trim()})`);
     return true;
   } catch (err: any) {
-    console.error('[Printer] macOS print error:', err.message);
+    const detail = String(err.stderr || err.message || '').trim();
+    console.error(`[Printer] CUPS print failed for "${label}": ${detail}`);
     return false;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
@@ -1285,27 +1324,6 @@ async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<b
   } catch (err: any) {
     const detail = String(err.stderr || err.message || '').trim();
     console.error(`[Printer] Windows raw print failed for "${printerName}": ${detail}`);
-    return false;
-  } finally {
-    try { fs.unlinkSync(tmpFile); } catch {}
-  }
-}
-
-async function printViaUSBLinux(data: Buffer, printerName?: string): Promise<boolean> {
-  const tmpFile = `/tmp/flo_print_${Date.now()}.bin`;
-
-  try {
-    fs.writeFileSync(tmpFile, data);
-
-    if (printerName) {
-      execFileSync('lp', ['-d', printerName, '-o', 'raw', tmpFile], { encoding: 'utf8' });
-    } else {
-      execFileSync('lp', ['-o', 'raw', tmpFile], { encoding: 'utf8' });
-    }
-
-    return true;
-  } catch (err: any) {
-    console.error('[Printer] Linux print error:', err.message);
     return false;
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}

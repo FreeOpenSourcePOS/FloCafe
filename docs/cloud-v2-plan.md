@@ -38,6 +38,25 @@ Replaces the register → pending → poll → claim flow in `main/services/clou
 - Registration still must not block startup — keep the existing backoff and the "billing works
   regardless" guarantee.
 
+**Cloud becomes on by default.** `seedInstallDefaults()` currently seeds `cloud_sync_enabled = '0'`;
+it becomes `'1'` to match the server. Auto-registering *is* contacting the cloud, so leaving the
+flag off would mean the POS and server disagree about the same install.
+
+**Existing installs get flipped on too — but only those that never touched the setting.** The two
+cases are distinguishable, and the distinction must be honoured:
+
+| `settings.updated_at` for `cloud_sync_enabled` | Meaning | Action |
+|---|---|---|
+| No `T` (e.g. `2026-07-04 09:12:33`) | Written by `seedInstallDefaults()`, never edited — SQLite's `CURRENT_TIMESTAMP` default | **Flip to `'1'`** |
+| Contains `T` (e.g. `2026-07-04T09:12:33.456Z`) | Written by `upsertSettings()` → `now()` → `toISOString()` — a human changed it | **Leave alone** |
+
+The seed uses `INSERT OR IGNORE INTO settings (key, value)` and omits `updated_at`; every other
+write path sets it explicitly from `now()`. That difference is the discriminator — verify it still
+holds before relying on it.
+
+Ship as a numbered migration (next after v39), not as a change to `seedInstallDefaults()` alone —
+the seed only runs on a fresh database, so existing installs would otherwise never move.
+
 ## 2. Pairing code: 8 digits, 24 hours
 
 Touches `main/routes/index.ts` (`/api/mobile/pairing-code`, `/api/mobile/rotate-code`), the cache
@@ -73,6 +92,47 @@ store's recent failures instead of fleet aggregates.
 - **Never send** merchant name, email, phone, addresses, customer data, or order contents. The
   server joins contact details from the store record when it needs them.
 - Off unless explicitly enabled. Not pre-ticked.
+
+### Wording
+
+Two placements. **Not** in first-run setup — a new user has no context for it, and burying it in a
+wall of setup checkboxes is how you get consent that is technically obtained and practically
+meaningless.
+
+**A. Settings → Privacy** (below the anonymous-stats toggle), unticked:
+
+> **☐ Let support see this store's error reports**
+>
+> When something fails — a printer, a sync, an update — send the error details tagged with this
+> store, so support can look up what actually went wrong instead of guessing.
+>
+> **Sent:** the error code, which step failed, app version, operating system, when it happened,
+> and this store's ID.
+> **Never sent:** your sales, bills, menu, customers, or their phone numbers. No screenshots.
+> Nothing your staff types.
+>
+> Kept for 180 days, then deleted automatically. Turn this off any time — new reports stop
+> immediately.
+>
+> *Separate from anonymous usage stats above. Turning one on or off doesn't change the other.*
+
+**B. Inline, when an error actually fires** — the better moment, because the user has a concrete
+problem in front of them:
+
+> Printing failed. *(support code: `KOT-4471`)*
+> **☐ Let support see errors like this from this store** — [what gets sent](#)
+
+Ticking it in either place sets the same flag. The inline link expands the same "sent / never
+sent" text as A; it must not be a bare checkbox with no explanation.
+
+**Rules the copy has to keep:**
+- Unticked by default, and never pre-selected by any upgrade path.
+- Never bundled with the anonymous-stats consent or the marketing checkbox — three separate
+  decisions, three separate controls.
+- Withdrawal is one click in the same place, and the copy says so.
+- Plain language. No "telemetry", no "diagnostics payload", no "data processing".
+- The "never sent" list is a promise the code must actually keep — if a field is added to the
+  payload later, this text changes in the same commit.
 
 ## 5. Support hot button
 

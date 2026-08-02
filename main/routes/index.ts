@@ -370,6 +370,7 @@ export function registerRoutes(app: Express): void {
           country: getSettingValue('country') || 'IN',
           business_type: getSettingValue('business_type') || 'restaurant',
           state_code: getSettingValue('state_code') || '',
+          taxes_enabled: getSettingValue('taxes_enabled') === 'true',
         };
         const customer = order.customer_id
           ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any
@@ -536,6 +537,7 @@ export function registerRoutes(app: Express): void {
           country: getSettingValue('country') || 'IN',
           business_type: getSettingValue('business_type') || 'restaurant',
           state_code: getSettingValue('state_code') || '',
+          taxes_enabled: getSettingValue('taxes_enabled') === 'true',
         };
         const customer = order.customer_id
           ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any

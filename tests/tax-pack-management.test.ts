@@ -233,7 +233,7 @@ async function main() {
       chargeOverrideIds.push(chargeOverride.data.override.id);
     }
     const serviceChargeTax = calculateConfiguredChargeTaxes(
-      { country: 'IN', business_type: 'restaurant', state_code: '27' },
+      { country: 'IN', business_type: 'restaurant', state_code: '27', taxes_enabled: true },
       {
         service_charge: 20,
         service_charge_tax_category_id: 'standard',

@@ -248,6 +248,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
         country: settings.country || 'IN',
         business_type: settings.business_type || 'restaurant',
         state_code: settings.state_code || '',
+        taxes_enabled: settings.taxes_enabled === 'true',
       };
       const chargeCategories = getConfiguredChargeTaxCategories(tenantInfo.country);
       const chargeContext = {
@@ -452,6 +453,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       country: settings.country || 'IN',
       business_type: settings.business_type || 'restaurant',
       state_code: settings.state_code || '',
+      taxes_enabled: settings.taxes_enabled === 'true',
     };
 
     const { updatedOrder, updatedItems } = withTxn(() => {
@@ -919,6 +921,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
       country: getSettingValue('country') || 'IN',
       business_type: getSettingValue('business_type') || 'restaurant',
       state_code: getSettingValue('state_code') || '',
+      taxes_enabled: getSettingValue('taxes_enabled') === 'true',
     };
     // BUG #6 FIX: Wrap discount + tax + bill sync in a transaction
     const result = withTxn(() => {
@@ -1131,12 +1134,13 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
     // Recalculate tax on discounted subtotal
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
     const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any : null;
-    const settings = db.prepare("SELECT * FROM settings WHERE key IN ('country', 'business_type', 'state_code')").all() as any[];
+    const settings = db.prepare("SELECT * FROM settings WHERE key IN ('country', 'business_type', 'state_code', 'taxes_enabled')").all() as any[];
     const settingsMap = Object.fromEntries(settings.map((s: any) => [s.key, s.value]));
     const tenantInfo = {
       country: settingsMap.country || 'IN',
       business_type: settingsMap.business_type || 'restaurant',
       state_code: settingsMap.state_code || '',
+      taxes_enabled: settingsMap.taxes_enabled === 'true',
     };
     const taxResult = calculateItemTax(tenantInfo, product, newSubtotal, customer);
     const newTaxAmount = taxResult.tax_amount;

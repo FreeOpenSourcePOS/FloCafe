@@ -177,7 +177,11 @@ function main() {
     .run(legacyProduct.id);
   const { calculateItemTax } = require('../main/services/tax');
   const legacyTax = calculateItemTax(
-    { country: 'IN', business_type: 'restaurant', state_code: 'KA' },
+    // taxes_enabled: true here, deliberately, even though this install's
+    // actual setting is 'false' (asserted above) — the point of this
+    // assertion is that an unresolved category charges no tax on its own
+    // merits, not that the global switch happens to also be off.
+    { country: 'IN', business_type: 'restaurant', state_code: 'KA', taxes_enabled: true },
     db.prepare('SELECT * FROM products WHERE id = ?').get(legacyProduct.id),
     100,
     null,

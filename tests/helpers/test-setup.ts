@@ -360,6 +360,17 @@ function installAndActivateTestTaxPack(db: any, pack: any) {
         installedAt,
       );
     }
+
+    // Mirrors the real activation route (main/routes/tax-packs.ts), which
+    // flips taxes_enabled on as part of activating a pack. This helper writes
+    // pack rows directly rather than going through that route, so it has to
+    // reproduce the same side effect or every caller silently computes zero
+    // tax regardless of which pack it just "activated" (taxes_enabled
+    // defaults to 'false' — PLAN.md § 3.3, migration 40).
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('taxes_enabled', 'true', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(installedAt);
   })();
 
   return versionId;

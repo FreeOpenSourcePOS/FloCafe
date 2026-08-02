@@ -631,6 +631,7 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
       country: getSettingValue('country') || 'IN',
       business_type: getSettingValue('business_type') || 'restaurant',
       state_code: getSettingValue('state_code') || '',
+      taxes_enabled: getSettingValue('taxes_enabled') === 'true',
     };
     const customer = bill.customer_id
       ? db.prepare('SELECT * FROM customers WHERE id = ?').get(bill.customer_id) as any

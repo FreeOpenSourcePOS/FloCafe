@@ -188,7 +188,7 @@ async function runArgentinaTaxAndCustomers(baseUrl, db) {
 
   const { calculateItemTax } = require('../main/services/tax');
   const result = calculateItemTax(
-    { country: 'AR', business_type: 'restaurant', state_code: '' },
+    { country: 'AR', business_type: 'restaurant', state_code: '', taxes_enabled: true },
     { tax_type: 'inclusive', tax_rate: 21 },
     100,
     null,

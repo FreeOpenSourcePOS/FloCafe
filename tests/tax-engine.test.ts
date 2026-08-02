@@ -394,7 +394,7 @@ test('unclassified products are taxed at the standard rate, never silently zero'
 
 test('products without a resolved tax category charge no tax, regardless of legacy tax_type/tax_rate', () => {
   const uncategorizedIndia = calculateItemTax(
-    { country: 'IN', business_type: 'restaurant', state_code: 'KA' },
+    { country: 'IN', business_type: 'restaurant', state_code: 'KA', taxes_enabled: true },
     { tax_type: 'exclusive', tax_rate: 18 },
     10.1,
     null,
@@ -407,7 +407,7 @@ test('products without a resolved tax category charge no tax, regardless of lega
   });
 
   const uncategorizedFallback = calculateItemTax(
-    { country: 'US', business_type: 'retail', state_code: '' },
+    { country: 'US', business_type: 'retail', state_code: '', taxes_enabled: true },
     { tax_type: 'inclusive', tax_rate: 10 },
     110,
     null,

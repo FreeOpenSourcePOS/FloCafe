@@ -6,6 +6,11 @@ interface TenantInfo {
   country: string;
   business_type: string;
   state_code: string;
+  // Read from settings once per request by the caller (main/routes/orders.ts)
+  // and passed in explicitly, rather than read here via getSettingValue —
+  // calculateItemTax's other inputs are all explicit parameters, and isolated
+  // unit tests (tests/tax-engine.test.ts) call it directly with no database.
+  taxes_enabled: boolean;
 }
 
 interface Product {
@@ -110,7 +115,7 @@ export function calculateItemTax(
   taxableAmount: number,
   customer: Customer | null
 ): TaxResult {
-  if (getSettingValue('taxes_enabled') !== 'true') {
+  if (!tenant.taxes_enabled) {
     return { tax_amount: 0, tax_breakdown: [], tax_type: 'none', tax_snapshot: null };
   }
   const taxCategoryId = product.tax_category_id || product.tax_category;
@@ -637,6 +642,7 @@ export async function calculateTaxPreview(req: any, res: any): Promise<void> {
       country: settings.country || 'IN',
       business_type: settings.business_type || 'restaurant',
       state_code: settings.state_code || '',
+      taxes_enabled: settings.taxes_enabled === 'true',
     };
 
     const customer = customer_id

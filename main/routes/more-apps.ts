@@ -23,6 +23,7 @@ type AppEntry = {
   tagline: string;
   iosUrl: string | null;
   androidUrl: string | null;
+  landingUrl?: string | null;
 };
 
 const MORE_APPS: AppEntry[] = [];
@@ -33,10 +34,11 @@ const REVFLO_APP: AppEntry = {
   tagline: 'See live sales, daily summaries, and reports for your store from your phone.',
   iosUrl: null,
   androidUrl: null,
+  landingUrl: 'https://flopos.com',
 };
 
 async function toAppResponse(app: AppEntry) {
-  const primaryUrl = app.iosUrl || app.androidUrl;
+  const primaryUrl = app.iosUrl || app.androidUrl || app.landingUrl || null;
   let qrDataUrl: string | null = null;
   if (primaryUrl) {
     try {
@@ -51,6 +53,7 @@ async function toAppResponse(app: AppEntry) {
     tagline: app.tagline,
     ios_url: app.iosUrl,
     android_url: app.androidUrl,
+    landing_url: app.landingUrl || null,
     qr_data_url: qrDataUrl,
     available: Boolean(primaryUrl),
   };

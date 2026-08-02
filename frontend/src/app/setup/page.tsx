@@ -53,7 +53,6 @@ export default function SetupPage() {
     business_name: '',
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [anonymousDataConsent, setAnonymousDataConsent] = useState(false);
   const passwordsEntered = form.password.length > 0 && form.confirmPassword.length > 0;
   const passwordsMatch = !passwordsEntered || form.password === form.confirmPassword;
 
@@ -196,7 +195,6 @@ export default function SetupPage() {
         setup_profile: profile,
         service_model: serviceModel,
         terms_accepted: termsAccepted,
-        anonymous_data_consent: anonymousDataConsent,
         master_pin: masterPinAvailable ? masterPin : undefined,
         cloud_sync_enabled: true,
         cloud_server_url: cloudServerUrl.trim() || DEFAULT_CLOUD_SERVER_URL,
@@ -535,18 +533,14 @@ export default function SetupPage() {
                     </span>
                   </label>
 
-                  <label className="flex items-start gap-2 text-sm text-muted-foreground">
-                    <input
-                      type="checkbox"
-                      checked={anonymousDataConsent}
-                      onChange={(e) => setAnonymousDataConsent(e.target.checked)}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
-                    />
-                    <span>
-                      <span className="font-medium text-foreground">{t('setup.anonymousDataTitle')}</span>
-                      <span className="block mt-1">{t('setup.anonymousDataDescription')}</span>
-                    </span>
-                  </label>
+                  <div className="rounded-lg border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
+                    <p className="font-medium text-foreground">{t('setup.anonymousDataTitle')}</p>
+                    <p className="mt-1">{t('setup.anonymousDataDescription')}</p>
+                    <details className="mt-2">
+                      <summary className="cursor-pointer text-primary">{t('setup.anonymousDataDetails')}</summary>
+                      <p className="mt-1">{t('setup.anonymousDataFields')}</p>
+                    </details>
+                  </div>
 
 
                   <Button type="submit" disabled={!passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">

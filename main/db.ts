@@ -1475,14 +1475,56 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   },
   {
     version: 40,
+    name: 'v2_cloud_defaults_and_tax_toggle',
+    up: () => {
+      // Seed-written timestamps use SQLite's format without T. An ISO
+      // timestamp means the merchant explicitly changed the setting.
+      db.prepare(`
+        UPDATE settings
+           SET value = '1', updated_at = ?
+         WHERE key = 'cloud_sync_enabled'
+           AND value = '0'
+           AND updated_at NOT LIKE '%T%'
+      `).run(now());
+      db.prepare(`DELETE FROM settings WHERE key = 'cloud_pending_store_id'`).run();
+      insertSettingIfMissing('taxes_enabled', 'false');
+    },
+  },
+  {
+    version: 41,
+    name: 'support_ticket_outbox',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS support_ticket_outbox (
+          client_ticket_id TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending', 'sending', 'delivered', 'failed')),
+          support_code TEXT,
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at TEXT,
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          delivered_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_support_ticket_outbox_retry
+          ON support_ticket_outbox(status, next_attempt_at, created_at);
+      `);
+    },
+  },
+  {
+    version: 42,
     name: 'add_global_cashback_percent',
     up: () => {
-      const existing = db.prepare("SELECT value FROM settings WHERE key = 'global_cashback_percent'").get();
-      if (!existing) {
-        db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('global_cashback_percent', '0')").run();
-      }
-      // Migrate legacy default cb_percent = 0 to NULL so existing products inherit global cashback rate
-      db.prepare("UPDATE products SET cb_percent = NULL WHERE cb_percent = 0").run();
+      insertSettingIfMissing('global_cashback_percent', '0');
+      // Existing cb_percent values are deliberately left alone. Under the
+      // tri-state, 0 means "earns nothing" and NULL means "inherit the global
+      // rate" — and the old schema default was 0, so rewriting 0 to NULL here
+      // would silently opt every product a merchant had excluded back into
+      // earning the moment they set a global rate. Products created from here
+      // on default to NULL; existing ones adopt the global rate only through
+      // the explicit bulk action on the products screen.
     },
   },
 ];
@@ -1622,7 +1664,13 @@ function createSchema(): void {
       tax_rate REAL DEFAULT 0,
       tax_category_id TEXT DEFAULT NULL,
       tax_behavior TEXT DEFAULT 'country_default',
-      cb_percent REAL DEFAULT NULL,
+      -- Stays DEFAULT 0 so a fresh install and an upgraded one have an
+      -- identical products table. SQLite cannot alter a column default without
+      -- rebuilding the table, so changing it here would drift every upgraded
+      -- install away from the ideal schema and light up schema-health forever.
+      -- The tri-state does not depend on the default: every insert path passes
+      -- cb_percent explicitly, and NULL is written as NULL.
+      cb_percent REAL DEFAULT 0,
       tags TEXT,
       deleted_at TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -2131,7 +2179,7 @@ function seedCloudSyncDefaults(): void {
   // see specs/floadmin.md § api surface). Harmless pre-claim: every send path in
   // cloud-sync.ts is gated on api_key being present, which only exists after a
   // human claims the store on FloAdmin, so nothing transmits before then.
-  insertSettingIfMissing('cloud_sync_enabled', '0');
+  insertSettingIfMissing('cloud_sync_enabled', '1');
   insertSettingIfMissing('cloud_orders_enabled', '0');
   insertSettingIfMissing('cloud_reports_enabled', '1');
   insertSettingIfMissing('cloud_command_polling_enabled', '1');
@@ -2173,19 +2221,20 @@ function seedInstallDefaults(): void {
   insert('gstin', '');
   insert('state_code', '');
   insert('tax_scheme', 'regular');
+  insert('taxes_enabled', 'false');
   insert('billing_type', 'postpaid');
   insert('tables_required', 'true');
   insert('service_model', 'finedine');
   insert('setup_profile', '');
   insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
   insert('cloud_connected', 'false');
-  insert('cloud_sync_enabled', '0');
+  insert('cloud_sync_enabled', '1');
   insert('cloud_orders_enabled', '0');
   insert('cloud_reports_enabled', '1');
   insert('cloud_command_polling_enabled', '1');
   insert('cloud_registration_status', 'unregistered');
   insert('anonymous_data_consent', 'true');
-  insert('telemetry_enabled', 'true');
+  insert('telemetry_enabled', 'false');
   insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
   insert('kds_enabled', 'true');
   insert('kot_printing_enabled', 'true');

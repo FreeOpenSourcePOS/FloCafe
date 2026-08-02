@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
 import { v4 as uuidv4 } from 'uuid';
-import { printViaNetwork, printViaUSB, buildTestPage, printReceipt, printKOT, detectConnectedPrinters } from '../printers/thermal';
+import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters } from '../printers/thermal';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 
@@ -338,13 +338,13 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
-    const success = await printReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint);
-    console.log('[Print Bill] Print completed', { success });
+    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint);
+    console.log('[Print Bill] Print completed', result);
 
-    if (success) {
+    if (result.ok) {
       res.json({ success: true });
     } else {
-      res.status(502).json({ error: 'Print failed. Check printer connection and settings.' });
+      res.status(502).json({ error: 'Print failed. Check printer connection and settings.', code: result.code, correlation_id: result.correlationId, stage: result.stage });
     }
   } catch (error: any) {
     console.error('[Print Bill] Error:', error);
@@ -445,22 +445,26 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req
     // but kept for any external caller) always prints a single ticket, as before.
     // Otherwise, auto-route items to their configured kitchen stations.
     let success = true;
+    let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
     if (stationName || items) {
       const kotItems = items || orderItems;
       const station = stationName || 'Kitchen';
-      success = await printKOT(order, kotItems, station, useUnicode);
+      const result = await printKOTDetailed(order, kotItems, station, useUnicode);
+      success = result.ok;
+      failure = result.ok ? null : result;
     } else {
       const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
       for (const group of groups) {
-        const ok = await printKOT(order, group.items, group.stationName, useUnicode, group.printer || undefined);
-        success = success && ok;
+        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined);
+        success = success && result.ok;
+        if (!result.ok && !failure) failure = result;
       }
     }
 
     if (success) {
       res.json({ success: true });
     } else {
-      res.status(502).json({ error: 'KOT print failed. Check printer connection.' });
+      res.status(502).json({ error: 'KOT print failed. Check printer connection.', code: failure?.code, correlation_id: failure?.correlationId, stage: failure?.stage });
     }
   } catch (error: any) {
     console.error('[Print KOT] Error:', error);

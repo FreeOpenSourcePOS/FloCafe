@@ -45,7 +45,6 @@ interface Payment {
 
 export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: Props) {
   const cart = useCartStore();
-  const { tax, loading: taxLoading } = useTaxPreview(cart.items, cart.customerId);
   const customer = cart.customer;
   const { t } = useI18n();
   const currencyFmt = useFormatCurrency();
@@ -62,6 +61,24 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const [discountReason, setDiscountReason] = useState('');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
+
+  const previewDiscount = useMemo(() => {
+    if (!showDiscount) return null;
+    const rawValue = Number.parseFloat(discountValue);
+    if (!Number.isFinite(rawValue) || rawValue <= 0) return null;
+    return {
+      type: discountType,
+      value: discountType === 'percentage'
+        ? Math.min(100, Math.max(0, rawValue))
+        : Math.max(0, rawValue),
+    };
+  }, [showDiscount, discountType, discountValue]);
+  const { tax, loading: taxLoading } = useTaxPreview(
+    cart.items,
+    cart.customerId,
+    undefined,
+    previewDiscount,
+  );
 
   const [payments, setPayments] = useState<Payment[]>([{ method: 'cash', amount: '0' }]);
   // Tracks whether the cashier has manually typed a split amount — once true, we stop
@@ -98,32 +115,21 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     }
   }, [customer?.id]);
 
-  // Net payable amount after discount — tax is recalculated on the discounted subtotal,
-  // matching how the backend recomputes tax when a discount is applied to an order/bill.
+  // The backend preview is the settlement source of truth: it applies the same
+  // discount/tax rules and active-pack payable rounding used by bill generation.
   const preview = useMemo(() => {
     if (!tax) return null;
-    const rawValue = parseFloat(discountValue) || 0;
-    const cappedValue = discountType === 'percentage' ? Math.min(100, Math.max(0, rawValue)) : Math.max(0, rawValue);
-    const discountAmount = showDiscount && cappedValue > 0
-      ? Math.round((discountType === 'percentage' ? (tax.subtotal * cappedValue) / 100 : Math.min(cappedValue, tax.subtotal)) * 100) / 100
-      : 0;
-    const discountedSubtotal = Math.max(0, tax.subtotal - discountAmount);
-    const taxRatio = discountAmount > 0 && tax.subtotal > 0 ? discountedSubtotal / tax.subtotal : 1;
-    const discountedTax = Math.round(tax.tax_amount * taxRatio * 100) / 100;
-    const preRoundTotal = discountedSubtotal + discountedTax + tax.packaging_charge;
-    const total = Math.round(preRoundTotal);
-    const roundOff = Math.round((total - preRoundTotal) * 100) / 100;
     return {
       subtotal: tax.subtotal,
-      discountAmount,
-      discountedSubtotal,
-      taxAmount: discountedTax,
-      taxBreakdown: tax.tax_breakdown.map((line) => ({ ...line, amount: Math.round(line.amount * taxRatio * 100) / 100 })),
+      discountAmount: tax.discount_amount,
+      discountedSubtotal: tax.discounted_subtotal,
+      taxAmount: tax.tax_amount,
+      taxBreakdown: tax.tax_breakdown,
       packagingCharge: tax.packaging_charge,
-      roundOff,
-      total,
+      roundOff: tax.round_off,
+      total: tax.total,
     };
-  }, [tax, showDiscount, discountType, discountValue]);
+  }, [tax]);
 
   const remaining = preview?.total ?? 0;
 
@@ -204,7 +210,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     const discount: PrepaidDiscount | null = showDiscount && preview.discountAmount > 0
       ? {
         type: discountType,
-        value: parseFloat(discountValue) || 0,
+        value: previewDiscount?.value || 0,
         reason: discountReason || undefined,
         override_pin: discountRequiresApproval ? discountPin : undefined,
       }

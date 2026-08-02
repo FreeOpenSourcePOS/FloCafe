@@ -88,6 +88,14 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
   assert.match(setting('cloud_pos_hash') || '', /^pos_[a-f0-9]{40}$/, 'fresh install has a POS hash');
   assert.ok((setting('cloud_device_secret') || '').length >= 32, 'fresh install has a local cloud secret');
   assert.equal(count('cloud_sync_outbox'), 0, 'fresh install starts with an empty cloud outbox');
+  assert.equal(count('country_packs'), 1, 'fresh install registers only the generic tax pack');
+  assert.deepEqual(
+    getDatabase().prepare(
+      'SELECT id, country, status FROM country_packs ORDER BY id'
+    ).all(),
+    [{ id: 'local-generic', country: '*', status: 'active' }],
+    'fresh setup does not preinstall a country-specific tax pack',
+  );
   console.log('   ✓ fresh database has schema/default settings only and awaits setup');
 
   const api = express();
@@ -111,7 +119,12 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(before.status, 200);
     assert.equal(before.data.needsSetup, true, 'fresh install needs setup');
     assert.equal(before.data.initialRole, 'owner');
-    console.log('   ✓ setup status reports setup is needed');
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(before.data, 'bundledTaxPackCountries'),
+      false,
+      'setup status contains no tax-catalog metadata',
+    );
+    console.log('   ✓ setup status reports setup is needed without tax catalog messaging');
 
     const withoutTerms = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
@@ -182,12 +195,10 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(count('users'), 1, 'setup cannot create a second owner');
     console.log('   ✓ setup endpoint is disabled after the first user exists');
 
-    // Cloud services during setup are off by default (#128) — the "first"
-    // owner above never sent cloud_sync_enabled, so it should have landed
-    // disabled with the default cloud server URL.
-    assert.equal(setting('cloud_sync_enabled'), 'false', 'cloud sync defaults to disabled when not requested at setup');
-    assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com/', 'cloud server URL keeps the pre-seeded default when cloud sync is disabled');
-    console.log('   ✓ setup endpoint leaves cloud services disabled by default');
+    // Cloud v2 coordination is automatic for new installs.
+    assert.equal(setting('cloud_sync_enabled'), 'true', 'cloud coordination is enabled automatically on v2 setup');
+    assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com', 'cloud server URL keeps the default');
+    console.log('   ✓ setup endpoint enables cloud coordination automatically');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

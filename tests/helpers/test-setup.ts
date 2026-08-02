@@ -32,6 +32,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const http = require('http');
 const fs = require('fs');
+const crypto = require('crypto');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../../main/db');
 
 // ── Assertion Helpers ────────────────────────────────────────────────────────
@@ -229,11 +230,11 @@ function seedProduct(db: any, id: string, categoryId: string, name: string, pric
   stock_quantity?: number;
 }) {
   // Most integration fixtures represent taxable menu products. Assign the
-  // bundled India standard category by default; pass null explicitly when a
-  // test needs to exercise the uncategorized/no-tax path.
+  // Fresh stores use the generic no-tax pack, so test products are
+  // uncategorized unless a country-tax scenario opts in explicitly.
   const taxCategoryId = options && Object.prototype.hasOwnProperty.call(options, 'tax_category_id')
     ? options.tax_category_id
-    : 'standard';
+    : null;
   db.prepare(
     `INSERT OR IGNORE INTO products (
        id, category_id, name, price, tax_type, tax_category_id, tax_behavior,
@@ -270,6 +271,98 @@ function seedWalletCredit(db: any, customerId: string, amount: number, billId?: 
     `INSERT INTO loyalty_ledger (customer_id, bill_id, type, amount, description, created_at, updated_at)
      VALUES (?, ?, 'credit', ?, ?, ?, ?)`
   ).run(customerId, billId || null, amount, 'Test wallet credit', now(), now());
+}
+
+function installAndActivateTestTaxPack(db: any, pack: any) {
+  const installedAt = now();
+  const versionId = `${pack.id}@${pack.version}`;
+  const packJson = JSON.stringify(pack);
+  const digest = crypto.createHash('sha256').update(packJson).digest('hex');
+
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO country_packs (
+        id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        publisher = excluded.publisher,
+        country = excluded.country,
+        jurisdiction = excluded.jurisdiction,
+        active_version_id = excluded.active_version_id,
+        status = 'active',
+        updated_at = excluded.updated_at
+    `).run(
+      pack.id, pack.publisher, pack.country, pack.jurisdiction,
+      versionId, installedAt, installedAt,
+    );
+    db.prepare(`
+      INSERT OR REPLACE INTO country_pack_versions (
+        id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
+        effective_from, effective_to, min_flo_version, published_at, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', ?)
+    `).run(
+      versionId,
+      pack.id,
+      pack.version,
+      pack.schemaVersion,
+      JSON.stringify({
+        id: pack.id,
+        publisher: pack.publisher,
+        country: pack.country,
+        jurisdiction: pack.jurisdiction,
+        version: pack.version,
+        publishedAt: pack.publishedAt,
+      }),
+      packJson,
+      digest,
+      pack.effectiveFrom,
+      pack.effectiveTo || null,
+      pack.minFloVersion,
+      pack.publishedAt,
+      installedAt,
+    );
+
+    const insertCategory = db.prepare(`
+      INSERT OR REPLACE INTO tax_categories (
+        id, pack_version_id, category_id, label, default_behavior, definition_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const category of pack.categories) {
+      insertCategory.run(
+        `${versionId}:category:${category.id}`,
+        versionId,
+        category.id,
+        category.label,
+        category.defaultBehavior || null,
+        JSON.stringify(category),
+        installedAt,
+      );
+    }
+
+    const insertRule = db.prepare(`
+      INSERT OR REPLACE INTO tax_rules (
+        id, pack_version_id, rule_id, label, calculation_type, rate, amount,
+        applies_per, base_rule_ids, definition_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const rule of pack.rules) {
+      insertRule.run(
+        `${versionId}:rule:${rule.id}`,
+        versionId,
+        rule.id,
+        rule.label,
+        rule.type,
+        rule.rate || null,
+        rule.amount || null,
+        rule.appliesPer || null,
+        JSON.stringify(rule.baseRuleIds || []),
+        JSON.stringify(rule),
+        installedAt,
+      );
+    }
+  })();
+
+  return versionId;
 }
 
 // ── API Request Helper ───────────────────────────────────────────────────────
@@ -321,6 +414,7 @@ module.exports = {
   seedCustomer,
   seedTable,
   seedWalletCredit,
+  installAndActivateTestTaxPack,
 
   // API
   api,

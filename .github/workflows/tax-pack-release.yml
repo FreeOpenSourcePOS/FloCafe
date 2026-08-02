@@ -6,7 +6,7 @@ on:
       - 'tax-pack-*-v*'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: tax-pack-release-${{ github.ref }}
@@ -27,15 +27,15 @@ jobs:
       - name: Download the newest published catalog
         id: previous-catalog
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.TAX_PACK_RELEASE_TOKEN }}
         run: |
           mkdir -p "$RUNNER_TEMP/tax-pack-previous"
-          LATEST_TAG="$(gh api --paginate "repos/FreeOpenSourcePOS/FloCafe/releases?per_page=100" \
+          LATEST_TAG="$(gh api --paginate "repos/FreeOpenSourcePOS/FloCafe-Plugins/releases?per_page=100" \
             --jq '.[] | select(.draft == false) | select(.tag_name | test("^tax-pack-[a-z0-9][a-z0-9-]*-v[0-9]+\\.[0-9]+\\.[0-9]+$")) | .tag_name' \
             | sed -n '1p')"
           if [ -n "$LATEST_TAG" ]; then
             gh release download "$LATEST_TAG" \
-              --repo FreeOpenSourcePOS/FloCafe \
+              --repo FreeOpenSourcePOS/FloCafe-Plugins \
               --pattern catalog.json \
               --dir "$RUNNER_TEMP/tax-pack-previous"
             echo "path=$RUNNER_TEMP/tax-pack-previous/catalog.json" >> "$GITHUB_OUTPUT"
@@ -54,10 +54,10 @@ jobs:
 
       - name: Publish immutable release assets
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.TAX_PACK_RELEASE_TOKEN }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
             "$RUNNER_TEMP"/tax-pack-release/* \
-            --repo FreeOpenSourcePOS/FloCafe \
+            --repo FreeOpenSourcePOS/FloCafe-Plugins \
             --title "$GITHUB_REF_NAME" \
             --notes "Signed FloCafe country-pack release. Activation remains an explicit owner action in the app."

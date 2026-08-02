@@ -26,6 +26,7 @@ import { menuCsvRoutes } from './menu-csv';
 import { taxPackRoutes } from './tax-packs';
 import { heldOrderRoutes } from './held-orders';
 import { whatsappRoutes } from './whatsapp';
+import { supportTicketRoutes } from './support-ticket';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
 import {
@@ -90,6 +91,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/tax-packs', taxPackRoutes);
   app.use('/api/held-orders', heldOrderRoutes);
   app.use('/api/whatsapp', whatsappRoutes);
+  app.use('/api/support-ticket', supportTicketRoutes);
 
   // Tax preview
   app.post('/api/tax/preview', async (req, res) => {

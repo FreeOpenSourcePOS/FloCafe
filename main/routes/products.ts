@@ -58,9 +58,17 @@ function fetchPinnedHttps(
       headers: { 'User-Agent': 'FloCafe-ImageProxy/1.0' },
       servername: parsedUrl.hostname,
       signal,
-      lookup: (_hostname, _options, callback) => {
-        callback(null, resolvedAddress, net.isIP(resolvedAddress));
-      },
+      lookup: ((_hostname, options, callback) => {
+        const family = net.isIP(resolvedAddress);
+        // Node 20+ may ask custom lookups for all candidate addresses while it
+        // chooses an address family. We intentionally permit only the single
+        // IP that passed the SSRF check, so return it in the requested shape.
+        if (options.all) {
+          callback(null, [{ address: resolvedAddress, family }]);
+          return;
+        }
+        callback(null, resolvedAddress, family);
+      }) as net.LookupFunction,
     }, (response) => {
       const chunks: Buffer[] = [];
       let totalBytes = 0;

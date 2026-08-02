@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Download FloCafe
+    url: https://flopos.com/download
+    about: Get the latest packaged release before reporting an issue.
+  - name: FloCafe documentation
+    url: https://flopos.com/documentation
+    about: Setup, installation, printers, backups, and operating guidance.
+  - name: Community support
+    url: https://www.reddit.com/r/FloPOS/
+    about: Ask questions and share operator experiences with the community.
+

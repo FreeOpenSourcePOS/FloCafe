@@ -49,6 +49,16 @@ fixtureDb.prepare(`
   INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, tax_breakdown, total)
   VALUES ('INV-LEGACY-TAX', ?, 100, 5, ?, 105)
 `).run(legacyOrder.lastInsertRowid, legacyTaxBreakdown);
+fixtureDb.prepare(`
+  INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES
+    ('cloud_sync_enabled', '0', '2026-08-01 12:00:00'),
+    ('cloud_pending_store_id', 'old-pending-id', '2026-08-01 12:00:00'),
+    ('cloud_server_url', 'https://example.test/', '2026-08-01 12:00:00')
+`).run();
+fixtureDb.prepare(`
+  INSERT OR REPLACE INTO settings (key, value, updated_at)
+  VALUES ('cloud_orders_enabled', '0', '2026-08-01T12:00:00.000Z')
+`).run();
 fixtureDb.close();
 
 const mockApp = {
@@ -89,6 +99,17 @@ function main() {
   console.log('   ✓ an old (pre-migration-array) install migrates through to the latest schema without crashing');
 
   const db = getDatabase();
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'cloud_sync_enabled'").get().value, '1',
+    'seed-written cloud sync defaults are flipped on during upgrade');
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key = 'cloud_pending_store_id'").get().count, 0,
+    'pending registration state is removed during upgrade');
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'cloud_orders_enabled'").get().value, '0',
+    'explicitly edited settings remain unchanged during upgrade');
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'taxes_enabled'").get().value, 'false',
+    'taxes remain off until the merchant enables them');
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'support_ticket_outbox'").get(),
+    'support ticket outbox exists after upgrade');
+  console.log('   ✓ v40 preserves deliberate settings, flips untouched cloud sync, and creates the support outbox');
   const ideal = buildIdealSchemaDb();
   const latestSchemaVersion = ideal.pragma('user_version', { simple: true }) as number;
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,
@@ -135,15 +156,15 @@ function main() {
   console.log('   ✓ old installs receive every Phase 1 tax table and guarded additive column');
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM country_packs').get() as { count: number }).count,
-    3,
-    'old installs register all bundled tax packs during upgrade',
+    1,
+    'old installs register only the generic tax pack during upgrade',
   );
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
-    3,
-    'old installs register all bundled pack versions during upgrade',
+    1,
+    'old installs register only the generic tax pack version during upgrade',
   );
-  console.log('   ✓ old installs receive the bundled tax pack registry without replacing legacy tax data');
+  console.log('   ✓ old installs receive generic tax behavior without replacing legacy tax data');
 
   assert.equal((db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count, 10);
   // A product originating in this pre-tax-engine fixture can still carry the
@@ -198,11 +219,57 @@ function main() {
     console.log('   ✓ the backfilled columns are readable and writable');
   }
 
+  const indiaPack = require('../main/tax-packs/in.json');
+  const preservedVersionId = 'official-india@existing-active';
+  const preservedAt = '2026-07-30T00:00:00.000Z';
+  db.prepare(`
+    INSERT INTO country_packs (
+      id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+  `).run(
+    indiaPack.id,
+    indiaPack.publisher,
+    indiaPack.country,
+    indiaPack.jurisdiction,
+    preservedVersionId,
+    preservedAt,
+    preservedAt,
+  );
+  db.prepare(`
+    INSERT INTO country_pack_versions (
+      id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
+      effective_from, effective_to, min_flo_version, published_at, status, created_at
+    ) VALUES (?, ?, ?, ?, '{}', ?, ?, NULL, ?, NULL, ?, ?, 'active', ?)
+  `).run(
+    preservedVersionId,
+    indiaPack.id,
+    'existing-active',
+    indiaPack.schemaVersion,
+    JSON.stringify(indiaPack),
+    'preserved-existing-version',
+    indiaPack.effectiveFrom,
+    indiaPack.minFloVersion,
+    indiaPack.publishedAt,
+    preservedAt,
+  );
+  db.pragma('user_version = 37');
   closeDatabase();
   initDatabase();
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
   assert.equal(runHealthCheck().findings.length, 0);
-  console.log('   ✓ reopening an already-migrated database is idempotent');
+  const preservedPack = getDatabase().prepare(`
+    SELECT active_version_id, status FROM country_packs WHERE id = 'official-india'
+  `).get() as { active_version_id: string; status: string };
+  assert.deepEqual(
+    preservedPack,
+    { active_version_id: preservedVersionId, status: 'active' },
+    'an already-active country pack survives the changed bundle migration untouched',
+  );
+  assert.ok(
+    getDatabase().prepare('SELECT 1 FROM country_pack_versions WHERE id = ?').get(preservedVersionId),
+    'the previously installed active pack version is preserved',
+  );
+  console.log('   ✓ reopening is idempotent and preserves an already-active country pack');
   closeDatabase();
 
   console.log('='.repeat(60));

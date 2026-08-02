@@ -1013,7 +1013,6 @@ export default function SettingsPage() {
   const [savedCloudSettings, setSavedCloudSettings] = useState(cloudSettings);
   const [cloudStatus, setCloudStatus] = useState({
     cloud_registration_status: 'unregistered',
-    cloud_pending_store_id: null as string | null,
     cloud_connected: false,
     cloud_relay_mode: 'disconnected',
     cloud_last_heartbeat: null as string | null,
@@ -1252,7 +1251,6 @@ export default function SettingsPage() {
       setSavedCloudSettings(settings);
       setCloudStatus({
         cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
-        cloud_pending_store_id: res.data.cloud_pending_store_id || null,
         cloud_connected: !!res.data.cloud_connected,
         cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
         cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
@@ -1350,7 +1348,6 @@ export default function SettingsPage() {
       const res = await api.post('/settings/cloud/register', { email });
       setCloudStatus({
         cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
-        cloud_pending_store_id: res.data.cloud_pending_store_id || null,
         cloud_connected: !!res.data.cloud_connected,
         cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
         cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
@@ -1361,9 +1358,7 @@ export default function SettingsPage() {
         cloud_api_key: res.data.cloud_api_key || prev.cloud_api_key,
         cloud_store_id: res.data.cloud_store_id || prev.cloud_store_id,
       }));
-      if (res.data.cloud_registration_status === 'pending') {
-        toast.success(t('settings.cloudRegistrationPending'));
-      } else if (res.data.cloud_registration_status === 'registered') {
+      if (res.data.cloud_registration_status === 'registered') {
         toast.success(t('settings.cloudRegistrationSuccess'));
       }
     } catch (err: unknown) {
@@ -1560,6 +1555,35 @@ export default function SettingsPage() {
         bill_show_phone: form.billShowPhone,
         bill_show_gstn: form.billShowGstn,
       });
+      if (savedBusiness.countryCode !== form.countryCode) {
+        const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
+        if (taxSetting?.data.setting?.value === 'true') {
+          try {
+            await api.post('/tax-packs/ensure-country', { country: form.countryCode });
+          } catch (error) {
+            const status = (error as { response?: { status?: number } }).response?.status;
+            if (status === 404) {
+              const key = `tax_plugin_request:${form.countryCode}`;
+              const requestSetting = await api.get(`/settings/${key}`).catch(() => null);
+              const clientTicketId = requestSetting?.data.setting?.value || crypto.randomUUID();
+              if (!requestSetting?.data.setting?.value) {
+                await api.put(`/settings/${key}`, { value: clientTicketId });
+              }
+              await api.post('/support-ticket', {
+                client_ticket_id: clientTicketId,
+                subject: `Request tax support for ${form.countryCode}`,
+                event_code: 'tax.country_plugin_unavailable',
+                message: `The merchant changed country to ${form.countryCode} while taxes were enabled, but no verified country tax plugin is available. Please create and publish it.`,
+                diagnostics: { country: form.countryCode },
+              }).catch(() => {});
+              await api.put('/settings/taxes_enabled', { value: 'false' }).catch(() => {});
+              toast.error(`Tax support for ${form.countryCode} is not available yet. We requested the plugin and will build it soon. Taxes are now off.`);
+            } else {
+              toast.error('The country was saved, but its tax plugin could not be installed. Taxes remain enabled until it is resolved.');
+            }
+          }
+        }
+      }
       setSavedBusiness(form);
       posSettings.setBillGstin(form.gstin);
       posSettings.setBillAddress(form.businessAddress);
@@ -3367,21 +3391,17 @@ export default function SettingsPage() {
                     <div className="flex items-center gap-2">
                   {cloudStatus.cloud_registration_status === 'registered' ? (
                     <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-                  ) : cloudStatus.cloud_registration_status === 'pending' ? (
-                    <Cloud size={16} className="text-amber-500 shrink-0" />
                   ) : (
                     <CloudOff size={16} className="text-gray-400 shrink-0" />
                   )}
                   <div>
                     <p className="text-sm font-medium text-gray-900">
                       {cloudStatus.cloud_registration_status === 'registered' && (cloudStatus.cloud_connected ? t('settings.connectedToFloadmin') : t('settings.registeredReconnecting'))}
-                      {cloudStatus.cloud_registration_status === 'pending' && t('settings.waitingForApproval')}
                       {cloudStatus.cloud_registration_status === 'rejected' && t('settings.registrationRejected')}
                       {(cloudStatus.cloud_registration_status === 'unregistered' || cloudStatus.cloud_registration_status === 'registration_failed') && t('settings.notRegistered')}
                     </p>
                     <p className="text-xs text-gray-500">
                       {cloudStatus.cloud_registration_status === 'registered' && (cloudStatus.cloud_last_heartbeat ? t('settings.liveChannelHeartbeat', { mode: cloudStatus.cloud_relay_mode.replace('_', ' '), time: formatTime(cloudStatus.cloud_last_heartbeat) }) : t('settings.liveChannel', { mode: cloudStatus.cloud_relay_mode.replace('_', ' ') }))}
-                      {cloudStatus.cloud_registration_status === 'pending' && t('settings.storeIdPending', { id: cloudStatus.cloud_pending_store_id || '—' })}
                       {cloudStatus.cloud_registration_status === 'rejected' && t('settings.registrationContactSupport')}
                       {cloudStatus.cloud_registration_status === 'registration_failed' && (cloudStatus.cloud_last_error ? t('settings.registrationLastError', { error: cloudStatus.cloud_last_error }) : t('settings.registrationLastFailed'))}
                       {cloudStatus.cloud_registration_status === 'unregistered' && t('settings.registrationRegisterHelp')}

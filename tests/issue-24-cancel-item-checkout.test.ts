@@ -28,6 +28,7 @@ process.env.JWT_SECRET = 'test-secret-issue-24';
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedManagerUser, seedCategory, seedProduct, seedTable,
+  installAndActivateTestTaxPack,
   api, assert, assertEqual, assertIncludes,
   getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
@@ -35,19 +36,22 @@ const {
 const { registerRoutes } = require('../main/routes/index');
 const { billRoutes } = require('../main/routes/bills');
 const { orderRoutes } = require('../main/routes/orders');
+const indiaTaxPack = require('../main/tax-packs/in.json');
 
 async function main() {
   console.log('Integration Test: Issue #24 — Cancel item then checkout');
   console.log('='.repeat(60));
 
   const db = initTestDb();
+  installAndActivateTestTaxPack(db, indiaTaxPack);
 
   const { authHeader } = seedOwnerUser(db);
   seedManagerUser(db);
   seedCategory(db, 'cat-24', 'Drinks');
-  seedProduct(db, 'prod-24-a', 'cat-24', 'Latte', 200);
-  seedProduct(db, 'prod-24-b', 'cat-24', 'Espresso', 150);
-  seedProduct(db, 'prod-24-c', 'cat-24', 'Muffin', 100);
+  const taxableProduct = { tax_category_id: 'standard', tax_behavior: 'exclusive' };
+  seedProduct(db, 'prod-24-a', 'cat-24', 'Latte', 200, taxableProduct);
+  seedProduct(db, 'prod-24-b', 'cat-24', 'Espresso', 150, taxableProduct);
+  seedProduct(db, 'prod-24-c', 'cat-24', 'Muffin', 100, taxableProduct);
 
   // Mount all routes the same way as production
   const express = require('express');

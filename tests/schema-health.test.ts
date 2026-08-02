@@ -99,22 +99,22 @@ function main() {
   console.log('   ✓ fresh installs include every Phase 1 tax table and column');
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM country_packs').get() as { count: number }).count,
-    3,
-    'fresh installs register all bundled tax packs',
+    1,
+    'fresh installs register only the generic tax pack',
   );
   assert.equal(
     (db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions').get() as { count: number }).count,
-    3,
-    'fresh installs register all bundled tax pack versions',
+    1,
+    'fresh installs register only the generic tax pack version',
   );
   assert.ok(
     (db.prepare(`
       SELECT 1 FROM country_pack_versions
-      WHERE pack_id = 'official-in' AND version = '1.0.0' AND status = 'active'
+      WHERE pack_id = 'local-generic' AND version = '1.0.0' AND status = 'active'
     `).get()),
-    'fresh installs activate the bundled India pack version',
+    'fresh installs activate the generic no-tax pack version',
   );
-  console.log('   ✓ fresh installs register the bundled pack artifacts used by Settings');
+  console.log('   ✓ fresh installs register only the generic pack artifact used by Settings');
 
   // ── Extra column is flagged manual_review, never auto-applicable ────────
   db.exec(`ALTER TABLE products ADD COLUMN __test_extra_col TEXT`);

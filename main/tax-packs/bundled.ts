@@ -1,11 +1,7 @@
 import type { CountryPack } from './types';
-import indiaPackData from './in.json';
-import thailandPackData from './th.json';
 import genericPackData from './generic.json';
 
 export const BUNDLED_COUNTRY_PACKS: readonly CountryPack[] = [
-  indiaPackData as CountryPack,
-  thailandPackData as CountryPack,
   genericPackData as CountryPack,
 ];
 

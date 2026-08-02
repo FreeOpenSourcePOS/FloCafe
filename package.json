@@ -1,7 +1,7 @@
 {
   "name": "flo-desktop",
   "version": "2.4.7",
-  "description": "Flo - Self-hosted Point of Sale System",
+  "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
     "node": ">=22.0.0"
   },
@@ -10,6 +10,8 @@
     "clean": "node kill-ports.js 3001 3002",
     "predev": "",
     "dev": "npm run clean && npm run build:frontend && npm run build && electron .",
+    "dev:restart": "bash scripts/dev/restart.sh",
+    "dev:reset": "bash scripts/dev/nuclear-reset.sh",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "tsc && node scripts/copy-runtime-assets.cjs",
     "lint:backend": "eslint main/",
@@ -109,7 +111,7 @@
     "name": "Flo",
     "email": "support@flo.local"
   },
-  "homepage": "https://flo.local",
+  "homepage": "https://flopos.com",
   "license": "MIT",
   "overrides": {
     "node-abi": "^4.33.0",
@@ -151,7 +153,6 @@
     "googleapis": "^173.0.0",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.9",
-    "node-thermal-printer": "^4.2.1",
     "pino": "^10.3.1",
     "qrcode": "^1.5.3",
     "uuid": "^14.0.1",

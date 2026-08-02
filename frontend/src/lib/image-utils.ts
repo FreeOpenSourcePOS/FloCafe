@@ -8,6 +8,37 @@
 
 const MAX_BASE64_LENGTH = 50_000;
 
+type CropArea = { x: number; y: number; width: number; height: number };
+
+const CROP_ENCODING_ATTEMPTS = [
+  { size: 400, quality: 0.8 },
+  { size: 400, quality: 0.6 },
+  { size: 400, quality: 0.4 },
+  { size: 320, quality: 0.6 },
+  { size: 320, quality: 0.4 },
+];
+
+/** Encode a selected product-image crop within the database size limit. */
+export function compressCroppedImage(image: HTMLImageElement, crop: CropArea): string | null {
+  try {
+    for (const { size, quality } of CROP_ENCODING_ATTEMPTS) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+
+      ctx.drawImage(image, crop.x, crop.y, crop.width, crop.height, 0, 0, size, size);
+      const dataUri = canvas.toDataURL('image/webp', quality);
+      if (dataUri !== 'data:,' && dataUri.length <= MAX_BASE64_LENGTH) return dataUri;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 /**
  * Compress an image file to a Base64 WebP data URI.
  * Pipeline: load → draw to canvas (1:1 crop) → toDataURL('image/webp', quality).

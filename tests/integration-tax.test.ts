@@ -23,6 +23,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct,
+  installAndActivateTestTaxPack,
   api, assert, assertEqual,
   getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
@@ -30,6 +31,8 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { registerRoutes } = require('../main/routes/index');
+const indiaTaxPack = require('../main/tax-packs/in.json');
+const thailandTaxPack = require('../main/tax-packs/th.json');
 
 async function main() {
   console.log('Integration Test: Tax Correctness');
@@ -41,6 +44,8 @@ async function main() {
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?)").run(now());
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_type', 'restaurant', ?)").run(now());
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('state_code', '27', ?)").run(now());
+  installAndActivateTestTaxPack(db, indiaTaxPack);
+  installAndActivateTestTaxPack(db, thailandTaxPack);
 
   // Seed data
   const { authHeader } = seedOwnerUser(db);
@@ -378,6 +383,131 @@ async function main() {
     assertEqual(noTaxCheckoutRes.data.order.tax_amount, 0, 'product without a tax category has zero tax');
     assertEqual(noTaxCheckoutRes.data.order.tax_breakdown.length, 0, 'product without a tax category has no order tax breakdown');
     assert(!noTaxCheckoutRes.data.order.tax_snapshot, 'product without a tax category has no order tax snapshot');
+
+    // ── Step 10: payable preview, bill settlement, and payment stay reconciled ──
+    console.log('\n10. Tax preview and bill settlement use the same active-pack payable rounding');
+    db.prepare("UPDATE settings SET value = 'TH' WHERE key = 'country'").run();
+    seedProduct(db, 'prod-tax-th-preview', 'cat-tax', 'Thai Preview Coffee', 60, {
+      tax_category_id: 'standard',
+      tax_behavior: 'exclusive',
+    });
+
+    const decimalPreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-tax-th-preview', quantity: 1, addons: [] }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(decimalPreview.status, 200, 'Thailand tax preview succeeds');
+    assertEqual(decimalPreview.data.summary.subtotal, 60, 'preview subtotal = ฿60.00');
+    assertEqual(decimalPreview.data.summary.tax_amount, 4.2, 'preview VAT = ฿4.20');
+    assertEqual(decimalPreview.data.summary.round_off, 0, '0.01 pack does not force whole-unit rounding');
+    assertEqual(decimalPreview.data.summary.total, 64.2, 'preview payable total = ฿64.20');
+
+    const discountedPreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-tax-th-preview', quantity: 1, addons: [] }],
+        discount_type: 'percentage',
+        discount_value: 10,
+      },
+      headers: authHeader,
+    });
+    assertEqual(discountedPreview.status, 200, 'discounted Thailand tax preview succeeds');
+    assertEqual(discountedPreview.data.summary.discount_amount, 6, 'preview discount = ฿6.00');
+    assertEqual(discountedPreview.data.summary.discounted_subtotal, 54, 'discounted preview subtotal = ฿54.00');
+    assertEqual(discountedPreview.data.summary.tax_amount, 3.78, 'discounted preview VAT = ฿3.78');
+    assertEqual(discountedPreview.data.summary.total, 57.78, 'discounted preview total = ฿57.78');
+
+    const decimalOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-tax-th-preview', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(decimalOrder.status, 201, 'Thailand order created');
+    assertEqual(decimalOrder.data.order.total, 64.2, 'order keeps exact total = ฿64.20');
+    assertEqual(decimalOrder.data.order.round_off, 0, 'order remains unrounded at the commercial-total layer');
+
+    const decimalBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: decimalOrder.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(decimalBill.status, 201, 'Thailand bill generated');
+    assertEqual(decimalBill.data.bill.total, decimalPreview.data.summary.total, 'bill total matches authoritative preview');
+    assertEqual(decimalBill.data.bill.round_off, decimalPreview.data.summary.round_off, 'bill round-off matches authoritative preview');
+
+    const decimalPayment = await api(baseUrl, `/api/bills/${decimalBill.data.bill.id}/payment`, {
+      method: 'POST',
+      body: { method: 'cash', amount: decimalPreview.data.summary.total },
+      headers: authHeader,
+    });
+    assertEqual(decimalPayment.status, 200, 'full decimal payment accepted');
+    assertEqual(decimalPayment.data.bill.payment_status, 'paid', '฿64.20 payment settles the bill');
+    assertEqual(decimalPayment.data.bill.balance, 0, 'decimal bill balance = 0');
+    const paidDecimalOrder = await api(baseUrl, `/api/orders/${decimalOrder.data.order.id}`, { headers: authHeader });
+    assertEqual(paidDecimalOrder.data.order.status, 'completed', 'decimal-total order completes after payment');
+
+    const activeThailandVersion = db.prepare(`
+      SELECT version.id, version.pack_json
+      FROM country_packs AS pack
+      JOIN country_pack_versions AS version ON version.id = pack.active_version_id
+      WHERE pack.id = 'official-thailand'
+    `).get() as { id: string; pack_json: string };
+    const coarsePack = JSON.parse(activeThailandVersion.pack_json);
+    coarsePack.payableRounding = { increment: '1', method: 'half_up' };
+    db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?')
+      .run(JSON.stringify(coarsePack), activeThailandVersion.id);
+
+    const coarsePreview = await api(baseUrl, '/api/tax/preview', {
+      method: 'POST',
+      body: {
+        items: [{ product_id: 'prod-tax-th-preview', quantity: 1, addons: [] }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(coarsePreview.status, 200, 'coarse-rounding tax preview succeeds');
+    assertEqual(coarsePreview.data.summary.tax_amount, 4.2, 'coarse pack leaves VAT component unchanged');
+    assertEqual(coarsePreview.data.summary.round_off, -0.2, 'coarse pack exposes its -฿0.20 settlement adjustment');
+    assertEqual(coarsePreview.data.summary.total, 64, 'coarse pack preview rounds payable total to ฿64.00');
+
+    const coarseOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'takeaway',
+        items: [{ product_id: 'prod-tax-th-preview', quantity: 1 }],
+      },
+      headers: authHeader,
+    });
+    assertEqual(coarseOrder.status, 201, 'coarse-pack order created');
+    assertEqual(coarseOrder.data.order.total, 64.2, 'coarse pack still keeps the order total exact');
+    assertEqual(coarseOrder.data.order.round_off, 0, 'coarse pack does not round the order layer');
+
+    const coarseBill = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: coarseOrder.data.order.id },
+      headers: authHeader,
+    });
+    assertEqual(coarseBill.status, 201, 'coarse-pack bill generated');
+    assertEqual(coarseBill.data.bill.total, coarsePreview.data.summary.total, 'coarse bill total matches preview');
+    assertEqual(coarseBill.data.bill.round_off, coarsePreview.data.summary.round_off, 'coarse bill adjustment matches preview');
+
+    const coarsePayment = await api(baseUrl, `/api/bills/${coarseBill.data.bill.id}/payment`, {
+      method: 'POST',
+      body: { method: 'cash', amount: coarsePreview.data.summary.total },
+      headers: authHeader,
+    });
+    assertEqual(coarsePayment.status, 200, 'coarse rounded payment accepted');
+    assertEqual(coarsePayment.data.bill.payment_status, 'paid', '฿64.00 payment settles the coarse-rounded bill');
+    assertEqual(coarsePayment.data.bill.balance, 0, 'coarse-rounded bill balance = 0');
+
+    db.prepare('UPDATE country_pack_versions SET pack_json = ? WHERE id = ?')
+      .run(activeThailandVersion.pack_json, activeThailandVersion.id);
+    db.prepare("UPDATE settings SET value = 'IN' WHERE key = 'country'").run();
 
   } finally {
     server.close();

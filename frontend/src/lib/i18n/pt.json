@@ -275,6 +275,7 @@
   "pos.payment": "Pagamento",
   "pos.paymentBelowBalance": "O valor do pagamento é menor que o saldo",
   "pos.paymentFailed": "Falha no pagamento",
+  "pos.paymentIncomplete": "Pagamento incompleto — ainda faltam {amount}.",
   "pos.paymentRecorded": "Pagamento registrado!",
   "pos.sendViaWhatsApp": "Enviar comprovante via WhatsApp",
   "pos.paymentRecordedWithPoints": "Pagamento registrado! {points} pontos de fidelidade creditados.",

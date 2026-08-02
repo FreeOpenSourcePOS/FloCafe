@@ -204,12 +204,9 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
           liveCol.notnull ? 'NOT NULL' : 'nullable', idealCol.notnull ? 'NOT NULL' : 'nullable'));
       }
       if ((liveCol.dfltValue ?? null) !== (idealCol.dfltValue ?? null)) {
-        // Known intentional drift: legacy products had cb_percent DEFAULT 0, but v39+ defaults to NULL.
-        if (!(tableName === 'products' && idealCol.name === 'cb_percent' && liveCol.dfltValue === '0' && idealCol.dfltValue === 'NULL')) {
-          findings.push(mismatchFinding(tableName, idealCol.name, 'column_default_mismatch',
-            `Column "${idealCol.name}" default value differs from the expected schema.`,
-            liveCol.dfltValue ?? 'none', idealCol.dfltValue ?? 'none'));
-        }
+        findings.push(mismatchFinding(tableName, idealCol.name, 'column_default_mismatch',
+          `Column "${idealCol.name}" default value differs from the expected schema.`,
+          liveCol.dfltValue ?? 'none', idealCol.dfltValue ?? 'none'));
       }
     }
 

@@ -26,24 +26,33 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer,
   seedOwnerUser, seedCategory, seedProduct,
+  installAndActivateTestTaxPack,
   api, assert, assertEqual,
   getResults, closeDatabase,
 } = require('./helpers/test-setup');
 
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
+const indiaTaxPack = require('../main/tax-packs/in.json');
 
 async function main() {
   console.log('Integration Test: Happy Path');
   console.log('='.repeat(50));
 
   const db = initTestDb();
+  installAndActivateTestTaxPack(db, indiaTaxPack);
 
   // Seed: owner user, category, 2 products
   const { authHeader } = seedOwnerUser(db);
   seedCategory(db, 'cat-happy', 'Test Menu');
-  seedProduct(db, 'prod-a', 'cat-happy', 'Cappuccino', 500);
-  seedProduct(db, 'prod-b', 'cat-happy', 'Sandwich', 300);
+  seedProduct(db, 'prod-a', 'cat-happy', 'Cappuccino', 500, {
+    tax_category_id: 'standard',
+    tax_behavior: 'exclusive',
+  });
+  seedProduct(db, 'prod-b', 'cat-happy', 'Sandwich', 300, {
+    tax_category_id: 'standard',
+    tax_behavior: 'exclusive',
+  });
 
   // Create Express app with orders + bills routes
   const app = createApp({

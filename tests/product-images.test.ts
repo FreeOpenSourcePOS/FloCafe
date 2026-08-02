@@ -33,6 +33,9 @@ const {
 } = require('./helpers/test-setup');
 
 const { productRoutes } = require('../main/routes/products');
+const dns = require('dns');
+const https = require('https');
+const { EventEmitter } = require('events');
 
 // ── Test Data ────────────────────────────────────────────────────────────────
 
@@ -289,6 +292,43 @@ async function main() {
       body: { url: 'https://example.com:8443/photo.jpg' },
     });
     assertEqual(res.status, 400, 'E6: Non-standard port rejected');
+
+    // E7: Node's automatic address-family selection requests an address list.
+    // The proxy must return its one validated, pinned IP in that shape.
+    const originalLookup = dns.promises.lookup;
+    const originalRequest = https.request;
+    let requestOptions: any;
+    let pinnedAddresses: any;
+    dns.promises.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+    https.request = (options: any, callback: (response: any) => void) => {
+      requestOptions = options;
+      options.lookup('example.com', { all: true }, (_error: unknown, addresses: unknown) => {
+        pinnedAddresses = addresses;
+      });
+      const request = new EventEmitter() as any;
+      request.end = () => {
+        const response = new EventEmitter() as any;
+        response.statusCode = 200;
+        response.headers = { 'content-type': 'image/webp', 'content-length': '4' };
+        callback(response);
+        response.emit('data', Buffer.from('test'));
+        response.emit('end');
+      };
+      request.destroy = () => undefined;
+      return request;
+    };
+    try {
+      res = await api(baseUrl, '/api/products/fetch-url', {
+        method: 'POST', headers: authHeader,
+        body: { url: 'https://example.com/photo.webp' },
+      });
+      assertEqual(res.status, 200, 'E7a: Pinned HTTPS image is fetched');
+      assertEqual(Array.isArray(pinnedAddresses), true, 'E7b: Pinned lookup returns an address list when requested');
+      assertEqual(pinnedAddresses[0].address, '93.184.216.34', 'E7c: Pinned lookup returns only validated IP');
+    } finally {
+      dns.promises.lookup = originalLookup;
+      https.request = originalRequest;
+    }
 
     // ── F) POST / — create product with image validation ───────────────────
     console.log('\n─── F) POST / — create with image validation ───');

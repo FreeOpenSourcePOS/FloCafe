@@ -4,7 +4,7 @@ import { useCallback, useState, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import Cropper, { type Area } from 'react-easy-crop';
 import { Camera, Link, Upload, X, Check } from 'lucide-react';
-import { MAX_RAW_FILE_SIZE, MAX_IMAGE_LENGTH } from '@/lib/image-utils';
+import { compressCroppedImage, MAX_RAW_FILE_SIZE } from '@/lib/image-utils';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/hooks/useI18n';
@@ -86,39 +86,9 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       const x = cropAreaRef.current.x || 0;
       const y = cropAreaRef.current.y || 0;
 
-      const TARGET_SIZE = 400; // Fixed max dimension for product images
-      const canvas = document.createElement('canvas');
-      canvas.width = TARGET_SIZE;
-      canvas.height = TARGET_SIZE;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      // Draw ONLY the cropped region — scaled down to TARGET_SIZE
-      ctx.drawImage(
-        img,
-        x, y, width, height,   // source: cropped area from original
-        0, 0, TARGET_SIZE, TARGET_SIZE // destination: scaled down
-      );
-
-      let dataUri: string;
-      try {
-        dataUri = canvas.toDataURL('image/webp', 0.8);
-      } catch {
-        toast.error('Failed to process image canvas.');
-        setMode('idle');
-        setCropSrc(null);
-        return;
-      }
-
-      if (dataUri === 'data:,') {
-        toast.error('Failed to process image. Try a different file.');
-        setMode('idle');
-        setCropSrc(null);
-        return;
-      }
-
-      if (dataUri.length > MAX_IMAGE_LENGTH) {
-        toast.error('Compressed image still too large. Try a simpler image.');
+      const dataUri = compressCroppedImage(img, { x, y, width, height });
+      if (!dataUri) {
+        toast.error('Could not compress this image enough. Try a tighter crop or another image.');
         return;
       }
 

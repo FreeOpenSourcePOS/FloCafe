@@ -275,6 +275,7 @@
   "pos.payment": "Payment",
   "pos.paymentBelowBalance": "Payment amount is less than balance",
   "pos.paymentFailed": "Payment failed",
+  "pos.paymentIncomplete": "Payment incomplete — {amount} remains due.",
   "pos.paymentRecorded": "Payment recorded!",
   "pos.sendViaWhatsApp": "Send receipt via WhatsApp",
   "pos.paymentRecordedWithPoints": "Payment recorded! {points} loyalty points credited.",

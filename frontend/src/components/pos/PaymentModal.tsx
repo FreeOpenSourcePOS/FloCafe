@@ -232,6 +232,13 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       // Sequential per-line requests would leave the bill partially paid if a later
       // line failed (e.g. network drop) after an earlier one had already committed.
       const res = await api.post(`/bills/${bill.id}/payments`, { payments: splitLines, customer_id: effectiveCustomerId });
+      const updatedBill = res.data?.bill as Bill | undefined;
+      if (!updatedBill || updatedBill.payment_status !== 'paid') {
+        if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
+        throw new Error(t('pos.paymentIncomplete', {
+          amount: currencyFmt(Number(updatedBill?.balance) || 0),
+        }));
+      }
       const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
       setPointsEarned(earned);
       if (earned > 0) {
@@ -241,8 +248,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       }
       setJustPaid(true);
     } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('pos.paymentFailed'));
+      const axiosErr = err as { response?: { data?: { error?: string } }; message?: string };
+      toast.error(axiosErr.response?.data?.error || axiosErr.message || t('pos.paymentFailed'));
     } finally {
       setProcessing(false);
     }

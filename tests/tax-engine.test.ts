@@ -76,12 +76,17 @@ function line(overrides: Partial<TaxEngineLine> = {}): TaxEngineLine {
   };
 }
 
-function calculate(pack: CountryPack, lines: TaxEngineLine[]) {
+function calculate(
+  pack: CountryPack,
+  lines: TaxEngineLine[],
+  context: Partial<Parameters<typeof TaxEngine.calculate>[0]> = {},
+) {
   return TaxEngine.calculate({
     pack,
     country: pack.country,
     transactionDate: '2026-07-27',
     lines,
+    ...context,
   });
 }
 
@@ -308,71 +313,78 @@ test('applyPayableRounding (#170): fractional totals are not force-rounded to a 
   assert.equal(dustyResult.adjustment, 0);
 });
 
-test('bundled India and Thailand packs reproduce current fixed behavior as data', () => {
-  const intra = calculateItemTax(
-    { country: 'IN', business_type: 'restaurant', state_code: 'KA' },
-    {
-      tax_type: 'exclusive', tax_rate: 99, tax_category_id: 'standard', tax_behavior: 'exclusive',
-    },
-    10.1,
-    null,
-  );
+test('catalog India and Thailand packs reproduce current fixed behavior as data', () => {
+  const intra = TaxEngine.calculate({
+    pack: indiaPack,
+    country: 'IN',
+    businessType: 'restaurant',
+    storeStateCode: 'KA',
+    transactionDate: '2026-07-27',
+    lines: [line({ unitPrice: '10.1', productCategoryId: 'standard', taxBehavior: 'exclusive' })],
+  });
   assert.deepEqual(
-    { tax_amount: intra.tax_amount, tax_breakdown: intra.tax_breakdown, tax_type: intra.tax_type },
-    {
-      tax_amount: 0.51,
-      tax_breakdown: [
-        { title: 'CGST', rate: 2.5, amount: 0.25 },
-        { title: 'SGST', rate: 2.5, amount: 0.26 },
-      ],
-      tax_type: 'exclusive',
-    },
+    intra.lines[0].components.map((component) => ({
+      title: component.label,
+      rate: Number(component.rate),
+      amount: Number(component.amount),
+    })),
+    [
+      { title: 'CGST', rate: 2.5, amount: 0.25 },
+      { title: 'SGST', rate: 2.5, amount: 0.26 },
+    ],
   );
-  assert.ok(intra.tax_snapshot, 'categorized items also carry the full engine snapshot');
+  assert.equal(intra.lines[0].taxAmount, '0.51');
 
-  const inter = calculateItemTax(
-    { country: 'IN', business_type: 'salon', state_code: 'KA' },
-    {
-      tax_type: 'exclusive', tax_rate: 99, tax_category_id: 'standard', tax_behavior: 'exclusive',
-    },
-    100,
-    { gstin: 'GSTIN', customer_state_code: 'MH' },
+  const inter = TaxEngine.calculate({
+    pack: indiaPack,
+    country: 'IN',
+    businessType: 'salon',
+    storeStateCode: 'KA',
+    transactionDate: '2026-07-27',
+    customer: { registrationNumber: 'GSTIN', stateCode: 'MH' },
+    lines: [line({ unitPrice: '100', productCategoryId: 'standard', taxBehavior: 'exclusive' })],
+  });
+  assert.deepEqual(
+    inter.lines[0].components.map((component) => ({
+      title: component.label,
+      rate: Number(component.rate),
+      amount: Number(component.amount),
+    })),
+    [{ title: 'IGST', rate: 5, amount: 5 }],
   );
-  assert.deepEqual(inter.tax_breakdown, [{ title: 'IGST', rate: 5, amount: 5 }]);
 
-  const thai = calculateItemTax(
-    { country: 'TH', business_type: 'restaurant', state_code: '' },
-    {
-      tax_type: 'exclusive', tax_rate: 99, tax_category_id: 'standard', tax_behavior: 'exclusive',
-    },
-    100,
-    null,
+  const thai = calculate(thailandPack, [
+    line({ unitPrice: '100', productCategoryId: 'standard', taxBehavior: 'exclusive' }),
+  ], { businessType: 'restaurant' });
+  assert.deepEqual(
+    thai.lines[0].components.map((component) => ({
+      title: component.label,
+      rate: Number(component.rate),
+      amount: Number(component.amount),
+    })),
+    [{ title: 'VAT', rate: 7, amount: 7 }],
   );
-  assert.deepEqual(thai.tax_breakdown, [{ title: 'VAT', rate: 7, amount: 7 }]);
   assert.equal(indiaPack.rules.every((rule) => rule.rate !== undefined), true);
   assert.equal(thailandPack.rules[0].rate, '7');
 });
 
 test('unclassified products are taxed at the standard rate, never silently zero', () => {
-  const india = calculateItemTax(
-    { country: 'IN', business_type: 'restaurant', state_code: 'KA' },
-    { tax_type: 'exclusive', tax_rate: 99, tax_category_id: 'unclassified', tax_behavior: 'exclusive' },
-    1000,
-    null,
+  const india = calculate(indiaPack, [
+    line({ unitPrice: '1000', productCategoryId: 'unclassified', taxBehavior: 'exclusive' }),
+  ], { businessType: 'restaurant', storeStateCode: 'KA' });
+  assert.equal(india.lines[0].taxAmount, '50.00');
+  assert.deepEqual(
+    india.lines[0].components.map((component) => [component.label, component.amount]),
+    [['CGST', '25.00'], ['SGST', '25.00']],
   );
-  assert.equal(india.tax_amount, 50);
-  assert.deepEqual(india.tax_breakdown, [
-    { title: 'CGST', rate: 2.5, amount: 25 },
-    { title: 'SGST', rate: 2.5, amount: 25 },
-  ]);
 
-  const thailand = calculateItemTax(
-    { country: 'TH', business_type: 'restaurant', state_code: '' },
-    { tax_type: 'exclusive', tax_rate: 99, tax_category_id: 'unclassified', tax_behavior: 'exclusive' },
-    100,
-    null,
+  const thailand = calculate(thailandPack, [
+    line({ unitPrice: '100', productCategoryId: 'unclassified', taxBehavior: 'exclusive' }),
+  ], { businessType: 'restaurant' });
+  assert.deepEqual(
+    thailand.lines[0].components.map((component) => [component.label, component.amount]),
+    [['VAT', '7.00']],
   );
-  assert.deepEqual(thailand.tax_breakdown, [{ title: 'VAT', rate: 7, amount: 7 }]);
 
   const indiaUnclassified = indiaPack.categories.find((category) => category.id === 'unclassified')!;
   const thailandUnclassified = thailandPack.categories.find((category) => category.id === 'unclassified')!;

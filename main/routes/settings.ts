@@ -490,6 +490,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'billing_type', 'tables_required', 'tax_registered', 'bill_show_name', 'bill_show_address',
   'bill_show_phone', 'bill_show_gstn',
   'tax_scheme',
+  'taxes_enabled',
   'loyalty_enabled',
   'language',
   'kds_default_view',
@@ -497,6 +498,10 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'telemetry_enabled',
   'kds_enabled', 'kot_printing_enabled',
 ]);
+
+function isAllowedWildcardKey(key: string): boolean {
+  return ALLOWED_WILDCARD_KEYS.has(key) || /^tax_plugin_request:[A-Z]{2}$/.test(key);
+}
 
 router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
   try {
@@ -527,7 +532,7 @@ router.get('/:key', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef')
 
 router.put('/:key', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    if (!ALLOWED_WILDCARD_KEYS.has(req.params.key as string)) {
+    if (!isAllowedWildcardKey(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting cannot be updated via wildcard route' });
     }
     const { value } = req.body;

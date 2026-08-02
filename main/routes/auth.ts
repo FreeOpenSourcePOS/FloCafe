@@ -718,7 +718,6 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       tax_registered,
       billing_type,
       terms_accepted,
-      anonymous_data_consent,
       master_pin,
       cloud_server_url,
     } = req.body;
@@ -732,8 +731,6 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const resolvedStoreName = storeName || 'Store';
     const outletAddress = String(business_address || address || '').trim();
     const outletPhone = String(business_phone || phone || '').trim();
-    const anonymousDataConsent = anonymous_data_consent === true;
-
     if (!displayName || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }
@@ -825,8 +822,8 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         service_model: normalizedServiceModel,
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
-        anonymous_data_consent: anonymousDataConsent ? 'true' : 'false',
-        telemetry_enabled: anonymousDataConsent ? 'true' : 'false',
+        anonymous_data_consent: 'true',
+        telemetry_enabled: 'true',
         telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
         cloud_sync_enabled: cloudSyncEnabled ? 'true' : 'false',
         cloud_server_url: normalizedCloudServerUrl || DEFAULT_CLOUD_SERVER_URL,

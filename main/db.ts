@@ -132,11 +132,11 @@ export function ensureTelemetryAnonId(): string {
 }
 
 /**
- * Opt-in: consent is captured once at first-run setup (see
- * routes/auth.ts `/setup/initialize`'s `anonymous_data_consent`), which sets
- * this setting explicitly. Missing/anything but the literal 'true' means no
- * consent was ever given (including pre-existing installs from before this
- * setting existed) — never defaults to on.
+ * Anonymous usage telemetry is on by default for new installs and is switched
+ * off in Settings > Privacy. First-run setup discloses it rather than asking:
+ * a pre-ticked consent box is not valid consent, so we do not present one.
+ * Tier 2 store-attributed diagnostics is a separate, explicit opt-in and is
+ * never bundled into this stream.
  */
 export function isTelemetryEnabled(): boolean {
   return getSettingValue('telemetry_enabled') === 'true';
@@ -1527,6 +1527,21 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       // the explicit bulk action on the products screen.
     },
   },
+  {
+    version: 43,
+    name: 'telemetry_default_on_for_new_installs',
+    up: () => {
+      // INSERT OR IGNORE, deliberately: an existing merchant's choice must
+      // survive, including an earlier opt-out. Only installs that predate the
+      // setting entirely pick up the new default here — every build released
+      // so far shipped telemetry on, so this changes nothing for the current
+      // fleet and simply keeps a fresh row consistent with seedInstallDefaults.
+      const t = now();
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('telemetry_enabled', 'true', ?)`).run(t);
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', 'true', ?)`).run(t);
+      db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics', ?)`).run(t);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -2234,7 +2249,7 @@ function seedInstallDefaults(): void {
   insert('cloud_command_polling_enabled', '1');
   insert('cloud_registration_status', 'unregistered');
   insert('anonymous_data_consent', 'true');
-  insert('telemetry_enabled', 'false');
+  insert('telemetry_enabled', 'true');
   insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
   insert('kds_enabled', 'true');
   insert('kot_printing_enabled', 'true');

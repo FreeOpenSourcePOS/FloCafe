@@ -1,11 +1,9 @@
 /**
  * Anonymous usage telemetry — independent of cloud sync (sends whether or
  * not this store has cloud sync configured, since it's a separate concern).
- * Opt-in: only sends once the user has consented, either at first-run setup
- * (`anonymous_data_consent`, see routes/auth.ts `/setup/initialize`) or
- * later via Settings > Privacy. See db.isTelemetryEnabled — no consent ever
- * given means this stays a no-op, including for installs that predate this
- * feature.
+ * Enabled by default for new installs. The owner can switch it off at any
+ * time in Settings > Privacy. Tier 2 store diagnostics is a separate,
+ * explicit opt-in and is never bundled into this stream.
  *
  * anon_id is a random UUID persisted locally (see db.ensureTelemetryAnonId),
  * never a store id, device id, or anything else that ties back to a business.

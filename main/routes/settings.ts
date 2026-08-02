@@ -557,6 +557,16 @@ router.put('/:key', requireRole('owner', 'manager'), (req: Request, res: Respons
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run(req.params.key, value, now());
 
+    // Keep the legacy setting as a compatibility mirror. The canonical runtime
+    // switch is telemetry_enabled; this route is the only user-facing writer,
+    // so both stay aligned whenever the owner changes the toggle.
+    if (req.params.key === 'telemetry_enabled') {
+      db.prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', ?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(value, now());
+    }
+
     const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
     res.json({ setting });
   } catch (error: any) {

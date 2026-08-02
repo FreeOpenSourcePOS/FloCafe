@@ -153,7 +153,10 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         setup_profile: 'express',
         service_model: 'qsr',
         terms_accepted: true,
-        anonymous_data_consent: true,
+        // Deliberately sent as false: first-run setup no longer asks about
+        // telemetry, it discloses it. The route must ignore this field
+        // entirely rather than let a stale client switch telemetry off.
+        anonymous_data_consent: false,
       }),
     });
 
@@ -170,8 +173,8 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(setting('billing_type'), 'prepaid');
     assert.equal(setting('tables_required'), 'false');
     assert.equal(setting('onboarding_completed'), 'true');
-    assert.equal(setting('anonymous_data_consent'), 'true');
-    assert.equal(setting('telemetry_enabled'), 'true');
+    assert.equal(setting('anonymous_data_consent'), 'true', 'setup ignores a client-supplied consent field');
+    assert.equal(setting('telemetry_enabled'), 'true', 'telemetry is on by default after setup');
     assert.equal(setting('telemetry_scope'), 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
     assert.equal(count('categories'), 2, 'express setup seeds minimal categories');
     assert.equal(count('products'), 4, 'express setup seeds minimal products');

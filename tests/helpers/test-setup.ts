@@ -225,7 +225,7 @@ function seedProduct(db: any, id: string, categoryId: string, name: string, pric
   tax_type?: string;
   tax_category_id?: string | null;
   tax_behavior?: string;
-  cb_percent?: number;
+  cb_percent?: number | null;
   track_inventory?: boolean;
   stock_quantity?: number;
 }) {
@@ -245,7 +245,7 @@ function seedProduct(db: any, id: string, categoryId: string, name: string, pric
     options?.tax_type || 'none',
     taxCategoryId,
     options?.tax_behavior || 'country_default',
-    options?.cb_percent || 0,
+    options && Object.prototype.hasOwnProperty.call(options, 'cb_percent') ? options.cb_percent : 0,
     options?.track_inventory ? 1 : 0,
     options?.stock_quantity ?? 999,
     1, 1, now(), now()

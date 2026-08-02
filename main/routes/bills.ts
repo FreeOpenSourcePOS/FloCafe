@@ -286,6 +286,11 @@ function applyPayment(
       `SELECT value FROM settings WHERE key = 'loyalty_enabled'`
     ).get() as any)?.value;
     if ((loyaltySetting === 'true' || loyaltySetting === '1') && effectiveCustomerIdForCashback) {
+      const globalCbSetting = (db.prepare(
+        `SELECT value FROM settings WHERE key = 'global_cashback_percent'`
+      ).get() as any)?.value;
+      const globalCbRate = parseFloat(globalCbSetting || '0');
+
       // BUG #20 FIX: Calculate cashback on discounted subtotal (proportional)
       const order = db.prepare('SELECT subtotal, discount_amount FROM orders WHERE id = ?').get(bill.order_id) as any;
       const orderDiscount = order?.discount_amount || 0;
@@ -296,7 +301,7 @@ function applyPayment(
         FROM order_items oi
         JOIN products p ON p.id = oi.product_id
         WHERE oi.order_id = ? AND oi.status != 'cancelled'
-      `).all(bill.order_id) as { subtotal: number; cb_percent: number }[];
+      `).all(bill.order_id) as { subtotal: number; cb_percent: number | null }[];
       for (const item of items) {
         let effectiveSubtotal = item.subtotal;
         // Apply proportional discount to each item's subtotal
@@ -304,9 +309,11 @@ function applyPayment(
           const itemDiscountShare = orderDiscount * (item.subtotal / orderSubtotal);
           effectiveSubtotal = Math.max(0, item.subtotal - itemDiscountShare);
         }
-        // Points earned come solely from each item's own cashback percentage
-        if (item.cb_percent > 0) {
-          loyaltyCashbackToCredit += Math.floor(effectiveSubtotal * item.cb_percent / 100) * 100; // Multiply by LOYALTY_REDEMPTION_RATE (100) to store as points instead of raw currency
+        // Tri-state: NULL inherits the global rate, 0 explicitly earns nothing,
+        // a positive value is the item's own custom rate (loyalty overhaul, #81).
+        const effectiveCbRate = item.cb_percent !== null ? item.cb_percent : globalCbRate;
+        if (effectiveCbRate > 0) {
+          loyaltyCashbackToCredit += Math.floor(effectiveSubtotal * effectiveCbRate / 100) * 100; // Multiply by LOYALTY_REDEMPTION_RATE (100) to store as points instead of raw currency
         }
       }
     }
@@ -453,7 +460,6 @@ function applyPayment(
 router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    // BUG #2 FIX: Entire payment logic inside transaction to prevent race conditions
     const result = withTxn(() => applyPayment(db, req.params.id as string, req.body, req.body.customer_id));
 
     const billStatus = (result.bill as any)?.payment_status;

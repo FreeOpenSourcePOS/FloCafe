@@ -235,6 +235,10 @@ export default function SettingsPage() {
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
   const [savedLoyaltyEnabled, setSavedLoyaltyEnabled] = useState(false);
+  const [globalCashbackPercent, setGlobalCashbackPercent] = useState('0');
+  const [savedGlobalCashbackPercent, setSavedGlobalCashbackPercent] = useState('0');
+  const [globalRateCandidates, setGlobalRateCandidates] = useState(0);
+  const [applyingGlobalRate, setApplyingGlobalRate] = useState(false);
   const [savingLoyalty, setSavingLoyalty] = useState(false);
 
   // Discount settings
@@ -1102,6 +1106,8 @@ export default function SettingsPage() {
 
       setLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
+      setGlobalCashbackPercent(String(loyaltyRes.data.global_cashback_percent ?? 0));
+      setSavedGlobalCashbackPercent(String(loyaltyRes.data.global_cashback_percent ?? 0));
 
       if (discountRes.data.discount_max_percentage !== undefined) {
         const value = normalizeDiscountPercentage(discountRes.data.discount_max_percentage);
@@ -1183,7 +1189,13 @@ export default function SettingsPage() {
     api.get('/settings/loyalty').then((res) => {
       setLoyaltyEnabled(!!res.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!res.data.loyalty_enabled);
+      setGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
+      setSavedGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
     }).catch(() => {});
+
+    api.get('/products/loyalty/global-rate-candidates')
+      .then((res) => setGlobalRateCandidates(Number(res.data.count) || 0))
+      .catch(() => {});
 
     api.get('/settings/discount').then((res) => {
       if (res.data.discount_max_percentage !== undefined) {
@@ -1484,16 +1496,34 @@ export default function SettingsPage() {
   const saveLoyalty = async (silent = false) => {
     setSavingLoyalty(true);
     try {
+      const parsedRate = Math.min(100, Math.max(0, parseFloat(globalCashbackPercent) || 0));
       await api.put('/settings/loyalty', {
         loyalty_enabled: loyaltyEnabled,
+        global_cashback_percent: parsedRate,
       });
       setSavedLoyaltyEnabled(loyaltyEnabled);
+      setGlobalCashbackPercent(String(parsedRate));
+      setSavedGlobalCashbackPercent(String(parsedRate));
       if (!silent) toast.success(t('settings.loyaltySaved'));
     } catch (err) {
       if (!silent) toast.error(t('settings.saveFailed'));
       throw err;
     } finally {
       setSavingLoyalty(false);
+    }
+  };
+
+  const applyGlobalRateToProducts = async () => {
+    setApplyingGlobalRate(true);
+    try {
+      const res = await api.post('/products/loyalty/apply-global-rate');
+      const updated = Number(res.data.updated) || 0;
+      setGlobalRateCandidates(0);
+      toast.success(t('settings.applyGlobalRateDone', { count: updated }));
+    } catch {
+      toast.error(t('settings.saveFailed'));
+    } finally {
+      setApplyingGlobalRate(false);
     }
   };
 
@@ -1677,6 +1707,7 @@ export default function SettingsPage() {
     JSON.stringify(printingForm) !== JSON.stringify(savedPrinting) ||
     JSON.stringify(billForm) !== JSON.stringify(savedBillForm) ||
     loyaltyEnabled !== savedLoyaltyEnabled ||
+    globalCashbackPercent !== savedGlobalCashbackPercent ||
     discountMaxPct !== savedDiscountMaxPct ||
     discountMaxAmount !== savedDiscountMaxAmount ||
     discountMode !== savedDiscountMode ||
@@ -2537,10 +2568,53 @@ export default function SettingsPage() {
                     }`} />
                   </button>
                 </div>
+                {/* Global Cashback Input */}
+                {loyaltyEnabled && (
+                  <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-gray-900">{t('settings.globalLoyaltyRate')}</p>
+                      <p className="text-sm text-gray-500">{t('settings.globalLoyaltyRateHint')}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={globalCashbackPercent}
+                        onChange={(e) => setGlobalCashbackPercent(e.target.value)}
+                        placeholder="0"
+                        className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-right"
+                      />
+                      <span className="text-gray-500 font-medium">%</span>
+                    </div>
+                  </div>
+                )}
+                {/* Products upgraded from before the tri-state all sit at 0%
+                    ("earns nothing"), so the global rate does nothing for them
+                    until the owner explicitly opts them in. */}
+                {loyaltyEnabled && globalRateCandidates > 0 && (
+                  <div className="pt-4 border-t border-gray-100">
+                    <p className="font-medium text-gray-900">{t('settings.applyGlobalRateTitle')}</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {t('settings.applyGlobalRateHint', { count: globalRateCandidates })}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={applyGlobalRateToProducts}
+                      disabled={applyingGlobalRate}
+                      className="mt-3 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {applyingGlobalRate
+                        ? t('settings.applyGlobalRateWorking')
+                        : t('settings.applyGlobalRateAction', { count: globalRateCandidates })}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            
+
             {/* Discount Limits */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">

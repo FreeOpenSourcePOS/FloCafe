@@ -1513,6 +1513,20 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 42,
+    name: 'add_global_cashback_percent',
+    up: () => {
+      insertSettingIfMissing('global_cashback_percent', '0');
+      // Existing cb_percent values are deliberately left alone. Under the
+      // tri-state, 0 means "earns nothing" and NULL means "inherit the global
+      // rate" — and the old schema default was 0, so rewriting 0 to NULL here
+      // would silently opt every product a merchant had excluded back into
+      // earning the moment they set a global rate. Products created from here
+      // on default to NULL; existing ones adopt the global rate only through
+      // the explicit bulk action on the products screen.
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -1650,6 +1664,12 @@ function createSchema(): void {
       tax_rate REAL DEFAULT 0,
       tax_category_id TEXT DEFAULT NULL,
       tax_behavior TEXT DEFAULT 'country_default',
+      -- Stays DEFAULT 0 so a fresh install and an upgraded one have an
+      -- identical products table. SQLite cannot alter a column default without
+      -- rebuilding the table, so changing it here would drift every upgraded
+      -- install away from the ideal schema and light up schema-health forever.
+      -- The tri-state does not depend on the default: every insert path passes
+      -- cb_percent explicitly, and NULL is written as NULL.
       cb_percent REAL DEFAULT 0,
       tags TEXT,
       deleted_at TEXT,

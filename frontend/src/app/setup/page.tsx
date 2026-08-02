@@ -53,7 +53,7 @@ export default function SetupPage() {
     business_name: '',
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [anonymousDataConsent, setAnonymousDataConsent] = useState(true);
+  const [anonymousDataConsent, setAnonymousDataConsent] = useState(false);
   const passwordsEntered = form.password.length > 0 && form.confirmPassword.length > 0;
   const passwordsMatch = !passwordsEntered || form.password === form.confirmPassword;
 
@@ -62,7 +62,7 @@ export default function SetupPage() {
   const [masterPinConfirm, setMasterPinConfirm] = useState('');
   const masterPinValid = /^\d{4}$/.test(masterPin) && masterPin === masterPinConfirm;
 
-  const [cloudEnabled, setCloudEnabled] = useState(false);
+  const cloudEnabled = true;
   const [cloudServerUrl, setCloudServerUrl] = useState(DEFAULT_CLOUD_SERVER_URL);
 
   const isPasswordValid = (password: string) => {
@@ -198,8 +198,8 @@ export default function SetupPage() {
         terms_accepted: termsAccepted,
         anonymous_data_consent: anonymousDataConsent,
         master_pin: masterPinAvailable ? masterPin : undefined,
-        cloud_sync_enabled: cloudEnabled,
-        cloud_server_url: cloudEnabled ? (cloudServerUrl.trim() || DEFAULT_CLOUD_SERVER_URL) : undefined,
+        cloud_sync_enabled: true,
+        cloud_server_url: cloudServerUrl.trim() || DEFAULT_CLOUD_SERVER_URL,
         ...countryPayload,
       });
       completeSetup();
@@ -632,12 +632,12 @@ export default function SetupPage() {
                   <input
                     type="checkbox"
                     checked={cloudEnabled}
-                    onChange={(e) => setCloudEnabled(e.target.checked)}
+                    disabled
                     className="mt-0.5 h-4 w-4 rounded border-gray-300"
                   />
                   <span>
-                    <span className="font-medium text-foreground">{t('setup.cloudEnableLabel')}</span>
-                    <span className="block text-sm text-muted-foreground mt-1">{t('setup.cloudEnableHint')}</span>
+                    <span className="font-medium text-foreground">Cloud Services are enabled automatically</span>
+                    <span className="block text-sm text-muted-foreground mt-1">FloCafe connects automatically so RevFlo pairing and support work without a manual approval step.</span>
                   </span>
                 </label>
 

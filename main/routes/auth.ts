@@ -720,7 +720,6 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       terms_accepted,
       anonymous_data_consent,
       master_pin,
-      cloud_sync_enabled,
       cloud_server_url,
     } = req.body;
     const email = normalizeEmail(req.body.email);
@@ -767,10 +766,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid service model' });
     }
 
-    // Cloud services (#128): off by default, opt-in only. The URL is only
-    // validated/stored when the owner actually enables sync — an invalid URL
-    // in a disabled, unused field shouldn't block setup.
-    const cloudSyncEnabled = cloud_sync_enabled === true;
+    // Cloud v2 registers the POS automatically on first boot. There is no
+    // pending/claim step, so new installs start with cloud coordination on.
+    const cloudSyncEnabled = true;
     let normalizedCloudServerUrl: string | undefined;
     if (cloudSyncEnabled) {
       try {

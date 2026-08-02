@@ -58,6 +58,7 @@ export default function POSPage() {
   const [showCustomerPrompt, setShowCustomerPrompt] = useState(false);
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
+  const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
   const { printBill, printKot } = usePrinterStore();
@@ -76,6 +77,12 @@ export default function POSPage() {
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
       const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');
+      const code = `print.kot.${msg.toLowerCase().includes('spool') ? 'spooler_timeout' : 'failed'}`;
+      setSupportError({
+        code,
+        message: msg,
+        payload: { event_code: code, message: msg, diagnostics: { order_id: order.id, stage: 'kot_print' } },
+      });
       toast.error(`${t('pos.kotPrintFailed')}: ${msg}`);
     }
   };
@@ -95,8 +102,15 @@ export default function POSPage() {
         currency,
         country: currentTenant.country,
       });
-    } catch {
+    } catch (err) {
       // Non-fatal: print failure should not block the checkout flow.
+      const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');
+      const code = 'print.receipt.failed';
+      setSupportError({
+        code,
+        message: msg,
+        payload: { event_code: code, message: msg, diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
+      });
       toast.error(t('pos.receiptPrintFailed'));
     }
   };
@@ -467,6 +481,37 @@ export default function POSPage() {
 
   return (
     <>
+      {supportError && (
+        <div className="fixed bottom-4 left-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-white p-4 shadow-xl">
+          <p className="font-semibold text-red-800">Printing failed</p>
+          <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
+          <details className="mt-2 text-xs text-gray-500">
+            <summary className="cursor-pointer">Show what will be sent</summary>
+            <pre className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(supportError.payload, null, 2)}</pre>
+          </details>
+          <div className="mt-3 flex gap-2">
+            <button
+              className="rounded bg-brand px-3 py-2 text-sm font-medium text-white"
+              onClick={async () => {
+                try {
+                  const response = await api.post('/support-ticket', {
+                    ...supportError.payload,
+                    subject: 'FloCafe printing problem',
+                    include_contact: true,
+                    correlation_id: crypto.randomUUID(),
+                    client_ticket_id: crypto.randomUUID(),
+                  });
+                  toast.success(response.data.message || 'Queued — will send when online');
+                  setSupportError(null);
+                } catch {
+                  toast.error('Could not queue the support request');
+                }
+              }}
+            >Get help</button>
+            <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>Dismiss</button>
+          </div>
+        </div>
+      )}
       <PosTopbar tables={tables} onShowTablePicker={() => setShowTablePicker(true)} />
 
       {/* Main content area */}

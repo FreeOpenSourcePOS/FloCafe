@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { getDatabase } from '../db';
+import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
 
 interface TenantInfo {
@@ -110,6 +110,9 @@ export function calculateItemTax(
   taxableAmount: number,
   customer: Customer | null
 ): TaxResult {
+  if (getSettingValue('taxes_enabled') !== 'true') {
+    return { tax_amount: 0, tax_breakdown: [], tax_type: 'none', tax_snapshot: null };
+  }
   const taxCategoryId = product.tax_category_id || product.tax_category;
   const pack = getActiveCountryPack(tenant.country);
   let merchantOverride: { id: string; categoryId: string } | null = null;
@@ -217,6 +220,7 @@ const CHARGE_KINDS: ChargeTaxKind[] = ['packaging', 'delivery', 'service_charge'
 export function getConfiguredChargeTaxCategories(
   country: string,
 ): Partial<Record<ChargeTaxKind, ChargeTaxCategorySelection>> {
+  if (getSettingValue('taxes_enabled') !== 'true') return {};
   const pack = getActiveCountryPack(country);
   try {
     const rows = getDatabase().prepare(`

@@ -76,6 +76,10 @@ async function main() {
 
     installAndActivateTestTaxPack(db, indiaPackDefinition);
     installAndActivateTestTaxPack(db, thailandPackDefinition);
+    // Tax calculation is intentionally zeroed while the merchant toggle is
+    // off. Enable it here so the management assertions exercise the active
+    // country-plugin path rather than the generic no-tax default.
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'taxes_enabled'").run();
     const listRes = await api(baseUrl, '/api/tax-packs', { headers: manager.authHeader });
     const india = listRes.data.packs.find((pack: any) => pack.id === 'official-india');
     assert(!!india, 'India pack is listed');

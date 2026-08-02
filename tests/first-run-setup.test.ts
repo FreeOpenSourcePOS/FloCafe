@@ -195,12 +195,10 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(count('users'), 1, 'setup cannot create a second owner');
     console.log('   ✓ setup endpoint is disabled after the first user exists');
 
-    // Cloud services during setup are off by default (#128) — the "first"
-    // owner above never sent cloud_sync_enabled, so it should have landed
-    // disabled with the default cloud server URL.
-    assert.equal(setting('cloud_sync_enabled'), 'false', 'cloud sync defaults to disabled when not requested at setup');
-    assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com/', 'cloud server URL keeps the pre-seeded default when cloud sync is disabled');
-    console.log('   ✓ setup endpoint leaves cloud services disabled by default');
+    // Cloud v2 coordination is automatic for new installs.
+    assert.equal(setting('cloud_sync_enabled'), 'true', 'cloud coordination is enabled automatically on v2 setup');
+    assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com', 'cloud server URL keeps the default');
+    console.log('   ✓ setup endpoint enables cloud coordination automatically');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }

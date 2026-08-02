@@ -12,7 +12,6 @@ import {
   Lock,
   Plus,
   RefreshCw,
-  RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
 } from 'lucide-react';
@@ -117,17 +116,6 @@ type Calculation = {
   }>;
 };
 
-type CatalogEntry = {
-  id: string;
-  publisher: string;
-  country: string;
-  jurisdiction: string;
-  version: string;
-  publishedAt: string;
-  minFloVersion: string;
-  digest: string;
-};
-
 const ENTITY_LABELS: Record<OverrideEntityType, string> = {
   product: 'Product',
   addon: 'Add-on',
@@ -135,6 +123,17 @@ const ENTITY_LABELS: Record<OverrideEntityType, string> = {
   delivery: 'Delivery charge',
   service_charge: 'Service charge',
 };
+
+const pluginRequestSettingKey = (country: string) => `tax_plugin_request:${country}`;
+
+async function loadPluginRequestId(country: string): Promise<string | null> {
+  try {
+    const response = await api.get(`/settings/${pluginRequestSettingKey(country)}`);
+    return response.data.setting?.value || null;
+  } catch {
+    return null;
+  }
+}
 const CHARGE_TYPES: OverrideEntityType[] = ['packaging', 'delivery', 'service_charge'];
 
 const ACTION_LABELS: Record<string, string> = {
@@ -198,17 +197,23 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [testAmount, setTestAmount] = useState('100');
   const [testBehavior, setTestBehavior] = useState('country_default');
   const [calculation, setCalculation] = useState<Calculation | null>(null);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogChecked, setCatalogChecked] = useState(false);
-  const [catalogEntries, setCatalogEntries] = useState<CatalogEntry[]>([]);
   const [enablingTaxes, setEnablingTaxes] = useState(false);
   const [countryPackUnavailable, setCountryPackUnavailable] = useState(false);
+  const [taxesEnabled, setTaxesEnabled] = useState(false);
+  const [pluginRequested, setPluginRequested] = useState(false);
 
   const loadList = useCallback(async () => {
-    const response = await api.get('/tax-packs');
+    const [response, settingResponse] = await Promise.all([
+      api.get('/tax-packs'),
+      api.get('/settings/taxes_enabled'),
+    ]);
     const nextPacks = response.data.packs as PackSummary[];
     setPacks(nextPacks);
     setStoreCountry(response.data.store_country);
+    const requestId = await loadPluginRequestId(response.data.store_country);
+    setPluginRequested(Boolean(requestId));
+    setCountryPackUnavailable(Boolean(requestId));
+    setTaxesEnabled(settingResponse.data.setting?.value === 'true');
     setSelectedPackId((current) => {
       if (current && nextPacks.some((pack) => pack.id === current)) return current;
       return nextPacks.find((pack) => pack.active_for_store)?.id || nextPacks[0]?.id || '';
@@ -249,11 +254,18 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   useEffect(() => {
     let cancelled = false;
     void Promise.all([api.get('/tax-packs'), api.get('/tax-packs/audit?limit=100')])
-      .then(([packResponse, auditResponse]) => {
+      .then(async ([packResponse, auditResponse]) => {
         if (cancelled) return;
         const nextPacks = packResponse.data.packs as PackSummary[];
         setPacks(nextPacks);
         setStoreCountry(packResponse.data.store_country);
+        const requestId = await loadPluginRequestId(packResponse.data.store_country);
+        if (cancelled) return;
+        setPluginRequested(Boolean(requestId));
+        setCountryPackUnavailable(Boolean(requestId));
+        void api.get('/settings/taxes_enabled').then((settingResponse) => {
+          setTaxesEnabled(settingResponse.data.setting?.value === 'true');
+        }).catch(() => {});
         setSelectedPackId(
           nextPacks.find((pack) => pack.active_for_store)?.id || nextPacks[0]?.id || '',
         );
@@ -290,9 +302,6 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   }, [selectedPackId]);
 
   const selectedPack = packs.find((pack) => pack.id === selectedPackId);
-  const activeCountryPack = packs.find(
-    (pack) => pack.country === storeCountry && pack.active_for_store,
-  );
   const targetOptions = entityType === 'product'
     ? detail?.targets.products || []
     : entityType === 'addon'
@@ -393,120 +402,41 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
-  async function activateVersion(versionId: string) {
-    if (!isOwner || !selectedPackId) return;
-    setSaving(true);
-    try {
-      await api.post(`/tax-packs/${selectedPackId}/versions/${versionId}/activate`);
-      toast.success('Installed tax pack version activated');
-      await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
-    } catch (error) {
-      toast.error(apiMessage(error, 'Could not activate tax pack version'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function rollback() {
-    if (!isOwner || !selectedPackId || !window.confirm('Roll back to the previous installed version?')) return;
-    setSaving(true);
-    try {
-      await api.post(`/tax-packs/${selectedPackId}/rollback`);
-      toast.success('Tax pack rolled back');
-      await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
-    } catch (error) {
-      toast.error(apiMessage(error, 'Could not roll back tax pack'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function checkForUpdates() {
-    setCatalogLoading(true);
-    try {
-      const response = await api.get('/tax-packs/catalog');
-      const available = response.data.available as CatalogEntry[];
-      setCatalogEntries(available);
-      setCatalogChecked(true);
-      if (available.length === 0) toast.success('Installed tax packs are up to date');
-    } catch (error) {
-      setCatalogEntries([]);
-      setCatalogChecked(true);
-      toast.error(apiMessage(error, 'Could not check for tax pack updates'));
-    } finally {
-      setCatalogLoading(false);
-    }
-  }
-
-  async function installCatalogPack(entry: CatalogEntry) {
-    if (!isOwner) return;
-    setSaving(true);
-    try {
-      await api.post('/tax-packs/catalog/install', {
-        pack_id: entry.id,
-        version: entry.version,
-      });
-      toast.success(`Tax pack ${entry.id} v${entry.version} verified and installed`);
-      setCatalogEntries((current) => current.filter(
-        (candidate) => candidate.id !== entry.id || candidate.version !== entry.version,
-      ));
-      setSelectedPackId(entry.id);
-      await Promise.all([loadList(), loadAudit(), loadDetail(entry.id)]);
-    } catch (error) {
-      toast.error(apiMessage(error, 'Could not install tax pack update'));
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function enableCountryTaxes() {
     if (!isOwner || !storeCountry) return;
     setEnablingTaxes(true);
     setCountryPackUnavailable(false);
     try {
-      const installedPack = packs.find((pack) => pack.country === storeCountry);
-      const installedVersion = installedPack?.versions
-        .slice()
-        .sort((left, right) => right.published_at.localeCompare(left.published_at))[0];
-
-      let packId = installedPack?.id;
-      let versionId = installedVersion?.id;
-      let version = installedVersion?.version;
-
-      if (!packId || !versionId) {
-        const response = await api.get('/tax-packs/catalog');
-        const available = response.data.available as CatalogEntry[];
-        setCatalogEntries(available);
-        setCatalogChecked(true);
-        const entry = available
-          .filter((candidate) => candidate.country === storeCountry)
-          .sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))[0];
-        if (!entry) {
-          setCountryPackUnavailable(true);
-          return;
-        }
-        const installResponse = await api.post('/tax-packs/catalog/install', {
-          pack_id: entry.id,
-          version: entry.version,
-        });
-        packId = installResponse.data.installed.packId;
-        versionId = installResponse.data.installed.versionId;
-        version = installResponse.data.installed.version;
-        setCatalogEntries((current) => current.filter(
-          (candidate) => candidate.id !== entry.id || candidate.version !== entry.version,
-        ));
-      }
-
-      if (!packId || !versionId || !version) {
-        throw new Error('The selected tax pack has no installable version');
-      }
-      await api.post(
-        `/tax-packs/${encodeURIComponent(packId)}/versions/${encodeURIComponent(versionId)}/activate`,
-      );
-      setSelectedPackId(packId);
-      await Promise.all([loadList(), loadAudit(), loadDetail(packId)]);
-      toast.success(`Taxes enabled with ${packId} v${version}`);
+      await api.post('/tax-packs/ensure-country', { country: storeCountry });
+      setTaxesEnabled(true);
+      setCountryPackUnavailable(false);
+      setPluginRequested(false);
+      await Promise.all([loadList(), loadAudit()]);
+      toast.success(`Taxes enabled for ${storeCountry}`);
     } catch (error) {
+      const status = (error as { response?: { status?: number } }).response?.status;
+      if (status === 404) {
+        setCountryPackUnavailable(true);
+        const key = pluginRequestSettingKey(storeCountry);
+        const existing = await loadPluginRequestId(storeCountry);
+        const clientTicketId = existing || crypto.randomUUID();
+        if (!existing) await api.put(`/settings/${key}`, { value: clientTicketId });
+        try {
+          await api.post('/support-ticket', {
+            client_ticket_id: clientTicketId,
+            subject: `Request tax support for ${storeCountry}`,
+            event_code: 'tax.country_plugin_unavailable',
+            message: `The merchant selected ${storeCountry} and enabled taxes, but no verified country tax plugin is currently available. Please create and publish the plugin.`,
+            diagnostics: { country: storeCountry },
+          });
+          setPluginRequested(true);
+        } catch {
+          // The visible unavailable state remains; the support outbox will retry
+          // when the network is available on a later attempt.
+        }
+        return;
+      }
       toast.error(apiMessage(error, 'Could not enable taxes for this country'));
     } finally {
       setEnablingTaxes(false);
@@ -552,14 +482,6 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            onClick={() => void checkForUpdates()}
-            disabled={catalogLoading}
-          >
-            <RefreshCw size={15} className={catalogLoading ? 'animate-spin' : ''} />
-            {catalogLoading ? 'Checking…' : 'Check for updates'}
-          </Button>
-          <Button
-            variant="outline"
             onClick={() => {
               setLoading(true);
               void refreshAll();
@@ -578,14 +500,14 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </div>
       )}
 
-      {!activeCountryPack && (
+      {!taxesEnabled && (
         <section className="rounded-xl border border-blue-200 bg-blue-50 p-5">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="font-semibold text-gray-900">Country taxes are not enabled</h3>
               <p className="mt-1 text-sm text-gray-600">
-                FloCafe is using the generic no-tax profile. An owner can download, verify, and
-                activate an official pack for {storeCountry} when internet access is available.
+                FloCafe is using the generic no-tax profile. When you enable taxes, FloCafe will
+                automatically install the verified plugin for {storeCountry}.
               </p>
             </div>
             <Button
@@ -600,59 +522,38 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           </div>
           {countryPackUnavailable && (
             <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              No official tax pack is currently available for {storeCountry}. Keep taxes disabled,
-              or use the generic/manual configuration below.
+              Tax support for {storeCountry} is not available yet. We have requested the plugin
+              from the FloCafe team and will build it soon. Taxes remain off until it is ready.
+              {pluginRequested && ' Your request is queued for the team.'}
             </p>
           )}
         </section>
       )}
 
-      {catalogChecked && (
-        <section className="rounded-xl border border-gray-200 bg-white p-5">
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Download size={20} className="text-brand" />
-              <div>
-                <h3 className="font-semibold text-gray-900">Available tax packs</h3>
-                <p className="text-sm text-gray-500">
-                  Downloads are verified with the built-in FloCafe signing key before installation.
-                </p>
-              </div>
-            </div>
+      {taxesEnabled && (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 flex items-center justify-between gap-4">
+          <div>
+            <h3 className="font-semibold text-gray-900">Taxes are enabled</h3>
+            <p className="mt-1 text-sm text-gray-600">FloCafe is using the verified plugin for {storeCountry}.</p>
           </div>
-          {catalogEntries.length > 0 ? (
-            <div className="mt-4 space-y-2">
-              {catalogEntries.map((entry) => (
-                <div
-                  key={`${entry.id}@${entry.version}`}
-                  className="flex flex-col gap-3 rounded-lg border border-gray-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-gray-800">
-                      {entry.id} · v{entry.version}
-                    </p>
-                    <p className="mt-0.5 text-xs text-gray-500">
-                      {entry.country === '*' ? 'Generic' : entry.country}
-                      {' · '}{entry.publisher}
-                      {' · '}Published {entry.publishedAt}
-                      {' · '}Requires FloCafe {entry.minFloVersion}+
-                    </p>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={!isOwner || saving}
-                    onClick={() => void installCatalogPack(entry)}
-                    title={!isOwner ? 'Only owners can install tax packs' : undefined}
-                  >
-                    <Download size={14} /> Verify and install
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 text-sm text-gray-500">No newer tax pack versions are available.</p>
-          )}
+          <Button
+            variant="outline"
+            disabled={!isOwner || saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await api.put('/settings/taxes_enabled', { value: 'false' });
+                setTaxesEnabled(false);
+                toast.success('Taxes disabled');
+              } catch (error) {
+                toast.error(apiMessage(error, 'Could not disable taxes'));
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            Turn taxes off
+          </Button>
         </section>
       )}
 
@@ -662,20 +563,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             <ShieldCheck size={20} className="text-brand" />
             <h3 className="font-semibold text-gray-900">Installed country packs</h3>
           </div>
-          {packs.length > 1 && (
-            <select
-              value={selectedPackId}
-              onChange={(event) => setSelectedPackId(event.target.value)}
-              className="rounded-md border border-gray-200 px-3 py-2 text-sm"
-            >
-              {packs.map((pack) => (
-                <option key={pack.id} value={pack.id}>
-                  {pack.country === '*' ? 'Generic' : pack.country} · {pack.publisher}
-                  {pack.active_for_store ? ' (active)' : ''}
-                </option>
-              ))}
-            </select>
-          )}
+          <span className="text-xs text-gray-500">FloCafe selects the plugin for {storeCountry} automatically.</span>
         </div>
 
         {selectedPack && detail ? (
@@ -722,15 +610,6 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             <div className="mt-5 border-t border-gray-100 pt-4">
               <div className="mb-2 flex items-center justify-between">
                 <p className="text-sm font-medium text-gray-800">Installed versions</p>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={!isOwner || saving || detail.versions.length < 2}
-                  onClick={() => void rollback()}
-                  title={detail.versions.length < 2 ? 'No previous installed version is available' : undefined}
-                >
-                  <RotateCcw size={14} /> Roll back
-                </Button>
               </div>
               <div className="space-y-2">
                 {detail.versions.map((version) => {
@@ -741,18 +620,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                         v{version.version}
                         <span className="ml-2 text-xs text-gray-400">{version.status}</span>
                       </span>
-                      {active ? (
-                        <span className="text-xs font-medium text-emerald-700">Active</span>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!isOwner || saving}
-                          onClick={() => void activateVersion(version.id)}
-                        >
-                          Activate installed version
-                        </Button>
-                      )}
+                      {active && <span className="text-xs font-medium text-emerald-700">Active</span>}
                     </div>
                   );
                 })}

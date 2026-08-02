@@ -1,8 +1,32 @@
 # Cloud v2 — FloCafe client plan
 
-Status: **planned, nothing built.** This is the FloCafe-side work for the FloAdmin v2 cloud
+Status: **Phase 1 implemented in the client.** This is the FloCafe-side work for the FloAdmin v2 cloud
 redesign agreed 2026-08-01. Cross-app contracts live in the private specs repo; this file covers
 only what changes inside this repository.
+
+## Phase 1 implementation notes
+
+- New installs enable cloud coordination automatically and register by
+  `cloud_pos_hash`; there is no claim, pending, or human approval step.
+- Pairing uses the server-issued eight-digit code. Routine refreshes do not
+  disconnect existing RevFlo devices; only an explicit revoke action does.
+- Support requests are one-way, durable local outbox entries. They retry when
+  the POS is online and deduplicate by `client_ticket_id`.
+- Printer failures expose a correlation ID and structured error stage so a
+  merchant can send useful diagnostics without exposing billing data.
+
+### Automatic country tax plugins
+
+Taxes remain off until the owner explicitly enables them. The owner selects a
+country only in business settings; the tax screen never exposes a plugin
+catalog, country-pack selector, download button, or manual activation flow.
+When taxes are enabled, FloCafe asks FloAdmin to resolve the current country,
+then verifies, downloads, installs, and activates the matching plugin. If no
+verified plugin exists, FloCafe leaves taxes off, queues one support ticket per
+country, and keeps a visible message explaining that the plugin has been
+requested and will be built soon. Changing the business country while taxes
+are enabled repeats the same automatic resolution and disables taxes if the
+new country is not yet supported.
 
 Nothing here affects offline operation. **Billing must never block on the cloud** — that rule is
 unchanged, and every item below is required to degrade quietly when the network is gone.

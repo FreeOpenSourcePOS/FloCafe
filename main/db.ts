@@ -1473,6 +1473,46 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 40,
+    name: 'v2_cloud_defaults_and_tax_toggle',
+    up: () => {
+      // Seed-written timestamps use SQLite's format without T. An ISO
+      // timestamp means the merchant explicitly changed the setting.
+      db.prepare(`
+        UPDATE settings
+           SET value = '1', updated_at = ?
+         WHERE key = 'cloud_sync_enabled'
+           AND value = '0'
+           AND updated_at NOT LIKE '%T%'
+      `).run(now());
+      db.prepare(`DELETE FROM settings WHERE key = 'cloud_pending_store_id'`).run();
+      insertSettingIfMissing('taxes_enabled', 'false');
+    },
+  },
+  {
+    version: 41,
+    name: 'support_ticket_outbox',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS support_ticket_outbox (
+          client_ticket_id TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending', 'sending', 'delivered', 'failed')),
+          support_code TEXT,
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at TEXT,
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          delivered_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_support_ticket_outbox_retry
+          ON support_ticket_outbox(status, next_attempt_at, created_at);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -2119,7 +2159,7 @@ function seedCloudSyncDefaults(): void {
   // see specs/floadmin.md § api surface). Harmless pre-claim: every send path in
   // cloud-sync.ts is gated on api_key being present, which only exists after a
   // human claims the store on FloAdmin, so nothing transmits before then.
-  insertSettingIfMissing('cloud_sync_enabled', '0');
+  insertSettingIfMissing('cloud_sync_enabled', '1');
   insertSettingIfMissing('cloud_orders_enabled', '0');
   insertSettingIfMissing('cloud_reports_enabled', '1');
   insertSettingIfMissing('cloud_command_polling_enabled', '1');
@@ -2161,19 +2201,20 @@ function seedInstallDefaults(): void {
   insert('gstin', '');
   insert('state_code', '');
   insert('tax_scheme', 'regular');
+  insert('taxes_enabled', 'false');
   insert('billing_type', 'postpaid');
   insert('tables_required', 'true');
   insert('service_model', 'finedine');
   insert('setup_profile', '');
   insert('cloud_server_url', DEFAULT_CLOUD_SERVER_URL);
   insert('cloud_connected', 'false');
-  insert('cloud_sync_enabled', '0');
+  insert('cloud_sync_enabled', '1');
   insert('cloud_orders_enabled', '0');
   insert('cloud_reports_enabled', '1');
   insert('cloud_command_polling_enabled', '1');
   insert('cloud_registration_status', 'unregistered');
   insert('anonymous_data_consent', 'true');
-  insert('telemetry_enabled', 'true');
+  insert('telemetry_enabled', 'false');
   insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
   insert('kds_enabled', 'true');
   insert('kot_printing_enabled', 'true');

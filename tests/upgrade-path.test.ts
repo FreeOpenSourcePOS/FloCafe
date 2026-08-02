@@ -49,6 +49,16 @@ fixtureDb.prepare(`
   INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, tax_breakdown, total)
   VALUES ('INV-LEGACY-TAX', ?, 100, 5, ?, 105)
 `).run(legacyOrder.lastInsertRowid, legacyTaxBreakdown);
+fixtureDb.prepare(`
+  INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES
+    ('cloud_sync_enabled', '0', '2026-08-01 12:00:00'),
+    ('cloud_pending_store_id', 'old-pending-id', '2026-08-01 12:00:00'),
+    ('cloud_server_url', 'https://example.test/', '2026-08-01 12:00:00')
+`).run();
+fixtureDb.prepare(`
+  INSERT OR REPLACE INTO settings (key, value, updated_at)
+  VALUES ('cloud_orders_enabled', '0', '2026-08-01T12:00:00.000Z')
+`).run();
 fixtureDb.close();
 
 const mockApp = {
@@ -89,6 +99,17 @@ function main() {
   console.log('   ✓ an old (pre-migration-array) install migrates through to the latest schema without crashing');
 
   const db = getDatabase();
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'cloud_sync_enabled'").get().value, '1',
+    'seed-written cloud sync defaults are flipped on during upgrade');
+  assert.equal(db.prepare("SELECT COUNT(*) AS count FROM settings WHERE key = 'cloud_pending_store_id'").get().count, 0,
+    'pending registration state is removed during upgrade');
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'cloud_orders_enabled'").get().value, '0',
+    'explicitly edited settings remain unchanged during upgrade');
+  assert.equal(db.prepare("SELECT value FROM settings WHERE key = 'taxes_enabled'").get().value, 'false',
+    'taxes remain off until the merchant enables them');
+  assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'support_ticket_outbox'").get(),
+    'support ticket outbox exists after upgrade');
+  console.log('   ✓ v40 preserves deliberate settings, flips untouched cloud sync, and creates the support outbox');
   const ideal = buildIdealSchemaDb();
   const latestSchemaVersion = ideal.pragma('user_version', { simple: true }) as number;
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,

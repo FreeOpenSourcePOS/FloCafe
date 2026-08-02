@@ -8,6 +8,15 @@ import { getDatabase } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
+import { correlationId, type FloErrorCode } from '../errors';
+
+export type PrintResult = {
+  ok: boolean;
+  code?: FloErrorCode;
+  correlationId: string;
+  stage: 'prepare' | 'dispatch';
+  detail?: string;
+};
 
 const isMasBuild =
   process.env.MAS_BUILD === '1' ||
@@ -492,6 +501,31 @@ export async function printKOT(order: any, items: any[], stationName: string, us
   } catch (error: any) {
     console.error('[Printer] KOT print error:', error);
     return false;
+  }
+}
+
+/** Typed adapters used by API callers while legacy boolean callers migrate. */
+export async function printReceiptDetailed(...args: Parameters<typeof printReceipt>): Promise<PrintResult> {
+  const id = correlationId();
+  try {
+    const ok = await printReceipt(...args);
+    return ok
+      ? { ok: true, correlationId: id, stage: 'dispatch' }
+      : { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch' };
+  } catch (error) {
+    return { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch', detail: (error as Error).message };
+  }
+}
+
+export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Promise<PrintResult> {
+  const id = correlationId();
+  try {
+    const ok = await printKOT(...args);
+    return ok
+      ? { ok: true, correlationId: id, stage: 'dispatch' }
+      : { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch' };
+  } catch (error) {
+    return { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch', detail: (error as Error).message };
   }
 }
 

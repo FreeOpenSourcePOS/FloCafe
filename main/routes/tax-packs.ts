@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID, createHash, type KeyLike } from 'crypto';
 import Decimal from 'decimal.js';
-import { getDatabase, getSettingValue, now, withTxn } from '../db';
+import { getDatabase, getSettingValue, now, upsertSettings, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { TaxEngine } from '../services/tax-engine';
 import type { CountryPack, TaxBehavior } from '../tax-packs/types';
@@ -57,6 +57,28 @@ function parseJson<T>(value: string | null | undefined, fallback: T): T {
 
 function actorUserId(req: Request): string | null {
   return (req as any).user?.userId || (req as any).user?.id || null;
+}
+
+function activateInstalledPack(pack: PackRow, version: VersionRow, actorId: string | null): void {
+  const db = getDatabase();
+  const validation = validationChecklist(version);
+  if (!validation.valid) {
+    throw Object.assign(new Error('Tax pack failed activation validation'), { statusCode: 400 });
+  }
+  const previousVersionId = pack.active_version_id;
+  withTxn(() => {
+    db.prepare(`UPDATE country_packs SET status = 'installed', updated_at = ? WHERE country = ? AND id != ?`)
+      .run(now(), pack.country, pack.id);
+    if (previousVersionId) {
+      db.prepare(`UPDATE country_pack_versions SET status = 'installed' WHERE id = ?`).run(previousVersionId);
+      db.prepare(`UPDATE tax_overrides SET pack_version_id = ?, updated_at = ? WHERE pack_version_id = ?`)
+        .run(version.id, now(), previousVersionId);
+    }
+    db.prepare(`UPDATE country_packs SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ?`)
+      .run(version.id, now(), pack.id);
+    db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(version.id);
+    audit('activate_pack', actorId, pack.id, version.id, null, { previousVersionId, automatic: true });
+  });
 }
 
 function trustStatus(pack: PackRow, overrideCount: number): string {
@@ -659,6 +681,47 @@ router.get('/catalog', requireRole('owner', 'manager'), async (_req: Request, re
   } catch (error: any) {
     console.error('[Tax Packs] Catalog fetch failed:', error);
     res.status(502).json({ error: error.message || 'Could not check the tax pack catalog' });
+  }
+});
+
+// Merchant-facing path: resolve the selected country without exposing the
+// catalog or allowing manual selection of a different country's plugin.
+router.post('/ensure-country', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+  try {
+    const country = String(req.body?.country || getSettingValue('country') || '').toUpperCase();
+    if (!/^[A-Z]{2}$/.test(country)) return res.status(400).json({ error: 'Invalid country' });
+    const db = getDatabase();
+    let pack = db.prepare(`SELECT * FROM country_packs WHERE country = ? AND status IN ('active', 'installed') ORDER BY status = 'active' DESC, updated_at DESC LIMIT 1`).get(country) as PackRow | undefined;
+    let version = pack?.active_version_id
+      ? db.prepare('SELECT * FROM country_pack_versions WHERE id = ? AND pack_id = ?').get(pack.active_version_id, pack.id) as VersionRow | undefined
+      : undefined;
+
+    if (!version && pack) {
+      // Reuse a verified download if activation was interrupted before the
+      // active_version_id was written.
+      version = db.prepare(`
+        SELECT * FROM country_pack_versions
+         WHERE pack_id = ? AND status IN ('installed', 'active')
+         ORDER BY published_at DESC, id DESC LIMIT 1
+      `).get(pack.id) as VersionRow | undefined;
+    }
+    if (!version) {
+      const remote = await fetchRemoteTaxPackCatalog();
+      const entry = remote.catalog.packs
+        .filter((candidate) => candidate.country === country)
+        .sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))[0];
+      if (!entry) return res.status(404).json({ plugin_available: false, country, error: `Tax support for ${country} is not available yet` });
+      const installed = await installCatalogEntry(entry, { actorUserId: actorUserId(req) });
+      pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(installed.packId) as PackRow;
+      version = db.prepare('SELECT * FROM country_pack_versions WHERE id = ?').get(installed.versionId) as VersionRow;
+    }
+    if (!pack || !version) throw new Error('Installed tax pack could not be loaded');
+    activateInstalledPack(pack, version, actorUserId(req));
+    upsertSettings({ taxes_enabled: 'true' });
+    return res.json({ enabled: true, country, pack_id: pack.id, version: version.version });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 502;
+    return res.status(statusCode).json({ error: error.message || 'Could not install the country tax plugin' });
   }
 });
 

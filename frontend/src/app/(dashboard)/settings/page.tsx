@@ -237,6 +237,8 @@ export default function SettingsPage() {
   const [savedLoyaltyEnabled, setSavedLoyaltyEnabled] = useState(false);
   const [globalCashbackPercent, setGlobalCashbackPercent] = useState('0');
   const [savedGlobalCashbackPercent, setSavedGlobalCashbackPercent] = useState('0');
+  const [globalRateCandidates, setGlobalRateCandidates] = useState(0);
+  const [applyingGlobalRate, setApplyingGlobalRate] = useState(false);
   const [savingLoyalty, setSavingLoyalty] = useState(false);
 
   // Discount settings
@@ -1191,6 +1193,10 @@ export default function SettingsPage() {
       setSavedGlobalCashbackPercent(String(res.data.global_cashback_percent ?? 0));
     }).catch(() => {});
 
+    api.get('/products/loyalty/global-rate-candidates')
+      .then((res) => setGlobalRateCandidates(Number(res.data.count) || 0))
+      .catch(() => {});
+
     api.get('/settings/discount').then((res) => {
       if (res.data.discount_max_percentage !== undefined) {
         const value = normalizeDiscountPercentage(res.data.discount_max_percentage);
@@ -1504,6 +1510,20 @@ export default function SettingsPage() {
       throw err;
     } finally {
       setSavingLoyalty(false);
+    }
+  };
+
+  const applyGlobalRateToProducts = async () => {
+    setApplyingGlobalRate(true);
+    try {
+      const res = await api.post('/products/loyalty/apply-global-rate');
+      const updated = Number(res.data.updated) || 0;
+      setGlobalRateCandidates(0);
+      toast.success(t('settings.applyGlobalRateDone', { count: updated }));
+    } catch {
+      toast.error(t('settings.saveFailed'));
+    } finally {
+      setApplyingGlobalRate(false);
     }
   };
 
@@ -2570,10 +2590,31 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 )}
+                {/* Products upgraded from before the tri-state all sit at 0%
+                    ("earns nothing"), so the global rate does nothing for them
+                    until the owner explicitly opts them in. */}
+                {loyaltyEnabled && globalRateCandidates > 0 && (
+                  <div className="pt-4 border-t border-gray-100">
+                    <p className="font-medium text-gray-900">{t('settings.applyGlobalRateTitle')}</p>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {t('settings.applyGlobalRateHint', { count: globalRateCandidates })}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={applyGlobalRateToProducts}
+                      disabled={applyingGlobalRate}
+                      className="mt-3 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {applyingGlobalRate
+                        ? t('settings.applyGlobalRateWorking')
+                        : t('settings.applyGlobalRateAction', { count: globalRateCandidates })}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
-            
+
             {/* Discount Limits */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">

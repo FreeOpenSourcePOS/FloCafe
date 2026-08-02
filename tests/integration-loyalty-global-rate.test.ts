@@ -217,7 +217,7 @@ async function main() {
     assert(badCsv2.data.errors.some((e: string) => e.includes('invalid cashback_percent "-5"')), 'csv rejects negative cashback percent');
 
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario 4: Legacy migration test (cb_percent=0 converted to NULL)
+    // Scenario 4: the migration must NOT rewrite legacy cb_percent = 0
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario 4: Legacy migration test ───');
 
@@ -231,8 +231,41 @@ async function main() {
     assert(cbMigration !== undefined, 'add_global_cashback_percent migration registered in db.ts');
     cbMigration.up();
 
+    // 0 means "earns nothing" and NULL means "inherit the global rate". The old
+    // schema default was 0, so rewriting it here would silently opt every
+    // excluded product back into earning the moment an owner sets a global
+    // rate. The migration leaves the data alone; the owner opts in explicitly.
     const legacyProd = db.prepare("SELECT cb_percent FROM products WHERE id = 'prod-legacy'").get() as any;
-    assertEqual(legacyProd.cb_percent, null, 'legacy product with cb_percent=0 converted to NULL by the migration\'s up()');
+    assertEqual(legacyProd.cb_percent, 0, 'migration preserves an existing cb_percent = 0 instead of rewriting it to NULL');
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Scenario 5: the explicit bulk opt-in is what moves 0 → NULL
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario 5: bulk apply global rate ───');
+
+    const candidates = await api(baseUrl, '/api/products/loyalty/global-rate-candidates', {
+      method: 'GET',
+      headers: authHeader,
+    });
+    assertEqual(candidates.status, 200, 'candidate count endpoint responds');
+    assert(candidates.data.count >= 1, 'legacy zero-rate product is counted as a candidate');
+
+    const applied = await api(baseUrl, '/api/products/loyalty/apply-global-rate', {
+      method: 'POST',
+      body: {},
+      headers: authHeader,
+    });
+    assertEqual(applied.status, 200, 'bulk apply endpoint responds');
+    assert(applied.data.updated >= 1, 'bulk apply reports the rows it changed');
+
+    const afterApply = db.prepare("SELECT cb_percent FROM products WHERE id = 'prod-legacy'").get() as any;
+    assertEqual(afterApply.cb_percent, null, 'bulk apply switches a zero-rate product to inherit the global rate');
+
+    const afterCount = await api(baseUrl, '/api/products/loyalty/global-rate-candidates', {
+      method: 'GET',
+      headers: authHeader,
+    });
+    assertEqual(afterCount.data.count, 0, 'no candidates remain after the bulk apply');
 
   } finally {
     server.close();

@@ -784,4 +784,36 @@ router.post('/:id/stock', requireRole('owner', 'manager'), (req: Request, res: R
   }
 });
 
+// Every product created before the tri-state loyalty rates carries
+// cb_percent = 0, which now reads as "earns nothing" — so an owner who sets a
+// global rate on an upgraded install sees nothing happen. Migration 42
+// deliberately does not rewrite those rows: "never configured" and
+// "deliberately excluded" are indistinguishable in the old data, and guessing
+// would silently start paying out on products a merchant had excluded. These
+// two routes are the explicit, counted alternative — the owner sees how many
+// products are affected, then chooses.
+router.get('/loyalty/global-rate-candidates', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+  try {
+    const row = getDatabase().prepare(
+      'SELECT COUNT(*) AS count FROM products WHERE cb_percent = 0 AND deleted_at IS NULL'
+    ).get() as { count: number };
+    res.json({ count: row.count });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.post('/loyalty/apply-global-rate', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+  try {
+    const result = getDatabase().prepare(
+      'UPDATE products SET cb_percent = NULL, updated_at = ? WHERE cb_percent = 0 AND deleted_at IS NULL'
+    ).run(now());
+    res.json({ updated: result.changes });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 export const productRoutes = router;

@@ -40,6 +40,31 @@ This changes only new/default installations. Upgrades must preserve every instal
 pack, active version, override, and historical tax snapshot; startup must never
 delete or deactivate an existing country pack as part of this change.
 
+### Upgrade safety guarantee
+
+Taxation changes must be safe for every supported installation that upgrades from an older
+FloCafe version:
+
+- Create a verified database backup before any schema migration and retain the pre-migration
+  copy for rollback.
+- Use only additive, versioned migrations. Never delete or rename legacy tax columns in the
+  first rollout, and never edit an already-applied migration.
+- Preserve existing products, orders, bills, tax breakdowns, active pack, merchant overrides,
+  open/held orders, and historical tax snapshots unless a documented migration adds a nullable
+  field or audit record.
+- Do not automatically activate a newly downloaded tax pack on an existing store. Download,
+  validation, and activation remain separate; activation requires owner approval.
+- Keep the legacy adapter for products using `tax_type`/`tax_rate`. Ambiguous products remain
+  usable and appear in a review queue; migration must not silently make them tax-free.
+- Historical finalized transactions always use their stored snapshot, never current rules.
+- If migration or pack activation fails, keep the prior active configuration and allow the
+  store to continue operating offline while surfacing recovery instructions.
+
+Existing installations should therefore keep their data and remain usable after upgrading,
+provided the implementation follows this contract and passes fresh-database, oldest-supported
+fixture, interrupted-migration, rollback, and mixed legacy/new tax tests. The application
+upgrade itself must not silently change a store's tax outcome.
+
 ## Architecture layering
 
 Core (generic tax engine + translations + manual config + offline fallback) → Country profiles (signed, versioned, bundled + updatable data) → Capability plugins (#142, executable, isolated `utilityProcess`: fiscal auth, payments, delivery, complex jurisdiction lookups) → optional external paid services, never required.

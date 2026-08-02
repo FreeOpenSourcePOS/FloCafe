@@ -47,6 +47,7 @@ type CloudCommand = {
   id: string;
   type: string;
   payload?: Record<string, unknown>;
+  correlation_id?: string;
 };
 
 type OutboxRow = {
@@ -629,9 +630,9 @@ class CloudSyncService {
     let body: Record<string, unknown>;
     try {
       const result = this.runCommand(command);
-      body = { ok: true, result, completed_at: new Date().toISOString() };
+      body = { version: 1, correlation_id: command.correlation_id || command.id, ok: true, result, completed_at: new Date().toISOString() };
     } catch (err) {
-      body = { ok: false, error: (err as Error).message, completed_at: new Date().toISOString() };
+      body = { version: 1, correlation_id: command.correlation_id || command.id, ok: false, error: (err as Error).message, completed_at: new Date().toISOString() };
     }
 
     const res = await this.signedFetch(`/api/pos/commands/${encodeURIComponent(command.id)}/result`, {
@@ -646,9 +647,9 @@ class CloudSyncService {
     let body: Record<string, unknown>;
     try {
       const result = this.runCommand(command);
-      body = { ok: true, result, completed_at: new Date().toISOString() };
+      body = { version: 1, correlation_id: command.correlation_id || command.id, ok: true, result, completed_at: new Date().toISOString() };
     } catch (err) {
-      body = { ok: false, error: (err as Error).message, completed_at: new Date().toISOString() };
+      body = { version: 1, correlation_id: command.correlation_id || command.id, ok: false, error: (err as Error).message, completed_at: new Date().toISOString() };
     }
     if (this.relaySocket?.readyState === WebSocket.OPEN) {
       this.relaySocket.send(JSON.stringify({ type: 'result', id: command.id, ...body }));
@@ -761,7 +762,15 @@ class CloudSyncService {
     }
 
     if (frame?.type === 'command' && frame.id && frame.cmd) {
-      void this.executeRelayCommand({ id: frame.id, type: frame.cmd, payload: frame.payload });
+      const envelope = frame.payload && typeof frame.payload === 'object' ? frame.payload : {};
+      const commandPayload = envelope.version === 1 && envelope.payload && typeof envelope.payload === 'object'
+        ? envelope.payload : envelope;
+      void this.executeRelayCommand({
+        id: frame.id,
+        type: frame.cmd,
+        payload: commandPayload,
+        correlation_id: typeof envelope.correlation_id === 'string' ? envelope.correlation_id : frame.id,
+      });
     } else if (frame?.type === 'heartbeat_ack') {
       this.applyFeatures(frame.features);
     }
@@ -841,6 +850,9 @@ class CloudSyncService {
   }
 
   private runCommand(command: CloudCommand): unknown {
+    if (command.payload && command.payload.version === 1 && command.payload.payload && typeof command.payload.payload === 'object') {
+      command = { ...command, payload: command.payload.payload as Record<string, unknown> };
+    }
     switch (command.type) {
       case 'health.get':
         return this.healthPayload();
@@ -850,6 +862,14 @@ class CloudSyncService {
         return this.getOrder(command.payload);
       case 'report.sales':
         return this.salesReport(command.payload);
+      case 'report.dashboard':
+        return this.dashboardReport(command.payload);
+      case 'report.hourly':
+        return this.hourlyReport(command.payload);
+      case 'report.items':
+        return this.itemsReport(command.payload);
+      case 'report.payments':
+        return this.paymentsReport(command.payload);
       default:
         throw new Error(`Unsupported command type: ${command.type}`);
     }
@@ -938,7 +958,91 @@ class CloudSyncService {
       LIMIT 20
     `).all(range.from, range.to);
 
-    return { range, totals, by_day: byDay, top_items: topItems };
+    return {
+      range,
+      totals,
+      data: (byDay as any[]).map((row) => ({ period: row.date, total: row.gross_sales, bill_count: row.bill_count })),
+      top_items: topItems,
+    };
+  }
+
+  private dashboardReport(payload?: Record<string, unknown>) {
+    const range = dateRange({ from: payload?.date, to: payload?.date });
+    const db = getDatabase();
+    const totals = db.prepare(`
+      SELECT COUNT(*) AS bill_count, COALESCE(SUM(total), 0) AS total_sales,
+             COALESCE(SUM(tax_amount), 0) AS total_tax,
+             COALESCE(SUM(discount_amount), 0) AS total_discount
+        FROM bills
+       WHERE payment_status = 'paid' AND date(COALESCE(paid_at, created_at)) BETWEEN date(?) AND date(?)
+    `).get(range.from, range.to) as any;
+    const topItems = db.prepare(`
+      SELECT oi.product_name AS name, COALESCE(SUM(oi.quantity), 0) AS qty,
+             COALESCE(SUM(oi.total), 0) AS revenue,
+             COALESCE(AVG(oi.unit_price), 0) AS price
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN bills b ON b.order_id = o.id
+       WHERE b.payment_status = 'paid' AND date(COALESCE(b.paid_at, b.created_at)) BETWEEN date(?) AND date(?)
+       GROUP BY oi.product_id, oi.product_name ORDER BY revenue DESC LIMIT 5
+    `).all(range.from, range.to);
+    const paymentRows = this.paymentBreakdown(range);
+    const totalSales = Number(totals.total_sales || 0);
+    return {
+      ...totals,
+      avg_order_value: totals.bill_count ? totalSales / Number(totals.bill_count) : 0,
+      payment_breakdown: Object.fromEntries((paymentRows as any[]).map((row) => [String(row.method || 'other').toLowerCase(), row.amount])),
+      top_items: topItems,
+    };
+  }
+
+  private hourlyReport(payload?: Record<string, unknown>) {
+    const range = dateRange({ from: payload?.date, to: payload?.date });
+    const rows = getDatabase().prepare(`
+      SELECT strftime('%H', COALESCE(paid_at, created_at)) AS hour,
+             COALESCE(SUM(total), 0) AS sales, COUNT(*) AS bills
+        FROM bills
+       WHERE payment_status = 'paid' AND date(COALESCE(paid_at, created_at)) BETWEEN date(?) AND date(?)
+       GROUP BY hour ORDER BY hour
+    `).all(range.from, range.to) as any[];
+    const byHour = new Map(rows.map((row) => [String(row.hour).padStart(2, '0'), row]));
+    return { hours: Array.from({ length: 24 }, (_, hour) => {
+      const row = byHour.get(String(hour).padStart(2, '0'));
+      return { hour: `${String(hour).padStart(2, '0')}:00`, sales: row?.sales || 0, bills: row?.bills || 0 };
+    }) };
+  }
+
+  private itemsReport(payload?: Record<string, unknown>) {
+    const range = dateRange(payload);
+    const requestedLimit = Number(payload?.limit);
+    const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
+    const items = getDatabase().prepare(`
+      SELECT oi.product_name AS name, COALESCE(SUM(oi.quantity), 0) AS qty_sold,
+             COALESCE(SUM(oi.total), 0) AS revenue
+        FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN bills b ON b.order_id = o.id
+       WHERE b.payment_status = 'paid' AND date(COALESCE(b.paid_at, b.created_at)) BETWEEN date(?) AND date(?)
+       GROUP BY oi.product_id, oi.product_name ORDER BY revenue DESC LIMIT ?
+    `).all(range.from, range.to, limit);
+    return { items };
+  }
+
+  private paymentsReport(payload?: Record<string, unknown>) {
+    const range = dateRange(payload);
+    const rows = this.paymentBreakdown(range) as any[];
+    const total = rows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    return {
+      total,
+      breakdown: rows.map((row) => ({ method: row.method || 'Other', amount: row.amount || 0, count: row.count || 0, percent: total ? Number(row.amount || 0) / total * 100 : 0 })),
+    };
+  }
+
+  private paymentBreakdown(range: DateRange) {
+    return getDatabase().prepare(`
+      SELECT json_extract(je.value, '$.method') AS method,
+             COUNT(*) AS count, COALESCE(SUM(json_extract(je.value, '$.amount')), 0) AS amount
+        FROM bills b, json_each(b.payment_details) je
+       WHERE b.payment_details IS NOT NULL
+         AND date(COALESCE(json_extract(je.value, '$.timestamp'), b.paid_at, b.created_at)) BETWEEN date(?) AND date(?)
+       GROUP BY method ORDER BY amount DESC
+    `).all(range.from, range.to);
   }
 
   private buildOrderSnapshot(orderId: number | string) {

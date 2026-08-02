@@ -2,6 +2,20 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.5.0] - 2026-08-03
+
+### Added
+- New installs now register with the cloud automatically on first boot — no pending state, no human approval queue, no claim step. Pairing a phone (RevFlo) uses a server-issued 8-digit code, valid 24 hours, without disconnecting devices already paired; only an explicit "disconnect everyone" action does that.
+- Printer, sync, and other critical failures now carry a correlation ID and a structured failing stage, and expose a **Get help** button that shows the exact support payload before sending, queues it locally if offline, and retries with backoff. Nothing is sent unless the button is pressed.
+- Automatic country tax plugins: turning on taxes in Business Settings now resolves, verifies, downloads, and activates the matching country's tax pack with no manual catalog or download step. If no verified plugin exists yet for a country, taxes stay off and one support ticket is queued automatically.
+- Loyalty: products can now set their own earning rate, inherit a new store-wide global rate, or be explicitly excluded from earning — instead of a single per-item percentage with no fallback. Existing products keep their current earning behavior exactly; nothing changes automatically. Settings → Loyalty shows how many products are still on the old "earns nothing" default and offers a one-click, fully-reversible way to switch them onto the global rate if that's what you want (#81, thanks @khaira777).
+
+### Changed
+- Anonymous usage telemetry is on by default for new installs. First-run setup no longer presents a pre-ticked consent checkbox — a pre-ticked box isn't valid consent under GDPR or India's DPDPA, and FloCafe ships across roughly 34 countries — it now plainly discloses what's sent, with the full field list one tap away, and points at the one-click off switch in Settings → Privacy. Installs that already made a choice, including turning it off, are left exactly as they were.
+
+### Fixed
+- Live reports (dashboard, hourly, sales, items, payments) requested from RevFlo are now correctly versioned, correlation-tracked, and bounded, and a request that times out can no longer be overwritten by a stray late result from the POS. Reports are never stored server-side.
+
 ## [2.4.7] - 2026-07-29
 
 ### Fixed

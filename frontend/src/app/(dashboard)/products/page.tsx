@@ -94,6 +94,7 @@ export default function ProductsPage() {
   const [catReassignTo, setCatReassignTo] = useState<string>('');
 
   const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
+  const [defaultTaxCategoryId, setDefaultTaxCategoryId] = useState('');
   const [showBulkTaxModal, setShowBulkTaxModal] = useState(false);
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
@@ -139,7 +140,11 @@ export default function ProductsPage() {
       })
       .finally(() => { setLoading(false); });
     api.get('/tax/categories', { signal: controller.signal })
-      .then((res) => setTaxCategories((res.data as { categories?: { id: string; label: string }[] }).categories || []))
+      .then((res) => {
+        const data = res.data as { categories?: { id: string; label: string }[]; default_category_id?: string | null };
+        setTaxCategories(data.categories || []);
+        setDefaultTaxCategoryId(data.default_category_id || '');
+      })
       .catch((err: unknown) => {
         if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) setTaxCategories([]);
       });
@@ -220,6 +225,12 @@ export default function ProductsPage() {
     setImageTouched(false);
     setEditingProduct(null);
     setShowForm(false);
+  };
+
+  const openCreate = () => {
+    resetForm();
+    setForm((current) => ({ ...current, tax_category_id: defaultTaxCategoryId }));
+    setShowForm(true);
   };
 
   const openEdit = (product: Product) => {
@@ -481,7 +492,7 @@ export default function ProductsPage() {
             <Button variant="outline" onClick={() => openCsvModal('products')}>
               <FileSpreadsheet size={16} className="mr-1" /> CSV
             </Button>
-            <Button onClick={() => { resetForm(); setShowForm(true); }}>
+            <Button onClick={openCreate}>
               <Plus size={16} className="mr-1" /> {t('products.addProduct')}
             </Button>
           </div>
@@ -717,14 +728,17 @@ export default function ProductsPage() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tax category</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tax rate group</label>
                 <select value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
-                  <option value="">— {t('products.taxNone')} —</option>
+                  <option value="">— No tax / exempt —</option>
                   {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
                 </select>
                 {taxCategories.length === 0 && (
-                  <p className="text-xs text-gray-400 mt-1">No tax categories available. Products remain tax-free until a category is configured.</p>
+                  <p className="text-xs text-gray-400 mt-1">No tax groups are available until country taxes are enabled in Settings.</p>
+                )}
+                {taxCategories.length > 0 && (
+                  <p className="text-xs text-gray-400 mt-1">The store default is selected automatically. Change this only when a product legally uses a different rate or is exempt.</p>
                 )}
               </div>
               {form.tax_category_id ? (

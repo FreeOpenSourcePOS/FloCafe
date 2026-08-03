@@ -13,9 +13,19 @@ import {
   type TaxPackCatalogEntry,
 } from '../tax-packs/catalog';
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from '../tax-packs/trusted-signing-key';
+import legacyIndiaPack from '../tax-packs/in.json';
+import legacyThailandPack from '../tax-packs/th.json';
 
 const router = Router();
 const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
+// India and Thailand were bundled unsigned before country packs moved to the
+// signed release catalog. Existing customer databases still contain those
+// exact artifacts. Trust only an exact canonical match so upgrades work while
+// modified or newly downloaded artifacts continue to require Ed25519.
+const LEGACY_TRUSTED_PACKS_BY_ID = new Map<string, CountryPack>([
+  [legacyIndiaPack.id, legacyIndiaPack as CountryPack],
+  [legacyThailandPack.id, legacyThailandPack as CountryPack],
+]);
 const APP_VERSION = String(require('../../package.json').version);
 const ENTITY_TYPES = ['product', 'addon', 'packaging', 'delivery', 'service_charge'] as const;
 const TAX_BEHAVIORS: TaxBehavior[] = ['country_default', 'inclusive', 'exclusive', 'exempt'];
@@ -318,10 +328,13 @@ export function validationChecklist(
     `FloCafe ${APP_VERSION} satisfies minimum compatible version ${pack.minFloVersion}`);
   add(5, version.digest === createHash('sha256').update(version.pack_json).digest('hex'), 'Stored artifact digest matches');
   const bundledDefinition = BUNDLED_PACKS_BY_ID.get(pack.id);
+  const legacyTrustedDefinition = LEGACY_TRUSTED_PACKS_BY_ID.get(pack.id);
   const trustedArtifact = pack.publisher === 'local'
     ? version.signature === null
     : Boolean(
       (bundledDefinition && JSON.stringify(bundledDefinition) === JSON.stringify(pack))
+      || (version.signature === null && legacyTrustedDefinition
+        && JSON.stringify(legacyTrustedDefinition) === JSON.stringify(pack))
       || (version.signature && verifyTaxPackSignature(version.pack_json, version.signature, publicKey)),
     );
   add(6, trustedArtifact, pack.publisher === 'local'
@@ -717,6 +730,16 @@ router.post('/ensure-country', requireRole('owner', 'manager'), async (req: Requ
     }
     if (!pack || !version) throw new Error('Installed tax pack could not be loaded');
     activateInstalledPack(pack, version, actorUserId(req));
+    const definition = JSON.parse(version.pack_json) as CountryPack;
+    // Enabling taxes should work immediately for a normal merchant. Existing
+    // explicit assignments are preserved; only previously unclassified rows
+    // receive the official country defaults.
+    withTxn(() => {
+      db.prepare(`UPDATE products SET tax_category_id = ?, updated_at = ? WHERE tax_category_id IS NULL AND deleted_at IS NULL`)
+        .run(definition.defaultCategories.product, now());
+      db.prepare(`UPDATE addons SET tax_category_id = ? WHERE tax_category_id IS NULL`)
+        .run(definition.defaultCategories.addon);
+    });
     upsertSettings({ taxes_enabled: 'true' });
     return res.json({ enabled: true, country, pack_id: pack.id, version: version.version });
   } catch (error: any) {

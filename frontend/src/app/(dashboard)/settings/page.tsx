@@ -921,6 +921,7 @@ export default function SettingsPage() {
   // Mobile App Pairing
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [pairingExpiresAt, setPairingExpiresAt] = useState<string | null>(null);
+  const [pairingQrDataUrl, setPairingQrDataUrl] = useState<string | null>(null);
   // Defaults to true (not false) so the "Generate Pairing Code" button can't
   // render — and be clicked — before the /settings/cloud fetch below has told
   // us whether this store is actually registered. Clicking it in that window
@@ -1022,9 +1023,7 @@ export default function SettingsPage() {
   });
    
   const [savingCloud, setSavingCloud] = useState(false);
-  const [testingCloud, setTestingCloud] = useState(false);
   const [registeringCloud, setRegisteringCloud] = useState(false);
-  const [cloudTestResult, setCloudTestResult] = useState<'ok' | 'fail' | null>(null);
   const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
 
   const [telemetryEnabled, setTelemetryEnabled] = useState(false);
@@ -1224,9 +1223,9 @@ export default function SettingsPage() {
     });
 
     api.get('/settings/diagnostics_consent').then((res) => {
-      setDiagnosticsConsent(res.data.setting?.value === 'true');
+      setDiagnosticsConsent(res.data.setting?.value !== 'false');
     }).catch(() => {
-      setDiagnosticsConsent(false);
+      setDiagnosticsConsent(true);
     });
 
     fetchGoogleDriveStatus();
@@ -1278,6 +1277,7 @@ export default function SettingsPage() {
         api.get('/mobile/pairing-code').then((pcRes) => {
           setPairingCode(pcRes.data.pairing_code);
           setPairingExpiresAt(pcRes.data.expires_at);
+          setPairingQrDataUrl(pcRes.data.qr_data_url || null);
           setPairingUnavailable(false);
         }).catch(() => {
           setPairingUnavailable(true);
@@ -1327,10 +1327,14 @@ export default function SettingsPage() {
   const saveCloud = async (silent = false) => {
     setSavingCloud(true);
     try {
-      await api.put('/settings/cloud', cloudSettings);
-      setSavedCloudSettings(cloudSettings);
+      const res = await api.put('/settings/cloud', {
+        cloud_sync_enabled: cloudSettings.cloud_sync_enabled,
+        cloud_orders_enabled: cloudSettings.cloud_orders_enabled,
+      });
+      const next = { ...cloudSettings, ...res.data };
+      setCloudSettings(next);
+      setSavedCloudSettings(next);
       if (!silent) toast.success(t('settings.cloudSaved'));
-      setCloudTestResult(null);
     } catch (err) {
       if (!silent) toast.error(t('settings.cloudSaveFailed'));
       throw err;
@@ -1341,20 +1345,6 @@ export default function SettingsPage() {
 
   const resetCloud = () => {
     setCloudSettings(savedCloudSettings);
-  };
-
-  const testCloudConnection = async () => {
-    if (!cloudSettings.cloud_api_key) { toast.error(t('settings.apiKeyRequired')); return; }
-    setTestingCloud(true);
-    setCloudTestResult(null);
-    try {
-      await api.post('/settings/cloud/test');
-      setCloudTestResult('ok');
-    } catch {
-      setCloudTestResult('fail');
-    } finally {
-      setTestingCloud(false);
-    }
   };
 
   const registerCloud = async (email: string) => {
@@ -1696,6 +1686,7 @@ export default function SettingsPage() {
       const res = await api.post('/mobile/rotate-code');
       setPairingCode(res.data.pairing_code);
       setPairingExpiresAt(res.data.expires_at);
+      setPairingQrDataUrl(res.data.qr_data_url || null);
       setPairingUnavailable(false);
       toast.success(t('settings.pairingCodeRotated'));
       loadPairedDevices();
@@ -3484,43 +3475,7 @@ export default function SettingsPage() {
               </div>
 
               <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.apiKey')} <span className="text-xs text-gray-400 font-normal">{t('settings.apiKeyHint')}</span></label>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      value={cloudSettings.cloud_api_key}
-                      onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_api_key: e.target.value })}
-                      placeholder={t('settings.apiKeyInputPlaceholder')}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand outline-none"
-                    />
-                    <button
-                      onClick={testCloudConnection}
-                      disabled={testingCloud}
-                      className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 font-medium disabled:opacity-50"
-                    >
-                      {testingCloud ? t('settings.testing') : t('settings.test')}
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">{t('settings.apiKeyHelp')}</p>
-                  {cloudTestResult === 'ok' && (
-                    <p className="flex items-center gap-1 text-xs text-green-600 mt-1"><CheckCircle2 size={13} /> {t('settings.connectedToFloadmin')}</p>
-                  )}
-                  {cloudTestResult === 'fail' && (
-                    <p className="flex items-center gap-1 text-xs text-red-600 mt-1"><CloudOff size={13} /> {t('settings.connectionFailed')}</p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.storeId')} <span className="text-gray-400 font-normal">{t('settings.optional')}</span></label>
-                  <input
-                    type="text"
-                    value={cloudSettings.cloud_store_id}
-                    onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_store_id: e.target.value })}
-                    placeholder={t('settings.storeIdPlaceholder')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-brand outline-none"
-                  />
-                </div>
+                <p className="text-sm text-gray-600">{t('settings.cloudManagedAutomatically')}</p>
 
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
@@ -3730,13 +3685,6 @@ export default function SettingsPage() {
                 <span className="text-sm text-gray-700">{t('settings.enableOnlineOrderPolling')}</span>
               </label>
 
-              {cloudSettings.cloud_store_id && (
-                <div className="bg-gray-50 rounded-lg px-4 py-3 text-xs space-y-1">
-                  <p className="text-gray-500 font-medium">{t('settings.webhookUrls')}</p>
-                  <p className="font-mono text-gray-700">{t('settings.webhookZomato', { id: cloudSettings.cloud_store_id })}</p>
-                  <p className="font-mono text-gray-700">{t('settings.webhookSwiggy', { id: cloudSettings.cloud_store_id })}</p>
-                </div>
-              )}
             </div>
 
             {/* RevFlo — consolidated: download/QR + app (pairing) code + paired devices */}
@@ -3783,7 +3731,11 @@ export default function SettingsPage() {
                   <p className="text-sm text-gray-500">{t('settings.mobilePairingNeedsCloud')}</p>
                 ) : pairingCode ? (
                   <div className="space-y-3">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-4">
+                      {pairingQrDataUrl && (
+                        <img src={pairingQrDataUrl} alt={t('settings.pairingQrAlt')} className="w-28 h-28 rounded-lg border border-gray-200" />
+                      )}
+                      <div className="flex items-center gap-3 flex-1">
                       <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
                         <span className="font-mono text-2xl font-bold tracking-[0.3em] text-gray-900">
                           {pairingCode.toUpperCase()}
@@ -3796,6 +3748,7 @@ export default function SettingsPage() {
                       >
                         {copiedCode ? <Check size={18} className="text-green-600" /> : <Copy size={18} />}
                       </button>
+                      </div>
                     </div>
                     {pairingExpiresAt && (
                       <p className="text-xs text-gray-400">

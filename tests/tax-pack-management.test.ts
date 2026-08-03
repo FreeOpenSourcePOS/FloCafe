@@ -42,6 +42,7 @@ const { registerRoutes } = require('../main/routes/index');
 const { calculateConfiguredChargeTaxes } = require('../main/services/tax');
 const {
   installCatalogEntry,
+  validationChecklist,
 } = require('../main/routes/tax-packs');
 const {
   taxPackSha256,
@@ -91,14 +92,8 @@ async function main() {
     assert(detailRes.data.categories.length > 0, 'categories are available for reference');
     assert(detailRes.data.rules.length > 0, 'rules are available for reference');
     assertEqual(detailRes.data.active_version.validation.checks.length, 24, 'all 24 activation checks are reported');
-    assertEqual(
-      detailRes.data.active_version.validation.checks
-        .filter((check: any) => !check.passed)
-        .map((check: any) => check.id)
-        .join(','),
-      '6',
-      'the test-seeded India source only lacks its release signature',
-    );
+    assertEqual(detailRes.data.active_version.validation.valid, true,
+      'an exact legacy bundled India artifact remains trusted after upgrade');
     for (const packId of ['official-thailand', 'local-generic']) {
       const packDetail = await api(baseUrl, `/api/tax-packs/${packId}`, { headers: manager.authHeader });
       assertEqual(packDetail.status, 200, `${packId} details are readable`);
@@ -111,14 +106,37 @@ async function main() {
         .filter((check: any) => !check.passed)
         .map((check: any) => check.id)
         .join(',');
-      assertEqual(
-        failedCheckIds,
-        packId === 'local-generic' ? '' : '6',
-        packId === 'local-generic'
-          ? `${packId} passes its activation vectors`
-          : `${packId} test source only lacks its release signature`,
-      );
+      assertEqual(failedCheckIds, '', `${packId} passes activation validation`);
     }
+
+    const legacyIndiaRow = db.prepare(
+      'SELECT * FROM country_pack_versions WHERE id = ?'
+    ).get(`${indiaPackDefinition.id}@${indiaPackDefinition.version}`);
+    const tamperedPackJson = JSON.stringify({ ...indiaPackDefinition, currency: 'USD' });
+    const tamperedValidation = validationChecklist({
+      ...legacyIndiaRow,
+      pack_json: tamperedPackJson,
+      digest: taxPackSha256(tamperedPackJson),
+    });
+    assertEqual(
+      tamperedValidation.checks.find((check: any) => check.id === 6)?.passed,
+      false,
+      'an unsigned modified legacy artifact is still rejected',
+    );
+
+    db.prepare(`UPDATE products SET tax_category_id = NULL WHERE id = 'override-product'`).run();
+    const enableLegacyPack = await api(baseUrl, '/api/tax-packs/ensure-country', {
+      method: 'POST',
+      body: { country: 'IN' },
+      headers: owner.authHeader,
+    });
+    assertEqual(enableLegacyPack.status, 200, 'owner can enable taxes with the exact legacy India pack');
+    assertEqual(
+      db.prepare(`SELECT tax_category_id FROM products WHERE id = 'override-product'`).get().tax_category_id,
+      indiaPackDefinition.defaultCategories.product,
+      'enabling taxes assigns the official default to uncategorized products',
+    );
+    db.prepare(`UPDATE products SET tax_category_id = NULL WHERE id = 'override-product'`).run();
 
     console.log('\n2. Test calculation is available to managers');
     const calculationRes = await api(baseUrl, '/api/tax-packs/test-calculation', {

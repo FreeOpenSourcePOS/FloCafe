@@ -307,6 +307,14 @@ function main() {
     getDatabase().prepare('SELECT 1 FROM country_pack_versions WHERE id = ?').get(preservedVersionId),
     'the previously installed active pack version is preserved',
   );
+  getDatabase().prepare(`UPDATE settings SET value = 'false' WHERE key = 'diagnostics_consent'`).run();
+  getDatabase().pragma('user_version = 46');
+  closeDatabase();
+  initDatabase();
+  const diagnosticsSetting = getDatabase().prepare(
+    `SELECT value FROM settings WHERE key = 'diagnostics_consent'`,
+  ).get() as { value: string };
+  assert.equal(diagnosticsSetting.value, 'false', 'v47 preserves an existing diagnostics opt-out');
   console.log('   ✓ reopening is idempotent and preserves an already-active country pack');
   closeDatabase();
 

@@ -143,13 +143,11 @@ export function isTelemetryEnabled(): boolean {
 }
 
 /**
- * Tier 2 store-attributed diagnostics — a separate, explicit opt-in from Tier
- * 1 telemetry above. Never pre-ticked: a store that already consented to
- * anonymous collection has not thereby consented to events being attributed
- * to it. Defaults to 'false' for every install, new or upgraded.
+ * Tier 2 store-attributed diagnostics, kept separate from anonymous telemetry.
+ * New installs default to enabled; an owner can switch it off in Settings.
  */
 export function isDiagnosticsConsentEnabled(): boolean {
-  return getSettingValue('diagnostics_consent') === 'true';
+  return getSettingValue('diagnostics_consent') !== 'false';
 }
 
 /**
@@ -1556,11 +1554,9 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 44,
     name: 'store_diagnostics_outbox',
     up: () => {
-      // diagnostics_consent defaults to 'false' for every install, upgraded or
-      // fresh — unlike telemetry_enabled above, this is never turned on by a
-      // migration. It is Tier 2 (store-attributed), a separate explicit
-      // opt-in from Tier 1's anonymous telemetry (specs/floadmin.md § 6.2).
-      insertSettingIfMissing('diagnostics_consent', 'false');
+      // This setting is migrated to the product default in v47. Keep the
+      // original schema migration safe for databases upgrading through v44.
+      insertSettingIfMissing('diagnostics_consent', 'true');
       db.exec(`
         CREATE TABLE IF NOT EXISTS store_diagnostics_outbox (
           event_id TEXT PRIMARY KEY,
@@ -1675,6 +1671,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         toOne.run(key);
         toZero.run(key);
       }
+    },
+  },
+  {
+    version: 47,
+    name: 'store_diagnostics_enabled_by_default',
+    up: () => {
+      // New installs already receive the v44/v47 default. Preserve an existing
+      // false value because it may represent an owner's explicit opt-out.
+      insertSettingIfMissing('diagnostics_consent', 'true');
     },
   },
 ];
@@ -2386,7 +2391,7 @@ function seedInstallDefaults(): void {
   insert('anonymous_data_consent', 'true');
   insert('telemetry_enabled', 'true');
   insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
-  insert('diagnostics_consent', 'false');
+  insert('diagnostics_consent', 'true');
   insert('kds_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('order_number_prefix', 'ORD');

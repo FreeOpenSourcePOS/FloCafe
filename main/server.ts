@@ -122,6 +122,19 @@ function rewriteNextExportPath(reqPath: string): string {
   return prefix + rewrittenName + extPart;
 }
 
+/** Resolve a clean application route to its own Next.js static-export page. */
+export function resolveStaticPage(frontendDir: string, reqPath: string): string {
+  const route = reqPath.replace(/^\/+|\/+$/g, '');
+  if (!route) return path.join(frontendDir, 'index.html');
+  // Static app routes contain only path-safe segments. Unknown or suspicious
+  // paths fall back to the root page without ever escaping frontendDir.
+  if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(route)) {
+    return path.join(frontendDir, 'index.html');
+  }
+  const candidate = path.join(frontendDir, route, 'index.html');
+  return fs.existsSync(candidate) ? candidate : path.join(frontendDir, 'index.html');
+}
+
 export function startServer(): Promise<void> {
   return new Promise((resolve, reject) => {
     app = express();
@@ -202,10 +215,11 @@ export function startServer(): Promise<void> {
 
       app.use(express.static(frontendDir, { dotfiles: 'deny', index: false }));
 
-      // SPA fallback: any unknown path returns index.html so Next.js
-      // client-side routing works. Exclude /api (API routes) and /kds.
-      app.get(/^(?!\/api|\/kds).*$/, (_req: Request, res: Response) => {
-        res.sendFile(path.join(frontendDir, 'index.html'));
+      // Serve each Next.js static route's own index. Returning the root export
+      // for /whatsapp (or any direct link/refresh) runs app/page.tsx and sends
+      // the user to Dashboard instead of the requested page.
+      app.get(/^(?!\/api|\/kds).*$/, (req: Request, res: Response) => {
+        res.sendFile(resolveStaticPage(frontendDir, req.path));
       });
     } else {
       console.warn('[Server] Frontend build not found. Run `npm run build:frontend` first.');

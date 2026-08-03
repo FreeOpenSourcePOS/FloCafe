@@ -99,11 +99,6 @@ function hmacHex(secret: string, value: string): string {
   return crypto.createHmac('sha256', secret).update(value).digest('hex');
 }
 
-function maskSecret(value: string | null | undefined): string | null {
-  if (!value) return null;
-  return `****${value.slice(-4)}`;
-}
-
 function isLocalDevUrl(url: URL): boolean {
   return ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
 }
@@ -278,8 +273,6 @@ class CloudSyncService {
       cloud_server_url: refreshed.cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
       cloud_pos_hash: refreshed.cloud_pos_hash || null,
       cloud_pos_id: refreshed.cloud_pos_id || null,
-      cloud_store_id: refreshed.cloud_store_id || null,
-      cloud_api_key: maskSecret(refreshed.cloud_api_key),
       cloud_sync_enabled: refreshed.cloud_sync_enabled === '1',
       cloud_orders_enabled: refreshed.cloud_orders_enabled === '1',
       cloud_reports_enabled: refreshed.cloud_reports_enabled === '1',

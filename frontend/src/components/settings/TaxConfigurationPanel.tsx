@@ -203,6 +203,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [countryPackUnavailable, setCountryPackUnavailable] = useState(false);
   const [taxesEnabled, setTaxesEnabled] = useState(false);
   const [pluginRequested, setPluginRequested] = useState(false);
+  const [showAdvancedTools, setShowAdvancedTools] = useState(false);
 
   const loadList = useCallback(async () => {
     const [response, settingResponse] = await Promise.all([
@@ -478,7 +479,8 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         <div>
           <h2 className="text-xl font-semibold text-gray-900">Tax configuration</h2>
           <p className="mt-1 text-sm text-gray-500">
-            Review installed country packs, apply merchant overrides, and test calculations.
+            Enable the verified tax rules for your store country. FloCafe applies the standard
+            product tax group automatically; exceptions can be changed per product.
           </p>
         </div>
         <div className="flex gap-2">
@@ -559,6 +561,22 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </section>
       )}
 
+      <button
+        type="button"
+        onClick={() => setShowAdvancedTools((value) => !value)}
+        className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white p-5 text-left"
+      >
+        <div>
+          <h3 className="font-semibold text-gray-900">Advanced tax tools</h3>
+          <p className="mt-1 text-sm text-gray-500">
+            Optional testing, charge rules, exceptions, pack details, and audit history. Most stores never need these.
+          </p>
+        </div>
+        <ChevronDown size={18} className={`shrink-0 text-gray-500 ${showAdvancedTools ? 'rotate-180' : ''}`} />
+      </button>
+
+      {showAdvancedTools && (
+        <>
       <section className="rounded-xl border border-gray-200 bg-white p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2">
@@ -850,6 +868,8 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           {!audit.length && <p className="py-6 text-center text-sm text-gray-400">No tax configuration changes recorded.</p>}
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 }

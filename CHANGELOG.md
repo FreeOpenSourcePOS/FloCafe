@@ -2,6 +2,21 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.7.0] - 2026-08-04
+
+### Added
+- RevFlo pairing now shows the short-lived numeric code beside a scannable QR code. The RevFlo plan documents scanner support with manual entry as a fallback.
+- Store diagnostics are enabled by default for new installs. Existing owner opt-outs remain unchanged, and diagnostics can still be disabled in Settings → Privacy.
+
+### Changed
+- Cloud store IDs, API keys, and platform webhook URLs are now managed internally and hidden from Settings instead of being presented as merchant-editable configuration.
+- Tax setup now assigns the country pack's standard tax group to uncategorized products and add-ons automatically. Specialist tools—test calculations, charge categories, merchant overrides, pack details, and audit history—are grouped under a collapsed Advanced section.
+- Patched vulnerable transitive frontend development dependencies; both production and full dependency audits now report zero known vulnerabilities.
+
+### Fixed
+- Settings → WhatsApp now opens the WhatsApp page instead of falling through the static export's root route and redirecting to Dashboard.
+- Upgraded stores can enable the original bundled India and Thailand tax packs again. Only byte-for-byte-equivalent legacy artifacts are trusted without a signature; modified or downloaded packs still require a valid trusted Ed25519 signature.
+
 ## [2.6.2] - 2026-08-03
 
 ### Fixed

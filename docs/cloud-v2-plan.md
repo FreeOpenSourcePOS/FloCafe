@@ -10,6 +10,11 @@ only what changes inside this repository.
   `cloud_pos_hash`; there is no claim, pending, or human approval step.
 - Pairing uses the server-issued eight-digit code. Routine refreshes do not
   disconnect existing RevFlo devices; only an explicit revoke action does.
+- RevFlo pairing is now QR-ready: FloCafe shows the short-lived pairing code
+  as readable digits and as a QR containing only that code. RevFlo's Pair
+  screen should scan and validate the numeric payload, then reuse the existing
+  `POST /api/pairing/redeem` request; manual entry remains the fallback when
+  camera access is unavailable.
 - Support requests are one-way, durable local outbox entries. They retry when
   the POS is online and deduplicate by `client_ticket_id`.
 - Printer failures expose a correlation ID and structured error stage so a
@@ -115,7 +120,9 @@ store's recent failures instead of fleet aggregates.
 - Send: store id, severity, error code, correlation id, app version, platform, redacted metadata.
 - **Never send** merchant name, email, phone, addresses, customer data, or order contents. The
   server joins contact details from the store record when it needs them.
-- Off unless explicitly enabled. Not pre-ticked.
+- Enabled by default so support diagnostics are available immediately; the
+  owner can turn it off at any time in Settings. It remains separate from
+  anonymous telemetry and never includes customer or order contents.
 
 ### Wording
 

@@ -39,6 +39,7 @@ import {
 import { applyPayableRounding } from '../services/tax-engine';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
+import QRCode from 'qrcode';
 
 // "Cloud POS is not registered" (thrown synchronously by cloud-sync.ts's
 // signedFetch, no network call even attempted) means this store was never
@@ -118,6 +119,7 @@ export function registerRoutes(app: Express): void {
         categories: configurationReady
           ? pack.categories.map((category) => ({ id: category.id, label: category.label }))
           : [],
+        default_category_id: configurationReady ? pack.defaultCategories.product : null,
         configuration_ready: configurationReady,
         unclassified_category_id: pack.unclassifiedCategoryId,
       });
@@ -134,11 +136,19 @@ export function registerRoutes(app: Express): void {
     try {
       const cached = getCachedPairingCode();
       if (cached) {
-        return res.json({ pairing_code: cached.code, expires_at: cached.expiresAt });
+        return res.json({
+          pairing_code: cached.code,
+          expires_at: cached.expiresAt,
+          qr_data_url: await QRCode.toDataURL(cached.code, { errorCorrectionLevel: 'M', width: 256 }),
+        });
       }
       const { code, expires_at } = await cloudSync.generatePairingCode(false);
       setCachedPairingCode(code, expires_at);
-      res.json({ pairing_code: code, expires_at });
+      res.json({
+        pairing_code: code,
+        expires_at,
+        qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
+      });
     } catch (error: any) {
       res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
     }
@@ -149,7 +159,11 @@ export function registerRoutes(app: Express): void {
     try {
       const { code, expires_at } = await cloudSync.generatePairingCode(true);
       setCachedPairingCode(code, expires_at);
-      res.json({ pairing_code: code, expires_at });
+      res.json({
+        pairing_code: code,
+        expires_at,
+        qr_data_url: await QRCode.toDataURL(code, { errorCorrectionLevel: 'M', width: 256 }),
+      });
     } catch (error: any) {
       res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
     }

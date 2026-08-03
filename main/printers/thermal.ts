@@ -527,15 +527,22 @@ function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void 
     connection_type: connectionType,
   });
 
-  cloudSync.reportDiagnostic({
-    event_id: randomUUID(),
-    event_code: result.code || `print.${kind}.failed`,
-    severity: 'error',
-    correlation_id: result.correlationId,
-    message: (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300),
-    metadata: { connection_type: connectionType, kind, os_platform: process.platform },
-    occurred_at: new Date().toISOString(),
-  });
+  try {
+    cloudSync.reportDiagnostic({
+      event_id: randomUUID(),
+      event_code: result.code || `print.${kind}.failed`,
+      severity: 'error',
+      correlation_id: result.correlationId,
+      message: (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300),
+      metadata: { connection_type: connectionType, kind, os_platform: process.platform },
+      occurred_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    // Never let a diagnostics-plumbing error (e.g. a mid-migration DB) turn a
+    // printer failure into an unhandled rejection — the caller must still get
+    // back the real PrintResult so the cashier sees the actual printer error.
+    console.error('[Printer] reportDiagnostic failed (non-fatal):', err);
+  }
 }
 
 /** Typed adapters used by API callers while legacy boolean callers migrate. */

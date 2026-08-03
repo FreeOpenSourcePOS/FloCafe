@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons } from '../db';
+import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate } from '../db';
 import {
   calculateConfiguredChargeTaxes,
   calculateItemTax,
@@ -104,67 +104,167 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
   try {
     const user = (req as any).user;
     const db = getDatabase();
-    let query = 'SELECT * FROM orders WHERE 1=1';
+    const wheres: string[] = [];
     const params: any[] = [];
 
     if (req.query.status) {
       const statuses = (req.query.status as string).split(',');
       if (statuses.length === 1) {
-        query += ' AND status = ?';
+        wheres.push('status = ?');
         params.push(statuses[0]);
       } else {
-        query += ` AND status IN (${statuses.map(() => '?').join(',')})`;
+        wheres.push(`status IN (${statuses.map(() => '?').join(',')})`);
         params.push(...statuses);
       }
     }
     if (req.query.type) {
-      query += ' AND type = ?';
+      wheres.push('type = ?');
       params.push(req.query.type);
     }
+    // #208: `today` is the UTC day, as a range filter (was UTC date() that
+    // wrapped the column and blocked `idx_orders_created_at`). `start_date` /
+    // `end_date` add a range filter so the UI can actually load older pages
+    // — combined with the cursor, this is what gives us real pagination
+    // instead of "latest 50 forever".
     if (req.query.today && req.query.today !== '0' && req.query.today !== 'false') {
-      query += " AND date(created_at) = date('now')";
+      const [s, e] = utcDayBounds(utcTodayDate());
+      wheres.push('created_at >= ? AND created_at < ?');
+      params.push(s, e);
+    } else {
+      const startDate = typeof req.query.start_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.start_date) ? req.query.start_date : null;
+      const endDate = typeof req.query.end_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.end_date) ? req.query.end_date : null;
+      if (startDate) {
+        wheres.push('created_at >= ?');
+        params.push(utcDayBounds(startDate)[0]);
+      }
+      if (endDate) {
+        wheres.push('created_at < ?');
+        params.push(utcDayBounds(endDate)[1]);
+      }
     }
     if (req.query.table_id) {
-      query += ' AND table_id = ?';
+      wheres.push('table_id = ?');
       params.push(req.query.table_id);
     }
-
     if (user.role === 'waiter') {
-      query += ' AND user_id = ?';
+      wheres.push('user_id = ?');
       params.push(user.userId);
     }
-
-    query += ' ORDER BY created_at DESC';
-
-    if (req.query.per_page) {
-      const perPage = Math.min(Math.max(parseInt(req.query.per_page as string) || 50, 1), 500);
-      query += ` LIMIT ${perPage}`;
+    // Cursor pagination: `before` / `after` are ORDER BY keys (created_at),
+    // composed with `id` to break ties when many orders share a second.
+    if (typeof req.query.before_id === 'string' && /^\d+$/.test(req.query.before_id)) {
+      const oid = parseInt(req.query.before_id, 10);
+      const ref = db.prepare('SELECT created_at FROM orders WHERE id = ?').get(oid) as { created_at: string } | undefined;
+      if (ref) {
+        wheres.push('(created_at, id) < (?, ?)');
+        params.push(ref.created_at, oid);
+      }
     }
 
-    const orders = db.prepare(query).all(...params).map(parseRowJson);
+    const whereSql = wheres.length > 0 ? `WHERE ${wheres.join(' AND ')}` : '';
+    // #208: cap page size even when clients omit per_page (the original
+    // "unbounded" default made GET /orders on the tables page load the entire
+    // active-order history with the N+1 below).
+    const requestedPerPage = req.query.per_page ? parseInt(req.query.per_page as string, 10) : NaN;
+    const perPage = Number.isInteger(requestedPerPage) && requestedPerPage > 0
+      ? Math.min(requestedPerPage, 500)
+      : 50;
+    const perPagePlusOne = perPage + 1;
 
-    // Load related data
-    const ordersWithRelations = orders.map((order: any) => {
-      const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
-      const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
-      const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
-      const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
-      const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any);
-      if (bill && (bill as any).customer_id) {
-        const earned = db.prepare(
-          `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`
-        ).get((bill as any).id) as { total: number };
-        (bill as any).points_earned = earned.total;
-      }
-      return { ...order, items, table, customer, bill };
+    const orders = db.prepare(`
+      SELECT * FROM orders
+      ${whereSql}
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+    `).all(...params, perPagePlusOne) as any[];
+
+    const hasMore = orders.length > perPage;
+    const pageOrders = hasMore ? orders.slice(0, perPage) : orders;
+    const nextCursor = hasMore ? pageOrders[pageOrders.length - 1].id : null;
+
+    // #208: replace the per-order N+1 (5 queries × N) with one IN() per
+    // relation, then assemble. Measured ~300+ queries per poll → ~6.
+    const ordersWithRelations = batchHydrateOrders(db, pageOrders);
+
+    res.json({
+      orders: ordersWithRelations,
+      ...(nextCursor !== null && { nextCursor }),
     });
-
-    res.json({ orders: ordersWithRelations });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+/**
+ * Batch the relations (items+addons, table, customer, bill+loyalty) for a
+ * page of orders into 5 IN() queries instead of N per-order prepared calls.
+ * Used by GET /orders and kept here so the orders route owns its own data
+ * shape. #208
+ */
+function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
+  if (orders.length === 0) return [];
+  // Normalize JSON text columns (tax_breakdown/tax_snapshot on orders and
+  // items) so the list endpoint matches GET /orders/:id. parseRowJson is
+  // idempotent, so the /:id path passing an already-parsed row is fine.
+  const parsedOrders = orders.map(parseRowJson);
+  const ids = parsedOrders.map((o) => o.id);
+  const tableIds = Array.from(new Set(parsedOrders.map((o: any) => o.table_id).filter(Boolean)));
+  const customerIds = Array.from(new Set(parsedOrders.map((o: any) => o.customer_id).filter(Boolean)));
+
+  const orderIdsCsv = `(${ids.map(() => '?').join(',')})`;
+  const itemsRows = db.prepare(`SELECT * FROM order_items WHERE order_id IN ${orderIdsCsv} ORDER BY order_id, id`).all(...ids).map(parseItemJson);
+  // #208: a single call to attachEffectiveAddons batches all addons across
+  // all items into one IN() query against order_item_addons. Re-group the
+  // result back by order_id for the per-order payload below.
+  const itemsWithAddons = attachEffectiveAddons(db, itemsRows as any[]);
+  const itemsByOrder = new Map<number, any[]>();
+  for (const it of itemsWithAddons) {
+    const list = itemsByOrder.get(it.order_id) || [];
+    list.push(it);
+    itemsByOrder.set(it.order_id, list);
+  }
+
+  const tablesById = new Map<string, any>();
+  if (tableIds.length > 0) {
+    const ph = tableIds.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT * FROM tables WHERE id IN (${ph})`).all(...tableIds) as any[];
+    for (const t of rows) tablesById.set(t.id, t);
+  }
+  const customersById = new Map<string, any>();
+  if (customerIds.length > 0) {
+    const ph = customerIds.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT * FROM customers WHERE id IN (${ph})`).all(...customerIds);
+    for (const c of rows as any[]) customersById.set(c.id, parseRowJson(c));
+  }
+  const billsByOrderId = new Map<number, any>();
+  const billsById = new Map<number, any>();
+  const billRows = db.prepare(`SELECT * FROM bills WHERE order_id IN ${orderIdsCsv}`).all(...ids) as any[];
+  for (const b of billRows) {
+    const parsed = parseRowJson(b);
+    billsByOrderId.set(parsed.order_id, parsed);
+    billsById.set(parsed.id, parsed);
+  }
+  const ledgerByBillId = new Map<number, number>();
+  if (billsById.size > 0) {
+    const billIds = Array.from(billsById.keys());
+    const ph = billIds.map(() => '?').join(',');
+    const rows = db.prepare(`SELECT bill_id, COALESCE(SUM(amount),0) as total FROM loyalty_ledger WHERE bill_id IN (${ph}) AND type = 'credit' GROUP BY bill_id`).all(...billIds) as { bill_id: number; total: number }[];
+    for (const r of rows) ledgerByBillId.set(r.bill_id, r.total);
+  }
+
+  return parsedOrders.map((order) => {
+    const itemList = itemsByOrder.get(order.id) || [];
+    const tableRow = order.table_id ? tablesById.get(order.table_id) : null;
+    const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
+    const customer = order.customer_id ? customersById.get(order.customer_id) : null;
+    const bill = billsByOrderId.get(order.id) || null;
+    if (bill && bill.customer_id) {
+      bill.points_earned = ledgerByBillId.get(bill.id) || 0;
+    }
+    return { ...order, items: itemList, table, customer, bill };
+  });
+}
 
 router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
@@ -179,19 +279,11 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
       return res.status(403).json({ error: 'Waiters can only view their own orders' });
     }
 
-    const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
-    const tableRow = (order as any).table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get((order as any).table_id) as any : null;
-    const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
-    const customer = (order as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((order as any).customer_id) : null;
-    const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE order_id = ?').get(req.params.id));
-    if (bill && (bill as any).customer_id) {
-      const earned = db.prepare(
-        `SELECT COALESCE(SUM(amount), 0) as total FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`
-      ).get((bill as any).id) as { total: number };
-      (bill as any).points_earned = earned.total;
-    }
-
-    res.json({ order: { ...order, items, table, customer, bill } });
+    // #208: collapse the per-order N+1 (5 queries: items/addons/table/customer/bill/loyalty)
+    // into the same batchHydrateOrders used by the list endpoint. Previously
+    // 6 prepared calls per single detail click.
+    const [hydrated] = batchHydrateOrders(db, [order]);
+    res.json({ order: hydrated });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

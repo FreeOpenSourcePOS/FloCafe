@@ -12,6 +12,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import type { OrderItem, Table, Product, Customer } from '@/lib/types';
 import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
@@ -289,7 +290,7 @@ export default function OrdersPage() {
   };
 
   const getTimeSince = (dateStr: string) => {
-    const minutes = Math.floor((now - new Date(dateStr).getTime()) / 60000);
+    const minutes = Math.floor((now - parseDbTimestamp(dateStr).getTime()) / 60000);
     if (minutes < 1) return t('common.justNow');
     if (minutes < 60) return `${minutes}m ago`;
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;

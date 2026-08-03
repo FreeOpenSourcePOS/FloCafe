@@ -74,6 +74,7 @@
   "customers.columnDate": "Date",
   "customers.columnLedger": "Ledger",
   "customers.empty": "No customers found",
+  "customers.first200": "Showing the first 200 customers — refine your search to see more.",
   "customers.loyaltyLedger": "Loyalty Ledger",
   "customers.noTransactions": "No transactions yet",
   "customers.totalBalance": "Total Balance",

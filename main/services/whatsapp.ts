@@ -287,7 +287,9 @@ function isOverRateLimit(phoneE164: string): { limited: boolean; retryAfterMs?: 
     }
   }
   const db = getDatabase();
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  // Space form, same as now()/queued_at — an ISO-Z bound would sort above
+  // every space-form row of the same day and the rate limit would never fire.
+  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString().replace('T', ' ').replace(/\..*$/, '');
   const row = db.prepare(`
     SELECT COUNT(*) AS c FROM whatsapp_messages
     WHERE phone_e164 = ? AND direction = 'outbound' AND queued_at >= ?

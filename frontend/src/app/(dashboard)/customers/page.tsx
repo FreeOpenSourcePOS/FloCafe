@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { parseDbTimestamp } from '@/lib/utils';
 
 import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
@@ -61,7 +62,7 @@ export default function CustomersPage() {
   };
 
   const fmtDate = (d: string) => {
-    try { return new Date(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
+    try { return parseDbTimestamp(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
     catch { return d; }
   };
 
@@ -232,6 +233,7 @@ export default function CustomersPage() {
           </tbody>
         </table>
         {customers.length === 0 && <p className="text-center text-gray-500 py-12">{t('customers.empty')}</p>}
+        {customers.length >= 200 && <p className="text-center text-xs text-gray-400 py-3">{t('customers.first200')}</p>}
       </div>
 
       {/* Loyalty Ledger Modal */}

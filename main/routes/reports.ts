@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Decimal from 'decimal.js';
-import { getDatabase, getSettingValue, parseItemJson } from '../db';
+import { getDatabase, getSettingValue, parseDbTimestamp, parseItemJson, utcDayBounds, utcTodayDate } from '../db';
 import { requireRole } from '../middleware/security';
 import { aggregateTaxComponents } from '../services/tax-components';
 
@@ -28,7 +28,7 @@ function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { 
   const dayCounts = new Array(7).fill(0);
 
   for (const ts of timestamps) {
-    const d = new Date(ts);
+    const d = parseDbTimestamp(ts);
     if (isNaN(d.getTime())) continue;
     const hour = parseInt(hourFmt.format(d), 10);
     if (hour >= 0 && hour <= 23) hourCounts[hour]++;
@@ -46,8 +46,16 @@ function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { 
  * that with `json_each` and buckets by the split's own timestamp (not the
  * bill's `paid_at`, which only marks when the bill became fully paid and
  * would misattribute or drop earlier partial-payment splits on other days).
+ * #208: paid_at is NULL until the bill is fully paid, so the filter is
+ * `paid_at is still NULL OR paid_at is on/after the report day` — a mid-day
+ * partial payment must show up the moment it's taken, and a split taken
+ * just before midnight must not vanish because the bill only completed
+ * after midnight (paid_at then lands in the next day). `idx_bills_paid_at`
+ * serves both OR branches. The split timestamp is normalized with REPLACE
+ * so legacy ISO splits compare consistently against the space-form rows.
  */
 function paymentMethodBreakdown(db: ReturnType<typeof getDatabase>, date: string) {
+  const [start] = utcDayBounds(date);
   return db.prepare(`
     SELECT
       json_extract(je.value, '$.method') as method,
@@ -55,10 +63,11 @@ function paymentMethodBreakdown(db: ReturnType<typeof getDatabase>, date: string
       COALESCE(SUM(json_extract(je.value, '$.amount')), 0) as total
     FROM bills b, json_each(b.payment_details) je
     WHERE b.payment_details IS NOT NULL
-      AND date(json_extract(je.value, '$.timestamp')) = date(?)
+      AND (b.paid_at IS NULL OR b.paid_at >= ?)
+      AND substr(replace(json_extract(je.value, '$.timestamp'), 'T', ' '), 1, 10) = ?
     GROUP BY method
     ORDER BY total DESC
-  `).all(date);
+  `).all(start, date);
 }
 
 /** argmax/argmin over counts, restricted to indices where include(count) is true. Returns null if nothing qualifies. */
@@ -76,12 +85,16 @@ function pickExtreme(counts: number[], mode: 'max' | 'min', include: (count: num
 router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const today = new Date().toISOString().slice(0, 10);
+    // #208: UTC today with the half-open UTC range so we can
+    // hit `idx_bills_created_at` instead of going through `date(...)` on
+    // every row. dashboard polls every load.
+    const today = utcTodayDate();
+    const [start, end] = utcDayBounds(today);
 
     const salesToday = db.prepare(`
       SELECT COALESCE(SUM(paid_amount), 0) as sales
-      FROM bills WHERE date(created_at) = date(?)
-    `).get(today) as { sales: number };
+      FROM bills WHERE created_at >= ? AND created_at < ?
+    `).get(start, end) as { sales: number };
 
     const runningOrders = db.prepare(`
       SELECT COUNT(*) as count FROM orders WHERE status IN ('pending', 'preparing')
@@ -111,25 +124,28 @@ router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: 
 router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const date = reportDate(req.query.date, new Date().toISOString().slice(0, 10));
+    // #208: an explicit date param is a UTC `YYYY-MM-DD`; resolve to the
+    // half-open UTC range. `reportDate` validates the param shape.
+    const date = reportDate(req.query.date, utcTodayDate());
+    const [start, end] = utcDayBounds(date);
 
     const ordersToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total
-      FROM orders WHERE date(created_at) = date(?)
-    `).get(date) as { count: number; total: number };
+      FROM orders WHERE created_at >= ? AND created_at < ?
+    `).get(start, end) as { count: number; total: number };
 
     const billsToday = db.prepare(`
       SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total, COALESCE(SUM(paid_amount), 0) as collected
-      FROM bills WHERE date(created_at) = date(?)
-    `).get(date) as { count: number; total: number; collected: number };
+      FROM bills WHERE created_at >= ? AND created_at < ?
+    `).get(start, end) as { count: number; total: number; collected: number };
 
     const customersToday = db.prepare(`
-      SELECT COUNT(*) as count FROM customers WHERE date(created_at) = date(?)
-    `).get(date) as { count: number };
+      SELECT COUNT(*) as count FROM customers WHERE created_at >= ? AND created_at < ?
+    `).get(start, end) as { count: number };
 
     const ordersByStatus = db.prepare(`
-      SELECT status, COUNT(*) as count FROM orders WHERE date(created_at) = date(?) GROUP BY status
-    `).all(date);
+      SELECT status, COUNT(*) as count FROM orders WHERE created_at >= ? AND created_at < ? GROUP BY status
+    `).all(start, end);
 
     res.json({
       summary: {
@@ -153,21 +169,23 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
 router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = utcTodayDate();
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
+    const windowStart = utcDayBounds(startDate)[0];
+    const windowEnd = utcDayBounds(endDate)[1];
 
     const bills = db.prepare(`
       SELECT b.*
       FROM bills b
       JOIN orders o ON o.id = b.order_id
-      WHERE date(b.created_at) BETWEEN date(?) AND date(?)
+      WHERE b.created_at >= ? AND b.created_at < ?
         AND o.status != 'cancelled'
       ORDER BY b.created_at, b.id
-    `).all(startDate, endDate) as any[];
+    `).all(windowStart, windowEnd) as any[];
 
     const itemsByOrder = new Map<number, any[]>();
     if (bills.length > 0) {
@@ -214,36 +232,42 @@ router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, re
 router.get('/sales', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = utcTodayDate();
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
       return res.status(400).json({ error: 'start_date must be on or before end_date' });
     }
+    // #208: half-open UTC ranges so the orders/bills indexes apply instead
+    // of `date(...)` on every row. All day boundaries are UTC.
+    const windowStart = utcDayBounds(startDate)[0];
+    const windowEnd = utcDayBounds(endDate)[1];
 
+    // Daily series bucketed by UTC day (substr of the stored UTC timestamp) —
+    // same labels the previous `date(created_at)` produced, at index cost.
     const dailySales = db.prepare(`
-      SELECT date(created_at) as date, COUNT(*) as orders, SUM(total) as sales
+      SELECT substr(created_at, 1, 10) as date, COUNT(*) as orders, SUM(total) as sales
       FROM orders
-      WHERE date(created_at) BETWEEN date(?) AND date(?)
-      GROUP BY date(created_at)
+      WHERE created_at >= ? AND created_at < ?
+      GROUP BY substr(created_at, 1, 10)
       ORDER BY date
-    `).all(startDate, endDate);
+    `).all(windowStart, windowEnd);
 
     const byPaymentMethod = db.prepare(`
       SELECT json_extract(payment_details, '$.method') as method,
         COUNT(*) as count, SUM(paid_amount) as total
       FROM bills
       WHERE payment_status = 'paid'
-        AND date(paid_at) BETWEEN date(?) AND date(?)
+        AND paid_at >= ? AND paid_at < ?
       GROUP BY json_extract(payment_details, '$.method')
-    `).all(startDate, endDate);
+    `).all(windowStart, windowEnd);
 
     const byOrderType = db.prepare(`
       SELECT type, COUNT(*) as count, SUM(total) as total
       FROM orders
-      WHERE date(created_at) BETWEEN date(?) AND date(?)
+      WHERE created_at >= ? AND created_at < ?
       GROUP BY type
-    `).all(startDate, endDate);
+    `).all(windowStart, windowEnd);
 
     res.json({
       sales: {
@@ -263,7 +287,7 @@ router.get('/sales', requireRole('owner', 'manager'), (req: Request, res: Respon
 router.get('/topProducts', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const today = new Date().toISOString().slice(0, 10);
+    const today = utcTodayDate();
     const startDate = reportDate(req.query.start_date, today);
     const endDate = reportDate(req.query.end_date, today);
     if (startDate > endDate) {
@@ -271,6 +295,8 @@ router.get('/topProducts', requireRole('owner', 'manager'), (req: Request, res: 
     }
     const requestedLimit = Number(req.query.limit);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 10;
+    const windowStart = utcDayBounds(startDate)[0];
+    const windowEnd = utcDayBounds(endDate)[1];
 
     const topProducts = db.prepare(`
       SELECT oi.product_id, oi.product_name,
@@ -279,11 +305,11 @@ router.get('/topProducts', requireRole('owner', 'manager'), (req: Request, res: 
         COUNT(DISTINCT oi.order_id) as order_count
       FROM order_items oi
       JOIN orders o ON oi.order_id = o.id
-      WHERE date(o.created_at) BETWEEN date(?) AND date(?)
+      WHERE o.created_at >= ? AND o.created_at < ?
       GROUP BY oi.product_id
       ORDER BY total_quantity DESC
       LIMIT ?
-    `).all(startDate, endDate, limit);
+    `).all(windowStart, windowEnd, limit);
 
     res.json({ topProducts });
   } catch (error: any) {
@@ -305,29 +331,41 @@ router.get('/recentOrders', requireRole('owner', 'manager'), (req: Request, res:
     // Without a date, "most recent overall" (dashboard live view). With one,
     // scoped to that day — lets the dashboard show a past day's orders
     // instead of always the latest regardless of which date is selected.
-    const recentOrders = date
-      ? db.prepare(`
-          SELECT o.*, t.number as table_name, c.name as customer_name
-          FROM orders o
-          LEFT JOIN tables t ON o.table_id = t.id
-          LEFT JOIN customers c ON o.customer_id = c.id
-          WHERE date(o.created_at) = date(?)
-          ORDER BY o.created_at DESC
-          LIMIT ?
-        `).all(date, limit)
-      : db.prepare(`
-          SELECT o.*, t.number as table_name, c.name as customer_name
-          FROM orders o
-          LEFT JOIN tables t ON o.table_id = t.id
-          LEFT JOIN customers c ON o.customer_id = c.id
-          ORDER BY o.created_at DESC
-          LIMIT ?
-        `).all(limit);
+    // #208: range filter hits idx_orders_created_at instead of full scan.
+    const params: any[] = [];
+    let where = '';
+    if (date) {
+      const [s, e] = utcDayBounds(date);
+      where = 'WHERE o.created_at >= ? AND o.created_at < ?';
+      params.push(s, e);
+    }
 
-    const ordersWithItems = recentOrders.map((order: any) => {
-      const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-      return { ...order, items };
-    });
+    const recentOrders = db.prepare(`
+      SELECT o.*, t.number as table_name, c.name as customer_name
+      FROM orders o
+      LEFT JOIN tables t ON o.table_id = t.id
+      LEFT JOIN customers c ON o.customer_id = c.id
+      ${where}
+      ORDER BY o.created_at DESC
+      LIMIT ?
+    `).all(...params, limit);
+
+    // #208: batch all items in one IN() query instead of per-order N+1.
+    const orderIds = recentOrders.map((o: any) => o.id);
+    const itemsByOrder = new Map<number, any[]>();
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(',');
+      const items = db.prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders}) ORDER BY order_id, id`).all(...orderIds);
+      for (const item of items as any[]) {
+        const list = itemsByOrder.get(item.order_id) || [];
+        list.push(item);
+        itemsByOrder.set(item.order_id, list);
+      }
+    }
+    const ordersWithItems = recentOrders.map((order: any) => ({
+      ...order,
+      items: itemsByOrder.get(order.id) || [],
+    }));
 
     res.json({ recentOrders: ordersWithItems });
   } catch (error: any) {
@@ -339,6 +377,7 @@ router.get('/recentOrders', requireRole('owner', 'manager'), (req: Request, res:
 router.get('/tables', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const [start, end] = utcDayBounds(utcTodayDate());
 
     const tableStats = db.prepare(`
       SELECT t.*,
@@ -347,9 +386,9 @@ router.get('/tables', requireRole('owner', 'manager'), (req: Request, res: Respo
         MAX(o.created_at) as last_order_at
       FROM tables t
       LEFT JOIN orders o ON t.id = o.table_id
-      WHERE date(o.created_at) = date('now') OR o.id IS NULL
+        AND o.created_at >= ? AND o.created_at < ?
       GROUP BY t.id
-    `).all();
+    `).all(start, end);
 
     const tableUtilization = db.prepare(`
       SELECT
@@ -379,15 +418,19 @@ router.get('/insights', requireRole('owner', 'manager'), (req: Request, res: Res
   try {
     const db = getDatabase();
     const days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);
+    // #208: "N days back" in UTC, with the UTC day range so the window
+    // filters on the index. Day boundaries are UTC; the tenant timezone only
+    // drives the hour/day-of-week bucketing below.
     const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const timeZone = getSettingValue('timezone') || 'Asia/Kolkata';
+    const [windowStart] = utcDayBounds(startDate);
 
     // AOV — same revenue basis ("paid bills") as the existing daily-stats tile.
     const revenue = db.prepare(`
       SELECT COUNT(*) as billCount, COALESCE(SUM(paid_amount), 0) as total
       FROM bills
-      WHERE payment_status = 'paid' AND date(paid_at) >= date(?)
-    `).get(startDate) as { billCount: number; total: number };
+      WHERE payment_status = 'paid' AND paid_at >= ?
+    `).get(windowStart) as { billCount: number; total: number };
     const aov = revenue.billCount > 0 ? revenue.total / revenue.billCount : 0;
 
     // Kitchen velocity — substitutes for "best cook", which isn't derivable:
@@ -399,8 +442,8 @@ router.get('/insights', requireRole('owner', 'manager'), (req: Request, res: Res
         COUNT(*) as sampleSize
       FROM orders
       WHERE cooking_started_at IS NOT NULL AND ready_at IS NOT NULL
-        AND date(created_at) >= date(?) AND status != 'cancelled'
-    `).get(startDate) as { avgMinutes: number | null; sampleSize: number };
+        AND created_at >= ? AND status != 'cancelled'
+    `).get(windowStart) as { avgMinutes: number | null; sampleSize: number };
 
     // Top staff by revenue — covers whoever creates orders (owner/manager/
     // cashier/waiter, per POST /orders' own role gate), i.e. "best cashier".
@@ -410,11 +453,11 @@ router.get('/insights', requireRole('owner', 'manager'), (req: Request, res: Res
         COUNT(o.id) as orderCount
       FROM orders o
       JOIN users u ON u.id = o.user_id
-      WHERE date(o.created_at) >= date(?) AND o.status != 'cancelled'
+      WHERE o.created_at >= ? AND o.status != 'cancelled'
       GROUP BY u.id
       ORDER BY revenue DESC
       LIMIT 5
-    `).all(startDate);
+    `).all(windowStart);
 
     // Top categories by revenue.
     const topCategories = db.prepare(`
@@ -425,16 +468,16 @@ router.get('/insights', requireRole('owner', 'manager'), (req: Request, res: Res
       JOIN orders o ON o.id = oi.order_id
       JOIN products p ON p.id = oi.product_id
       LEFT JOIN categories c ON c.id = p.category_id
-      WHERE date(o.created_at) >= date(?) AND oi.status != 'cancelled'
+      WHERE o.created_at >= ? AND oi.status != 'cancelled'
       GROUP BY c.id
       ORDER BY revenue DESC
       LIMIT 5
-    `).all(startDate);
+    `).all(windowStart);
 
     // Busiest/idlest hour & day-of-week, bucketed in the tenant's local timezone.
     const orderTimestamps = (db.prepare(
-      `SELECT created_at FROM orders WHERE date(created_at) >= date(?) AND status != 'cancelled'`
-    ).all(startDate) as { created_at: string }[]).map((r) => r.created_at);
+      `SELECT created_at FROM orders WHERE created_at >= ? AND status != 'cancelled'`
+    ).all(windowStart) as { created_at: string }[]).map((r) => r.created_at);
 
     const { hourCounts, dayCounts } = bucketByLocalHourAndWeekday(orderTimestamps, timeZone);
 

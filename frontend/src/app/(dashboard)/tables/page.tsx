@@ -251,7 +251,7 @@ export default function TablesPage() {
   useEffect(() => {
     if (!showDetails) return;
     const fetchOrders = () => {
-      api.get('/orders', { params: { status: 'pending,preparing,ready,served' } })
+      api.get('/orders', { params: { status: 'pending,preparing,ready,served', per_page: 500 } })
         .then(({ data }) => setOrders(data.orders || []))
         .catch(() => {
           // silently fail — tables still show

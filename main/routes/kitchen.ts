@@ -7,12 +7,16 @@ const router = Router();
 router.use(requireRole('chef', 'manager', 'owner'));
 router.use(requireKdsEnabled);
 
-const ACTIVE_KITCHEN_ORDERS_CONDITION = `
-  status != 'cancelled'
-  AND (
-    status != 'completed'
-    OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id AND oi.status NOT IN ('served', 'cancelled'))
-  )
+// Active kitchen orders — the old `OR EXISTS` form forced the planner to
+// SCAN orders and run a correlated subquery per row. The UNION form lets
+// each branch hit an index: status-in check uses `idx_orders_status`, and
+// the live-items branch uses `idx_order_items_order`. #208
+const ACTIVE_KITCHEN_ORDER_IDS_SQL = `
+  SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
+  UNION
+  SELECT o.id FROM orders o
+  JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
+  WHERE o.status NOT IN ('pending','preparing','ready','served','cancelled')
 `;
 
 // GET /api/kitchen/orders — returns active orders with items for KDS display
@@ -21,10 +25,10 @@ router.get('/orders', (req: Request, res: Response) => {
     const db = getDatabase();
 
     const orders = db.prepare(`
-      SELECT *
-      FROM orders
-      WHERE ${ACTIVE_KITCHEN_ORDERS_CONDITION}
-      ORDER BY created_at ASC
+      SELECT o.*
+      FROM orders o
+      WHERE o.id IN (${ACTIVE_KITCHEN_ORDER_IDS_SQL})
+      ORDER BY o.created_at ASC
     `).all() as any[];
 
     if (orders.length === 0) {
@@ -34,9 +38,10 @@ router.get('/orders', (req: Request, res: Response) => {
     const orderIds = orders.map((o) => o.id);
     const tableIds = Array.from(new Set(orders.map((o) => o.table_id).filter(Boolean)));
 
-    // Batch query order items and tables
+    // Batch query order items and tables (one IN() each instead of N+1
+    // per order) and one addons pass across all items.
     const placeholders = orderIds.map(() => '?').join(',');
-    const rawItems = db.prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders})`).all(...orderIds) as any[];
+    const rawItems = db.prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders}) ORDER BY order_id, id`).all(...orderIds) as any[];
 
     const itemsByOrder: Record<string, any[]> = {};
     for (const item of rawItems) {
@@ -53,25 +58,28 @@ router.get('/orders', (req: Request, res: Response) => {
       }
     }
 
+    // Resolve addons for every visible item in one batched call.
+    const allVisibleItems = rawItems.filter(
+      (i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+    );
+    const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson));
+    const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
+
     const ordersWithItems = orders.map((order) => {
       const orderRawItems = itemsByOrder[order.id] || [];
-      const visibleItems = orderRawItems.filter(
-        (i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-      );
-      const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson));
+      const visibleItems = orderRawItems
+        .filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)))
+        .map((i) => addonsByItemId.get(i.id) || i);
       const table = order.table_id ? tablesMap[order.table_id] || null : null;
-      return { ...order, items, table };
+      return { ...order, items: visibleItems, table };
     });
 
-    const counts = db.prepare(`
-      SELECT status, COUNT(*) as count
-      FROM order_items
-      WHERE order_id IN (SELECT id FROM orders WHERE ${ACTIVE_KITCHEN_ORDERS_CONDITION})
-      GROUP BY status
-    `).all() as { status: string; count: number }[];
-
-    const countMap: Record<string, number> = {};
-    counts.forEach((c) => { countMap[c.status] = c.count; });
+    // Counts are derived from the items we already fetched for these exact
+    // active orders — no need to re-run the UNION and re-query order_items.
+    const countMap: Record<string, any> = {};
+    for (const item of rawItems) {
+      countMap[item.status] = (countMap[item.status] || 0) + 1;
+    }
 
     res.json({ orders: ordersWithItems, counts: countMap });
   } catch (error: any) {

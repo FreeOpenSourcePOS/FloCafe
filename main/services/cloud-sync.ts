@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, utcDayBounds, utcTodayDate } from '../db';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -441,11 +441,15 @@ class CloudSyncService {
       for (const row of rowsToFail) {
         const attempts = row.attempt_count + 1;
         const delayMs = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
+        // Space form, same as now() — the flush query compares
+        // `next_attempt_at <= now()`, and an ISO-Z value would sort after
+        // every space-form row of the same day, deferring retries by up to a day.
+        const nextAttemptAt = new Date(Date.now() + delayMs).toISOString().replace('T', ' ').replace(/\..*$/, '');
         db.prepare(`
           UPDATE support_ticket_outbox
              SET status = 'failed', attempt_count = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
            WHERE client_ticket_id = ?
-        `).run(attempts, new Date(Date.now() + delayMs).toISOString(), message, now(), row.client_ticket_id);
+        `).run(attempts, nextAttemptAt, message, now(), row.client_ticket_id);
       }
       this.markError(message);
     }
@@ -502,11 +506,15 @@ class CloudSyncService {
       for (const row of rowsToFail) {
         const attempts = row.attempt_count + 1;
         const delayMs = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
+        // Space form, same as now() — the flush query compares
+        // `next_attempt_at <= now()`, and an ISO-Z value would sort after
+        // every space-form row of the same day, deferring retries by up to a day.
+        const nextAttemptAt = new Date(Date.now() + delayMs).toISOString().replace('T', ' ').replace(/\..*$/, '');
         db.prepare(`
           UPDATE store_diagnostics_outbox
              SET status = 'failed', attempt_count = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
            WHERE event_id = ?
-        `).run(attempts, new Date(Date.now() + delayMs).toISOString(), message, now(), row.event_id);
+        `).run(attempts, nextAttemptAt, message, now(), row.event_id);
       }
       // Non-fatal, same as support tickets: diagnostics must never surface a
       // connectivity error as if it were a cloud-sync problem to the merchant.
@@ -562,11 +570,14 @@ class CloudSyncService {
       SELECT COUNT(*) as count FROM orders
       WHERE status IN ('pending', 'preparing', 'ready', 'served')
     `).get() as { count: number };
+    // #208: UTC "today" via the new idx_bills_paid_status_paid_at
+    // instead of date() on every row.
+    const [ts, te] = utcDayBounds(utcTodayDate());
     const todaySales = db.prepare(`
       SELECT COALESCE(SUM(total), 0) as total, COUNT(*) as count
       FROM bills
-      WHERE payment_status = 'paid' AND date(paid_at) = date('now')
-    `).get() as { total: number; count: number };
+      WHERE payment_status = 'paid' AND paid_at >= ? AND paid_at < ?
+    `).get(ts, te) as { total: number; count: number };
     return {
       pos_hash: cfg.pos_hash,
       pos_id: cfg.pos_id || null,
@@ -702,7 +713,11 @@ class CloudSyncService {
     for (const row of rows) {
       const attempts = row.attempt_count + 1;
       const delayMs = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
-      stmt.run(attempts, new Date(Date.now() + delayMs).toISOString(), message, now(), row.id);
+      // Space form, same as now() — `next_attempt_at <= now()` in the flush
+      // query compares like-for-like (an ISO-Z value would sort after space
+      // rows of the same day and delay retries by up to a day).
+      const nextAttemptAt = new Date(Date.now() + delayMs).toISOString().replace('T', ' ').replace(/\..*$/, '');
+      stmt.run(attempts, nextAttemptAt, message, now(), row.id);
     }
     this.markError(message);
   }

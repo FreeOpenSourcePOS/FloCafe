@@ -1,6 +1,14 @@
 import { useCallback } from 'react';
 import { useAuthStore } from '@/store/auth';
 import { getCountryByCode } from '@/lib/countries';
+import { parseDbTimestamp } from '@/lib/utils';
+
+// String timestamps arrive in the DB's UTC space form (`YYYY-MM-DD HH:MM:SS`);
+// V8's legacy parser reads that form as machine-local, so only Date/number
+// inputs may use `new Date` directly.
+function toDate(date: string | Date | number): Date {
+  return typeof date === 'string' ? parseDbTimestamp(date) : new Date(date);
+}
 
 export function useFormatDate() {
   const currentTenant = useAuthStore((s) => s.currentTenant);
@@ -18,7 +26,7 @@ export function useFormatDate() {
   const formatDate = useCallback((date?: string | Date | number | null, options?: Intl.DateTimeFormatOptions) => {
     if (!date) return '';
     try {
-      const d = new Date(date);
+      const d = toDate(date);
       if (isNaN(d.getTime())) return String(date);
       return new Intl.DateTimeFormat(locale, {
         timeZone,
@@ -35,7 +43,7 @@ export function useFormatDate() {
   const formatTime = useCallback((date?: string | Date | number | null, options?: Intl.DateTimeFormatOptions) => {
     if (!date) return '';
     try {
-      const d = new Date(date);
+      const d = toDate(date);
       if (isNaN(d.getTime())) return String(date);
       return new Intl.DateTimeFormat(locale, {
         timeZone,
@@ -51,7 +59,7 @@ export function useFormatDate() {
   const formatDateTime = useCallback((date?: string | Date | number | null, options?: Intl.DateTimeFormatOptions) => {
     if (!date) return '';
     try {
-      const d = new Date(date);
+      const d = toDate(date);
       if (isNaN(d.getTime())) return String(date);
       return new Intl.DateTimeFormat(locale, {
         timeZone,

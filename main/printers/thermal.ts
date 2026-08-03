@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execSync, exec, execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
-import { getDatabase } from '../db';
+import { getDatabase, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
@@ -641,7 +641,7 @@ function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' | 'd
 
 function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
   const lines: string[] = [];
-  const date = new Date(order.created_at);
+  const date = parseDbTimestamp(order.created_at);
 
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
@@ -719,7 +719,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
 
 function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
   const lines: string[] = [];
-  const date = new Date(order.created_at);
+  const date = parseDbTimestamp(order.created_at);
 
   const dash = '-'.repeat(cols);
 
@@ -820,7 +820,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
 function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
   const lines: string[] = [];
-  const date = new Date(order.created_at);
+  const date = parseDbTimestamp(order.created_at);
 
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
@@ -965,7 +965,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   if (order.table) {
     lines.push('Table: ' + order.table.name);
   }
-  lines.push('Time: ' + new Date(order.created_at).toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
+  lines.push('Time: ' + parseDbTimestamp(order.created_at).toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
   lines.push(bar);
   lines.push('');
 

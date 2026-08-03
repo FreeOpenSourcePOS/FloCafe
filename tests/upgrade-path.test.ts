@@ -59,6 +59,17 @@ fixtureDb.prepare(`
   INSERT OR REPLACE INTO settings (key, value, updated_at)
   VALUES ('cloud_orders_enabled', '0', '2026-08-01T12:00:00.000Z')
 `).run();
+// Pre-v45 era rows written by the old `now()` (ISO-8601 with T/Z/ms). Migration
+// v45 must normalize these to the space form so range/order/compare operations
+// see one consistent format.
+const isoOrder = fixtureDb.prepare(`
+  INSERT INTO orders (order_number, subtotal, tax_amount, total, created_at, updated_at, cooking_started_at, ready_at)
+  VALUES ('ORD-ISO-TS', 10, 0, 10, '2026-07-01T10:00:00.123Z', '2026-07-01T10:00:00.123Z', '2026-07-01T10:05:00.000Z', '2026-07-01T10:12:00.000Z')
+`).run();
+fixtureDb.prepare(`
+  INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, total, paid_at, created_at, updated_at)
+  VALUES ('INV-ISO-TS', ?, 10, 0, 10, '2026-07-01T11:30:00.000Z', '2026-07-01T11:00:00.000Z', '2026-07-01T11:30:00.000Z')
+`).run(isoOrder.lastInsertRowid);
 fixtureDb.close();
 
 const mockApp = {
@@ -109,12 +120,35 @@ function main() {
     'taxes remain off until the merchant enables them');
   assert.ok(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'support_ticket_outbox'").get(),
     'support ticket outbox exists after upgrade');
-  console.log('   ✓ v40 preserves deliberate settings, flips untouched cloud sync, and creates the support outbox');
+  console.log('   ✓ v40/v41 preserves deliberate settings, flips untouched cloud sync, and creates the support outbox');
   const ideal = buildIdealSchemaDb();
   const latestSchemaVersion = ideal.pragma('user_version', { simple: true }) as number;
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,
     'migrated old install reaches the same schema version as a fresh install');
   ideal.close();
+
+  // ── Migration v45: legacy ISO timestamps are normalized to the space form ─
+  const isoOrderRow = db.prepare(
+    `SELECT created_at, updated_at, cooking_started_at, ready_at FROM orders WHERE order_number = 'ORD-ISO-TS'`
+  ).get() as { created_at: string; updated_at: string; cooking_started_at: string; ready_at: string };
+  assert.deepEqual(
+    [isoOrderRow.created_at, isoOrderRow.updated_at, isoOrderRow.cooking_started_at, isoOrderRow.ready_at],
+    ['2026-07-01 10:00:00', '2026-07-01 10:00:00', '2026-07-01 10:05:00', '2026-07-01 10:12:00'],
+    'v45 normalizes legacy ISO order timestamps to the space form (second precision)',
+  );
+  const isoBillRow = db.prepare(
+    `SELECT created_at, updated_at, paid_at FROM bills WHERE bill_number = 'INV-ISO-TS'`
+  ).get() as { created_at: string; updated_at: string; paid_at: string };
+  assert.deepEqual(
+    [isoBillRow.created_at, isoBillRow.updated_at, isoBillRow.paid_at],
+    ['2026-07-01 11:00:00', '2026-07-01 11:30:00', '2026-07-01 11:30:00'],
+    'v45 normalizes legacy ISO bill timestamps to the space form',
+  );
+  assert.ok(
+    db.prepare(`SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_bills_paid_at'`).get(),
+    'v45 creates idx_bills_paid_at for the payment-method breakdown scan',
+  );
+  console.log('   ✓ legacy ISO timestamps are normalized to the space form (v45)');
 
   const customerColumns = db.prepare(`PRAGMA table_info(customers)`).all().map((c: any) => c.name);
   assert.ok(customerColumns.includes('country_code'), 'customers.country_code exists after migrating an old install');

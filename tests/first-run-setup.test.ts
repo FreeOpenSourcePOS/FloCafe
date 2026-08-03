@@ -199,7 +199,9 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     console.log('   ✓ setup endpoint is disabled after the first user exists');
 
     // Cloud v2 coordination is automatic for new installs.
-    assert.equal(setting('cloud_sync_enabled'), 'true', 'cloud coordination is enabled automatically on v2 setup');
+    // '1', not 'true' — cloud-sync.ts reads this key with a strict '1' check
+    // everywhere, matching FloAdmin's own `stores` table.
+    assert.equal(setting('cloud_sync_enabled'), '1', 'cloud coordination is enabled automatically on v2 setup');
     assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com', 'cloud server URL keeps the default');
     console.log('   ✓ setup endpoint enables cloud coordination automatically');
   } finally {
@@ -256,7 +258,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
       }),
     });
     assert.equal(enabled.status, 200, `setup succeeds with a valid custom cloud server URL (got ${enabled.status}, ${JSON.stringify(enabled.data)})`);
-    assert.equal(setting('cloud_sync_enabled'), 'true', 'cloud sync is enabled when requested at setup');
+    assert.equal(setting('cloud_sync_enabled'), '1', 'cloud sync is enabled when requested at setup');
     assert.equal(setting('cloud_server_url'), 'https://cloud.example.test/relay', 'the custom cloud server URL is persisted, normalized');
     console.log('   ✓ setup persists an explicit cloud_sync_enabled + custom cloud_server_url');
   } finally {

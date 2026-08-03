@@ -1656,6 +1656,27 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 46,
+    name: 'normalize_cloud_enabled_flags_to_01',
+    up: () => {
+      // cloud_sync_enabled/cloud_orders_enabled/cloud_reports_enabled/
+      // cloud_command_polling_enabled are meant to mirror FloAdmin's own
+      // `stores` table and are read as a strict '1' check everywhere in
+      // cloud-sync.ts — but both the setup wizard (auth.ts) and the Settings
+      // → Cloud route wrote 'true'/'false' instead, so any store that ever
+      // completed setup or saved that settings page silently never matched
+      // the '1' check: cloud sync, order/report sync, command polling, and
+      // RevFlo pairing's auto-registration all quietly stopped working.
+      const flags = ['cloud_sync_enabled', 'cloud_orders_enabled', 'cloud_reports_enabled', 'cloud_command_polling_enabled'];
+      const toOne = db.prepare(`UPDATE settings SET value = '1' WHERE key = ? AND value = 'true'`);
+      const toZero = db.prepare(`UPDATE settings SET value = '0' WHERE key = ? AND value = 'false'`);
+      for (const key of flags) {
+        toOne.run(key);
+        toZero.run(key);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

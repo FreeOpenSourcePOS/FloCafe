@@ -64,6 +64,14 @@ function boolFlag(value: unknown): string | undefined {
   return value ? 'true' : 'false';
 }
 
+// cloud_sync_enabled/cloud_orders_enabled/cloud_reports_enabled/cloud_command_polling_enabled
+// mirror FloAdmin's own `stores` table and are read elsewhere (cloud-sync.ts) as a strict
+// '1' check, not boolFlag()'s 'true'/'false' — keep this route's writes on that convention.
+function bool01Flag(value: unknown): string | undefined {
+  const flag = boolFlag(value);
+  return flag === undefined ? undefined : flag === 'true' ? '1' : '0';
+}
+
 function isMaskedSecret(value: unknown): boolean {
   return typeof value === 'string' && value.startsWith('****');
 }
@@ -374,10 +382,10 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
     const db = getDatabase();
     const updates: Record<string, string | undefined> = {
       cloud_store_id: cloud_store_id === undefined ? undefined : String(cloud_store_id || ''),
-      cloud_sync_enabled: boolFlag(cloud_sync_enabled),
-      cloud_orders_enabled: boolFlag(cloud_orders_enabled),
-      cloud_reports_enabled: boolFlag(cloud_reports_enabled),
-      cloud_command_polling_enabled: boolFlag(cloud_command_polling_enabled),
+      cloud_sync_enabled: bool01Flag(cloud_sync_enabled),
+      cloud_orders_enabled: bool01Flag(cloud_orders_enabled),
+      cloud_reports_enabled: bool01Flag(cloud_reports_enabled),
+      cloud_command_polling_enabled: bool01Flag(cloud_command_polling_enabled),
     };
 
     if (cloud_server_url !== undefined) {

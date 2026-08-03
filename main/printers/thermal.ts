@@ -226,21 +226,51 @@ async function isMacOSDefaultPrinter(name: string): Promise<boolean> {
   }
 }
 
-function detectWindowsPrinters(): PrinterInfo[] {
+// wmic.exe was removed from Windows 11 24H2+, so it can no longer be relied
+// on to enumerate printers. Get-CimInstance talks to the same WMI class
+// (Win32_Printer) through the still-supported CIM cmdlets, and -EncodedCommand
+// (rather than a .ps1) survives a GPO-locked ExecutionPolicy the same way the
+// raw-print helper below does.
+const DETECT_WINDOWS_PRINTERS_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+try {
+  Get-CimInstance -ClassName Win32_Printer -Property Name,Default,PrinterStatus,DriverName |
+    Select-Object Name,Default,PrinterStatus,DriverName |
+    ConvertTo-Json -Compress
+} catch {
+  [Console]::Error.WriteLine($_.Exception.Message)
+  exit 1
+}
+`;
+
+// Win32_Printer.PrinterStatus: 1=Other, 2=Unknown, 3=Idle, 4=Printing, 5=Warming Up, 6=Stopped Printing, 7=Offline.
+function mapWindowsPrinterStatus(printerStatus: unknown): 'idle' | 'printing' | 'offline' {
+  if (printerStatus === 3 || printerStatus === 5) return 'idle';
+  if (printerStatus === 4) return 'printing';
+  return 'offline';
+}
+
+async function detectWindowsPrinters(): Promise<PrinterInfo[]> {
   const printers: PrinterInfo[] = [];
 
   try {
-    const output = execSync('wmic printer get Name,Default,Status,DriverName 2>/dev/null', { encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 });
-    const lines = output.split('\n').slice(1);
+    const encoded = Buffer.from(DETECT_WINDOWS_PRINTERS_SCRIPT, 'utf16le').toString('base64');
+    const { stdout } = await execFileAsync(
+      'powershell',
+      ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+      { encoding: 'utf8', timeout: 10000, windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+    );
 
-    for (const line of lines) {
-      const parts = line.trim().split(/\s{2,}/);
-      if (parts.length >= 2 && parts[0]) {
-        const name = parts[0].trim();
-        const isDefault = parts[1]?.toLowerCase() === 'true';
-        const status = parts[2]?.toLowerCase() || 'unknown';
-        const driver = parts[3] || '';
+    const trimmed = stdout.trim();
+    if (trimmed && trimmed !== 'null') {
+      const parsed = JSON.parse(trimmed);
+      const entries = Array.isArray(parsed) ? parsed : [parsed];
 
+      for (const entry of entries) {
+        const name = typeof entry?.Name === 'string' ? entry.Name.trim() : '';
+        if (!name) continue;
+
+        const driver = typeof entry.DriverName === 'string' ? entry.DriverName : '';
         const makeModel = detectWindowsMakeModel(name, driver);
 
         printers.push(annotateProfile({
@@ -250,14 +280,14 @@ function detectWindowsPrinters(): PrinterInfo[] {
           connectionType: 'usb',
           deviceUri: name,
           driver,
-          status: status === 'ok' || status === 'idle' ? 'idle' : 'offline',
-          isDefault,
+          status: mapWindowsPrinterStatus(entry.PrinterStatus),
+          isDefault: entry.Default === true,
           paperWidth: guessPaperWidth(name, makeModel.model),
         }));
       }
     }
   } catch (err) {
-    console.log('[Printer] Could not detect Windows printers via wmic:', err);
+    console.log('[Printer] Could not detect Windows printers via Get-CimInstance:', err);
   }
 
   return printers;

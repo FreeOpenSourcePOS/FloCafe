@@ -518,6 +518,7 @@ function createMenu(): void {
         ...(isStoreBuild
           ? []
           : [{ label: 'Check for Updates', click: () => checkForUpdates() }]),
+        { label: 'Open Logs Folder', click: () => shell.showItemInFolder(log.transports.file.getFile().path) },
       ],
     },
   ];

@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "2.6.0",
+  "version": "2.6.1",
   "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
     "node": ">=22.0.0"

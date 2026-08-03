@@ -404,15 +404,16 @@ console.log('\n✅ Test 10: Detect connected printers (hardware discovery)');
         const testBuf = buildTestPage('80mm');
 
         let ok = false;
+        let detail: string | undefined;
         if (targetInfo?.connectionType === 'network' && /\d+\.\d+\.\d+\.\d+/.test(targetInfo.deviceUri)) {
           const ipMatch = targetInfo.deviceUri.match(/(\d+\.\d+\.\d+\.\d+)(?::(\d+))?/);
           const ip = ipMatch?.[1];
           const port = ipMatch?.[2] ? parseInt(ipMatch[2], 10) : 9100;
-          if (ip) ok = await printViaNetwork(ip, port, testBuf);
+          if (ip) ({ ok, detail } = await printViaNetwork(ip, port, testBuf));
         } else {
-          ok = await printViaUSB(testBuf, target);
+          ({ ok, detail } = await printViaUSB(testBuf, target));
         }
-        assert(`live test page printed on ${target}`, ok, 'check printer is online, has paper, and driver is installed');
+        assert(`live test page printed on ${target}`, ok, detail || 'check printer is online, has paper, and driver is installed');
       }
     } else {
       console.log('\n   (skipping live print — pass --live or set FLO_LIVE_PRINT=1 to actually print)');

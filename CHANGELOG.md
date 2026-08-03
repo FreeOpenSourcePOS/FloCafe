@@ -2,6 +2,12 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.6.1] - 2026-08-03
+
+### Fixed
+- Print failures on every connection type (network, USB/CUPS, USB/Windows) now carry the actual OS/driver reason (e.g. "printer is set to 'Use Printer Offline'", "cannot open printer 'X' (Win32 error N)", a CUPS queue problem, a network timeout) all the way to the error shown in Settings — previously this detail was only ever written to the log file and every failure showed a generic "Printer did not respond or print failed" instead, including on the **Test Print** button, which is the one most people reach for while troubleshooting. This detail also now reaches Tier 2 diagnostics (2.6.0) for stores that opted in, instead of falling back to a generic placeholder in nearly every real failure.
+- Added **Help → Open Logs Folder** to the app menu, so a merchant can find and share `main.log` without knowing the OS-specific path by heart.
+
 ## [2.6.0] - 2026-08-03
 
 ### Added

@@ -201,25 +201,28 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
 
     const profile = resolvePrinterProfile(printer);
     const testData = buildTestPage(printer.paper_width || profile.defaultPaperWidth, profile.cutMode);
-    let success = false;
+    let result: { ok: boolean; detail?: string } = { ok: false };
 
     switch (printer.connection_type) {
       case 'network':
         if (!printer.ip_address) return res.status(400).json({ error: 'No IP address configured' });
-        success = await printViaNetwork(printer.ip_address, printer.port || 9100, testData);
+        result = await printViaNetwork(printer.ip_address, printer.port || 9100, testData);
         break;
       case 'usb':
-        success = await printViaUSB(testData, printer.name);
+        result = await printViaUSB(testData, printer.name);
         break;
       case 'webusb':
         // WebUSB is handled entirely in the browser; return the bytes for the frontend to send
         return res.json({ success: true, webusb: true, bytes: Array.from(testData) });
     }
 
-    if (success) {
+    if (result.ok) {
       res.json({ success: true });
     } else {
-      res.status(502).json({ error: 'Printer did not respond or print failed' });
+      // Surface the actual reason (offline, paper out, name mismatch, driver
+      // rejection, etc.) instead of a generic message — this is the button a
+      // merchant reaches for while troubleshooting, so it should say why.
+      res.status(502).json({ error: result.detail || 'Printer did not respond or print failed', detail: result.detail });
     }
   } catch (error: any) {
     console.error("[API] Internal error:", error);

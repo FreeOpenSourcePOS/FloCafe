@@ -130,7 +130,19 @@ The database and backups live in the operating system's user-data directory, sep
 
 Before a pending migration runs, FloCafe creates a timestamped local backup. Migrations are additive and tracked with SQLite's `user_version` pragma. Use Settings → Database Tools → Backup before moving to another computer or switching distribution channels.
 
-For printer problems, check the cable or network address, then use Settings → Printers → Test Print. If the app cannot start, do not delete the database first. Restore the latest backup from Settings → Database Tools, then [open an issue](https://github.com/FreeOpenSourcePOS/FloCafe/issues) with the app version, operating system, and logs.
+If the app cannot start, do not delete the database first. Restore the latest backup from Settings → Database Tools, then [open an issue](https://github.com/FreeOpenSourcePOS/FloCafe/issues) with the app version, operating system, and logs.
+
+## Troubleshooting
+
+### Printers not printing
+
+1. Use Settings → Printers → **Test Print** first. As of 2.6.1 it shows the actual failure reason (offline, out of paper, cover open, a Windows driver error, a network timeout) instead of a generic message — read it, it usually tells you exactly what's wrong.
+2. **Network printers:** confirm the printer's IP address hasn't changed (check your router's DHCP lease list or set a static IP/DHCP reservation) and that it's on the same network as the machine running FloCafe.
+3. **Windows USB printers, especially with the manufacturer's own driver installed:** FloCafe sends raw ESC/POS bytes directly to the Windows print queue, bypassing the driver, which only works if the queue's *Print Processor* is the default `winprint`/`RAW`. Manufacturer "official" driver packages (Epson APD, Star, etc.) are usually GDI drivers meant to render formatted pages, and can register their own print processor or reject/garble a raw byte stream. Two things to try, in order:
+   - Right-click the printer in Windows → **Printer Properties → Advanced tab → Print Processor** → confirm it's `winprint` with datatype `RAW`.
+   - If that doesn't help, add/reinstall the printer using Windows' built-in **"Generic / Text Only"** driver, or the manufacturer's dedicated raw/ESC-POS mode if their installer offers one as an alternative to their main GDI driver — then re-select it in FloCafe's printer settings, since renaming or reinstalling changes the exact queue name FloCafe has stored.
+4. **macOS/Linux (CUPS) printers:** if the print queue is disabled (commonly after the printer was unplugged), re-enable it from the OS's printer settings and the next print will go through — FloCafe detects and reports a disabled queue rather than silently failing.
+5. Still stuck? Open **Help → Open Logs Folder** (added in 2.6.1) and check `main.log` around the time of the failed print for a `[Printer]` line with the specific error, then [open an issue](https://github.com/FreeOpenSourcePOS/FloCafe/issues) with that line, your OS, printer make/model, and whether it's USB or network.
 
 ## Development
 

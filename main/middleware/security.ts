@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { getDatabase, isKdsEnabled } from '../db';
+import { getDatabase, isKdsEnabled, parseDbTimestamp } from '../db';
 
 interface RateLimitRecord {
   count: number;
@@ -167,12 +167,13 @@ export function invalidateUserAuthCache(userId: string): void {
  */
 export function isTokenStale(iat: number | undefined, tokensValidAfter: string | null | undefined): boolean {
   if (!tokensValidAfter || typeof iat !== 'number') return false;
-  // JWT `iat` only has whole-second resolution, but tokens_valid_after is written with
-  // millisecond precision — comparing them directly would flag a token minted in the
-  // very same second as the change (e.g. the fresh login right after a password reset)
-  // as stale, even though it was actually issued after. Floor tokens_valid_after to
-  // seconds too so both sides compare at the same resolution.
-  const tokensValidAfterSeconds = Math.floor(new Date(tokensValidAfter).getTime() / 1000);
+  // `tokens_valid_after` is stored in the DB's UTC space form; parse it as
+  // UTC — `new Date()` would read it as machine-local and shift the
+  // revocation window by the host's offset. Both sides are compared at
+  // whole-second resolution, so a token minted in the very same second as
+  // the change (e.g. the fresh login right after a password reset) is not
+  // flagged as stale.
+  const tokensValidAfterSeconds = Math.floor(parseDbTimestamp(tokensValidAfter).getTime() / 1000);
   return iat < tokensValidAfterSeconds;
 }
 

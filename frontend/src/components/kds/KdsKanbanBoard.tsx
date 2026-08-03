@@ -17,6 +17,7 @@ import {
 } from '@/hooks/useKdsConnection';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useI18n } from '@/hooks/useI18n';
+import { parseDbTimestamp } from '@/lib/utils';
 
 export interface KdsKanbanBoardProps {
   orders: KdsOrder[];
@@ -104,7 +105,7 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
   }, []);
 
   const timeSince = (dateStr: string) => {
-    const totalSeconds = Math.max(0, Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000));
+    const totalSeconds = Math.max(0, Math.floor((Date.now() - parseDbTimestamp(dateStr).getTime()) / 1000));
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;

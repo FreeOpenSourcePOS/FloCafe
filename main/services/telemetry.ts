@@ -12,7 +12,7 @@
 
 import { app } from 'electron';
 import log from 'electron-log';
-import { ensureTelemetryAnonId, isTelemetryEnabled, getSettingValue, upsertTelemetryLastPing } from '../db';
+import { ensureTelemetryAnonId, isTelemetryEnabled, getSettingValue, parseDbTimestamp, upsertTelemetryLastPing } from '../db';
 
 export const TELEMETRY_URL = 'https://telemetry.flopos.com/collect';
 
@@ -50,7 +50,7 @@ function maybeSendDailyPing(): void {
   if (!isTelemetryEnabled()) return;
 
   const lastPingAt = getSettingValue('telemetry_last_ping_at');
-  const lastPingMs = lastPingAt ? new Date(lastPingAt).getTime() : NaN;
+  const lastPingMs = lastPingAt ? parseDbTimestamp(lastPingAt).getTime() : NaN;
   const elapsed = isNaN(lastPingMs) ? Infinity : Date.now() - lastPingMs;
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 

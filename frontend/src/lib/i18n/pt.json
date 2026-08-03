@@ -1573,5 +1573,6 @@
   "update.downloadingDetail": "Baixando a versão {version}...",
   "update.versionReady": "A versão {version} está pronta para instalar",
   "update.currentVersion": "Versão atual: {version}",
-  "update.restartNow": "Reiniciar agora"
+  "update.restartNow": "Reiniciar agora",
+  "customers.first200": "Mostrando os primeiros 200 clientes — refine a busca para ver mais."
 }

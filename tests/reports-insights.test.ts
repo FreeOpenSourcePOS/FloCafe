@@ -130,15 +130,17 @@ async function main() {
   // ── Seed orders for hour/day-of-week bucketing ───────────────────────
   // Expected (precomputed): busiest hour=14 (3 orders), idlest hour=8 (1),
   // busiest day=Monday (3), idlest day=Tuesday (0 — no fixture lands there).
+  // Timestamps use the DB's canonical space form (UTC wall, what now() and
+  // migration v45 produce) so day-range filters compare like-for-like.
   const hourDayFixtures: { id: string; createdAt: string }[] = [
-    { id: 'ORD-INS-1', createdAt: '2026-06-01T08:30:00.000Z' }, // Mon 14:00
-    { id: 'ORD-INS-2', createdAt: '2026-06-01T09:00:00.000Z' }, // Mon 14:30
-    { id: 'ORD-INS-3', createdAt: '2026-06-01T09:15:00.000Z' }, // Mon 14:45
-    { id: 'ORD-INS-4', createdAt: '2026-06-03T04:00:00.000Z' }, // Wed 09:30
-    { id: 'ORD-INS-5', createdAt: '2026-06-04T03:00:00.000Z' }, // Thu 08:30
-    { id: 'ORD-INS-6', createdAt: '2026-06-05T05:00:00.000Z' }, // Fri 10:30
-    { id: 'ORD-INS-7', createdAt: '2026-06-06T06:00:00.000Z' }, // Sat 11:30
-    { id: 'ORD-INS-8', createdAt: '2026-06-07T07:00:00.000Z' }, // Sun 12:30
+    { id: 'ORD-INS-1', createdAt: '2026-06-01 08:30:00' }, // Mon 14:00
+    { id: 'ORD-INS-2', createdAt: '2026-06-01 09:00:00' }, // Mon 14:30
+    { id: 'ORD-INS-3', createdAt: '2026-06-01 09:15:00' }, // Mon 14:45
+    { id: 'ORD-INS-4', createdAt: '2026-06-03 04:00:00' }, // Wed 09:30
+    { id: 'ORD-INS-5', createdAt: '2026-06-04 03:00:00' }, // Thu 08:30
+    { id: 'ORD-INS-6', createdAt: '2026-06-05 05:00:00' }, // Fri 10:30
+    { id: 'ORD-INS-7', createdAt: '2026-06-06 06:00:00' }, // Sat 11:30
+    { id: 'ORD-INS-8', createdAt: '2026-06-07 07:00:00' }, // Sun 12:30
   ];
   // Zero-value on purpose — only created_at matters for bucketing, and this
   // keeps these 8 orders from perturbing the top-staff revenue ranking below.

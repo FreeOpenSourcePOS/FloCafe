@@ -63,15 +63,44 @@ router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'waiter'), (req
 router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    let query = `SELECT c.*,
-      COALESCE((SELECT COUNT(*) FROM orders o WHERE o.customer_id = c.id), 0) as visits_count,
-      COALESCE((SELECT SUM(total) FROM orders o WHERE o.customer_id = c.id), 0) as total_spent,
-      MAX(0,
-        COALESCE((SELECT SUM(ll.amount) FROM loyalty_ledger ll WHERE ll.customer_id = c.id AND ll.type = 'credit'), 0) -
-        COALESCE((SELECT SUM(ll.amount) FROM loyalty_ledger ll WHERE ll.customer_id = c.id AND ll.type = 'debit'), 0)
-      ) as wallet_balance,
-      (SELECT MAX(created_at) FROM orders o WHERE o.customer_id = c.id) as last_visit_at
-      FROM customers c WHERE c.is_active = 1`;
+    // #208: the previous version ran 4 correlated subqueries per customer
+    // (visits, spent, wallet credits, wallet debits, last visit) and never
+    // hit any index for `WHERE o.customer_id = c.id`. The equivalent join
+    // uses the new `idx_orders_customer` and groups once. Aggregates across
+    // customers sit in three CTEs so each scans its index once.
+    let query = `
+      WITH order_stats AS (
+        SELECT customer_id,
+          COUNT(*) AS visits_count,
+          COALESCE(SUM(total), 0) AS total_spent,
+          MAX(created_at) AS last_visit_at
+        FROM orders
+        WHERE customer_id IS NOT NULL
+        GROUP BY customer_id
+      ),
+      ledger_credits AS (
+        SELECT customer_id, COALESCE(SUM(amount), 0) AS credits
+        FROM loyalty_ledger
+        WHERE type = 'credit'
+        GROUP BY customer_id
+      ),
+      ledger_debits AS (
+        SELECT customer_id, COALESCE(SUM(amount), 0) AS debits
+        FROM loyalty_ledger
+        WHERE type = 'debit'
+        GROUP BY customer_id
+      )
+      SELECT c.*,
+        COALESCE(os.visits_count, 0) as visits_count,
+        COALESCE(os.total_spent, 0) as total_spent,
+        MAX(0, COALESCE(lc.credits, 0) - COALESCE(ld.debits, 0)) as wallet_balance,
+        os.last_visit_at
+      FROM customers c
+      LEFT JOIN order_stats os ON os.customer_id = c.id
+      LEFT JOIN ledger_credits lc ON lc.customer_id = c.id
+      LEFT JOIN ledger_debits ld ON ld.customer_id = c.id
+      WHERE c.is_active = 1
+    `;
     const params: any[] = [];
 
     if (req.query.search) {
@@ -110,6 +139,12 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
       }
       const limit = Math.min(parsed, 500);
       query += ` LIMIT ${limit}`;
+    } else {
+      // #208: unbounded default meant every customers list response fanned
+      // the full backend on each search keystroke. Cap at 200 as a sensible
+      // first-page default; clients that need more can page (cursor support
+      // is a follow-up).
+      query += ` LIMIT 200`;
     }
 
     const customers = db.prepare(query).all(...params);

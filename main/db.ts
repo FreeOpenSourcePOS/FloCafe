@@ -1475,7 +1475,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     name: 'add_users_tokens_valid_after',
     up: () => {
       // Backs the JWT-revocation-on-credential-change fix (#173): requireAuth
-      // rejects any token whose `iat` predates this timestamp, so changing a
+      // rejects any token whose `iat` predates this `tokens_valid_after`, so changing a
       // password/PIN can invalidate every outstanding session for that user
       // without maintaining a per-token blocklist across devices.
       if (!getColumns(db, 'users').includes('tokens_valid_after')) {
@@ -1577,6 +1577,83 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         CREATE INDEX IF NOT EXISTS idx_store_diagnostics_outbox_retry
           ON store_diagnostics_outbox(status, next_attempt_at, created_at);
       `);
+    },
+  },
+  {
+    // Performance fixes for ~100k+ orders (issue #208) plus timestamp
+    // normalization, in one migration because v40 never shipped outside this
+    // PR (upstream's v40-v44 landed first; this is v45). Indexes are all
+    // `IF NOT EXISTS` so reruns are safe. Range queries
+    // (`created_at >= ? AND created_at < ?`) and the composite used by the
+    // orders list pagination both depend on the indexes.
+    //
+    // The normalization: `now()` used to write ISO-8601 (`...T10:00:00.123Z`)
+    // while rows inserted via CURRENT_TIMESTAMP defaults carry SQLite's
+    // `YYYY-MM-DD HH:MM:SS` form. Mixed formats break string range compares
+    // at day boundaries, intra-day ORDER BY, `expires_at > datetime('now')`
+    // expiry checks, and JS `new Date(ts)` parsing (the space form is read as
+    // machine-local time). Normalize every legacy ISO row to the space form
+    // once, so all rows in a column share one sortable, UTC-wall format.
+    // Only rows containing 'T' are touched; each column is verified to exist
+    // before the UPDATE so odd legacy installs cannot crash the migration.
+    version: 45,
+    name: 'add_performance_indexes_and_normalize_timestamps',
+    up: () => {
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_orders_table_id ON orders(table_id);
+        CREATE INDEX IF NOT EXISTS idx_orders_type ON orders(type);
+        CREATE INDEX IF NOT EXISTS idx_bills_created_at ON bills(created_at);
+        CREATE INDEX IF NOT EXISTS idx_bills_paid_status_paid_at ON bills(payment_status, paid_at);
+        CREATE INDEX IF NOT EXISTS idx_bills_customer_id ON bills(customer_id);
+        CREATE INDEX IF NOT EXISTS idx_print_logs_bill_id ON print_logs(bill_id);
+        CREATE INDEX IF NOT EXISTS idx_ledger_bill_id_type ON loyalty_ledger(bill_id, type);
+        CREATE INDEX IF NOT EXISTS idx_order_items_product_id ON order_items(product_id);
+        CREATE INDEX IF NOT EXISTS idx_customers_created_at ON customers(created_at);
+        -- idx_bills_paid_at: payment-method breakdown scans paid_at ranges
+        -- (including NULL for still-open bills); a plain single-column index
+        -- lets the OR optimization use both branches.
+        CREATE INDEX IF NOT EXISTS idx_bills_paid_at ON bills(paid_at);
+      `);
+      const normalize: [string, string][] = [
+        ['orders', 'created_at'], ['orders', 'updated_at'],
+        ['orders', 'cooking_started_at'], ['orders', 'ready_at'],
+        ['orders', 'served_at'], ['orders', 'completed_at'], ['orders', 'cancelled_at'],
+        ['order_items', 'created_at'], ['order_items', 'updated_at'], ['order_items', 'voided_at'],
+        ['bills', 'created_at'], ['bills', 'updated_at'], ['bills', 'paid_at'], ['bills', 'printed_at'],
+        ['customers', 'created_at'], ['customers', 'updated_at'],
+        ['users', 'created_at'], ['users', 'updated_at'],
+        ['users', 'terms_accepted_at'], ['users', 'tokens_valid_after'],
+        ['loyalty_ledger', 'created_at'], ['loyalty_ledger', 'updated_at'], ['loyalty_ledger', 'expires_at'],
+        ['products', 'created_at'], ['products', 'updated_at'],
+        ['addons', 'created_at'], ['addons', 'updated_at'],
+        ['addon_groups', 'created_at'], ['addon_groups', 'updated_at'],
+        ['tables', 'created_at'], ['tables', 'updated_at'],
+        ['settings', 'updated_at'],
+        ['print_logs', 'printed_at'],
+        ['order_item_addons', 'created_at'],
+        ['whatsapp_messages', 'queued_at'], ['whatsapp_messages', 'seen_at'],
+        ['whatsapp_messages', 'typing_at'], ['whatsapp_messages', 'sent_at'],
+        ['whatsapp_messages', 'delivered_at'], ['whatsapp_messages', 'read_at'],
+        ['whatsapp_messages', 'failed_at'],
+        ['whatsapp_blocklist', 'blocked_at'],
+        ['held_orders', 'created_at'], ['held_orders', 'updated_at'],
+        ['kds_pairing_tokens', 'expires_at'], ['kds_pairing_tokens', 'created_at'],
+        // Outbox tables (created by migrations v3/v41, before this one): rows
+        // that failed pre-upgrade carry ISO next_attempt_at, which would sort
+        // after space-form `now()` and defer retries by up to a day.
+        ['cloud_sync_outbox', 'created_at'], ['cloud_sync_outbox', 'updated_at'], ['cloud_sync_outbox', 'next_attempt_at'],
+        ['support_ticket_outbox', 'created_at'], ['support_ticket_outbox', 'updated_at'],
+        ['support_ticket_outbox', 'next_attempt_at'], ['support_ticket_outbox', 'delivered_at'],
+      ];
+      for (const [table, column] of normalize) {
+        if (!getColumns(db, table).includes(column)) continue;
+        // '2026-08-01T10:00:00.123Z' -> '2026-08-01 10:00:00' (second precision,
+        // matching now()/CURRENT_TIMESTAMP). Milliseconds are never relied on.
+        db.prepare(
+          `UPDATE ${table} SET ${column} = substr(REPLACE(${column}, 'T', ' '), 1, 19) WHERE ${column} LIKE '%T%'`
+        ).run();
+      }
     },
   },
 ];
@@ -2384,7 +2461,52 @@ export function generateBillNumber(): string {
 }
 
 export function now(): string {
-  return new Date().toISOString();
+  // Match SQLite's CURRENT_TIMESTAMP format (`YYYY-MM-DD HH:MM:SS`, UTC). The
+  // legacy `new Date().toISOString()` form (with `T`, `Z`, milliseconds) was
+  // mixed into columns whose `CREATE TABLE` defaults use CURRENT_TIMESTAMP, so
+  // range and ordering operations on those columns stopped sorting correctly.
+  // Migration v45 normalized the legacy ISO rows to this format. #208
+  return new Date().toISOString().replace('T', ' ').replace(/\..*$/, '');
+}
+
+/**
+ * Parse a DB timestamp into a Date. Columns are stored in UTC wall time in
+ * `YYYY-MM-DD HH:MM:SS` (space) form — V8's legacy parser treats that form as
+ * machine-LOCAL time, so `new Date(ts)` silently shifts by the host's offset
+ * on machines outside UTC. ISO rows (`...T10:00:00.123Z`, pre-v40 data) parse
+ * as UTC natively. Use this everywhere a stored timestamp is turned into a
+ * Date (reports, receipts, KDS clocks, auth token staleness, telemetry).
+ */
+export function parseDbTimestamp(ts: string | null | undefined): Date {
+  if (!ts) return new Date(NaN);
+  // Space form: append a Z so V8 parses it as UTC instead of machine-local.
+  return /^\d{4}-\d{2}-\d{2} /.test(ts) ? new Date(`${ts.replace(' ', 'T')}Z`) : new Date(ts);
+}
+
+/**
+ * "Today" as a `YYYY-MM-DD` string in UTC. All daily boundaries are UTC —
+ * the tenant timezone setting only drives the insights hour/day bucketing,
+ * never which day a row belongs to.
+ */
+export function utcTodayDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * `[start, end)` half-open range strings (UTC wall, `YYYY-MM-DD HH:MM:SS`)
+ * for a given `YYYY-MM-DD` date. Use with `WHERE col >= ? AND col < ?`
+ * against the UTC timestamp columns (`created_at`, `paid_at`, etc.) so
+ * indexes apply instead of `date(col) = date('now')`, which can't. #208
+ *
+ * Bounds are emitted in the space form so string comparisons line up exactly
+ * with stored rows (migration v40 normalized all rows to it).
+ */
+export function utcDayBounds(date: string): [string, string] {
+  const [y, m, d] = date.split('-').map(Number);
+  const start = new Date(Date.UTC(y, m - 1, d, 0, 0, 0));
+  const end = new Date(start.getTime() + 24 * 3600 * 1000);
+  const fmt = (dt: Date) => dt.toISOString().replace('T', ' ').replace(/\..*$/, '');
+  return [fmt(start), fmt(end)];
 }
 
 /** Verify a user PIN against the stored pin_hash. */
@@ -2408,7 +2530,7 @@ export const KDS_VOIDED_ITEM_VISIBILITY_MS = 15 * 60 * 1000;
  */
 export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boolean {
   if (!voidedAt) return true;
-  return Date.now() - new Date(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
+  return Date.now() - parseDbTimestamp(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
 }
 
 /**

@@ -251,13 +251,16 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
  */
 function activeOrdersCondition(): string {
   if (!isKdsEnabled()) return `o.status NOT IN ('completed', 'cancelled')`;
-  return `
-    o.status != 'cancelled'
-    AND (
-      o.status != 'completed'
-      OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.order_id = o.id AND oi2.status NOT IN ('served', 'cancelled'))
-    )
-  `;
+  // #208: replace the OR EXISTS scan with a CTE anchored on the status and
+  // item-status indexes — keeps the active-orders payload fast as the
+  // orders table grows past ~100k rows.
+  return `o.id IN (
+    SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
+    UNION
+    SELECT o2.id FROM orders o2
+    JOIN order_items oi2 ON oi2.order_id = o2.id AND oi2.status NOT IN ('served','cancelled')
+    WHERE o2.status NOT IN ('pending','preparing','ready','served','cancelled')
+  )`;
 }
 
 function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
@@ -283,15 +286,34 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     allowedProductIds = new Set(productRows.map((p) => p.id));
   }
 
-  // Filter and attach items
+  // Filter and attach items — one batched items query and one addons pass
+  // per broadcast instead of N+1 per order (this runs on every KDS update).
+  const orderIds = (orders as any[]).map((o: any) => o.id);
+  const itemsByOrder: Record<string, any[]> = {};
+  if (orderIds.length > 0) {
+    const placeholders = orderIds.map(() => '?').join(',');
+    const rawItems = db.prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders}) ORDER BY order_id, id`).all(...orderIds) as any[];
+    for (const item of rawItems) {
+      if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
+      itemsByOrder[item.order_id].push(item);
+    }
+  }
+
+  const allVisibleItems = (orders as any[])
+    .flatMap((o: any) => itemsByOrder[o.id] || [])
+    .filter((i: any) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+  const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]);
+  const addonsByItemId = new Map(itemsWithAddons.map((it: any) => [it.id, it]));
+
   const ordersWithItems = orders.map((order: any) => {
-    const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
     // #150: hide the void reversal line (bill adjustment, not a kitchen
     // item) and age voided items off the board after their grace period.
-    const visibleItems = rawItems.filter((i: any) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
-    let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
+    const visibleItems = (itemsByOrder[order.id] || [])
+      .filter((i: any) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)))
+      .map((i: any) => addonsByItemId.get(i.id) || i);
 
     // Filter items by category if user has category restrictions
+    let items = visibleItems;
     if (allowedProductIds) {
       items = items.filter((item: any) => allowedProductIds!.has(item.product_id));
     }

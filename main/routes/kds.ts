@@ -21,16 +21,21 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     // A prepaid order is marked 'completed' the moment its bill is fully
     // paid, which can happen before the kitchen has prepared anything — so
     // a completed order still belongs here if it has items the kitchen
-    // hasn't served yet.
+    // hasn't served yet. #208: rewrite the OR EXISTS scan as a CTE-anchored
+    // subquery that hits idx_orders_status + idx_order_items_order instead
+    // of scanning all orders with a correlated subquery.
     let query = `
+      WITH active_ids AS (
+        SELECT id FROM orders WHERE status IN ('pending','preparing','ready','served')
+        UNION
+        SELECT o.id FROM orders o
+        JOIN order_items oi ON oi.order_id = o.id AND oi.status NOT IN ('served','cancelled')
+        WHERE o.status NOT IN ('pending','preparing','ready','served','cancelled')
+      )
       SELECT o.*, t.number as table_name, t.floor, t.section
       FROM orders o
       LEFT JOIN tables t ON o.table_id = t.id
-      WHERE o.status != 'cancelled'
-        AND (
-          o.status != 'completed'
-          OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = o.id AND oi.status NOT IN ('served', 'cancelled'))
-        )
+      WHERE o.id IN active_ids
     `;
     const params: any[] = [];
 
@@ -43,23 +48,42 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
 
     const orders = db.prepare(query).all(...params);
 
-    const ordersWithItems = orders.map((order: any) => {
+    // One batched items query (with product/category joins) plus one addons
+    // pass, instead of N+1 per order — the KDS board polls this constantly.
+    const orderIds = (orders as any[]).map((o) => o.id);
+    const itemsByOrder: Record<string, any[]> = {};
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(',');
       const rawItems = db.prepare(`
         SELECT oi.*, p.category_id, c.name as category_name
         FROM order_items oi
         LEFT JOIN products p ON oi.product_id = p.id
         LEFT JOIN categories c ON p.category_id = c.id
-        WHERE oi.order_id = ?
-        ORDER BY oi.created_at ASC
-      `).all(order.id) as any[];
+        WHERE oi.order_id IN (${placeholders})
+        ORDER BY oi.order_id, oi.created_at ASC
+      `).all(...orderIds) as any[];
+      for (const item of rawItems) {
+        if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
+        itemsByOrder[item.order_id].push(item);
+      }
+    }
+
+    const allVisibleItems = (orders as any[])
+      .flatMap((o) => itemsByOrder[o.id] || [])
+      .filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+    const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems);
+    const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
+
+    const ordersWithItems = (orders as any[]).map((order) => {
       // #150: hide the void reversal line (bill adjustment, not a kitchen
       // item) and age voided items off the board after their grace period.
-      const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
-      const items = attachEffectiveAddons(db, visibleItems);
+      const visibleItems = (itemsByOrder[order.id] || [])
+        .filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)))
+        .map((i) => addonsByItemId.get(i.id) || i);
 
       return {
         ...order,
-        items,
+        items: visibleItems,
         table: order.table_name ? { name: order.table_name } : null,
       };
     });
@@ -97,7 +121,10 @@ router.post('/pairing', requireRole('owner', 'manager'), (req: Request, res: Res
     }
 
     const token = crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    // Space form, same as every other DB timestamp (v45 normalized the
+    // column) — a consumer comparing expires_at against a space-form now
+    // would see ISO-Z tokens sort after it and treat them as never expired.
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString().replace('T', ' ').replace(/\..*$/, '');
     const tokenId = randomUUID();
 
     const result = db.prepare(`
@@ -151,8 +178,10 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     // #150: 'void_adjustment' is a bill-only reversal line, never a kitchen
     // item — excluded outright. A voided item itself stays visible, struck
     // through, until voided_at ages past the same grace period every other
-    // KDS surface uses (main/db.ts's isVoidedItemKdsVisible).
-    const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString();
+    // KDS surface uses (main/db.ts's isVoidedItemKdsVisible). The cutoff is
+    // emitted in the DB's space form — an ISO-Z bound would sort after every
+    // space-form row of the same day and hide voided items immediately.
+    const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
     let itemsQuery = `
       SELECT oi.*, o.id as order_id, o.order_number, o.type, o.status as order_status,
         o.table_id, t.number as table_name, o.special_instructions as order_notes,

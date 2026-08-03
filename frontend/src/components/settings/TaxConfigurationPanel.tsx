@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { parseDbTimestamp } from '@/lib/utils';
 import {
   AlertTriangle,
   Calculator,
@@ -152,7 +153,8 @@ function apiMessage(error: unknown, fallback: string): string {
 }
 
 function dateTime(value: string): string {
-  const date = new Date(value);
+  // Backend timestamps are UTC space form — parse as UTC, not machine-local.
+  const date = parseDbTimestamp(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 

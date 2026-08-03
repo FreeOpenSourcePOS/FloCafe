@@ -1,12 +1,14 @@
 import { Router, Request, Response } from 'express';
 import {
   attachEffectiveAddons,
+  utcDayBounds,
   generateBillNumber,
   getDatabase,
   getSettingValue,
   now,
   parseItemJson,
   parseRowJson,
+  utcTodayDate,
   verifyPin,
   withTxn,
 } from '../db';
@@ -76,16 +78,23 @@ router.get('/', requireRole('owner', 'manager', 'cashier'), (req: Request, res: 
       params.push(req.query.customer_id);
     }
     if (req.query.today === 'true') {
-      query += " AND date(created_at) = date('now')";
+      // #208: UTC-day range hits `idx_bills_created_at` instead of date() on every row.
+      const [s, e] = utcDayBounds(utcTodayDate());
+      query += ' AND created_at >= ? AND created_at < ?';
+      params.push(s, e);
     }
 
     query += ' ORDER BY created_at DESC';
 
-    if (req.query.per_page) {
-      const perPage = Math.min(Math.max(parseInt(req.query.per_page as string) || 50, 1), 500);
-      query += ' LIMIT ?';
-      params.push(perPage);
-    }
+    // #208: default page size of 50 and a hard cap even when clients omit
+    // per_page — the previous "unbounded" default could return every bill
+    // ever when a caller left the param off.
+    const requestedPerPage = req.query.per_page ? parseInt(req.query.per_page as string, 10) : NaN;
+    const perPage = Number.isInteger(requestedPerPage) && requestedPerPage > 0
+      ? Math.min(Math.max(requestedPerPage, 1), 500)
+      : 50;
+    query += ' LIMIT ?';
+    params.push(perPage);
 
     const bills = db.prepare(query).all(...params).map(parseRowJson);
     res.json({ bills });

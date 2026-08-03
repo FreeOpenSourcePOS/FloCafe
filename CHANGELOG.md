@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.6.2] - 2026-08-03
+
+### Fixed
+- Windows printer detection ("Installed on this computer" in Settings → Printers) used `wmic`, which Microsoft removed starting with Windows 11 24H2 — affected machines silently showed "No installed printers found" even with a printer installed and set as default, forcing manual configuration. Detection now uses `Get-CimInstance` against the same underlying `Win32_Printer` data, delivered the same GPO-safe way the raw ESC/POS print path already is.
+
 ## [2.6.1] - 2026-08-03
 
 ### Fixed

@@ -496,6 +496,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'kds_default_view',
   'printer_method', 'paper_size', 'bill_template',
   'telemetry_enabled',
+  'diagnostics_consent',
   'kds_enabled', 'kot_printing_enabled',
 ]);
 
@@ -565,6 +566,13 @@ router.put('/:key', requireRole('owner', 'manager'), (req: Request, res: Respons
         INSERT INTO settings (key, value, updated_at) VALUES ('anonymous_data_consent', ?, ?)
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
       `).run(value, now());
+    }
+
+    // Tell FloAdmin the merchant's current choice so stores.diagnostics_consent
+    // matches in both directions, not just inferred from "an event arrived."
+    // Best-effort — never blocks the setting save on cloud reachability.
+    if (req.params.key === 'diagnostics_consent') {
+      void cloudSync.setDiagnosticsConsent(boolFlag(value) === 'true');
     }
 
     const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);

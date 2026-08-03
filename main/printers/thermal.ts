@@ -9,6 +9,9 @@ import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, Su
 import { getCountryByCode } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
 import { correlationId, type FloErrorCode } from '../errors';
+import { sendEvent } from '../services/telemetry';
+import { cloudSync } from '../services/cloud-sync';
+import { randomUUID } from 'crypto';
 
 export type PrintResult = {
   ok: boolean;
@@ -504,16 +507,51 @@ export async function printKOT(order: any, items: any[], stationName: string, us
   }
 }
 
+/**
+ * Reports a print failure on both telemetry tiers: an anonymous, aggregate
+ * Tier 1 event (specs/floadmin.md § 6.1) and, only where the merchant has
+ * given the separate opt-in, a Tier 2 store-attributed diagnostic event
+ * (§ 6.2). Both are best-effort and must never affect the caller's result —
+ * a slow or unreachable telemetry endpoint cannot make checkout wait.
+ */
+function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void {
+  let connectionType = 'unknown';
+  try {
+    connectionType = getPrinterConfig()?.connection_type || 'unknown';
+  } catch { /* best-effort only */ }
+
+  void sendEvent('print_failed', {
+    kind,
+    code: result.code,
+    stage: result.stage,
+    connection_type: connectionType,
+  });
+
+  cloudSync.reportDiagnostic({
+    event_id: randomUUID(),
+    event_code: result.code || `print.${kind}.failed`,
+    severity: 'error',
+    correlation_id: result.correlationId,
+    message: (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300),
+    metadata: { connection_type: connectionType, kind, os_platform: process.platform },
+    occurred_at: new Date().toISOString(),
+  });
+}
+
 /** Typed adapters used by API callers while legacy boolean callers migrate. */
 export async function printReceiptDetailed(...args: Parameters<typeof printReceipt>): Promise<PrintResult> {
   const id = correlationId();
   try {
     const ok = await printReceipt(...args);
-    return ok
+    const result: PrintResult = ok
       ? { ok: true, correlationId: id, stage: 'dispatch' }
       : { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch' };
+    if (!result.ok) reportPrintFailure('receipt', result);
+    return result;
   } catch (error) {
-    return { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch', detail: (error as Error).message };
+    const result: PrintResult = { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch', detail: (error as Error).message };
+    reportPrintFailure('receipt', result);
+    return result;
   }
 }
 
@@ -521,11 +559,15 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
   const id = correlationId();
   try {
     const ok = await printKOT(...args);
-    return ok
+    const result: PrintResult = ok
       ? { ok: true, correlationId: id, stage: 'dispatch' }
       : { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch' };
+    if (!result.ok) reportPrintFailure('kot', result);
+    return result;
   } catch (error) {
-    return { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch', detail: (error as Error).message };
+    const result: PrintResult = { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch', detail: (error as Error).message };
+    reportPrintFailure('kot', result);
+    return result;
   }
 }
 

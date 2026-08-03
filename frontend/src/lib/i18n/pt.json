@@ -413,6 +413,8 @@
   "settings.adminOnly": "Somente administrador",
   "settings.anonymousTelemetry": "Telemetria anônima de uso",
   "settings.anonymousTelemetryHint": "Quando ativado, envia pings de uso anônimos e não identificáveis (como inicializações do app) para sabermos que o FloCafe está sendo usado. Nunca inclui dados da loja, vendas ou qualquer coisa que possa identificar sua empresa. Independente da sincronização na nuvem — enviado mesmo com a nuvem desativada. Você fez essa escolha durante a configuração; altere-a a qualquer momento aqui.",
+  "settings.storeDiagnostics": "Diagnóstico da loja (para suporte)",
+  "settings.storeDiagnosticsHint": "Quando ativado, envia detalhes de erros tipados (como qual etapa da impressão falhou e em qual conexão) atribuídos a esta loja, para que o suporte possa diagnosticar problemas sem que você precise reproduzi-los. Nunca inclui nomes de clientes, telefones, endereços ou conteúdo de pedidos. Desativado por padrão, separado da telemetria anônima acima, e requer que a sincronização na nuvem esteja conectada.",
   "settings.apiKey": "Chave de API",
   "settings.apiKeyHelp": "Obtenha em soflo.codify.tech → registre sua loja → copie a chave de API",
   "settings.apiKeyHint": "(manual — opcional se registrado acima)",

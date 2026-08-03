@@ -1030,6 +1030,9 @@ export default function SettingsPage() {
   const [telemetryEnabled, setTelemetryEnabled] = useState(false);
   const [savingTelemetry, setSavingTelemetry] = useState(false);
 
+  const [diagnosticsConsent, setDiagnosticsConsent] = useState(false);
+  const [savingDiagnosticsConsent, setSavingDiagnosticsConsent] = useState(false);
+
   type GoogleDriveStatus = {
     configured: boolean;
     secure_storage_available: boolean;
@@ -1220,6 +1223,12 @@ export default function SettingsPage() {
       setTelemetryEnabled(false);
     });
 
+    api.get('/settings/diagnostics_consent').then((res) => {
+      setDiagnosticsConsent(res.data.setting?.value === 'true');
+    }).catch(() => {
+      setDiagnosticsConsent(false);
+    });
+
     fetchGoogleDriveStatus();
 
     api.get('/settings/kds_enabled').then((res) => {
@@ -1386,6 +1395,20 @@ export default function SettingsPage() {
       toast.error(t('settings.saveFailed'));
     } finally {
       setSavingTelemetry(false);
+    }
+  };
+
+  const saveDiagnosticsConsent = async (enabled: boolean) => {
+    const previous = diagnosticsConsent;
+    setDiagnosticsConsent(enabled);
+    setSavingDiagnosticsConsent(true);
+    try {
+      await api.put('/settings/diagnostics_consent', { value: enabled ? 'true' : 'false' });
+    } catch {
+      setDiagnosticsConsent(previous);
+      toast.error(t('settings.saveFailed'));
+    } finally {
+      setSavingDiagnosticsConsent(false);
     }
   };
 
@@ -3540,6 +3563,20 @@ export default function SettingsPage() {
                 <span className="text-sm text-gray-700">{t('settings.anonymousTelemetry')}</span>
               </label>
               <p className="text-xs text-gray-500">{t('settings.anonymousTelemetryHint')}</p>
+
+              <div className="border-t border-gray-100 pt-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={diagnosticsConsent}
+                    disabled={savingDiagnosticsConsent}
+                    onChange={(e) => saveDiagnosticsConsent(e.target.checked)}
+                    className="rounded border-gray-300 text-brand focus:ring-brand"
+                  />
+                  <span className="text-sm text-gray-700">{t('settings.storeDiagnostics')}</span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1">{t('settings.storeDiagnosticsHint')}</p>
+              </div>
             </div>
 
             {/* Google Drive — automated off-device backups (#129) */}

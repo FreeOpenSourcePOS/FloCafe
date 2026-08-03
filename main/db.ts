@@ -143,6 +143,16 @@ export function isTelemetryEnabled(): boolean {
 }
 
 /**
+ * Tier 2 store-attributed diagnostics — a separate, explicit opt-in from Tier
+ * 1 telemetry above. Never pre-ticked: a store that already consented to
+ * anonymous collection has not thereby consented to events being attributed
+ * to it. Defaults to 'false' for every install, new or upgraded.
+ */
+export function isDiagnosticsConsentEnabled(): boolean {
+  return getSettingValue('diagnostics_consent') === 'true';
+}
+
+/**
  * Kitchen Display System on/off switch (issue #133). Defaults to enabled
  * (missing/anything but the literal 'false') so pre-existing installs that
  * predate this setting keep their current always-on behavior.
@@ -1542,6 +1552,33 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       db.prepare(`INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics', ?)`).run(t);
     },
   },
+  {
+    version: 44,
+    name: 'store_diagnostics_outbox',
+    up: () => {
+      // diagnostics_consent defaults to 'false' for every install, upgraded or
+      // fresh — unlike telemetry_enabled above, this is never turned on by a
+      // migration. It is Tier 2 (store-attributed), a separate explicit
+      // opt-in from Tier 1's anonymous telemetry (specs/floadmin.md § 6.2).
+      insertSettingIfMissing('diagnostics_consent', 'false');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS store_diagnostics_outbox (
+          event_id TEXT PRIMARY KEY,
+          payload TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK (status IN ('pending', 'sending', 'delivered', 'failed')),
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at TEXT,
+          last_error TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          delivered_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_store_diagnostics_outbox_retry
+          ON store_diagnostics_outbox(status, next_attempt_at, created_at);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -2251,6 +2288,7 @@ function seedInstallDefaults(): void {
   insert('anonymous_data_consent', 'true');
   insert('telemetry_enabled', 'true');
   insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
+  insert('diagnostics_consent', 'false');
   insert('kds_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('order_number_prefix', 'ORD');

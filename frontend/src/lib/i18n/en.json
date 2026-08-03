@@ -413,6 +413,8 @@
   "settings.adminOnly": "Admin only",
   "settings.anonymousTelemetry": "Anonymous usage telemetry",
   "settings.anonymousTelemetryHint": "When enabled, sends anonymous, non-identifying usage pings (like app launches) so we know FloCafe is being used. Never includes store data, sales, or anything that could identify your business. Independent of cloud sync — sent even if cloud sync is off. You made this choice during setup; change it anytime here.",
+  "settings.storeDiagnostics": "Store diagnostics (for support)",
+  "settings.storeDiagnosticsHint": "When enabled, sends typed error details (like which printer step failed and on what connection) attributed to this store, so support can diagnose problems without you having to reproduce them. Never includes customer names, phone numbers, addresses, or order contents. Off by default, separate from anonymous usage telemetry above, and requires cloud sync to be connected.",
   "settings.apiKey": "API Key",
   "settings.apiKeyHelp": "Get this from soflo.codify.tech → register your store → copy the API key",
   "settings.apiKeyHint": "(manual — optional if registered above)",

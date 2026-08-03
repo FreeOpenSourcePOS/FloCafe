@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled } from '../db';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -69,6 +69,21 @@ export type SupportTicketInput = {
   contact_phone?: string;
   message: string;
   diagnostics?: Record<string, unknown> | null;
+};
+
+/**
+ * Tier 2 store-attributed diagnostics (specs/floadmin.md § 6.2). No names,
+ * phones, addresses, or order payloads belong in message/metadata — this is
+ * "which typed error, on which store," not a log dump.
+ */
+export type DiagnosticEventInput = {
+  event_id: string;
+  event_code: string;
+  severity: 'debug' | 'info' | 'warn' | 'error' | 'critical';
+  correlation_id?: string;
+  message?: string;
+  metadata?: Record<string, unknown>;
+  occurred_at: string;
 };
 
 type DateRange = {
@@ -167,6 +182,7 @@ class CloudSyncService {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private outboxTimer: ReturnType<typeof setInterval> | null = null;
   private supportOutboxTimer: ReturnType<typeof setInterval> | null = null;
+  private diagnosticsOutboxTimer: ReturnType<typeof setInterval> | null = null;
   private commandTimer: ReturnType<typeof setInterval> | null = null;
   private settings: CloudSettings | null = null;
   private flushing = false;
@@ -205,6 +221,8 @@ class CloudSyncService {
       this.outboxTimer = setInterval(() => void this.flushOutbox(), OUTBOX_INTERVAL_MS);
       void this.flushSupportTicketOutbox();
       this.supportOutboxTimer = setInterval(() => void this.flushSupportTicketOutbox(), OUTBOX_INTERVAL_MS);
+      void this.flushDiagnosticsOutbox();
+      this.diagnosticsOutboxTimer = setInterval(() => void this.flushDiagnosticsOutbox(), OUTBOX_INTERVAL_MS);
     }
 
     this.maybeStartRelay();
@@ -222,6 +240,7 @@ class CloudSyncService {
     if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
     if (this.outboxTimer) { clearInterval(this.outboxTimer); this.outboxTimer = null; }
     if (this.supportOutboxTimer) { clearInterval(this.supportOutboxTimer); this.supportOutboxTimer = null; }
+    if (this.diagnosticsOutboxTimer) { clearInterval(this.diagnosticsOutboxTimer); this.diagnosticsOutboxTimer = null; }
     if (this.commandTimer) { clearInterval(this.commandTimer); this.commandTimer = null; }
     if (this.autoRegisterTimer) { clearTimeout(this.autoRegisterTimer); this.autoRegisterTimer = null; }
     this.httpFallbackActive = false;
@@ -355,6 +374,25 @@ class CloudSyncService {
     return { ok: true, data, status: this.getStatus() };
   }
 
+  /**
+   * Tells FloAdmin the merchant's current Tier 2 diagnostics choice, so
+   * `stores.diagnostics_consent` server-side matches the local toggle in both
+   * directions (on AND off) — not just inferred from "an event arrived."
+   * Best-effort: if the POS is offline or unregistered right now, the very
+   * next reportDiagnostic() call (when back online) is gated locally anyway,
+   * and the next successful call here will still bring the server in sync.
+   */
+  async setDiagnosticsConsent(enabled: boolean): Promise<void> {
+    try {
+      await this.signedFetch('/api/pos/diagnostics-consent', {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      });
+    } catch (err) {
+      log.debug('[CloudSync] diagnostics consent sync failed (non-fatal):', (err as Error).message);
+    }
+  }
+
   /** Queue a support request durably; the caller can be offline. */
   queueSupportTicket(input: SupportTicketInput): { queued: boolean; client_ticket_id: string } {
     const db = getDatabase();
@@ -410,6 +448,68 @@ class CloudSyncService {
         `).run(attempts, new Date(Date.now() + delayMs).toISOString(), message, now(), row.client_ticket_id);
       }
       this.markError(message);
+    }
+  }
+
+  /**
+   * Queue a Tier 2 store-attributed diagnostic event durably. No-ops silently
+   * when the merchant hasn't given the separate diagnostics_consent opt-in —
+   * callers should not need to check this themselves before every call site.
+   */
+  reportDiagnostic(input: DiagnosticEventInput): void {
+    if (!isDiagnosticsConsentEnabled()) return;
+    const db = getDatabase();
+    const timestamp = now();
+    db.prepare(`
+      INSERT OR IGNORE INTO store_diagnostics_outbox
+        (event_id, payload, status, created_at, updated_at)
+      VALUES (?, ?, 'pending', ?, ?)
+    `).run(input.event_id, JSON.stringify(input), timestamp, timestamp);
+    void this.flushDiagnosticsOutbox();
+  }
+
+  private async flushDiagnosticsOutbox(): Promise<void> {
+    if (!isDiagnosticsConsentEnabled()) return;
+    const cfg = this.settings ?? this.loadSettings();
+    if (!cfg?.sync_enabled || !cfg.api_key) return;
+    const db = getDatabase();
+    const rows = db.prepare(`
+      SELECT * FROM store_diagnostics_outbox
+       WHERE status IN ('pending', 'failed')
+         AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+       ORDER BY created_at ASC LIMIT 20
+    `).all(now()) as Array<{ event_id: string; payload: string; attempt_count: number }>;
+    if (rows.length === 0) return;
+
+    try {
+      for (const row of rows) {
+        db.prepare(`UPDATE store_diagnostics_outbox SET status = 'sending', updated_at = ? WHERE event_id = ?`)
+          .run(now(), row.event_id);
+        const res = await this.signedFetch('/api/pos/diagnostics', {
+          method: 'POST',
+          body: row.payload,
+        });
+        if (!res.ok) throw new Error(`diagnostic event submission failed (${res.status})`);
+        db.prepare(`
+          UPDATE store_diagnostics_outbox
+             SET status = 'delivered', delivered_at = ?, updated_at = ?, last_error = NULL
+           WHERE event_id = ?
+        `).run(now(), now(), row.event_id);
+      }
+    } catch (err) {
+      const message = (err as Error).message;
+      const rowsToFail = db.prepare(`SELECT event_id, attempt_count FROM store_diagnostics_outbox WHERE status = 'sending'`).all() as Array<{ event_id: string; attempt_count: number }>;
+      for (const row of rowsToFail) {
+        const attempts = row.attempt_count + 1;
+        const delayMs = Math.min(30 * 60_000, Math.pow(2, Math.min(attempts, 8)) * 1000);
+        db.prepare(`
+          UPDATE store_diagnostics_outbox
+             SET status = 'failed', attempt_count = ?, next_attempt_at = ?, last_error = ?, updated_at = ?
+           WHERE event_id = ?
+        `).run(attempts, new Date(Date.now() + delayMs).toISOString(), message, now(), row.event_id);
+      }
+      // Non-fatal, same as support tickets: diagnostics must never surface a
+      // connectivity error as if it were a cloud-sync problem to the merchant.
     }
   }
 

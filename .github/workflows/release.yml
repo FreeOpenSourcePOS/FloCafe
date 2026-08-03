@@ -263,10 +263,19 @@ jobs:
           ls release/*.zip.blockmap >/dev/null 2>&1 || { echo "::error::no .zip.blockmap in release/ — macOS auto-update would be broken for this release"; exit 1; }
           # Guards against a regression back to #199/#178: this should list one
           # `files:` entry per .zip built (both archs), not just exist.
+          #
+          # mac.target configures both dmg and zip (each x64+arm64), and
+          # electron-builder's update-info writer lists both under `files:` in
+          # latest-mac.yml, not just zip — confirmed directly against a local
+          # v26.15.3 build (v2.5.0's release-mac run failed here with a false
+          # positive: 4 total `- url:` lines against 2 zips, because dmg
+          # entries were being counted as if they were missing zip entries).
+          # electron-updater's MacUpdater only ever selects a `.zip` entry, so
+          # only those need to be counted here.
           ZIP_COUNT=$(ls release/*.zip | wc -l | tr -d ' ')
-          MANIFEST_COUNT=$(grep -c '^\s*- url:' release/latest-mac.yml || true)
+          MANIFEST_COUNT=$(grep -cE '^\s*- url: .*\.zip$' release/latest-mac.yml || true)
           if [ "$MANIFEST_COUNT" -ne "$ZIP_COUNT" ]; then
-            echo "::error::latest-mac.yml lists $MANIFEST_COUNT file(s) but $ZIP_COUNT .zip(s) were built — auto-update would be broken for whichever architecture's entry is missing"
+            echo "::error::latest-mac.yml lists $MANIFEST_COUNT .zip file(s) but $ZIP_COUNT .zip(s) were built — auto-update would be broken for whichever architecture's entry is missing"
             exit 1
           fi
           VERIFY_DIR=$(mktemp -d)

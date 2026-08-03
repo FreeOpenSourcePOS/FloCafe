@@ -35,6 +35,13 @@ function seedPosFixture() {
     ['billing_type', 'prepaid'],
     ['business_type', 'restaurant'],
     ['tables_required', 'false'],
+    // Tax defaults off (migration 40) until explicitly enabled — this fixture's
+    // product carries a real tax_category_id expecting real VAT, so it must
+    // turn taxes on itself rather than rely on a global default. No
+    // country_packs row is seeded either; getActiveCountryPack's bundled-JSON
+    // fallback (main/services/tax.ts) is the documented behavior for exactly
+    // this case and supplies Thailand's standard 7% VAT category.
+    ['taxes_enabled', 'true'],
   ]) {
     db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
       .run(key, value, createdAt);

@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.5.1] - 2026-08-03
+
+### Fixed
+- Verification-only release: no user-facing changes beyond 2.5.0. `release-mac`'s own post-build check failed v2.5.0's macOS build — Windows and Linux published, macOS did not. `mac.target` builds both `dmg` and `zip` for each architecture, and electron-builder's update manifest (`latest-mac.yml`) lists all of them under `files:`, not just `zip`; the check counted every entry (4) against the number of `.zip` files on disk (2) and failed a build that was actually complete and correctly signed. Confirmed by reproducing the exact build locally before changing anything. The check now counts only `.zip` entries, which is what `electron-updater`'s `MacUpdater` actually reads.
+
 ## [2.5.0] - 2026-08-03
 
 ### Added

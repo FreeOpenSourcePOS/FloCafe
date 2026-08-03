@@ -15,9 +15,81 @@ Module._load = function (request, parent, isMain) {
   return originalLoad.apply(this, arguments);
 };
 
+const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../dist/db');
 const { startServer, stopServer } = require('../dist/server');
+const thailandTaxPack = require('../main/tax-packs/th.json');
+
+// BUNDLED_COUNTRY_PACKS (main/tax-packs/bundled.ts) only ships the generic
+// pack — Thailand and India are separately-published "official" packs that
+// must be explicitly installed and activated, same as production's real
+// activation route (main/routes/tax-packs.ts) and the Node test suite's
+// installAndActivateTestTaxPack (tests/helpers/test-setup.ts). Without this,
+// getActiveCountryPack('TH') matches the generic pack's '*' wildcard row
+// before ever falling back to bundled data, and this fixture's 'standard'
+// category resolves to nothing — checkout fails with "no tax rules apply to
+// category standard for business type restaurant" instead of computing VAT.
+function installAndActivateTaxPack(db, pack) {
+  const installedAt = now();
+  const versionId = `${pack.id}@${pack.version}`;
+  const packJson = JSON.stringify(pack);
+  const digest = crypto.createHash('sha256').update(packJson).digest('hex');
+
+  db.prepare(`
+    INSERT INTO country_packs (
+      id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      publisher = excluded.publisher,
+      country = excluded.country,
+      jurisdiction = excluded.jurisdiction,
+      active_version_id = excluded.active_version_id,
+      status = 'active',
+      updated_at = excluded.updated_at
+  `).run(pack.id, pack.publisher, pack.country, pack.jurisdiction, versionId, installedAt, installedAt);
+
+  db.prepare(`
+    INSERT OR REPLACE INTO country_pack_versions (
+      id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
+      effective_from, effective_to, min_flo_version, published_at, status, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, 'active', ?)
+  `).run(
+    versionId, pack.id, pack.version, pack.schemaVersion,
+    JSON.stringify({
+      id: pack.id, publisher: pack.publisher, country: pack.country,
+      jurisdiction: pack.jurisdiction, version: pack.version, publishedAt: pack.publishedAt,
+    }),
+    packJson, digest, pack.effectiveFrom, pack.effectiveTo || null, pack.minFloVersion,
+    pack.publishedAt, installedAt,
+  );
+
+  const insertCategory = db.prepare(`
+    INSERT OR REPLACE INTO tax_categories (
+      id, pack_version_id, category_id, label, default_behavior, definition_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const category of pack.categories) {
+    insertCategory.run(
+      `${versionId}:category:${category.id}`, versionId, category.id, category.label,
+      category.defaultBehavior || null, JSON.stringify(category), installedAt,
+    );
+  }
+
+  const insertRule = db.prepare(`
+    INSERT OR REPLACE INTO tax_rules (
+      id, pack_version_id, rule_id, label, calculation_type, rate, amount,
+      applies_per, base_rule_ids, definition_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const rule of pack.rules) {
+    insertRule.run(
+      `${versionId}:rule:${rule.id}`, versionId, rule.id, rule.label, rule.type,
+      rule.rate || null, rule.amount || null, rule.appliesPer || null,
+      JSON.stringify(rule.baseRuleIds || []), JSON.stringify(rule), installedAt,
+    );
+  }
+}
 const { startKdsServer, stopKdsServer } = require('../dist/kds-server');
 
 function seedUser(id, email, role) {
@@ -37,15 +109,13 @@ function seedPosFixture() {
     ['tables_required', 'false'],
     // Tax defaults off (migration 40) until explicitly enabled — this fixture's
     // product carries a real tax_category_id expecting real VAT, so it must
-    // turn taxes on itself rather than rely on a global default. No
-    // country_packs row is seeded either; getActiveCountryPack's bundled-JSON
-    // fallback (main/services/tax.ts) is the documented behavior for exactly
-    // this case and supplies Thailand's standard 7% VAT category.
+    // turn taxes on itself rather than rely on a global default.
     ['taxes_enabled', 'true'],
   ]) {
     db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
       .run(key, value, createdAt);
   }
+  installAndActivateTaxPack(db, thailandTaxPack);
   db.prepare(
     'INSERT INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)'
   ).run('e2e-category', 'E2E Menu', 1, createdAt, createdAt);

@@ -2,6 +2,19 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.6.0] - 2026-08-03
+
+### Added
+- Print failures now report an anonymous, aggregate event (which stage failed, on which connection type) so we can see fleet-wide printer failure rates without any store identity attached.
+- New opt-in "Store diagnostics" toggle in Settings → Privacy (off by default, separate from anonymous telemetry): when a merchant turns it on, typed error events (e.g. which printer step failed) are attributed to their store so support can diagnose a reported problem without asking them to reproduce it. Never includes customer data, order contents, or raw log files.
+
+### Changed
+- Large-scale database performance overhaul for high-volume installs (#208, thanks @carvalab): 11 new indexes, batched order/item hydration replacing hundreds of per-row queries, and CTE-based rewrites of the customers list and kitchen/KDS active-order queries. Measured on a synthetic 100k+ order database: the customers list dropped from ~40s to ~12ms, and every daily-report query improved 25x-3,200x. The orders list and single-order views now share one batched hydration path instead of firing a query per related row.
+- All stored timestamps are now normalized to one consistent format (matching SQLite's own `CURRENT_TIMESTAMP`); a prior mix of two timestamp formats in the same columns could sort incorrectly across day boundaries and shift daily "today" boundaries by several hours depending on timezone. Existing data is normalized automatically on upgrade.
+
+### Fixed
+- A print failure's diagnostics report could no longer throw past the actual printer error — any issue reporting the failure itself is now caught and logged rather than replacing the real error shown to the cashier.
+
 ## [2.5.1] - 2026-08-03
 
 ### Fixed

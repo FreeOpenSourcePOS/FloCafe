@@ -39,9 +39,11 @@ async function main() {
   });
   const { baseUrl, server } = await startServer(app);
 
-  async function newBill() {
+  async function newBill(customerId?: string) {
     const order = await api(baseUrl, '/api/orders', {
-      method: 'POST', body: { type: 'takeaway', items: [{ product_id: 'prod-214', quantity: 1 }] }, headers: authHeader,
+      method: 'POST',
+      body: { type: 'takeaway', ...(customerId ? { customer_id: customerId } : {}), items: [{ product_id: 'prod-214', quantity: 1 }] },
+      headers: authHeader,
     });
     const bill = await api(baseUrl, '/api/bills/generate', {
       method: 'POST', body: { order_id: order.data.order.id }, headers: authHeader,
@@ -63,17 +65,19 @@ async function main() {
       method: 'POST', body: {}, headers: authHeader,
     });
     assertEqual(malformedSingle.status, 400, 'missing single-payment fields are rejected without a server error');
-    for (const payload of [
-      { payments: null },
-      { payments: {} },
-      { payments: [] },
-      { payments: [{ method: 'cash' }] },
-      { payments: [{ method: 'cash', amount: null }] },
-    ]) {
+    for (const payload of [{ payments: null }, { payments: {} }, { payments: [] }]) {
       const malformedBatch = await api(baseUrl, `/api/bills/${malformedBodyBill.id}/payments`, {
         method: 'POST', body: payload, headers: authHeader,
       });
       assertEqual(malformedBatch.status, 400, `malformed batch body ${JSON.stringify(payload)} is rejected`);
+    }
+    for (const [label, amount] of [['omitted', undefined], ['null', null]] as const) {
+      const legacyBatchBill = await newBill();
+      const legacyPayment = await api(baseUrl, `/api/bills/${legacyBatchBill.id}/payments`, {
+        method: 'POST', body: { payments: [{ method: 'card', ...(amount === undefined ? {} : { amount }) }] }, headers: authHeader,
+      });
+      assertEqual(legacyPayment.status, 200, `single-line batch ${label} amount remains compatible`);
+      assertEqual(legacyPayment.data.bill.payment_status, 'paid', `single-line batch ${label} settles the bill`);
     }
 
     // Batch allocation is independent of array order and preserves cash tender/change.
@@ -109,8 +113,35 @@ async function main() {
     assertEqual(JSON.stringify(followup.data.bill.payment_details[0]), priorDetails, 'prior payment detail remains unchanged');
     assertEqual(followup.data.bill.paid_amount, 100, 'partial bill plus batch settles the bill');
 
-    // Wallet affordability is checked for the whole batch before any write.
-    const walletRollback = await newBill();
+    const replayBill = await newBill();
+    const replayPayload = { payments: [{ method: 'card', amount: 100, transaction_id: 'tx-214-replay' }] };
+    const firstReplay = await api(baseUrl, `/api/bills/${replayBill.id}/payments`, {
+      method: 'POST', body: replayPayload, headers: authHeader,
+    });
+    const secondReplay = await api(baseUrl, `/api/bills/${replayBill.id}/payments`, {
+      method: 'POST', body: replayPayload, headers: authHeader,
+    });
+    assertEqual(firstReplay.status, 200, 'transaction-id payment is accepted');
+    assertEqual(secondReplay.status, 200, 'replaying transaction-id payment is idempotent');
+    assertEqual(secondReplay.data.bill.paid_amount, 100, 'replay does not inflate paid amount');
+    assertEqual(secondReplay.data.bill.payment_details.length, 1, 'replay does not duplicate payment history');
+
+    const zeroCash = await newBill();
+    const zeroCashResult = await api(baseUrl, `/api/bills/${zeroCash.id}/payments`, {
+      method: 'POST', body: { payments: [{ method: 'card', amount: 100 }, { method: 'cash', amount: 10 }] }, headers: authHeader,
+    });
+    assertEqual(zeroCashResult.status, 200, 'cash-only change line does not fail settlement');
+    assertEqual(zeroCashResult.data.bill.payment_details.length, 1, 'zero-applied cash line is omitted');
+    assertEqual(zeroCashResult.data.bill.payment_details[0].method, 'card', 'zero-applied cash is not counted as a method');
+
+    // Wallet affordability is checked for the whole batch before any write, and
+    // wallet debits require the order/bill to carry the same customer.
+    const unboundWallet = await newBill();
+    const unboundWalletResult = await api(baseUrl, `/api/bills/${unboundWallet.id}/payment`, {
+      method: 'POST', body: { method: 'wallet', amount: 1, customer_id: 'cust-214' }, headers: authHeader,
+    });
+    assertEqual(unboundWalletResult.status, 400, 'unbound wallet payment is rejected');
+    const walletRollback = await newBill('cust-214');
     seedWalletCredit(db, 'cust-214', 500);
     const walletBefore = db.prepare("SELECT COUNT(*) AS count FROM loyalty_ledger WHERE bill_id = ? AND type = 'debit'").get(walletRollback.id) as any;
     const walletBatch = await api(baseUrl, `/api/bills/${walletRollback.id}/payments`, {
@@ -167,7 +198,7 @@ async function main() {
     assertIncludes(precise.data.error, 'at most 2 decimal', 'precision error is clear');
 
     // Wallet debits are aggregate-checked and retain cent precision.
-    const walletBill = await newBill();
+    const walletBill = await newBill('cust-214');
     db.prepare('UPDATE bills SET total = .01, balance = .01 WHERE id = ?').run(walletBill.id);
     seedWalletCredit(db, 'cust-214', 1);
     const walletPay = await api(baseUrl, `/api/bills/${walletBill.id}/payment`, {

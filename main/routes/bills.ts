@@ -281,21 +281,68 @@ interface PreparedPayment {
   changeCents?: number;
 }
 
+function paymentTransactionKey(payment: unknown): string | null {
+  if (!payment || typeof payment !== 'object' || Array.isArray(payment)) return null;
+  const candidate = payment as PaymentInput;
+  return typeof candidate.method === 'string' && typeof candidate.transaction_id === 'string'
+    ? JSON.stringify([candidate.method, candidate.transaction_id])
+    : null;
+}
+
 function preparePaymentBatch(
   db: ReturnType<typeof getDatabase>,
   billId: string,
   payments: PaymentInput[],
   bodyCustomerId?: string | number,
   allowOmittedAmount = false,
-): { bill: any; prepared: PreparedPayment[]; existingPayments: any[]; effectiveCustomerId: string | null } {
+): { bill: any; prepared: PreparedPayment[]; existingPayments: any[]; effectiveCustomerId: string | null; idempotentReplay?: boolean } {
   const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(billId) as any;
   if (!bill) throw Object.assign(new Error('Bill not found'), { statusCode: 404 });
-  if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
   if (!Array.isArray(payments) || payments.length === 0) throw Object.assign(new Error('payments must be a non-empty array'), { statusCode: 400 });
   if (payments.length > MAX_PAYMENT_LINES) throw Object.assign(new Error(`A maximum of ${MAX_PAYMENT_LINES} payment lines is allowed`), { statusCode: 400 });
+  let existingPayments: any[] = [];
+  if (bill.payment_details) {
+    try {
+      const parsed = JSON.parse(bill.payment_details);
+      existingPayments = Array.isArray(parsed) ? parsed : [parsed];
+    } catch {
+      // Preserve settlement compatibility with legacy malformed JSON. The new
+      // line is still appended in a recoverable JSON array below.
+      existingPayments = [];
+    }
+  }
+  const existingTransactionKeys = new Set(existingPayments.map(paymentTransactionKey).filter(Boolean));
+  const requestTransactionKeys = payments.map(paymentTransactionKey);
+  const replay = requestTransactionKeys.every((key) => key !== null && existingTransactionKeys.has(key));
+  if (replay) {
+    return { bill, prepared: [], existingPayments, effectiveCustomerId: bill.customer_id || null, idempotentReplay: true };
+  }
+  const seenTransactionKeys = new Set<string>();
+  for (const key of requestTransactionKeys) {
+    if (key && (seenTransactionKeys.has(key) || existingTransactionKeys.has(key))) {
+      throw Object.assign(new Error('Payment transaction_id has already been used for this bill'), { statusCode: 409 });
+    }
+    if (key) seenTransactionKeys.add(key);
+  }
+  if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
   const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * 100));
   if (remainingCents <= 0) throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
-  const effectiveCustomerId = bill.customer_id || (bodyCustomerId ? String(bodyCustomerId) : null);
+  const requestedCustomerId = bodyCustomerId === undefined || bodyCustomerId === null || bodyCustomerId === ''
+    ? null
+    : String(bodyCustomerId);
+  const order = db.prepare('SELECT customer_id FROM orders WHERE id = ?').get(bill.order_id) as { customer_id?: string | number | null } | undefined;
+  const associatedCustomerId = bill.customer_id || order?.customer_id || null;
+  if (requestedCustomerId && associatedCustomerId && String(associatedCustomerId) !== requestedCustomerId) {
+    throw Object.assign(new Error('Payment customer does not match the bill customer'), { statusCode: 400 });
+  }
+  const usesWallet = payments.some((payment) => payment && typeof payment === 'object' && !Array.isArray(payment) && (payment as PaymentInput).method === 'wallet');
+  if (usesWallet && !associatedCustomerId) {
+    throw Object.assign(new Error('Wallet payment requires a customer associated with the bill'), { statusCode: 400 });
+  }
+  const effectiveCustomerId = associatedCustomerId ? String(associatedCustomerId) : requestedCustomerId;
+  if (effectiveCustomerId && !db.prepare('SELECT id FROM customers WHERE id = ?').get(effectiveCustomerId)) {
+    throw Object.assign(new Error('Customer not found'), { statusCode: 400 });
+  }
   const raw = payments.map((payment, index) => {
     if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
       throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
@@ -313,11 +360,13 @@ function preparePaymentBatch(
         throw Object.assign(new Error(`${field} is invalid or too long`), { statusCode: 400 });
       }
     }
-    // POST /:id/payment historically accepted null as an omitted amount. The
-    // batch endpoint requires every line to state its amount explicitly.
-    const amountValue = allowOmittedAmount && payment.amount === null ? undefined : payment.amount;
+    // Preserve omitted/null compatibility for the legacy single-line contracts.
+    // Multi-line batches must state every amount explicitly so allocation is
+    // deterministic before any write.
+    const supportsOmittedAmount = allowOmittedAmount || payments.length === 1;
+    const amountValue = supportsOmittedAmount && payment.amount === null ? undefined : payment.amount;
     const amount = amountValue === undefined
-      ? (allowOmittedAmount && payments.length === 1 ? remainingCents : undefined)
+      ? (supportsOmittedAmount ? remainingCents : undefined)
       : paymentAmountCents(amountValue);
     if (amount === undefined) throw Object.assign(new Error('Payment amount is required for split payments'), { statusCode: 400 });
     const normalizedPayment: PaymentInput = { method: String(payment.method) };
@@ -336,18 +385,7 @@ function preparePaymentBatch(
     const applied = Math.min(line.requestedCents, cashLeft);
     cashLeft -= applied;
     return { payment: line.payment, amountCents: applied, tenderedCents: line.requestedCents, changeCents: line.requestedCents - applied };
-  });
-  let existingPayments: any[] = [];
-  if (bill.payment_details) {
-    try {
-      const parsed = JSON.parse(bill.payment_details);
-      existingPayments = Array.isArray(parsed) ? parsed : [parsed];
-    } catch {
-      // Preserve settlement compatibility with legacy malformed JSON. The new
-      // line is still appended in a recoverable JSON array below.
-      existingPayments = [];
-    }
-  }
+  }).filter((line) => line.amountCents > 0);
 
   if (prepared.some((line) => line.payment.method === 'wallet')) {
     if (!effectiveCustomerId) throw Object.assign(new Error('Customer association is required for wallet payment'), { statusCode: 400 });
@@ -381,9 +419,12 @@ function applyPaymentBatch(
   bodyCustomerId?: string | number,
   allowOmittedAmount = false,
 ): { bill: any; walletDebited: boolean; loyaltyPointsEarned: number } {
-  const { bill, prepared, existingPayments, effectiveCustomerId } = preparePaymentBatch(
+  const { bill, prepared, existingPayments, effectiveCustomerId, idempotentReplay } = preparePaymentBatch(
     db, billId, payments, bodyCustomerId, allowOmittedAmount,
   );
+  if (idempotentReplay) {
+    return { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited: false, loyaltyPointsEarned: 0 };
+  }
   const totalAppliedCents = prepared.reduce((sum, line) => sum + line.amountCents, 0);
   const oldPaidCents = Math.round(Number(bill.paid_amount || 0) * 100);
   const totalCents = Math.round(Number(bill.total || 0) * 100);

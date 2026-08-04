@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -30,8 +30,29 @@ import { useI18n } from '@/hooks/useI18n';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 
+const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
+const POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
+
+interface PostpaidAttempt {
+  userId: string;
+  fingerprint: string;
+  idempotencyKey: string;
+  order?: Order;
+}
+
+interface PrepaidAttempt {
+  userId: string;
+  cartFingerprint: string;
+  paymentFingerprint: string;
+  discount: PrepaidDiscount | null;
+  order?: Order;
+  bill?: Bill;
+  orderIdempotencyKey: string;
+  paymentIdempotencyKey: string;
+}
+
 export default function POSPage() {
-  const { currentTenant } = useAuthStore();
+  const { currentTenant, user } = useAuthStore();
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const cart = useCartStore();
   const heldOrders = useHeldOrdersStore();
@@ -59,6 +80,90 @@ export default function POSPage() {
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
+  const activeUserId = user?.id == null ? null : String(user.id);
+  const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
+  const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
+  const addItemsAttemptRef = useRef<{ orderId: string; key: string } | null>(null);
+
+  const readPostpaidAttempt = () => {
+    if (postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
+    postpaidAttemptRef.current = null;
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) as PostpaidAttempt : null;
+      if (parsed && parsed.userId === activeUserId) postpaidAttemptRef.current = parsed;
+      else window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+    } catch {
+      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+    }
+    return postpaidAttemptRef.current;
+  };
+  const savePostpaidAttempt = (attempt: PostpaidAttempt): boolean => {
+    postpaidAttemptRef.current = attempt;
+    try {
+      window.localStorage.setItem(POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const clearPostpaidAttempt = () => {
+    postpaidAttemptRef.current = null;
+    try {
+      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+  };
+
+  const readPrepaidAttempt = () => {
+    if (prepaidAttemptRef.current?.userId === activeUserId) return prepaidAttemptRef.current;
+    prepaidAttemptRef.current = null;
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = window.localStorage.getItem(PREPAID_ATTEMPT_STORAGE_KEY);
+      const parsed = stored ? JSON.parse(stored) as PrepaidAttempt : null;
+      if (parsed && parsed.userId === activeUserId) {
+        if (parsed.discount && 'override_pin' in parsed.discount) {
+          const safeDiscount = { ...parsed.discount };
+          delete safeDiscount.override_pin;
+          parsed.discount = safeDiscount;
+          window.localStorage.setItem(PREPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(parsed));
+        }
+        prepaidAttemptRef.current = parsed;
+      } else window.localStorage.removeItem(PREPAID_ATTEMPT_STORAGE_KEY);
+    } catch {
+      window.localStorage.removeItem(PREPAID_ATTEMPT_STORAGE_KEY);
+    }
+    return prepaidAttemptRef.current;
+  };
+  const savePrepaidAttempt = (attempt: PrepaidAttempt): boolean => {
+    try {
+      const safeAttempt = { ...attempt };
+      if (safeAttempt.discount) {
+        const safeDiscount = { ...safeAttempt.discount };
+        delete safeDiscount.override_pin;
+        safeAttempt.discount = safeDiscount;
+      }
+      prepaidAttemptRef.current = safeAttempt;
+      window.localStorage.setItem(PREPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(safeAttempt));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const clearPrepaidAttempt = () => {
+    prepaidAttemptRef.current = null;
+    try {
+      window.localStorage.removeItem(PREPAID_ATTEMPT_STORAGE_KEY);
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+  };
+  const newIdempotencyKey = () => typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
   const { printBill, printKot } = usePrinterStore();
@@ -223,7 +328,7 @@ export default function POSPage() {
       let orderForKot: Order;
 
       if (pendingOrder) {
-        // Add new items to existing order
+        // Add new items to an existing order with a durable retry key.
         const newItems = cart.items.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
@@ -232,12 +337,23 @@ export default function POSPage() {
             : null,
           special_instructions: item.special_instructions || null,
         }));
-        const { data } = await api.post(`/orders/${pendingOrder.id}/items`, { items: newItems, special_instructions: cart.orderNotes || undefined });
+        const itemFingerprint = JSON.stringify({ order_id: pendingOrder.id, items: newItems, special_instructions: cart.orderNotes || undefined });
+        const priorItemsAttempt = readPostpaidAttempt();
+        const itemAttempt: PostpaidAttempt = priorItemsAttempt?.userId === activeUserId && priorItemsAttempt.fingerprint === itemFingerprint
+          ? priorItemsAttempt
+          : { userId: activeUserId || '', fingerprint: itemFingerprint, idempotencyKey: newIdempotencyKey() };
+        if (!savePostpaidAttempt(itemAttempt)) throw new Error(t('pos.placeOrderFailed'));
+        const { data } = await api.post(
+          `/orders/${pendingOrder.id}/items`,
+          { items: newItems, special_instructions: cart.orderNotes || undefined },
+          { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } },
+        );
         toast.success(t('pos.itemsAddedToOrder', { number: pendingOrder.order_number }));
         orderForKot = data.order as Order;
+        clearPostpaidAttempt();
         setPendingOrder(null);
       } else {
-        const { data } = await api.post('/orders', {
+        const orderPayload = {
           table_id: cart.tableId,
           customer_id: cart.customerId,
           type: cart.orderType,
@@ -251,9 +367,20 @@ export default function POSPage() {
               : null,
             special_instructions: item.special_instructions || null,
           })),
-        });
+        };
+        const orderFingerprint = JSON.stringify(orderPayload);
+        const priorOrderAttempt = readPostpaidAttempt();
+        const orderAttempt: PostpaidAttempt = priorOrderAttempt?.userId === activeUserId && priorOrderAttempt.fingerprint === orderFingerprint
+          ? priorOrderAttempt
+          : { userId: activeUserId || '', fingerprint: orderFingerprint, idempotencyKey: newIdempotencyKey() };
+        if (!savePostpaidAttempt(orderAttempt)) throw new Error(t('pos.placeOrderFailed'));
+        const { data } = orderAttempt.order
+          ? { data: { order: orderAttempt.order } }
+          : await api.post('/orders', orderPayload, { headers: { 'Idempotency-Key': orderAttempt.idempotencyKey } });
+        if (!orderAttempt.order) savePostpaidAttempt({ ...orderAttempt, order: data.order as Order });
         toast.success(t('pos.orderPlaced', { number: data.order.order_number }));
         orderForKot = data.order as Order;
+        clearPostpaidAttempt();
       }
 
       if (cart.tableId) heldOrders.removeHeldOrder(cart.tableId);
@@ -275,54 +402,165 @@ export default function POSPage() {
     const isPrepaidCheckout = shouldTakePaymentNow;
     setShowPrepaidCheckout(false);
     setSubmitting(true);
+    const orderItems = cart.items.map((item) => ({
+      product_id: item.product.id,
+      quantity: item.quantity,
+      addons: item.addons.length > 0
+        ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
+        : null,
+      special_instructions: item.special_instructions || null,
+    }));
+    const paymentLines = payments
+      .filter((p) => p.amount > 0)
+      .map((p) => ({ method: p.method, amount: p.amount }));
+    if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
+    const paymentFingerprint = JSON.stringify({ payments: paymentLines, customer_id: cart.customerId });
+    const cartFingerprint = JSON.stringify({
+      table_id: cart.tableId,
+      customer_id: cart.customerId,
+      type: cart.orderType,
+      guest_count: cart.guestCount,
+      special_instructions: cart.orderNotes,
+      items: orderItems,
+    });
+    const storedAttempt = readPrepaidAttempt();
+    const existingAttempt = storedAttempt && storedAttempt.userId === activeUserId && storedAttempt.cartFingerprint === cartFingerprint
+      && storedAttempt.orderIdempotencyKey && storedAttempt.paymentIdempotencyKey
+      ? storedAttempt
+      : null;
+    const currentDiscount = discount && discount.value > 0 ? discount : null;
+    const discountFingerprint = (value: PrepaidDiscount | null | undefined) => JSON.stringify(
+      value ? { type: value.type, value: value.value, reason: value.reason } : null,
+    );
+    const discountChanged = !!existingAttempt
+      && discountFingerprint(existingAttempt.discount) !== discountFingerprint(currentDiscount);
+    const retryDiscount = currentDiscount;
+    let attempt: PrepaidAttempt = existingAttempt
+      ? {
+        ...existingAttempt,
+        discount: retryDiscount,
+        bill: discountChanged ? undefined : existingAttempt.bill,
+        paymentFingerprint,
+        paymentIdempotencyKey: existingAttempt.paymentFingerprint === paymentFingerprint && !discountChanged
+          ? existingAttempt.paymentIdempotencyKey
+          : newIdempotencyKey(),
+      }
+      : {
+        userId: activeUserId || '',
+        cartFingerprint,
+        paymentFingerprint,
+        discount: discount && discount.value > 0 ? discount : null,
+        orderIdempotencyKey: newIdempotencyKey(),
+        paymentIdempotencyKey: newIdempotencyKey(),
+      };
+    // Persist the key before the first order mutation. The server replays the
+    // order response if this renderer loses the response or restarts.
+    if (!savePrepaidAttempt(attempt)) {
+      clearPrepaidAttempt();
+      toast.error(t('pos.processOrderFailed'));
+      setSubmitting(false);
+      return;
+    }
+    let orderData: { order: Order };
+    let billData: { bill: Bill };
     try {
-      // Step 1: Create the order
-      const { data: orderData } = await api.post('/orders', {
-        table_id: cart.tableId,
-        customer_id: cart.customerId,
-        type: cart.orderType,
-        guest_count: cart.guestCount,
-        special_instructions: cart.orderNotes || undefined,
-        items: cart.items.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          addons: item.addons.length > 0
-            ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-            : null,
-          special_instructions: item.special_instructions || null,
-        })),
-      });
+      if (existingAttempt?.bill && discountChanged) {
+        try {
+          const { data: currentBillData } = await api.get(`/bills/${existingAttempt.bill.id}`);
+          if (currentBillData.bill?.payment_status === 'paid') {
+            // A lost payment response wins over a later UI edit; replay the
+            // original request instead of mutating an already-settled bill.
+            attempt = {
+              ...attempt,
+              discount: existingAttempt.discount,
+              bill: existingAttempt.bill,
+              paymentFingerprint: existingAttempt.paymentFingerprint,
+              paymentIdempotencyKey: existingAttempt.paymentIdempotencyKey,
+            };
+            savePrepaidAttempt(attempt);
+          }
+        } catch {
+          // An unknown bill state must replay the original request. Applying a
+          // new discount/key could turn a committed payment into a stuck retry.
+          attempt = {
+            ...attempt,
+            discount: existingAttempt.discount,
+            bill: existingAttempt.bill,
+            paymentFingerprint: existingAttempt.paymentFingerprint,
+            paymentIdempotencyKey: existingAttempt.paymentIdempotencyKey,
+          };
+          savePrepaidAttempt(attempt);
+        }
+      }
+      if (attempt.order) {
+        orderData = { order: attempt.order };
+      } else {
+        const { data } = await api.post('/orders', {
+          table_id: cart.tableId,
+          customer_id: cart.customerId,
+          type: cart.orderType,
+          guest_count: cart.guestCount,
+          special_instructions: cart.orderNotes || undefined,
+          items: orderItems,
+        }, { headers: { 'Idempotency-Key': attempt.orderIdempotencyKey } });
+        orderData = data;
+        savePrepaidAttempt({ ...attempt, order: data.order });
+      }
       const orderId = orderData.order.id;
 
-      // Step 2: Apply discount to the order before the bill is generated, so the
-      // bill picks up the already-discounted totals (tax recalculated on net payable amount).
-      if (discount && discount.value > 0) {
+      // Apply discount before bill generation so the bill uses the discounted
+      // totals (tax recalculated on the net payable amount). Repeating this SET
+      // operation is safe if its response was lost.
+      const effectiveDiscount = attempt.discount;
+      const discountForRequest = effectiveDiscount && currentDiscount
+        && discountFingerprint(effectiveDiscount) === discountFingerprint(currentDiscount)
+        ? { ...effectiveDiscount, override_pin: currentDiscount.override_pin }
+        : effectiveDiscount;
+      let discountAlreadyApplied = false;
+      if (!attempt.bill && (discountChanged || (effectiveDiscount && effectiveDiscount.value > 0)) && attempt.order) {
+        try {
+          const { data: currentOrderData } = await api.get(`/orders/${orderId}`);
+          const serverDiscount = currentOrderData.order?.discount_type && Number(currentOrderData.order.discount_value) > 0
+            ? {
+              type: currentOrderData.order.discount_type,
+              value: Number(currentOrderData.order.discount_value),
+              reason: currentOrderData.order.discount_reason || undefined,
+            }
+            : null;
+          discountAlreadyApplied = discountFingerprint(serverDiscount) === discountFingerprint(effectiveDiscount);
+        } catch {
+          // If the order cannot be read, retain the safe retry behavior below;
+          // an approval PIN may be required to reapply an uncertain discount.
+        }
+      }
+      if (!attempt.bill && !discountAlreadyApplied && (discountChanged || (effectiveDiscount && effectiveDiscount.value > 0))) {
         await api.patch(`/orders/${orderId}/discount`, {
-          discount_type: discount.type,
-          discount_value: discount.value,
-          discount_reason: discount.reason,
-          override_pin: discount.override_pin,
+          discount_type: discountForRequest?.type || 'percentage',
+          discount_value: discountForRequest?.value || 0,
+          discount_reason: discountForRequest?.reason,
+          override_pin: discountForRequest?.override_pin,
         });
       }
 
-      // Step 3: Generate bill
-      const { data: billData } = await api.post('/bills/generate', { order_id: orderId });
-      const billId = billData.bill.id;
+      if (attempt.bill) {
+        billData = { bill: attempt.bill };
+      } else {
+        const { data: generatedBill } = await api.post('/bills/generate', { order_id: orderId });
+        billData = generatedBill;
+        savePrepaidAttempt({ ...attempt, order: orderData.order, bill: generatedBill.bill });
+      }
 
-      // Step 4: Record payment(s) — cash/card/upi splits, then wallet redemption
-      let paidBill: Bill = billData.bill;
-      let pointsEarned = 0;
-      for (const p of payments) {
-        if (!p.amount || p.amount <= 0) continue;
-        const res = await api.post(`/bills/${billId}/payment`, { amount: p.amount, method: p.method, customer_id: cart.customerId });
-        paidBill = res.data?.bill || paidBill;
-        if (res.data?.loyaltyPointsEarned > 0) pointsEarned = res.data.loyaltyPointsEarned;
-      }
-      if (walletAmount > 0) {
-        const res = await api.post(`/bills/${billId}/payment`, { amount: walletAmount, method: 'wallet', customer_id: cart.customerId });
-        paidBill = res.data?.bill || paidBill;
-        if (res.data?.loyaltyPointsEarned > 0) pointsEarned = res.data.loyaltyPointsEarned;
-      }
+      // Record every split in one atomic request. The persisted bill/key pair
+      // makes a lost response safe to retry without creating a second order.
+      const paymentResponse = await api.post(
+        `/bills/${billData.bill.id}/payments`,
+        { payments: paymentLines, customer_id: cart.customerId },
+        { headers: { 'Idempotency-Key': attempt.paymentIdempotencyKey } },
+      );
+      const paidBill: Bill = paymentResponse.data?.bill || billData.bill;
+      const pointsEarned = paymentResponse.data?.loyaltyPointsEarned > 0
+        ? paymentResponse.data.loyaltyPointsEarned
+        : 0;
 
       if (paidBill.payment_status !== 'paid') {
         throw new Error(t('pos.paymentIncomplete', {
@@ -336,10 +574,11 @@ export default function POSPage() {
       toast.success(successMsg);
       if (cart.tableId) heldOrders.removeHeldOrder(cart.tableId);
       cart.clearCart();
+      clearPrepaidAttempt();
       setMobileCartOpen(false);
       await refreshTables();
 
-      await printKotIfEnabled(orderData.order as Order);
+      await printKotIfEnabled(orderData.order);
 
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch (err: unknown) {
@@ -429,6 +668,11 @@ export default function POSPage() {
     }
     setSubmitting(true);
     try {
+      const existingAttempt = addItemsAttemptRef.current;
+      const idempotencyKey = existingAttempt?.orderId === String(order.id)
+        ? existingAttempt.key
+        : newIdempotencyKey();
+      addItemsAttemptRef.current = { orderId: String(order.id), key: idempotencyKey };
       await api.post(`/orders/${order.id}/items`, {
         items: cart.items.map((item) => ({
           product_id: item.product.id,
@@ -439,7 +683,8 @@ export default function POSPage() {
           special_instructions: item.special_instructions || null,
         })),
         special_instructions: order.special_instructions || undefined,
-      });
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      addItemsAttemptRef.current = null;
       toast.success(t('pos.itemsAddedToOrder', { number: order.order_number }));
       cart.clearCart();
       setCheckoutTable(null);

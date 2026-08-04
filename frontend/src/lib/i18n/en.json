@@ -275,6 +275,7 @@
   "pos.pay": "Pay",
   "pos.payment": "Payment",
   "pos.paymentBelowBalance": "Payment amount is less than balance",
+  "pos.paymentAboveBalance": "Card, UPI, and wallet payments cannot exceed the balance",
   "pos.paymentFailed": "Payment failed",
   "pos.paymentIncomplete": "Payment incomplete — {amount} remains due.",
   "pos.paymentRecorded": "Payment recorded!",

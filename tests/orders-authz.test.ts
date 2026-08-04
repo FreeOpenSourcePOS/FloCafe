@@ -36,10 +36,10 @@ function seedUser(db: any, id: string, role: string, pin?: string) {
   };
 }
 
-function seedOrderWithItem(db: any, suffix: string) {
-  db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
-    VALUES (?, 'takeaway', 'pending', 100, 100, ?, ?)`)
-    .run(`ORD-AUTHZ-${suffix}`, now(), now());
+function seedOrderWithItem(db: any, suffix: string, ownerId?: string) {
+  db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, user_id, created_at, updated_at)
+    VALUES (?, 'takeaway', 'pending', 100, 100, ?, ?, ?)`)
+    .run(`ORD-AUTHZ-${suffix}`, ownerId || null, now(), now());
   const orderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get(`ORD-AUTHZ-${suffix}`) as any).id;
   db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
     VALUES (?, 'authz-product', 'Authz item', 100, 1, 100, 0, 100, 'preparing', ?, ?)`)
@@ -70,14 +70,14 @@ async function main() {
   const { baseUrl, server } = await startServer(app);
 
   try {
-    const statusOrder = seedOrderWithItem(db, 'STATUS');
+    const statusOrder = seedOrderWithItem(db, 'STATUS', 'cashier-authz');
     const cashierStatus = await api(baseUrl, `/api/orders/${statusOrder.orderId}/status`, {
       method: 'PATCH', body: { status: 'preparing' }, headers: cashierAuth,
     });
     assertEqual(cashierStatus.status, 200, 'cashier can advance an order to preparing');
 
     for (const [role, auth] of [['cashier', cashierAuth], ['waiter', waiterAuth]] as const) {
-      const order = seedOrderWithItem(db, role.toUpperCase());
+      const order = seedOrderWithItem(db, role.toUpperCase(), role === 'waiter' ? 'waiter-authz' : 'cashier-authz');
       const response = await api(baseUrl, `/api/orders/${order.orderId}/items/${order.itemId}/cancel`, {
         method: 'PATCH', body: { override_pin: '1234' }, headers: auth,
       });
@@ -85,7 +85,22 @@ async function main() {
       assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(order.itemId) as any).status, 'voided', `${role} void marks the original item voided`);
     }
 
-    const invalidPinOrder = seedOrderWithItem(db, 'INVALID-PIN');
+    const waiterOwnOrder = seedOrderWithItem(db, 'WAITER-OWN', 'waiter-authz');
+    const waiterCanAdvance = await api(baseUrl, `/api/orders/${waiterOwnOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'preparing' }, headers: waiterAuth,
+    });
+    assertEqual(waiterCanAdvance.status, 200, 'waiter can advance their own order');
+    const otherOrder = seedOrderWithItem(db, 'WAITER-OTHER', 'cashier-authz');
+    const waiterOtherStatus = await api(baseUrl, `/api/orders/${otherOrder.orderId}/status`, {
+      method: 'PATCH', body: { status: 'cancelled', override_pin: '1234' }, headers: waiterAuth,
+    });
+    assertEqual(waiterOtherStatus.status, 403, 'waiter cannot cancel another user\'s order');
+    const waiterOtherItem = await api(baseUrl, `/api/orders/${otherOrder.orderId}/items/${otherOrder.itemId}/cancel`, {
+      method: 'PATCH', body: { override_pin: '1234' }, headers: waiterAuth,
+    });
+    assertEqual(waiterOtherItem.status, 403, 'waiter cannot void another user\'s item');
+
+    const invalidPinOrder = seedOrderWithItem(db, 'INVALID-PIN', 'cashier-authz');
     const invalidPin = await api(baseUrl, `/api/orders/${invalidPinOrder.orderId}/items/${invalidPinOrder.itemId}/cancel`, {
       method: 'PATCH', body: { override_pin: '9999' }, headers: cashierAuth,
     });

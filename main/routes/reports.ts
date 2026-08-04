@@ -40,34 +40,52 @@ function bucketByLocalHourAndWeekday(timestamps: string[], timeZone: string): { 
 }
 
 /**
- * `bills.payment_details` is a JSON array of individual payment splits
- * (`[{method, amount, timestamp, ...}, ...]`), not a single object — a bill
- * can be paid across multiple methods (e.g. part cash, part card). Flattens
- * that with `json_each` and buckets by the split's own timestamp (not the
- * bill's `paid_at`, which only marks when the bill became fully paid and
- * would misattribute or drop earlier partial-payment splits on other days).
- * #208: paid_at is NULL until the bill is fully paid, so the filter is
- * `paid_at is still NULL OR paid_at is on/after the report day` — a mid-day
- * partial payment must show up the moment it's taken, and a split taken
- * just before midnight must not vanish because the bill only completed
- * after midnight (paid_at then lands in the next day). `idx_bills_paid_at`
- * serves both OR branches. The split timestamp is normalized with REPLACE
- * so legacy ISO splits compare consistently against the space-form rows.
+ * Return payment lines in a UTC half-open range using SQLite JSON1. Keeping
+ * expansion in SQL avoids loading every bill and tolerates both the current
+ * array shape, legacy top-level objects, and invalid JSON.
  */
-function paymentMethodBreakdown(db: ReturnType<typeof getDatabase>, date: string) {
-  const [start] = utcDayBounds(date);
+function paymentMethodBreakdown(
+  db: ReturnType<typeof getDatabase>,
+  startDate: string,
+  endDate = startDate,
+  paidOnly = false,
+) {
+  const start = utcDayBounds(startDate)[0];
+  const end = utcDayBounds(endDate)[1];
   return db.prepare(`
-    SELECT
-      json_extract(je.value, '$.method') as method,
-      COUNT(*) as count,
-      COALESCE(SUM(json_extract(je.value, '$.amount')), 0) as total
-    FROM bills b, json_each(b.payment_details) je
-    WHERE b.payment_details IS NOT NULL
-      AND (b.paid_at IS NULL OR b.paid_at >= ?)
-      AND substr(replace(json_extract(je.value, '$.timestamp'), 'T', ' '), 1, 10) = ?
+    WITH payment_lines AS (
+      SELECT b.paid_at, b.created_at, je.value AS line
+      FROM bills b
+      JOIN json_each(CASE
+        WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array'
+          THEN b.payment_details
+        WHEN json_valid(b.payment_details)
+          THEN json_array(b.payment_details)
+        ELSE '[]'
+      END) je
+      WHERE b.payment_details IS NOT NULL
+        AND b.created_at < ?
+        AND (b.paid_at IS NULL OR b.paid_at >= ?)
+        AND (? = 0 OR b.payment_status = 'paid')
+        AND json_type(je.value) = 'object'
+    ), normalized AS (
+      SELECT
+        COALESCE(NULLIF(json_extract(line, '$.method'), ''), 'unknown') AS method,
+        json_extract(line, '$.amount') AS amount,
+        COALESCE(
+          datetime(NULLIF(json_extract(line, '$.timestamp'), '')),
+          datetime(NULLIF(paid_at, '')),
+          datetime(NULLIF(created_at, ''))
+        ) AS payment_time
+      FROM payment_lines
+    )
+    SELECT method, COUNT(*) AS count,
+      COALESCE(SUM(CASE WHEN typeof(amount) IN ('integer', 'real') THEN amount ELSE 0 END), 0) AS total
+    FROM normalized
+    WHERE payment_time >= datetime(?) AND payment_time < datetime(?)
     GROUP BY method
     ORDER BY total DESC
-  `).all(start, date);
+  `).all(end, start, paidOnly ? 1 : 0, start, end);
 }
 
 /** argmax/argmin over counts, restricted to indices where include(count) is true. Returns null if nothing qualifies. */
@@ -85,16 +103,13 @@ function pickExtreme(counts: number[], mode: 'max' | 'min', include: (count: num
 router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    // #208: UTC today with the half-open UTC range so we can
-    // hit `idx_bills_created_at` instead of going through `date(...)` on
-    // every row. dashboard polls every load.
     const today = utcTodayDate();
     const [start, end] = utcDayBounds(today);
-
     const salesToday = db.prepare(`
-      SELECT COALESCE(SUM(paid_amount), 0) as sales
+      SELECT COALESCE(SUM(paid_amount), 0) AS sales
       FROM bills WHERE created_at >= ? AND created_at < ?
     `).get(start, end) as { sales: number };
+    const paymentMethodsToday = paymentMethodBreakdown(db, today) as { total: number }[];
 
     const runningOrders = db.prepare(`
       SELECT COUNT(*) as count FROM orders WHERE status IN ('pending', 'preparing')
@@ -113,7 +128,7 @@ router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: 
       runningOrders: runningOrders.count,
       pendingOrders: pendingOrders.count,
       tablesOccupied: tablesOccupied.count,
-      paymentMethods: paymentMethodBreakdown(db, today),
+      paymentMethods: paymentMethodsToday,
     });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -135,9 +150,11 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
     `).get(start, end) as { count: number; total: number };
 
     const billsToday = db.prepare(`
-      SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total, COALESCE(SUM(paid_amount), 0) as collected
+      SELECT COUNT(*) as count, COALESCE(SUM(total), 0) as total,
+        COALESCE(SUM(paid_amount), 0) as collected
       FROM bills WHERE created_at >= ? AND created_at < ?
     `).get(start, end) as { count: number; total: number; collected: number };
+    const paymentMethodsToday = paymentMethodBreakdown(db, date);
 
     const customersToday = db.prepare(`
       SELECT COUNT(*) as count FROM customers WHERE created_at >= ? AND created_at < ?
@@ -154,7 +171,7 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
         bills: { count: billsToday.count, total: billsToday.total, collected: billsToday.collected },
         customers: { new: customersToday.count },
         ordersByStatus,
-        paymentMethods: paymentMethodBreakdown(db, date),
+        paymentMethods: paymentMethodsToday,
       }
     });
   } catch (error: any) {
@@ -253,14 +270,7 @@ router.get('/sales', requireRole('owner', 'manager'), (req: Request, res: Respon
       ORDER BY date
     `).all(windowStart, windowEnd);
 
-    const byPaymentMethod = db.prepare(`
-      SELECT json_extract(payment_details, '$.method') as method,
-        COUNT(*) as count, SUM(paid_amount) as total
-      FROM bills
-      WHERE payment_status = 'paid'
-        AND paid_at >= ? AND paid_at < ?
-      GROUP BY json_extract(payment_details, '$.method')
-    `).all(windowStart, windowEnd);
+    const byPaymentMethod = paymentMethodBreakdown(db, startDate, endDate, true) as { method: string; count: number; total: number }[];
 
     const byOrderType = db.prepare(`
       SELECT type, COUNT(*) as count, SUM(total) as total

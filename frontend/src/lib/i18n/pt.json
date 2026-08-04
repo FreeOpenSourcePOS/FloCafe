@@ -274,6 +274,7 @@
   "pos.pay": "Pagar",
   "pos.payment": "Pagamento",
   "pos.paymentBelowBalance": "O valor do pagamento é menor que o saldo",
+  "pos.paymentAboveBalance": "Pagamentos com cartão, UPI e carteira não podem exceder o saldo",
   "pos.paymentFailed": "Falha no pagamento",
   "pos.paymentIncomplete": "Pagamento incompleto — ainda faltam {amount}.",
   "pos.paymentRecorded": "Pagamento registrado!",

@@ -161,11 +161,11 @@ function insertCustomer(db: ReturnType<typeof getDatabase>, id: string, name: st
   `).run(id, name, phone, countryCode, now(), now());
 }
 
-function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: string, email: string, role: string, password: string): void {
+function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: string, email: string, role: string, password: string, isActive = 1): void {
   db.prepare(`
     INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-  `).run(id, name, email, bcrypt.hashSync(password, 10), role, now(), now());
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, email, bcrypt.hashSync(password, 10), role, isActive, now(), now());
 }
 
 function seedExpressRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: string): void {
@@ -269,9 +269,12 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
   const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'pt' ? 'Gerente Demo' : 'Demo Manager';
   const cashierName = lang === 'es' ? 'Cajero Demo' : lang === 'pt' ? 'Caixa Demo' : 'Demo Cashier';
   const chefName = lang === 'es' ? 'Cocinero Demo' : lang === 'pt' ? 'Cozinheiro Demo' : 'Demo Chef';
-  insertStaffUser(db, 'user-demo-manager', managerName, 'manager@flo.local', 'manager', 'demo12345');
-  insertStaffUser(db, 'user-demo-cashier', cashierName, 'cashier@flo.local', 'cashier', 'demo12345');
-  insertStaffUser(db, 'user-demo-chef', chefName, 'chef@flo.local', 'chef', 'demo12345');
+  // Demo staff remains useful as localized sample rows, but must never ship with
+  // a reusable public credential. The inactive rows can be explicitly replaced
+  // by an owner during setup if staff access is wanted.
+  insertStaffUser(db, 'user-demo-manager', managerName, 'manager@flo.local', 'manager', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-cashier', cashierName, 'cashier@flo.local', 'cashier', randomBytes(32).toString('hex'), 0);
+  insertStaffUser(db, 'user-demo-chef', chefName, 'chef@flo.local', 'chef', randomBytes(32).toString('hex'), 0);
 }
 
 export function seedSetupProfile(db: ReturnType<typeof getDatabase>, profile: string, serviceModel: string, language?: string, country?: string): void {
@@ -350,8 +353,16 @@ router.post('/login', authRateLimit(), async (req: Request, res: Response) => {
 
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
+    let passwordMatches = false;
+    if (user) {
+      try {
+        passwordMatches = await bcrypt.compare(password, user.password);
+      } catch {
+        passwordMatches = false;
+      }
+    }
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    if (!user || !passwordMatches) {
       const attemptsRemaining = incrementFailedLogin(ip);
       return res.status(401).json({
         error: 'Invalid credentials',
@@ -409,9 +420,9 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db.prepare('SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (isTokenStale(decoded.iat, user.tokens_valid_after)) {
+    if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
@@ -463,8 +474,8 @@ router.post('/refresh', (req: Request, res: Response) => {
     // Without this, a token minted before a password/PIN change (#173) could
     // keep refreshing itself into new tokens forever, bypassing revocation entirely.
     const db = getDatabase();
-    const user = db.prepare('SELECT tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
-    if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
+    const user = db.prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    if (!user || user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
@@ -501,9 +512,9 @@ router.get('/me', (req: Request, res: Response) => {
     const decoded = jwt.verify(token, getJWTSecret()) as any;
 
     const db = getDatabase();
-    const user = db.prepare('SELECT id, name, email, role, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
+    const user = db.prepare('SELECT id, name, email, role, is_active, tokens_valid_after FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (isTokenStale(decoded.iat, user.tokens_valid_after)) {
+    if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
@@ -522,7 +533,7 @@ router.get('/me', (req: Request, res: Response) => {
 
 router.post('/password/change', (req: Request, res: Response) => {
   try {
-    const { current_password, password } = req.body;
+    const { current_password, password } = req.body || {};
     const authHeader = req.headers.authorization;
 
     if (!authHeader?.startsWith('Bearer ')) {
@@ -538,16 +549,18 @@ router.post('/password/change', (req: Request, res: Response) => {
     const db = getDatabase();
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(decoded.userId) as any;
     if (!user) return res.status(404).json({ error: 'User not found' });
-    if (isTokenStale(decoded.iat, user.tokens_valid_after)) {
+    if (user.is_active !== 1 || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
 
+    if (typeof current_password !== 'string' || !current_password) {
+      return res.status(400).json({ error: 'Current password is required' });
+    }
+    if (typeof password !== 'string' || !password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
     if (!bcrypt.compareSync(current_password, user.password)) {
       return res.status(400).json({ error: 'Current password is incorrect' });
-    }
-
-    if (!password) {
-      return res.status(400).json({ error: 'Password is required' });
     }
     if (!validatePassword(password)) {
       return res.status(400).json({ error: 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.' });
@@ -650,13 +663,13 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     // `telemetry_last_ping_at`.
     upsertSettings(db, {
       last_password_recovery_at: now(),
-      last_password_recovery_email: email,
+      last_password_recovery_user_id: String(user.id),
       ...(restoredOwnerAccess ? {
         last_owner_recovery_at: now(),
-        last_owner_recovery_email: email,
+        last_owner_recovery_user_id: String(user.id),
       } : {}),
     });
-    console.warn(`[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access for' : 'owner password for'} ${email} was reset locally via Master PIN`);
+    console.warn(`[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access' : 'owner password'} was reset locally via Master PIN for user ${user.id}`);
 
     res.json({ message: restoredOwnerAccess
       ? 'Owner access restored. You can now log in with your new password.'

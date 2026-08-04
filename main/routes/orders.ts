@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate } from '../db';
 import {
@@ -14,6 +15,16 @@ import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
 
 const router = Router();
+const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
+
+function orderIdempotencyKey(req: Request): string | null {
+  const supplied = req.get('Idempotency-Key')?.trim();
+  if (!supplied) return null;
+  if (supplied.length > MAX_ORDER_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
+    throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400 });
+  }
+  return supplied;
+}
 
 // Rate limiting for PIN validation (simple in-memory)
 const pinAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -292,7 +303,13 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
 
 router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
-    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = req.body;
+    const body = req.body || {};
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = body;
+    const idempotencyKey = orderIdempotencyKey(req);
+    const idempotencyUserId = String((req as any).user.userId);
+    const requestHash = idempotencyKey
+      ? createHash('sha256').update(JSON.stringify(body)).digest('hex')
+      : null;
     // Always the authenticated caller, never client-supplied — trusting a
     // client-sent user_id would let staff spoof order attribution, and the
     // frontend has in fact never sent one, so every order got user_id=NULL.
@@ -326,7 +343,29 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
-    const { order, orderItems } = withTxn(() => {
+    const result = withTxn(() => {
+      if (idempotencyKey) {
+        // Preserve exact replay for pre-user-scoped records whose creator is
+        // unavailable. New records never use the `legacy` compatibility owner.
+        const prior = db.prepare(`
+          SELECT request_hash, response_json
+          FROM order_idempotency
+          WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
+          ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
+          LIMIT 1
+        `).get(idempotencyUserId, idempotencyKey, idempotencyUserId) as { request_hash: string; response_json: string } | undefined;
+        if (prior) {
+          if (prior.request_hash !== requestHash) {
+            throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
+          }
+          try {
+            const response = JSON.parse(prior.response_json);
+            return { order: response.order, orderItems: response.order?.items || [], idempotentReplay: true };
+          } catch {
+            throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
+          }
+        }
+      }
       // Generate order number inside transaction to prevent race conditions
       const orderNumber = generateOrderNumber();
 
@@ -478,22 +517,29 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
       const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
-      return { order, orderItems };
+      const response = { order: Object.assign({}, order, { items: orderItems }) };
+      if (idempotencyKey && requestHash) {
+        db.prepare('INSERT INTO order_idempotency (user_id, idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(idempotencyUserId, idempotencyKey, requestHash, JSON.stringify(response), now());
+      }
+      return { order, orderItems, idempotentReplay: false };
     });
 
-    notifyKdsUpdate();
-    notifyOrderUpdated();
-    cloudSync.recordOrderChanged(order.id, 'order.created');
+    if (!result.idempotentReplay) {
+      notifyKdsUpdate();
+      notifyOrderUpdated();
+      cloudSync.recordOrderChanged(result.order.id, 'order.created');
 
-    if (customer_id) {
-      try {
-        syncCustomerTagCounts(db, customer_id, items);
-      } catch (err) {
-        console.error('[Orders] Tag sync failed:', err);
+      if (customer_id) {
+        try {
+          syncCustomerTagCounts(db, customer_id, items);
+        } catch (err) {
+          console.error('[Orders] Tag sync failed:', err);
+        }
       }
     }
 
-    res.status(201).json({ order: Object.assign({}, order, { items: orderItems }) });
+    res.status(result.idempotentReplay ? 200 : 201).json({ order: Object.assign({}, result.order, { items: result.orderItems }) });
   } catch (error: any) {
     console.error('[Orders] Create error:', error);
     console.error("[API] Internal error:", error);
@@ -504,6 +550,13 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const body = req.body || {};
+    const { items, special_instructions } = body;
+    const idempotencyKey = orderIdempotencyKey(req);
+    const idempotencyUserId = String((req as any).user.userId);
+    const requestHash = idempotencyKey
+      ? createHash('sha256').update(JSON.stringify({ order_id: req.params.id, items, special_instructions })).digest('hex')
+      : null;
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -514,12 +567,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       return res.status(403).json({ error: 'Waiters can only modify their own orders' });
     }
 
-    if (['completed', 'cancelled'].includes((order as any).status)) {
-      return res.status(400).json({ error: 'Cannot add items to a completed or cancelled order' });
-    }
-
-    const { items, special_instructions } = req.body;
-    if (!items || items.length === 0) {
+    if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'At least one item is required' });
     }
 
@@ -548,13 +596,30 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       taxes_enabled: settings.taxes_enabled === 'true',
     };
 
-    const { updatedOrder, updatedItems } = withTxn(() => {
+    const result = withTxn(() => {
       // Re-fetch and re-validate under the transaction lock: another request (e.g. a
       // cashier completing/cancelling the order) can race the checks above, which run
       // before this lock is acquired (#175).
       const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (idempotencyKey) {
+        const prior = db.prepare(`
+          SELECT request_hash, response_json
+          FROM order_idempotency
+          WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
+          ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
+          LIMIT 1
+        `).get(idempotencyUserId, idempotencyKey, idempotencyUserId) as { request_hash: string; response_json: string } | undefined;
+        if (prior) {
+          if (prior.request_hash !== requestHash) throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
+          try {
+            return { replayResponse: JSON.parse(prior.response_json) };
+          } catch {
+            throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
+          }
+        }
       }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
@@ -712,14 +777,20 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
-      return { updatedOrder, updatedItems };
+      const response = { order: Object.assign({}, updatedOrder, { items: updatedItems }) };
+      if (idempotencyKey && requestHash) {
+        db.prepare('INSERT INTO order_idempotency (user_id, idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(idempotencyUserId, idempotencyKey, requestHash, JSON.stringify(response), now());
+      }
+      return { updatedOrder, updatedItems, replayResponse: null };
     });
 
+    if (result.replayResponse) return res.json(result.replayResponse);
     cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyKdsUpdate();
     notifyOrderUpdated();
 
-    res.json({ order: Object.assign({}, updatedOrder, { items: updatedItems }) });
+    res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
@@ -746,6 +817,10 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
+    const authUser = (req as any).user;
+    if (authUser?.role === 'waiter' && String((order as any).user_id) !== String(authUser.userId)) {
+      return res.status(403).json({ error: 'Waiters can only modify their own orders' });
+    }
 
     // Override validation: cancelling an order in preparing+ status (or with items in preparing+) requires manager PIN
     const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
@@ -769,8 +844,8 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
 
-      // Validate PIN against owner/manager accounts only
-      const user = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+      // Validate PIN against active owner/manager accounts only
+      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
         .all()
         .find((u: any) => verifyPin(u.pin_hash, override_pin));
 
@@ -950,7 +1025,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
       return res.status(400).json({ error: 'Cannot apply discount to a completed or cancelled order' });
     }
 
-    const { discount_type, discount_value, discount_reason } = req.body;
+    const { discount_type, discount_value, discount_reason } = req.body || {};
 
     // Validate discount_type
     if (discount_value !== 0 && (!discount_type || !['percentage', 'amount'].includes(discount_type))) {
@@ -966,7 +1041,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
     if (discount_value > 0) {
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
-        const { override_pin } = req.body;
+        const { override_pin } = req.body || {};
         if (!override_pin) {
           return res.status(403).json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
@@ -975,7 +1050,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
         if (!checkPinRateLimit(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const user = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+        const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
           .all()
           .find((u: any) => verifyPin(u.pin_hash, override_pin));
         if (!user) {
@@ -1177,7 +1252,7 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
-      const user = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
         .all()
         .find((u: any) => verifyPin(u.pin_hash, override_pin));
       if (!user) {

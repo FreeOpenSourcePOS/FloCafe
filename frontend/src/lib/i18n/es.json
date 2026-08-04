@@ -274,6 +274,7 @@
   "pos.pay": "Cobrar",
   "pos.payment": "Pago",
   "pos.paymentBelowBalance": "El monto del pago es menor que el saldo",
+  "pos.paymentAboveBalance": "Los pagos con tarjeta, UPI y billetera no pueden superar el saldo",
   "pos.paymentFailed": "Falló el pago",
   "pos.paymentIncomplete": "Pago incompleto: queda pendiente {amount}.",
   "pos.paymentRecorded": "¡Pago registrado!",

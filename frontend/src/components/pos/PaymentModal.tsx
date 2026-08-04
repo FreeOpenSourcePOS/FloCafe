@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Wallet, Plus, Trash2, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
@@ -53,6 +53,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const { t } = useI18n();
   const { currentTenant } = useAuthStore();
   const isWhatsAppReady = useWhatsAppReady();
+  const idempotencyKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    idempotencyKeyRef.current = null;
+  }, [bill.id]);
   const [justPaid, setJustPaid] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
@@ -207,6 +211,22 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   };
 
   const handlePay = async () => {
+    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,2})?$/.test(value.trim());
+    if (payments.some((p) => !PAYMENT_METHODS.some((allowed) => allowed.key === p.method) || !amountIsValid(p.amount))) {
+      toast.error(t('pos.paymentFailed'));
+      return;
+    }
+    if (walletAmount.trim() && !/^\d+(?:\.\d{1,2})?$/.test(walletAmount.trim())) {
+      toast.error(t('pos.paymentFailed'));
+      return;
+    }
+    const nonCashTotal = payments
+      .filter((p) => p.method !== 'cash')
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) + walletAmt;
+    if (nonCashTotal > remaining + 0.000001) {
+      toast.error(t('pos.paymentAboveBalance'));
+      return;
+    }
     if (totalPayment < remaining - 0.01) {
       toast.error(t('pos.paymentBelowBalance'));
       return;
@@ -231,9 +251,20 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       // Single atomic call (#177) — either every split line is applied, or none are.
       // Sequential per-line requests would leave the bill partially paid if a later
       // line failed (e.g. network drop) after an earlier one had already committed.
-      const res = await api.post(`/bills/${bill.id}/payments`, { payments: splitLines, customer_id: effectiveCustomerId });
+      const idempotencyKey = idempotencyKeyRef.current || (typeof globalThis.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      idempotencyKeyRef.current = idempotencyKey;
+      const res = await api.post(
+        `/bills/${bill.id}/payments`,
+        { payments: splitLines, customer_id: effectiveCustomerId },
+        { headers: { 'Idempotency-Key': idempotencyKey } },
+      );
       const updatedBill = res.data?.bill as Bill | undefined;
       if (!updatedBill || updatedBill.payment_status !== 'paid') {
+        // This request committed a partial payment, so the next attempt is a
+        // new request and must not reuse the completed request's hash.
+        if (updatedBill) idempotencyKeyRef.current = null;
         if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
         throw new Error(t('pos.paymentIncomplete', {
           amount: currencyFmt(Number(updatedBill?.balance) || 0),

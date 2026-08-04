@@ -90,7 +90,7 @@ interface DiscountModal {
 }
 
 export default function OrdersPage() {
-  const { currentTenant } = useAuthStore();
+  const { currentTenant, user } = useAuthStore();
   const { printBill } = usePrinterStore();
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
@@ -144,6 +144,7 @@ export default function OrdersPage() {
   const [productSearch, setProductSearch] = useState('');
   const [selectedItems, setSelectedItems] = useState<{ product_id: number; product_name: string; quantity: number; special_instructions: string }[]>([]);
   const [addingItems, setAddingItems] = useState(false);
+  const addItemsAttemptRef = useRef<{ fingerprint: string; key: string } | null>(null);
 
   // Link Customer states
   const [linkCustomerOrderId, setLinkCustomerOrderId] = useState<number | null>(null);
@@ -664,13 +665,25 @@ export default function OrdersPage() {
     if (!addItemsOrder || selectedItems.length === 0) return;
     setAddingItems(true);
     try {
+      const items = selectedItems.map(i => ({
+        product_id: i.product_id,
+        quantity: i.quantity,
+        special_instructions: i.special_instructions || undefined,
+      }));
+      const fingerprint = JSON.stringify({ user_id: user?.id ?? null, order_id: addItemsOrder.id, items });
+      const attempt = addItemsAttemptRef.current?.fingerprint === fingerprint
+        ? addItemsAttemptRef.current
+        : {
+          fingerprint,
+          key: typeof globalThis.crypto?.randomUUID === 'function'
+            ? globalThis.crypto.randomUUID()
+            : `items-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        };
+      addItemsAttemptRef.current = attempt;
       await api.post(`/orders/${addItemsOrder.id}/items`, {
-        items: selectedItems.map(i => ({
-          product_id: i.product_id,
-          quantity: i.quantity,
-          special_instructions: i.special_instructions || undefined,
-        })),
-      });
+        items,
+      }, { headers: { 'Idempotency-Key': attempt.key } });
+      addItemsAttemptRef.current = null;
       toast.success(t('orders.itemsAdded', { count: selectedItems.length }));
       openAddItemsModal(null);
       fetchOrders();

@@ -38,6 +38,15 @@ interface Props {
 // Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
 const LOYALTY_REDEMPTION_RATE = 100;
 
+function distributeEvenly(total: number, count: number): string[] {
+  const totalCents = Math.round(total * 100);
+  const baseCents = Math.floor(totalCents / count);
+  const remainderCents = totalCents - baseCents * count;
+  return Array.from({ length: count }, (_, index) => (
+    (baseCents + (index === 0 ? remainderCents : 0)) / 100
+  ).toFixed(2));
+}
+
 interface Payment {
   method: string;
   amount: string;
@@ -152,8 +161,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           return { ...p, amount: (cashRemaining * ratio).toFixed(2) };
         }));
       } else {
-        const perSplit = cashRemaining / payments.length;
-        setPayments(payments.map((p) => ({ ...p, amount: perSplit.toFixed(2) })));
+        const amounts = distributeEvenly(cashRemaining, payments.length);
+        setPayments(payments.map((p, i) => ({ ...p, amount: amounts[i] })));
       }
     }
   }
@@ -167,8 +176,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     const newPayments = [...payments, { method: 'card' as const, amount: '0' }];
     const walletUsed = parseFloat(walletAmount) || 0;
     const cashRemaining = Math.max(0, remaining - walletUsed);
-    const perSplit = cashRemaining / newPayments.length;
-    setPayments(newPayments.map((p) => ({ ...p, amount: perSplit.toFixed(2) })));
+    const amounts = distributeEvenly(cashRemaining, newPayments.length);
+    setPayments(newPayments.map((p, i) => ({ ...p, amount: amounts[i] })));
   };
 
   const removeSplit = (idx: number) => {
@@ -186,6 +195,22 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
   const handleConfirm = () => {
     if (!preview) return;
+    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,2})?$/.test(value.trim());
+    if (payments.some((p) => !PAYMENT_METHODS.some((allowed) => allowed.key === p.method) || !amountIsValid(p.amount))) {
+      toast.error(t('pos.paymentFailed'));
+      return;
+    }
+    if (walletAmount.trim() && !/^\d+(?:\.\d{1,2})?$/.test(walletAmount.trim())) {
+      toast.error(t('pos.paymentFailed'));
+      return;
+    }
+    const nonCashTotal = payments
+      .filter((p) => p.method !== 'cash')
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) + walletAmt;
+    if (nonCashTotal > remaining + 0.000001) {
+      toast.error(t('pos.paymentAboveBalance'));
+      return;
+    }
     if (totalPayment < remaining - 0.01) {
       toast.error(t('pos.paymentBelowBalance'));
       return;

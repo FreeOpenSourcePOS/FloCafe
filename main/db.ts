@@ -2052,8 +2052,14 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const targetPath = path.join(backupDir, `flo-backup-${timestamp}-pre-v${fromVersion}-to-v${toVersion}.db`);
 
-    db.pragma('wal_checkpoint(TRUNCATE)');
-    fs.copyFileSync(dbPath, targetPath);
+    if (fs.existsSync(dbPath)) {
+      db.pragma('wal_checkpoint(TRUNCATE)');
+      fs.copyFileSync(dbPath, targetPath);
+    } else {
+      // A brand-new install has no source file yet; keep the backup contract
+      // by creating an empty SQLite file with migration metadata below.
+      fs.writeFileSync(targetPath, '');
+    }
 
     const backupDb = new Database(targetPath);
     backupDb.pragma('journal_mode = DELETE');

@@ -59,8 +59,11 @@ let updateDownloaded = false;
 
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
+  // Downloading is harmless and lets the user see a ready-to-install build,
+  // but installation must always be an explicit action. A POS may be closed
+  // while a payment, printer job, or end-of-day workflow is still in flight.
   autoUpdater.autoDownload = true;
-  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.autoInstallOnAppQuit = false;
 
   autoUpdater.on('checking-for-update', () => {
     console.log('[Update] Checking for updates...');
@@ -94,8 +97,8 @@ function setupAutoUpdater(): void {
   });
 
   autoUpdater.on('update-downloaded', (info) => {
-    // No dialog — the renderer's update badge shows a "Restart Now" prompt and
-    // calls the restart-and-install IPC handler below when the user clicks it.
+    // The renderer's update badge shows a "Restart Now" prompt. Because
+    // autoInstallOnAppQuit is disabled, only that explicit action installs it.
     console.log('[Update] Download complete:', info.version);
     updateDownloaded = true;
     mainWindow?.webContents.send('update-status', {
@@ -601,6 +604,10 @@ async function initialize(): Promise<void> {
     });
 
     ipcMain.handle('restart-and-install', () => {
+      if (!updateDownloaded) {
+        log.warn('[Update] Ignoring install request before an update is downloaded');
+        return;
+      }
       isQuitting = true;
       autoUpdater.quitAndInstall();
     });

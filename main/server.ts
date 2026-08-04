@@ -238,8 +238,11 @@ export function startServer(): Promise<void> {
       if (err.type === 'entity.parse.failed') {
         return res.status(400).json({ error: 'Malformed JSON request body' });
       }
-      console.error('[Server] Error:', err);
-      res.status(500).json({ error: 'Internal server error' });
+      const status = typeof err.status === 'number' && err.status >= 400 && err.status < 500
+        ? err.status
+        : 500;
+      if (status >= 500) console.error('[Server] Error:', err);
+      res.status(status).json({ error: status >= 500 ? 'Internal server error' : (err.message || 'Client error') });
     });
 
     let currentPort = PORT;

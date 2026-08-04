@@ -11,7 +11,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const {
-  initTestDb, createApp, startServer, seedOwnerUser, seedCategory, seedProduct,
+  initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
   seedCustomer, seedWalletCredit, api, assert, assertEqual, assertIncludes,
   getResults, closeDatabase, getDatabase,
 } = require('./helpers/test-setup');
@@ -24,6 +24,7 @@ async function main() {
   console.log('Issue #214: payment integrity and reports');
   const db = initTestDb();
   const { authHeader } = seedOwnerUser(db);
+  const { authHeader: secondUserAuth } = seedManagerUser(db);
   seedCategory(db, 'cat-214', 'Issue 214 menu');
   seedProduct(db, 'prod-214', 'cat-214', 'Issue 214 item', 100);
   seedCustomer(db, 'cust-214', 'Issue 214 customer', '9999999999');
@@ -39,14 +40,14 @@ async function main() {
   });
   const { baseUrl, server } = await startServer(app);
 
-  async function newBill(customerId?: string) {
+  async function newBill(customerId?: string, headers = authHeader) {
     const order = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: { type: 'takeaway', ...(customerId ? { customer_id: customerId } : {}), items: [{ product_id: 'prod-214', quantity: 1 }] },
-      headers: authHeader,
+      headers,
     });
     const bill = await api(baseUrl, '/api/bills/generate', {
-      method: 'POST', body: { order_id: order.data.order.id }, headers: authHeader,
+      method: 'POST', body: { order_id: order.data.order.id }, headers,
     });
     return bill.data.bill;
   }
@@ -64,6 +65,45 @@ async function main() {
     assertEqual(retriedOrder.status, 200, 'order creation retry replays the original response');
     assertEqual(retriedOrder.data.order.id, firstOrder.data.order.id, 'order retry does not create a second order');
 
+    const ownerScopedBill = await newBill();
+    const secondUserScopedBill = await newBill(undefined, secondUserAuth);
+    const scopedPayload = { payments: [{ method: 'card', amount: 100 }] };
+    const ownerScoped = await api(baseUrl, `/api/bills/${ownerScopedBill.id}/payments`, {
+      method: 'POST', body: scopedPayload, headers: { ...authHeader, 'Idempotency-Key': 'shared-user-scoped-key' },
+    });
+    const secondUserScoped = await api(baseUrl, `/api/bills/${secondUserScopedBill.id}/payments`, {
+      method: 'POST', body: scopedPayload, headers: { ...secondUserAuth, 'Idempotency-Key': 'shared-user-scoped-key' },
+    });
+    assertEqual(ownerScoped.status, 200, 'first user-scoped idempotent payment is accepted');
+    assertEqual(secondUserScoped.status, 200, 'another user may independently reuse the idempotency key');
+
+    const legacyPaymentBill = await newBill();
+    const legacyPaymentKey = 'legacy-payment-retry';
+    const legacyPayment = await api(baseUrl, `/api/bills/${legacyPaymentBill.id}/payments`, {
+      method: 'POST', body: scopedPayload, headers: { ...authHeader, 'Idempotency-Key': legacyPaymentKey },
+    });
+    db.prepare('UPDATE orders SET user_id = NULL WHERE id = ?').run(legacyPaymentBill.order_id);
+    db.prepare('UPDATE payment_idempotency SET user_id = \'legacy\' WHERE idempotency_key = ?').run(legacyPaymentKey);
+    const legacyPaymentReplay = await api(baseUrl, `/api/bills/${legacyPaymentBill.id}/payments`, {
+      method: 'POST', body: scopedPayload, headers: { ...secondUserAuth, 'Idempotency-Key': legacyPaymentKey },
+    });
+    assertEqual(legacyPayment.status, 200, 'legacy payment record is created for compatibility coverage');
+    assertEqual(legacyPaymentReplay.status, 200, 'ownerless legacy payment retry replays exactly');
+    assertEqual(legacyPaymentReplay.data.bill.payment_details.length, 1, 'ownerless legacy payment retry does not duplicate the payment');
+
+    const legacyOrderKey = 'legacy-order-retry';
+    const legacyOrderBody = { type: 'takeaway', items: [{ product_id: 'prod-214', quantity: 1 }] };
+    const legacyOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: legacyOrderBody, headers: { ...authHeader, 'Idempotency-Key': legacyOrderKey },
+    });
+    db.prepare('UPDATE orders SET user_id = NULL WHERE id = ?').run(legacyOrder.data.order.id);
+    db.prepare('UPDATE order_idempotency SET user_id = \'legacy\' WHERE idempotency_key = ?').run(legacyOrderKey);
+    const legacyOrderReplay = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: legacyOrderBody, headers: { ...secondUserAuth, 'Idempotency-Key': legacyOrderKey },
+    });
+    assertEqual(legacyOrderReplay.status, 200, 'ownerless legacy order retry replays exactly');
+    assertEqual(legacyOrderReplay.data.order.id, legacyOrder.data.order.id, 'ownerless legacy order retry does not create a second order');
+
     // Single-payment compatibility: null means omitted/full remaining.
     const omitted = await newBill();
     const full = await api(baseUrl, `/api/bills/${omitted.id}/payment`, {
@@ -71,6 +111,17 @@ async function main() {
     });
     assertEqual(full.status, 200, 'single payment amount=null remains full-payment compatible');
     assertEqual(full.data.bill.payment_status, 'paid', 'null amount settles the remaining balance');
+
+    const repeatedLegacy = await newBill();
+    const firstRepeated = await api(baseUrl, `/api/bills/${repeatedLegacy.id}/payment`, {
+      method: 'POST', body: { method: 'cash', amount: 10 }, headers: authHeader,
+    });
+    const secondRepeated = await api(baseUrl, `/api/bills/${repeatedLegacy.id}/payment`, {
+      method: 'POST', body: { method: 'cash', amount: 10 }, headers: authHeader,
+    });
+    assertEqual(firstRepeated.status, 200, 'first identical legacy payment is accepted');
+    assertEqual(secondRepeated.status, 200, 'second identical legacy payment is recorded separately');
+    assertEqual(secondRepeated.data.bill.paid_amount, 20, 'identical legacy payments are not request-deduplicated');
 
     const malformedBodyBill = await newBill();
     const malformedSingle = await api(baseUrl, `/api/bills/${malformedBodyBill.id}/payment`, {
@@ -159,8 +210,13 @@ async function main() {
     const globalTransactionSecond = await api(baseUrl, `/api/bills/${globalTransactionB.id}/payment`, {
       method: 'POST', body: { method: 'upi', amount: 100, transaction_id: 'tx-214-global' }, headers: authHeader,
     });
-    assertEqual(globalTransactionFirst.status, 200, 'first global transaction reference is accepted');
-    assertEqual(globalTransactionSecond.status, 409, 'transaction reference cannot be reused across methods or bills');
+    assertEqual(globalTransactionFirst.status, 200, 'first method-scoped transaction reference is accepted');
+    assertEqual(globalTransactionSecond.status, 200, 'same opaque reference is allowed for a different payment method');
+    const duplicateTransactionBatch = await newBill();
+    const duplicateTransactionResult = await api(baseUrl, `/api/bills/${duplicateTransactionBatch.id}/payments`, {
+      method: 'POST', body: { payments: [{ method: 'card', amount: 50, transaction_id: 'tx-214-batch' }, { method: 'upi', amount: 50, transaction_id: 'tx-214-batch' }] }, headers: authHeader,
+    });
+    assertEqual(duplicateTransactionResult.status, 400, 'cross-method transaction IDs are rejected within one batch');
 
     const zeroCash = await newBill();
     const zeroCashResult = await api(baseUrl, `/api/bills/${zeroCash.id}/payments`, {

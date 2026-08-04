@@ -663,13 +663,13 @@ router.post('/recover-password', authRateLimit(), (req: Request, res: Response) 
     // `telemetry_last_ping_at`.
     upsertSettings(db, {
       last_password_recovery_at: now(),
-      last_password_recovery_email: email,
+      last_password_recovery_user_id: String(user.id),
       ...(restoredOwnerAccess ? {
         last_owner_recovery_at: now(),
-        last_owner_recovery_email: email,
+        last_owner_recovery_user_id: String(user.id),
       } : {}),
     });
-    console.warn(`[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access for' : 'owner password for'} ${email} was reset locally via Master PIN`);
+    console.warn(`[Auth] Password recovery: ${restoredOwnerAccess ? 'owner access' : 'owner password'} was reset locally via Master PIN for user ${user.id}`);
 
     res.json({ message: restoredOwnerAccess
       ? 'Owner access restored. You can now log in with your new password.'

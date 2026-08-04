@@ -1724,16 +1724,31 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           PRIMARY KEY (method, transaction_id)
         );
         CREATE INDEX IF NOT EXISTS idx_payment_transaction_refs_bill ON payment_transaction_refs(bill_id);
+        CREATE TABLE IF NOT EXISTS payment_transaction_ref_conflicts (
+          method TEXT NOT NULL,
+          transaction_id TEXT NOT NULL,
+          bill_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          detected_at TEXT NOT NULL
+        );
       `);
       const rows = db.prepare('SELECT id, payment_details FROM bills WHERE payment_details IS NOT NULL').all() as { id: string; payment_details: string }[];
       const insert = db.prepare('INSERT OR IGNORE INTO payment_transaction_refs (method, transaction_id, bill_id, created_at) VALUES (?, ?, ?, ?)');
+      const conflictInsert = db.prepare('INSERT INTO payment_transaction_ref_conflicts (method, transaction_id, bill_id, created_at, detected_at) VALUES (?, ?, ?, ?, ?)');
+      const seenRefs = new Map<string, { billId: string; createdAt: string }>();
+      const detectedAt = now();
       for (const row of rows) {
         try {
           const parsed = JSON.parse(row.payment_details);
           const payments = Array.isArray(parsed) ? parsed : [parsed];
           for (const payment of payments) {
             if (payment && typeof payment.method === 'string' && typeof payment.transaction_id === 'string' && payment.transaction_id.trim() !== '') {
-              insert.run(payment.method, payment.transaction_id, row.id, now());
+              const createdAt = payment.timestamp || detectedAt;
+              const key = `${payment.method}\u0000${payment.transaction_id}`;
+              const previous = seenRefs.get(key);
+              if (previous && previous.billId !== row.id) conflictInsert.run(payment.method, payment.transaction_id, row.id, previous.createdAt, detectedAt);
+              else seenRefs.set(key, { billId: row.id, createdAt });
+              insert.run(payment.method, payment.transaction_id, row.id, createdAt);
             }
           }
         } catch {
@@ -1799,6 +1814,228 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         ORDER BY created_at, bill_id;
         DROP TABLE payment_transaction_refs;
         ALTER TABLE payment_transaction_refs_global RENAME TO payment_transaction_refs;
+        CREATE INDEX idx_payment_transaction_refs_bill ON payment_transaction_refs(bill_id);
+      `);
+    },
+  },
+  {
+    version: 52,
+    name: 'restore_method_scoped_transaction_refs',
+    up: () => {
+      // v51 temporarily collapsed references by transaction_id. Rebuild from
+      // the authoritative payment snapshots as well as the collapsed table so
+      // duplicate same-method references are audited rather than discarded.
+      const recordConflict = db.prepare(`
+        INSERT INTO payment_transaction_ref_conflicts (method, transaction_id, bill_id, created_at, detected_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const detectedAt = now();
+      db.exec(`
+        CREATE TABLE payment_transaction_refs_method (
+          method TEXT NOT NULL,
+          transaction_id TEXT NOT NULL,
+          bill_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (method, transaction_id)
+        );
+      `);
+      const insertRef = db.prepare(`
+        INSERT OR IGNORE INTO payment_transaction_refs_method
+          (method, transaction_id, bill_id, created_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      const findRef = db.prepare('SELECT bill_id, created_at FROM payment_transaction_refs_method WHERE method = ? AND transaction_id = ?');
+      const addRef = (method: string, transactionId: string, billId: string, createdAt: string) => {
+        const existing = findRef.get(method, transactionId) as { bill_id: string; created_at: string } | undefined;
+        if (existing && String(existing.bill_id) !== String(billId)) {
+          recordConflict.run(method, transactionId, billId, createdAt, detectedAt);
+          return;
+        }
+        insertRef.run(method, transactionId, billId, createdAt);
+      };
+      const existingRefs = db.prepare('SELECT method, transaction_id, bill_id, created_at FROM payment_transaction_refs').all() as { method: string; transaction_id: string; bill_id: string; created_at: string }[];
+      for (const ref of existingRefs) addRef(ref.method, ref.transaction_id, ref.bill_id, ref.created_at);
+      const rows = db.prepare('SELECT id, payment_details FROM bills WHERE payment_details IS NOT NULL ORDER BY id').all() as { id: string; payment_details: string }[];
+      for (const row of rows) {
+        try {
+          const parsed = JSON.parse(row.payment_details);
+          const payments = Array.isArray(parsed) ? parsed : [parsed];
+          for (const payment of payments) {
+            if (!payment || typeof payment.method !== 'string' || typeof payment.transaction_id !== 'string' || payment.transaction_id.trim() === '') continue;
+            addRef(payment.method, payment.transaction_id, String(row.id), payment.timestamp || detectedAt);
+          }
+        } catch {
+          // Invalid legacy JSON remains recoverable by the settlement path.
+        }
+      }
+      db.exec(`
+        DROP TABLE payment_transaction_refs;
+        ALTER TABLE payment_transaction_refs_method RENAME TO payment_transaction_refs;
+        CREATE INDEX idx_payment_transaction_refs_bill ON payment_transaction_refs(bill_id);
+      `);
+    },
+  },
+  {
+    version: 53,
+    name: 'scope_idempotency_records_to_user',
+    up: () => {
+      db.exec(`
+        CREATE TABLE payment_idempotency_scoped (
+          user_id TEXT NOT NULL,
+          idempotency_key TEXT NOT NULL,
+          bill_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, idempotency_key)
+        );
+        CREATE TABLE order_idempotency_scoped (
+          user_id TEXT NOT NULL,
+          idempotency_key TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (user_id, idempotency_key)
+        );
+      `);
+      const paymentRows = db.prepare(`
+        SELECT p.idempotency_key, p.bill_id, p.request_hash, p.response_json, p.created_at,
+               COALESCE(CAST(o.user_id AS TEXT), 'legacy') AS user_id
+        FROM payment_idempotency p
+        LEFT JOIN bills b ON b.id = p.bill_id
+        LEFT JOIN orders o ON o.id = b.order_id
+      `).all() as { idempotency_key: string; bill_id: string; request_hash: string; response_json: string; created_at: string; user_id: string }[];
+      const insertPayment = db.prepare(`
+        INSERT INTO payment_idempotency_scoped
+          (user_id, idempotency_key, bill_id, request_hash, response_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      for (const row of paymentRows) insertPayment.run(row.user_id || 'legacy', row.idempotency_key, row.bill_id, row.request_hash, row.response_json, row.created_at);
+
+      const orderRows = db.prepare('SELECT idempotency_key, request_hash, response_json, created_at FROM order_idempotency').all() as { idempotency_key: string; request_hash: string; response_json: string; created_at: string }[];
+      const insertOrder = db.prepare(`
+        INSERT INTO order_idempotency_scoped
+          (user_id, idempotency_key, request_hash, response_json, created_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      for (const row of orderRows) {
+        let userId = 'legacy';
+        try {
+          const response = JSON.parse(row.response_json);
+          if (response?.order?.user_id != null) userId = String(response.order.user_id);
+        } catch {
+          // Keep the compatibility owner for malformed historical responses.
+        }
+        insertOrder.run(userId, row.idempotency_key, row.request_hash, row.response_json, row.created_at);
+      }
+      db.exec(`
+        DROP TABLE payment_idempotency;
+        ALTER TABLE payment_idempotency_scoped RENAME TO payment_idempotency;
+        CREATE INDEX idx_payment_idempotency_bill ON payment_idempotency(bill_id);
+        DROP TABLE order_idempotency;
+        ALTER TABLE order_idempotency_scoped RENAME TO order_idempotency;
+      `);
+    },
+  },
+  {
+    version: 54,
+    name: 'repair_retry_ownership_and_payment_reference_history',
+    up: () => {
+      // Repair databases that were opened by an intermediate v53 build before
+      // ownership backfilling was added. Keep the compatibility owner only
+      // when the historical record has no recoverable owner.
+      const paymentRows = db.prepare(`
+        SELECT p.idempotency_key,
+               CAST(o.user_id AS TEXT) AS user_id
+        FROM payment_idempotency p
+        JOIN bills b ON b.id = p.bill_id
+        JOIN orders o ON o.id = b.order_id
+        WHERE p.user_id = 'legacy' AND o.user_id IS NOT NULL
+      `).all() as { idempotency_key: string; user_id: string }[];
+      const updatePayment = db.prepare(`
+        UPDATE payment_idempotency SET user_id = ?
+        WHERE user_id = 'legacy' AND idempotency_key = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM payment_idempotency existing
+            WHERE existing.idempotency_key = payment_idempotency.idempotency_key
+              AND existing.user_id != 'legacy'
+          )
+      `);
+      for (const row of paymentRows) updatePayment.run(row.user_id, row.idempotency_key);
+
+      const orderRows = db.prepare(`
+        SELECT idempotency_key, response_json
+        FROM order_idempotency
+        WHERE user_id = 'legacy'
+      `).all() as { idempotency_key: string; response_json: string }[];
+      const updateOrder = db.prepare(`
+        UPDATE order_idempotency SET user_id = ?
+        WHERE user_id = 'legacy' AND idempotency_key = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM order_idempotency existing
+            WHERE existing.idempotency_key = order_idempotency.idempotency_key
+              AND existing.user_id != 'legacy'
+          )
+      `);
+      for (const row of orderRows) {
+        try {
+          const response = JSON.parse(row.response_json);
+          if (response?.order?.user_id != null) updateOrder.run(String(response.order.user_id), row.idempotency_key);
+        } catch {
+          // Leave malformed historical responses under the compatibility owner.
+        }
+      }
+
+      // Reconstruct references from every bill snapshot. This repairs v51/v52
+      // databases where a global transaction-id table collapsed cross-method
+      // rows before method-scoped uniqueness was restored.
+      const existingRefs = db.prepare('SELECT method, transaction_id, bill_id, created_at FROM payment_transaction_refs').all() as { method: string; transaction_id: string; bill_id: string; created_at: string }[];
+      const rows = db.prepare('SELECT id, payment_details FROM bills WHERE payment_details IS NOT NULL ORDER BY id').all() as { id: string; payment_details: string }[];
+      db.exec(`
+        CREATE TABLE payment_transaction_refs_repaired (
+          method TEXT NOT NULL,
+          transaction_id TEXT NOT NULL,
+          bill_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (method, transaction_id)
+        );
+      `);
+      const insertRef = db.prepare(`
+        INSERT OR IGNORE INTO payment_transaction_refs_repaired
+          (method, transaction_id, bill_id, created_at)
+        VALUES (?, ?, ?, ?)
+      `);
+      const findRef = db.prepare('SELECT bill_id FROM payment_transaction_refs_repaired WHERE method = ? AND transaction_id = ?');
+      const recordConflict = db.prepare(`
+        INSERT INTO payment_transaction_ref_conflicts
+          (method, transaction_id, bill_id, created_at, detected_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const detectedAt = now();
+      const addRef = (method: string, transactionId: string, billId: string, createdAt: string) => {
+        const existing = findRef.get(method, transactionId) as { bill_id: string } | undefined;
+        if (existing && String(existing.bill_id) !== String(billId)) {
+          recordConflict.run(method, transactionId, billId, createdAt, detectedAt);
+          return;
+        }
+        insertRef.run(method, transactionId, billId, createdAt);
+      };
+      for (const ref of existingRefs) addRef(ref.method, ref.transaction_id, ref.bill_id, ref.created_at);
+      for (const row of rows) {
+        try {
+          const parsed = JSON.parse(row.payment_details);
+          const payments = Array.isArray(parsed) ? parsed : [parsed];
+          for (const payment of payments) {
+            if (!payment || typeof payment.method !== 'string' || typeof payment.transaction_id !== 'string' || payment.transaction_id.trim() === '') continue;
+            addRef(payment.method, payment.transaction_id, String(row.id), payment.timestamp || detectedAt);
+          }
+        } catch {
+          // Invalid legacy JSON remains recoverable by the settlement path.
+        }
+      }
+      db.exec(`
+        DROP TABLE payment_transaction_refs;
+        ALTER TABLE payment_transaction_refs_repaired RENAME TO payment_transaction_refs;
         CREATE INDEX idx_payment_transaction_refs_bill ON payment_transaction_refs(bill_id);
       `);
     },

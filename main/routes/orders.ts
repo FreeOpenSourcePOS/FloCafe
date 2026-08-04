@@ -306,6 +306,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
     const body = req.body || {};
     const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = body;
     const idempotencyKey = orderIdempotencyKey(req);
+    const idempotencyUserId = String((req as any).user.userId);
     const requestHash = idempotencyKey
       ? createHash('sha256').update(JSON.stringify(body)).digest('hex')
       : null;
@@ -344,7 +345,15 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
     }
     const result = withTxn(() => {
       if (idempotencyKey) {
-        const prior = db.prepare('SELECT request_hash, response_json FROM order_idempotency WHERE idempotency_key = ?').get(idempotencyKey) as { request_hash: string; response_json: string } | undefined;
+        // Preserve exact replay for pre-user-scoped records whose creator is
+        // unavailable. New records never use the `legacy` compatibility owner.
+        const prior = db.prepare(`
+          SELECT request_hash, response_json
+          FROM order_idempotency
+          WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
+          ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
+          LIMIT 1
+        `).get(idempotencyUserId, idempotencyKey, idempotencyUserId) as { request_hash: string; response_json: string } | undefined;
         if (prior) {
           if (prior.request_hash !== requestHash) {
             throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
@@ -510,8 +519,8 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
       const response = { order: Object.assign({}, order, { items: orderItems }) };
       if (idempotencyKey && requestHash) {
-        db.prepare('INSERT INTO order_idempotency (idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?)')
-          .run(idempotencyKey, requestHash, JSON.stringify(response), now());
+        db.prepare('INSERT INTO order_idempotency (user_id, idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(idempotencyUserId, idempotencyKey, requestHash, JSON.stringify(response), now());
       }
       return { order, orderItems, idempotentReplay: false };
     });
@@ -544,6 +553,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     const body = req.body || {};
     const { items, special_instructions } = body;
     const idempotencyKey = orderIdempotencyKey(req);
+    const idempotencyUserId = String((req as any).user.userId);
     const requestHash = idempotencyKey
       ? createHash('sha256').update(JSON.stringify({ order_id: req.params.id, items, special_instructions })).digest('hex')
       : null;
@@ -555,10 +565,6 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     const authUser = (req as any).user;
     if (authUser?.role === 'waiter' && order.user_id !== authUser.userId) {
       return res.status(403).json({ error: 'Waiters can only modify their own orders' });
-    }
-
-    if (['completed', 'cancelled'].includes((order as any).status)) {
-      return res.status(400).json({ error: 'Cannot add items to a completed or cancelled order' });
     }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -598,11 +604,14 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
-      if (['completed', 'cancelled'].includes(currentOrder.status)) {
-        throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
-      }
       if (idempotencyKey) {
-        const prior = db.prepare('SELECT request_hash, response_json FROM order_idempotency WHERE idempotency_key = ?').get(idempotencyKey) as { request_hash: string; response_json: string } | undefined;
+        const prior = db.prepare(`
+          SELECT request_hash, response_json
+          FROM order_idempotency
+          WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
+          ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
+          LIMIT 1
+        `).get(idempotencyUserId, idempotencyKey, idempotencyUserId) as { request_hash: string; response_json: string } | undefined;
         if (prior) {
           if (prior.request_hash !== requestHash) throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
           try {
@@ -611,6 +620,9 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
             throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
           }
         }
+      }
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
       }
 
       const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;
@@ -767,8 +779,8 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
       const response = { order: Object.assign({}, updatedOrder, { items: updatedItems }) };
       if (idempotencyKey && requestHash) {
-        db.prepare('INSERT INTO order_idempotency (idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?)')
-          .run(idempotencyKey, requestHash, JSON.stringify(response), now());
+        db.prepare('INSERT INTO order_idempotency (user_id, idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)')
+          .run(idempotencyUserId, idempotencyKey, requestHash, JSON.stringify(response), now());
       }
       return { updatedOrder, updatedItems, replayResponse: null };
     });
@@ -804,6 +816,10 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+    const authUser = (req as any).user;
+    if (authUser?.role === 'waiter' && String((order as any).user_id) !== String(authUser.userId)) {
+      return res.status(403).json({ error: 'Waiters can only modify their own orders' });
     }
 
     // Override validation: cancelling an order in preparing+ status (or with items in preparing+) requires manager PIN

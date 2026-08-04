@@ -275,17 +275,13 @@ function paymentRequestHash(billId: string, payments: unknown, customerId: unkno
     .digest('hex');
 }
 
-function paymentIdempotencyKey(req: Request, requestHash: string): string {
+function paymentIdempotencyKey(req: Request): string | null {
   const supplied = req.get('Idempotency-Key')?.trim();
-  if (supplied) {
-    if (supplied.length > MAX_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
-      throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400 });
-    }
-    return supplied;
+  if (!supplied) return null;
+  if (supplied.length > MAX_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
+    throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400 });
   }
-  // Deterministic fallback preserves legacy clients while making exact retries
-  // safe. An intentional changed request gets a different canonical hash.
-  return `legacy-${requestHash}`;
+  return supplied;
 }
 
 function paymentAmountCents(value: unknown, label = 'Payment amount'): number {
@@ -402,13 +398,22 @@ function preparePaymentBatch(
     const transactionKey = paymentTransactionKey(payment);
     if (!transactionKey) continue;
     const candidate = payment as PaymentInput;
-    const reference = db.prepare('SELECT bill_id, method FROM payment_transaction_refs WHERE transaction_id = ?').get(candidate.transaction_id) as { bill_id: string; method: string } | undefined;
-    if (reference && (String(reference.bill_id) !== String(billId) || reference.method !== String(candidate.method))) {
-      throw Object.assign(new Error('Payment transaction_id has already been used for another bill or method'), { statusCode: 409 });
+    const reference = db.prepare('SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?').get(candidate.method, candidate.transaction_id) as { bill_id: string } | undefined;
+    if (reference && String(reference.bill_id) !== String(billId)) {
+      throw Object.assign(new Error('Payment transaction_id has already been used for another bill'), { statusCode: 409 });
     }
     if (reference) existingTransactionKeys.add(transactionKey);
   }
   const requestTransactionKeys = payments.map(paymentTransactionKey);
+  const transactionMethods = new Map<string, string>();
+  for (const payment of payments) {
+    if (typeof payment.transaction_id !== 'string' || payment.transaction_id.trim() === '') continue;
+    const previousMethod = transactionMethods.get(payment.transaction_id);
+    if (previousMethod && previousMethod !== String(payment.method)) {
+      throw Object.assign(new Error('A transaction_id cannot be reused across payment methods in one batch'), { statusCode: 400 });
+    }
+    transactionMethods.set(payment.transaction_id, String(payment.method));
+  }
   const replay = requestTransactionKeys.every((key, index) => (
     key !== null
     && existingTransactionKeys.has(key)
@@ -495,11 +500,21 @@ function applyPaymentBatch(
   payments: PaymentInput[],
   bodyCustomerId?: string | number,
   allowOmittedAmount = false,
-  idempotencyKey?: string,
+  idempotencyKey?: string | null,
   requestHash?: string,
+  idempotencyUserId?: string,
 ): { bill: any; walletDebited: boolean; loyaltyPointsEarned: number } {
-  if (idempotencyKey) {
-    const prior = db.prepare('SELECT bill_id, request_hash, response_json FROM payment_idempotency WHERE idempotency_key = ?').get(idempotencyKey) as { bill_id: string; request_hash: string; response_json: string } | undefined;
+  if (idempotencyKey && idempotencyUserId) {
+    // `legacy` is an append-only compatibility owner for pre-user-scoped
+    // records whose original user cannot be recovered. It is only reachable
+    // with the exact bill and request hash; new records are always user-bound.
+    const prior = db.prepare(`
+      SELECT bill_id, request_hash, response_json
+      FROM payment_idempotency
+      WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
+      ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
+      LIMIT 1
+    `).get(idempotencyUserId, idempotencyKey, idempotencyUserId) as { bill_id: string; request_hash: string; response_json: string } | undefined;
     if (prior) {
       if (String(prior.bill_id) !== String(billId) || prior.request_hash !== requestHash) {
         throw Object.assign(new Error('Idempotency-Key was already used for a different payment request'), { statusCode: 409 });
@@ -562,9 +577,9 @@ function applyPaymentBatch(
     }
   }
   const result = { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited, loyaltyPointsEarned };
-  if (idempotencyKey && requestHash) {
-    db.prepare('INSERT INTO payment_idempotency (idempotency_key, bill_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)')
-      .run(idempotencyKey, billId, requestHash, JSON.stringify(result), changedAt);
+  if (idempotencyKey && requestHash && idempotencyUserId) {
+    db.prepare('INSERT INTO payment_idempotency (user_id, idempotency_key, bill_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(idempotencyUserId, idempotencyKey, billId, requestHash, JSON.stringify(result), changedAt);
   }
   return result;
 }
@@ -579,7 +594,7 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
     const requestHash = paymentRequestHash(req.params.id as string, [payment], payment.customer_id);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, [payment], payment.customer_id, true,
-      paymentIdempotencyKey(req, requestHash), requestHash,
+      paymentIdempotencyKey(req), requestHash, String((req as any).user.userId),
     ));
 
     const billStatus = (result.bill as any)?.payment_status;
@@ -613,7 +628,7 @@ router.post('/:id/payments', requireRole('owner', 'manager', 'cashier'), (req: R
     const requestHash = paymentRequestHash(req.params.id as string, payments, bodyCustomerId);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, payments, bodyCustomerId, false,
-      paymentIdempotencyKey(req, requestHash), requestHash,
+      paymentIdempotencyKey(req), requestHash, String((req as any).user.userId),
     ));
 
     const billStatus = (result.bill as any)?.payment_status;

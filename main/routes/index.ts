@@ -252,6 +252,9 @@ export function registerRoutes(app: Express): void {
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
       }
+      if (userRole === 'waiter' && String(order.user_id) !== String((req as any).user.userId)) {
+        return res.status(403).json({ error: 'Waiters can only modify their own orders' });
+      }
 
       const item = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
       if (!item) {

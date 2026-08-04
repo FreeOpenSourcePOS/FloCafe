@@ -987,7 +987,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
       return res.status(400).json({ error: 'Cannot apply discount to a completed or cancelled order' });
     }
 
-    const { discount_type, discount_value, discount_reason } = req.body;
+    const { discount_type, discount_value, discount_reason } = req.body || {};
 
     // Validate discount_type
     if (discount_value !== 0 && (!discount_type || !['percentage', 'amount'].includes(discount_type))) {
@@ -1003,7 +1003,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
     if (discount_value > 0) {
       const requiresApproval = getSettingValue('discount_requires_approval') === 'true';
       if (requiresApproval) {
-        const { override_pin } = req.body;
+        const { override_pin } = req.body || {};
         if (!override_pin) {
           return res.status(403).json({ error: 'Manager PIN required for discounts', requiresApproval: true });
         }
@@ -1012,7 +1012,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
         if (!checkPinRateLimit(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const user = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+        const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
           .all()
           .find((u: any) => verifyPin(u.pin_hash, override_pin));
         if (!user) {

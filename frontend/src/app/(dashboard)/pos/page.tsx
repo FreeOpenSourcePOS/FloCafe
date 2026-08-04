@@ -84,12 +84,19 @@ export default function POSPage() {
     }
     return prepaidAttemptRef.current;
   };
-  const savePrepaidAttempt = (attempt: PrepaidAttempt) => {
+  const savePrepaidAttempt = (attempt: PrepaidAttempt): boolean => {
     prepaidAttemptRef.current = attempt;
     try {
-      window.localStorage.setItem(PREPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+      const safeAttempt = { ...attempt };
+      if (safeAttempt.discount) {
+        const safeDiscount = { ...safeAttempt.discount };
+        delete safeDiscount.override_pin;
+        safeAttempt.discount = safeDiscount;
+      }
+      window.localStorage.setItem(PREPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(safeAttempt));
+      return true;
     } catch {
-      // In-memory retry protection still applies when storage is unavailable.
+      return false;
     }
   };
   const clearPrepaidAttempt = () => {
@@ -345,9 +352,11 @@ export default function POSPage() {
       && storedAttempt.orderIdempotencyKey && storedAttempt.paymentIdempotencyKey
       ? storedAttempt
       : null;
+    const retryDiscount = discount && discount.value > 0 ? discount : null;
     const attempt: PrepaidAttempt = existingAttempt
       ? {
         ...existingAttempt,
+        discount: retryDiscount,
         paymentFingerprint,
         paymentIdempotencyKey: existingAttempt.paymentFingerprint === paymentFingerprint
           ? existingAttempt.paymentIdempotencyKey
@@ -362,7 +371,12 @@ export default function POSPage() {
       };
     // Persist the key before the first order mutation. The server replays the
     // order response if this renderer loses the response or restarts.
-    savePrepaidAttempt(attempt);
+    if (!savePrepaidAttempt(attempt)) {
+      clearPrepaidAttempt();
+      toast.error(t('pos.processOrderFailed'));
+      setSubmitting(false);
+      return;
+    }
     let orderData: { order: Order };
     let billData: { bill: Bill };
     try {
@@ -385,7 +399,7 @@ export default function POSPage() {
       // Apply discount before bill generation so the bill uses the discounted
       // totals (tax recalculated on the net payable amount). Repeating this SET
       // operation is safe if its response was lost.
-      const effectiveDiscount = attempt.discount ?? discount;
+      const effectiveDiscount = attempt.discount;
       if (effectiveDiscount && effectiveDiscount.value > 0 && !attempt.bill) {
         await api.patch(`/orders/${orderId}/discount`, {
           discount_type: effectiveDiscount.type,

@@ -325,7 +325,7 @@ function validatePaymentFields(payment: PaymentInput, index: number): void {
   }
   for (const [field, maxLength] of [['transaction_id', 256], ['notes', 1024] ] as const) {
     const value = payment[field];
-    if (value !== undefined && (typeof value !== 'string' || value.length > maxLength)) {
+    if (value !== undefined && (typeof value !== 'string' || value.length > maxLength || (field === 'transaction_id' && value.trim() === ''))) {
       throw Object.assign(new Error(`${field} is invalid or too long`), { statusCode: 400 });
     }
   }
@@ -402,9 +402,9 @@ function preparePaymentBatch(
     const transactionKey = paymentTransactionKey(payment);
     if (!transactionKey) continue;
     const candidate = payment as PaymentInput;
-    const reference = db.prepare('SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?').get(candidate.method, candidate.transaction_id) as { bill_id: string } | undefined;
-    if (reference && String(reference.bill_id) !== String(billId)) {
-      throw Object.assign(new Error('Payment transaction_id has already been used for another bill'), { statusCode: 409 });
+    const reference = db.prepare('SELECT bill_id, method FROM payment_transaction_refs WHERE transaction_id = ?').get(candidate.transaction_id) as { bill_id: string; method: string } | undefined;
+    if (reference && (String(reference.bill_id) !== String(billId) || reference.method !== String(candidate.method))) {
+      throw Object.assign(new Error('Payment transaction_id has already been used for another bill or method'), { statusCode: 409 });
     }
     if (reference) existingTransactionKeys.add(transactionKey);
   }

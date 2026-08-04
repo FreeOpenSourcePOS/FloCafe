@@ -1732,7 +1732,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           const parsed = JSON.parse(row.payment_details);
           const payments = Array.isArray(parsed) ? parsed : [parsed];
           for (const payment of payments) {
-            if (payment && typeof payment.method === 'string' && typeof payment.transaction_id === 'string') {
+            if (payment && typeof payment.method === 'string' && typeof payment.transaction_id === 'string' && payment.transaction_id.trim() !== '') {
               insert.run(payment.method, payment.transaction_id, row.id, now());
             }
           }
@@ -1754,6 +1754,52 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           response_json TEXT NOT NULL,
           created_at TEXT NOT NULL
         );
+      `);
+    },
+  },
+  {
+    version: 51,
+    name: 'enforce_global_payment_transaction_refs',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS payment_transaction_ref_conflicts (
+          method TEXT NOT NULL,
+          transaction_id TEXT NOT NULL,
+          bill_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          detected_at TEXT NOT NULL
+        );
+      `);
+      const duplicateRows = db.prepare(`
+        SELECT method, transaction_id, bill_id, created_at
+        FROM payment_transaction_refs
+        WHERE transaction_id IN (
+          SELECT transaction_id FROM payment_transaction_refs
+          GROUP BY transaction_id HAVING COUNT(*) > 1
+        )
+      `).all() as { method: string; transaction_id: string; bill_id: string; created_at: string }[];
+      const recordConflict = db.prepare(`
+        INSERT INTO payment_transaction_ref_conflicts (method, transaction_id, bill_id, created_at, detected_at)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      const detectedAt = now();
+      for (const row of duplicateRows) recordConflict.run(row.method, row.transaction_id, row.bill_id, row.created_at, detectedAt);
+      db.exec(`
+        CREATE TABLE payment_transaction_refs_global (
+          transaction_id TEXT PRIMARY KEY,
+          method TEXT NOT NULL,
+          bill_id TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+      `);
+      db.exec(`
+        INSERT OR IGNORE INTO payment_transaction_refs_global (transaction_id, method, bill_id, created_at)
+        SELECT transaction_id, method, bill_id, created_at
+        FROM payment_transaction_refs
+        ORDER BY created_at, bill_id;
+        DROP TABLE payment_transaction_refs;
+        ALTER TABLE payment_transaction_refs_global RENAME TO payment_transaction_refs;
+        CREATE INDEX idx_payment_transaction_refs_bill ON payment_transaction_refs(bill_id);
       `);
     },
   },

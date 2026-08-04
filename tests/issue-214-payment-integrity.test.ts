@@ -157,10 +157,10 @@ async function main() {
     });
     const globalTransactionB = await newBill();
     const globalTransactionSecond = await api(baseUrl, `/api/bills/${globalTransactionB.id}/payment`, {
-      method: 'POST', body: { method: 'card', amount: 100, transaction_id: 'tx-214-global' }, headers: authHeader,
+      method: 'POST', body: { method: 'upi', amount: 100, transaction_id: 'tx-214-global' }, headers: authHeader,
     });
     assertEqual(globalTransactionFirst.status, 200, 'first global transaction reference is accepted');
-    assertEqual(globalTransactionSecond.status, 409, 'transaction reference cannot be reused on another bill');
+    assertEqual(globalTransactionSecond.status, 409, 'transaction reference cannot be reused across methods or bills');
 
     const zeroCash = await newBill();
     const zeroCashResult = await api(baseUrl, `/api/bills/${zeroCash.id}/payments`, {

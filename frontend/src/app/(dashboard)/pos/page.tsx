@@ -31,6 +31,13 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 
 const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
+const POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
+
+interface PostpaidAttempt {
+  fingerprint: string;
+  idempotencyKey: string;
+  order?: Order;
+}
 
 interface PrepaidAttempt {
   cartFingerprint: string;
@@ -72,6 +79,36 @@ export default function POSPage() {
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
+  const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
+
+  const readPostpaidAttempt = () => {
+    if (postpaidAttemptRef.current) return postpaidAttemptRef.current;
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      if (stored) postpaidAttemptRef.current = JSON.parse(stored) as PostpaidAttempt;
+    } catch {
+      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+    }
+    return postpaidAttemptRef.current;
+  };
+  const savePostpaidAttempt = (attempt: PostpaidAttempt): boolean => {
+    postpaidAttemptRef.current = attempt;
+    try {
+      window.localStorage.setItem(POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  const clearPostpaidAttempt = () => {
+    postpaidAttemptRef.current = null;
+    try {
+      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+  };
 
   const readPrepaidAttempt = () => {
     if (prepaidAttemptRef.current) return prepaidAttemptRef.current;
@@ -274,7 +311,7 @@ export default function POSPage() {
       let orderForKot: Order;
 
       if (pendingOrder) {
-        // Add new items to existing order
+        // Add new items to an existing order with a durable retry key.
         const newItems = cart.items.map((item) => ({
           product_id: item.product.id,
           quantity: item.quantity,
@@ -283,12 +320,23 @@ export default function POSPage() {
             : null,
           special_instructions: item.special_instructions || null,
         }));
-        const { data } = await api.post(`/orders/${pendingOrder.id}/items`, { items: newItems, special_instructions: cart.orderNotes || undefined });
+        const itemFingerprint = JSON.stringify({ order_id: pendingOrder.id, items: newItems, special_instructions: cart.orderNotes || undefined });
+        const priorItemsAttempt = readPostpaidAttempt();
+        const itemAttempt = priorItemsAttempt?.fingerprint === itemFingerprint
+          ? priorItemsAttempt
+          : { fingerprint: itemFingerprint, idempotencyKey: newIdempotencyKey() };
+        if (!savePostpaidAttempt(itemAttempt)) throw new Error(t('pos.placeOrderFailed'));
+        const { data } = await api.post(
+          `/orders/${pendingOrder.id}/items`,
+          { items: newItems, special_instructions: cart.orderNotes || undefined },
+          { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } },
+        );
         toast.success(t('pos.itemsAddedToOrder', { number: pendingOrder.order_number }));
         orderForKot = data.order as Order;
+        clearPostpaidAttempt();
         setPendingOrder(null);
       } else {
-        const { data } = await api.post('/orders', {
+        const orderPayload = {
           table_id: cart.tableId,
           customer_id: cart.customerId,
           type: cart.orderType,
@@ -302,9 +350,20 @@ export default function POSPage() {
               : null,
             special_instructions: item.special_instructions || null,
           })),
-        });
+        };
+        const orderFingerprint = JSON.stringify(orderPayload);
+        const priorOrderAttempt = readPostpaidAttempt();
+        const orderAttempt: PostpaidAttempt = priorOrderAttempt?.fingerprint === orderFingerprint
+          ? priorOrderAttempt
+          : { fingerprint: orderFingerprint, idempotencyKey: newIdempotencyKey() };
+        if (!savePostpaidAttempt(orderAttempt)) throw new Error(t('pos.placeOrderFailed'));
+        const { data } = orderAttempt.order
+          ? { data: { order: orderAttempt.order } }
+          : await api.post('/orders', orderPayload, { headers: { 'Idempotency-Key': orderAttempt.idempotencyKey } });
+        if (!orderAttempt.order) savePostpaidAttempt({ ...orderAttempt, order: data.order as Order });
         toast.success(t('pos.orderPlaced', { number: data.order.order_number }));
         orderForKot = data.order as Order;
+        clearPostpaidAttempt();
       }
 
       if (cart.tableId) heldOrders.removeHeldOrder(cart.tableId);
@@ -352,13 +411,20 @@ export default function POSPage() {
       && storedAttempt.orderIdempotencyKey && storedAttempt.paymentIdempotencyKey
       ? storedAttempt
       : null;
-    const retryDiscount = discount && discount.value > 0 ? discount : null;
+    const currentDiscount = discount && discount.value > 0 ? discount : null;
+    const discountFingerprint = (value: PrepaidDiscount | null | undefined) => JSON.stringify(
+      value ? { type: value.type, value: value.value, reason: value.reason } : null,
+    );
+    const discountChanged = !!existingAttempt && !!currentDiscount
+      && discountFingerprint(existingAttempt.discount) !== discountFingerprint(currentDiscount);
+    const retryDiscount = currentDiscount || (existingAttempt?.bill ? existingAttempt.discount : null) || null;
     const attempt: PrepaidAttempt = existingAttempt
       ? {
         ...existingAttempt,
         discount: retryDiscount,
+        bill: discountChanged ? undefined : existingAttempt.bill,
         paymentFingerprint,
-        paymentIdempotencyKey: existingAttempt.paymentFingerprint === paymentFingerprint
+        paymentIdempotencyKey: existingAttempt.paymentFingerprint === paymentFingerprint && !discountChanged
           ? existingAttempt.paymentIdempotencyKey
           : newIdempotencyKey(),
       }

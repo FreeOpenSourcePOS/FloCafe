@@ -541,6 +541,12 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const body = req.body || {};
+    const { items, special_instructions } = body;
+    const idempotencyKey = orderIdempotencyKey(req);
+    const requestHash = idempotencyKey
+      ? createHash('sha256').update(JSON.stringify({ order_id: req.params.id, items, special_instructions })).digest('hex')
+      : null;
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -555,8 +561,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       return res.status(400).json({ error: 'Cannot add items to a completed or cancelled order' });
     }
 
-    const { items, special_instructions } = req.body;
-    if (!items || items.length === 0) {
+    if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'At least one item is required' });
     }
 
@@ -585,7 +590,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       taxes_enabled: settings.taxes_enabled === 'true',
     };
 
-    const { updatedOrder, updatedItems } = withTxn(() => {
+    const result = withTxn(() => {
       // Re-fetch and re-validate under the transaction lock: another request (e.g. a
       // cashier completing/cancelling the order) can race the checks above, which run
       // before this lock is acquired (#175).
@@ -595,6 +600,17 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
+      }
+      if (idempotencyKey) {
+        const prior = db.prepare('SELECT request_hash, response_json FROM order_idempotency WHERE idempotency_key = ?').get(idempotencyKey) as { request_hash: string; response_json: string } | undefined;
+        if (prior) {
+          if (prior.request_hash !== requestHash) throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
+          try {
+            return { replayResponse: JSON.parse(prior.response_json) };
+          } catch {
+            throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
+          }
+        }
       }
 
       const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;
@@ -749,14 +765,20 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
 
       const updatedOrder = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
       const updatedItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
-      return { updatedOrder, updatedItems };
+      const response = { order: Object.assign({}, updatedOrder, { items: updatedItems }) };
+      if (idempotencyKey && requestHash) {
+        db.prepare('INSERT INTO order_idempotency (idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?)')
+          .run(idempotencyKey, requestHash, JSON.stringify(response), now());
+      }
+      return { updatedOrder, updatedItems, replayResponse: null };
     });
 
+    if (result.replayResponse) return res.json(result.replayResponse);
     cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyKdsUpdate();
     notifyOrderUpdated();
 
-    res.json({ order: Object.assign({}, updatedOrder, { items: updatedItems }) });
+    res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
@@ -806,8 +828,8 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
 
-      // Validate PIN against owner/manager accounts only
-      const user = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+      // Validate PIN against active owner/manager accounts only
+      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
         .all()
         .find((u: any) => verifyPin(u.pin_hash, override_pin));
 
@@ -1214,7 +1236,7 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
-      const user = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
         .all()
         .find((u: any) => verifyPin(u.pin_hash, override_pin));
       if (!user) {

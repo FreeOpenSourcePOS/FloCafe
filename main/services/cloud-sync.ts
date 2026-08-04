@@ -289,14 +289,16 @@ class CloudSyncService {
     };
   }
 
-  // No owner/business email is ever sent here — FloAdmin doesn't store or
-  // use it yet (documented gap, specs/floadmin.md § POST /api/pos/register),
-  // and owners never log into FloAdmin, so there's nothing for it to do.
+  // Registration carries contact metadata for FloAdmin support. It is not an
+  // authentication credential and does not create a cloud owner account.
   async register(): Promise<Record<string, unknown>> {
     const db = getDatabase();
     const settings = this.readSettings(db);
     const { posHash, deviceSecret } = ensureCloudIdentity();
     const serverUrl = normalizeCloudServerUrl(settings.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
+    const owner = db.prepare(
+      "SELECT name FROM users WHERE role = 'owner' AND is_active = 1 ORDER BY created_at ASC LIMIT 1"
+    ).get() as { name?: string } | undefined;
     const body = {
       pos_hash: posHash,
       device_secret_hash: sha256Hex(deviceSecret),
@@ -307,9 +309,13 @@ class CloudSyncService {
       store_type: 'cafe',
       business: {
         name: settings.business_name || '',
+        contact_name: owner?.name || '',
+        email: settings.email || '',
         phone: settings.business_phone || settings.phone || '',
         country: settings.country || 'IN',
         timezone: settings.timezone || 'Asia/Kolkata',
+        currency: settings.currency || 'INR',
+        address: settings.business_address || '',
       },
       requested_at: new Date().toISOString(),
     };
@@ -765,16 +771,14 @@ class CloudSyncService {
   }
 
   /**
-   * Zero-touch: register automatically if this install has never successfully
-   * announced itself. Retries a prior failure too (network down at last boot) —
-   * only a definitive registered response stops this from trying again.
+   * Register on every boot so FloAdmin receives refreshed store metadata
+   * (name, contact, country, version) after setup changes. The server's
+   * create-or-find endpoint preserves the installation identity and API key.
    */
   private maybeAutoRegister() {
     const db = getDatabase();
     const settings = this.readSettings(db);
     if (settings.cloud_sync_enabled !== '1') return;
-    const status = settings.cloud_registration_status || 'unregistered';
-    if (status !== 'unregistered' && status !== 'registration_failed') return;
     this.attemptAutoRegister();
   }
 

@@ -8,7 +8,7 @@ only what changes inside this repository.
 
 - New installs enable cloud coordination automatically and register by
   `cloud_pos_hash`; there is no claim, pending, or human approval step.
-- Pairing uses the server-issued eight-digit code. Routine refreshes do not
+- Pairing uses the server-issued eight-digit, single-use code. Routine refreshes do not
   disconnect existing RevFlo devices; only an explicit revoke action does.
 - RevFlo pairing is now QR-ready: FloCafe shows the short-lived pairing code
   as readable digits and as a QR containing only that code. RevFlo's Pair
@@ -19,6 +19,12 @@ only what changes inside this repository.
   the POS is online and deduplicate by `client_ticket_id`.
 - Printer failures expose a correlation ID and structured error stage so a
   merchant can send useful diagnostics without exposing billing data.
+- Registration's `business` payload sends `contact_name`, `email`, `currency`,
+  and `address` alongside the existing `name`/`phone`/`country`/`timezone` —
+  migration 005 on FloAdmin added columns for these plus `gstin`/`state_code`,
+  but FloAdmin does not require GSTIN or state code, so FloCafe deliberately
+  does not send them. Those two columns stay unused; `pos.php` already
+  `COALESCE`s missing fields, so no FloAdmin-side change is needed.
 
 ### Automatic country tax plugins
 

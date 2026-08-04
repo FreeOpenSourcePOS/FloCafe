@@ -1388,6 +1388,7 @@
   "settings.nothingPending": "Nada pendente",
   "settings.pairingCodeFailed": "Falha ao gerar o código",
   "settings.pairingCodeRotated": "Novo código de pareamento gerado",
+  "settings.pairingCodeSingleUse": "Este código pode parear apenas um dispositivo RevFlo. Gere um novo código para outro dispositivo.",
   "settings.pairingQrAlt": "Código QR de pareamento do RevFlo",
   "settings.pinFourDigits": "O PIN deve ter exatamente 4 dígitos",
   "settings.pinMismatch": "Os PINs não coincidem",

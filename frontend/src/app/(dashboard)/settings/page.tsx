@@ -3755,6 +3755,9 @@ export default function SettingsPage() {
                         {t('settings.codeExpires', { date: formatDate(pairingExpiresAt) })}
                       </p>
                     )}
+                    <p className="text-xs text-gray-500">
+                      {t('settings.pairingCodeSingleUse')}
+                    </p>
                     <button
                       onClick={rotatePairingCode}
                       disabled={rotatingCode}

@@ -458,6 +458,9 @@ function preparePaymentBatch(
     if (line.method !== 'cash') return { payment: line.payment, amountCents: line.requestedCents, amountOmitted: line.amountOmitted };
     const applied = Math.min(line.requestedCents, cashLeft);
     cashLeft -= applied;
+    if (applied === 0 && line.payment.transaction_id) {
+      throw Object.assign(new Error('A zero-applied cash line cannot carry a transaction_id'), { statusCode: 400 });
+    }
     return { payment: line.payment, amountCents: applied, tenderedCents: line.requestedCents, changeCents: line.requestedCents - applied, amountOmitted: line.amountOmitted };
   }).filter((line) => line.amountCents > 0);
 

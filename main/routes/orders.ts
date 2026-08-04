@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import { getDatabase, generateOrderNumber, now, parseItemJson, parseRowJson, withTxn, verifyPin, getSettingValue, insertOrderItemAddons, attachEffectiveAddons, utcDayBounds, utcTodayDate } from '../db';
 import {
@@ -14,6 +15,16 @@ import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
 
 const router = Router();
+const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
+
+function orderIdempotencyKey(req: Request): string | null {
+  const supplied = req.get('Idempotency-Key')?.trim();
+  if (!supplied) return null;
+  if (supplied.length > MAX_ORDER_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
+    throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400 });
+  }
+  return supplied;
+}
 
 // Rate limiting for PIN validation (simple in-memory)
 const pinAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -292,7 +303,12 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
 
 router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
-    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = req.body;
+    const body = req.body || {};
+    const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = body;
+    const idempotencyKey = orderIdempotencyKey(req);
+    const requestHash = idempotencyKey
+      ? createHash('sha256').update(JSON.stringify(body)).digest('hex')
+      : null;
     // Always the authenticated caller, never client-supplied — trusting a
     // client-sent user_id would let staff spoof order attribution, and the
     // frontend has in fact never sent one, so every order got user_id=NULL.
@@ -326,7 +342,21 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
     }
-    const { order, orderItems } = withTxn(() => {
+    const result = withTxn(() => {
+      if (idempotencyKey) {
+        const prior = db.prepare('SELECT request_hash, response_json FROM order_idempotency WHERE idempotency_key = ?').get(idempotencyKey) as { request_hash: string; response_json: string } | undefined;
+        if (prior) {
+          if (prior.request_hash !== requestHash) {
+            throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
+          }
+          try {
+            const response = JSON.parse(prior.response_json);
+            return { order: response.order, orderItems: response.order?.items || [], idempotentReplay: true };
+          } catch {
+            throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
+          }
+        }
+      }
       // Generate order number inside transaction to prevent race conditions
       const orderNumber = generateOrderNumber();
 
@@ -478,22 +508,29 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
       const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)) as any;
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
-      return { order, orderItems };
+      const response = { order: Object.assign({}, order, { items: orderItems }) };
+      if (idempotencyKey && requestHash) {
+        db.prepare('INSERT INTO order_idempotency (idempotency_key, request_hash, response_json, created_at) VALUES (?, ?, ?, ?)')
+          .run(idempotencyKey, requestHash, JSON.stringify(response), now());
+      }
+      return { order, orderItems, idempotentReplay: false };
     });
 
-    notifyKdsUpdate();
-    notifyOrderUpdated();
-    cloudSync.recordOrderChanged(order.id, 'order.created');
+    if (!result.idempotentReplay) {
+      notifyKdsUpdate();
+      notifyOrderUpdated();
+      cloudSync.recordOrderChanged(result.order.id, 'order.created');
 
-    if (customer_id) {
-      try {
-        syncCustomerTagCounts(db, customer_id, items);
-      } catch (err) {
-        console.error('[Orders] Tag sync failed:', err);
+      if (customer_id) {
+        try {
+          syncCustomerTagCounts(db, customer_id, items);
+        } catch (err) {
+          console.error('[Orders] Tag sync failed:', err);
+        }
       }
     }
 
-    res.status(201).json({ order: Object.assign({}, order, { items: orderItems }) });
+    res.status(result.idempotentReplay ? 200 : 201).json({ order: Object.assign({}, result.order, { items: result.orderItems }) });
   } catch (error: any) {
     console.error('[Orders] Create error:', error);
     console.error("[API] Internal error:", error);

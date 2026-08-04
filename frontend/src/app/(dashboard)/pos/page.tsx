@@ -30,12 +30,16 @@ import { useI18n } from '@/hooks/useI18n';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 
+const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
+
 interface PrepaidAttempt {
   cartFingerprint: string;
   paymentFingerprint: string;
-  order: Order;
-  bill: Bill;
-  idempotencyKey: string;
+  discount: PrepaidDiscount | null;
+  order?: Order;
+  bill?: Bill;
+  orderIdempotencyKey: string;
+  paymentIdempotencyKey: string;
 }
 
 export default function POSPage() {
@@ -68,6 +72,37 @@ export default function POSPage() {
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
+
+  const readPrepaidAttempt = () => {
+    if (prepaidAttemptRef.current) return prepaidAttemptRef.current;
+    if (typeof window === 'undefined') return null;
+    try {
+      const stored = window.localStorage.getItem(PREPAID_ATTEMPT_STORAGE_KEY);
+      if (stored) prepaidAttemptRef.current = JSON.parse(stored) as PrepaidAttempt;
+    } catch {
+      window.localStorage.removeItem(PREPAID_ATTEMPT_STORAGE_KEY);
+    }
+    return prepaidAttemptRef.current;
+  };
+  const savePrepaidAttempt = (attempt: PrepaidAttempt) => {
+    prepaidAttemptRef.current = attempt;
+    try {
+      window.localStorage.setItem(PREPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+    } catch {
+      // In-memory retry protection still applies when storage is unavailable.
+    }
+  };
+  const clearPrepaidAttempt = () => {
+    prepaidAttemptRef.current = null;
+    try {
+      window.localStorage.removeItem(PREPAID_ATTEMPT_STORAGE_KEY);
+    } catch {
+      // Ignore storage cleanup failures.
+    }
+  };
+  const newIdempotencyKey = () => typeof globalThis.crypto?.randomUUID === 'function'
+    ? globalThis.crypto.randomUUID()
+    : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
   const { printBill, printKot } = usePrinterStore();
@@ -304,30 +339,36 @@ export default function POSPage() {
       guest_count: cart.guestCount,
       special_instructions: cart.orderNotes,
       items: orderItems,
-      discount: discount && discount.value > 0 ? discount : null,
     });
+    const storedAttempt = readPrepaidAttempt();
+    const existingAttempt = storedAttempt && storedAttempt.cartFingerprint === cartFingerprint
+      && storedAttempt.orderIdempotencyKey && storedAttempt.paymentIdempotencyKey
+      ? storedAttempt
+      : null;
+    const attempt: PrepaidAttempt = existingAttempt
+      ? {
+        ...existingAttempt,
+        paymentFingerprint,
+        paymentIdempotencyKey: existingAttempt.paymentFingerprint === paymentFingerprint
+          ? existingAttempt.paymentIdempotencyKey
+          : newIdempotencyKey(),
+      }
+      : {
+        cartFingerprint,
+        paymentFingerprint,
+        discount: discount && discount.value > 0 ? discount : null,
+        orderIdempotencyKey: newIdempotencyKey(),
+        paymentIdempotencyKey: newIdempotencyKey(),
+      };
+    // Persist the key before the first order mutation. The server replays the
+    // order response if this renderer loses the response or restarts.
+    savePrepaidAttempt(attempt);
     let orderData: { order: Order };
     let billData: { bill: Bill };
-    let orderId: string | number;
-    let billId: string | number;
-    let idempotencyKey: string;
-    const existingAttempt = prepaidAttemptRef.current;
     try {
-      if (existingAttempt && existingAttempt.cartFingerprint === cartFingerprint) {
-        // Reuse the original order/bill after a lost payment response. If the
-        // operator changed the split, keep the bill but use a new request key.
-        orderData = { order: existingAttempt.order };
-        billData = { bill: existingAttempt.bill };
-        orderId = existingAttempt.order.id;
-        billId = existingAttempt.bill.id;
-        idempotencyKey = existingAttempt.paymentFingerprint === paymentFingerprint
-          ? existingAttempt.idempotencyKey
-          : (typeof globalThis.crypto?.randomUUID === 'function'
-            ? globalThis.crypto.randomUUID()
-            : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-        prepaidAttemptRef.current = { ...existingAttempt, paymentFingerprint, idempotencyKey };
+      if (attempt.order) {
+        orderData = { order: attempt.order };
       } else {
-        // Create the order only once per unchanged checkout attempt.
         const { data } = await api.post('/orders', {
           table_id: cart.tableId,
           customer_id: cart.customerId,
@@ -335,42 +376,39 @@ export default function POSPage() {
           guest_count: cart.guestCount,
           special_instructions: cart.orderNotes || undefined,
           items: orderItems,
-        });
+        }, { headers: { 'Idempotency-Key': attempt.orderIdempotencyKey } });
         orderData = data;
-        orderId = data.order.id;
+        savePrepaidAttempt({ ...attempt, order: data.order });
+      }
+      const orderId = orderData.order.id;
 
-        // Apply discount before bill generation so the bill uses the discounted
-        // totals (tax recalculated on the net payable amount).
-        if (discount && discount.value > 0) {
-          await api.patch(`/orders/${orderId}/discount`, {
-            discount_type: discount.type,
-            discount_value: discount.value,
-            discount_reason: discount.reason,
-            override_pin: discount.override_pin,
-          });
-        }
+      // Apply discount before bill generation so the bill uses the discounted
+      // totals (tax recalculated on the net payable amount). Repeating this SET
+      // operation is safe if its response was lost.
+      const effectiveDiscount = attempt.discount ?? discount;
+      if (effectiveDiscount && effectiveDiscount.value > 0 && !attempt.bill) {
+        await api.patch(`/orders/${orderId}/discount`, {
+          discount_type: effectiveDiscount.type,
+          discount_value: effectiveDiscount.value,
+          discount_reason: effectiveDiscount.reason,
+          override_pin: effectiveDiscount.override_pin,
+        });
+      }
 
+      if (attempt.bill) {
+        billData = { bill: attempt.bill };
+      } else {
         const { data: generatedBill } = await api.post('/bills/generate', { order_id: orderId });
         billData = generatedBill;
-        billId = generatedBill.bill.id;
-        idempotencyKey = typeof globalThis.crypto?.randomUUID === 'function'
-          ? globalThis.crypto.randomUUID()
-          : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        prepaidAttemptRef.current = {
-          cartFingerprint,
-          paymentFingerprint,
-          order: orderData.order,
-          bill: billData.bill,
-          idempotencyKey,
-        };
+        savePrepaidAttempt({ ...attempt, order: orderData.order, bill: generatedBill.bill });
       }
 
       // Record every split in one atomic request. The persisted bill/key pair
       // makes a lost response safe to retry without creating a second order.
       const paymentResponse = await api.post(
-        `/bills/${billId}/payments`,
+        `/bills/${billData.bill.id}/payments`,
         { payments: paymentLines, customer_id: cart.customerId },
-        { headers: { 'Idempotency-Key': idempotencyKey } },
+        { headers: { 'Idempotency-Key': attempt.paymentIdempotencyKey } },
       );
       const paidBill: Bill = paymentResponse.data?.bill || billData.bill;
       const pointsEarned = paymentResponse.data?.loyaltyPointsEarned > 0
@@ -389,7 +427,7 @@ export default function POSPage() {
       toast.success(successMsg);
       if (cart.tableId) heldOrders.removeHeldOrder(cart.tableId);
       cart.clearCart();
-      prepaidAttemptRef.current = null;
+      clearPrepaidAttempt();
       setMobileCartOpen(false);
       await refreshTables();
 

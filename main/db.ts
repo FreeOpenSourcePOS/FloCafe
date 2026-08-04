@@ -1743,6 +1743,20 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 50,
+    name: 'add_order_idempotency_records',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS order_idempotency (
+          idempotency_key TEXT PRIMARY KEY,
+          request_hash TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

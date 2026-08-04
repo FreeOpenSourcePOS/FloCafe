@@ -52,6 +52,18 @@ async function main() {
   }
 
   try {
+    const idempotentOrderBody = { type: 'takeaway', items: [{ product_id: 'prod-214', quantity: 1 }] };
+    const orderKeyHeaders = { ...authHeader, 'Idempotency-Key': 'issue-214-order-retry' };
+    const firstOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: idempotentOrderBody, headers: orderKeyHeaders,
+    });
+    const retriedOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST', body: idempotentOrderBody, headers: orderKeyHeaders,
+    });
+    assertEqual(firstOrder.status, 201, 'idempotent order creation is accepted');
+    assertEqual(retriedOrder.status, 200, 'order creation retry replays the original response');
+    assertEqual(retriedOrder.data.order.id, firstOrder.data.order.id, 'order retry does not create a second order');
+
     // Single-payment compatibility: null means omitted/full remaining.
     const omitted = await newBill();
     const full = await api(baseUrl, `/api/bills/${omitted.id}/payment`, {
@@ -157,6 +169,11 @@ async function main() {
     assertEqual(zeroCashResult.status, 200, 'cash-only change line does not fail settlement');
     assertEqual(zeroCashResult.data.bill.payment_details.length, 1, 'zero-applied cash line is omitted');
     assertEqual(zeroCashResult.data.bill.payment_details[0].method, 'card', 'zero-applied cash is not counted as a method');
+    const zeroCashWithReference = await newBill();
+    const zeroCashReferenceResult = await api(baseUrl, `/api/bills/${zeroCashWithReference.id}/payments`, {
+      method: 'POST', body: { payments: [{ method: 'card', amount: 100 }, { method: 'cash', amount: 10, transaction_id: 'tx-214-zero-cash' }] }, headers: authHeader,
+    });
+    assertEqual(zeroCashReferenceResult.status, 400, 'zero-applied cash transaction reference is rejected');
 
     // Wallet affordability is checked for the whole batch before any write, and
     // wallet debits require the order/bill to carry the same customer.

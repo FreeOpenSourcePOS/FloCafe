@@ -412,9 +412,9 @@ async function main() {
     assert(pay8.data.error.includes('greater than zero'), 'error mentions amount must be positive');
 
     // ═══════════════════════════════════════════════════════════════════
-    // Scenario 9: Overpayment capped at remaining balance
+    // Scenario 9: Wallet overpayment is rejected rather than silently capped
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── Scenario 9: Overpayment capped at remaining balance ───');
+    console.log('\n─── Scenario 9: Wallet overpayment rejected ───');
 
     seedCustomer(db, 'cust-redeem-7', 'Overpayment Customer', '7777777777');
     seedWalletCredit(db, 'cust-redeem-7', 100000); // Plenty of points
@@ -442,16 +442,15 @@ async function main() {
       body: { method: 'wallet', amount: bill9Total + 1000, customer_id: 'cust-redeem-7' },
       headers: authHeader,
     });
-    assertEqual(pay9.status, 200, 'overpayment accepted (capped internally)');
-    assertEqual(pay9.data.bill.payment_status, 'paid', 'bill is fully paid');
-    assertEqual(pay9.data.bill.balance, 0, 'balance = 0');
-    // Verify only the correct amount was debited (bill9Total × 100 rate)
-    const expectedDebit9 = Math.ceil(bill9Total * 100);
+    assertEqual(pay9.status, 400, 'wallet overpayment is rejected');
+    assertEqual(pay9.data.error.includes('exceeds the bill balance'), true, 'error explains the non-cash overpayment');
+    const unchangedBill9 = db.prepare('SELECT paid_amount, balance, payment_details FROM bills WHERE id = ?').get(bill9.data.bill.id) as any;
+    assertEqual(unchangedBill9.paid_amount, 0, 'rejected wallet overpayment leaves paid_amount unchanged');
+    assertEqual(unchangedBill9.balance, bill9Total, 'rejected wallet overpayment leaves balance unchanged');
     const debitEntry9 = db.prepare(
       "SELECT amount FROM loyalty_ledger WHERE customer_id = 'cust-redeem-7' AND type = 'debit' AND bill_id = ?"
     ).get(bill9.data.bill.id) as any;
-    assert(debitEntry9 !== undefined, 'debit entry exists');
-    assertEqual(debitEntry9.amount, expectedDebit9, `debit = ${expectedDebit9} points (capped at bill total)`);
+    assertEqual(debitEntry9, undefined, 'rejected wallet overpayment creates no debit');
 
   } finally {
     server.close();

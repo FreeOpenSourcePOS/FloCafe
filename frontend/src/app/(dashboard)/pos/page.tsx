@@ -309,20 +309,21 @@ export default function POSPage() {
       const { data: billData } = await api.post('/bills/generate', { order_id: orderId });
       const billId = billData.bill.id;
 
-      // Step 4: Record payment(s) — cash/card/upi splits, then wallet redemption
-      let paidBill: Bill = billData.bill;
-      let pointsEarned = 0;
-      for (const p of payments) {
-        if (!p.amount || p.amount <= 0) continue;
-        const res = await api.post(`/bills/${billId}/payment`, { amount: p.amount, method: p.method, customer_id: cart.customerId });
-        paidBill = res.data?.bill || paidBill;
-        if (res.data?.loyaltyPointsEarned > 0) pointsEarned = res.data.loyaltyPointsEarned;
-      }
-      if (walletAmount > 0) {
-        const res = await api.post(`/bills/${billId}/payment`, { amount: walletAmount, method: 'wallet', customer_id: cart.customerId });
-        paidBill = res.data?.bill || paidBill;
-        if (res.data?.loyaltyPointsEarned > 0) pointsEarned = res.data.loyaltyPointsEarned;
-      }
+      // Step 4: Record every split in one atomic request. This prevents a
+      // wallet failure/network interruption from leaving a newly created order
+      // partially paid.
+      const paymentLines = payments
+        .filter((p) => p.amount > 0)
+        .map((p) => ({ method: p.method, amount: p.amount }));
+      if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
+      const paymentResponse = await api.post(`/bills/${billId}/payments`, {
+        payments: paymentLines,
+        customer_id: cart.customerId,
+      });
+      const paidBill: Bill = paymentResponse.data?.bill || billData.bill;
+      const pointsEarned = paymentResponse.data?.loyaltyPointsEarned > 0
+        ? paymentResponse.data.loyaltyPointsEarned
+        : 0;
 
       if (paidBill.payment_status !== 'paid') {
         throw new Error(t('pos.paymentIncomplete', {

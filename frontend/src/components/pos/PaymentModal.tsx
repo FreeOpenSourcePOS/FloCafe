@@ -207,6 +207,22 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   };
 
   const handlePay = async () => {
+    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,2})?$/.test(value.trim());
+    if (payments.some((p) => !PAYMENT_METHODS.some((allowed) => allowed.key === p.method) || !amountIsValid(p.amount))) {
+      toast.error(t('pos.paymentFailed'));
+      return;
+    }
+    if (walletAmount.trim() && !/^\d+(?:\.\d{1,2})?$/.test(walletAmount.trim())) {
+      toast.error(t('pos.paymentFailed'));
+      return;
+    }
+    const nonCashTotal = payments
+      .filter((p) => p.method !== 'cash')
+      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) + walletAmt;
+    if (nonCashTotal > remaining + 0.000001) {
+      toast.error(t('pos.paymentAboveBalance'));
+      return;
+    }
     if (totalPayment < remaining - 0.01) {
       toast.error(t('pos.paymentBelowBalance'));
       return;

@@ -234,7 +234,10 @@ export function startServer(): Promise<void> {
     }
 
     // ── Global error handler ───────────────────────────────────────────
-    app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+    app.use((err: Error & { status?: number; type?: string }, _req: Request, res: Response, _next: NextFunction) => {
+      if (err.type === 'entity.parse.failed' || err.status === 400) {
+        return res.status(400).json({ error: 'Malformed JSON request body' });
+      }
       console.error('[Server] Error:', err);
       res.status(500).json({ error: 'Internal server error' });
     });

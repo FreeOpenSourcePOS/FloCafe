@@ -265,11 +265,12 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
       return res.status(403).json({ error: 'Managers cannot deactivate or reactivate owner or manager accounts' });
     }
 
+    const changedAt = now();
     const result = db.prepare(`
-      UPDATE users SET is_active = 0, updated_at = ?
+      UPDATE users SET is_active = 0, tokens_valid_after = ?, updated_at = ?
       WHERE id = ? AND is_active = 1
         AND (role != 'owner' OR (SELECT COUNT(*) FROM users WHERE role = 'owner' AND is_active = 1) > 1)
-    `).run(now(), req.params.id);
+    `).run(changedAt, changedAt, req.params.id);
     if (result.changes === 0) {
       return res.status(400).json({ error: 'Cannot deactivate the last owner account' });
     }

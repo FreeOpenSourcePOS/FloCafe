@@ -24,7 +24,7 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   });
   const paymentResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
-    return response.request().method() === 'POST' && /^\/api\/bills\/[^/]+\/payment$/.test(url.pathname);
+    return response.request().method() === 'POST' && /^\/api\/bills\/[^/]+\/payments$/.test(url.pathname);
   });
 
   await page.getByRole('button', { name: 'Confirm Payment · ฿64.20' }).click();
@@ -54,7 +54,9 @@ test('prepaid checkout never reports success when the payment response is partia
   await page.getByRole('button', { name: 'Place Order' }).click();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
 
-  await page.route('**/api/bills/*/payment', async (route) => {
+  let paymentBatchRequests = 0;
+  await page.route('**/api/bills/*/payments', async (route) => {
+    paymentBatchRequests++;
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -71,6 +73,7 @@ test('prepaid checkout never reports success when the payment response is partia
   await page.getByRole('button', { name: 'Confirm Payment · ฿64.20' }).click();
 
   await expect(page.getByText(/Payment incomplete/)).toBeVisible();
+  expect(paymentBatchRequests).toBe(1);
   await expect(page.getByText(/Order #ORD-\d+-\d+ paid!/)).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Place Order' })).toBeEnabled();
 });

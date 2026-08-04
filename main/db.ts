@@ -1682,6 +1682,27 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSettingIfMissing('diagnostics_consent', 'true');
     },
   },
+  {
+    version: 48,
+    name: 'deactivate_reusable_demo_credentials',
+    up: () => {
+      // Only the bundled demo identities with the original public password are
+      // affected. A merchant who changed one of these passwords keeps the user
+      // active and retains their account.
+      const changedAt = now();
+      const demoUsers = db.prepare(`SELECT id, password FROM users WHERE id IN ('user-demo-manager', 'user-demo-cashier', 'user-demo-chef')`).all() as { id: string; password: string }[];
+      const deactivate = db.prepare('UPDATE users SET is_active = 0, tokens_valid_after = ?, updated_at = ? WHERE id = ?');
+      for (const user of demoUsers) {
+        try {
+          if (bcrypt.compareSync('demo12345', user.password)) deactivate.run(changedAt, changedAt, user.id);
+        } catch {
+          // A corrupt legacy hash must not abort the migration or prevent the
+          // rest of the database from opening.
+          console.warn(`[DB] Could not inspect demo credential for ${user.id}`);
+        }
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

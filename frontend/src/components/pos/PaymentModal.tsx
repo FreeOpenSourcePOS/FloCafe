@@ -262,6 +262,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       );
       const updatedBill = res.data?.bill as Bill | undefined;
       if (!updatedBill || updatedBill.payment_status !== 'paid') {
+        // This request committed a partial payment, so the next attempt is a
+        // new request and must not reuse the completed request's hash.
+        if (updatedBill) idempotencyKeyRef.current = null;
         if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
         throw new Error(t('pos.paymentIncomplete', {
           amount: currencyFmt(Number(updatedBill?.balance) || 0),

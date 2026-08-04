@@ -1900,10 +1900,8 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
       const paymentRows = db.prepare(`
         SELECT p.idempotency_key, p.bill_id, p.request_hash, p.response_json, p.created_at,
-               COALESCE(CAST(o.user_id AS TEXT), 'legacy') AS user_id
+               'legacy' AS user_id
         FROM payment_idempotency p
-        LEFT JOIN bills b ON b.id = p.bill_id
-        LEFT JOIN orders o ON o.id = b.order_id
       `).all() as { idempotency_key: string; bill_id: string; request_hash: string; response_json: string; created_at: string; user_id: string }[];
       const insertPayment = db.prepare(`
         INSERT INTO payment_idempotency_scoped

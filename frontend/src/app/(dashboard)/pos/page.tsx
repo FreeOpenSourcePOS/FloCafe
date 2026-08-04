@@ -83,6 +83,7 @@ export default function POSPage() {
   const activeUserId = user?.id == null ? null : String(user.id);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
+  const addItemsAttemptRef = useRef<{ orderId: string; key: string } | null>(null);
 
   const readPostpaidAttempt = () => {
     if (postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
@@ -667,6 +668,11 @@ export default function POSPage() {
     }
     setSubmitting(true);
     try {
+      const existingAttempt = addItemsAttemptRef.current;
+      const idempotencyKey = existingAttempt?.orderId === String(order.id)
+        ? existingAttempt.key
+        : newIdempotencyKey();
+      addItemsAttemptRef.current = { orderId: String(order.id), key: idempotencyKey };
       await api.post(`/orders/${order.id}/items`, {
         items: cart.items.map((item) => ({
           product_id: item.product.id,
@@ -677,7 +683,8 @@ export default function POSPage() {
           special_instructions: item.special_instructions || null,
         })),
         special_instructions: order.special_instructions || undefined,
-      });
+      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+      addItemsAttemptRef.current = null;
       toast.success(t('pos.itemsAddedToOrder', { number: order.order_number }));
       cart.clearCart();
       setCheckoutTable(null);

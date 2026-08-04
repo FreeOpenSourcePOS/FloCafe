@@ -1703,6 +1703,46 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 49,
+    name: 'add_payment_idempotency_records',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS payment_idempotency (
+          idempotency_key TEXT PRIMARY KEY,
+          bill_id TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          response_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_payment_idempotency_bill ON payment_idempotency(bill_id);
+        CREATE TABLE IF NOT EXISTS payment_transaction_refs (
+          method TEXT NOT NULL,
+          transaction_id TEXT NOT NULL,
+          bill_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY (method, transaction_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_payment_transaction_refs_bill ON payment_transaction_refs(bill_id);
+      `);
+      const rows = db.prepare('SELECT id, payment_details FROM bills WHERE payment_details IS NOT NULL').all() as { id: string; payment_details: string }[];
+      const insert = db.prepare('INSERT OR IGNORE INTO payment_transaction_refs (method, transaction_id, bill_id, created_at) VALUES (?, ?, ?, ?)');
+      for (const row of rows) {
+        try {
+          const parsed = JSON.parse(row.payment_details);
+          const payments = Array.isArray(parsed) ? parsed : [parsed];
+          for (const payment of payments) {
+            if (payment && typeof payment.method === 'string' && typeof payment.transaction_id === 'string') {
+              insert.run(payment.method, payment.transaction_id, row.id, now());
+            }
+          }
+        } catch {
+          // Invalid legacy payment JSON is handled at settlement time; it must
+          // not prevent idempotency tables from being created.
+        }
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

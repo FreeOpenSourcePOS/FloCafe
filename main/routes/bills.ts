@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
   attachEffectiveAddons,
@@ -257,6 +258,35 @@ interface PaymentInput {
 const PAYMENT_METHODS = new Set(['cash', 'card', 'upi', 'wallet']);
 const MAX_PAYMENT_LINES = 100;
 const MAX_PAYMENT_METADATA_BYTES = 8192;
+const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
+
+function canonicalizePaymentRequest(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalizePaymentRequest).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${canonicalizePaymentRequest((value as Record<string, unknown>)[key])}`).join(',')}}`;
+  }
+  if (value === undefined) return 'undefined';
+  return JSON.stringify(value);
+}
+
+function paymentRequestHash(billId: string, payments: unknown, customerId: unknown): string {
+  return createHash('sha256')
+    .update(canonicalizePaymentRequest({ billId, payments, customer_id: customerId }))
+    .digest('hex');
+}
+
+function paymentIdempotencyKey(req: Request, requestHash: string): string {
+  const supplied = req.get('Idempotency-Key')?.trim();
+  if (supplied) {
+    if (supplied.length > MAX_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
+      throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400 });
+    }
+    return supplied;
+  }
+  // Deterministic fallback preserves legacy clients while making exact retries
+  // safe. An intentional changed request gets a different canonical hash.
+  return `legacy-${requestHash}`;
+}
 
 function paymentAmountCents(value: unknown, label = 'Payment amount'): number {
   if (typeof value !== 'number' && typeof value !== 'string') {
@@ -312,6 +342,16 @@ function preparePaymentBatch(
     }
   }
   const existingTransactionKeys = new Set(existingPayments.map(paymentTransactionKey).filter(Boolean));
+  for (const payment of payments) {
+    const transactionKey = paymentTransactionKey(payment);
+    if (!transactionKey) continue;
+    const candidate = payment as PaymentInput;
+    const reference = db.prepare('SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?').get(candidate.method, candidate.transaction_id) as { bill_id: string } | undefined;
+    if (reference && String(reference.bill_id) !== String(billId)) {
+      throw Object.assign(new Error('Payment transaction_id has already been used for another bill'), { statusCode: 409 });
+    }
+    if (reference) existingTransactionKeys.add(transactionKey);
+  }
   const requestTransactionKeys = payments.map(paymentTransactionKey);
   const replay = requestTransactionKeys.every((key) => key !== null && existingTransactionKeys.has(key));
   if (replay) {
@@ -418,7 +458,22 @@ function applyPaymentBatch(
   payments: PaymentInput[],
   bodyCustomerId?: string | number,
   allowOmittedAmount = false,
+  idempotencyKey?: string,
+  requestHash?: string,
 ): { bill: any; walletDebited: boolean; loyaltyPointsEarned: number } {
+  if (idempotencyKey) {
+    const prior = db.prepare('SELECT bill_id, request_hash, response_json FROM payment_idempotency WHERE idempotency_key = ?').get(idempotencyKey) as { bill_id: string; request_hash: string; response_json: string } | undefined;
+    if (prior) {
+      if (String(prior.bill_id) !== String(billId) || prior.request_hash !== requestHash) {
+        throw Object.assign(new Error('Idempotency-Key was already used for a different payment request'), { statusCode: 409 });
+      }
+      try {
+        return JSON.parse(prior.response_json);
+      } catch {
+        throw Object.assign(new Error('Stored payment response is invalid'), { statusCode: 500 });
+      }
+    }
+  }
   const { bill, prepared, existingPayments, effectiveCustomerId, idempotentReplay } = preparePaymentBatch(
     db, billId, payments, bodyCustomerId, allowOmittedAmount,
   );
@@ -440,6 +495,10 @@ function applyPaymentBatch(
   }
   const allPayments = existingPayments.concat(newPayments);
   const changedAt = now();
+  const insertTransactionRef = db.prepare('INSERT INTO payment_transaction_refs (method, transaction_id, bill_id, created_at) VALUES (?, ?, ?, ?)');
+  for (const line of prepared) {
+    if (line.payment.transaction_id) insertTransactionRef.run(line.payment.method, line.payment.transaction_id, billId, changedAt);
+  }
   if (!bill.customer_id && effectiveCustomerId) db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?').run(effectiveCustomerId, changedAt, billId);
   db.prepare(`UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?, payment_details = ?, paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?`).run(newPaidCents / 100, newBalanceCents / 100, paymentStatus, JSON.stringify(allPayments), paymentStatus, paymentStatus === 'paid' ? changedAt : null, changedAt, billId);
   let loyaltyPointsEarned = 0;
@@ -458,7 +517,12 @@ function applyPaymentBatch(
       }
     }
   }
-  return { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited, loyaltyPointsEarned };
+  const result = { bill: parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(billId)), walletDebited, loyaltyPointsEarned };
+  if (idempotencyKey && requestHash) {
+    db.prepare('INSERT INTO payment_idempotency (idempotency_key, bill_id, request_hash, response_json, created_at) VALUES (?, ?, ?, ?, ?)')
+      .run(idempotencyKey, billId, requestHash, JSON.stringify(result), changedAt);
+  }
+  return result;
 }
 
 router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
@@ -468,8 +532,10 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
       return res.status(400).json({ error: 'Payment body must be an object' });
     }
     const db = getDatabase();
+    const requestHash = paymentRequestHash(req.params.id as string, [payment], payment.customer_id);
     const result = withTxn(() => applyPaymentBatch(
       db, req.params.id as string, [payment], payment.customer_id, true,
+      paymentIdempotencyKey(req, requestHash), requestHash,
     ));
 
     const billStatus = (result.bill as any)?.payment_status;
@@ -500,7 +566,11 @@ router.post('/:id/payments', requireRole('owner', 'manager', 'cashier'), (req: R
     }
 
     const db = getDatabase();
-    const result = withTxn(() => applyPaymentBatch(db, req.params.id as string, payments, bodyCustomerId));
+    const requestHash = paymentRequestHash(req.params.id as string, payments, bodyCustomerId);
+    const result = withTxn(() => applyPaymentBatch(
+      db, req.params.id as string, payments, bodyCustomerId, false,
+      paymentIdempotencyKey(req, requestHash), requestHash,
+    ));
 
     const billStatus = (result.bill as any)?.payment_status;
     if (billStatus === 'paid') notifyKdsUpdate();

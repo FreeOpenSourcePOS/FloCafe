@@ -115,16 +115,32 @@ async function main() {
 
     const replayBill = await newBill();
     const replayPayload = { payments: [{ method: 'card', amount: 100, transaction_id: 'tx-214-replay' }] };
+    const replayHeaders = { ...authHeader, 'Idempotency-Key': 'issue-214-replay' };
     const firstReplay = await api(baseUrl, `/api/bills/${replayBill.id}/payments`, {
-      method: 'POST', body: replayPayload, headers: authHeader,
+      method: 'POST', body: replayPayload, headers: replayHeaders,
     });
     const secondReplay = await api(baseUrl, `/api/bills/${replayBill.id}/payments`, {
-      method: 'POST', body: replayPayload, headers: authHeader,
+      method: 'POST', body: replayPayload, headers: replayHeaders,
+    });
+    const changedReplay = await api(baseUrl, `/api/bills/${replayBill.id}/payments`, {
+      method: 'POST', body: { payments: [{ method: 'card', amount: 99, transaction_id: 'tx-214-replay' }] }, headers: replayHeaders,
     });
     assertEqual(firstReplay.status, 200, 'transaction-id payment is accepted');
     assertEqual(secondReplay.status, 200, 'replaying transaction-id payment is idempotent');
+    assertEqual(changedReplay.status, 409, 'reusing an idempotency key for changed data is rejected');
     assertEqual(secondReplay.data.bill.paid_amount, 100, 'replay does not inflate paid amount');
     assertEqual(secondReplay.data.bill.payment_details.length, 1, 'replay does not duplicate payment history');
+
+    const globalTransactionA = await newBill();
+    const globalTransactionFirst = await api(baseUrl, `/api/bills/${globalTransactionA.id}/payment`, {
+      method: 'POST', body: { method: 'card', amount: 100, transaction_id: 'tx-214-global' }, headers: authHeader,
+    });
+    const globalTransactionB = await newBill();
+    const globalTransactionSecond = await api(baseUrl, `/api/bills/${globalTransactionB.id}/payment`, {
+      method: 'POST', body: { method: 'card', amount: 100, transaction_id: 'tx-214-global' }, headers: authHeader,
+    });
+    assertEqual(globalTransactionFirst.status, 200, 'first global transaction reference is accepted');
+    assertEqual(globalTransactionSecond.status, 409, 'transaction reference cannot be reused on another bill');
 
     const zeroCash = await newBill();
     const zeroCashResult = await api(baseUrl, `/api/bills/${zeroCash.id}/payments`, {

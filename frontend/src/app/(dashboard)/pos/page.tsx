@@ -316,10 +316,14 @@ export default function POSPage() {
         .filter((p) => p.amount > 0)
         .map((p) => ({ method: p.method, amount: p.amount }));
       if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
-      const paymentResponse = await api.post(`/bills/${billId}/payments`, {
-        payments: paymentLines,
-        customer_id: cart.customerId,
-      });
+      const idempotencyKey = typeof globalThis.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const paymentResponse = await api.post(
+        `/bills/${billId}/payments`,
+        { payments: paymentLines, customer_id: cart.customerId },
+        { headers: { 'Idempotency-Key': idempotencyKey } },
+      );
       const paidBill: Bill = paymentResponse.data?.bill || billData.bill;
       const pointsEarned = paymentResponse.data?.loyaltyPointsEarned > 0
         ? paymentResponse.data.loyaltyPointsEarned

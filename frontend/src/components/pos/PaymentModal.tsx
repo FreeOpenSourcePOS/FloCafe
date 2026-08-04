@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { X, Wallet, Plus, Trash2, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
@@ -53,6 +53,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const { t } = useI18n();
   const { currentTenant } = useAuthStore();
   const isWhatsAppReady = useWhatsAppReady();
+  const idempotencyKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    idempotencyKeyRef.current = null;
+  }, [bill.id]);
   const [justPaid, setJustPaid] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
@@ -247,7 +251,15 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       // Single atomic call (#177) — either every split line is applied, or none are.
       // Sequential per-line requests would leave the bill partially paid if a later
       // line failed (e.g. network drop) after an earlier one had already committed.
-      const res = await api.post(`/bills/${bill.id}/payments`, { payments: splitLines, customer_id: effectiveCustomerId });
+      const idempotencyKey = idempotencyKeyRef.current || (typeof globalThis.crypto?.randomUUID === 'function'
+        ? globalThis.crypto.randomUUID()
+        : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+      idempotencyKeyRef.current = idempotencyKey;
+      const res = await api.post(
+        `/bills/${bill.id}/payments`,
+        { payments: splitLines, customer_id: effectiveCustomerId },
+        { headers: { 'Idempotency-Key': idempotencyKey } },
+      );
       const updatedBill = res.data?.bill as Bill | undefined;
       if (!updatedBill || updatedBill.payment_status !== 'paid') {
         if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);

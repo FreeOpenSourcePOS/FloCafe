@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { useCartStore } from '@/store/cart';
@@ -29,6 +29,14 @@ import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+
+interface PrepaidAttempt {
+  cartFingerprint: string;
+  paymentFingerprint: string;
+  order: Order;
+  bill: Bill;
+  idempotencyKey: string;
+}
 
 export default function POSPage() {
   const { currentTenant } = useAuthStore();
@@ -59,6 +67,7 @@ export default function POSPage() {
   const [showPrepaidCheckout, setShowPrepaidCheckout] = useState(false);
   const [pendingOrder, setPendingOrder] = useState<Order | null>(null);
   const [supportError, setSupportError] = useState<{ code: string; message: string; payload: Record<string, unknown> } | null>(null);
+  const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
   const { printBill, printKot } = usePrinterStore();
@@ -275,50 +284,89 @@ export default function POSPage() {
     const isPrepaidCheckout = shouldTakePaymentNow;
     setShowPrepaidCheckout(false);
     setSubmitting(true);
+    const orderItems = cart.items.map((item) => ({
+      product_id: item.product.id,
+      quantity: item.quantity,
+      addons: item.addons.length > 0
+        ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
+        : null,
+      special_instructions: item.special_instructions || null,
+    }));
+    const paymentLines = payments
+      .filter((p) => p.amount > 0)
+      .map((p) => ({ method: p.method, amount: p.amount }));
+    if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
+    const paymentFingerprint = JSON.stringify({ payments: paymentLines, customer_id: cart.customerId });
+    const cartFingerprint = JSON.stringify({
+      table_id: cart.tableId,
+      customer_id: cart.customerId,
+      type: cart.orderType,
+      guest_count: cart.guestCount,
+      special_instructions: cart.orderNotes,
+      items: orderItems,
+      discount: discount && discount.value > 0 ? discount : null,
+    });
+    let orderData: { order: Order };
+    let billData: { bill: Bill };
+    let orderId: string | number;
+    let billId: string | number;
+    let idempotencyKey: string;
+    const existingAttempt = prepaidAttemptRef.current;
     try {
-      // Step 1: Create the order
-      const { data: orderData } = await api.post('/orders', {
-        table_id: cart.tableId,
-        customer_id: cart.customerId,
-        type: cart.orderType,
-        guest_count: cart.guestCount,
-        special_instructions: cart.orderNotes || undefined,
-        items: cart.items.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          addons: item.addons.length > 0
-            ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-            : null,
-          special_instructions: item.special_instructions || null,
-        })),
-      });
-      const orderId = orderData.order.id;
-
-      // Step 2: Apply discount to the order before the bill is generated, so the
-      // bill picks up the already-discounted totals (tax recalculated on net payable amount).
-      if (discount && discount.value > 0) {
-        await api.patch(`/orders/${orderId}/discount`, {
-          discount_type: discount.type,
-          discount_value: discount.value,
-          discount_reason: discount.reason,
-          override_pin: discount.override_pin,
+      if (existingAttempt && existingAttempt.cartFingerprint === cartFingerprint) {
+        // Reuse the original order/bill after a lost payment response. If the
+        // operator changed the split, keep the bill but use a new request key.
+        orderData = { order: existingAttempt.order };
+        billData = { bill: existingAttempt.bill };
+        orderId = existingAttempt.order.id;
+        billId = existingAttempt.bill.id;
+        idempotencyKey = existingAttempt.paymentFingerprint === paymentFingerprint
+          ? existingAttempt.idempotencyKey
+          : (typeof globalThis.crypto?.randomUUID === 'function'
+            ? globalThis.crypto.randomUUID()
+            : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        prepaidAttemptRef.current = { ...existingAttempt, paymentFingerprint, idempotencyKey };
+      } else {
+        // Create the order only once per unchanged checkout attempt.
+        const { data } = await api.post('/orders', {
+          table_id: cart.tableId,
+          customer_id: cart.customerId,
+          type: cart.orderType,
+          guest_count: cart.guestCount,
+          special_instructions: cart.orderNotes || undefined,
+          items: orderItems,
         });
+        orderData = data;
+        orderId = data.order.id;
+
+        // Apply discount before bill generation so the bill uses the discounted
+        // totals (tax recalculated on the net payable amount).
+        if (discount && discount.value > 0) {
+          await api.patch(`/orders/${orderId}/discount`, {
+            discount_type: discount.type,
+            discount_value: discount.value,
+            discount_reason: discount.reason,
+            override_pin: discount.override_pin,
+          });
+        }
+
+        const { data: generatedBill } = await api.post('/bills/generate', { order_id: orderId });
+        billData = generatedBill;
+        billId = generatedBill.bill.id;
+        idempotencyKey = typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        prepaidAttemptRef.current = {
+          cartFingerprint,
+          paymentFingerprint,
+          order: orderData.order,
+          bill: billData.bill,
+          idempotencyKey,
+        };
       }
 
-      // Step 3: Generate bill
-      const { data: billData } = await api.post('/bills/generate', { order_id: orderId });
-      const billId = billData.bill.id;
-
-      // Step 4: Record every split in one atomic request. This prevents a
-      // wallet failure/network interruption from leaving a newly created order
-      // partially paid.
-      const paymentLines = payments
-        .filter((p) => p.amount > 0)
-        .map((p) => ({ method: p.method, amount: p.amount }));
-      if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
-      const idempotencyKey = typeof globalThis.crypto?.randomUUID === 'function'
-        ? globalThis.crypto.randomUUID()
-        : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      // Record every split in one atomic request. The persisted bill/key pair
+      // makes a lost response safe to retry without creating a second order.
       const paymentResponse = await api.post(
         `/bills/${billId}/payments`,
         { payments: paymentLines, customer_id: cart.customerId },
@@ -341,10 +389,11 @@ export default function POSPage() {
       toast.success(successMsg);
       if (cart.tableId) heldOrders.removeHeldOrder(cart.tableId);
       cart.clearCart();
+      prepaidAttemptRef.current = null;
       setMobileCartOpen(false);
       await refreshTables();
 
-      await printKotIfEnabled(orderData.order as Order);
+      await printKotIfEnabled(orderData.order);
 
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch (err: unknown) {

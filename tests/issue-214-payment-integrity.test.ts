@@ -125,9 +125,17 @@ async function main() {
     const changedReplay = await api(baseUrl, `/api/bills/${replayBill.id}/payments`, {
       method: 'POST', body: { payments: [{ method: 'card', amount: 99, transaction_id: 'tx-214-replay' }] }, headers: replayHeaders,
     });
+    const changedTransaction = await api(baseUrl, `/api/bills/${replayBill.id}/payments`, {
+      method: 'POST', body: { payments: [{ method: 'card', amount: 99, transaction_id: 'tx-214-replay' }] }, headers: { ...authHeader, 'Idempotency-Key': 'issue-214-changed-transaction' },
+    });
+    const malformedTransaction = await api(baseUrl, `/api/bills/${replayBill.id}/payments`, {
+      method: 'POST', body: { payments: [{ method: 'card', amount: 99.001, transaction_id: 'tx-214-replay' }] }, headers: { ...authHeader, 'Idempotency-Key': 'issue-214-malformed-transaction' },
+    });
     assertEqual(firstReplay.status, 200, 'transaction-id payment is accepted');
     assertEqual(secondReplay.status, 200, 'replaying transaction-id payment is idempotent');
     assertEqual(changedReplay.status, 409, 'reusing an idempotency key for changed data is rejected');
+    assertEqual(changedTransaction.status, 409, 'changing a transaction-id payment is rejected');
+    assertEqual(malformedTransaction.status, 400, 'malformed transaction-id payment is rejected');
     assertEqual(secondReplay.data.bill.paid_amount, 100, 'replay does not inflate paid amount');
     assertEqual(secondReplay.data.bill.payment_details.length, 1, 'replay does not duplicate payment history');
 

@@ -309,6 +309,27 @@ interface PreparedPayment {
   amountCents: number;
   tenderedCents?: number;
   changeCents?: number;
+  amountOmitted?: boolean;
+}
+
+function validatePaymentFields(payment: PaymentInput, index: number): void {
+  if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
+    throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
+  }
+  if (!payment.method) throw Object.assign(new Error('Payment method is required'), { statusCode: 400 });
+  if (!PAYMENT_METHODS.has(String(payment.method))) {
+    throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
+  }
+  if (JSON.stringify(payment).length > MAX_PAYMENT_METADATA_BYTES) {
+    throw Object.assign(new Error(`Payment metadata at line ${index + 1} is too large`), { statusCode: 400 });
+  }
+  for (const [field, maxLength] of [['transaction_id', 256], ['notes', 1024] ] as const) {
+    const value = payment[field];
+    if (value !== undefined && (typeof value !== 'string' || value.length > maxLength)) {
+      throw Object.assign(new Error(`${field} is invalid or too long`), { statusCode: 400 });
+    }
+  }
+  if (payment.amount !== undefined && payment.amount !== null) paymentAmountCents(payment.amount);
 }
 
 function paymentTransactionKey(payment: unknown): string | null {
@@ -317,6 +338,19 @@ function paymentTransactionKey(payment: unknown): string | null {
   return typeof candidate.method === 'string' && typeof candidate.transaction_id === 'string'
     ? JSON.stringify([candidate.method, candidate.transaction_id])
     : null;
+}
+
+function transactionPaymentMatches(existing: any, candidate: PaymentInput): boolean {
+  if (!existing) return false;
+  if (existing.method !== candidate.method || existing.transaction_id !== candidate.transaction_id) return false;
+  if ((existing.notes ?? null) !== (candidate.notes ?? null)) return false;
+  const candidateOmitted = candidate.amount === undefined || candidate.amount === null;
+  if (existing.amount_omitted !== undefined && Boolean(existing.amount_omitted) !== candidateOmitted) return false;
+  if (candidateOmitted) return true;
+  const requestedCents = paymentAmountCents(candidate.amount);
+  const storedRequested = existing.requested_amount
+    ?? (existing.method === 'cash' && existing.tendered_amount !== undefined ? existing.tendered_amount : existing.amount);
+  return typeof storedRequested === 'number' && Math.round(storedRequested * 100) === requestedCents;
 }
 
 function preparePaymentBatch(
@@ -341,32 +375,7 @@ function preparePaymentBatch(
       existingPayments = [];
     }
   }
-  const existingTransactionKeys = new Set(existingPayments.map(paymentTransactionKey).filter(Boolean));
-  for (const payment of payments) {
-    const transactionKey = paymentTransactionKey(payment);
-    if (!transactionKey) continue;
-    const candidate = payment as PaymentInput;
-    const reference = db.prepare('SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?').get(candidate.method, candidate.transaction_id) as { bill_id: string } | undefined;
-    if (reference && String(reference.bill_id) !== String(billId)) {
-      throw Object.assign(new Error('Payment transaction_id has already been used for another bill'), { statusCode: 409 });
-    }
-    if (reference) existingTransactionKeys.add(transactionKey);
-  }
-  const requestTransactionKeys = payments.map(paymentTransactionKey);
-  const replay = requestTransactionKeys.every((key) => key !== null && existingTransactionKeys.has(key));
-  if (replay) {
-    return { bill, prepared: [], existingPayments, effectiveCustomerId: bill.customer_id || null, idempotentReplay: true };
-  }
-  const seenTransactionKeys = new Set<string>();
-  for (const key of requestTransactionKeys) {
-    if (key && (seenTransactionKeys.has(key) || existingTransactionKeys.has(key))) {
-      throw Object.assign(new Error('Payment transaction_id has already been used for this bill'), { statusCode: 409 });
-    }
-    if (key) seenTransactionKeys.add(key);
-  }
-  if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
-  const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * 100));
-  if (remainingCents <= 0) throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
+  payments.forEach(validatePaymentFields);
   const requestedCustomerId = bodyCustomerId === undefined || bodyCustomerId === null || bodyCustomerId === ''
     ? null
     : String(bodyCustomerId);
@@ -383,23 +392,43 @@ function preparePaymentBatch(
   if (effectiveCustomerId && !db.prepare('SELECT id FROM customers WHERE id = ?').get(effectiveCustomerId)) {
     throw Object.assign(new Error('Customer not found'), { statusCode: 400 });
   }
+  const existingTransactionKeys = new Set(existingPayments.map(paymentTransactionKey).filter(Boolean));
+  const existingTransactionPayments = new Map<string, any>();
+  for (const existing of existingPayments) {
+    const transactionKey = paymentTransactionKey(existing);
+    if (transactionKey) existingTransactionPayments.set(transactionKey, existing);
+  }
+  for (const payment of payments) {
+    const transactionKey = paymentTransactionKey(payment);
+    if (!transactionKey) continue;
+    const candidate = payment as PaymentInput;
+    const reference = db.prepare('SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?').get(candidate.method, candidate.transaction_id) as { bill_id: string } | undefined;
+    if (reference && String(reference.bill_id) !== String(billId)) {
+      throw Object.assign(new Error('Payment transaction_id has already been used for another bill'), { statusCode: 409 });
+    }
+    if (reference) existingTransactionKeys.add(transactionKey);
+  }
+  const requestTransactionKeys = payments.map(paymentTransactionKey);
+  const replay = requestTransactionKeys.every((key, index) => (
+    key !== null
+    && existingTransactionKeys.has(key)
+    && transactionPaymentMatches(existingTransactionPayments.get(key), payments[index])
+  ));
+  if (replay) {
+    return { bill, prepared: [], existingPayments, effectiveCustomerId, idempotentReplay: true };
+  }
+  const seenTransactionKeys = new Set<string>();
+  for (const key of requestTransactionKeys) {
+    if (key && (seenTransactionKeys.has(key) || existingTransactionKeys.has(key))) {
+      throw Object.assign(new Error('Payment transaction_id has already been used for this bill'), { statusCode: 409 });
+    }
+    if (key) seenTransactionKeys.add(key);
+  }
+  if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
+  const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * 100));
+  if (remainingCents <= 0) throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
   const raw = payments.map((payment, index) => {
-    if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
-      throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
-    }
-    if (!payment.method) throw Object.assign(new Error('Payment method is required'), { statusCode: 400 });
-    if (!PAYMENT_METHODS.has(String(payment.method))) {
-      throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
-    }
-    if (JSON.stringify(payment).length > MAX_PAYMENT_METADATA_BYTES) {
-      throw Object.assign(new Error(`Payment metadata at line ${index + 1} is too large`), { statusCode: 400 });
-    }
-    for (const [field, maxLength] of [['transaction_id', 256], ['notes', 1024] ] as const) {
-      const value = payment[field];
-      if (value !== undefined && (typeof value !== 'string' || value.length > maxLength)) {
-        throw Object.assign(new Error(`${field} is invalid or too long`), { statusCode: 400 });
-      }
-    }
+    validatePaymentFields(payment, index);
     // Preserve omitted/null compatibility for the legacy single-line contracts.
     // Multi-line batches must state every amount explicitly so allocation is
     // deterministic before any write.
@@ -412,7 +441,12 @@ function preparePaymentBatch(
     const normalizedPayment: PaymentInput = { method: String(payment.method) };
     if (payment.transaction_id !== undefined) normalizedPayment.transaction_id = payment.transaction_id;
     if (payment.notes !== undefined) normalizedPayment.notes = payment.notes;
-    return { payment: normalizedPayment, method: normalizedPayment.method, requestedCents: amount };
+    return {
+      payment: normalizedPayment,
+      method: normalizedPayment.method,
+      requestedCents: amount,
+      amountOmitted: amountValue === undefined,
+    };
   });
   const nonCashCents = raw.filter((line) => line.method !== 'cash').reduce((sum, line) => sum + line.requestedCents, 0);
   if (nonCashCents > remainingCents) throw Object.assign(new Error('Non-cash payment exceeds the bill balance'), { statusCode: 400 });
@@ -421,10 +455,10 @@ function preparePaymentBatch(
   // needed after non-cash lines; a short tender simply leaves a partial bill.
   let cashLeft = cashRequiredCents;
   const prepared: PreparedPayment[] = raw.map((line) => {
-    if (line.method !== 'cash') return { payment: line.payment, amountCents: line.requestedCents };
+    if (line.method !== 'cash') return { payment: line.payment, amountCents: line.requestedCents, amountOmitted: line.amountOmitted };
     const applied = Math.min(line.requestedCents, cashLeft);
     cashLeft -= applied;
-    return { payment: line.payment, amountCents: applied, tenderedCents: line.requestedCents, changeCents: line.requestedCents - applied };
+    return { payment: line.payment, amountCents: applied, tenderedCents: line.requestedCents, changeCents: line.requestedCents - applied, amountOmitted: line.amountOmitted };
   }).filter((line) => line.amountCents > 0);
 
   if (prepared.some((line) => line.payment.method === 'wallet')) {
@@ -486,7 +520,14 @@ function applyPaymentBatch(
   const newPaidCents = oldPaidCents + totalAppliedCents;
   const newBalanceCents = Math.max(0, totalCents - newPaidCents);
   const paymentStatus = newBalanceCents === 0 ? 'paid' : 'partial';
-  const newPayments = prepared.map((line) => ({ ...line.payment, amount: line.amountCents / 100, ...(line.payment.method === 'cash' ? { tendered_amount: (line.tenderedCents || 0) / 100, change_amount: (line.changeCents || 0) / 100 } : {}), timestamp: now() }));
+  const newPayments = prepared.map((line) => ({
+    ...line.payment,
+    amount: line.amountCents / 100,
+    requested_amount: (line.tenderedCents || line.amountCents) / 100,
+    amount_omitted: Boolean(line.amountOmitted),
+    ...(line.payment.method === 'cash' ? { tendered_amount: (line.tenderedCents || 0) / 100, change_amount: (line.changeCents || 0) / 100 } : {}),
+    timestamp: now(),
+  }));
   let walletDebited = false;
   for (const line of prepared) {
     if (line.payment.method !== 'wallet' || line.amountCents <= 0) continue;

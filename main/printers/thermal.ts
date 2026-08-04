@@ -19,10 +19,58 @@ export type PrintResult = {
   correlationId: string;
   stage: 'prepare' | 'dispatch';
   detail?: string;
+  failureClass?: PrintFailureClass;
+  platformErrorCode?: number;
+  jobId?: number;
+  driverName?: string;
+  printerStatus?: number;
 };
 
 /** Low-level dispatch result — carries the actual OS/driver reason, not just ok/fail. */
-export type DispatchResult = { ok: boolean; detail?: string };
+export type DispatchResult = {
+  ok: boolean;
+  detail?: string;
+  failureClass?: PrintFailureClass;
+  platformErrorCode?: number;
+  jobId?: number;
+  driverName?: string;
+  printerStatus?: number;
+};
+
+export type PrintFailureClass =
+  | 'not_configured'
+  | 'offline'
+  | 'queue_unavailable'
+  | 'spooler_error'
+  | 'driver_error'
+  | 'permission_denied'
+  | 'timeout'
+  | 'write_error'
+  | 'unsupported'
+  | 'unknown';
+
+/** Stable, privacy-safe classification for fleet telemetry. */
+export function classifyPrintFailure(detail?: string): PrintFailureClass {
+  const value = String(detail || '').toLowerCase();
+  if (!value) return 'unknown';
+  if (value.includes('no printer configured') || value.includes('no windows printer configured')) return 'not_configured';
+  if (value.includes('offline') || value.includes('use printer offline') || value.includes('disconnected')) return 'offline';
+  if (value.includes('not accepting') || value.includes('queue') && value.includes('unavailable') || value.includes('cannot open printer')) return 'queue_unavailable';
+  if (value.includes('spool') || value.includes('startdocprinter') || value.includes('startpageprinter')) return 'spooler_error';
+  if (value.includes('driver') || value.includes('no driver')) return 'driver_error';
+  if (value.includes('access denied') || value.includes('permission')) return 'permission_denied';
+  if (value.includes('timed out') || value.includes('timeout')) return 'timeout';
+  if (value.includes('writeprinter') || value.includes('accepted') && value.includes('of')) return 'write_error';
+  if (value.includes('not supported') || value.includes('unsupported')) return 'unsupported';
+  return 'unknown';
+}
+
+function extractPlatformErrorCode(detail?: string): number | undefined {
+  const match = String(detail || '').match(/\b(?:win32 error|error)\s+(\d+)\b/i);
+  if (!match) return undefined;
+  const code = Number(match[1]);
+  return Number.isSafeInteger(code) ? code : undefined;
+}
 
 const isMasBuild =
   process.env.MAS_BUILD === '1' ||
@@ -553,11 +601,16 @@ function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void 
     connectionType = getPrinterConfig()?.connection_type || 'unknown';
   } catch { /* best-effort only */ }
 
+  const failureClass = result.failureClass || classifyPrintFailure(result.detail);
   void sendEvent('print_failed', {
     kind,
     code: result.code,
     stage: result.stage,
     connection_type: connectionType,
+    correlation_id: result.correlationId,
+    failure_class: failureClass,
+    ...(result.platformErrorCode !== undefined ? { platform_error_code: result.platformErrorCode } : {}),
+    ...(result.jobId !== undefined ? { job_id: result.jobId } : {}),
   });
 
   try {
@@ -567,7 +620,16 @@ function reportPrintFailure(kind: 'receipt' | 'kot', result: PrintResult): void 
       severity: 'error',
       correlation_id: result.correlationId,
       message: (result.detail || `${kind} print failed at ${result.stage} stage`).slice(0, 300),
-      metadata: { connection_type: connectionType, kind, os_platform: process.platform },
+      metadata: {
+        connection_type: connectionType,
+        kind,
+        os_platform: process.platform,
+        failure_class: failureClass,
+        ...(result.platformErrorCode !== undefined ? { platform_error_code: result.platformErrorCode } : {}),
+        ...(result.jobId !== undefined ? { job_id: result.jobId } : {}),
+        ...(result.driverName ? { driver_name: result.driverName.slice(0, 160) } : {}),
+        ...(result.printerStatus !== undefined ? { printer_status: result.printerStatus } : {}),
+      },
       occurred_at: new Date().toISOString(),
     });
   } catch (err) {
@@ -585,11 +647,23 @@ export async function printReceiptDetailed(...args: Parameters<typeof printRecei
     const dispatch = await printReceipt(...args);
     const result: PrintResult = dispatch.ok
       ? { ok: true, correlationId: id, stage: 'dispatch' }
-      : { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch', detail: dispatch.detail };
+      : {
+        ok: false,
+        code: 'print.receipt.failed',
+        correlationId: id,
+        stage: 'dispatch',
+        detail: dispatch.detail,
+        failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+        platformErrorCode: dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+        jobId: dispatch.jobId,
+        driverName: dispatch.driverName,
+        printerStatus: dispatch.printerStatus,
+      };
     if (!result.ok) reportPrintFailure('receipt', result);
     return result;
   } catch (error) {
-    const result: PrintResult = { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch', detail: (error as Error).message };
+    const detail = (error as Error).message;
+    const result: PrintResult = { ok: false, code: 'print.receipt.failed', correlationId: id, stage: 'dispatch', detail, failureClass: classifyPrintFailure(detail), platformErrorCode: extractPlatformErrorCode(detail) };
     reportPrintFailure('receipt', result);
     return result;
   }
@@ -601,11 +675,23 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
     const dispatch = await printKOT(...args);
     const result: PrintResult = dispatch.ok
       ? { ok: true, correlationId: id, stage: 'dispatch' }
-      : { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch', detail: dispatch.detail };
+      : {
+        ok: false,
+        code: 'print.kot.failed',
+        correlationId: id,
+        stage: 'dispatch',
+        detail: dispatch.detail,
+        failureClass: dispatch.failureClass || classifyPrintFailure(dispatch.detail),
+        platformErrorCode: dispatch.platformErrorCode || extractPlatformErrorCode(dispatch.detail),
+        jobId: dispatch.jobId,
+        driverName: dispatch.driverName,
+        printerStatus: dispatch.printerStatus,
+      };
     if (!result.ok) reportPrintFailure('kot', result);
     return result;
   } catch (error) {
-    const result: PrintResult = { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch', detail: (error as Error).message };
+    const detail = (error as Error).message;
+    const result: PrintResult = { ok: false, code: 'print.kot.failed', correlationId: id, stage: 'dispatch', detail, failureClass: classifyPrintFailure(detail), platformErrorCode: extractPlatformErrorCode(detail) };
     reportPrintFailure('kot', result);
     return result;
   }
@@ -1395,6 +1481,17 @@ try {
   if ([string]::IsNullOrEmpty($name)) { throw 'no printer name supplied' }
   if ([string]::IsNullOrEmpty($file)) { throw 'no payload file supplied' }
 
+  # Best-effort metadata for Tier-2 diagnostics. This is never included in the
+  # anonymous telemetry payload and must not prevent the raw print attempt.
+  try {
+    $printerInfo = Get-CimInstance -ClassName Win32_Printer -Property Name,PrinterStatus,DriverName |
+      Where-Object { $_.Name -eq $name } |
+      Select-Object -First 1 Name,PrinterStatus,DriverName
+    if ($printerInfo) {
+      Write-Output ('FLO_PRINTER_INFO=' + ($printerInfo | ConvertTo-Json -Compress))
+    }
+  } catch { }
+
   Add-Type -TypeDefinition @'
 ${WINSPOOL_HELPER_SOURCE}
 '@
@@ -1410,6 +1507,26 @@ ${WINSPOOL_HELPER_SOURCE}
 `;
 
 const execFileAsync = promisify(execFile);
+
+function parseWindowsPrintOutput(output: unknown): Pick<DispatchResult, 'jobId' | 'driverName' | 'printerStatus'> {
+  const outputLines = String(output || '').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const jobLine = outputLines.find((line) => line.startsWith('FLO_JOB_ID='));
+  const infoLine = outputLines.find((line) => line.startsWith('FLO_PRINTER_INFO='));
+  const parsed: Pick<DispatchResult, 'jobId' | 'driverName' | 'printerStatus'> = {};
+
+  if (jobLine) {
+    const jobId = Number(jobLine.slice('FLO_JOB_ID='.length));
+    if (Number.isSafeInteger(jobId) && jobId > 0) parsed.jobId = jobId;
+  }
+  if (infoLine) {
+    try {
+      const info = JSON.parse(infoLine.slice('FLO_PRINTER_INFO='.length)) as { DriverName?: unknown; PrinterStatus?: unknown };
+      if (typeof info.DriverName === 'string' && info.DriverName.trim()) parsed.driverName = info.DriverName.trim();
+      if (typeof info.PrinterStatus === 'number') parsed.printerStatus = info.PrinterStatus;
+    } catch { /* diagnostics metadata is best-effort */ }
+  }
+  return parsed;
+}
 
 async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<DispatchResult> {
   if (!printerName) {
@@ -1437,12 +1554,19 @@ async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<D
       },
     );
 
-    console.log(`[Printer] Windows raw print accepted for "${printerName}" (${stdout.trim()})`);
-    return { ok: true };
+    const metadata = parseWindowsPrintOutput(stdout);
+    console.log(`[Printer] Windows raw print accepted for "${printerName}" (${String(stdout).trim()})`);
+    return { ok: true, ...metadata };
   } catch (err: any) {
     const detail = String(err.stderr || err.message || '').trim();
     console.error(`[Printer] Windows raw print failed for "${printerName}": ${detail}`);
-    return { ok: false, detail: detail || `Windows raw print failed for "${printerName}"` };
+    return {
+      ok: false,
+      detail: detail || `Windows raw print failed for "${printerName}"`,
+      failureClass: classifyPrintFailure(detail),
+      platformErrorCode: extractPlatformErrorCode(detail),
+      ...parseWindowsPrintOutput(err.stdout),
+    };
   } finally {
     try { fs.unlinkSync(tmpFile); } catch {}
   }

@@ -15,6 +15,7 @@ import {
   detectConnectedPrinters,
   printViaUSB,
   printViaNetwork,
+  classifyPrintFailure,
 } from '../main/printers/thermal';
 import { matchSupportedPrinterProfile } from '../main/printers/profiles';
 
@@ -371,7 +372,17 @@ console.log('\n✅ Test 9: Supported printer profile matching');
   assert('does not match unknown Xprinter to XP-V320M profile', genericXprinter === null);
 }
 
-console.log('\n✅ Test 10: Detect connected printers (hardware discovery)');
+console.log('\n✅ Test 10: Print failure telemetry classification');
+{
+  assert('classifies Windows offline state', classifyPrintFailure("printer is set to 'Use Printer Offline' in Windows") === 'offline');
+  assert('classifies Winspool open failure', classifyPrintFailure("cannot open printer 'Kitchen' (Win32 error 1801)") === 'queue_unavailable');
+  assert('classifies spooler failure', classifyPrintFailure('StartDocPrinter failed (Win32 error 5)') === 'spooler_error');
+  assert('classifies raw write failure', classifyPrintFailure('WritePrinter failed (Win32 error 1722)') === 'write_error');
+  assert('classifies timeout', classifyPrintFailure('Timed out connecting to 192.168.1.10:9100') === 'timeout');
+  assert('does not expose unknown detail as a new telemetry class', classifyPrintFailure('some vendor-specific failure') === 'unknown');
+}
+
+console.log('\n✅ Test 11: Detect connected printers (hardware discovery)');
 (async () => {
   try {
     const printers = await detectConnectedPrinters();

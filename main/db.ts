@@ -2071,6 +2071,7 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
     console.log(`[DB] Auto-backup before migrating v${fromVersion} → v${toVersion} created at ${targetPath}`);
   } catch (err: any) {
     console.error(`[DB] Auto-backup before migration failed:`, err.message);
+    throw new Error(`Pre-migration backup failed; refusing to migrate the database: ${err.message}`);
   }
 }
 

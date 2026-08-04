@@ -515,7 +515,24 @@ export default function POSPage() {
         && discountFingerprint(effectiveDiscount) === discountFingerprint(currentDiscount)
         ? { ...effectiveDiscount, override_pin: currentDiscount.override_pin }
         : effectiveDiscount;
-      if (!attempt.bill && (discountChanged || (effectiveDiscount && effectiveDiscount.value > 0))) {
+      let discountAlreadyApplied = false;
+      if (!attempt.bill && (discountChanged || (effectiveDiscount && effectiveDiscount.value > 0)) && attempt.order) {
+        try {
+          const { data: currentOrderData } = await api.get(`/orders/${orderId}`);
+          const serverDiscount = currentOrderData.order?.discount_type && Number(currentOrderData.order.discount_value) > 0
+            ? {
+              type: currentOrderData.order.discount_type,
+              value: Number(currentOrderData.order.discount_value),
+              reason: currentOrderData.order.discount_reason || undefined,
+            }
+            : null;
+          discountAlreadyApplied = discountFingerprint(serverDiscount) === discountFingerprint(effectiveDiscount);
+        } catch {
+          // If the order cannot be read, retain the safe retry behavior below;
+          // an approval PIN may be required to reapply an uncertain discount.
+        }
+      }
+      if (!attempt.bill && !discountAlreadyApplied && (discountChanged || (effectiveDiscount && effectiveDiscount.value > 0))) {
         await api.patch(`/orders/${orderId}/discount`, {
           discount_type: discountForRequest?.type || 'percentage',
           discount_value: discountForRequest?.value || 0,

@@ -83,6 +83,8 @@ async function main() {
 
     const inactiveStationOrders = await request(app).get('/api/kds/orders').set(inactiveChefAuth);
     assertEqual(inactiveStationOrders.status, 403, 'inactive-only station assignments do not fail open');
+    const inactiveOwnerOrders = await request(app).get('/api/kds/orders?station_id=kds-contract-inactive-station').set(authHeader);
+    assertEqual(inactiveOwnerOrders.status, 404, 'station-scoped orders reject inactive stations');
 
     const restrictedOrders = await request(app).get('/api/kds/orders').set(chefAuth);
     assertEqual(restrictedOrders.status, 200, 'restricted chef can access embedded KDS orders');
@@ -121,6 +123,7 @@ async function main() {
     assertEqual(stationOnlyDisplay.status, 200, 'station-only chef can access station display');
     assert(!('subtotal' in (stationOnlyDisplay.body.orders[0]?.items?.[0] || {})), 'station-only chef receives redacted station display items');
     assert(!('kitchen_station_id' in (stationOnlyDisplay.body.orders[0]?.table || {})), 'station-only chef receives projected table metadata');
+    assertEqual(stationOnlyDisplay.body.orders[0]?.table_id, null, 'station-only display does not expose raw table IDs');
   } finally {
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

@@ -96,9 +96,11 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
     const nextStationAssignmentsConfigured = hasUserKdsStationAssignments(getDatabase(), client.userId);
     if (!nextStationIds || !nextStationCategoryIds || nextStationAssignmentsConfigured === null) return false;
     if (nextStationAssignmentsConfigured && nextStationIds.length === 0) return false;
+    const roleChanged = client.role !== status.role;
     client.categoryIdsChanged = client.categoryIdsChanged
       || JSON.stringify(client.categoryIds) !== JSON.stringify(nextCategoryIds);
     client.stationIdsChanged = client.stationIdsChanged
+      || roleChanged
       || JSON.stringify(client.stationIds) !== JSON.stringify(nextStationIds)
       || JSON.stringify(client.stationCategoryIds) !== JSON.stringify(nextStationCategoryIds)
       || client.stationAssignmentsConfigured !== nextStationAssignmentsConfigured;

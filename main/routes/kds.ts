@@ -51,6 +51,9 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     if (!userCategoryIds || !userStationIds || hasStationAssignments === null || !stationCategoryIds) return res.status(403).json({ error: 'User account is not active' });
     if (hasStationAssignments && userStationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
     const stationId = req.query.station_id as string;
+    if (stationId && !db.prepare('SELECT 1 FROM kitchen_stations WHERE id = ? AND is_active = 1').get(stationId)) {
+      return res.status(404).json({ error: 'Kitchen station not found' });
+    }
     const requestedStationCategoryIds = stationId ? getKdsStationCategoryIds(db, [stationId]) : stationCategoryIds;
     if (!requestedStationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
     const payloadStationIds = stationId ? [stationId] : userStationIds;
@@ -299,9 +302,9 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     itemsQuery += ` AND (t.kitchen_station_id = ?${categoryRoute})`;
     params.push(stationId, ...categoryIds);
 
-    if (categoryIds.length > 0) {
-      itemsQuery += ` AND EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.category_id IN (${categoryIds.map(() => '?').join(',')}))`;
-      params.push(...categoryIds);
+    if (userCategoryIds.length > 0) {
+      itemsQuery += ` AND EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.category_id IN (${userCategoryIds.map(() => '?').join(',')}))`;
+      params.push(...userCategoryIds);
     }
 
     itemsQuery += ' ORDER BY oi.created_at ASC';
@@ -315,7 +318,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
         groupedByOrder[orderId] = {
           order_id: orderId,
           order_number: (item as any).order_number,
-          table_id: (item as any).table_id,
+          table_id: restrictedPayload ? null : (item as any).table_id,
           table_name: (item as any).table_name,
           table: (item as any).table_name ? { name: (item as any).table_name } : null,
           type: (item as any).type,

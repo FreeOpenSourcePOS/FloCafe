@@ -235,7 +235,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       setConnected(true);
     } catch (error: unknown) {
       if (generation !== sessionGenerationRef.current) return;
-      const status = (error as { response?: { status?: number } })?.response?.status;
+      const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
+      const status = axiosError?.response?.status;
       const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
       if (status === 401 || tokenMissing) {
         sessionGenerationRef.current += 1;
@@ -251,7 +252,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (typeof window !== 'undefined') window.localStorage.removeItem('token');
       } else if (status === 403) {
         // The KDS endpoint may deny a valid dashboard session (for example,
-        // after station reassignment). Never retain data fetched earlier.
+        // after station reassignment). Never retain data fetched earlier or
+        // retry the same KDS authorization failure on the next mount.
+        markKdsAuthBlocked();
+        stopRestPolling();
+        setUser(null);
+        setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
         setOrders([]);
         setCounts({});
         setConnected(false);
@@ -261,8 +267,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setConnected(false);
       }
     }
-  }, [api, ordersPath, stopRestPolling]);
-
+  }, [api, ordersPath, stopRestPolling, t]);
   // connectionMode is already 'rest' by the time this runs (it's only invoked from the
   // effect below, guarded on that condition), and `connected` is owned by fetchOrdersRest's
   // own success/failure handling — so this only needs to (re)start the polling loop. The
@@ -565,8 +570,14 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           generation !== sessionGenerationRef.current ||
           window.localStorage.getItem('token') !== savedToken
         ) return;
-        const status = (error as { response?: { status?: number } })?.response?.status;
+        const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
+        const status = axiosError?.response?.status;
         if (status === 401) window.localStorage.removeItem('token');
+        if (status === 403) {
+          markKdsAuthBlocked();
+          setUser(null);
+          setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
+        }
         setLoading(false);
       });
 
@@ -582,7 +593,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       }
       stopRestPolling();
     };
-  }, [api, mePath, tryWebSocket, stopRestPolling]);
+  }, [api, mePath, tryWebSocket, stopRestPolling, t]);
 
   useEffect(() => {
     if (connectionMode === 'rest' && user) {

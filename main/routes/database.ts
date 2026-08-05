@@ -148,7 +148,13 @@ router.post('/import', requireRole('owner'),
         if (commonCols.length === 0) continue;
 
         if (overwrite || hasVersionMismatch) {
-          db.exec(`DELETE FROM ${tableName}`);
+          if (tableName === 'settings') {
+            const protectedKeys = Array.from(EXPORT_SETTINGS_REDACT);
+            const placeholders = protectedKeys.map(() => '?').join(', ');
+            db.prepare(`DELETE FROM settings WHERE key NOT IN (${placeholders})`).run(...protectedKeys);
+          } else {
+            db.exec(`DELETE FROM ${tableName}`);
+          }
         }
 
         const colList = commonCols.join(', ');
@@ -158,6 +164,13 @@ router.post('/import', requireRole('owner'),
         );
         
         for (const row of rows) {
+          // Exported secret fields are deliberately redacted. Never import the
+          // marker itself as a real credential (which would make it known).
+          if (
+            tableName === 'settings' &&
+            EXPORT_SETTINGS_REDACT.has(String(row.key)) &&
+            row.value === '[REDACTED]'
+          ) continue;
           insertStmt.run(...commonCols.map(col => row[col]));
         }
         

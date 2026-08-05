@@ -37,7 +37,7 @@ process.env.JWT_SECRET = 'test-secret-for-db-tools-api';
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
-const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS, now } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
@@ -129,6 +129,28 @@ async function runTests() {
   const db = getDatabase();
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('cashier-1', 'Cashier', 'hash', 'cashier', 1)`);
   const cashierToken = tokenFor('cashier-1', 'cashier');
+
+  // Redacted export fields must never become literal credentials on import.
+  const jwtSecretBefore = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
+  const redactedImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [{ key: 'jwt_secret', value: '[REDACTED]', updated_at: now() }],
+        categories: [],
+        products: [],
+        users: [],
+      },
+    },
+  });
+  assert(redactedImport.status === 200, `redacted settings import returns 200 (got ${redactedImport.status}, ${JSON.stringify(redactedImport.body)})`);
+  const jwtSecretAfter = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
+  assert(
+    (jwtSecretAfter?.value ?? null) === (jwtSecretBefore?.value ?? null),
+    'redacted jwt_secret is preserved during import',
+  );
 
   // ── Test 2: health-check is owner-gated, not PIN-gated ──────────────────
   console.log('\nTest 2: GET /db-tools/health-check');

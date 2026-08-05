@@ -189,6 +189,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sessionGenerationRef = useRef(0);
   const updatingIdsRef = useRef(new Set<number>());
   // Holds the latest tryWebSocket so its own reconnect timer can call it recursively without
   // referencing the useCallback-bound identifier before it's declared (which the compiler
@@ -204,13 +205,18 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   }, []);
 
   const fetchOrdersRest = useCallback(async () => {
+    const generation = sessionGenerationRef.current;
     try {
       const { data } = await api.get(`${ordersPath}?status=pending,preparing,ready,served`);
+      if (
+        generation !== sessionGenerationRef.current ||
+        (typeof window !== 'undefined' && !window.localStorage.getItem('token'))
+      ) return;
       setOrders(data.orders || []);
       setCounts(data.counts || {});
       setConnected(true);
     } catch {
-      setConnected(false);
+      if (generation === sessionGenerationRef.current) setConnected(false);
     }
   }, [api, ordersPath]);
 
@@ -321,8 +327,20 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             setLoading(false);
           } else if (msg.type === 'auth_error') {
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
+            sessionGenerationRef.current += 1;
             setLoginError(msg.message || t('kds.authFailed'));
             if (wsRef.current === ws) wsRef.current = null;
+            if (reconnectTimerRef.current) {
+              clearTimeout(reconnectTimerRef.current);
+              reconnectTimerRef.current = null;
+            }
+            stopRestPolling();
+            setUser(null);
+            setOrders([]);
+            setCounts({});
+            setConnected(false);
+            setConnectionMode(null);
+            window.localStorage.removeItem('token');
             ws.close();
             setLoading(false);
           } else if ((msg.type === 'initial_data' || msg.type === 'orders') && msg.orders) {
@@ -345,7 +363,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
       }, 5000);
     },
-    [t, api],
+    [t, api, stopRestPolling],
   );
   useEffect(() => {
     tryWebSocketRef.current = tryWebSocket;
@@ -355,6 +373,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     async (e: React.FormEvent) => {
       e.preventDefault();
       setLoginError('');
+      sessionGenerationRef.current += 1;
       setLoginLoading(true);
       setLoading(true);
 
@@ -390,6 +409,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const handleLogout = useCallback(async () => {
     if (!await confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) return;
+    sessionGenerationRef.current += 1;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -435,6 +455,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       });
 
     return () => {
+      sessionGenerationRef.current += 1;
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;

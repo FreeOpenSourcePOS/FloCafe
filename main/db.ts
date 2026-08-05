@@ -864,13 +864,15 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
 
 
 export function getSchemaVersionFromBackup(backupPath: string): number {
+  let backupDb: Database.Database | undefined;
   try {
-    const backupDb = new Database(backupPath, { readonly: true });
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
     const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-    backupDb.close();
     return metaRow ? parseInt(metaRow.value, 10) : 0;
   } catch {
     return 0;
+  } finally {
+    backupDb?.close();
   }
 }
 

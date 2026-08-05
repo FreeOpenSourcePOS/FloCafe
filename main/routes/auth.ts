@@ -856,6 +856,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     // Pick up the cloud settings just written without requiring a restart —
     // mirrors PUT /api/settings/cloud's own reload() call.
     cloudSync.reload();
+    cloudSync.refreshRegistrationProfile();
 
     const token = jwt.sign(
       { userId, email, role: INITIAL_ADMIN_ROLE },

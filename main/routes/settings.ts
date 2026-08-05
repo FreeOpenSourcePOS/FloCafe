@@ -138,6 +138,7 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn,
     });
+    cloudSync.refreshRegistrationProfile();
 
     res.json(businessShape(getAllSettings(db)));
   } catch (error: any) {
@@ -166,6 +167,7 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
 
     const db = getDatabase();
     upsertSettings(db, { tax_registered, gstin, state_code, tax_scheme, country });
+    cloudSync.refreshRegistrationProfile();
     res.json(taxShape(getAllSettings(db)));
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -397,6 +399,7 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
 
     upsertSettings(db, updates);
     cloudSync.reload();
+    cloudSync.refreshRegistrationProfile();
     res.json(cloudSync.getStatus());
   } catch (error: any) {
     console.error('[API] Cloud settings update failed:', error);

@@ -28,6 +28,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const express = require('express');
 const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS } = require('../main/db');
+const { cloudSync } = require('../main/services/cloud-sync');
 const { authRoutes } = require('../main/routes/auth');
 
 function count(table: string): number {
@@ -66,6 +67,10 @@ function isNativeAbiMismatch(error: any): boolean {
 async function main() {
   console.log('🧪 FloDesktop First-Run Setup Tests');
   console.log('='.repeat(60));
+
+  let profileRefreshes = 0;
+  const originalRefreshRegistrationProfile = cloudSync.refreshRegistrationProfile.bind(cloudSync);
+  cloudSync.refreshRegistrationProfile = () => { profileRefreshes++; };
 
   try {
     initDatabase();
@@ -177,6 +182,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(setting('telemetry_enabled'), 'true', 'telemetry is on by default after setup');
     assert.equal(setting('telemetry_scope'), 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
     assert.equal(setting('diagnostics_consent'), 'true', 'store diagnostics are on by default for a new install');
+    assert.equal(profileRefreshes, 1, 'setup immediately refreshes the completed store profile in FloAdmin');
     assert.equal(count('categories'), 2, 'express setup seeds minimal categories');
     assert.equal(count('products'), 4, 'express setup seeds minimal products');
     assert.equal(count('tables'), 0, 'qsr express setup does not seed dine-in tables');
@@ -206,6 +212,7 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(setting('cloud_server_url'), 'https://blue.flopos.com', 'cloud server URL keeps the default');
     console.log('   ✓ setup endpoint enables cloud coordination automatically');
   } finally {
+    cloudSync.refreshRegistrationProfile = originalRefreshRegistrationProfile;
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 

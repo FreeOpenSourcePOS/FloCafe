@@ -196,8 +196,11 @@ class CloudSyncService {
   // Zero-touch registration state.
   private autoRegisterTimer: ReturnType<typeof setTimeout> | null = null;
   private autoRegisterAttempts = 0;
+  private autoRegisterInFlight = false;
+  private runtimeStarted = false;
 
   start() {
+    this.runtimeStarted = true;
     ensureCloudIdentity();
     this.reload();
     // Register once at boot. The v2 endpoint creates/finds the live store and
@@ -779,14 +782,32 @@ class CloudSyncService {
     const db = getDatabase();
     const settings = this.readSettings(db);
     if (settings.cloud_sync_enabled !== '1') return;
+    // initDatabase() runs before first-run setup. Registering seeded defaults at
+    // that point creates a permanent-looking blank row in FloAdmin. Setup always
+    // writes a non-empty business name (falling back to "Store"), so wait for it.
+    if (!settings.business_name?.trim()) return;
     this.attemptAutoRegister();
   }
 
+  /** Refresh FloAdmin after setup or store-profile settings change. */
+  refreshRegistrationProfile() {
+    // Routes are also imported by isolated tests and backend-only tooling where
+    // the desktop runtime was never started. Do not create background network
+    // retries in those processes.
+    if (!this.runtimeStarted) return;
+    this.maybeAutoRegister();
+  }
+
   private attemptAutoRegister() {
-    if (this.autoRegisterTimer) return; // a retry is already scheduled
+    if (this.autoRegisterTimer || this.autoRegisterInFlight) return;
+    this.autoRegisterInFlight = true;
     void this.register()
-      .then(() => { this.autoRegisterAttempts = 0; })
+      .then(() => {
+        this.autoRegisterAttempts = 0;
+        this.autoRegisterInFlight = false;
+      })
       .catch(() => {
+        this.autoRegisterInFlight = false;
         const delay = Math.min(AUTO_REGISTER_MAX_BACKOFF_MS, 2 ** this.autoRegisterAttempts * 1000);
         this.autoRegisterAttempts++;
         this.autoRegisterTimer = setTimeout(() => {

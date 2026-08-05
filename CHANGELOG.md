@@ -2,6 +2,18 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.7.2] - 2026-08-05
+
+### Changed
+- Cloud registration now sends the complete support profile FloAdmin understands: outlet and contact names, email, phone, address, country, currency, timezone, platform, architecture, and app version.
+- Anonymous telemetry now sends the configured ISO country directly instead of relying only on IP geolocation.
+
+### Fixed
+- Fresh installs no longer create a blank FloAdmin store before first-run setup. The completed outlet profile is registered immediately after setup and refreshed after business or country changes.
+- Telemetry delivery now treats non-success HTTP responses as failures and only records a daily ping as sent after the collector confirms it, allowing failed pings to retry instead of disappearing for 24 hours.
+- Payments and retries are now atomic, cent-precise, user-scoped, and idempotent; cash change no longer inflates paid totals, loyalty balances remain consistent, and reports flatten split/legacy payments correctly.
+- Print-failure diagnostics retain the actionable OS/driver detail and failing stage across network, CUPS/USB, and Windows dispatch paths.
+
 ## [2.7.0] - 2026-08-04
 
 ### Added

@@ -22,12 +22,14 @@ const DAILY_PING_MIN_GAP_MS = 24 * 60 * 60_000;
 
 let dailyPingTimer: ReturnType<typeof setInterval> | null = null;
 
-export async function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<void> {
-  if (!isTelemetryEnabled()) return;
+export async function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
+  if (!isTelemetryEnabled()) return false;
 
   try {
     const anonId = ensureTelemetryAnonId();
-    await fetch(TELEMETRY_URL, {
+    const configuredCountry = (getSettingValue('country') || '').trim().toUpperCase();
+    const country = /^[A-Z]{2}$/.test(configuredCountry) ? configuredCountry : undefined;
+    const response = await fetch(TELEMETRY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -36,13 +38,20 @@ export async function sendEvent(eventType: string, payload?: Record<string, unkn
         app_version: app.getVersion(),
         event_type: eventType,
         platform: process.platform,
+        ...(country ? { country } : {}),
         ...(payload ? { payload } : {}),
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+    if (!response.ok) {
+      log.debug(`[Flo] telemetry rejected with HTTP ${response.status}`);
+      return false;
+    }
+    return true;
   } catch (e) {
     // Telemetry must never disrupt the app or surface to the user.
     log.debug('[Flo] telemetry send failed (non-fatal):', e);
+    return false;
   }
 }
 
@@ -54,7 +63,9 @@ function maybeSendDailyPing(): void {
   const elapsed = isNaN(lastPingMs) ? Infinity : Date.now() - lastPingMs;
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 
-  void sendEvent('daily_ping').then(() => upsertTelemetryLastPing());
+  void sendEvent('daily_ping').then((sent) => {
+    if (sent) upsertTelemetryLastPing();
+  });
 }
 
 export const telemetry = {

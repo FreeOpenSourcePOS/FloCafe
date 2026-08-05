@@ -16,6 +16,12 @@ let databaseMaintenanceTail: Promise<void> = Promise.resolve();
 let databaseMaintenanceActive = false;
 let activeDatabaseRequests = 0;
 let maintenanceRequestWaiters: (() => void)[] = [];
+const databaseMaintenanceStartListeners = new Set<() => void>();
+
+export function registerDatabaseMaintenanceStartListener(listener: () => void): () => void {
+  databaseMaintenanceStartListeners.add(listener);
+  return () => databaseMaintenanceStartListeners.delete(listener);
+}
 
 export function isDatabaseMaintenanceActive(): boolean {
   return databaseMaintenanceActive;
@@ -24,12 +30,13 @@ export function isDatabaseMaintenanceActive(): boolean {
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
   // These handlers acquire the maintenance lock themselves. They must not be
   // counted as active requests or the lock would wait on its own response.
+  const normalizedPath = req.path.replace(/\/+$/, '') || '/';
   const ownsMaintenanceLock = [
     '/api/db/import',
     '/api/db/backup',
     '/api/db/download',
     '/api/db-tools/initialize',
-  ].includes(req.path);
+  ].includes(normalizedPath);
   if (databaseMaintenanceActive && !ownsMaintenanceLock) {
     res.status(503).json({ error: 'Database maintenance in progress' });
     return;
@@ -62,6 +69,9 @@ export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>):
   databaseMaintenanceTail = new Promise<void>((resolve) => { release = resolve; });
   return previous.then(async () => {
     databaseMaintenanceActive = true;
+    for (const listener of databaseMaintenanceStartListeners) {
+      try { listener(); } catch (error) { console.error('[DB] Maintenance listener failed:', error); }
+    }
     if (activeDatabaseRequests > 0) {
       await new Promise<void>((resolve) => maintenanceRequestWaiters.push(resolve));
     }

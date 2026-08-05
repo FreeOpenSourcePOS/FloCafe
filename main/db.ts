@@ -750,7 +750,9 @@ export type KdsEnabledSettingState = { present: boolean; value: string | null };
 
 export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {
   const row = dbInstance.prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as { value: string | null } | undefined;
-  return { present: !!row, value: row?.value ?? null };
+  // A missing setting has always meant enabled; preserve that effective
+  // security posture instead of letting an older backup disable KDS.
+  return { present: true, value: row?.value ?? 'true' };
 }
 
 export function mergeKdsEnabledSetting(dbInstance: Database.Database, state: KdsEnabledSettingState): void {
@@ -855,6 +857,36 @@ export function getKdsStationCategoryIds(dbInstance: Database.Database, stationI
         const parsed = JSON.parse(row.category_ids);
         if (Array.isArray(parsed)) for (const categoryId of parsed) if (categoryId != null) categories.add(String(categoryId));
       } catch { }
+    }
+    return [...categories];
+  } catch {
+    return null;
+  }
+}
+
+export function getKdsStationRoutingCategoryIds(
+  dbInstance: Database.Database,
+  stationIds: string[],
+  userCategoryIds: string[],
+): string[] | null {
+  if (stationIds.length === 0) return [];
+  try {
+    const placeholders = stationIds.map(() => '?').join(',');
+    const rows = dbInstance.prepare(`
+      SELECT category_ids FROM kitchen_stations
+      WHERE is_active = 1 AND id IN (${placeholders})
+    `).all(...stationIds) as { category_ids: string | null }[];
+    const categories = new Set<string>();
+    for (const row of rows) {
+      let stationCategories: string[] = [];
+      if (row.category_ids) {
+        try {
+          const parsed = JSON.parse(row.category_ids);
+          if (Array.isArray(parsed)) stationCategories = parsed.filter((id) => id != null).map(String);
+        } catch { }
+      }
+      if (stationCategories.length > 0) stationCategories.forEach((id) => categories.add(id));
+      else userCategoryIds.forEach((id) => categories.add(String(id)));
     }
     return [...categories];
   } catch {

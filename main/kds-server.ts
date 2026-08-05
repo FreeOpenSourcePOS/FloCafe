@@ -6,7 +6,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
+import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
@@ -260,7 +260,7 @@ export function startKdsServer(): Promise<void> {
         const categoryIds = kdsUser.categoryIds;
         const stationIds = kdsUser.stationIds;
         const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-        const stationRoutingCategoryIds = stationCategoryIds && stationCategoryIds.length > 0 ? stationCategoryIds : categoryIds;
+        const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
         const restrictedKdsPayload = categoryIds.length > 0 || (kdsUser.role === 'chef' && stationIds.length > 0);
         if (!stationCategoryIds || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
@@ -364,7 +364,7 @@ export function startKdsServer(): Promise<void> {
 
           if (stationIds.length > 0) {
             const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-            const stationRoutingCategoryIds = stationCategoryIds && stationCategoryIds.length > 0 ? stationCategoryIds : categoryIds;
+            const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
             const station = db.prepare(`
               SELECT t.kitchen_station_id
               FROM orders o LEFT JOIN tables t ON t.id = o.table_id
@@ -409,12 +409,12 @@ export function startKdsServer(): Promise<void> {
         const db = getDatabase();
         const kdsUser = (req as any).user as KdsRequestUser;
         const stationCategoryIds = getKdsStationCategoryIds(db, kdsUser.stationIds);
-        if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-        const categoryIds = stationCategoryIds.length > 0
-          ? stationCategoryIds.filter((categoryId) => kdsUser.categoryIds.length === 0 || kdsUser.categoryIds.includes(categoryId))
-          : kdsUser.categoryIds;
-        const categories = categoryIds.length > 0
-          ? db.prepare(`SELECT * FROM categories WHERE is_active = 1 AND id IN (${categoryIds.map(() => '?').join(',')}) ORDER BY sort_order`).all(...categoryIds)
+        const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, kdsUser.stationIds, kdsUser.categoryIds);
+        if (!stationCategoryIds || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const categoryIds = stationRoutingCategoryIds.filter((categoryId) => kdsUser.categoryIds.length === 0 || kdsUser.categoryIds.includes(categoryId));
+        const categoryScopeConfigured = stationRoutingCategoryIds.length > 0 || kdsUser.categoryIds.length > 0;
+        const categories = categoryScopeConfigured
+          ? db.prepare(`SELECT * FROM categories WHERE is_active = 1 AND id IN (${categoryIds.length > 0 ? categoryIds.map(() => '?').join(',') : "''"}) ORDER BY sort_order`).all(...categoryIds)
           : db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();
         res.json({ categories });
       } catch (error: any) {

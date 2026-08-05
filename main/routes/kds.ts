@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
@@ -54,11 +54,14 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     if (stationId && !db.prepare('SELECT 1 FROM kitchen_stations WHERE id = ? AND is_active = 1').get(stationId)) {
       return res.status(404).json({ error: 'Kitchen station not found' });
     }
-    const stationRoutingCategoryIds = stationCategoryIds.length > 0 ? stationCategoryIds : userCategoryIds;
+    const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, userStationIds, userCategoryIds);
+    if (!stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
     const requestedStationCategoryIds = stationId ? getKdsStationCategoryIds(db, [stationId]) : stationCategoryIds;
     if (!requestedStationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-    const requestedRoutingCategoryIds = requestedStationCategoryIds.length > 0 ? requestedStationCategoryIds : userCategoryIds;
-    const payloadStationIds = stationId ? [stationId] : userStationIds;
+    const requestedRoutingCategoryIds = stationId
+      ? getKdsStationRoutingCategoryIds(db, [stationId], userCategoryIds)
+      : stationRoutingCategoryIds;
+    if (!requestedRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });    const payloadStationIds = stationId ? [stationId] : userStationIds;
     const restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
     if (stationId && userStationIds.length > 0 && !userStationIds.includes(stationId)) {
       return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
@@ -372,7 +375,8 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     if (hasStationAssignments && userStationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
     const stationCategoryIds = getKdsStationCategoryIds(db, userStationIds);
     if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-    const stationRoutingCategoryIds = stationCategoryIds.length > 0 ? stationCategoryIds : userCategoryIds;
+    const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, userStationIds, userCategoryIds);
+    if (!stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
     const restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
 
     const updatedItem = withTxn(() => {

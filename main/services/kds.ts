@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, registerDatabaseMaintenanceStartListener, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, registerDatabaseMaintenanceStartListener, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -469,8 +469,8 @@ function activeOrdersCondition(): string {
 function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: string[] = [], restrictedPayload = categoryIds.length > 0): void {
   const db = getDatabase();
   const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-  if (!stationCategoryIds) throw new Error('Could not load station permissions');
-  const stationRoutingCategoryIds = stationCategoryIds.length > 0 ? stationCategoryIds : categoryIds;
+  const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
+  if (!stationCategoryIds || !stationRoutingCategoryIds) throw new Error('Could not load station permissions');
 
   let query = `
     SELECT o.*, t.number as table_name, t.kitchen_station_id

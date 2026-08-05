@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
 import { requireKdsEnabled } from '../middleware/security';
@@ -48,7 +48,8 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
     if (hasStationAssignments && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
     const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
     if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-    const stationRoutingCategoryIds = stationCategoryIds.length > 0 ? stationCategoryIds : categoryIds;
+    const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
+    if (!stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
     const restrictedKdsPayload = categoryIds.length > 0 || (currentUser.role === 'chef' && stationIds.length > 0);
 
     const orderData = withTxn(() => {

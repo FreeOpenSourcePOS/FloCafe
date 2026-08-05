@@ -54,6 +54,7 @@ async function main() {
     chefId, 'kds-contract-chef@flo.local', bcrypt.hashSync('testpass123', 10), JSON.stringify(['kds-contract-category']), now(), now(),
   );
   const chefAuth = { Authorization: `Bearer ${jwt.sign({ userId: chefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
+  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(chefId, 'kds-contract-station', now());
 
   const app = createApp({ '/api/kds': kdsRoutes, '/api/order-items': orderItemRoutes });
   try {
@@ -75,6 +76,10 @@ async function main() {
       VALUES ('kds-contract-bar-station', 'Bar Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-bar']), now(), now());
     const deniedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-bar-station').set(chefAuth);
     assertEqual(deniedDisplay.status, 403, 'restricted chef cannot open a disallowed station display');
+
+    const pairing = await request(app).get('/api/kds/pairing').set(chefAuth);
+    assertEqual(pairing.status, 200, 'restricted chef can list assigned KDS stations');
+    assertEqual(pairing.body.stations.some((station: any) => station.id === 'kds-contract-bar-station'), false, 'station assignments hide unassigned stations');
 
     const restrictedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(restrictedDisplay.status, 200, 'restricted chef can access the station display');

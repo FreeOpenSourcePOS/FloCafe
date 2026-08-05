@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
+import { getDatabase, getUserKdsStationIds, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
@@ -22,6 +22,7 @@ type KdsRequestUser = {
   email?: string;
   role: string;
   categoryIds: string[];
+  stationIds: string[];
 };
 
 function categoryIdsForRole(role: string, categoryIds: string | null): string[] {
@@ -113,6 +114,7 @@ export function startKdsServer(): Promise<void> {
           email: user.email,
           role: user.role,
           categoryIds: categoryIdsForRole(user.role, user.category_ids),
+          stationIds: getUserKdsStationIds(db, user.id),
         } satisfies KdsRequestUser;
         next();
       } catch (error) {
@@ -194,6 +196,7 @@ export function startKdsServer(): Promise<void> {
             email: user.email,
             role: user.role,
             category_ids: categoryIdsForRole(user.role, user.category_ids),
+            station_ids: getUserKdsStationIds(db, user.id),
           },
         });
       } catch (error: any) {
@@ -240,6 +243,7 @@ export function startKdsServer(): Promise<void> {
       try {
         const db = getDatabase();
         const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
+        const stationIds = ((req as any).user as KdsRequestUser).stationIds;
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
 
         let query = `
@@ -250,10 +254,15 @@ export function startKdsServer(): Promise<void> {
           WHERE (oi.status IN ('pending', 'preparing', 'ready')
             OR (oi.status = 'voided' AND (oi.voided_at IS NULL OR oi.voided_at > ?)))
           AND o.created_at >= datetime('now', '-24 hours')
-          ORDER BY o.created_at ASC
         `;
+        const orderParams: string[] = [voidedCutoff];
+        if (stationIds.length > 0) {
+          query += ` AND EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationIds.map(() => '?').join(',')}))`;
+          orderParams.push(...stationIds);
+        }
+        query += ' ORDER BY o.created_at ASC';
 
-        const orders = db.prepare(query).all(voidedCutoff);
+        const orders = db.prepare(query).all(...orderParams);
 
         // Pre-fetch allowed product IDs once if category restrictions apply to eliminate N+1 queries
         let allowedProductIds: Set<string> | null = null;
@@ -322,8 +331,22 @@ export function startKdsServer(): Promise<void> {
         if (item.status === 'void_adjustment') {
           return res.status(400).json({ error: 'This bill adjustment cannot be updated from KDS' });
         }
+        if (item.status === 'completed' || item.status === 'cancelled') {
+          return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
+        }
 
         const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
+        const stationIds = ((req as any).user as KdsRequestUser).stationIds;
+        if (stationIds.length > 0) {
+          const station = db.prepare(`
+            SELECT t.kitchen_station_id
+            FROM orders o LEFT JOIN tables t ON t.id = o.table_id
+            WHERE o.id = ?
+          `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
+          if (!station?.kitchen_station_id || !stationIds.includes(String(station.kitchen_station_id))) {
+            return res.status(403).json({ error: 'Not authorized to update this station' });
+          }
+        }
         if (categoryIds.length > 0 && !categoryIds.includes(String(item.category_id))) {
           return res.status(403).json({ error: 'Not authorized to update this item' });
         }

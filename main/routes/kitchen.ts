@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder } from '../db';
+import { getDatabase, getUserKdsStationIds, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder } from '../db';
 import { requireRole, requireKdsEnabled } from '../middleware/security';
 import { parseCategoryIds } from './auth';
 
@@ -32,6 +32,7 @@ router.get('/orders', (req: Request, res: Response) => {
     const categoryIds = currentUser.role === 'manager' || currentUser.role === 'owner'
       ? []
       : parseCategoryIds(currentUser.category_ids);
+    const stationIds = getUserKdsStationIds(db, userId);
     let allowedProductIds: Set<string> | null = null;
     if (categoryIds.length > 0) {
       const productRows = db.prepare(`
@@ -40,12 +41,15 @@ router.get('/orders', (req: Request, res: Response) => {
       allowedProductIds = new Set(productRows.map((product) => String(product.id)));
     }
 
+    const stationFilter = stationIds.length > 0
+      ? ` AND EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationIds.map(() => '?').join(',')}))`
+      : '';
     const orders = db.prepare(`
       SELECT o.*
       FROM orders o
-      WHERE o.id IN (${ACTIVE_KITCHEN_ORDER_IDS_SQL})
+      WHERE o.id IN (${ACTIVE_KITCHEN_ORDER_IDS_SQL})${stationFilter}
       ORDER BY o.created_at ASC
-    `).all() as any[];
+    `).all(...stationIds) as any[];
 
     if (orders.length === 0) {
       return res.json({ orders: [], counts: {} });

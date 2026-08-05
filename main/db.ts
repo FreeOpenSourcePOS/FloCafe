@@ -635,6 +635,41 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
 }
 
 type RevocationRow = { token_hash: string; expires_at: number; revoked_at: string };
+export type UserSecurityState = { id: string; is_active: number; tokens_valid_after: string | null };
+
+export function getUserKdsStationIds(dbInstance: Database.Database, userId: string): string[] {
+  try {
+    return (dbInstance.prepare('SELECT station_id FROM station_users WHERE user_id = ?').all(userId) as { station_id: string }[])
+      .map((row) => String(row.station_id));
+  } catch {
+    return [];
+  }
+}
+
+export function captureUserSecurityState(dbInstance: Database.Database): UserSecurityState[] {
+  try {
+    return dbInstance.prepare('SELECT id, is_active, tokens_valid_after FROM users').all() as UserSecurityState[];
+  } catch {
+    return [];
+  }
+}
+
+export function mergeUserSecurityState(dbInstance: Database.Database, rows: UserSecurityState[]): void {
+  for (const row of rows) {
+    const restored = dbInstance.prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?').get(row.id) as UserSecurityState | undefined;
+    if (!restored) continue;
+    const currentEpoch = row.tokens_valid_after;
+    const restoredEpoch = restored.tokens_valid_after;
+    const tokensValidAfter = currentEpoch && restoredEpoch
+      ? (currentEpoch > restoredEpoch ? currentEpoch : restoredEpoch)
+      : (currentEpoch || restoredEpoch || null);
+    dbInstance.prepare(`
+      UPDATE users
+      SET is_active = ?, tokens_valid_after = ?
+      WHERE id = ?
+    `).run(row.is_active === 0 || restored.is_active === 0 ? 0 : 1, tokensValidAfter, row.id);
+  }
+}
 
 function readRevocations(dbInstance: Database.Database): RevocationRow[] {
   try {
@@ -682,6 +717,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   // Never let restoring an older snapshot resurrect a token that was revoked
   // after that snapshot was created.
   const preservedRevocations = readRevocations(currentDb);
+  const preservedUserSecurity = captureUserSecurityState(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -724,6 +760,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       initDatabase();
 
       const freshDb = getDatabase();
+      mergeUserSecurityState(freshDb, preservedUserSecurity);
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const foreignKeyViolations = freshDb.prepare('PRAGMA foreign_key_check').all();
@@ -761,7 +798,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity);
 }
 
 /** Return true only if the string is a safe SQL identifier (letters, digits, underscore). */
@@ -769,7 +806,13 @@ export function isSafeIdentifier(name: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
 }
 
-function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersion: number, preservedRevocations: RevocationRow[] = []): RestoreResult {
+function dataOnlyRestore(
+  backupPath: string,
+  backupVersion: number,
+  currentVersion: number,
+  preservedRevocations: RevocationRow[] = [],
+  preservedUserSecurity: UserSecurityState[] = [],
+): RestoreResult {
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
   let backupDb: Database.Database | undefined;
@@ -847,6 +890,7 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
       console.log(`[DB] Restored ${tableName}: ${commonColumns.length} columns`);
     }
 
+    mergeUserSecurityState(currentDb, preservedUserSecurity);
     mergeRevocations(currentDb, preservedRevocations);
     const foreignKeyViolations = currentDb.prepare('PRAGMA foreign_key_check').all();
     if (foreignKeyViolations.length > 0) {

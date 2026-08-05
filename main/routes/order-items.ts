@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, projectKdsItem, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, getUserKdsStationIds, now, parseItemJson, attachEffectiveAddons, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
 
@@ -41,6 +41,7 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     const categoryIds = currentUser.role === 'manager' || currentUser.role === 'owner'
       ? []
       : parseCategoryIds(currentUser.category_ids);
+    const stationIds = getUserKdsStationIds(db, userId);
 
     const orderData = withTxn(() => {
       const item = db.prepare(`
@@ -59,9 +60,22 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       if (item.status === 'void_adjustment') {
         throw new Error('IMMUTABLE_KDS_ITEM');
       }
+      if (item.status === 'completed' || item.status === 'cancelled') {
+        throw new Error('TERMINAL_KDS_ITEM');
+      }
 
       if (categoryIds.length > 0 && (!item.category_id || !categoryIds.includes(String(item.category_id)))) {
         throw new Error('CATEGORY_FORBIDDEN');
+      }
+      if (stationIds.length > 0) {
+        const station = db.prepare(`
+          SELECT t.kitchen_station_id
+          FROM orders o LEFT JOIN tables t ON t.id = o.table_id
+          WHERE o.id = ?
+        `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
+        if (!station?.kitchen_station_id || !stationIds.includes(String(station.kitchen_station_id))) {
+          throw new Error('STATION_FORBIDDEN');
+        }
       }
 
       db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?')
@@ -104,11 +118,14 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     if (error.message === 'VOIDED_ITEM') {
       return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
     }
-    if (error.message === 'CATEGORY_FORBIDDEN') {
+    if (error.message === 'CATEGORY_FORBIDDEN' || error.message === 'STATION_FORBIDDEN') {
       return res.status(403).json({ error: 'Not authorized to update this item' });
     }
     if (error.message === 'IMMUTABLE_KDS_ITEM') {
       return res.status(400).json({ error: 'This bill adjustment cannot be updated from KDS' });
+    }
+    if (error.message === 'TERMINAL_KDS_ITEM') {
+      return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
     }
     console.error('[OrderItems] Status update error:', error);
     res.status(500).json({ error: "Could not update order item status" });

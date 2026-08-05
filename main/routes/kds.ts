@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
+import { getDatabase, getUserKdsStationIds, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
@@ -7,6 +7,11 @@ import { parseCategoryIds } from './auth';
 import { notifyKdsUpdate } from '../services/kds';
 
 const router = Router();
+
+function getKdsUserStationIds(db: ReturnType<typeof getDatabase>, req: Request): string[] | null {
+  const userId = (req as any).user?.userId;
+  return userId ? getUserKdsStationIds(db, userId) : null;
+}
 
 function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request): string[] | null {
   const userId = (req as any).user?.userId;
@@ -31,7 +36,12 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const userCategoryIds = getKdsUserCategoryIds(db, req);
-    if (!userCategoryIds) return res.status(403).json({ error: 'User account is not active' });
+    const userStationIds = getKdsUserStationIds(db, req);
+    if (!userCategoryIds || !userStationIds) return res.status(403).json({ error: 'User account is not active' });
+    const stationId = req.query.station_id as string;
+    if (stationId && userStationIds.length > 0 && !userStationIds.includes(stationId)) {
+      return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
+    }
     let allowedProductIds: Set<string> | null = null;
     if (userCategoryIds.length > 0) {
       const productRows = db.prepare(`
@@ -39,8 +49,6 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       `).all(...userCategoryIds) as { id: string | number }[];
       allowedProductIds = new Set(productRows.map((product) => String(product.id)));
     }
-    const stationId = req.query.station_id as string;
-
     // A prepaid order is marked 'completed' the moment its bill is fully
     // paid, which can happen before the kitchen has prepared anything — so
     // a completed order still belongs here if it has items the kitchen
@@ -62,6 +70,10 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     `;
     const params: any[] = [];
 
+    if (userStationIds.length > 0) {
+      query += ` AND t.kitchen_station_id IN (${userStationIds.map(() => '?').join(',')})`;
+      params.push(...userStationIds);
+    }
     if (stationId) {
       query += ` AND t.kitchen_station_id = ?`;
       params.push(stationId);
@@ -126,9 +138,11 @@ router.get('/pairing', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const userCategoryIds = getKdsUserCategoryIds(db, req);
-    if (!userCategoryIds) return res.status(403).json({ error: 'User account is not active' });
+    const userStationIds = getKdsUserStationIds(db, req);
+    if (!userCategoryIds || !userStationIds) return res.status(403).json({ error: 'User account is not active' });
     const stations = (db.prepare('SELECT * FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_order, name').all() as any[])
       .filter((station) => {
+        if (userStationIds.length > 0 && !userStationIds.includes(String(station.id))) return false;
         if (userCategoryIds.length === 0 || !station.category_ids) return true;
         const stationCategories = parseCategoryIds(station.category_ids);
         return stationCategories.length === 0 || stationCategories.some((categoryId) => userCategoryIds.includes(categoryId));
@@ -190,7 +204,8 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const userCategoryIds = getKdsUserCategoryIds(db, req);
-    if (!userCategoryIds) return res.status(403).json({ error: 'User account is not active' });
+    const userStationIds = getKdsUserStationIds(db, req);
+    if (!userCategoryIds || !userStationIds) return res.status(403).json({ error: 'User account is not active' });
     const stationId = req.query.station_id as string;
 
     if (!stationId) {
@@ -200,6 +215,9 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(stationId);
     if (!station) {
       return res.status(404).json({ error: 'Kitchen station not found' });
+    }
+    if (userStationIds.length > 0 && !userStationIds.includes(stationId)) {
+      return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
     }
 
     let stationCategoryIds: string[] = [];
@@ -293,14 +311,15 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
       return res.status(400).json({ error: 'Status is required' });
     }
 
-    const validStatuses = ['pending', 'preparing', 'ready', 'served', 'completed', 'cancelled'];
+    const validStatuses = ['pending', 'preparing', 'ready', 'served'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Use: ${validStatuses.join(', ')}` });
     }
 
     const db = getDatabase();
     const userCategoryIds = getKdsUserCategoryIds(db, req);
-    if (!userCategoryIds) return res.status(403).json({ error: 'User account is not active' });
+    const userStationIds = getKdsUserStationIds(db, req);
+    if (!userCategoryIds || !userStationIds) return res.status(403).json({ error: 'User account is not active' });
 
     const updatedItem = withTxn(() => {
       const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id) as any;
@@ -314,11 +333,24 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
       if (item.status === 'void_adjustment') {
         throw new Error('IMMUTABLE_KDS_ITEM');
       }
+      if (item.status === 'completed' || item.status === 'cancelled') {
+        throw new Error('TERMINAL_KDS_ITEM');
+      }
 
       if (userCategoryIds.length > 0) {
         const product = db.prepare('SELECT category_id FROM products WHERE id = ?').get(item.product_id) as { category_id: string | null } | undefined;
         if (!product || !userCategoryIds.includes(String(product.category_id || ''))) {
           throw new Error('CATEGORY_FORBIDDEN');
+        }
+      }
+      if (userStationIds.length > 0) {
+        const station = db.prepare(`
+          SELECT t.kitchen_station_id
+          FROM orders o LEFT JOIN tables t ON t.id = o.table_id
+          WHERE o.id = ?
+        `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
+        if (!station?.kitchen_station_id || !userStationIds.includes(String(station.kitchen_station_id))) {
+          throw new Error('STATION_FORBIDDEN');
         }
       }
 
@@ -340,11 +372,14 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     if (error.message === 'VOIDED_ITEM') {
       return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
     }
-    if (error.message === 'CATEGORY_FORBIDDEN') {
+    if (error.message === 'CATEGORY_FORBIDDEN' || error.message === 'STATION_FORBIDDEN') {
       return res.status(403).json({ error: 'Not authorized to update this item' });
     }
     if (error.message === 'IMMUTABLE_KDS_ITEM') {
       return res.status(400).json({ error: 'This bill adjustment cannot be updated from KDS' });
+    }
+    if (error.message === 'TERMINAL_KDS_ITEM') {
+      return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
     }
     console.error("[API] KDS item status update error:", error);
     res.status(500).json({ error: "Could not update item status" });

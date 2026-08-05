@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, getUserKdsStationIds, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -10,9 +10,11 @@ interface KdsClient {
   userName: string | null;
   role: string | null;
   categoryIds: string[];
+  stationIds: string[];
   token: string | null;
   isAlive: boolean;
   categoryIdsChanged: boolean;
+  stationIdsChanged: boolean;
   authTimeout?: NodeJS.Timeout;
 }
 
@@ -36,6 +38,7 @@ function clearClientIdentity(client: KdsClient): void {
   client.userName = null;
   client.role = null;
   client.categoryIds = [];
+  client.stationIds = [];
   client.token = null;
 }
 
@@ -68,9 +71,12 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
     const nextCategoryIds = ['manager', 'owner'].includes(status.role)
       ? []
       : parseCategoryIds(currentUser.category_ids);
+    const nextStationIds = getUserKdsStationIds(getDatabase(), client.userId);
     client.categoryIdsChanged = JSON.stringify(client.categoryIds) !== JSON.stringify(nextCategoryIds);
+    client.stationIdsChanged = JSON.stringify(client.stationIds) !== JSON.stringify(nextStationIds);
     client.role = status.role;
     client.categoryIds = nextCategoryIds;
+    client.stationIds = nextStationIds;
     return true;
   } catch {
     return false;
@@ -93,9 +99,11 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
       userName: null,
       role: null,
       categoryIds: [],
+      stationIds: [],
       token: null,
       isAlive: true,
       categoryIdsChanged: false,
+      stationIdsChanged: false,
     };
     client.authTimeout = setTimeout(() => {
       if (!client.userId) {
@@ -143,9 +151,14 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
           closeKdsClient(client, 'Session expired or revoked');
           return;
         }
-        if (client.categoryIdsChanged && ws.readyState === WebSocket.OPEN) {
+        let snapshotSent = false;
+        if ((client.categoryIdsChanged || client.stationIdsChanged) && ws.readyState === WebSocket.OPEN) {
           client.categoryIdsChanged = false;
-          try { sendActiveOrders(ws, client.categoryIds); } catch (error) {
+          client.stationIdsChanged = false;
+          try {
+            sendActiveOrders(ws, client.categoryIds, client.stationIds);
+            snapshotSent = true;
+          } catch (error) {
             console.error('[KDS] Category refresh error:', error);
             closeKdsClient(client, 'Could not refresh KDS permissions');
             return;
@@ -156,6 +169,13 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
             ws.terminate();
             clients.delete(ws);
             return;
+          }
+          if (client.userId && !snapshotSent) {
+            try { sendActiveOrders(ws, client.categoryIds, client.stationIds); } catch (error) {
+              console.error('[KDS] Heartbeat refresh error:', error);
+              closeKdsClient(client, 'Could not refresh KDS board');
+              return;
+            }
           }
           client.isAlive = false;
           ws.ping();
@@ -241,12 +261,15 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
     const categoryIds = ['manager', 'owner'].includes(user.role)
       ? []
       : parseCategoryIds(user.category_ids);
+    const stationIds = getUserKdsStationIds(getDatabase(), user.id);
 
     client.userId = user.id;
     client.userName = user.name;
     client.role = user.role;
     client.categoryIds = categoryIds;
+    client.stationIds = stationIds;
     client.categoryIdsChanged = false;
+    client.stationIdsChanged = false;
     client.token = token;
     clearClientAuthTimeout(client);
 
@@ -257,10 +280,11 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
         name: user.name,
         role: user.role,
         categoryIds: categoryIds,
+        stationIds: stationIds,
       },
     }));
 
-    sendActiveOrders(ws, client.categoryIds);
+    sendActiveOrders(ws, client.categoryIds, client.stationIds);
   } catch {
     closeKdsClient(client, 'Invalid token');
   }
@@ -306,6 +330,20 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
       }
       if (existingItem.status === 'void_adjustment') {
         return { error: 'This bill adjustment cannot be updated from KDS' };
+      }
+      if (existingItem.status === 'completed' || existingItem.status === 'cancelled') {
+        return { error: 'This terminal item cannot be updated from KDS' };
+      }
+
+      if (client.stationIds.length > 0) {
+        const station = db.prepare(`
+          SELECT t.kitchen_station_id
+          FROM orders o LEFT JOIN tables t ON t.id = o.table_id
+          WHERE o.id = ?
+        `).get(existingItem.order_id) as { kitchen_station_id: string | null } | undefined;
+        if (!station?.kitchen_station_id || !client.stationIds.includes(String(station.kitchen_station_id))) {
+          return { error: 'Not authorized to update this station' };
+        }
       }
 
       if (client.categoryIds.length > 0 && !client.categoryIds.includes(existingItem.category_id)) {
@@ -360,7 +398,7 @@ function activeOrdersCondition(): string {
   )`;
 }
 
-function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
+function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: string[] = []): void {
   const db = getDatabase();
 
   let query = `
@@ -370,9 +408,14 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     WHERE ${activeOrdersCondition()}
   `;
 
+  const orderParams: string[] = [];
+  if (stationIds.length > 0) {
+    query += ` AND t.kitchen_station_id IN (${stationIds.map(() => '?').join(',')})`;
+    orderParams.push(...stationIds);
+  }
   query += ' ORDER BY o.created_at ASC';
 
-  const orders = db.prepare(query).all();
+  const orders = db.prepare(query).all(...orderParams);
 
   // Pre-fetch allowed product IDs once if category restrictions apply to eliminate N+1 queries
   let allowedProductIds: Set<string> | null = null;
@@ -462,7 +505,7 @@ function broadcastOrderUpdate(): void {
     if (client.ws.readyState !== WebSocket.OPEN) return;
     try {
       client.categoryIdsChanged = false;
-      sendActiveOrders(client.ws, client.categoryIds);
+      sendActiveOrders(client.ws, client.categoryIds, client.stationIds);
     } catch (err) {
       console.error('[KDS] Broadcast error for client:', err);
     }

@@ -113,6 +113,22 @@ async function run() {
     assert.equal(retry.success, true, 'a valid restore succeeds after a failed restore');
     assertNoRestoreAttachment();
 
+    // A same-version file that is missing current-schema tables must also be
+    // rejected before it can replace the live database.
+    const incompleteBackup = path.join(testDir, 'incomplete-schema.db');
+    copyAndStamp(sameSchemaBackup, incompleteBackup, currentVersion);
+    const incompleteDb = new Database(incompleteBackup);
+    incompleteDb.pragma('foreign_keys = OFF');
+    incompleteDb.exec('DROP TABLE categories');
+    incompleteDb.close();
+    const incomplete = restoreBackup(incompleteBackup, true);
+    assert.equal(incomplete.success, false, 'direct restore rejects a same-version backup missing required tables');
+    assert.equal(
+      (getDatabase().prepare('SELECT name FROM categories WHERE id = ?').get('restore-category') as { name: string }).name,
+      'Restore Category',
+      'live data remains unchanged after incomplete-schema rejection',
+    );
+
     // forceDirect must reject a newer backup before closing or replacing the live DB.
     const newerBackup = path.join(testDir, 'newer-schema.db');
     copyAndStamp(sameSchemaBackup, newerBackup, currentVersion + 1);

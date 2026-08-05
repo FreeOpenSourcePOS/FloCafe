@@ -85,6 +85,7 @@ export function initDatabase(): void {
   }
 
   console.log(`[DB] Opening database at: ${dbPath}`);
+  dbHealthError = null;
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
@@ -571,14 +572,62 @@ export interface RestoreResult {
   error?: string;
 }
 
+function validateDirectBackup(backupPath: string, currentDb: Database.Database, currentVersion: number): string | null {
+  let backupDb: Database.Database | undefined;
+  try {
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+    const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
+    const metadataVersion = metaRow ? Number.parseInt(metaRow.value, 10) : 0;
+    const pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
+    if (metadataVersion !== currentVersion || pragmaVersion !== currentVersion) {
+      return `Direct restore requires matching metadata/header schema v${currentVersion}`;
+    }
+
+    const integrity = backupDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
+    if (integrity.some((row) => row.integrity_check !== 'ok')) {
+      return `Backup integrity check failed: ${integrity.map((row) => row.integrity_check).join('; ')}`;
+    }
+    const foreignKeyViolations = backupDb.prepare('PRAGMA foreign_key_check').all();
+    if (foreignKeyViolations.length > 0) {
+      return `Backup contains ${foreignKeyViolations.length} foreign-key violation(s)`;
+    }
+
+    const currentTables = getTables(currentDb);
+    const backupTables = new Set(getTables(backupDb));
+    const missingTables = currentTables.filter((tableName) => !backupTables.has(tableName));
+    if (missingTables.length > 0) {
+      return `Backup is missing required table(s): ${missingTables.join(', ')}`;
+    }
+
+    for (const tableName of currentTables) {
+      const backupColumns = new Set(getColumns(backupDb, tableName));
+      const missingColumns = getColumns(currentDb, tableName).filter((column) => !backupColumns.has(column));
+      if (missingColumns.length > 0) {
+        return `Backup table ${tableName} is missing required column(s): ${missingColumns.join(', ')}`;
+      }
+    }
+    return null;
+  } catch (error: any) {
+    return `Backup validation failed: ${error?.message || 'unknown error'}`;
+  } finally {
+    backupDb?.close();
+  }
+}
+
 export function restoreBackup(backupPath: string, forceDirect: boolean = false): RestoreResult {
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
 
-  const backupDb = new Database(backupPath, { readonly: true });
-  const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-  const metadataVersion = metaRow ? Number.parseInt(metaRow.value, 10) : 0;
-  const pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
-  backupDb.close();
+  let metadataVersion = 0;
+  let pragmaVersion = 0;
+  let backupDb: Database.Database | undefined;
+  try {
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+    const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
+    metadataVersion = metaRow ? Number.parseInt(metaRow.value, 10) : 0;
+    pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
+  } finally {
+    backupDb?.close();
+  }
 
   // The SQLite header is authoritative for what initDatabase() will open. A
   // forged/stale _flo_meta stamp must not let forceDirect replace the live DB
@@ -603,6 +652,18 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   if (forceDirect || backupSchemaVersion === currentVersion) {
+    const validationError = validateDirectBackup(backupPath, currentDb, currentVersion);
+    if (validationError) {
+      return {
+        success: false,
+        mode: 'direct',
+        backupSchemaVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored: 0,
+        error: validationError,
+      };
+    }
+
     console.log('[DB] restoreBackup: Direct restore (same schema version)');
     const dbPath = getDbPath();
     const recoveryPath = path.join(getBackupDir(), `flo-restore-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
@@ -618,6 +679,14 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       initDatabase();
 
       const freshDb = getDatabase();
+      const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
+      const foreignKeyViolations = freshDb.prepare('PRAGMA foreign_key_check').all();
+      if (
+        integrity.some((row) => row.integrity_check !== 'ok') ||
+        foreignKeyViolations.length > 0
+      ) {
+        throw new Error('Restored database failed integrity validation');
+      }
       return {
         success: true,
         mode: 'direct',
@@ -657,13 +726,18 @@ export function isSafeIdentifier(name: string): boolean {
 function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersion: number): RestoreResult {
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
-  const backupDb = new Database(backupPath, { readonly: true });
-  const backupTables = getTables(backupDb);
+  let backupDb: Database.Database | undefined;
+  let backupTables: string[] = [];
   const backupColumns = new Map<string, string[]>();
-  for (const tableName of backupTables) {
-    if (isSafeIdentifier(tableName)) backupColumns.set(tableName, getColumns(backupDb, tableName));
+  try {
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+    backupTables = getTables(backupDb);
+    for (const tableName of backupTables) {
+      if (isSafeIdentifier(tableName)) backupColumns.set(tableName, getColumns(backupDb, tableName));
+    }
+  } finally {
+    backupDb?.close();
   }
-  backupDb.close();
 
   const currentDb = getDatabase();
   const currentTables = getTables(currentDb);
@@ -690,14 +764,6 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
       error: `Could not clear a previous restore attachment: ${error?.message || 'unknown error'}`,
     };
   }
-
-  // Compare only newly introduced violations. Older installs can already
-  // contain legacy FK violations; a restore must not make that existing state
-  // worse, but it should not reject an otherwise safe restore because of it.
-  const fkViolationKey = (row: unknown) => JSON.stringify(row);
-  const existingForeignKeyViolations = new Set(
-    (currentDb.prepare('PRAGMA foreign_key_check').all() as unknown[]).map(fkViolationKey),
-  );
 
   try {
     // FK enforcement must be disabled before BEGIN. With it off, deleting a
@@ -735,10 +801,9 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
       console.log(`[DB] Restored ${tableName}: ${commonColumns.length} columns`);
     }
 
-    const newForeignKeyViolations = (currentDb.prepare('PRAGMA foreign_key_check').all() as unknown[])
-      .filter((row) => !existingForeignKeyViolations.has(fkViolationKey(row)));
-    if (newForeignKeyViolations.length > 0) {
-      throw new Error(`Restore would introduce ${newForeignKeyViolations.length} foreign-key violation(s)`);
+    const foreignKeyViolations = currentDb.prepare('PRAGMA foreign_key_check').all();
+    if (foreignKeyViolations.length > 0) {
+      throw new Error(`Restore would leave ${foreignKeyViolations.length} foreign-key violation(s)`);
     }
 
     // SQLite does not allow DETACH while a write transaction is active.
@@ -746,8 +811,25 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
     // source handle immediately so the long-lived connection stays clean.
     currentDb.exec('COMMIT');
     inTransaction = false;
-    currentDb.exec('DETACH DATABASE _restore_src');
-    attached = false;
+    try {
+      currentDb.exec('DETACH DATABASE _restore_src');
+      attached = false;
+    } catch (detachError: any) {
+      // Once committed, a detach failure cannot be rolled back. Reopening the
+      // main connection drops every attachment and gives the caller a clean,
+      // usable handle instead of reporting a false failure with live data
+      // already changed.
+      try {
+        closeDatabase();
+        initDatabase();
+        attached = false;
+      } catch (recoveryError: any) {
+        throw new Error(
+          `Restore committed but source cleanup failed: ${detachError?.message || 'unknown error'}; ` +
+          `database reopen also failed: ${recoveryError?.message || 'unknown error'}`,
+        );
+      }
+    }
 
     return {
       success: true,
@@ -774,7 +856,9 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
     if (attached) {
       try { currentDb.exec('DETACH DATABASE _restore_src'); } catch { }
     }
-    if (previousForeignKeys) currentDb.pragma('foreign_keys = ON');
+    try {
+      getDatabase().pragma(`foreign_keys = ${previousForeignKeys ? 'ON' : 'OFF'}`);
+    } catch { }
   }
 }
 

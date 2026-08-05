@@ -61,6 +61,7 @@ export default function KdsStandalonePage() {
   const standaloneEndpoints = {
     login: '/api/auth/login',
     me: '/api/auth/me',
+    logout: '/api/auth/logout',
     orders: '/api/kds/orders',
     itemStatus: '/api/kds/items/:itemId/status',
   };

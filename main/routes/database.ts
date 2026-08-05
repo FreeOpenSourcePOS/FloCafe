@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, isSafeIdentifier, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
+import * as fs from 'fs';
 import * as path from 'path';
 
 const router = Router();
@@ -213,14 +214,26 @@ router.post('/backup', requireRole('owner'), requireMasterPin, async (req: Reque
   }
 });
 
-router.get('/download', requireRole('owner'), requireMasterPin, (req: Request, res: Response) => {
+router.get('/download', requireRole('owner'), requireMasterPin, async (_req: Request, res: Response) => {
+  let tempDir: string | null = null;
   try {
     const dbPath = getDbPath();
+    tempDir = fs.mkdtempSync(path.join(path.dirname(dbPath), '.flo-download-'));
+    const snapshotPath = path.join(tempDir, 'flo-database.db');
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filename = `flo-database-${timestamp}.db`;
 
-    res.download(dbPath, filename);
+    // Download a clean checkpointed backup rather than streaming the live WAL
+    // file. The temporary snapshot is independent of later restore/reset work.
+    await createBackup(snapshotPath);
+    res.download(snapshotPath, filename, (error) => {
+      try { if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
+      if (error) console.error('[DB Download] Stream error:', error);
+    });
   } catch (error: any) {
+    if (tempDir) {
+      try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
+    }
     console.error('[DB Download] Error:', error);
     res.status(500).json({ error: 'Download failed' });
   }

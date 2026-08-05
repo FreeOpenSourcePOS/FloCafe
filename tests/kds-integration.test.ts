@@ -109,7 +109,22 @@ async function run() {
     assert(chefLogin.status === 200, 'Chef login succeeds on KDS API');
     assert(!!chefLogin.body.access_token, 'Chef login returns access_token');
 
-    const token = chefLogin.body.access_token;
+    let token = chefLogin.body.access_token;
+
+    const standaloneLogout = await request(`http://127.0.0.1:${port}`)
+      .post('/api/auth/logout')
+      .set('Authorization', `Bearer ${token}`);
+    assert(standaloneLogout.status === 200, 'Standalone KDS logout succeeds');
+    const rejectedAfterLogout = await request(`http://127.0.0.1:${port}`)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    assert(rejectedAfterLogout.status === 401, 'Standalone KDS logout revokes the token');
+
+    const relogin = await request(`http://127.0.0.1:${port}`)
+      .post('/api/auth/login')
+      .send({ email: 'chef@flo.local', password: 'KitchenPass123!' });
+    assert(relogin.status === 200, 'Chef can log in again after standalone logout');
+    token = relogin.body.access_token;
 
     // A credential cutoff must invalidate this token on every standalone KDS route.
     db.prepare('UPDATE users SET tokens_valid_after = ? WHERE id = ?').run('2099-01-01 00:00:00', 'user-chef-1');

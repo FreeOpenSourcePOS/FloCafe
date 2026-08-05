@@ -195,26 +195,13 @@ function hashRevokedToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function getTokenExpiryMs(token: string): number | null {
-  const parts = token.split('.');
-  if (parts.length !== 3) return null;
-  try {
-    const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8')) as { exp?: unknown };
-    const expMs = typeof payload.exp === 'number' ? payload.exp * 1000 : Number(payload.exp);
-    if (!Number.isFinite(expMs) || expMs <= Date.now()) return null;
-    return Math.min(expMs, Date.now() + MAX_JWT_LIFETIME_MS);
-  } catch {
-    return null;
-  }
-}
-
 function cleanupExpiredRevocations(db: ReturnType<typeof getDatabase>, nowMs: number): void {
   if (nowMs - lastRevocationCleanupAt < REVOCATION_CLEANUP_INTERVAL_MS) return;
   db.prepare('DELETE FROM revoked_tokens WHERE expires_at <= ?').run(nowMs);
   lastRevocationCleanupAt = nowMs;
 }
 
-export function revokeToken(token: string): void {
+export function revokeToken(token: string, verifiedExpiresAtMs?: number): void {
   if (!token || typeof token !== 'string') return;
 
   if (!revokedTokens.has(token)) {
@@ -225,8 +212,10 @@ export function revokeToken(token: string): void {
     revokedTokens.add(token);
   }
 
-  const expiresAt = getTokenExpiryMs(token);
-  if (expiresAt === null) return;
+  const expiresAt = typeof verifiedExpiresAtMs === 'number' && Number.isFinite(verifiedExpiresAtMs)
+    ? Math.min(verifiedExpiresAtMs, Date.now() + MAX_JWT_LIFETIME_MS)
+    : null;
+  if (expiresAt === null || expiresAt <= Date.now()) return;
 
   try {
     const db = getDatabase();

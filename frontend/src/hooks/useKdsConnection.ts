@@ -322,6 +322,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           } else if (msg.type === 'auth_error') {
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             setLoginError(msg.message || t('kds.authFailed'));
+            if (wsRef.current === ws) wsRef.current = null;
             ws.close();
             setLoading(false);
           } else if ((msg.type === 'initial_data' || msg.type === 'orders') && msg.orders) {
@@ -337,6 +338,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
       connectionTimeout = setTimeout(() => {
         if (ws.readyState === WebSocket.CONNECTING) {
+          if (wsRef.current === ws) wsRef.current = null;
           ws.close();
           setConnectionMode('rest');
           setLoading(false);
@@ -392,9 +394,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+    const activeWs = wsRef.current;
+    wsRef.current = null;
+    if (activeWs) activeWs.close();
     const token = user?.token || window.localStorage.getItem('token');
     if (token) {
       try {

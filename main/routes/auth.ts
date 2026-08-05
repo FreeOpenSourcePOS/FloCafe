@@ -375,7 +375,7 @@ router.post('/login', authRateLimit(), async (req: Request, res: Response) => {
 
     const remember = !!rememberMe;
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, remember },
+      { userId: user.id, email: user.email, role: user.role, remember, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -431,7 +431,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember },
+      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -448,10 +448,17 @@ router.post('/tenants/select', (req: Request, res: Response) => {
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────
 
-router.post('/logout', (req: Request, res: Response) => {
+router.post('/logout', authRateLimit(), (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
-    revokeToken(authHeader.split(' ')[1]);
+    const token = authHeader.slice('Bearer '.length);
+    try {
+      const decoded = jwt.verify(token, getJWTSecret()) as { exp?: number };
+      revokeToken(token, typeof decoded.exp === 'number' ? decoded.exp * 1000 : undefined);
+    } catch {
+      // Logout is intentionally idempotent; invalid credentials are not
+      // persisted as revocations and are still answered successfully.
+    }
   }
   res.json({ message: 'Logged out successfully' });
 });
@@ -875,7 +882,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { userId, email, role: INITIAL_ADMIN_ROLE },
+      { userId, email, role: INITIAL_ADMIN_ROLE, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );

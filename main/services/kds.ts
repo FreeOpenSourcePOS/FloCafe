@@ -17,7 +17,10 @@ interface KdsClient {
 
 export const KDS_AUTH_TIMEOUT_MS = 5_000;
 export const MAX_KDS_CLIENTS = 100;
+export const MAX_UNAUTHENTICATED_KDS_CLIENTS = 25;
 const clients: Map<WebSocket, KdsClient> = new Map();
+let activeWebSocketServers = 0;
+let heartbeat: NodeJS.Timeout | null = null;
 
 function clearClientAuthTimeout(client: KdsClient): void {
   if (client.authTimeout) {
@@ -66,7 +69,8 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
 
 export function setupKdsWebSocket(wss: WebSocketServer): void {
   wss.on('connection', (ws: WebSocket, _req) => {
-    if (clients.size >= MAX_KDS_CLIENTS) {
+    const unauthenticatedClients = Array.from(clients.values()).filter((client) => !client.userId).length;
+    if (clients.size >= MAX_KDS_CLIENTS || unauthenticatedClients >= MAX_UNAUTHENTICATED_KDS_CLIENTS) {
       ws.close(1013, 'KDS connection capacity reached');
       return;
     }
@@ -120,23 +124,36 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
     }));
   });
 
-  const heartbeat = setInterval(() => {
-    clients.forEach((client, ws) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        if (client.isAlive === false) {
-          ws.terminate();
-          clients.delete(ws);
+  activeWebSocketServers += 1;
+  if (!heartbeat) {
+    heartbeat = setInterval(() => {
+      clients.forEach((client, ws) => {
+        if (client.userId && !isKdsClientAuthorized(client)) {
+          closeKdsClient(client, 'Session expired or revoked');
           return;
         }
-        client.isAlive = false;
-        ws.ping();
-      }
-    });
-  }, 30000);
-  // The HTTP server owns this WebSocket server. Do not keep Electron/test
-  // processes alive after that server has closed.
-  heartbeat.unref();
-  wss.once('close', () => clearInterval(heartbeat));
+        if (ws.readyState === WebSocket.OPEN) {
+          if (client.isAlive === false) {
+            ws.terminate();
+            clients.delete(ws);
+            return;
+          }
+          client.isAlive = false;
+          ws.ping();
+        }
+      });
+    }, 30000);
+    // The HTTP server owns the WebSocket server. Do not keep Electron/test
+    // processes alive after that server has closed.
+    heartbeat.unref();
+  }
+  wss.once('close', () => {
+    activeWebSocketServers = Math.max(0, activeWebSocketServers - 1);
+    if (activeWebSocketServers === 0 && heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+  });
 
   console.log('[KDS] WebSocket server setup complete');
 }

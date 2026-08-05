@@ -6,6 +6,7 @@ import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
@@ -176,7 +177,7 @@ export function startKdsServer(): Promise<void> {
         }
 
         const token = jwt.sign(
-          { userId: user.id, email: user.email, role: user.role },
+          { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
           getJWTSecret(),
           { expiresIn: '24h' }
         );
@@ -197,9 +198,17 @@ export function startKdsServer(): Promise<void> {
       }
     });
 
-    app.post('/api/auth/logout', (req: Request, res: Response) => {
+    app.post('/api/auth/logout', authRateLimit(), (req: Request, res: Response) => {
       const authHeader = req.headers.authorization;
-      if (authHeader?.startsWith('Bearer ')) revokeToken(authHeader.slice('Bearer '.length));
+      if (authHeader?.startsWith('Bearer ')) {
+        const token = authHeader.slice('Bearer '.length);
+        try {
+          const decoded = jwt.verify(token, getJWTSecret()) as { exp?: number };
+          revokeToken(token, typeof decoded.exp === 'number' ? decoded.exp * 1000 : undefined);
+        } catch {
+          // Logout remains idempotent without persisting arbitrary bearer data.
+        }
+      }
       res.json({ message: 'Logged out successfully' });
     });
 
@@ -324,6 +333,9 @@ export function startKdsServer(): Promise<void> {
 
     // Get categories for filtering
     app.get('/api/categories', requireAuth, (_req: Request, res: Response) => {
+      if (!isKdsEnabled()) {
+        return res.status(403).json({ error: 'KDS is disabled for this business' });
+      }
       try {
         const db = getDatabase();
         const categories = db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();

@@ -26,7 +26,7 @@ async function main() {
   const db = initTestDb();
   const { authHeader } = seedOwnerUser(db);
   db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-    VALUES ('kds-contract-station', 'Contract Station', '[]', 1, ?, ?)`).run(now(), now());
+    VALUES ('kds-contract-station', 'Contract Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-category']), now(), now());
   db.prepare(`INSERT INTO tables (id, number, kitchen_station_id, created_at, updated_at)
     VALUES ('kds-contract-table', '42', 'kds-contract-station', ?, ?)`).run(now(), now());
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('kds-contract-category', 'Food', 1)`).run();
@@ -70,6 +70,11 @@ async function main() {
     assertEqual(restrictedOrders.status, 200, 'restricted chef can access embedded KDS orders');
     assertEqual(restrictedOrders.body.orders.some((entry: any) => entry.id === barOrderId), false, 'embedded KDS orders hide unauthorized categories');
     assert(!('unit_price' in (restrictedOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {})), 'restricted KDS items omit line pricing');
+
+    db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+      VALUES ('kds-contract-bar-station', 'Bar Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-bar']), now(), now());
+    const deniedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-bar-station').set(chefAuth);
+    assertEqual(deniedDisplay.status, 403, 'restricted chef cannot open a disallowed station display');
 
     const restrictedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(restrictedDisplay.status, 200, 'restricted chef can access the station display');

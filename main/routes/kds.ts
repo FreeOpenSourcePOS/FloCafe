@@ -211,6 +211,13 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     } catch (e) {
       stationCategoryIds = [];
     }
+    if (
+      userCategoryIds.length > 0 &&
+      stationCategoryIds.length > 0 &&
+      !stationCategoryIds.some((categoryId) => userCategoryIds.includes(categoryId))
+    ) {
+      return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
+    }
     const categoryIds = userCategoryIds.length > 0
       ? (stationCategoryIds.length > 0
         ? stationCategoryIds.filter((categoryId) => userCategoryIds.includes(categoryId))

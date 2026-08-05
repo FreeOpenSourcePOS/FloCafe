@@ -106,6 +106,7 @@ router.post('/import', requireRole('owner'),
     }
 
     const db = getDatabase();
+    const preservedRevocations = db.prepare('SELECT token_hash, expires_at, revoked_at FROM revoked_tokens').all() as { token_hash: string; expires_at: number; revoked_at: string }[];
     const importData = data.data as Record<string, any[]>;
     const importSchemaVersion = parseInt(data.schema_version || '0', 10);
 
@@ -226,6 +227,16 @@ router.post('/import', requireRole('owner'),
         console.log(`[DB Import] ${tableName}: ${rows.length} rows (${commonCols.length} columns)`);
       }
       
+      const mergeRevocation = db.prepare(`
+        INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(token_hash) DO UPDATE SET
+          expires_at = MAX(revoked_tokens.expires_at, excluded.expires_at),
+          revoked_at = MIN(revoked_tokens.revoked_at, excluded.revoked_at)
+      `);
+      for (const revocation of preservedRevocations) {
+        mergeRevocation.run(revocation.token_hash, revocation.expires_at, revocation.revoked_at);
+      }
       const foreignKeyViolations = db.prepare('PRAGMA foreign_key_check').all();
       if (foreignKeyViolations.length > 0) {
         throw new Error(`Import would leave ${foreignKeyViolations.length} foreign-key violation(s)`);

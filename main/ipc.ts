@@ -93,7 +93,7 @@ export function registerIpcHandlers(): void {
 
       const backupVersion = getSchemaVersionFromBackup(backupPath);
 
-      if (backupVersion === 0) {
+      if (backupVersion === null) {
         return {
           success: false,
           error: 'Invalid backup file: missing schema version metadata. This backup may have been created with an older version of FloDesktop.'

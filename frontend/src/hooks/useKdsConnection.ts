@@ -220,10 +220,27 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       setOrders(data.orders || []);
       setCounts(data.counts || {});
       setConnected(true);
-    } catch {
-      if (generation === sessionGenerationRef.current) setConnected(false);
+    } catch (error: unknown) {
+      if (generation !== sessionGenerationRef.current) return;
+      const status = (error as { response?: { status?: number } })?.response?.status;
+      const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
+      if (status === 401 || status === 403 || tokenMissing) {
+        sessionGenerationRef.current += 1;
+        stopRestPolling();
+        updatingIdsRef.current.clear();
+        setUpdating(null);
+        setUser(null);
+        setOrders([]);
+        setCounts({});
+        setConnected(false);
+        setConnectionMode(null);
+        setLoading(false);
+        if (typeof window !== 'undefined') window.localStorage.removeItem('token');
+      } else {
+        setConnected(false);
+      }
     }
-  }, [api, ordersPath]);
+  }, [api, ordersPath, stopRestPolling]);
 
   // connectionMode is already 'rest' by the time this runs (it's only invoked from the
   // effect below, guarded on that condition), and `connected` is owned by fetchOrdersRest's

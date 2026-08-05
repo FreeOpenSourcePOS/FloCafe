@@ -634,6 +634,28 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
   }
 }
 
+type RevocationRow = { token_hash: string; expires_at: number; revoked_at: string };
+
+function readRevocations(dbInstance: Database.Database): RevocationRow[] {
+  try {
+    return dbInstance.prepare('SELECT token_hash, expires_at, revoked_at FROM revoked_tokens').all() as RevocationRow[];
+  } catch {
+    return [];
+  }
+}
+
+function mergeRevocations(dbInstance: Database.Database, rows: RevocationRow[]): void {
+  if (rows.length === 0) return;
+  const merge = dbInstance.prepare(`
+    INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(token_hash) DO UPDATE SET
+      expires_at = MAX(revoked_tokens.expires_at, excluded.expires_at),
+      revoked_at = MIN(revoked_tokens.revoked_at, excluded.revoked_at)
+  `);
+  for (const row of rows) merge.run(row.token_hash, row.expires_at, row.revoked_at);
+}
+
 export function restoreBackup(backupPath: string, forceDirect: boolean = false): RestoreResult {
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
 
@@ -657,6 +679,9 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
     : pragmaVersion;
   const currentDb = getDatabase();
   const currentVersion = getCurrentSchemaVersion();
+  // Never let restoring an older snapshot resurrect a token that was revoked
+  // after that snapshot was created.
+  const preservedRevocations = readRevocations(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -699,6 +724,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       initDatabase();
 
       const freshDb = getDatabase();
+      mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const foreignKeyViolations = freshDb.prepare('PRAGMA foreign_key_check').all();
       if (
@@ -735,7 +761,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations);
 }
 
 /** Return true only if the string is a safe SQL identifier (letters, digits, underscore). */
@@ -743,7 +769,7 @@ export function isSafeIdentifier(name: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
 }
 
-function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersion: number): RestoreResult {
+function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersion: number, preservedRevocations: RevocationRow[] = []): RestoreResult {
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
   let backupDb: Database.Database | undefined;
@@ -821,6 +847,7 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
       console.log(`[DB] Restored ${tableName}: ${commonColumns.length} columns`);
     }
 
+    mergeRevocations(currentDb, preservedRevocations);
     const foreignKeyViolations = currentDb.prepare('PRAGMA foreign_key_check').all();
     if (foreignKeyViolations.length > 0) {
       throw new Error(`Restore would leave ${foreignKeyViolations.length} foreign-key violation(s)`);
@@ -883,14 +910,16 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
 }
 
 
-export function getSchemaVersionFromBackup(backupPath: string): number {
+export function getSchemaVersionFromBackup(backupPath: string): number | null {
   let backupDb: Database.Database | undefined;
   try {
     backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
     const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-    return metaRow ? parseInt(metaRow.value, 10) : 0;
+    if (!metaRow) return null;
+    const version = Number.parseInt(metaRow.value, 10);
+    return Number.isFinite(version) && version >= 0 ? version : null;
   } catch {
-    return 0;
+    return null;
   } finally {
     backupDb?.close();
   }
@@ -3234,9 +3263,19 @@ export function projectKdsItem(item: any, restricted: boolean): any {
   if (!restricted) return item;
   const allowedFields = [
     'id', 'order_id', 'product_id', 'product_name', 'product_sku',
-    'quantity', 'status', 'special_instructions', 'created_at', 'updated_at', 'addons',
+    'quantity', 'status', 'special_instructions', 'created_at', 'updated_at',
   ];
-  return Object.fromEntries(allowedFields.filter((field) => field in item).map((field) => [field, item[field]]));
+  const projected = Object.fromEntries(allowedFields.filter((field) => field in item).map((field) => [field, item[field]]));
+  if (Array.isArray(item.addons)) {
+    projected.addons = item.addons.map((addon: any) => {
+      const safeAddon: Record<string, any> = {};
+      for (const field of ['id', 'name', 'quantity']) {
+        if (field in addon) safeAddon[field] = addon[field];
+      }
+      return safeAddon;
+    });
+  }
+  return projected;
 }
 
 /** Avoid exposing printer/network credentials in restricted KDS station metadata. */

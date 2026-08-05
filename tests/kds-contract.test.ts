@@ -133,6 +133,7 @@ async function main() {
     assertEqual(deniedMixedStationMutation.status, 403, 'mixed station ACLs block cross-station mutations');
     const stationOnlyDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(stationOnlyDisplay.status, 200, 'station-only chef can access station display');
+    assertEqual(stationOnlyDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station display enforces per-station categories for table-assigned orders');
     assert(!('subtotal' in (stationOnlyDisplay.body.orders[0]?.items?.[0] || {})), 'station-only chef receives redacted station display items');
     assert(!('kitchen_station_id' in (stationOnlyDisplay.body.orders[0]?.table || {})), 'station-only chef receives projected table metadata');
     assertEqual(stationOnlyDisplay.body.orders[0]?.table_id, null, 'station-only display does not expose raw table IDs');

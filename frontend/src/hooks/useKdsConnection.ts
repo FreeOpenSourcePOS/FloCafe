@@ -305,7 +305,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       setUpdating(itemId);
       try {
         await api.patch(itemStatusPath.replace(':itemId', String(itemId)), { status });
-        if (generation === sessionGenerationRef.current && connectionMode === 'rest') {
+        if (generation === sessionGenerationRef.current && connectionMode === 'rest' && wsRef.current === null) {
           await fetchOrdersRest();
         }
         if (generation === sessionGenerationRef.current && !opts.silent) {
@@ -317,7 +317,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         const statusCode = axiosError.response?.status;
         const errorMessage = axiosError.response?.data?.error || t('kds.failedToUpdateItem');
         const kdsDisabled = /kds is disabled/i.test(errorMessage);
-        const authorizationFailure = /invalid|expired|revoked|authentication required|no active kitchen station|only chef|only kitchen staff|user account is not active/i.test(errorMessage);
+        const authorizationFailure = /invalid|expired|revoked|authentication required|no active kitchen station|only chef|only kitchen staff|user account is not active|not authorized to update (this item|this station)/i.test(errorMessage);
         if (statusCode === 401 || (statusCode === 403 && !kdsDisabled && authorizationFailure)) {
           sessionGenerationRef.current += 1;
           if (statusCode === 401) window.localStorage.removeItem('token');

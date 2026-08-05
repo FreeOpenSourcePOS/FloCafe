@@ -285,11 +285,11 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     ) {
       return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
     }
-    const categoryIds = userCategoryIds.length > 0
-      ? (stationCategoryIds.length > 0
+    const stationItemCategoryIds: string[] | null = stationCategoryIds.length > 0
+      ? (userCategoryIds.length > 0
         ? stationCategoryIds.filter((categoryId) => userCategoryIds.includes(categoryId))
-        : userCategoryIds)
-      : stationCategoryIds;
+        : stationCategoryIds)
+      : (userCategoryIds.length > 0 ? userCategoryIds : null);
     const restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
 
     // #150: 'void_adjustment' is a bill-only reversal line, never a kitchen
@@ -312,15 +312,17 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     `;
 
     const params: any[] = [voidedCutoff];
-    const categoryRoute = categoryIds.length > 0
-      ? ` OR EXISTS (SELECT 1 FROM products routed_p WHERE o.table_id IS NULL AND routed_p.id = oi.product_id AND routed_p.category_id IN (${categoryIds.map(() => '?').join(',')}))`
-      : '';
+    const categoryRoute = stationItemCategoryIds === null
+      ? ' OR o.table_id IS NULL'
+      : stationItemCategoryIds.length > 0
+        ? ` OR EXISTS (SELECT 1 FROM products routed_p WHERE o.table_id IS NULL AND routed_p.id = oi.product_id AND routed_p.category_id IN (${stationItemCategoryIds.map(() => '?').join(',')}))`
+        : '';
     itemsQuery += ` AND (t.kitchen_station_id = ?${categoryRoute})`;
-    params.push(stationId, ...categoryIds);
+    params.push(stationId, ...(stationItemCategoryIds || []));
 
-    if (userCategoryIds.length > 0) {
-      itemsQuery += ` AND EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.category_id IN (${userCategoryIds.map(() => '?').join(',')}))`;
-      params.push(...userCategoryIds);
+    if (stationItemCategoryIds !== null) {
+      itemsQuery += ` AND EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.category_id IN (${stationItemCategoryIds.length > 0 ? stationItemCategoryIds.map(() => '?').join(',') : "''"}))`;
+      params.push(...stationItemCategoryIds);
     }
 
     itemsQuery += ' ORDER BY oi.created_at ASC';

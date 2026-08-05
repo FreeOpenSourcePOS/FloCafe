@@ -72,13 +72,15 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       if (categoryIds.length > 0 && (!item.category_id || !categoryIds.includes(String(item.category_id)))) {
         throw new Error('CATEGORY_FORBIDDEN');
       }
+      let orderStationId: string | null | undefined;
       if (stationIds.length > 0) {
         const station = db.prepare(`
           SELECT t.kitchen_station_id
           FROM orders o LEFT JOIN tables t ON t.id = o.table_id
           WHERE o.id = ?
         `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-        if (!isKdsStationItemAllowed(stationIds, stationCategoryIds, station?.kitchen_station_id, item.category_id)) {
+        orderStationId = station?.kitchen_station_id;
+        if (!isKdsStationItemAllowed(stationIds, stationCategoryIds, orderStationId, item.category_id)) {
           throw new Error('STATION_FORBIDDEN');
         }
       }
@@ -98,7 +100,8 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       const visibleItems = rawItems
         .filter((row) => !['completed', 'cancelled', 'void_adjustment'].includes(row.status))
         .filter((row) => row.status !== 'voided' || isVoidedItemKdsVisible(row.voided_at))
-        .filter((row) => categoryIds.length === 0 || (row.category_id && categoryIds.includes(String(row.category_id))));
+        .filter((row) => categoryIds.length === 0 || (row.category_id && categoryIds.includes(String(row.category_id))))
+        .filter((row) => stationIds.length === 0 || isKdsStationItemAllowed(stationIds, stationCategoryIds, orderStationId, row.category_id));
       const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson))
         .map((row) => projectKdsItem(row, categoryIds.length > 0));
       const tableRow = order.table_id

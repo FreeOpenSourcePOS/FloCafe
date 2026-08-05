@@ -192,7 +192,6 @@ export function isTokenStale(iat: number | undefined, tokensValidAfter: string |
 // restart and cannot be defeated by FIFO eviction.
 const revokedTokens = new Set<string>();
 const MAX_IN_MEMORY_REVOKED_TOKENS = 5000;
-const MAX_JWT_LIFETIME_MS = 10 * 24 * 60 * 60 * 1000;
 const REVOCATION_CLEANUP_INTERVAL_MS = 60 * 1000;
 let lastRevocationCleanupAt = 0;
 
@@ -218,7 +217,7 @@ export function revokeToken(token: string, verifiedExpiresAtMs?: number): void {
   }
 
   const expiresAt = typeof verifiedExpiresAtMs === 'number' && Number.isFinite(verifiedExpiresAtMs)
-    ? Math.min(verifiedExpiresAtMs, Date.now() + MAX_JWT_LIFETIME_MS)
+    ? verifiedExpiresAtMs
     : null;
   if (expiresAt === null || expiresAt <= Date.now()) return;
 

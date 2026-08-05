@@ -342,49 +342,53 @@ export function startKdsServer(): Promise<void> {
         }
 
         const db = getDatabase();
-        const item = db.prepare(`
-          SELECT oi.*, p.category_id
-          FROM order_items oi
-          LEFT JOIN products p ON p.id = oi.product_id
-          WHERE oi.id = ?
-        `).get(req.params.id) as any;
-        if (!item) {
-          return res.status(404).json({ error: 'Order item not found' });
-        }
-
-        // #150: locked once voided — see main/routes/order-items.ts for the same rule.
-        if (item.status === 'voided') {
-          return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
-        }
-        if (item.status === 'void_adjustment') {
-          return res.status(400).json({ error: 'This bill adjustment cannot be updated from KDS' });
-        }
-        if (item.status === 'completed' || item.status === 'cancelled') {
-          return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
-        }
-
         const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
         const stationIds = ((req as any).user as KdsRequestUser).stationIds;
-        if (stationIds.length > 0) {
-          const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-          const station = db.prepare(`
-            SELECT t.kitchen_station_id
-            FROM orders o LEFT JOIN tables t ON t.id = o.table_id
-            WHERE o.id = ?
-          `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-          if (!stationCategoryIds || !isKdsStationItemAllowed(stationIds, stationCategoryIds, station?.kitchen_station_id, item.category_id)) {
-            return res.status(403).json({ error: 'Not authorized to update this station' });
+        const updateResult = db.transaction(() => {
+          const item = db.prepare(`
+            SELECT oi.*, p.category_id
+            FROM order_items oi
+            LEFT JOIN products p ON p.id = oi.product_id
+            WHERE oi.id = ?
+          `).get(req.params.id) as any;
+          if (!item) return { statusCode: 404, error: 'Order item not found' };
+
+          // #150: locked once voided — see main/routes/order-items.ts for the same rule.
+          if (item.status === 'voided') return { statusCode: 400, error: 'This item has been voided and can no longer be updated' };
+          if (item.status === 'void_adjustment') return { statusCode: 400, error: 'This bill adjustment cannot be updated from KDS' };
+          if (item.status === 'completed' || item.status === 'cancelled') {
+            return { statusCode: 400, error: 'This terminal item cannot be updated from KDS' };
           }
-        }
-        if (categoryIds.length > 0 && !categoryIds.includes(String(item.category_id))) {
-          return res.status(403).json({ error: 'Not authorized to update this item' });
-        }
 
-        db.prepare("UPDATE order_items SET status = ?, updated_at = datetime('now') WHERE id = ?")
-          .run(status, req.params.id);
+          if (stationIds.length > 0) {
+            const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
+            const station = db.prepare(`
+              SELECT t.kitchen_station_id
+              FROM orders o LEFT JOIN tables t ON t.id = o.table_id
+              WHERE o.id = ?
+            `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
+            if (!stationCategoryIds || !isKdsStationItemAllowed(stationIds, stationCategoryIds, station?.kitchen_station_id, item.category_id)) {
+              return { statusCode: 403, error: 'Not authorized to update this station' };
+            }
+          }
+          if (categoryIds.length > 0 && !categoryIds.includes(String(item.category_id))) {
+            return { statusCode: 403, error: 'Not authorized to update this item' };
+          }
 
+          const updated = db.prepare(`
+            UPDATE order_items
+            SET status = ?, updated_at = datetime('now')
+            WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled')
+          `).run(status, req.params.id);
+          return updated.changes === 1
+            ? { statusCode: 200, error: null }
+            : { statusCode: 409, error: 'The order item changed before it could be updated' };
+        }).immediate();
+
+        if (updateResult.statusCode !== 200) {
+          return res.status(updateResult.statusCode).json({ error: updateResult.error });
+        }
         notifyKdsUpdate();
-
         res.json({ success: true });
       } catch (error: any) {
         console.error('[KDS Server] PATCH item status error:', error);

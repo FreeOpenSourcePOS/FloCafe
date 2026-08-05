@@ -566,7 +566,7 @@ function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string
   const rows = dbInstance.prepare(`
     SELECT type, name, sql
     FROM sqlite_master
-    WHERE type IN ('table', 'index', 'trigger')
+    WHERE type IN ('table', 'index', 'trigger', 'view')
       AND name NOT LIKE 'sqlite_%'
       AND name NOT LIKE '_flo_meta%'
   `).all() as { type: string; name: string; sql: string | null }[];
@@ -647,6 +647,11 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
     for (const [key, definition] of currentSchema) {
       if (backupSchema.get(key) !== definition) {
         return `Backup schema object ${key} is missing or differs from the current definition`;
+      }
+    }
+    for (const key of backupSchema.keys()) {
+      if (!currentSchema.has(key)) {
+        return `Backup contains unapproved schema object ${key}`;
       }
     }
     return null;

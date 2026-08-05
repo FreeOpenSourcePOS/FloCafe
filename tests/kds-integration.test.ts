@@ -162,6 +162,12 @@ async function run() {
     assert(statusRes.status === 200, 'KDS item status update succeeds');
     await updatePromise;
     assert((db.prepare('SELECT status FROM order_items WHERE id = ?').get(itemId) as any).status === 'ready', 'WebSocket broadcast follows item mutation');
+    db.prepare("UPDATE order_items SET status = 'voided', voided_at = ? WHERE id = ?").run(now(), itemId);
+    const terminalStatusRes = await request(`http://127.0.0.1:${port}`)
+      .patch(`/api/kds/items/${itemId}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'preparing' });
+    assert(terminalStatusRes.status === 400, 'Standalone KDS cannot overwrite a voided item');
     ws.close();
     await once(ws, 'close');
 

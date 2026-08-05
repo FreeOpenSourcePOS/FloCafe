@@ -345,11 +345,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
         setConnected(false);
-        if (!authenticated) {
-          setConnectionMode('rest');
-          setLoading(false);
-          return;
-        }
+        setConnectionMode('rest');
+        setLoading(false);
+        if (!authenticated) return;
         reconnectTimerRef.current = setTimeout(() => {
           if (wsRef.current === ws && generation === sessionGenerationRef.current) {
             tryWebSocketRef.current(token);

@@ -477,12 +477,17 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     FROM order_items oi
     JOIN products p ON oi.product_id = p.id
     JOIN orders o ON oi.order_id = o.id
+    LEFT JOIN tables t ON o.table_id = t.id
     WHERE ${activeOrdersCondition()}
       AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment')
       AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
   `;
   const countParams: any[] = [voidedCutoff];
 
+  if (stationIds.length > 0) {
+    countsQuery += ` AND t.kitchen_station_id IN (${stationIds.map(() => '?').join(',')})`;
+    countParams.push(...stationIds);
+  }
   if (categoryIds.length > 0) {
     countsQuery += ` AND p.category_id IN (${categoryIds.map(() => '?').join(',')})`;
     countParams.push(...categoryIds);

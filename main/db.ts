@@ -675,8 +675,12 @@ export type UserSecurityState = {
 
 export function getUserKdsStationIds(dbInstance: Database.Database, userId: string): string[] | null {
   try {
-    return (dbInstance.prepare('SELECT station_id FROM station_users WHERE user_id = ?').all(userId) as { station_id: string }[])
-      .map((row) => String(row.station_id));
+    return (dbInstance.prepare(`
+      SELECT su.station_id
+      FROM station_users su
+      JOIN kitchen_stations ks ON ks.id = su.station_id
+      WHERE su.user_id = ? AND ks.is_active = 1
+    `).all(userId) as { station_id: string }[]).map((row) => String(row.station_id));
   } catch {
     return null;
   }

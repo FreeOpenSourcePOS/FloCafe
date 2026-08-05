@@ -79,8 +79,26 @@ async function run() {
       VALUES ('restore-station-chef', 'Station Chef', 'restore-station-chef@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
     db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, datetime(\'now\'))')
       .run('restore-station-chef', 'restore-station-current');
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run();
     const currentVersion = getCurrentSchemaVersion();
     const { path: sameSchemaBackup } = await createBackup();
+
+    const enabledKdsBackup = path.join(testDir, 'enabled-kds-backup.db');
+    copyAndStamp(sameSchemaBackup, enabledKdsBackup, currentVersion);
+    const enabledKdsDb = new Database(enabledKdsBackup);
+    enabledKdsDb.pragma('foreign_keys = OFF');
+    enabledKdsDb.prepare("UPDATE settings SET value = 'true' WHERE key = 'kds_enabled'").run();
+    enabledKdsDb.close();
+    const enabledKdsRestore = restoreBackup(enabledKdsBackup, true);
+    assert.equal(enabledKdsRestore.success, true, 'restore succeeds when backup enables KDS');
+    assert.equal(
+      (getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as { value: string }).value,
+      'false',
+      'direct restore preserves the current disabled KDS setting',
+    );
 
     const missingStationBackup = path.join(testDir, 'missing-current-station.db');
     copyAndStamp(sameSchemaBackup, missingStationBackup, currentVersion);
@@ -143,6 +161,11 @@ async function run() {
       'child data is restored after parent data',
     );
     assert.equal(getDatabase().pragma('foreign_keys', { simple: true }), 1, 'foreign keys are re-enabled after restore');
+    assert.equal(
+      (getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as { value: string }).value,
+      'false',
+      'data-only restore preserves the current disabled KDS setting',
+    );
     assertNoRestoreAttachment();
 
     // A failed restore must roll back and leave the connection reusable.

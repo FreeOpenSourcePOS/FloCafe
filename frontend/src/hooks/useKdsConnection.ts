@@ -340,6 +340,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           return;
         }
         if (kdsDisabled) {
+          sessionGenerationRef.current += 1;
           setOrders([]);
           setCounts({});
           setConnected(false);

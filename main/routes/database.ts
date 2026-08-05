@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureKitchenStationSecurityState, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeUserSecurityState, mergeUserStationSecurityState, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeUserSecurityState, mergeUserStationSecurityState, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
@@ -111,6 +111,7 @@ router.post('/import', requireRole('owner'),
     const preservedUserSecurity = captureUserSecurityState(db);
     const preservedUserStations = captureUserStationSecurityState(db);
     const preservedStationSecurity = captureKitchenStationSecurityState(db);
+    const preservedKdsEnabled = captureKdsEnabledSetting(db);
     const importData = data.data as Record<string, any[]>;
     const importSchemaVersion = parseInt(data.schema_version || '0', 10);
 
@@ -233,6 +234,7 @@ router.post('/import', requireRole('owner'),
       
       mergeUserSecurityState(db, preservedUserSecurity);
       mergeUserStationSecurityState(db, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
+      mergeKdsEnabledSetting(db, preservedKdsEnabled);
       const mergeRevocation = db.prepare(`
         INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at)
         VALUES (?, ?, ?)

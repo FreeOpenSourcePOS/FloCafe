@@ -3,8 +3,21 @@ import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VO
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
+import { parseCategoryIds } from './auth';
 
 const router = Router();
+
+function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request): string[] | null {
+  const userId = (req as any).user?.userId;
+  if (!userId) return null;
+  const user = db.prepare('SELECT role, category_ids, is_active FROM users WHERE id = ?').get(userId) as {
+    role: string;
+    category_ids: string | null;
+    is_active: number;
+  } | undefined;
+  if (!user?.is_active || !['chef', 'manager', 'owner'].includes(user.role)) return null;
+  return user.role === 'manager' || user.role === 'owner' ? [] : parseCategoryIds(user.category_ids);
+}
 
 // KDS disabled → 404 the pairing surface, checked before the role gate below
 // so a request from an authenticated-but-wrong-role user doesn't leak that
@@ -16,6 +29,15 @@ router.use(requireRole('chef', 'manager', 'owner'));
 router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const userCategoryIds = getKdsUserCategoryIds(db, req);
+    if (!userCategoryIds) return res.status(403).json({ error: 'User account is not active' });
+    let allowedProductIds: Set<string> | null = null;
+    if (userCategoryIds.length > 0) {
+      const productRows = db.prepare(`
+        SELECT id FROM products WHERE category_id IN (${userCategoryIds.map(() => '?').join(',')})
+      `).all(...userCategoryIds) as { id: string | number }[];
+      allowedProductIds = new Set(productRows.map((product) => String(product.id)));
+    }
     const stationId = req.query.station_id as string;
 
     // A prepaid order is marked 'completed' the moment its bill is fully
@@ -70,7 +92,9 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
 
     const allVisibleItems = (orders as any[])
       .flatMap((o) => itemsByOrder[o.id] || [])
-      .filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+      .filter((i) => i.status !== 'void_adjustment'
+        && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+        && (!allowedProductIds || allowedProductIds.has(String(i.product_id))));
     const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems);
     const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
 
@@ -78,7 +102,9 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       // #150: hide the void reversal line (bill adjustment, not a kitchen
       // item) and age voided items off the board after their grace period.
       const visibleItems = (itemsByOrder[order.id] || [])
-        .filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)))
+        .filter((i) => i.status !== 'void_adjustment'
+          && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+          && (!allowedProductIds || allowedProductIds.has(String(i.product_id))))
         .map((i) => addonsByItemId.get(i.id) || i);
 
       return {
@@ -86,10 +112,9 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         items: visibleItems,
         table: order.table_name ? { name: order.table_name } : null,
       };
-    });
+    }).filter((order) => order.items.length > 0);
 
-    res.json({ orders: ordersWithItems });
-  } catch (error: any) {
+    res.json({ orders: ordersWithItems });  } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -154,6 +179,8 @@ router.post('/pairing', requireRole('owner', 'manager'), (req: Request, res: Res
 router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const userCategoryIds = getKdsUserCategoryIds(db, req);
+    if (!userCategoryIds) return res.status(403).json({ error: 'User account is not active' });
     const stationId = req.query.station_id as string;
 
     if (!stationId) {
@@ -165,15 +192,20 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Kitchen station not found' });
     }
 
-    let categoryIds: number[] = [];
+    let stationCategoryIds: string[] = [];
     try {
       const stationData = station as any;
       if (stationData.category_ids) {
-        categoryIds = JSON.parse(stationData.category_ids);
+        stationCategoryIds = parseCategoryIds(stationData.category_ids);
       }
     } catch (e) {
-      categoryIds = [];
+      stationCategoryIds = [];
     }
+    const categoryIds = userCategoryIds.length > 0
+      ? (stationCategoryIds.length > 0
+        ? stationCategoryIds.filter((categoryId) => userCategoryIds.includes(categoryId))
+        : userCategoryIds)
+      : stationCategoryIds;
 
     // #150: 'void_adjustment' is a bill-only reversal line, never a kitchen
     // item — excluded outright. A voided item itself stays visible, struck
@@ -249,6 +281,8 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     }
 
     const db = getDatabase();
+    const userCategoryIds = getKdsUserCategoryIds(db, req);
+    if (!userCategoryIds) return res.status(403).json({ error: 'User account is not active' });
 
     const updatedItem = withTxn(() => {
       const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id) as any;
@@ -258,6 +292,13 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
 
       if (item.status === 'voided') {
         throw new Error('VOIDED_ITEM');
+      }
+
+      if (userCategoryIds.length > 0) {
+        const product = db.prepare('SELECT category_id FROM products WHERE id = ?').get(item.product_id) as { category_id: string | null } | undefined;
+        if (!product || !userCategoryIds.includes(String(product.category_id || ''))) {
+          throw new Error('CATEGORY_FORBIDDEN');
+        }
       }
 
       db.prepare(`
@@ -276,6 +317,9 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
   } catch (error: any) {
     if (error.message === 'VOIDED_ITEM') {
       return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
+    }
+    if (error.message === 'CATEGORY_FORBIDDEN') {
+      return res.status(403).json({ error: 'Not authorized to update this item' });
     }
     console.error("[API] KDS item status update error:", error);
     res.status(500).json({ error: "Could not update item status" });

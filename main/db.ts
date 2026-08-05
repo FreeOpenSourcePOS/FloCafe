@@ -2350,7 +2350,11 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
           value TEXT
         )
       `);
-      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('schema_version', String(getCurrentSchemaVersion()));
+      // This snapshot predates the migration about to run. Keep both the
+      // metadata stamp and SQLite header aligned with that older version so
+      // restoring it cannot be misclassified as a current-schema backup.
+      backupDb.pragma(`user_version = ${fromVersion}`);
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('schema_version', String(fromVersion));
       backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('backup_created_at', new Date().toISOString());
       backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('app_version', app.getVersion());
     } finally {

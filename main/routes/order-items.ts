@@ -9,6 +9,7 @@ interface OrderItemRow {
   id: number | string;
   order_id: number | string;
   status: string;
+  category_id?: string | null;
 }
 
 // PATCH /api/order-items/:id/status — update a single item's kitchen status
@@ -40,7 +41,12 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     const categoryIds = parseCategoryIds(currentUser.category_ids);
 
     const orderData = withTxn(() => {
-      const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(itemId) as OrderItemRow | undefined;
+      const item = db.prepare(`
+        SELECT oi.*, p.category_id
+        FROM order_items oi
+        LEFT JOIN products p ON p.id = oi.product_id
+        WHERE oi.id = ?
+      `).get(itemId) as OrderItemRow | undefined;
       if (!item) {
         return null;
       }
@@ -49,11 +55,8 @@ router.patch('/:id/status', (req: Request, res: Response) => {
         throw new Error('VOIDED_ITEM');
       }
 
-      if (categoryIds.length > 0) {
-        const product = db.prepare('SELECT category_id FROM products WHERE id = (SELECT product_id FROM order_items WHERE id = ?)').get(itemId) as { category_id: string | null } | undefined;
-        if (!product || !categoryIds.includes(product.category_id || '')) {
-          throw new Error('CATEGORY_FORBIDDEN');
-        }
+      if (categoryIds.length > 0 && (!item.category_id || !categoryIds.includes(String(item.category_id)))) {
+        throw new Error('CATEGORY_FORBIDDEN');
       }
 
       db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?')
@@ -62,8 +65,16 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(item.order_id) as any;
       if (!order) return null;
 
-      const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(item.order_id) as any[];
-      const items = attachEffectiveAddons(db, rawItems.map(parseItemJson));
+      const rawItems = db.prepare(`
+        SELECT oi.*, p.category_id
+        FROM order_items oi
+        LEFT JOIN products p ON p.id = oi.product_id
+        WHERE oi.order_id = ?
+      `).all(item.order_id) as any[];
+      const visibleItems = categoryIds.length > 0
+        ? rawItems.filter((row) => row.category_id && categoryIds.includes(String(row.category_id)))
+        : rawItems;
+      const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson));
       const tableRow = order.table_id
         ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
         : null;

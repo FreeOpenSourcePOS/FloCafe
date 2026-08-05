@@ -24,6 +24,10 @@ type KdsRequestUser = {
   categoryIds: string[];
 };
 
+function categoryIdsForRole(role: string, categoryIds: string | null): string[] {
+  return role === 'manager' || role === 'owner' ? [] : parseCategoryIds(categoryIds);
+}
+
 export function isKdsServerRunning(): boolean {
   return kdsServer !== null;
 }
@@ -108,7 +112,7 @@ export function startKdsServer(): Promise<void> {
           userId: user.id,
           email: user.email,
           role: user.role,
-          categoryIds: parseCategoryIds(user.category_ids),
+          categoryIds: categoryIdsForRole(user.role, user.category_ids),
         } satisfies KdsRequestUser;
         next();
       } catch (error) {
@@ -189,7 +193,7 @@ export function startKdsServer(): Promise<void> {
             name: user.name,
             email: user.email,
             role: user.role,
-            category_ids: parseCategoryIds(user.category_ids),
+            category_ids: categoryIdsForRole(user.role, user.category_ids),
           },
         });
       } catch (error: any) {

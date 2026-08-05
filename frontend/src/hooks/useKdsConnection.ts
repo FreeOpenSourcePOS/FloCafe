@@ -309,12 +309,13 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           reconnectTimerRef.current = null;
         }
         setConnectionMode('websocket');
-        setConnected(true);
+        setConnected(false);
         ws.send(JSON.stringify({ type: 'auth', token }));
         authTimeout = setTimeout(() => {
           if (wsRef.current !== ws || generation !== sessionGenerationRef.current) return;
           wsRef.current = null;
           ws.close();
+          setConnected(false);
           setConnectionMode('rest');
           setLoading(false);
         }, 5000);

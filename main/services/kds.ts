@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, withTxn } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -65,7 +65,9 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
       .prepare('SELECT category_ids FROM users WHERE id = ? AND is_active = 1')
       .get(client.userId) as { category_ids: string | null } | undefined;
     if (!currentUser) return false;
-    const nextCategoryIds = parseCategoryIds(currentUser.category_ids);
+    const nextCategoryIds = ['manager', 'owner'].includes(status.role)
+      ? []
+      : parseCategoryIds(currentUser.category_ids);
     client.categoryIdsChanged = JSON.stringify(client.categoryIds) !== JSON.stringify(nextCategoryIds);
     client.role = status.role;
     client.categoryIds = nextCategoryIds;
@@ -236,7 +238,9 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
       return;
     }
 
-    const categoryIds = parseCategoryIds(user.category_ids);
+    const categoryIds = ['manager', 'owner'].includes(user.role)
+      ? []
+      : parseCategoryIds(user.category_ids);
 
     client.userId = user.id;
     client.userName = user.name;
@@ -414,23 +418,26 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
   }).filter((order: any) => order.items.length > 0);
 
   // Get counts (filtered by category)
+  const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
   let countsQuery = `
     SELECT oi.status, COUNT(*) as count
     FROM order_items oi
     JOIN products p ON oi.product_id = p.id
     JOIN orders o ON oi.order_id = o.id
     WHERE ${activeOrdersCondition()}
+      AND oi.status != 'void_adjustment'
+      AND (oi.status != 'voided' OR oi.voided_at > ?)
   `;
+  const countParams: any[] = [voidedCutoff];
 
   if (categoryIds.length > 0) {
     countsQuery += ` AND p.category_id IN (${categoryIds.map(() => '?').join(',')})`;
+    countParams.push(...categoryIds);
   }
 
   countsQuery += ' GROUP BY oi.status';
 
-  const counts = categoryIds.length > 0
-    ? db.prepare(countsQuery).all(...categoryIds) as { status: string; count: number }[]
-    : db.prepare(countsQuery).all() as { status: string; count: number }[];
+  const counts = db.prepare(countsQuery).all(...countParams) as { status: string; count: number }[];
 
   const countMap: Record<string, number> = {};
   counts.forEach((c) => { countMap[c.status] = c.count; });

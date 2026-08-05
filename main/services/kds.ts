@@ -16,6 +16,7 @@ interface KdsClient {
   isAlive: boolean;
   categoryIdsChanged: boolean;
   stationIdsChanged: boolean;
+  lastExpiredVoidMarker: string | null;
   authTimeout?: NodeJS.Timeout;
 }
 
@@ -25,6 +26,7 @@ export const MAX_UNAUTHENTICATED_KDS_CLIENTS = 25;
 const clients: Map<WebSocket, KdsClient> = new Map();
 let activeWebSocketServers = 0;
 let heartbeat: NodeJS.Timeout | null = null;
+let lastKdsBroadcastAt = 0;
 
 function clearClientAuthTimeout(client: KdsClient): void {
   if (client.authTimeout) {
@@ -41,7 +43,22 @@ function clearClientIdentity(client: KdsClient): void {
   client.categoryIds = [];
   client.stationIds = [];
   client.stationAssignmentsConfigured = false;
+  client.lastExpiredVoidMarker = null;
   client.token = null;
+}
+
+function getExpiredVoidMarker(): string | null {
+  try {
+    const cutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
+    const row = getDatabase().prepare(`
+      SELECT COUNT(*) AS count, MAX(id) AS max_id
+      FROM order_items
+      WHERE status = 'voided' AND voided_at IS NOT NULL AND voided_at <= ?
+    `).get(cutoff) as { count: number; max_id: number | null };
+    return row.count > 0 ? `${row.count}:${row.max_id ?? ''}` : null;
+  } catch {
+    return null;
+  }
 }
 
 function closeKdsClient(client: KdsClient, message?: string): void {
@@ -112,6 +129,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
       isAlive: true,
       categoryIdsChanged: false,
       stationIdsChanged: false,
+      lastExpiredVoidMarker: null,
     };
     client.authTimeout = setTimeout(() => {
       if (!client.userId) {
@@ -159,12 +177,16 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
           closeKdsClient(client, 'Session expired or revoked');
           return;
         }
+        const expiredVoidMarker = client.userId ? getExpiredVoidMarker() : null;
         let snapshotSent = false;
-        if ((client.categoryIdsChanged || client.stationIdsChanged) && ws.readyState === WebSocket.OPEN) {
+        const permissionRefreshNeeded = client.categoryIdsChanged || client.stationIdsChanged;
+        const expiryRefreshNeeded = expiredVoidMarker !== null && expiredVoidMarker !== client.lastExpiredVoidMarker;
+        if ((permissionRefreshNeeded || expiryRefreshNeeded) && ws.readyState === WebSocket.OPEN) {
           client.categoryIdsChanged = false;
           client.stationIdsChanged = false;
           try {
             sendActiveOrders(ws, client.categoryIds, client.stationIds);
+            client.lastExpiredVoidMarker = expiredVoidMarker;
             snapshotSent = true;
           } catch (error) {
             console.error('[KDS] Category refresh error:', error);
@@ -179,11 +201,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
             return;
           }
           if (client.userId && !snapshotSent) {
-            try { sendActiveOrders(ws, client.categoryIds, client.stationIds); } catch (error) {
-              console.error('[KDS] Heartbeat refresh error:', error);
-              closeKdsClient(client, 'Could not refresh KDS board');
-              return;
-            }
+            client.lastExpiredVoidMarker = expiredVoidMarker;
           }
           client.isAlive = false;
           ws.ping();
@@ -299,6 +317,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
     }));
 
     sendActiveOrders(ws, client.categoryIds, client.stationIds);
+    client.lastExpiredVoidMarker = getExpiredVoidMarker();
   } catch {
     closeKdsClient(client, 'Invalid token');
   }
@@ -537,6 +556,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
 }
 
 function broadcastOrderUpdate(): void {
+  lastKdsBroadcastAt = Date.now();
   clients.forEach((client) => {
     if (!isKdsClientAuthorized(client)) {
       closeKdsClient(client, 'Session expired or revoked');
@@ -545,7 +565,9 @@ function broadcastOrderUpdate(): void {
     if (client.ws.readyState !== WebSocket.OPEN) return;
     try {
       client.categoryIdsChanged = false;
+      client.stationIdsChanged = false;
       sendActiveOrders(client.ws, client.categoryIds, client.stationIds);
+      client.lastExpiredVoidMarker = getExpiredVoidMarker();
     } catch (err) {
       console.error('[KDS] Broadcast error for client:', err);
     }
@@ -557,5 +579,8 @@ export function notifyKdsUpdate(): void {
 }
 
 export function notifyOrderUpdated(): void {
+  // Many mutation routes emit notifyKdsUpdate() followed by this legacy
+  // notification. Avoid issuing a second full snapshot for the same mutation.
+  if (Date.now() - lastKdsBroadcastAt < 100) return;
   broadcastOrderUpdate();
 }

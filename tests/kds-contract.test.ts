@@ -96,6 +96,8 @@ async function main() {
       VALUES ('kds-contract-bar-station', 'Bar Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-bar']), now(), now());
     const deniedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-bar-station').set(chefAuth);
     assertEqual(deniedDisplay.status, 403, 'restricted chef cannot open a disallowed station display');
+    const deniedStationOrders = await request(app).get('/api/kds/orders?station_id=kds-contract-bar-station').set(chefAuth);
+    assertEqual(deniedStationOrders.status, 403, 'restricted chef cannot list a disallowed station');
     const barDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-bar-station').set(authHeader);
     assertEqual(barDisplay.status, 200, 'owner can inspect the bar station display');
     assertEqual(barDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station category routing does not duplicate table-assigned orders');
@@ -118,7 +120,9 @@ async function main() {
     db.prepare('UPDATE users SET category_ids = NULL WHERE id = ?').run(chefId);
     const stationOnlyOrders = await request(app).get('/api/kds/orders').set(chefAuth);
     assertEqual(stationOnlyOrders.status, 200, 'station-only chef can access embedded KDS orders');
-    assert(!('unit_price' in (stationOnlyOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {})), 'station-only chef receives redacted embedded KDS items');
+    const stationOnlyItem = stationOnlyOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {};
+    assert(!('unit_price' in stationOnlyItem), 'station-only chef receives redacted embedded KDS items');
+    assert(!('table_id' in stationOnlyItem), 'station-only chef does not receive raw item table IDs');
     const stationOnlyDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(stationOnlyDisplay.status, 200, 'station-only chef can access station display');
     assert(!('subtotal' in (stationOnlyDisplay.body.orders[0]?.items?.[0] || {})), 'station-only chef receives redacted station display items');

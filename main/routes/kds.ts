@@ -61,6 +61,14 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     if (stationId && userStationIds.length > 0 && !userStationIds.includes(stationId)) {
       return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
     }
+    if (
+      stationId &&
+      userCategoryIds.length > 0 &&
+      requestedStationCategoryIds.length > 0 &&
+      !requestedStationCategoryIds.some((categoryId) => userCategoryIds.includes(categoryId))
+    ) {
+      return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
+    }
     let allowedProductIds: Set<string> | null = null;
     if (userCategoryIds.length > 0) {
       const productRows = db.prepare(`

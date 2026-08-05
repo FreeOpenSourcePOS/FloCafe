@@ -3629,7 +3629,7 @@ export function projectKdsItem(item: any, restricted: boolean): any {
   const allowedFields = [
     'id', 'order_id', 'product_id', 'product_name', 'product_sku',
     'quantity', 'status', 'special_instructions', 'created_at', 'updated_at',
-    'order_number', 'type', 'table_id', 'table_name', 'order_status', 'order_notes', 'order_time',
+    'order_number', 'type', 'table_name', 'order_status', 'order_notes', 'order_time',
   ];
   const projected = Object.fromEntries(allowedFields.filter((field) => field in item).map((field) => [field, item[field]]));
   if (Array.isArray(item.addons)) {

@@ -251,20 +251,28 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setLoading(false);
         if (typeof window !== 'undefined') window.localStorage.removeItem('token');
       } else if (status === 403) {
-        // The KDS endpoint may deny a valid dashboard session (for example,
-        // after station reassignment). Never retain data fetched earlier or
-        // retry the same KDS authorization failure on the next mount.
-        sessionGenerationRef.current += 1;
-        markKdsAuthBlocked();
-        stopRestPolling();
-        updatingIdsRef.current.clear();
-        setUpdating(null);
-        setUser(null);
-        setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
+        const message = axiosError.response?.data?.error || t('kds.authFailed');
+        const kdsDisabled = /kds is disabled/i.test(message);
+        if (!kdsDisabled) {
+          // A station/role denial is a KDS authorization failure. Never retain
+          // data fetched earlier or retry it on the next mount.
+          sessionGenerationRef.current += 1;
+          markKdsAuthBlocked();
+          stopRestPolling();
+          updatingIdsRef.current.clear();
+          setUpdating(null);
+          setUser(null);
+          setLoginError(message);
+          setConnectionMode(null);
+        } else {
+          // KDS can be re-enabled without changing the user's credentials;
+          // keep polling rather than permanently blocking the session.
+          setLoginError(message);
+          setConnectionMode('rest');
+        }
         setOrders([]);
         setCounts({});
         setConnected(false);
-        setConnectionMode(null);
         setLoading(false);
       } else {
         setConnected(false);
@@ -296,8 +304,35 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (generation === sessionGenerationRef.current && !opts.silent) {
           toast.success(t('kds.itemMarked', { status: statusLabel(status) }));
         }
-      } catch {
-        if (generation === sessionGenerationRef.current && !opts.silent) {
+      } catch (error: unknown) {
+        if (generation !== sessionGenerationRef.current) return;
+        const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
+        const statusCode = axiosError.response?.status;
+        if (statusCode === 401 || statusCode === 403) {
+          sessionGenerationRef.current += 1;
+          if (statusCode === 401) window.localStorage.removeItem('token');
+          else markKdsAuthBlocked();
+          stopRestPolling();
+          if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+          }
+          if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+          }
+          updatingIdsRef.current.clear();
+          setUpdating(null);
+          setUser(null);
+          setOrders([]);
+          setCounts({});
+          setConnected(false);
+          setConnectionMode(null);
+          setLoading(false);
+          setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
+          return;
+        }
+        if (!opts.silent) {
           toast.error(t('kds.failedToUpdateItem'));
         }
       } finally {
@@ -309,7 +344,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     },
     // statusLabel is derived from `t` (already in deps), so omit it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [api, itemStatusPath, t],
+    [api, itemStatusPath, stopRestPolling, t],
   );
 
   const tryWebSocket = useCallback(
@@ -575,8 +610,18 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         ) return;
         const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
         const status = axiosError?.response?.status;
-        if (status === 401) window.localStorage.removeItem('token');
-        if (status === 403) {
+        if (status === 401) {
+          sessionGenerationRef.current += 1;
+          stopRestPolling();
+          updatingIdsRef.current.clear();
+          setUpdating(null);
+          setUser(null);
+          setOrders([]);
+          setCounts({});
+          setConnected(false);
+          setConnectionMode(null);
+          window.localStorage.removeItem('token');
+        } else if (status === 403) {
           sessionGenerationRef.current += 1;
           markKdsAuthBlocked();
           stopRestPolling();

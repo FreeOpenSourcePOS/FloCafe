@@ -452,7 +452,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
 
 // ── POST /api/auth/logout ─────────────────────────────────────────────────────
 
-router.post('/logout', authRateLimit(), (req: Request, res: Response) => {
+router.post('/logout', (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
     const token = authHeader.slice('Bearer '.length);

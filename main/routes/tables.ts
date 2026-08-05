@@ -280,7 +280,6 @@ router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'waite
 
     cloudSync.recordOrderChanged(moved.order.id, 'order.table_moved');
     notifyKdsUpdate();
-    notifyOrderUpdated();
 
     res.json({
       order: moved.order,

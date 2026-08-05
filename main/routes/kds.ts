@@ -84,14 +84,14 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     if (userStationIds.length > 0) {
       const stationPlaceholders = userStationIds.map(() => '?').join(',');
       const categoryRoute = stationCategoryIds.length > 0
-        ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND routed_p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))`
+        ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))`
         : '';
       query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute})`;
       params.push(...userStationIds, ...stationCategoryIds);
     }
     if (stationId) {
       const categoryRoute = requestedStationCategoryIds.length > 0
-        ? ` OR EXISTS (SELECT 1 FROM order_items requested_oi JOIN products requested_p ON requested_p.id = requested_oi.product_id WHERE requested_oi.order_id = o.id AND requested_p.category_id IN (${requestedStationCategoryIds.map(() => '?').join(',')}))`
+        ? ` OR EXISTS (SELECT 1 FROM order_items requested_oi JOIN products requested_p ON requested_p.id = requested_oi.product_id WHERE requested_oi.order_id = o.id AND o.table_id IS NULL AND requested_p.category_id IN (${requestedStationCategoryIds.map(() => '?').join(',')}))`
         : '';
       query += ` AND (t.kitchen_station_id = ?${categoryRoute})`;
       params.push(stationId, ...requestedStationCategoryIds);
@@ -290,7 +290,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
 
     const params: any[] = [voidedCutoff];
     const categoryRoute = categoryIds.length > 0
-      ? ` OR EXISTS (SELECT 1 FROM products routed_p WHERE routed_p.id = oi.product_id AND routed_p.category_id IN (${categoryIds.map(() => '?').join(',')}))`
+      ? ` OR EXISTS (SELECT 1 FROM products routed_p WHERE o.table_id IS NULL AND routed_p.id = oi.product_id AND routed_p.category_id IN (${categoryIds.map(() => '?').join(',')}))`
       : '';
     itemsQuery += ` AND (t.kitchen_station_id = ?${categoryRoute})`;
     params.push(stationId, ...categoryIds);

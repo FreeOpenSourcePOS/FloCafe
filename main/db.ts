@@ -562,6 +562,20 @@ export function deleteBackup(fileName: string): void {
   fs.unlinkSync(fullPath);
 }
 
+function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
+  const rows = dbInstance.prepare(`
+    SELECT type, name, sql
+    FROM sqlite_master
+    WHERE type IN ('table', 'index', 'trigger')
+      AND name NOT LIKE 'sqlite_%'
+      AND name NOT LIKE '_flo_meta%'
+  `).all() as { type: string; name: string; sql: string | null }[];
+  return new Map(rows.map((row) => [
+    `${row.type}:${row.name}`,
+    (row.sql || '').replace(/\s+/g, ' ').trim(),
+  ]));
+}
+
 function getColumns(dbInstance: Database.Database, tableName: string): string[] {
   try {
     const columns = dbInstance.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[];
@@ -625,6 +639,14 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
       const missingColumns = getColumns(currentDb, tableName).filter((column) => !backupColumns.has(column));
       if (missingColumns.length > 0) {
         return `Backup table ${tableName} is missing required column(s): ${missingColumns.join(', ')}`;
+      }
+    }
+
+    const currentSchema = getSchemaDefinitions(currentDb);
+    const backupSchema = getSchemaDefinitions(backupDb);
+    for (const [key, definition] of currentSchema) {
+      if (backupSchema.get(key) !== definition) {
+        return `Backup schema object ${key} is missing or differs from the current definition`;
       }
     }
     return null;
@@ -713,7 +735,7 @@ export function isKdsStationItemAllowed(
   itemCategoryId: string | null | undefined,
 ): boolean {
   if (stationIds.length === 0) return true;
-  if (orderStationId && stationIds.includes(String(orderStationId))) return true;
+  if (orderStationId) return stationIds.includes(String(orderStationId));
   return !!itemCategoryId && stationCategoryIds.includes(String(itemCategoryId));
 }
 

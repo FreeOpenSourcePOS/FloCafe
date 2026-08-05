@@ -48,7 +48,7 @@ router.get('/orders', (req: Request, res: Response) => {
 
     const stationFilter = stationIds.length > 0
       ? ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationIds.map(() => '?').join(',')}))
-          ${stationCategoryIds.length > 0 ? `OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND routed_p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))` : ''})`
+          ${stationCategoryIds.length > 0 ? `OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))` : ''})`
       : '';
     const orders = db.prepare(`
       SELECT o.*, t.kitchen_station_id

@@ -94,6 +94,9 @@ async function main() {
       VALUES ('kds-contract-bar-station', 'Bar Station', ?, 1, ?, ?)`).run(JSON.stringify(['kds-contract-bar']), now(), now());
     const deniedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-bar-station').set(chefAuth);
     assertEqual(deniedDisplay.status, 403, 'restricted chef cannot open a disallowed station display');
+    const barDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-bar-station').set(authHeader);
+    assertEqual(barDisplay.status, 200, 'owner can inspect the bar station display');
+    assertEqual(barDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station category routing does not duplicate table-assigned orders');
 
     const pairing = await request(app).get('/api/kds/pairing').set(chefAuth);
     assertEqual(pairing.status, 200, 'restricted chef can list assigned KDS stations');

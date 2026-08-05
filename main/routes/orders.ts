@@ -527,7 +527,6 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
     if (!result.idempotentReplay) {
       notifyKdsUpdate();
-      notifyOrderUpdated();
       cloudSync.recordOrderChanged(result.order.id, 'order.created');
 
       if (customer_id) {
@@ -788,7 +787,6 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     if (result.replayResponse) return res.json(result.replayResponse);
     cloudSync.recordOrderChanged(req.params.id as string, 'order.updated');
     notifyKdsUpdate();
-    notifyOrderUpdated();
 
     res.json({ order: Object.assign({}, result.updatedOrder, { items: result.updatedItems }) });
   } catch (error: any) {
@@ -915,7 +913,6 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
 
     cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
     notifyKdsUpdate();
-    notifyOrderUpdated();
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });
   } catch (error: any) {
@@ -1003,7 +1000,6 @@ router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashie
 
     cloudSync.recordOrderChanged(req.params.id as string, 'order.type_changed');
     notifyKdsUpdate();
-    notifyOrderUpdated();
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table: null }) });
   } catch (error: any) {

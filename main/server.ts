@@ -50,7 +50,10 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
 
     // Reject tokens for users deactivated (or deleted) since the token was
     // issued, instead of trusting the JWT's signature/expiry alone (vuln-0001).
-    const status = getUserAuthStatus(decoded.userId, { fresh: req.path.startsWith('/api/kds') });
+    const freshKdsAuth = req.path.startsWith('/api/kds')
+      || req.path.startsWith('/api/kitchen')
+      || req.path.startsWith('/api/order-items');
+    const status = getUserAuthStatus(decoded.userId, { fresh: freshKdsAuth });
     if (!status || !status.isActive) {
       res.status(401).json({ error: 'Invalid or expired token' });
       return;

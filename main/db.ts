@@ -389,39 +389,52 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
   // avoids that restriction; we copy the final clean file to targetPath.
   const tempPath = path.join(backupDir, `flo-backup-${timestamp}-${uniqueSuffix}.db`);
   const finalPath = targetPath || tempPath;
+  let completed = false;
 
-  console.log('[DB] createBackup: Backing up to temp:', tempPath);
-  await db.backup(tempPath);
+  try {
+    console.log('[DB] createBackup: Backing up to temp:', tempPath);
+    await db.backup(tempPath);
 
-  const backupDb = new Database(tempPath);
-  // Switch to DELETE journal mode: checkpoints WAL and removes .db-wal/.db-shm
-  // so the final file is self-contained with no auxiliary files.
-  backupDb.pragma('journal_mode = DELETE');
-  backupDb.exec(`
-    CREATE TABLE IF NOT EXISTS _flo_meta (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    )
-  `);
+    let currentVersion = 0;
+    let backupDb: Database.Database | undefined;
+    try {
+      backupDb = new Database(tempPath);
+      // Switch to DELETE journal mode: checkpoints WAL and removes
+      // .db-wal/.db-shm so the final file is self-contained.
+      backupDb.pragma('journal_mode = DELETE');
+      backupDb.exec(`
+        CREATE TABLE IF NOT EXISTS _flo_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT
+        )
+      `);
 
-  const currentVersion = getCurrentSchemaVersion();
-  backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
-    .run('schema_version', String(currentVersion));
-  backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
-    .run('backup_created_at', new Date().toISOString());
-  backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
-    .run('app_version', app.getVersion());
-  backupDb.close();
+      currentVersion = getCurrentSchemaVersion();
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
+        .run('schema_version', String(currentVersion));
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
+        .run('backup_created_at', new Date().toISOString());
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
+        .run('app_version', app.getVersion());
+    } finally {
+      backupDb?.close();
+    }
 
-  if (finalPath !== tempPath) {
-    fs.copyFileSync(tempPath, finalPath);
-    fs.unlinkSync(tempPath);
-    console.log(`[DB] Backup saved to: ${finalPath} (schema v${currentVersion})`);
-  } else {
-    console.log(`[DB] Backup created: ${finalPath} (schema v${currentVersion})`);
+    if (finalPath !== tempPath) {
+      fs.copyFileSync(tempPath, finalPath);
+      fs.unlinkSync(tempPath);
+      console.log(`[DB] Backup saved to: ${finalPath} (schema v${currentVersion})`);
+    } else {
+      console.log(`[DB] Backup created: ${finalPath} (schema v${currentVersion})`);
+    }
+
+    completed = true;
+    return { path: finalPath, schemaVersion: currentVersion };
+  } finally {
+    if (!completed && fs.existsSync(tempPath)) {
+      try { fs.unlinkSync(tempPath); } catch { }
+    }
   }
-
-  return { path: finalPath, schemaVersion: currentVersion };
 }
 
 export function createBackup(targetPath?: string): Promise<{ path: string; schemaVersion: number }> {

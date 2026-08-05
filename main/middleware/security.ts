@@ -162,6 +162,11 @@ export function invalidateUserAuthCache(userId: string): void {
   userAuthCache.delete(userId);
 }
 
+export function clearUserAuthCache(): void {
+  userAuthCache.clear();
+  lastUserAuthCachePruneAt = 0;
+}
+
 /**
  * True if a JWT's `iat` (issued-at, seconds since epoch) predates the user's
  * `tokens_valid_after` — i.e. the credentials were changed after this token was

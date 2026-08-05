@@ -2,6 +2,7 @@ import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock } from './db';
+import { clearUserAuthCache } from './middleware/security';
 import { getLocalIP } from './server';
 import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
@@ -115,6 +116,7 @@ export function registerIpcHandlers(): void {
         }
 
         const restoreResult = await withDatabaseMaintenanceLock(() => restoreBackup(backupPath, false));
+        clearUserAuthCache();
         return {
           success: restoreResult.success,
           mode: restoreResult.mode,
@@ -129,6 +131,7 @@ export function registerIpcHandlers(): void {
       }
 
       const restoreResult = await withDatabaseMaintenanceLock(() => restoreBackup(backupPath, true));
+      clearUserAuthCache();
       return {
         success: restoreResult.success,
         mode: restoreResult.mode,
@@ -174,6 +177,7 @@ export function registerIpcHandlers(): void {
 
     try {
       const { backupPath } = await resetDatabaseWithBackup();
+      clearUserAuthCache();
       return { success: true, backupPath };
     } catch (error: any) {
       console.error('[IPC] db-initialize: Error:', error);

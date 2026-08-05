@@ -326,6 +326,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             setConnected(true);
             setLoading(false);
           } else if (msg.type === 'auth_error') {
+            if (wsRef.current !== ws) return;
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             sessionGenerationRef.current += 1;
             setLoginError(msg.message || t('kds.authFailed'));

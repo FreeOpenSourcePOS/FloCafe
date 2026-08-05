@@ -60,7 +60,12 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
       !['chef', 'owner', 'manager'].includes(status.role) ||
       isTokenStale(decoded.iat, status.tokensValidAfter)
     ) return false;
+    const currentUser = getDatabase()
+      .prepare('SELECT category_ids FROM users WHERE id = ? AND is_active = 1')
+      .get(client.userId) as { category_ids: string | null } | undefined;
+    if (!currentUser) return false;
     client.role = status.role;
+    client.categoryIds = parseCategoryIds(currentUser.category_ids);
     return true;
   } catch {
     return false;

@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
 import { getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, isSafeIdentifier, withTxn, withDatabaseMaintenanceLock } from '../db';
-import { requireRole } from '../middleware/security';
+import { clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -17,7 +17,7 @@ const EXPORT_SETTINGS_REDACT = new Set([
 ]);
 
 // User columns stripped from export — hashes must never leave the server.
-const USER_REDACT_COLS = new Set(['password', 'pin_hash']);
+const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
 const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox']);
@@ -125,9 +125,12 @@ router.post('/import', requireRole('owner'),
       console.log(`[DB Import] Version mismatch: import v${importSchemaVersion} vs current v${getCurrentSchemaVersion()}. Using data-only merge.`);
     }
 
-    db.exec('BEGIN IMMEDIATE');
-    
+    const previousForeignKeys = Number(db.pragma('foreign_keys', { simple: true })) === 1;
+    db.pragma('foreign_keys = OFF');
+
     try {
+      db.exec('BEGIN IMMEDIATE');
+      try {
       for (const tableName of importedTables) {
         // Validate table name to prevent SQL injection
         if (!isSafeIdentifier(tableName)) {
@@ -141,6 +144,9 @@ router.post('/import', requireRole('owner'),
         const currentCols = getTableColumns(db, tableName);
         // Validate and filter column names to prevent SQL injection
         const importCols = Object.keys(rows[0]).filter(isSafeIdentifier);
+        // A normal export intentionally omits password/pin hashes. It must not
+        // attempt to recreate users with a NULL required password.
+        if (tableName === 'users' && !importCols.includes('password')) continue;
         const commonCols = hasVersionMismatch
           ? importCols.filter(c => currentCols.includes(c) && isSafeIdentifier(c))
           : importCols;
@@ -177,7 +183,12 @@ router.post('/import', requireRole('owner'),
         console.log(`[DB Import] ${tableName}: ${rows.length} rows (${commonCols.length} columns)`);
       }
       
+      const foreignKeyViolations = db.prepare('PRAGMA foreign_key_check').all();
+      if (foreignKeyViolations.length > 0) {
+        throw new Error(`Import would leave ${foreignKeyViolations.length} foreign-key violation(s)`);
+      }
       db.exec('COMMIT');
+      clearUserAuthCache();
       res.json({ 
         success: true, 
         message: hasVersionMismatch 
@@ -188,9 +199,12 @@ router.post('/import', requireRole('owner'),
         importedSchemaVersion: importSchemaVersion,
         currentSchemaVersion: getCurrentSchemaVersion()
       });
-    } catch (err: any) {
-      db.exec('ROLLBACK');
-      throw err;
+      } catch (err: any) {
+        try { db.exec('ROLLBACK'); } catch { }
+        throw err;
+      }
+    } finally {
+      db.pragma(`foreign_keys = ${previousForeignKeys ? 'ON' : 'OFF'}`);
     }
     } catch (error: any) {
       console.error('[DB Import] Error:', error);

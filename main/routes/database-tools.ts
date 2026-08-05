@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { resetDatabaseWithBackup, listBackups, deleteBackup } from '../db';
-import { requireRole } from '../middleware/security';
+import { clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { runHealthCheck, applySafeFixes } from '../services/schema-health';
 import { isMasterPinAvailable, isMasterPinSet, resetMasterPin } from '../services/master-pin';
@@ -84,6 +84,7 @@ router.post('/initialize', requireRole('owner'), requireMasterPin, async (req: R
   }
   try {
     const { backupPath } = await resetDatabaseWithBackup();
+    clearUserAuthCache();
     res.json({ success: true, backupPath });
   } catch (error: any) {
     console.error('[DB Tools] initialize error:', error);

@@ -308,7 +308,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (generation !== sessionGenerationRef.current) return;
         const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
         const statusCode = axiosError.response?.status;
-        if (statusCode === 401 || statusCode === 403) {
+        const errorMessage = axiosError.response?.data?.error || t('kds.failedToUpdateItem');
+        const kdsDisabled = /kds is disabled/i.test(errorMessage);
+        if (statusCode === 401 || (statusCode === 403 && !kdsDisabled)) {
           sessionGenerationRef.current += 1;
           if (statusCode === 401) window.localStorage.removeItem('token');
           else markKdsAuthBlocked();
@@ -330,6 +332,15 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           setConnectionMode(null);
           setLoading(false);
           setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
+          return;
+        }
+        if (kdsDisabled) {
+          setOrders([]);
+          setCounts({});
+          setConnected(false);
+          setConnectionMode('rest');
+          setLoading(false);
+          setLoginError(errorMessage);
           return;
         }
         if (!opts.silent) {
@@ -576,6 +587,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     setUpdating(null);
     setUser(null);
     setOrders([]);
+    setCounts({});
     setConnected(false);
     setConnectionMode(null);
     window.localStorage.removeItem('token');

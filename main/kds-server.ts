@@ -259,9 +259,10 @@ export function startKdsServer(): Promise<void> {
         const kdsUser = (req as any).user as KdsRequestUser;
         const categoryIds = kdsUser.categoryIds;
         const stationIds = kdsUser.stationIds;
-        const restrictedKdsPayload = categoryIds.length > 0 || (kdsUser.role === 'chef' && stationIds.length > 0);
         const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-        if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const stationRoutingCategoryIds = stationCategoryIds && stationCategoryIds.length > 0 ? stationCategoryIds : categoryIds;
+        const restrictedKdsPayload = categoryIds.length > 0 || (kdsUser.role === 'chef' && stationIds.length > 0);
+        if (!stationCategoryIds || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
 
         let query = `
@@ -277,11 +278,11 @@ export function startKdsServer(): Promise<void> {
         const orderParams: string[] = [voidedCutoff];
         if (stationIds.length > 0) {
           const stationPlaceholders = stationIds.map(() => '?').join(',');
-          const categoryRoute = stationCategoryIds.length > 0
-            ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))`
+          const categoryRoute = stationRoutingCategoryIds.length > 0
+            ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
             : '';
           query += ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationPlaceholders}))${categoryRoute})`;
-          orderParams.push(...stationIds, ...stationCategoryIds);
+          orderParams.push(...stationIds, ...stationRoutingCategoryIds);
         }
         query += ' ORDER BY o.created_at ASC';
 
@@ -307,8 +308,7 @@ export function startKdsServer(): Promise<void> {
           const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment'
             && !['completed', 'cancelled'].includes(i.status)
             && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-            && isKdsStationItemAllowed(stationIds, stationCategoryIds, order.kitchen_station_id, i.category_id));
-          let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
+            && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id));          let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
           // Filter by category if provided
           if (allowedProductIds) {
@@ -364,12 +364,13 @@ export function startKdsServer(): Promise<void> {
 
           if (stationIds.length > 0) {
             const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
+            const stationRoutingCategoryIds = stationCategoryIds && stationCategoryIds.length > 0 ? stationCategoryIds : categoryIds;
             const station = db.prepare(`
               SELECT t.kitchen_station_id
               FROM orders o LEFT JOIN tables t ON t.id = o.table_id
               WHERE o.id = ?
             `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-            if (!stationCategoryIds || !isKdsStationItemAllowed(stationIds, stationCategoryIds, station?.kitchen_station_id, item.category_id)) {
+            if (!stationCategoryIds || !stationRoutingCategoryIds || !isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id)) {
               return { statusCode: 403, error: 'Not authorized to update this station' };
             }
           }

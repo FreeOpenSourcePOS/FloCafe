@@ -113,6 +113,23 @@ async function run() {
     assert.equal(restoredStationSecurity.is_active, 1, 'restore preserves the current station active state');
     assert.equal(restoredStationSecurity.category_ids, '[]', 'restore preserves the current station categories');
 
+    const backupOnlyUserBackup = path.join(testDir, 'backup-only-user.db');
+    copyAndStamp(sameSchemaBackup, backupOnlyUserBackup, currentVersion);
+    const backupOnlyUserDb = new Database(backupOnlyUserBackup);
+    backupOnlyUserDb.pragma('foreign_keys = OFF');
+    backupOnlyUserDb.prepare(`
+      INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES ('restore-backup-only-chef', 'Backup Only Chef', 'backup-only-chef@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))
+    `).run();
+    backupOnlyUserDb.close();
+    const backupOnlyUserRestore = restoreBackup(backupOnlyUserBackup, true);
+    assert.equal(backupOnlyUserRestore.success, true, 'restore succeeds with a backup-only user');
+    assert.equal(
+      (getDatabase().prepare('SELECT is_active FROM users WHERE id = ?').get('restore-backup-only-chef') as { is_active: number }).is_active,
+      0,
+      'backup-only users remain disabled after restore',
+    );
+
     // Make the backup appear to be an older schema while retaining real linked data.
     const olderBackup = path.join(testDir, 'older-schema.db');
     copyAndStamp(sameSchemaBackup, olderBackup, currentVersion - 1);

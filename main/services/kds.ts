@@ -190,6 +190,10 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
           closeKdsClient(client, 'Database maintenance in progress');
           return;
         }
+        if (!isKdsEnabled()) {
+          closeKdsClient(client, 'KDS is disabled');
+          return;
+        }
         if (client.userId && !isKdsClientAuthorized(client)) {
           closeKdsClient(client, 'Session expired or revoked');
           return;
@@ -461,6 +465,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   const db = getDatabase();
   const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
   if (!stationCategoryIds) throw new Error('Could not load station permissions');
+  const stationRoutingCategoryIds = stationCategoryIds.length > 0 ? stationCategoryIds : categoryIds;
 
   let query = `
     SELECT o.*, t.number as table_name, t.kitchen_station_id
@@ -472,11 +477,11 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   const orderParams: string[] = [];
   if (stationIds.length > 0) {
     const stationPlaceholders = stationIds.map(() => '?').join(',');
-    const categoryRoute = stationCategoryIds.length > 0
-      ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))`
+    const categoryRoute = stationRoutingCategoryIds.length > 0
+      ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
       : '';
     query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute})`;
-    orderParams.push(...stationIds, ...stationCategoryIds);
+    orderParams.push(...stationIds, ...stationRoutingCategoryIds);
   }
   query += ' ORDER BY o.created_at ASC';
 
@@ -513,7 +518,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     .filter((i: any) => i.status !== 'void_adjustment'
       && !['completed', 'cancelled'].includes(i.status)
       && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-      && isKdsStationItemAllowed(stationIds, stationCategoryIds, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id, i.category_id));
+      && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id, i.category_id));
   const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]);
   const addonsByItemId = new Map(itemsWithAddons.map((it: any) => [it.id, it]));
 
@@ -524,7 +529,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
       .filter((i: any) => i.status !== 'void_adjustment'
         && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-        && isKdsStationItemAllowed(stationIds, stationCategoryIds, order.kitchen_station_id, i.category_id))
+        && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id))
       .map((i: any) => addonsByItemId.get(i.id) || i);
 
     // Filter items by category if user has category restrictions
@@ -554,11 +559,11 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
 
   if (stationIds.length > 0) {
     const stationPlaceholders = stationIds.map(() => '?').join(',');
-    const categoryRoute = stationCategoryIds.length > 0
-      ? ` OR (o.table_id IS NULL AND p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))`
+    const categoryRoute = stationRoutingCategoryIds.length > 0
+      ? ` OR (o.table_id IS NULL AND p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
       : '';
     countsQuery += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute})`;
-    countParams.push(...stationIds, ...stationCategoryIds);
+    countParams.push(...stationIds, ...stationRoutingCategoryIds);
   }
   if (categoryIds.length > 0) {
     countsQuery += ` AND p.category_id IN (${categoryIds.map(() => '?').join(',')})`;
@@ -581,6 +586,10 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
 
 function broadcastOrderUpdate(): void {
   if (isDatabaseMaintenanceActive()) return;
+  if (!isKdsEnabled()) {
+    clients.forEach((client) => closeKdsClient(client, 'KDS is disabled'));
+    return;
+  }
   clients.forEach((client) => {
     if (!isKdsClientAuthorized(client)) {
       closeKdsClient(client, 'Session expired or revoked');

@@ -72,9 +72,10 @@ async function run() {
       .run('kds-category', 'Kitchen', 1);
     db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)')
       .run('kds-product', 'kds-category', 'KDS Burger', 10);
+    db.prepare('UPDATE users SET category_ids = ? WHERE id = ?').run(JSON.stringify(['kds-category']), 'user-chef-1');
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
-      VALUES ('kds-integration-station', 'Integration Station', ?, 1, ?, ?)`)
-      .run(JSON.stringify(['kds-category']), now(), now());
+      VALUES ('kds-integration-station', 'Integration Station', '[]', 1, ?, ?)`)
+      .run(now(), now());
     db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)')
       .run('user-chef-1', 'kds-integration-station', now());
     db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)

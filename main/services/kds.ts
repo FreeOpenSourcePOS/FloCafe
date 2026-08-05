@@ -72,6 +72,7 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
       ? []
       : parseCategoryIds(currentUser.category_ids);
     const nextStationIds = getUserKdsStationIds(getDatabase(), client.userId);
+    if (!nextStationIds) return false;
     client.categoryIdsChanged = JSON.stringify(client.categoryIds) !== JSON.stringify(nextCategoryIds);
     client.stationIdsChanged = JSON.stringify(client.stationIds) !== JSON.stringify(nextStationIds);
     client.role = status.role;
@@ -262,6 +263,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
       ? []
       : parseCategoryIds(user.category_ids);
     const stationIds = getUserKdsStationIds(getDatabase(), user.id);
+    if (!stationIds) throw new Error('Could not load station permissions');
 
     client.userId = user.id;
     client.userName = user.name;
@@ -441,7 +443,9 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
 
   const allVisibleItems = (orders as any[])
     .flatMap((o: any) => itemsByOrder[o.id] || [])
-    .filter((i: any) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+    .filter((i: any) => i.status !== 'void_adjustment'
+      && !['completed', 'cancelled'].includes(i.status)
+      && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
   const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]);
   const addonsByItemId = new Map(itemsWithAddons.map((it: any) => [it.id, it]));
 
@@ -449,7 +453,9 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     // #150: hide the void reversal line (bill adjustment, not a kitchen
     // item) and age voided items off the board after their grace period.
     const visibleItems = (itemsByOrder[order.id] || [])
-      .filter((i: any) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)))
+      .filter((i: any) => i.status !== 'void_adjustment'
+        && !['completed', 'cancelled'].includes(i.status)
+        && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)))
       .map((i: any) => addonsByItemId.get(i.id) || i);
 
     // Filter items by category if user has category restrictions

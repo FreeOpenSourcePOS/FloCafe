@@ -42,6 +42,7 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       ? []
       : parseCategoryIds(currentUser.category_ids);
     const stationIds = getUserKdsStationIds(db, userId);
+    if (!stationIds) return res.status(403).json({ error: 'User account is not active' });
 
     const orderData = withTxn(() => {
       const item = db.prepare(`

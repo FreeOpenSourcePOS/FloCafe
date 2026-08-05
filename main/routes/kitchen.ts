@@ -33,6 +33,7 @@ router.get('/orders', (req: Request, res: Response) => {
       ? []
       : parseCategoryIds(currentUser.category_ids);
     const stationIds = getUserKdsStationIds(db, userId);
+    if (!stationIds) return res.status(403).json({ error: 'User account is not active' });
     let allowedProductIds: Set<string> | null = null;
     if (categoryIds.length > 0) {
       const productRows = db.prepare(`
@@ -81,6 +82,7 @@ router.get('/orders', (req: Request, res: Response) => {
     // Resolve addons for every visible item in one batched call.
     const allVisibleItems = rawItems.filter(
       (i) => i.status !== 'void_adjustment'
+        && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
         && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
     );
@@ -91,6 +93,7 @@ router.get('/orders', (req: Request, res: Response) => {
       const orderRawItems = itemsByOrder[order.id] || [];
       const visibleItems = orderRawItems
         .filter((i) => i.status !== 'void_adjustment'
+          && !['completed', 'cancelled'].includes(i.status)
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id))))
         .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, categoryIds.length > 0));

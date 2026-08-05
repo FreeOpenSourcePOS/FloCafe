@@ -109,12 +109,14 @@ export function startKdsServer(): Promise<void> {
         if (!['chef', 'manager', 'owner'].includes(user.role)) {
           return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
         }
+        const stationIds = getUserKdsStationIds(db, user.id);
+        if (!stationIds) return res.status(401).json({ error: 'Invalid token' });
         (req as any).user = {
           userId: user.id,
           email: user.email,
           role: user.role,
           categoryIds: categoryIdsForRole(user.role, user.category_ids),
-          stationIds: getUserKdsStationIds(db, user.id),
+          stationIds,
         } satisfies KdsRequestUser;
         next();
       } catch (error) {
@@ -182,6 +184,9 @@ export function startKdsServer(): Promise<void> {
           return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
         }
 
+        const stationIds = getUserKdsStationIds(db, user.id);
+        if (!stationIds) return res.status(500).json({ error: 'Could not load station permissions' });
+
         const token = jwt.sign(
           { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
           getJWTSecret(),
@@ -196,7 +201,7 @@ export function startKdsServer(): Promise<void> {
             email: user.email,
             role: user.role,
             category_ids: categoryIdsForRole(user.role, user.category_ids),
-            station_ids: getUserKdsStationIds(db, user.id),
+            station_ids: stationIds,
           },
         });
       } catch (error: any) {
@@ -277,7 +282,9 @@ export function startKdsServer(): Promise<void> {
           const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
           // #150: hide the void reversal line (bill adjustment, not a kitchen
           // item) and age voided items off the board after their grace period.
-          const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+          const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment'
+            && !['completed', 'cancelled'].includes(i.status)
+            && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
           let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
           // Filter by category if provided

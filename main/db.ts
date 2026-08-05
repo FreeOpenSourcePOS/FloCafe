@@ -635,20 +635,54 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
 }
 
 type RevocationRow = { token_hash: string; expires_at: number; revoked_at: string };
-export type UserSecurityState = { id: string; is_active: number; tokens_valid_after: string | null };
+export type UserStationSecurityState = { user_id: string; station_id: string };
 
-export function getUserKdsStationIds(dbInstance: Database.Database, userId: string): string[] {
+export function captureUserStationSecurityState(dbInstance: Database.Database): UserStationSecurityState[] {
   try {
-    return (dbInstance.prepare('SELECT station_id FROM station_users WHERE user_id = ?').all(userId) as { station_id: string }[])
-      .map((row) => String(row.station_id));
+    return dbInstance.prepare('SELECT user_id, station_id FROM station_users').all() as UserStationSecurityState[];
   } catch {
     return [];
   }
 }
 
+export function mergeUserStationSecurityState(dbInstance: Database.Database, rows: UserStationSecurityState[], userIds: string[]): void {
+  const preservedIds = new Set(userIds);
+  const currentUsers = dbInstance.prepare('SELECT id FROM users').all() as { id: string }[];
+  for (const user of currentUsers) {
+    dbInstance.prepare('DELETE FROM station_users WHERE user_id = ?').run(user.id);
+  }
+  const insert = dbInstance.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)');
+  const stationExists = dbInstance.prepare('SELECT 1 FROM kitchen_stations WHERE id = ?');
+  for (const row of rows) {
+    if (preservedIds.has(row.user_id) && stationExists.get(row.station_id)) {
+      insert.run(row.user_id, row.station_id, now());
+    }
+  }
+}
+
+export type UserSecurityState = {
+  id: string;
+  password: string;
+  pin: string | null;
+  pin_hash: string | null;
+  role: string;
+  category_ids: string | null;
+  is_active: number;
+  tokens_valid_after: string | null;
+};
+
+export function getUserKdsStationIds(dbInstance: Database.Database, userId: string): string[] | null {
+  try {
+    return (dbInstance.prepare('SELECT station_id FROM station_users WHERE user_id = ?').all(userId) as { station_id: string }[])
+      .map((row) => String(row.station_id));
+  } catch {
+    return null;
+  }
+}
+
 export function captureUserSecurityState(dbInstance: Database.Database): UserSecurityState[] {
   try {
-    return dbInstance.prepare('SELECT id, is_active, tokens_valid_after FROM users').all() as UserSecurityState[];
+    return dbInstance.prepare('SELECT id, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after FROM users').all() as UserSecurityState[];
   } catch {
     return [];
   }
@@ -656,18 +690,35 @@ export function captureUserSecurityState(dbInstance: Database.Database): UserSec
 
 export function mergeUserSecurityState(dbInstance: Database.Database, rows: UserSecurityState[]): void {
   for (const row of rows) {
-    const restored = dbInstance.prepare('SELECT is_active, tokens_valid_after FROM users WHERE id = ?').get(row.id) as UserSecurityState | undefined;
+    const restored = dbInstance.prepare('SELECT id, is_active, tokens_valid_after FROM users WHERE id = ?').get(row.id) as UserSecurityState | undefined;
     if (!restored) continue;
     const currentEpoch = row.tokens_valid_after;
     const restoredEpoch = restored.tokens_valid_after;
-    const tokensValidAfter = currentEpoch && restoredEpoch
-      ? (currentEpoch > restoredEpoch ? currentEpoch : restoredEpoch)
-      : (currentEpoch || restoredEpoch || null);
+    const currentParsedTime = currentEpoch ? parseDbTimestamp(currentEpoch).getTime() : Number.NaN;
+    const restoredParsedTime = restoredEpoch ? parseDbTimestamp(restoredEpoch).getTime() : Number.NaN;
+    const currentTime = Number.isFinite(currentParsedTime) ? currentParsedTime : Number.NEGATIVE_INFINITY;
+    const restoredTime = Number.isFinite(restoredParsedTime) ? restoredParsedTime : Number.NEGATIVE_INFINITY;
+    const tokensValidAfter = currentTime >= restoredTime ? currentEpoch : restoredEpoch;
     dbInstance.prepare(`
       UPDATE users
-      SET is_active = ?, tokens_valid_after = ?
+      SET password = ?, pin = ?, pin_hash = ?, role = ?, category_ids = ?,
+          is_active = ?, tokens_valid_after = ?
       WHERE id = ?
-    `).run(row.is_active === 0 || restored.is_active === 0 ? 0 : 1, tokensValidAfter, row.id);
+    `).run(
+      row.password, row.pin, row.pin_hash, row.role, row.category_ids,
+      row.is_active === 0 || restored.is_active === 0 ? 0 : 1,
+      tokensValidAfter,
+      row.id,
+    );
+  }
+
+  // Accounts introduced only by an older snapshot must not become a new
+  // login path without an explicit owner reactivation.
+  const preservedIds = new Set(rows.map((row) => row.id));
+  const restoredUsers = dbInstance.prepare('SELECT id FROM users').all() as { id: string }[];
+  const disableRestoredOnly = dbInstance.prepare('UPDATE users SET is_active = 0, tokens_valid_after = ? WHERE id = ?');
+  for (const user of restoredUsers) {
+    if (!preservedIds.has(user.id)) disableRestoredOnly.run(now(), user.id);
   }
 }
 
@@ -718,6 +769,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   // after that snapshot was created.
   const preservedRevocations = readRevocations(currentDb);
   const preservedUserSecurity = captureUserSecurityState(currentDb);
+  const preservedUserStations = captureUserStationSecurityState(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -761,6 +813,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
 
       const freshDb = getDatabase();
       mergeUserSecurityState(freshDb, preservedUserSecurity);
+      mergeUserStationSecurityState(freshDb, preservedUserStations, preservedUserSecurity.map((row) => row.id));
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const foreignKeyViolations = freshDb.prepare('PRAGMA foreign_key_check').all();
@@ -798,7 +851,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations);
 }
 
 /** Return true only if the string is a safe SQL identifier (letters, digits, underscore). */
@@ -812,6 +865,7 @@ function dataOnlyRestore(
   currentVersion: number,
   preservedRevocations: RevocationRow[] = [],
   preservedUserSecurity: UserSecurityState[] = [],
+  preservedUserStations: UserStationSecurityState[] = [],
 ): RestoreResult {
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
@@ -891,6 +945,7 @@ function dataOnlyRestore(
     }
 
     mergeUserSecurityState(currentDb, preservedUserSecurity);
+    mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id));
     mergeRevocations(currentDb, preservedRevocations);
     const foreignKeyViolations = currentDb.prepare('PRAGMA foreign_key_check').all();
     if (foreignKeyViolations.length > 0) {
@@ -3308,6 +3363,7 @@ export function projectKdsItem(item: any, restricted: boolean): any {
   const allowedFields = [
     'id', 'order_id', 'product_id', 'product_name', 'product_sku',
     'quantity', 'status', 'special_instructions', 'created_at', 'updated_at',
+    'order_number', 'type', 'table_id', 'table_name', 'order_status', 'order_notes', 'order_time',
   ];
   const projected = Object.fromEntries(allowedFields.filter((field) => field in item).map((field) => [field, item[field]]));
   if (Array.isArray(item.addons)) {

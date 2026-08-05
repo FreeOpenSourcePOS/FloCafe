@@ -106,6 +106,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     const allVisibleItems = (orders as any[])
       .flatMap((o) => itemsByOrder[o.id] || [])
       .filter((i) => i.status !== 'void_adjustment'
+        && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
         && (!allowedProductIds || allowedProductIds.has(String(i.product_id))));
     const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems);
@@ -116,6 +117,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       // item) and age voided items off the board after their grace period.
       const visibleItems = (itemsByOrder[order.id] || [])
         .filter((i) => i.status !== 'void_adjustment'
+          && !['completed', 'cancelled'].includes(i.status)
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id))))
         .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, userCategoryIds.length > 0));

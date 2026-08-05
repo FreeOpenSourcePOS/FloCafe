@@ -478,7 +478,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     JOIN products p ON oi.product_id = p.id
     JOIN orders o ON oi.order_id = o.id
     WHERE ${activeOrdersCondition()}
-      AND oi.status != 'void_adjustment'
+      AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment')
       AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
   `;
   const countParams: any[] = [voidedCutoff];

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, getUserKdsStationIds, now, parseItemJson, attachEffectiveAddons, projectKdsItem, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, getUserKdsStationIds, now, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
 
@@ -91,9 +91,10 @@ router.patch('/:id/status', (req: Request, res: Response) => {
         LEFT JOIN products p ON p.id = oi.product_id
         WHERE oi.order_id = ?
       `).all(item.order_id) as any[];
-      const visibleItems = categoryIds.length > 0
-        ? rawItems.filter((row) => row.category_id && categoryIds.includes(String(row.category_id)))
-        : rawItems;
+      const visibleItems = rawItems
+        .filter((row) => !['completed', 'cancelled', 'void_adjustment'].includes(row.status))
+        .filter((row) => row.status !== 'voided' || isVoidedItemKdsVisible(row.voided_at))
+        .filter((row) => categoryIds.length === 0 || (row.category_id && categoryIds.includes(String(row.category_id))));
       const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson))
         .map((row) => projectKdsItem(row, categoryIds.length > 0));
       const tableRow = order.table_id

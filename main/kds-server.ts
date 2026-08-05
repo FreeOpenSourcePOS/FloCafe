@@ -258,6 +258,7 @@ export function startKdsServer(): Promise<void> {
           INNER JOIN order_items oi ON oi.order_id = o.id
           WHERE (oi.status IN ('pending', 'preparing', 'ready')
             OR (oi.status = 'voided' AND (oi.voided_at IS NULL OR oi.voided_at > ?)))
+          AND o.status != 'cancelled'
           AND o.created_at >= datetime('now', '-24 hours')
         `;
         const orderParams: string[] = [voidedCutoff];

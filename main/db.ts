@@ -662,6 +662,8 @@ export function mergeUserStationSecurityState(dbInstance: Database.Database, row
 
 export type UserSecurityState = {
   id: string;
+  name: string;
+  email: string | null;
   password: string;
   pin: string | null;
   pin_hash: string | null;
@@ -682,7 +684,7 @@ export function getUserKdsStationIds(dbInstance: Database.Database, userId: stri
 
 export function captureUserSecurityState(dbInstance: Database.Database): UserSecurityState[] {
   try {
-    return dbInstance.prepare('SELECT id, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after FROM users').all() as UserSecurityState[];
+    return dbInstance.prepare('SELECT id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after FROM users').all() as UserSecurityState[];
   } catch {
     return [];
   }
@@ -716,9 +718,26 @@ export function mergeUserSecurityState(dbInstance: Database.Database, rows: User
   // login path without an explicit owner reactivation.
   const preservedIds = new Set(rows.map((row) => row.id));
   const restoredUsers = dbInstance.prepare('SELECT id FROM users').all() as { id: string }[];
+  const restoredIds = new Set(restoredUsers.map((user) => user.id));
   const disableRestoredOnly = dbInstance.prepare('UPDATE users SET is_active = 0, tokens_valid_after = ? WHERE id = ?');
   for (const user of restoredUsers) {
     if (!preservedIds.has(user.id)) disableRestoredOnly.run(now(), user.id);
+  }
+
+  const insertPreservedUser = dbInstance.prepare(`
+    INSERT INTO users (id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const row of rows) {
+    if (restoredIds.has(row.id)) continue;
+    const emailConflict = row.email
+      ? dbInstance.prepare('SELECT id FROM users WHERE email = ?').get(row.email) as { id: string } | undefined
+      : undefined;
+    if (emailConflict) dbInstance.prepare('UPDATE users SET email = NULL WHERE id = ?').run(emailConflict.id);
+    insertPreservedUser.run(
+      row.id, row.name, row.email, row.password, row.pin, row.pin_hash, row.role,
+      row.category_ids, row.is_active, row.tokens_valid_after, now(), now(),
+    );
   }
 }
 

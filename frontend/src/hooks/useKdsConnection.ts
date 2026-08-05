@@ -309,6 +309,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       wsRef.current = ws;
       let connectionTimeout: ReturnType<typeof setTimeout> | null = null;
       let authTimeout: ReturnType<typeof setTimeout> | null = null;
+      let authenticated = false;
 
       const cleanup = () => {
         if (connectionTimeout) clearTimeout(connectionTimeout);
@@ -344,6 +345,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
         setConnected(false);
+        if (!authenticated) {
+          setConnectionMode('rest');
+          setLoading(false);
+          return;
+        }
         reconnectTimerRef.current = setTimeout(() => {
           if (wsRef.current === ws && generation === sessionGenerationRef.current) {
             tryWebSocketRef.current(token);
@@ -360,6 +366,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         try {
           const msg: WsMessage = JSON.parse(event.data);
           if (msg.type === 'auth_success' && msg.user) {
+            authenticated = true;
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             setUser((prev) => (prev ? { ...prev, ...msg.user, token: prev.token } : null));
             setOrders(msg.orders || []);

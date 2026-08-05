@@ -214,7 +214,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       return res.status(400).json({ error: 'station_id is required' });
     }
 
-    const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(stationId);
+    const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ? AND is_active = 1').get(stationId);
     if (!station) {
       return res.status(404).json({ error: 'Kitchen station not found' });
     }
@@ -264,6 +264,8 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     `;
 
     const params: any[] = [voidedCutoff];
+    itemsQuery += ' AND t.kitchen_station_id = ?';
+    params.push(stationId);
 
     if (categoryIds.length > 0) {
       itemsQuery += ` AND EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.category_id IN (${categoryIds.map(() => '?').join(',')}))`;

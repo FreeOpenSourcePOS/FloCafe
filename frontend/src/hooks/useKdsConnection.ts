@@ -196,7 +196,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   // referencing the useCallback-bound identifier before it's declared (which the compiler
   // can't safely memoize). Kept in sync via the unconditional assignment right after the
   // useCallback definition below.
-  const tryWebSocketRef = useRef<(token: string) => void>(() => {});
+  const tryWebSocketRef = useRef<(token: string, retryDuringMaintenance?: boolean) => void>(() => {});
 
   const stopRestPolling = useCallback(() => {
     if (restIntervalRef.current) {
@@ -292,7 +292,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   );
 
   const tryWebSocket = useCallback(
-    (token: string) => {
+    (token: string, retryDuringMaintenance = false) => {
       const generation = sessionGenerationRef.current;
       if (wsRef.current) {
         wsRef.current.close();
@@ -355,7 +355,16 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setConnected(false);
         setConnectionMode('rest');
         setLoading(false);
-        if (!authenticated) return;
+        if (!authenticated) {
+          if (retryDuringMaintenance) {
+            reconnectTimerRef.current = setTimeout(() => {
+              if (generation === sessionGenerationRef.current && window.localStorage.getItem('token') === token) {
+                tryWebSocketRef.current(token, true);
+              }
+            }, 3000);
+          }
+          return;
+        }
         reconnectTimerRef.current = setTimeout(() => {
           if (wsRef.current === ws && generation === sessionGenerationRef.current) {
             tryWebSocketRef.current(token);
@@ -382,9 +391,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           } else if (msg.type === 'auth_error') {
             if (wsRef.current !== ws) return;
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
+            const maintenanceInProgress = /database maintenance/i.test(msg.message || '');
             const invalidSession = /invalid|expired|revoked|authentication required/i.test(msg.message || '');
             sessionGenerationRef.current += 1;
-            setLoginError(msg.message || t('kds.authFailed'));
+            setLoginError(maintenanceInProgress ? '' : (msg.message || t('kds.authFailed')));
             if (wsRef.current === ws) wsRef.current = null;
             if (reconnectTimerRef.current) {
               clearTimeout(reconnectTimerRef.current);
@@ -393,14 +403,22 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             stopRestPolling();
             updatingIdsRef.current.clear();
             setUpdating(null);
-            setUser(null);
+            if (!maintenanceInProgress) setUser(null);
             setOrders([]);
             setCounts({});
             setConnected(false);
             setConnectionMode(null);
             if (invalidSession) window.localStorage.removeItem('token');
+            if (maintenanceInProgress) {
+              setLoading(true);
+              reconnectTimerRef.current = setTimeout(() => {
+                if (generation + 1 === sessionGenerationRef.current && window.localStorage.getItem('token') === token) {
+                  tryWebSocketRef.current(token, true);
+                }
+              }, 1500);
+            }
             ws.close();
-            setLoading(false);
+            setLoading(!maintenanceInProgress);
           } else if ((msg.type === 'initial_data' || msg.type === 'orders') && msg.orders) {
             setOrders(msg.orders);
             setCounts(msg.counts || {});

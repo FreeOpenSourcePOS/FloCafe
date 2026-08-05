@@ -305,6 +305,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       setUpdating(itemId);
       try {
         await api.patch(itemStatusPath.replace(':itemId', String(itemId)), { status });
+        if (generation === sessionGenerationRef.current && connectionMode === 'rest') {
+          await fetchOrdersRest();
+        }
         if (generation === sessionGenerationRef.current && !opts.silent) {
           toast.success(t('kds.itemMarked', { status: statusLabel(status) }));
         }
@@ -341,6 +344,17 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
         if (kdsDisabled) {
           sessionGenerationRef.current += 1;
+          const disabledGeneration = sessionGenerationRef.current;
+          const activeWs = wsRef.current;
+          wsRef.current = null;
+          if (activeWs) activeWs.close();
+          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = setTimeout(() => {
+            const token = window.localStorage.getItem('token');
+            if (token && disabledGeneration === sessionGenerationRef.current) {
+              tryWebSocketRef.current(token, true);
+            }
+          }, 1500);
           setOrders([]);
           setCounts({});
           setConnected(false);
@@ -361,7 +375,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     },
     // statusLabel is derived from `t` (already in deps), so omit it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [api, itemStatusPath, stopRestPolling, t],
+    [api, connectionMode, fetchOrdersRest, itemStatusPath, stopRestPolling, t],
   );
 
   const tryWebSocket = useCallback(
@@ -455,6 +469,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           const msg: WsMessage = JSON.parse(event.data);
           if (msg.type === 'auth_success' && msg.user) {
             authenticated = true;
+            // A REST fallback request may still be in flight when the socket
+            // authenticates. Invalidate it before accepting the snapshot so a
+            // late REST response cannot overwrite newer WebSocket state.
+            stopRestPolling();
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             setUser((prev) => (prev ? { ...prev, ...msg.user, token: prev.token } : null));
             setOrders(msg.orders || []);

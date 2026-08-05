@@ -6,7 +6,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
+import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
@@ -260,9 +260,10 @@ export function startKdsServer(): Promise<void> {
         const categoryIds = kdsUser.categoryIds;
         const stationIds = kdsUser.stationIds;
         const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-        const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
+        const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
+        const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
         const restrictedKdsPayload = kdsUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
-        if (!stationCategoryIds || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
 
         let query = `
@@ -308,7 +309,8 @@ export function startKdsServer(): Promise<void> {
           const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment'
             && !['completed', 'cancelled'].includes(i.status)
             && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-            && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id));          let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
+            && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope?.categoryIdsByStation[String(order.kitchen_station_id)] : undefined));
+          let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
           // Filter by category if provided
           if (allowedProductIds) {
@@ -364,13 +366,14 @@ export function startKdsServer(): Promise<void> {
 
           if (stationIds.length > 0) {
             const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-            const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
+            const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
+            const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
             const station = db.prepare(`
               SELECT t.kitchen_station_id
               FROM orders o LEFT JOIN tables t ON t.id = o.table_id
               WHERE o.id = ?
             `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-            if (!stationCategoryIds || !stationRoutingCategoryIds || !isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id)) {
+            if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds || !isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
               return { statusCode: 403, error: 'Not authorized to update this station' };
             }
           }
@@ -409,8 +412,9 @@ export function startKdsServer(): Promise<void> {
         const db = getDatabase();
         const kdsUser = (req as any).user as KdsRequestUser;
         const stationCategoryIds = getKdsStationCategoryIds(db, kdsUser.stationIds);
-        const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, kdsUser.stationIds, kdsUser.categoryIds);
-        if (!stationCategoryIds || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const stationScope = getKdsStationRoutingScope(db, kdsUser.stationIds, kdsUser.categoryIds);
+        const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
+        if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const categoryIds = kdsUser.stationIds.length === 0
           ? kdsUser.categoryIds
           : stationRoutingCategoryIds.filter((categoryId) => kdsUser.categoryIds.length === 0 || kdsUser.categoryIds.includes(categoryId));

@@ -105,6 +105,11 @@ async function main() {
     const pairing = await request(app).get('/api/kds/pairing').set(chefAuth);
     assertEqual(pairing.status, 200, 'restricted chef can list assigned KDS stations');
     assertEqual(pairing.body.stations.some((station: any) => station.id === 'kds-contract-bar-station'), false, 'station assignments hide unassigned stations');
+    db.prepare('UPDATE kitchen_stations SET category_ids = ? WHERE id = ?').run(JSON.stringify(['kds-contract-category', 'kds-contract-bar']), 'kds-contract-bar-station');
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(chefId, 'kds-contract-bar-station', now());
+    const mixedPairing = await request(app).get('/api/kds/pairing').set(chefAuth);
+    const mixedStation = mixedPairing.body.stations.find((station: any) => station.id === 'kds-contract-bar-station');
+    assertEqual(mixedStation?.category_ids, JSON.stringify(['kds-contract-category']), 'restricted station metadata omits disallowed categories');
 
     const restrictedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(restrictedDisplay.status, 200, 'restricted chef can access the station display');
@@ -123,6 +128,9 @@ async function main() {
     const stationOnlyItem = stationOnlyOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {};
     assert(!('unit_price' in stationOnlyItem), 'station-only chef receives redacted embedded KDS items');
     assert(!('table_id' in stationOnlyItem), 'station-only chef does not receive raw item table IDs');
+    assertEqual(stationOnlyOrders.body.orders.find((entry: any) => entry.id === barOrderId)?.items?.length || 0, 0, 'mixed station ACLs do not cross-route table-assigned categories');
+    const deniedMixedStationMutation = await request(app).patch(`/api/order-items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });
+    assertEqual(deniedMixedStationMutation.status, 403, 'mixed station ACLs block cross-station mutations');
     const stationOnlyDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(stationOnlyDisplay.status, 200, 'station-only chef can access station display');
     assert(!('subtotal' in (stationOnlyDisplay.body.orders[0]?.items?.[0] || {})), 'station-only chef receives redacted station display items');

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
@@ -54,14 +54,17 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     if (stationId && !db.prepare('SELECT 1 FROM kitchen_stations WHERE id = ? AND is_active = 1').get(stationId)) {
       return res.status(404).json({ error: 'Kitchen station not found' });
     }
-    const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, userStationIds, userCategoryIds);
-    if (!stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+    const stationScope = getKdsStationRoutingScope(db, userStationIds, userCategoryIds);
+    if (!stationScope) return res.status(403).json({ error: 'Could not load station permissions' });
+    const stationRoutingCategoryIds = stationScope.tablelessCategoryIds;
     const requestedStationCategoryIds = stationId ? getKdsStationCategoryIds(db, [stationId]) : stationCategoryIds;
     if (!requestedStationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-    const requestedRoutingCategoryIds = stationId
-      ? getKdsStationRoutingCategoryIds(db, [stationId], userCategoryIds)
-      : stationRoutingCategoryIds;
-    if (!requestedRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });    const payloadStationIds = stationId ? [stationId] : userStationIds;
+    const requestedScope = stationId
+      ? getKdsStationRoutingScope(db, [stationId], userCategoryIds)
+      : stationScope;
+    if (!requestedScope) return res.status(403).json({ error: 'Could not load station permissions' });
+    const requestedRoutingCategoryIds = requestedScope.tablelessCategoryIds;
+    const payloadStationIds = stationId ? [stationId] : userStationIds;
     const restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
     if (stationId && userStationIds.length > 0 && !userStationIds.includes(stationId)) {
       return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
@@ -149,7 +152,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
         && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
-        && isKdsStationItemAllowed(payloadStationIds, requestedRoutingCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id));
+        && isKdsStationItemAllowed(payloadStationIds, requestedRoutingCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id, ordersById.get(i.order_id)?.kitchen_station_id ? requestedScope.categoryIdsByStation[String(ordersById.get(i.order_id)?.kitchen_station_id)] : undefined));
     const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems);
     const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
 
@@ -161,7 +164,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
           && !['completed', 'cancelled'].includes(i.status)
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
-          && isKdsStationItemAllowed(payloadStationIds, requestedRoutingCategoryIds, order.kitchen_station_id, i.category_id))
+          && isKdsStationItemAllowed(payloadStationIds, requestedRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? requestedScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined))
         .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, restrictedPayload));
       return {
         ...projectKdsOrder(order, restrictedPayload),        items: visibleItems,
@@ -192,7 +195,7 @@ router.get('/pairing', (req: Request, res: Response) => {
         const stationCategories = parseCategoryIds(station.category_ids);
         return stationCategories.length === 0 || stationCategories.some((categoryId) => userCategoryIds.includes(categoryId));
       })
-      .map((station) => projectKdsStation(station, restrictedPayload));
+      .map((station) => projectKdsStation(station, restrictedPayload, userCategoryIds));
     res.json({ stations });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
@@ -345,7 +348,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     }
 
     res.json({
-      station: projectKdsStation(station, isRestrictedKdsPayload(req, userCategoryIds, userStationIds)),
+      station: projectKdsStation(station, isRestrictedKdsPayload(req, userCategoryIds, userStationIds), userCategoryIds),
       orders: Object.values(groupedByOrder),
     });
   } catch (error: any) {
@@ -374,9 +377,9 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     if (!userCategoryIds || !userStationIds || hasStationAssignments === null) return res.status(403).json({ error: 'User account is not active' });
     if (hasStationAssignments && userStationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
     const stationCategoryIds = getKdsStationCategoryIds(db, userStationIds);
-    if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-    const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, userStationIds, userCategoryIds);
-    if (!stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+    const stationScope = getKdsStationRoutingScope(db, userStationIds, userCategoryIds);
+    if (!stationCategoryIds || !stationScope) return res.status(403).json({ error: 'Could not load station permissions' });
+    const stationRoutingCategoryIds = stationScope.tablelessCategoryIds;
     const restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
 
     const updatedItem = withTxn(() => {
@@ -411,7 +414,7 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
           FROM orders o LEFT JOIN tables t ON t.id = o.table_id
           WHERE o.id = ?
         `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-        if (!isKdsStationItemAllowed(userStationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id)) {
+        if (!isKdsStationItemAllowed(userStationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
           throw new Error('STATION_FORBIDDEN');
         }
       }

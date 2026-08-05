@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, registerDatabaseMaintenanceStartListener, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, registerDatabaseMaintenanceStartListener, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -408,8 +408,9 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
           WHERE o.id = ?
         `).get(existingItem.order_id) as { kitchen_station_id: string | null } | undefined;
         const stationCategoryIds = getKdsStationCategoryIds(db, client.stationIds);
-        const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, client.stationIds, client.categoryIds);
-        if (!stationCategoryIds || !stationRoutingCategoryIds || !isKdsStationItemAllowed(client.stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, existingItem.category_id)) {
+        const stationScope = getKdsStationRoutingScope(db, client.stationIds, client.categoryIds);
+        const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
+        if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds || !isKdsStationItemAllowed(client.stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, existingItem.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
           return { error: 'Not authorized to update this station' };
         }
       }
@@ -469,8 +470,9 @@ function activeOrdersCondition(): string {
 function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: string[] = [], restrictedPayload = categoryIds.length > 0): void {
   const db = getDatabase();
   const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-  const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
-  if (!stationCategoryIds || !stationRoutingCategoryIds) throw new Error('Could not load station permissions');
+  const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
+  const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
+  if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds) throw new Error('Could not load station permissions');
 
   let query = `
     SELECT o.*, t.number as table_name, t.kitchen_station_id
@@ -523,7 +525,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     .filter((i: any) => i.status !== 'void_adjustment'
       && !['completed', 'cancelled'].includes(i.status)
       && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-      && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id, i.category_id));
+      && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id, i.category_id, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id ? stationScope.categoryIdsByStation[String((orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id)] : undefined));
   const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]);
   const addonsByItemId = new Map(itemsWithAddons.map((it: any) => [it.id, it]));
 
@@ -534,7 +536,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
       .filter((i: any) => i.status !== 'void_adjustment'
         && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-        && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id))
+        && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined))
       .map((i: any) => addonsByItemId.get(i.id) || i);
 
     // Filter items by category if user has category restrictions

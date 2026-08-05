@@ -864,34 +864,52 @@ export function getKdsStationCategoryIds(dbInstance: Database.Database, stationI
   }
 }
 
-export function getKdsStationRoutingCategoryIds(
+export type KdsStationRoutingScope = {
+  tablelessCategoryIds: string[];
+  categoryIdsByStation: Record<string, string[] | null>;
+};
+
+export function getKdsStationRoutingScope(
   dbInstance: Database.Database,
   stationIds: string[],
   userCategoryIds: string[],
-): string[] | null {
-  if (stationIds.length === 0) return [];
+): KdsStationRoutingScope | null {
+  if (stationIds.length === 0) return { tablelessCategoryIds: [], categoryIdsByStation: {} };
   try {
     const placeholders = stationIds.map(() => '?').join(',');
     const rows = dbInstance.prepare(`
-      SELECT category_ids FROM kitchen_stations
+      SELECT id, category_ids FROM kitchen_stations
       WHERE is_active = 1 AND id IN (${placeholders})
-    `).all(...stationIds) as { category_ids: string | null }[];
-    const categories = new Set<string>();
-    for (const row of rows) {
+    `).all(...stationIds) as { id: string; category_ids: string | null }[];
+    const byStation: Record<string, string[] | null> = {};
+    const tableless = new Set<string>();
+    for (const stationId of stationIds) {
+      const row = rows.find((candidate) => String(candidate.id) === String(stationId));
       let stationCategories: string[] = [];
-      if (row.category_ids) {
+      if (row?.category_ids) {
         try {
           const parsed = JSON.parse(row.category_ids);
           if (Array.isArray(parsed)) stationCategories = parsed.filter((id) => id != null).map(String);
         } catch { }
       }
-      if (stationCategories.length > 0) stationCategories.forEach((id) => categories.add(id));
-      else userCategoryIds.forEach((id) => categories.add(String(id)));
+      const allowed = stationCategories.length > 0
+        ? stationCategories.filter((id) => userCategoryIds.length === 0 || userCategoryIds.includes(id))
+        : (userCategoryIds.length > 0 ? [...userCategoryIds] : null);
+      byStation[String(stationId)] = allowed;
+      if (allowed !== null) allowed.forEach((id) => tableless.add(id));
     }
-    return [...categories];
+    return { tablelessCategoryIds: [...tableless], categoryIdsByStation: byStation };
   } catch {
     return null;
   }
+}
+
+export function getKdsStationRoutingCategoryIds(
+  dbInstance: Database.Database,
+  stationIds: string[],
+  userCategoryIds: string[],
+): string[] | null {
+  return getKdsStationRoutingScope(dbInstance, stationIds, userCategoryIds)?.tablelessCategoryIds ?? null;
 }
 
 export function isKdsStationItemAllowed(
@@ -899,9 +917,15 @@ export function isKdsStationItemAllowed(
   stationCategoryIds: string[],
   orderStationId: string | null | undefined,
   itemCategoryId: string | null | undefined,
+  orderStationCategoryIds?: string[] | null,
 ): boolean {
   if (stationIds.length === 0) return true;
-  if (orderStationId) return stationIds.includes(String(orderStationId));
+  if (orderStationId) {
+    if (!stationIds.includes(String(orderStationId))) return false;
+    if (orderStationCategoryIds === undefined) return true;
+    if (orderStationCategoryIds === null) return true;
+    return !!itemCategoryId && orderStationCategoryIds.includes(String(itemCategoryId));
+  }
   return !!itemCategoryId && stationCategoryIds.includes(String(itemCategoryId));
 }
 
@@ -3696,10 +3720,19 @@ export function projectKdsItem(item: any, restricted: boolean): any {
 }
 
 /** Avoid exposing printer/network credentials in restricted KDS station metadata. */
-export function projectKdsStation(station: any, restricted: boolean): any {
+export function projectKdsStation(station: any, restricted: boolean, userCategoryIds: string[] = []): any {
   if (!restricted) return station;
   const allowedFields = ['id', 'name', 'description', 'category_ids', 'sort_order', 'is_active'];
-  return Object.fromEntries(allowedFields.filter((field) => field in station).map((field) => [field, station[field]]));
+  const projected = Object.fromEntries(allowedFields.filter((field) => field in station).map((field) => [field, station[field]]));
+  if (typeof projected.category_ids === 'string' && userCategoryIds.length > 0) {
+    try {
+      const parsed = JSON.parse(projected.category_ids);
+      if (Array.isArray(parsed)) projected.category_ids = JSON.stringify(parsed.filter((id) => userCategoryIds.includes(String(id))));
+    } catch {
+      projected.category_ids = '[]';
+    }
+  }
+  return projected;
 }
 
 /**

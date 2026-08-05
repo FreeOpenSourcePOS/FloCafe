@@ -191,6 +191,9 @@ export function startKdsServer(): Promise<void> {
         const stationIds = getUserKdsStationIds(db, user.id);
         const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, user.id);
         if (!stationIds || stationAssignmentsConfigured === null) return res.status(500).json({ error: 'Could not load station permissions' });
+        if (stationAssignmentsConfigured && stationIds.length === 0) {
+          return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
+        }
 
         const token = jwt.sign(
           { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },

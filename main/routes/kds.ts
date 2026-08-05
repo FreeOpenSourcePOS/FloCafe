@@ -47,6 +47,9 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
     if (!userCategoryIds || !userStationIds || hasStationAssignments === null || !stationCategoryIds) return res.status(403).json({ error: 'User account is not active' });
     if (hasStationAssignments && userStationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
     const stationId = req.query.station_id as string;
+    const requestedStationCategoryIds = stationId ? getKdsStationCategoryIds(db, [stationId]) : stationCategoryIds;
+    if (!requestedStationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+    const payloadStationIds = stationId ? [stationId] : userStationIds;
     if (stationId && userStationIds.length > 0 && !userStationIds.includes(stationId)) {
       return res.status(403).json({ error: 'You are not assigned to this kitchen station' });
     }
@@ -87,8 +90,11 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       params.push(...userStationIds, ...stationCategoryIds);
     }
     if (stationId) {
-      query += ` AND t.kitchen_station_id = ?`;
-      params.push(stationId);
+      const categoryRoute = requestedStationCategoryIds.length > 0
+        ? ` OR EXISTS (SELECT 1 FROM order_items requested_oi JOIN products requested_p ON requested_p.id = requested_oi.product_id WHERE requested_oi.order_id = o.id AND requested_p.category_id IN (${requestedStationCategoryIds.map(() => '?').join(',')}))`
+        : '';
+      query += ` AND (t.kitchen_station_id = ?${categoryRoute})`;
+      params.push(stationId, ...requestedStationCategoryIds);
     }
 
     query += ' ORDER BY o.created_at ASC';
@@ -122,7 +128,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
         && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
-        && isKdsStationItemAllowed(userStationIds, stationCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id));
+        && isKdsStationItemAllowed(payloadStationIds, requestedStationCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id));
     const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems);
     const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
 
@@ -134,7 +140,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
           && !['completed', 'cancelled'].includes(i.status)
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
-          && isKdsStationItemAllowed(userStationIds, stationCategoryIds, order.kitchen_station_id, i.category_id))
+          && isKdsStationItemAllowed(payloadStationIds, requestedStationCategoryIds, order.kitchen_station_id, i.category_id))
         .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, userCategoryIds.length > 0));
 
       return {
@@ -283,8 +289,11 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     `;
 
     const params: any[] = [voidedCutoff];
-    itemsQuery += ' AND t.kitchen_station_id = ?';
-    params.push(stationId);
+    const categoryRoute = categoryIds.length > 0
+      ? ` OR EXISTS (SELECT 1 FROM products routed_p WHERE routed_p.id = oi.product_id AND routed_p.category_id IN (${categoryIds.map(() => '?').join(',')}))`
+      : '';
+    itemsQuery += ` AND (t.kitchen_station_id = ?${categoryRoute})`;
+    params.push(stationId, ...categoryIds);
 
     if (categoryIds.length > 0) {
       itemsQuery += ` AND EXISTS (SELECT 1 FROM products p WHERE p.id = oi.product_id AND p.category_id IN (${categoryIds.map(() => '?').join(',')}))`;

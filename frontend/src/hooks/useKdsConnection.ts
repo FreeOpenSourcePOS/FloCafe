@@ -374,6 +374,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           } else if (msg.type === 'auth_error') {
             if (wsRef.current !== ws) return;
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
+            const invalidSession = /invalid|expired|revoked|authentication required/i.test(msg.message || '');
             sessionGenerationRef.current += 1;
             setLoginError(msg.message || t('kds.authFailed'));
             if (wsRef.current === ws) wsRef.current = null;
@@ -389,7 +390,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             setCounts({});
             setConnected(false);
             setConnectionMode(null);
-            window.localStorage.removeItem('token');
+            if (invalidSession) window.localStorage.removeItem('token');
             ws.close();
             setLoading(false);
           } else if ((msg.type === 'initial_data' || msg.type === 'orders') && msg.orders) {
@@ -516,12 +517,13 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         });
         tryWebSocket(savedToken);
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (
           generation !== sessionGenerationRef.current ||
           window.localStorage.getItem('token') !== savedToken
         ) return;
-        window.localStorage.removeItem('token');
+        const status = (error as { response?: { status?: number } })?.response?.status;
+        if (status === 401) window.localStorage.removeItem('token');
         setLoading(false);
       });
 

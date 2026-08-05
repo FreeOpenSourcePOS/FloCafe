@@ -102,6 +102,7 @@ async function main() {
     const restrictedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(restrictedDisplay.status, 200, 'restricted chef can access the station display');
     assertEqual(restrictedDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station display hides unauthorized categories');
+    assertEqual(restrictedDisplay.body.orders.some((entry: any) => entry.order_id === tablelessOrderId), true, 'station display includes routed tableless orders');
     assert(!('subtotal' in (restrictedDisplay.body.orders[0]?.items?.[0] || {})), 'restricted station items omit line totals');
 
     const deniedEmbeddedMutation = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });

@@ -592,7 +592,7 @@ export interface RestoreResult {
   error?: string;
 }
 
-function validateDirectBackup(backupPath: string, currentDb: Database.Database, currentVersion: number): string | null {
+function validateDirectBackup(backupPath: string, currentDb: Database.Database, currentVersion: number, baselineForeignKeyViolations: Set<string> = new Set()): string | null {
   let backupDb: Database.Database | undefined;
   try {
     backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
@@ -607,9 +607,10 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
     if (integrity.some((row) => row.integrity_check !== 'ok')) {
       return `Backup integrity check failed: ${integrity.map((row) => row.integrity_check).join('; ')}`;
     }
-    const foreignKeyViolations = backupDb.prepare('PRAGMA foreign_key_check').all();
-    if (foreignKeyViolations.length > 0) {
-      return `Backup contains ${foreignKeyViolations.length} foreign-key violation(s)`;
+    const backupForeignKeyViolations = getForeignKeyViolationKeys(backupDb);
+    const newForeignKeyViolations = [...backupForeignKeyViolations].filter((key) => !baselineForeignKeyViolations.has(key));
+    if (newForeignKeyViolations.length > 0) {
+      return `Backup contains ${newForeignKeyViolations.length} new foreign-key violation(s)`;
     }
 
     const currentTables = getTables(currentDb);
@@ -847,7 +848,8 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   if (forceDirect || backupSchemaVersion === currentVersion) {
-    const validationError = validateDirectBackup(backupPath, currentDb, currentVersion);
+    const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
+    const validationError = validateDirectBackup(backupPath, currentDb, currentVersion, baselineForeignKeyViolations);
     if (validationError) {
       return {
         success: false,
@@ -878,10 +880,11 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       mergeUserStationSecurityState(freshDb, preservedUserStations, preservedUserSecurity.map((row) => row.id));
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
-      const foreignKeyViolations = freshDb.prepare('PRAGMA foreign_key_check').all();
+      const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
+        .filter((key) => !baselineForeignKeyViolations.has(key));
       if (
         integrity.some((row) => row.integrity_check !== 'ok') ||
-        foreignKeyViolations.length > 0
+        newForeignKeyViolations.length > 0
       ) {
         throw new Error('Restored database failed integrity validation');
       }
@@ -918,8 +921,22 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
 export function getForeignKeyViolationKeys(dbInstance: Database.Database): Set<string> {
-  const rows = dbInstance.prepare('PRAGMA foreign_key_check').all() as Record<string, unknown>[];
-  return new Set(rows.map((row) => JSON.stringify([row.table, row.rowid, row.parent, row.fkid])));
+  const rows = dbInstance.prepare('PRAGMA foreign_key_check').all() as { table: string; rowid: number | string | null; parent: string; fkid: number }[];
+  const keys = new Set<string>();
+  for (const row of rows) {
+    let identity: unknown = row.rowid;
+    try {
+      const tableInfo = dbInstance.prepare(`PRAGMA table_info("${row.table.replace(/"/g, '""')}")`).all() as { name: string; pk: number }[];
+      const primaryKeys = tableInfo.filter((column) => column.pk > 0).sort((a, b) => a.pk - b.pk);
+      if (primaryKeys.length > 0 && row.rowid != null) {
+        const columns = primaryKeys.map((column) => `"${column.name.replace(/"/g, '""')}"`).join(', ');
+        const values = dbInstance.prepare(`SELECT ${columns} FROM "${row.table.replace(/"/g, '""')}" WHERE rowid = ?`).get(row.rowid) as Record<string, unknown> | undefined;
+        if (values) identity = primaryKeys.map((column) => values[column.name]);
+      }
+    } catch { }
+    keys.add(JSON.stringify([row.table, identity, row.parent, row.fkid]));
+  }
+  return keys;
 }
 
 /** Return true only if the string is a safe SQL identifier (letters, digits, underscore). */

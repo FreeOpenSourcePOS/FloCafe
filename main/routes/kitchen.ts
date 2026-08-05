@@ -109,9 +109,12 @@ router.get('/orders', (req: Request, res: Response) => {
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
           && isKdsStationItemAllowed(stationIds, stationCategoryIds, order.kitchen_station_id, i.category_id))
-        .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, restrictedKdsPayload));      const table = order.table_id ? tablesMap[order.table_id] || null : null;
+        .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, restrictedKdsPayload));
+      const tableRow = order.table_id ? tablesMap[order.table_id] || null : null;
+      const table = tableRow && restrictedKdsPayload ? { name: tableRow.name } : tableRow;
       return {
-        ...projectKdsOrder(order, restrictedKdsPayload),        items: visibleItems,
+        ...projectKdsOrder(order, restrictedKdsPayload),
+        items: visibleItems,
         table,
       };
     }).filter((order) => order.items.length > 0);

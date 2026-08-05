@@ -104,13 +104,17 @@ router.patch('/:id/status', (req: Request, res: Response) => {
         .filter((row) => categoryIds.length === 0 || (row.category_id && categoryIds.includes(String(row.category_id))))
         .filter((row) => stationIds.length === 0 || isKdsStationItemAllowed(stationIds, stationCategoryIds, orderStationId, row.category_id));
       const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson))
-        .map((row) => projectKdsItem(row, restrictedKdsPayload));      const tableRow = order.table_id
+        .map((row) => projectKdsItem(row, restrictedKdsPayload));
+      const tableRow = order.table_id
         ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
         : null;
-      const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
+      const table = tableRow
+        ? (restrictedKdsPayload ? { name: tableRow.number } : { ...tableRow, name: tableRow.number })
+        : null;
 
       return {
-        ...projectKdsOrder(order, restrictedKdsPayload),        items,
+        ...projectKdsOrder(order, restrictedKdsPayload),
+        items,
         table,
       };
     });

@@ -738,7 +738,7 @@ export function captureUserStationSecurityState(dbInstance: Database.Database): 
 
 export function mergeUserStationSecurityState(dbInstance: Database.Database, rows: UserStationSecurityState[], userIds: string[]): void {
   const preservedIds = new Set(userIds);
-  const stationExists = dbInstance.prepare('SELECT 1 FROM kitchen_stations WHERE id = ?');
+  const stationExists = dbInstance.prepare('SELECT 1 FROM kitchen_stations WHERE id = ? AND is_active = 1');
   const missingStations = rows
     .filter((row) => preservedIds.has(row.user_id) && !stationExists.get(row.station_id))
     .map((row) => `${row.user_id}:${row.station_id}`);
@@ -960,12 +960,13 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
     const dbPath = getDbPath();
     const recoveryPath = path.join(getBackupDir(), `flo-restore-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
 
-    // Checkpoint the live WAL before making a synchronous recovery copy.
-    currentDb.pragma('wal_checkpoint(TRUNCATE)');
-    fs.copyFileSync(dbPath, recoveryPath);
-    closeDatabase();
-
+    let recoveryCopyReady = false;
     try {
+      // Checkpoint the live WAL before making a synchronous recovery copy.
+      currentDb.pragma('wal_checkpoint(TRUNCATE)');
+      fs.copyFileSync(dbPath, recoveryPath);
+      recoveryCopyReady = true;
+      closeDatabase();
       const removeFailures = removeDatabaseFiles(dbPath);
       if (removeFailures.length > 0) {
         throw new Error(`Could not remove database files: ${removeFailures.join(', ')}`);
@@ -996,6 +997,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
     } catch (error: any) {
       // A corrupt/incompatible same-version file must not strand the live
       // database. Restore the checkpointed safety copy before rethrowing.
+      if (!recoveryCopyReady) throw error;
       try {
         closeDatabase();
         const recoveryRemoveFailures = removeDatabaseFiles(dbPath);

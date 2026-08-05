@@ -1,6 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer } from 'ws';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
@@ -262,7 +262,11 @@ export function startServer(): Promise<void> {
 
         server.on('upgrade', (request, socket, head) => {
           const pathname = (request.url || '').split('?')[0];
-          if (pathname !== '/kds') return;
+          if (pathname !== '/kds') {
+            socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+            socket.destroy();
+            return;
+          }
 
           if (!isKdsEnabled()) {
             // Pretend the endpoint doesn't exist rather than confirming it's
@@ -273,9 +277,14 @@ export function startServer(): Promise<void> {
             return;
           }
 
-          wss.handleUpgrade(request, socket, head, (ws) => {
-            wss.emit('connection', ws, request);
-          });
+          try {
+            wss.handleUpgrade(request, socket, head, (ws) => {
+              wss.emit('connection', ws, request);
+            });
+          } catch (error) {
+            console.error('[Server] KDS WebSocket upgrade failed:', error);
+            socket.destroy();
+          }
         });
 
         console.log(`[Server] KDS WebSocket running on ws://localhost:${currentPort}/kds`);
@@ -283,7 +292,11 @@ export function startServer(): Promise<void> {
 
       // main/index.ts (Electron) also calls this; dev-server and pm2 boot
       // through here instead and would otherwise start with module defaults.
-      initWhatsAppFromDb();
+      try {
+        initWhatsAppFromDb();
+      } catch (error) {
+        console.error('[Server] WhatsApp startup initialization failed:', error);
+      }
 
       resolve();
     });
@@ -308,8 +321,15 @@ export function startServer(): Promise<void> {
 }
 
 export function stopServer(): void {
-  if (wss) wss.close();
-  if (server) server.close();
+  if (wss) {
+    for (const client of wss.clients) client.terminate();
+    wss.close();
+    wss = null as unknown as WebSocketServer;
+  }
+  if (server) {
+    server.close();
+    server = null;
+  }
   console.log('[Server] HTTP server stopped');
 }
 

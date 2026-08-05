@@ -115,6 +115,7 @@ interface WsMessage {
 export interface UseKdsConnectionEndpoints {
   login?: string;
   me?: string;
+  logout?: string;
   orders?: string;
   /** Path template containing a literal `:itemId` placeholder, e.g. '/kds/items/:itemId/status'. */
   itemStatus?: string;
@@ -161,6 +162,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const { api, endpoints } = options;
   const loginPath = endpoints?.login ?? LOGIN_ENDPOINT;
   const mePath = endpoints?.me ?? ME_ENDPOINT;
+  const logoutPath = endpoints?.logout ?? '/auth/logout';
   const ordersPath = endpoints?.orders ?? ORDERS_ENDPOINT;
   const itemStatusPath = endpoints?.itemStatus ?? ITEM_STATUS_ENDPOINT;
   const { t } = useI18n();
@@ -393,13 +395,21 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     if (wsRef.current) {
       wsRef.current.close();
     }
+    const token = user?.token || window.localStorage.getItem('token');
+    if (token) {
+      try {
+        await api.post(logoutPath, undefined, { headers: { Authorization: `Bearer ${token}` } });
+      } catch {
+        // Local logout must still complete if the server is offline.
+      }
+    }
     stopRestPolling();
     setUser(null);
     setOrders([]);
     setConnected(false);
     setConnectionMode(null);
     window.localStorage.removeItem('token');
-  }, [confirm, stopRestPolling, t]);
+  }, [api, confirm, logoutPath, stopRestPolling, t, user]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

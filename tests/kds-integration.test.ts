@@ -111,6 +111,14 @@ async function run() {
 
     const token = chefLogin.body.access_token;
 
+    // A credential cutoff must invalidate this token on every standalone KDS route.
+    db.prepare('UPDATE users SET tokens_valid_after = ? WHERE id = ?').run('2099-01-01 00:00:00', 'user-chef-1');
+    const staleMe = await request(`http://127.0.0.1:${port}`)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    assert(staleMe.status === 401, 'Standalone KDS rejects a token older than tokens_valid_after');
+    db.prepare('UPDATE users SET tokens_valid_after = NULL WHERE id = ?').run('user-chef-1');
+
     // 5. Unauthenticated request to /api/kds/orders fails with 401
     const unauthedOrders = await request(`http://127.0.0.1:${port}`).get('/api/kds/orders');
     assert(unauthedOrders.status === 401, 'Unauthenticated KDS orders request returns 401');

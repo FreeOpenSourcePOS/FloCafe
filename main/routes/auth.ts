@@ -799,6 +799,13 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     let userId = '';
     const hashedPassword = bcrypt.hashSync(password, 10);
 
+    // Persist the external Master PIN before committing the owner transaction.
+    // A keyring/filesystem failure must leave setup retryable rather than
+    // returning 500 after the database already contains an owner.
+    if (masterPinRequired) {
+      setMasterPin(String(master_pin));
+    }
+
     db.transaction(() => {
       const userCount = getUserCount(db);
       if (userCount > 0) {
@@ -852,16 +859,20 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);
     })();
 
-    // Written to userData/, outside flo.db and outside this transaction — the
-    // Master PIN is deliberately independent of the database it gates.
-    if (masterPinRequired) {
-      setMasterPin(String(master_pin));
-    }
-
     // Pick up the cloud settings just written without requiring a restart —
-    // mirrors PUT /api/settings/cloud's own reload() call.
-    cloudSync.reload();
-    cloudSync.refreshRegistrationProfile();
+    // mirrors PUT /api/settings/cloud's own reload() call. Cloud coordination
+    // is best-effort: a network/profile failure must not make a completed local
+    // setup appear to have failed.
+    try {
+      cloudSync.reload();
+    } catch (error) {
+      console.warn('[Auth] Cloud settings reload deferred after setup:', error);
+    }
+    try {
+      cloudSync.refreshRegistrationProfile();
+    } catch (error) {
+      console.warn('[Auth] Cloud registration profile refresh deferred after setup:', error);
+    }
 
     const token = jwt.sign(
       { userId, email, role: INITIAL_ADMIN_ROLE },

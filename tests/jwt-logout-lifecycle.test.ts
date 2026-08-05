@@ -38,8 +38,9 @@ const {
 } = require('./helpers/test-setup');
 
 const { authRoutes, getJWTSecret } = require('../main/routes/auth');
+const { initDatabase } = require('../main/db');
 const { staffRoutes } = require('../main/routes/staff');
-const { clearRevokedTokens } = require('../main/middleware/security');
+const { clearRevokedTokens, revokeToken, isTokenRevoked } = require('../main/middleware/security');
 
 async function run() {
   console.log('Testing JWT Logout & Token Lifecycle (Area E)...');
@@ -105,6 +106,25 @@ async function run() {
     .set('Authorization', `Bearer ${token}`)
     .send({ current_password: 'Pass1234!', password: 'NewPass1234!' });
   assertEqual(passwordChangeRes.status, 401, 'Password change with revoked token fails with 401');
+
+  // Logout revocation must survive a database/process lifecycle restart.
+  closeDatabase();
+  initDatabase();
+  const afterRestart = await request(app)
+    .get('/api/auth/me')
+    .set('Authorization', `Bearer ${token}`);
+  assertEqual(afterRestart.status, 401, 'logged-out token remains rejected after database restart');
+
+  // A bounded in-memory cache must not evict durable revocations.
+  for (let i = 0; i < 5001; i++) {
+    const churnToken = jwt.sign(
+      { userId: 'jwt-owner-1', email: 'jwt-owner@test.local', role: 'owner', jti: `churn-${i}` },
+      getJWTSecret(),
+      { expiresIn: '1h' },
+    );
+    revokeToken(churnToken);
+  }
+  assertEqual(isTokenRevoked(token), true, 'original logout remains revoked after token churn');
 
   // Step 7: Test expired token -> 401
   const expiredToken = jwt.sign(

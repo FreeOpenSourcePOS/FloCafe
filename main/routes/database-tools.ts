@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { createBackup, resetDatabaseWithBackup, listBackups, deleteBackup } from '../db';
+import { resetDatabaseWithBackup, listBackups, deleteBackup } from '../db';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { runHealthCheck, applySafeFixes } from '../services/schema-health';

@@ -12,12 +12,65 @@ interface KdsClient {
   categoryIds: string[];
   token: string | null;
   isAlive: boolean;
+  authTimeout?: NodeJS.Timeout;
 }
 
+export const KDS_AUTH_TIMEOUT_MS = 5_000;
+export const MAX_KDS_CLIENTS = 100;
 const clients: Map<WebSocket, KdsClient> = new Map();
 
+function clearClientAuthTimeout(client: KdsClient): void {
+  if (client.authTimeout) {
+    clearTimeout(client.authTimeout);
+    client.authTimeout = undefined;
+  }
+}
+
+function clearClientIdentity(client: KdsClient): void {
+  clearClientAuthTimeout(client);
+  client.userId = null;
+  client.userName = null;
+  client.role = null;
+  client.categoryIds = [];
+  client.token = null;
+}
+
+function closeKdsClient(client: KdsClient, message?: string): void {
+  clients.delete(client.ws);
+  if (message && client.ws.readyState === WebSocket.OPEN) {
+    try { client.ws.send(JSON.stringify({ type: 'auth_error', message })); } catch { }
+  }
+  clearClientIdentity(client);
+  if (client.ws.readyState === WebSocket.OPEN || client.ws.readyState === WebSocket.CONNECTING) {
+    client.ws.close(1008, message || 'Session invalid');
+  }
+}
+
+function isKdsClientAuthorized(client: KdsClient): boolean {
+  if (!isKdsEnabled() || !client.userId || !client.token || isTokenRevoked(client.token)) return false;
+  try {
+    const decoded = jwt.verify(client.token, getJWTSecret()) as any;
+    const status = getUserAuthStatus(decoded.userId, { fresh: true });
+    if (
+      decoded.userId !== client.userId ||
+      !status?.isActive ||
+      !['chef', 'owner', 'manager'].includes(status.role) ||
+      isTokenStale(decoded.iat, status.tokensValidAfter)
+    ) return false;
+    client.role = status.role;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function setupKdsWebSocket(wss: WebSocketServer): void {
-  wss.on('connection', (ws: WebSocket, req) => {
+  wss.on('connection', (ws: WebSocket, _req) => {
+    if (clients.size >= MAX_KDS_CLIENTS) {
+      ws.close(1013, 'KDS connection capacity reached');
+      return;
+    }
+
     console.log('[KDS] New client connection');
 
     const client: KdsClient = {
@@ -29,6 +82,12 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
       token: null,
       isAlive: true,
     };
+    client.authTimeout = setTimeout(() => {
+      if (!client.userId) {
+        closeKdsClient(client, 'Authentication required');
+      }
+    }, KDS_AUTH_TIMEOUT_MS);
+    client.authTimeout.unref();
     clients.set(ws, client);
 
     ws.on('message', (data) => {
@@ -42,6 +101,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
 
     ws.on('close', () => {
       console.log('[KDS] Client disconnected');
+      clearClientAuthTimeout(client);
       clients.delete(ws);
     });
 
@@ -85,6 +145,11 @@ function handleMessage(ws: WebSocket, message: any): void {
   const client = clients.get(ws);
   if (!client) return;
 
+  if (!client.userId && message.type !== 'auth') {
+    closeKdsClient(client, 'Authentication required');
+    return;
+  }
+
   switch (message.type) {
     case 'auth':
       handleAuth(ws, client, message);
@@ -106,9 +171,14 @@ function handleMessage(ws: WebSocket, message: any): void {
 function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
   const { token } = message;
 
+  if (!isKdsEnabled()) {
+    closeKdsClient(client, 'KDS is disabled');
+    return;
+  }
+
   // JWT-only authentication — plaintext password auth removed for security
   if (!token || isTokenRevoked(token)) {
-    ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid or revoked token' }));
+    closeKdsClient(client, 'Invalid or revoked token');
     return;
   }
 
@@ -118,17 +188,17 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
     const user = db.prepare('SELECT * FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
 
     if (!user) {
-      ws.send(JSON.stringify({ type: 'auth_error', message: 'User not found' }));
+      closeKdsClient(client, 'User not found');
       return;
     }
 
     if (isTokenStale(decoded.iat, user.tokens_valid_after)) {
-      ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid or revoked token' }));
+      closeKdsClient(client, 'Invalid or revoked token');
       return;
     }
 
     if (user.role !== 'chef' && user.role !== 'owner' && user.role !== 'manager') {
-      ws.send(JSON.stringify({ type: 'auth_error', message: 'Only kitchen staff can access KDS' }));
+      closeKdsClient(client, 'Only kitchen staff can access KDS');
       return;
     }
 
@@ -139,6 +209,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
     client.role = user.role;
     client.categoryIds = categoryIds;
     client.token = token;
+    clearClientAuthTimeout(client);
 
     ws.send(JSON.stringify({
       type: 'auth_success',
@@ -151,30 +222,14 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
     }));
 
     sendActiveOrders(ws, client.categoryIds);
-  } catch (err) {
-    ws.send(JSON.stringify({ type: 'auth_error', message: 'Invalid token' }));
+  } catch {
+    closeKdsClient(client, 'Invalid token');
   }
 }
 
 function handleStatusUpdate(client: KdsClient, message: any): void {
-  if (!client.userId || !client.token || isTokenRevoked(client.token)) {
-    client.ws.send(JSON.stringify({ type: 'error', message: 'Not authenticated or session revoked' }));
-    return;
-  }
-
-  try {
-    const decoded = jwt.verify(client.token, getJWTSecret()) as any;
-    const userStatus = getUserAuthStatus(decoded.userId);
-    if (!userStatus || !userStatus.isActive || !['chef', 'owner', 'manager'].includes(userStatus.role)) {
-      client.ws.send(JSON.stringify({ type: 'error', message: 'User deactivated or unauthorized' }));
-      return;
-    }
-    if (isTokenStale(decoded.iat, userStatus.tokensValidAfter)) {
-      client.ws.send(JSON.stringify({ type: 'error', message: 'Session revoked' }));
-      return;
-    }
-  } catch {
-    client.ws.send(JSON.stringify({ type: 'error', message: 'Session expired or invalid' }));
+  if (!isKdsClientAuthorized(client)) {
+    closeKdsClient(client, 'Session expired or revoked');
     return;
   }
 
@@ -354,12 +409,14 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
 
 function broadcastOrderUpdate(): void {
   clients.forEach((client) => {
-    if (client.userId) {
-      try {
-        sendActiveOrders(client.ws, client.categoryIds);
-      } catch (err) {
-        console.error('[KDS] Broadcast error for client:', err);
-      }
+    if (!isKdsClientAuthorized(client)) {
+      closeKdsClient(client, 'Session expired or revoked');
+      return;
+    }
+    try {
+      sendActiveOrders(client.ws, client.categoryIds);
+    } catch (err) {
+      console.error('[KDS] Broadcast error for client:', err);
     }
   });
 }
@@ -371,8 +428,10 @@ export function notifyKdsUpdate(): void {
 export function notifyOrderUpdated(): void {
   const msg = JSON.stringify({ type: 'order_updated' });
   clients.forEach((client) => {
-    if (client.ws.readyState === WebSocket.OPEN) {
-      client.ws.send(msg);
+    if (!isKdsClientAuthorized(client)) {
+      closeKdsClient(client, 'Session expired or revoked');
+      return;
     }
+    if (client.ws.readyState === WebSocket.OPEN) client.ws.send(msg);
   });
 }

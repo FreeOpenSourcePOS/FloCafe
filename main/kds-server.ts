@@ -9,7 +9,7 @@ import * as fs from 'fs';
 import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
-import { rateLimit, authRateLimit, corsOptions, isTokenRevoked } from './middleware/security';
+import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -96,8 +96,8 @@ export function startKdsServer(): Promise<void> {
       try {
         const decoded = jwt.verify(token, getJWTSecret()) as any;
         const db = getDatabase();
-        const user = db.prepare('SELECT id, email, role, category_ids FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
-        if (!user) {
+        const user = db.prepare('SELECT id, email, role, category_ids, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(decoded.userId) as any;
+        if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
           return res.status(401).json({ error: 'Invalid token' });
         }
         if (!['chef', 'manager', 'owner'].includes(user.role)) {
@@ -197,6 +197,12 @@ export function startKdsServer(): Promise<void> {
       }
     });
 
+    app.post('/api/auth/logout', (req: Request, res: Response) => {
+      const authHeader = req.headers.authorization;
+      if (authHeader?.startsWith('Bearer ')) revokeToken(authHeader.slice('Bearer '.length));
+      res.json({ message: 'Logged out successfully' });
+    });
+
     // Current user info — lets the frontend restore a session from a saved
     // token on page load/reload instead of forcing a fresh login every time.
     app.get('/api/auth/me', requireAuth, (req: Request, res: Response) => {
@@ -260,7 +266,7 @@ export function startKdsServer(): Promise<void> {
             table: order.table_number ? { name: order.table_number } : null,
             items,
           };
-        });
+        }).filter((order: any) => order.items.length > 0);
 
         res.json({ orders: ordersWithItems });
       } catch (error: any) {
@@ -406,7 +412,11 @@ export function startKdsServer(): Promise<void> {
 
         kdsServer.on('upgrade', (request, socket, head) => {
           const pathname = (request.url || '').split('?')[0];
-          if (pathname !== '/kds') return;
+          if (pathname !== '/kds') {
+            socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+            socket.destroy();
+            return;
+          }
 
           if (!isKdsEnabled()) {
             socket.write('HTTP/1.1 404 Not Found\r\n\r\n');
@@ -414,9 +424,14 @@ export function startKdsServer(): Promise<void> {
             return;
           }
 
-          wss.handleUpgrade(request, socket, head, (ws) => {
-            wss.emit('connection', ws, request);
-          });
+          try {
+            wss.handleUpgrade(request, socket, head, (ws) => {
+              wss.emit('connection', ws, request);
+            });
+          } catch (error) {
+            console.error('[KDS Server] WebSocket upgrade failed:', error);
+            socket.destroy();
+          }
         });
 
         console.log(`[KDS Server] WebSocket running on ws://localhost:${activeKdsPort}/kds`);

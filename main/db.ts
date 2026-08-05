@@ -17,10 +17,19 @@ let databaseMaintenanceActive = false;
 let activeDatabaseRequests = 0;
 let maintenanceRequestWaiters: (() => void)[] = [];
 
+export function isDatabaseMaintenanceActive(): boolean {
+  return databaseMaintenanceActive;
+}
+
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
   // These handlers acquire the maintenance lock themselves. They must not be
   // counted as active requests or the lock would wait on its own response.
-  const ownsMaintenanceLock = req.path === '/api/db/import' || req.path === '/api/db-tools/initialize';
+  const ownsMaintenanceLock = [
+    '/api/db/import',
+    '/api/db/backup',
+    '/api/db/download',
+    '/api/db-tools/initialize',
+  ].includes(req.path);
   if (databaseMaintenanceActive && !ownsMaintenanceLock) {
     res.status(503).json({ error: 'Database maintenance in progress' });
     return;

@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -180,6 +180,10 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
   if (!heartbeat) {
     heartbeat = setInterval(() => {
       clients.forEach((client, ws) => {
+        if (isDatabaseMaintenanceActive()) {
+          closeKdsClient(client, 'Database maintenance in progress');
+          return;
+        }
         if (client.userId && !isKdsClientAuthorized(client)) {
           closeKdsClient(client, 'Session expired or revoked');
           return;
@@ -233,6 +237,10 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
 function handleMessage(ws: WebSocket, message: any): void {
   const client = clients.get(ws);
   if (!client) return;
+  if (isDatabaseMaintenanceActive()) {
+    closeKdsClient(client, 'Database maintenance in progress');
+    return;
+  }
 
   if (!client.userId && message.type !== 'auth') {
     closeKdsClient(client, 'Authentication required');
@@ -567,6 +575,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
 }
 
 function broadcastOrderUpdate(): void {
+  if (isDatabaseMaintenanceActive()) return;
   clients.forEach((client) => {
     if (!isKdsClientAuthorized(client)) {
       closeKdsClient(client, 'Session expired or revoked');

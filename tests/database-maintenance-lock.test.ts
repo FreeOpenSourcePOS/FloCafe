@@ -63,6 +63,13 @@ async function run() {
   databaseMaintenanceMiddleware({ path: '/api/test' } as any, blockedResponse as any, () => { blockedNextCalled = true; });
   assert.equal(blockedNextCalled, false, 'new requests are rejected during maintenance');
   assert.equal(blockedStatus, 503, 'maintenance requests receive retryable status');
+
+  const ownerResponse = new EventEmitter() as EventEmitter & { status: (code: number) => typeof ownerResponse; json: (body: unknown) => void };
+  ownerResponse.status = () => ownerResponse;
+  ownerResponse.json = () => undefined;
+  let ownerNextCalled = false;
+  databaseMaintenanceMiddleware({ path: '/api/db/backup' } as any, ownerResponse as any, () => { ownerNextCalled = true; });
+  assert.equal(ownerNextCalled, true, 'maintenance-owning backup requests do not wait on themselves');
   await activeMaintenance;
 
   console.log('✅ Database maintenance lock tests passed');

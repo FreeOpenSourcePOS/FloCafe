@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
 import { getJWTSecret } from './routes/auth';
-import { databaseMaintenanceMiddleware, getDbHealth, isKdsEnabled } from './db';
+import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
@@ -268,6 +268,12 @@ export function startServer(): Promise<void> {
           const pathname = (request.url || '').split('?')[0];
           if (pathname !== '/kds') {
             socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+
+          if (isDatabaseMaintenanceActive()) {
+            socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
             socket.destroy();
             return;
           }

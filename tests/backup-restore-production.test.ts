@@ -91,13 +91,31 @@ async function run() {
     missingStationDb.close();
     assert.throws(
       () => restoreBackup(missingStationBackup, true),
-      /cannot preserve current station assignment/i,
+      /cannot preserve current station/i,
       'restore rejects a backup that cannot preserve current station assignments',
     );
     assert.equal(
       (getDatabase().prepare('SELECT station_id FROM station_users WHERE user_id = ?').get('restore-station-chef') as { station_id: string }).station_id,
       'restore-station-current',
       'failed station-assignment restore leaves the current restriction intact',
+    );
+
+    const changedStationBackup = path.join(testDir, 'changed-station-security.db');
+    copyAndStamp(sameSchemaBackup, changedStationBackup, currentVersion);
+    const changedStationDb = new Database(changedStationBackup);
+    changedStationDb.pragma('foreign_keys = OFF');
+    changedStationDb.prepare('UPDATE kitchen_stations SET is_active = 0, category_ids = ? WHERE id = ?')
+      .run('["different-category"]', 'restore-station-current');
+    changedStationDb.close();
+    assert.throws(
+      () => restoreBackup(changedStationBackup, true),
+      /cannot preserve current station/i,
+      'restore rejects changed station security configuration',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?').get('restore-station-current') as { is_active: number; category_ids: string }).is_active,
+      1,
+      'failed station security restore leaves the current station active',
     );
 
     // Make the backup appear to be an older schema while retaining real linked data.

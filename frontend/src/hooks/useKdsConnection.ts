@@ -157,6 +157,19 @@ const LOGIN_ENDPOINT = '/auth/login';
 const ME_ENDPOINT = '/auth/me';
 const ORDERS_ENDPOINT = '/kitchen/orders';
 const ITEM_STATUS_ENDPOINT = '/order-items/:itemId/status';
+const KDS_AUTH_BLOCKED_KEY = 'flocafe:kds-auth-blocked';
+
+function isKdsAuthBlocked(): boolean {
+  try { return window.sessionStorage.getItem(KDS_AUTH_BLOCKED_KEY) === '1'; } catch { return false; }
+}
+
+function clearKdsAuthBlocked(): void {
+  try { window.sessionStorage.removeItem(KDS_AUTH_BLOCKED_KEY); } catch { }
+}
+
+function markKdsAuthBlocked(): void {
+  try { window.sessionStorage.setItem(KDS_AUTH_BLOCKED_KEY, '1'); } catch { }
+}
 
 export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnectionResult {
   const { api, endpoints } = options;
@@ -176,7 +189,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   // Starts true only if there's a saved token to check (we're about to fetch /auth/me);
   // otherwise there's nothing to load. Lazy-initialized once on mount instead of being set
   // synchronously inside the mount effect below.
-  const [loading, setLoading] = useState(() => typeof window !== 'undefined' && !!window.localStorage.getItem('token'));
+  const [loading, setLoading] = useState(() => typeof window !== 'undefined' && !!window.localStorage.getItem('token') && !isKdsAuthBlocked());
   const [connected, setConnected] = useState(false);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>(null);
   const [updating, setUpdating] = useState<number | null>(null);
@@ -392,6 +405,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             if (wsRef.current !== ws) return;
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             const maintenanceInProgress = /database maintenance/i.test(msg.message || '');
+            const authorizationFailure = /user not found|only kitchen staff|no active kitchen station|could not load station permissions/i.test(msg.message || '');
             const invalidSession = /invalid|expired|revoked|authentication required/i.test(msg.message || '');
             sessionGenerationRef.current += 1;
             setLoginError(maintenanceInProgress ? '' : (msg.message || t('kds.authFailed')));
@@ -408,6 +422,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             setCounts({});
             setConnected(false);
             setConnectionMode(null);
+            if (authorizationFailure) markKdsAuthBlocked();
             if (invalidSession) window.localStorage.removeItem('token');
             if (maintenanceInProgress) {
               setLoading(true);
@@ -452,6 +467,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
+      clearKdsAuthBlocked();
       setLoginError('');
       sessionGenerationRef.current += 1;
       const generation = sessionGenerationRef.current;
@@ -528,6 +544,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     if (!savedToken) {
       return;
     }
+    if (isKdsAuthBlocked()) return;
     const generation = sessionGenerationRef.current;
     api.get(mePath)
       .then(({ data }) => {

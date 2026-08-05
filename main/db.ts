@@ -726,11 +726,20 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
 }
 
 type RevocationRow = { token_hash: string; expires_at: number; revoked_at: string };
-export type UserStationSecurityState = { user_id: string; station_id: string };
+export type UserStationSecurityState = {
+  user_id: string;
+  station_id: string;
+  is_active: number;
+  category_ids: string | null;
+};
 
 export function captureUserStationSecurityState(dbInstance: Database.Database): UserStationSecurityState[] {
   try {
-    return dbInstance.prepare('SELECT user_id, station_id FROM station_users').all() as UserStationSecurityState[];
+    return dbInstance.prepare(`
+      SELECT su.user_id, su.station_id, ks.is_active, ks.category_ids
+      FROM station_users su
+      JOIN kitchen_stations ks ON ks.id = su.station_id
+    `).all() as UserStationSecurityState[];
   } catch {
     return [];
   }
@@ -738,12 +747,18 @@ export function captureUserStationSecurityState(dbInstance: Database.Database): 
 
 export function mergeUserStationSecurityState(dbInstance: Database.Database, rows: UserStationSecurityState[], userIds: string[]): void {
   const preservedIds = new Set(userIds);
-  const stationExists = dbInstance.prepare('SELECT 1 FROM kitchen_stations WHERE id = ? AND is_active = 1');
-  const missingStations = rows
-    .filter((row) => preservedIds.has(row.user_id) && !stationExists.get(row.station_id))
+  const stationState = dbInstance.prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?');
+  const invalidStations = rows
+    .filter((row) => preservedIds.has(row.user_id))
+    .filter((row) => {
+      const restored = stationState.get(row.station_id) as { is_active: number; category_ids: string | null } | undefined;
+      return !restored
+        || restored.is_active !== row.is_active
+        || restored.category_ids !== row.category_ids;
+    })
     .map((row) => `${row.user_id}:${row.station_id}`);
-  if (missingStations.length > 0) {
-    throw new Error(`Restore cannot preserve current station assignment(s): ${missingStations.join(', ')}`);
+  if (invalidStations.length > 0) {
+    throw new Error(`Restore cannot preserve current station security state(s): ${invalidStations.join(', ')}`);
   }
 
   const currentUsers = dbInstance.prepare('SELECT id FROM users').all() as { id: string }[];
@@ -1182,9 +1197,30 @@ function dataOnlyRestore(
       tablesRestored,
     };
   } catch (error: any) {
+    let cleanupFailure: unknown = null;
     if (inTransaction) {
-      try { currentDb.exec('ROLLBACK'); } catch { }
+      try { currentDb.exec('ROLLBACK'); } catch (rollbackError) { cleanupFailure = rollbackError; }
       inTransaction = false;
+    }
+    if (attached) {
+      try {
+        currentDb.exec('DETACH DATABASE _restore_src');
+        attached = false;
+      } catch (detachError) {
+        cleanupFailure = cleanupFailure || detachError;
+      }
+    }
+    if (cleanupFailure) {
+      try {
+        closeDatabase();
+        initDatabase();
+        attached = false;
+      } catch (recoveryError: any) {
+        error = new Error(
+          `${error?.message || 'Restore failed'}; cleanup failed: ${cleanupFailure instanceof Error ? cleanupFailure.message : 'unknown error'}; ` +
+          `database reopen failed: ${recoveryError?.message || 'unknown error'}`,
+        );
+      }
     }
     console.error('[DB] dataOnlyRestore failed:', error);
     return {

@@ -234,16 +234,23 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const updateItemStatus = useCallback(
     async (itemId: number, status: KitchenStatus, opts: { silent?: boolean } = {}) => {
+      const generation = sessionGenerationRef.current;
       updatingIdsRef.current.add(itemId);
       setUpdating(itemId);
       try {
         await api.patch(itemStatusPath.replace(':itemId', String(itemId)), { status });
-        if (!opts.silent) toast.success(t('kds.itemMarked', { status: statusLabel(status) }));
+        if (generation === sessionGenerationRef.current && !opts.silent) {
+          toast.success(t('kds.itemMarked', { status: statusLabel(status) }));
+        }
       } catch {
-        if (!opts.silent) toast.error(t('kds.failedToUpdateItem'));
+        if (generation === sessionGenerationRef.current && !opts.silent) {
+          toast.error(t('kds.failedToUpdateItem'));
+        }
       } finally {
         updatingIdsRef.current.delete(itemId);
-        setUpdating(updatingIdsRef.current.values().next().value ?? null);
+        if (generation === sessionGenerationRef.current) {
+          setUpdating(updatingIdsRef.current.values().next().value ?? null);
+        }
       }
     },
     // statusLabel is derived from `t` (already in deps), so omit it.
@@ -312,7 +319,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         reconnectTimerRef.current = null;
         setConnected(false);
         reconnectTimerRef.current = setTimeout(() => {
-          if (wsRef.current === ws) {
+          if (wsRef.current === ws && generation === sessionGenerationRef.current) {
             tryWebSocketRef.current(token);
           }
         }, 3000);
@@ -387,6 +394,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       e.preventDefault();
       setLoginError('');
       sessionGenerationRef.current += 1;
+      const generation = sessionGenerationRef.current;
       setLoginLoading(true);
       setLoading(true);
 
@@ -397,6 +405,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           rememberMe,
         });
 
+        if (generation !== sessionGenerationRef.current) return;
         const token = data.access_token ?? data.token;
         const loggedInUser: KdsUser = {
           id: data.user.id,
@@ -409,12 +418,15 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         window.localStorage.setItem('token', token);
         tryWebSocket(token);
       } catch (err: unknown) {
+        if (generation !== sessionGenerationRef.current) return;
         const axiosErr = err as { response?: { data?: { error?: string } } };
         const msg = axiosErr.response?.data?.error || t('kds.loginFailed');
         setLoginError(msg);
       } finally {
-        setLoginLoading(false);
-        setLoading(false);
+        if (generation === sessionGenerationRef.current) {
+          setLoginLoading(false);
+          setLoading(false);
+        }
       }
     },
     [loginEmail, loginPassword, rememberMe, loginPath, api, t, tryWebSocket],
@@ -423,6 +435,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const handleLogout = useCallback(async () => {
     if (!await confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) return;
     sessionGenerationRef.current += 1;
+    const logoutGeneration = sessionGenerationRef.current;
     if (reconnectTimerRef.current) {
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
@@ -438,6 +451,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         // Local logout must still complete if the server is offline.
       }
     }
+    if (logoutGeneration !== sessionGenerationRef.current) return;
     stopRestPolling();
     setUser(null);
     setOrders([]);
@@ -468,6 +482,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         tryWebSocket(savedToken);
       })
       .catch(() => {
+        if (
+          generation !== sessionGenerationRef.current ||
+          window.localStorage.getItem('token') !== savedToken
+        ) return;
         window.localStorage.removeItem('token');
         setLoading(false);
       });

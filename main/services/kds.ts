@@ -448,6 +448,7 @@ function broadcastOrderUpdate(): void {
       closeKdsClient(client, 'Session expired or revoked');
       return;
     }
+    if (client.ws.readyState !== WebSocket.OPEN) return;
     try {
       client.categoryIdsChanged = false;
       sendActiveOrders(client.ws, client.categoryIds);
@@ -468,10 +469,11 @@ export function notifyOrderUpdated(): void {
       closeKdsClient(client, 'Session expired or revoked');
       return;
     }
+    if (client.ws.readyState !== WebSocket.OPEN) return;
     if (client.categoryIdsChanged) {
       client.categoryIdsChanged = false;
       sendActiveOrders(client.ws, client.categoryIds);
-    } else if (client.ws.readyState === WebSocket.OPEN) {
+    } else {
       client.ws.send(msg);
     }
   });

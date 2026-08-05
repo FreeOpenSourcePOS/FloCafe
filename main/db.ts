@@ -436,8 +436,10 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
     completed = true;
     return { path: finalPath, schemaVersion: currentVersion };
   } finally {
-    if (!completed && fs.existsSync(tempPath)) {
-      try { fs.unlinkSync(tempPath); } catch { }
+    if (!completed) {
+      for (const filePath of [tempPath, `${tempPath}-wal`, `${tempPath}-shm`]) {
+        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
+      }
     }
   }
 }

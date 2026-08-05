@@ -133,16 +133,27 @@ router.post('/import', requireRole('owner'),
     );
     const unresolvedUserIds = new Set<string>();
     for (const [tableName, rows] of Object.entries(importData)) {
-      if (tableName === 'users' || !Array.isArray(rows)) continue;
+      if (tableName === 'users' || !Array.isArray(rows) || !isSafeIdentifier(tableName)) continue;
+      const userReferenceColumns = (db.prepare(`PRAGMA foreign_key_list(${tableName})`).all() as { table: string; from: string }[])
+        .filter((foreignKey) => foreignKey.table === 'users')
+        .map((foreignKey) => foreignKey.from);
+      if (userReferenceColumns.length === 0) continue;
       for (const row of rows) {
         if (!row || typeof row !== 'object') continue;
-        for (const [column, value] of Object.entries(row)) {
-          if ((column === 'user_id' || column.endsWith('_user_id')) && value != null && String(value) !== '') {
+        for (const column of userReferenceColumns) {
+          const value = row[column];
+          if (value != null && String(value) !== '') {
             const userId = String(value);
             if (!existingUserIds.has(userId) && !credentialedUserIds.has(userId)) unresolvedUserIds.add(userId);
           }
         }
       }
+    }
+    const importedWhatsappActivator = importedTables.includes('settings') && Array.isArray(importData.settings)
+      ? importData.settings.find((row) => row?.key === 'whatsapp_activated_by_user_id')?.value
+      : null;
+    if (importedWhatsappActivator && !existingUserIds.has(String(importedWhatsappActivator)) && !credentialedUserIds.has(String(importedWhatsappActivator))) {
+      unresolvedUserIds.add(String(importedWhatsappActivator));
     }
     if (unresolvedUserIds.size > 0) {
       return res.status(400).json({

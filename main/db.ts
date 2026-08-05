@@ -747,11 +747,11 @@ export function mergeUserSecurityState(dbInstance: Database.Database, rows: User
     const tokensValidAfter = currentTime >= restoredTime ? currentEpoch : restoredEpoch;
     dbInstance.prepare(`
       UPDATE users
-      SET password = ?, pin = ?, pin_hash = ?, role = ?, category_ids = ?,
+      SET name = ?, email = ?, password = ?, pin = ?, pin_hash = ?, role = ?, category_ids = ?,
           is_active = ?, tokens_valid_after = ?
       WHERE id = ?
     `).run(
-      row.password, row.pin, row.pin_hash, row.role, row.category_ids,
+      row.name, row.email, row.password, row.pin, row.pin_hash, row.role, row.category_ids,
       row.is_active,
       tokensValidAfter,
       row.id,
@@ -928,10 +928,17 @@ export function getForeignKeyViolationKeys(dbInstance: Database.Database): Set<s
     try {
       const tableInfo = dbInstance.prepare(`PRAGMA table_info("${row.table.replace(/"/g, '""')}")`).all() as { name: string; pk: number }[];
       const primaryKeys = tableInfo.filter((column) => column.pk > 0).sort((a, b) => a.pk - b.pk);
-      if (primaryKeys.length > 0 && row.rowid != null) {
-        const columns = primaryKeys.map((column) => `"${column.name.replace(/"/g, '""')}"`).join(', ');
-        const values = dbInstance.prepare(`SELECT ${columns} FROM "${row.table.replace(/"/g, '""')}" WHERE rowid = ?`).get(row.rowid) as Record<string, unknown> | undefined;
-        if (values) identity = primaryKeys.map((column) => values[column.name]);
+      const columns = primaryKeys.map((column) => `"${column.name.replace(/"/g, '""')}"`);
+      const foreignKey = (dbInstance.prepare(`PRAGMA foreign_key_list("${row.table.replace(/"/g, '""')}")`).all() as { id: number; from: string }[])
+        .filter((entry) => entry.id === row.fkid)
+        .map((entry) => entry.from);
+      const selectedColumns = [...new Set([...columns, ...foreignKey.map((column) => `"${column.replace(/"/g, '""')}"`)])];
+      if (selectedColumns.length > 0 && row.rowid != null) {
+        const values = dbInstance.prepare(`SELECT ${selectedColumns.join(', ')} FROM "${row.table.replace(/"/g, '""')}" WHERE rowid = ?`).get(row.rowid) as Record<string, unknown> | undefined;
+        if (values) identity = {
+          primary: primaryKeys.map((column) => values[column.name]),
+          foreign: foreignKey.map((column) => values[column]),
+        };
       }
     } catch { }
     keys.add(JSON.stringify([row.table, identity, row.parent, row.fkid]));

@@ -236,6 +236,14 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setConnectionMode(null);
         setLoading(false);
         if (typeof window !== 'undefined') window.localStorage.removeItem('token');
+      } else if (status === 403) {
+        // The KDS endpoint may deny a valid dashboard session (for example,
+        // after station reassignment). Never retain data fetched earlier.
+        setOrders([]);
+        setCounts({});
+        setConnected(false);
+        setConnectionMode(null);
+        setLoading(false);
       } else {
         setConnected(false);
       }

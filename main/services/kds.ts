@@ -318,8 +318,11 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
 
     sendActiveOrders(ws, client.categoryIds, client.stationIds);
     client.lastExpiredVoidMarker = getExpiredVoidMarker();
-  } catch {
-    closeKdsClient(client, 'Invalid token');
+  } catch (error) {
+    const message = error instanceof Error && /station|permission/i.test(error.message)
+      ? error.message
+      : 'Invalid token';
+    closeKdsClient(client, message);
   }
 }
 

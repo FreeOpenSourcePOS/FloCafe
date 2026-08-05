@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, parseRowJson, withTxn } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
-import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
+import { notifyKdsUpdate } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 
 const router = Router();

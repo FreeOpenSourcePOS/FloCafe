@@ -254,8 +254,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         // The KDS endpoint may deny a valid dashboard session (for example,
         // after station reassignment). Never retain data fetched earlier or
         // retry the same KDS authorization failure on the next mount.
+        sessionGenerationRef.current += 1;
         markKdsAuthBlocked();
         stopRestPolling();
+        updatingIdsRef.current.clear();
+        setUpdating(null);
         setUser(null);
         setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
         setOrders([]);
@@ -574,8 +577,16 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         const status = axiosError?.response?.status;
         if (status === 401) window.localStorage.removeItem('token');
         if (status === 403) {
+          sessionGenerationRef.current += 1;
           markKdsAuthBlocked();
+          stopRestPolling();
+          updatingIdsRef.current.clear();
+          setUpdating(null);
           setUser(null);
+          setOrders([]);
+          setCounts({});
+          setConnected(false);
+          setConnectionMode(null);
           setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
         }
         setLoading(false);

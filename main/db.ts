@@ -732,6 +732,19 @@ export type UserStationSecurityState = {
   is_active: number;
   category_ids: string | null;
 };
+export type KitchenStationSecurityState = {
+  id: string;
+  is_active: number;
+  category_ids: string | null;
+};
+
+export function captureKitchenStationSecurityState(dbInstance: Database.Database): KitchenStationSecurityState[] {
+  try {
+    return dbInstance.prepare('SELECT id, is_active, category_ids FROM kitchen_stations').all() as KitchenStationSecurityState[];
+  } catch {
+    return [];
+  }
+}
 
 export function captureUserStationSecurityState(dbInstance: Database.Database): UserStationSecurityState[] {
   try {
@@ -745,8 +758,26 @@ export function captureUserStationSecurityState(dbInstance: Database.Database): 
   }
 }
 
-export function mergeUserStationSecurityState(dbInstance: Database.Database, rows: UserStationSecurityState[], userIds: string[]): void {
+export function mergeUserStationSecurityState(
+  dbInstance: Database.Database,
+  rows: UserStationSecurityState[],
+  userIds: string[],
+  preservedStations: KitchenStationSecurityState[] = [],
+): void {
   const preservedIds = new Set(userIds);
+  const currentStation = dbInstance.prepare('SELECT 1 FROM kitchen_stations WHERE id = ?');
+  const missingStations = preservedStations
+    .filter((station) => !currentStation.get(station.id))
+    .map((station) => station.id);
+  if (missingStations.length > 0) {
+    throw new Error(`Restore cannot preserve current kitchen station(s): ${missingStations.join(', ')}`);
+  }
+  const restoreStationSecurity = dbInstance.prepare(
+    'UPDATE kitchen_stations SET is_active = ?, category_ids = ?, updated_at = ? WHERE id = ?',
+  );
+  for (const station of preservedStations) {
+    restoreStationSecurity.run(station.is_active, station.category_ids, now(), station.id);
+  }
   const stationState = dbInstance.prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?');
   const invalidStations = rows
     .filter((row) => preservedIds.has(row.user_id))
@@ -943,6 +974,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   const preservedRevocations = readRevocations(currentDb);
   const preservedUserSecurity = captureUserSecurityState(currentDb);
   const preservedUserStations = captureUserStationSecurityState(currentDb);
+  const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -991,7 +1023,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
 
       const freshDb = getDatabase();
       mergeUserSecurityState(freshDb, preservedUserSecurity);
-      mergeUserStationSecurityState(freshDb, preservedUserStations, preservedUserSecurity.map((row) => row.id));
+      mergeUserStationSecurityState(freshDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
@@ -1034,7 +1066,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity);
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -1076,6 +1108,7 @@ function dataOnlyRestore(
   preservedRevocations: RevocationRow[] = [],
   preservedUserSecurity: UserSecurityState[] = [],
   preservedUserStations: UserStationSecurityState[] = [],
+  preservedStationSecurity: KitchenStationSecurityState[] = [],
 ): RestoreResult {
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
@@ -1156,7 +1189,7 @@ function dataOnlyRestore(
     }
 
     mergeUserSecurityState(currentDb, preservedUserSecurity);
-    mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id));
+    mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
     mergeRevocations(currentDb, preservedRevocations);
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));

@@ -91,7 +91,7 @@ async function run() {
     missingStationDb.close();
     assert.throws(
       () => restoreBackup(missingStationBackup, true),
-      /cannot preserve current station/i,
+      /cannot preserve current (?:kitchen )?station/i,
       'restore rejects a backup that cannot preserve current station assignments',
     );
     assert.equal(
@@ -107,16 +107,11 @@ async function run() {
     changedStationDb.prepare('UPDATE kitchen_stations SET is_active = 0, category_ids = ? WHERE id = ?')
       .run('["different-category"]', 'restore-station-current');
     changedStationDb.close();
-    assert.throws(
-      () => restoreBackup(changedStationBackup, true),
-      /cannot preserve current station/i,
-      'restore rejects changed station security configuration',
-    );
-    assert.equal(
-      (getDatabase().prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?').get('restore-station-current') as { is_active: number; category_ids: string }).is_active,
-      1,
-      'failed station security restore leaves the current station active',
-    );
+    const changedStationRestore = restoreBackup(changedStationBackup, true);
+    assert.equal(changedStationRestore.success, true, 'restore preserves current station security configuration');
+    const restoredStationSecurity = getDatabase().prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?').get('restore-station-current') as { is_active: number; category_ids: string };
+    assert.equal(restoredStationSecurity.is_active, 1, 'restore preserves the current station active state');
+    assert.equal(restoredStationSecurity.category_ids, '[]', 'restore preserves the current station categories');
 
     // Make the backup appear to be an older schema while retaining real linked data.
     const olderBackup = path.join(testDir, 'older-schema.db');

@@ -194,7 +194,7 @@ router.post('/pairing', requireRole('owner', 'manager'), (req: Request, res: Res
     const db = getDatabase();
 
     if (station_id) {
-      const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(station_id);
+      const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ? AND is_active = 1').get(station_id);
       if (!station) {
         return res.status(404).json({ error: 'Kitchen station not found' });
       }

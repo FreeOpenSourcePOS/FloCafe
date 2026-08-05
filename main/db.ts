@@ -423,6 +423,11 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
     if (finalPath !== tempPath) {
       fs.copyFileSync(tempPath, finalPath);
       fs.unlinkSync(tempPath);
+    }
+    for (const sidecar of [`${finalPath}-wal`, `${finalPath}-shm`]) {
+      try { if (fs.existsSync(sidecar)) fs.unlinkSync(sidecar); } catch { }
+    }
+    if (finalPath !== tempPath) {
       console.log(`[DB] Backup saved to: ${finalPath} (schema v${currentVersion})`);
     } else {
       console.log(`[DB] Backup created: ${finalPath} (schema v${currentVersion})`);
@@ -2313,6 +2318,8 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
+  let targetPath = '';
+  let completed = false;
   try {
     const dbPath = getDbPath();
     const backupDir = getBackupDir();
@@ -2320,7 +2327,7 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
       fs.mkdirSync(backupDir, { recursive: true });
     }
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const targetPath = path.join(backupDir, `flo-backup-${timestamp}-pre-v${fromVersion}-to-v${toVersion}.db`);
+    targetPath = path.join(backupDir, `flo-backup-${timestamp}-pre-v${fromVersion}-to-v${toVersion}.db`);
 
     if (fs.existsSync(dbPath)) {
       db.pragma('wal_checkpoint(TRUNCATE)');
@@ -2331,23 +2338,34 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
       fs.writeFileSync(targetPath, '');
     }
 
-    const backupDb = new Database(targetPath);
-    backupDb.pragma('journal_mode = DELETE');
-    backupDb.exec(`
-      CREATE TABLE IF NOT EXISTS _flo_meta (
-        key TEXT PRIMARY KEY,
-        value TEXT
-      )
-    `);
-    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('schema_version', String(getCurrentSchemaVersion()));
-    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('backup_created_at', new Date().toISOString());
-    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('app_version', app.getVersion());
-    backupDb.close();
+    let backupDb: Database.Database | undefined;
+    try {
+      backupDb = new Database(targetPath);
+      backupDb.pragma('journal_mode = DELETE');
+      backupDb.exec(`
+        CREATE TABLE IF NOT EXISTS _flo_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT
+        )
+      `);
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('schema_version', String(getCurrentSchemaVersion()));
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('backup_created_at', new Date().toISOString());
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('app_version', app.getVersion());
+    } finally {
+      backupDb?.close();
+    }
 
+    completed = true;
     console.log(`[DB] Auto-backup before migrating v${fromVersion} → v${toVersion} created at ${targetPath}`);
   } catch (err: any) {
     console.error(`[DB] Auto-backup before migration failed:`, err.message);
     throw new Error(`Pre-migration backup failed; refusing to migrate the database: ${err.message}`);
+  } finally {
+    if (!completed && targetPath) {
+      for (const filePath of [targetPath, `${targetPath}-wal`, `${targetPath}-shm`]) {
+        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
+      }
+    }
   }
 }
 

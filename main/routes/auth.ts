@@ -40,6 +40,10 @@ const LOCAL_SETUP_HOSTS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
  */
 let _jwtSecret: string | null = null;
 
+export function clearJWTSecretCache(): void {
+  _jwtSecret = null;
+}
+
 export function getJWTSecret(): string {
   if (_jwtSecret) return _jwtSecret;
 

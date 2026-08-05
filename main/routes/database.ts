@@ -1,8 +1,9 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
 import { getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, isSafeIdentifier, withTxn, withDatabaseMaintenanceLock } from '../db';
-import { clearUserAuthCache, requireRole } from '../middleware/security';
+import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
+import { clearJWTSecretCache } from './auth';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -118,6 +119,37 @@ router.post('/import', requireRole('owner'),
       });
     }
 
+    // Exported user rows intentionally omit password/pin hashes. Preserve
+    // existing destination accounts, but reject imports whose business rows
+    // reference users that cannot exist after those redacted rows are skipped.
+    const importedUserRows = Array.isArray(importData.users) ? importData.users : [];
+    const credentialedUserIds = new Set(
+      importedUserRows
+        .filter((row) => typeof row?.password === 'string' && row.password.length > 0)
+        .map((row) => String(row.id)),
+    );
+    const existingUserIds = new Set(
+      (db.prepare('SELECT id FROM users').all() as { id: string }[]).map((row) => String(row.id)),
+    );
+    const unresolvedUserIds = new Set<string>();
+    for (const [tableName, rows] of Object.entries(importData)) {
+      if (tableName === 'users' || !Array.isArray(rows)) continue;
+      for (const row of rows) {
+        if (!row || typeof row !== 'object') continue;
+        for (const [column, value] of Object.entries(row)) {
+          if ((column === 'user_id' || column.endsWith('_user_id')) && value != null && String(value) !== '') {
+            const userId = String(value);
+            if (!existingUserIds.has(userId) && !credentialedUserIds.has(userId)) unresolvedUserIds.add(userId);
+          }
+        }
+      }
+    }
+    if (unresolvedUserIds.size > 0) {
+      return res.status(400).json({
+        error: 'Import contains rows linked to redacted user accounts that are not present on this install. Set up matching staff accounts first.',
+      });
+    }
+
     const { path: backupPath } = await createBackupUnlocked();
     const hasVersionMismatch = importSchemaVersion !== getCurrentSchemaVersion();
 
@@ -189,6 +221,8 @@ router.post('/import', requireRole('owner'),
       }
       db.exec('COMMIT');
       clearUserAuthCache();
+      clearInMemoryRevokedTokens();
+      clearJWTSecretCache();
       res.json({ 
         success: true, 
         message: hasVersionMismatch 

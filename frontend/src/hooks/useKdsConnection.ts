@@ -253,6 +253,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const tryWebSocket = useCallback(
     (token: string) => {
+      const generation = sessionGenerationRef.current;
       if (wsRef.current) {
         wsRef.current.close();
       }
@@ -283,6 +284,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       };
 
       ws.onopen = () => {
+        if (wsRef.current !== ws || generation !== sessionGenerationRef.current) {
+          ws.close();
+          return;
+        }
         cleanup();
         if (wsRef.current === ws && reconnectTimerRef.current) {
           clearTimeout(reconnectTimerRef.current);
@@ -292,6 +297,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setConnected(true);
         ws.send(JSON.stringify({ type: 'auth', token }));
         authTimeout = setTimeout(() => {
+          if (wsRef.current !== ws || generation !== sessionGenerationRef.current) return;
+          wsRef.current = null;
           ws.close();
           setConnectionMode('rest');
           setLoading(false);
@@ -300,7 +307,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
       ws.onclose = () => {
         cleanup();
-        if (wsRef.current !== ws) return;
+        if (wsRef.current !== ws || generation !== sessionGenerationRef.current) return;
         if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
         reconnectTimerRef.current = null;
         setConnected(false);
@@ -312,10 +319,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       };
 
       ws.onerror = () => {
-        ws.close();
+        if (wsRef.current === ws && generation === sessionGenerationRef.current) ws.close();
       };
 
       ws.onmessage = (event) => {
+        if (wsRef.current !== ws || generation !== sessionGenerationRef.current) return;
         try {
           const msg: WsMessage = JSON.parse(event.data);
           if (msg.type === 'auth_success' && msg.user) {
@@ -356,7 +364,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       };
 
       connectionTimeout = setTimeout(() => {
-        if (ws.readyState === WebSocket.CONNECTING) {
+        if (
+          ws.readyState === WebSocket.CONNECTING &&
+          wsRef.current === ws &&
+          generation === sessionGenerationRef.current
+        ) {
           if (wsRef.current === ws) wsRef.current = null;
           ws.close();
           setConnectionMode('rest');
@@ -440,8 +452,13 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     if (!savedToken) {
       return;
     }
+    const generation = sessionGenerationRef.current;
     api.get(mePath)
       .then(({ data }) => {
+        if (
+          generation !== sessionGenerationRef.current ||
+          window.localStorage.getItem('token') !== savedToken
+        ) return;
         setUser({
           id: data.user.id,
           name: data.user.name,

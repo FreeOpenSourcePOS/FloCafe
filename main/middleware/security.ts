@@ -257,8 +257,12 @@ export function isTokenRevoked(token: string): boolean {
   }
 }
 
-export function clearRevokedTokens(): void {
+export function clearInMemoryRevokedTokens(): void {
   revokedTokens.clear();
+}
+
+export function clearRevokedTokens(): void {
+  clearInMemoryRevokedTokens();
   try {
     getDatabase().prepare('DELETE FROM revoked_tokens').run();
   } catch {

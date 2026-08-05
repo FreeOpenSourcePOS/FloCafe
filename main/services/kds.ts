@@ -12,6 +12,7 @@ interface KdsClient {
   categoryIds: string[];
   token: string | null;
   isAlive: boolean;
+  categoryIdsChanged: boolean;
   authTimeout?: NodeJS.Timeout;
 }
 
@@ -64,8 +65,10 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
       .prepare('SELECT category_ids FROM users WHERE id = ? AND is_active = 1')
       .get(client.userId) as { category_ids: string | null } | undefined;
     if (!currentUser) return false;
+    const nextCategoryIds = parseCategoryIds(currentUser.category_ids);
+    client.categoryIdsChanged = JSON.stringify(client.categoryIds) !== JSON.stringify(nextCategoryIds);
     client.role = status.role;
-    client.categoryIds = parseCategoryIds(currentUser.category_ids);
+    client.categoryIds = nextCategoryIds;
     return true;
   } catch {
     return false;
@@ -90,6 +93,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
       categoryIds: [],
       token: null,
       isAlive: true,
+      categoryIdsChanged: false,
     };
     client.authTimeout = setTimeout(() => {
       if (!client.userId) {
@@ -136,6 +140,14 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
         if (client.userId && !isKdsClientAuthorized(client)) {
           closeKdsClient(client, 'Session expired or revoked');
           return;
+        }
+        if (client.categoryIdsChanged && ws.readyState === WebSocket.OPEN) {
+          client.categoryIdsChanged = false;
+          try { sendActiveOrders(ws, client.categoryIds); } catch (error) {
+            console.error('[KDS] Category refresh error:', error);
+            closeKdsClient(client, 'Could not refresh KDS permissions');
+            return;
+          }
         }
         if (ws.readyState === WebSocket.OPEN) {
           if (client.isAlive === false) {
@@ -230,6 +242,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
     client.userName = user.name;
     client.role = user.role;
     client.categoryIds = categoryIds;
+    client.categoryIdsChanged = false;
     client.token = token;
     clearClientAuthTimeout(client);
 
@@ -436,6 +449,7 @@ function broadcastOrderUpdate(): void {
       return;
     }
     try {
+      client.categoryIdsChanged = false;
       sendActiveOrders(client.ws, client.categoryIds);
     } catch (err) {
       console.error('[KDS] Broadcast error for client:', err);
@@ -454,6 +468,11 @@ export function notifyOrderUpdated(): void {
       closeKdsClient(client, 'Session expired or revoked');
       return;
     }
-    if (client.ws.readyState === WebSocket.OPEN) client.ws.send(msg);
+    if (client.categoryIdsChanged) {
+      client.categoryIdsChanged = false;
+      sendActiveOrders(client.ws, client.categoryIds);
+    } else if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(msg);
+    }
   });
 }

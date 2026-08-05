@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { resetDatabaseWithBackup, listBackups, deleteBackup } from '../db';
-import { clearUserAuthCache, requireRole } from '../middleware/security';
+import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { runHealthCheck, applySafeFixes } from '../services/schema-health';
 import { isMasterPinAvailable, isMasterPinSet, resetMasterPin } from '../services/master-pin';
+import { clearJWTSecretCache } from './auth';
 
 const router = Router();
 
@@ -85,6 +86,8 @@ router.post('/initialize', requireRole('owner'), requireMasterPin, async (req: R
   try {
     const { backupPath } = await resetDatabaseWithBackup();
     clearUserAuthCache();
+    clearInMemoryRevokedTokens();
+    clearJWTSecretCache();
     res.json({ success: true, backupPath });
   } catch (error: any) {
     console.error('[DB Tools] initialize error:', error);

@@ -130,6 +130,20 @@ async function runTests() {
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('cashier-1', 'Cashier', 'hash', 'cashier', 1)`);
   const cashierToken = tokenFor('cashier-1', 'cashier');
 
+  const unresolvedUserImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [], categories: [], products: [], users: [],
+        orders: [{ id: 'order-with-missing-user', user_id: 'missing-user' }],
+      },
+    },
+  });
+  assert(unresolvedUserImport.status === 400, `imports with unresolved redacted user references are rejected (got ${unresolvedUserImport.status})`);
+  assert(unresolvedUserImport.body.error?.includes('redacted user'), 'unresolved user import explains the required staff setup');
+
   // Redacted export fields must never become literal credentials on import.
   const jwtSecretBefore = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
   const redactedImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({

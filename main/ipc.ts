@@ -2,8 +2,9 @@ import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock } from './db';
-import { clearUserAuthCache } from './middleware/security';
+import { clearInMemoryRevokedTokens, clearUserAuthCache } from './middleware/security';
 import { getLocalIP } from './server';
+import { clearJWTSecretCache } from './routes/auth';
 import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
@@ -117,6 +118,8 @@ export function registerIpcHandlers(): void {
 
         const restoreResult = await withDatabaseMaintenanceLock(() => restoreBackup(backupPath, false));
         clearUserAuthCache();
+        clearInMemoryRevokedTokens();
+        clearJWTSecretCache();
         return {
           success: restoreResult.success,
           mode: restoreResult.mode,
@@ -132,6 +135,8 @@ export function registerIpcHandlers(): void {
 
       const restoreResult = await withDatabaseMaintenanceLock(() => restoreBackup(backupPath, true));
       clearUserAuthCache();
+      clearInMemoryRevokedTokens();
+      clearJWTSecretCache();
       return {
         success: restoreResult.success,
         mode: restoreResult.mode,
@@ -178,6 +183,8 @@ export function registerIpcHandlers(): void {
     try {
       const { backupPath } = await resetDatabaseWithBackup();
       clearUserAuthCache();
+      clearInMemoryRevokedTokens();
+      clearJWTSecretCache();
       return { success: true, backupPath };
     } catch (error: any) {
       console.error('[IPC] db-initialize: Error:', error);

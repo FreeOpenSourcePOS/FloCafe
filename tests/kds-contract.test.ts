@@ -112,6 +112,14 @@ async function main() {
     assertEqual(deniedEmbeddedMutation.status, 403, 'restricted chef cannot mutate an unauthorized embedded KDS item');
     const deniedOrderItemMutation = await request(app).patch(`/api/order-items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });
     assertEqual(deniedOrderItemMutation.status, 403, 'restricted chef cannot mutate an unauthorized order item');
+
+    db.prepare('UPDATE users SET category_ids = NULL WHERE id = ?').run(chefId);
+    const stationOnlyOrders = await request(app).get('/api/kds/orders').set(chefAuth);
+    assertEqual(stationOnlyOrders.status, 200, 'station-only chef can access embedded KDS orders');
+    assert(!('unit_price' in (stationOnlyOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {})), 'station-only chef receives redacted embedded KDS items');
+    const stationOnlyDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
+    assertEqual(stationOnlyDisplay.status, 200, 'station-only chef can access station display');
+    assert(!('subtotal' in (stationOnlyDisplay.body.orders[0]?.items?.[0] || {})), 'station-only chef receives redacted station display items');
   } finally {
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

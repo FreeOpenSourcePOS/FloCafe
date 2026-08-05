@@ -38,6 +38,7 @@ router.get('/orders', (req: Request, res: Response) => {
     if (hasStationAssignments && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
     const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
     if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+    const restrictedKdsPayload = categoryIds.length > 0 || ((req as any).user?.role === 'chef' && stationIds.length > 0);
     let allowedProductIds: Set<string> | null = null;
     if (categoryIds.length > 0) {
       const productRows = db.prepare(`
@@ -108,11 +109,9 @@ router.get('/orders', (req: Request, res: Response) => {
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
           && isKdsStationItemAllowed(stationIds, stationCategoryIds, order.kitchen_station_id, i.category_id))
-        .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, categoryIds.length > 0));
-      const table = order.table_id ? tablesMap[order.table_id] || null : null;
+        .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, restrictedKdsPayload));      const table = order.table_id ? tablesMap[order.table_id] || null : null;
       return {
-        ...projectKdsOrder(order, categoryIds.length > 0),
-        items: visibleItems,
+        ...projectKdsOrder(order, restrictedKdsPayload),        items: visibleItems,
         table,
       };
     }).filter((order) => order.items.length > 0);

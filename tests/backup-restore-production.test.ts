@@ -72,8 +72,33 @@ async function run() {
 
   try {
     seedLinkedData();
+    const db = getDatabase();
+    db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+      VALUES ('restore-station-current', 'Current Station', '[]', 1, datetime('now'), datetime('now'))`).run();
+    db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES ('restore-station-chef', 'Station Chef', 'restore-station-chef@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, datetime(\'now\'))')
+      .run('restore-station-chef', 'restore-station-current');
     const currentVersion = getCurrentSchemaVersion();
     const { path: sameSchemaBackup } = await createBackup();
+
+    const missingStationBackup = path.join(testDir, 'missing-current-station.db');
+    copyAndStamp(sameSchemaBackup, missingStationBackup, currentVersion);
+    const missingStationDb = new Database(missingStationBackup);
+    missingStationDb.pragma('foreign_keys = OFF');
+    missingStationDb.prepare('DELETE FROM station_users WHERE station_id = ?').run('restore-station-current');
+    missingStationDb.prepare('DELETE FROM kitchen_stations WHERE id = ?').run('restore-station-current');
+    missingStationDb.close();
+    assert.throws(
+      () => restoreBackup(missingStationBackup, true),
+      /cannot preserve current station assignment/i,
+      'restore rejects a backup that cannot preserve current station assignments',
+    );
+    assert.equal(
+      (getDatabase().prepare('SELECT station_id FROM station_users WHERE user_id = ?').get('restore-station-chef') as { station_id: string }).station_id,
+      'restore-station-current',
+      'failed station-assignment restore leaves the current restriction intact',
+    );
 
     // Make the backup appear to be an older schema while retaining real linked data.
     const olderBackup = path.join(testDir, 'older-schema.db');

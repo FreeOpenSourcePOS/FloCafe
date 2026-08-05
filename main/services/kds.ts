@@ -198,7 +198,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
         const expiryRefreshNeeded = expiredVoidMarker !== null && expiredVoidMarker !== client.lastExpiredVoidMarker;
         if ((permissionRefreshNeeded || expiryRefreshNeeded) && ws.readyState === WebSocket.OPEN) {
           try {
-            sendActiveOrders(ws, client.categoryIds, client.stationIds);
+            sendActiveOrders(ws, client.categoryIds, client.stationIds, client.categoryIds.length > 0 || (client.role === 'chef' && client.stationIds.length > 0));
             client.categoryIdsChanged = false;
             client.stationIdsChanged = false;
             client.lastExpiredVoidMarker = expiredVoidMarker;
@@ -336,7 +336,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
       },
     }));
 
-    sendActiveOrders(ws, client.categoryIds, client.stationIds);
+    sendActiveOrders(ws, client.categoryIds, client.stationIds, client.categoryIds.length > 0 || (client.role === 'chef' && client.stationIds.length > 0));
     client.lastExpiredVoidMarker = getExpiredVoidMarker();
   } catch (error) {
     const message = error instanceof Error && /station|permission/i.test(error.message)
@@ -455,7 +455,7 @@ function activeOrdersCondition(): string {
   )`;
 }
 
-function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: string[] = []): void {
+function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: string[] = [], restrictedPayload = categoryIds.length > 0): void {
   const db = getDatabase();
   const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
   if (!stationCategoryIds) throw new Error('Could not load station permissions');
@@ -530,12 +530,11 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     if (allowedProductIds) {
       items = items.filter((item: any) => allowedProductIds!.has(item.product_id));
     }
-    items = items.map((item: any) => projectKdsItem(item, categoryIds.length > 0));
+    items = items.map((item: any) => projectKdsItem(item, restrictedPayload));
 
     // Normalize: frontend expects table.name, query aliases the join as table_name.
     const table = order.table_name ? { name: order.table_name } : null;
-    return { ...projectKdsOrder(order, categoryIds.length > 0), items, table };
-  }).filter((order: any) => order.items.length > 0);
+    return { ...projectKdsOrder(order, restrictedPayload), items, table };  }).filter((order: any) => order.items.length > 0);
 
   // Get counts (filtered by category)
   const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
@@ -587,7 +586,7 @@ function broadcastOrderUpdate(): void {
     }
     if (client.ws.readyState !== WebSocket.OPEN) return;
     try {
-      sendActiveOrders(client.ws, client.categoryIds, client.stationIds);
+      sendActiveOrders(client.ws, client.categoryIds, client.stationIds, client.categoryIds.length > 0 || (client.role === 'chef' && client.stationIds.length > 0));
       client.categoryIdsChanged = false;
       client.stationIdsChanged = false;
       client.lastExpiredVoidMarker = getExpiredVoidMarker();

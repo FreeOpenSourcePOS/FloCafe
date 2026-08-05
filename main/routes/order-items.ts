@@ -47,6 +47,7 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     if (hasStationAssignments && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
     const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
     if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+    const restrictedKdsPayload = categoryIds.length > 0 || (currentUser.role === 'chef' && stationIds.length > 0);
 
     const orderData = withTxn(() => {
       const item = db.prepare(`
@@ -103,15 +104,13 @@ router.patch('/:id/status', (req: Request, res: Response) => {
         .filter((row) => categoryIds.length === 0 || (row.category_id && categoryIds.includes(String(row.category_id))))
         .filter((row) => stationIds.length === 0 || isKdsStationItemAllowed(stationIds, stationCategoryIds, orderStationId, row.category_id));
       const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson))
-        .map((row) => projectKdsItem(row, categoryIds.length > 0));
-      const tableRow = order.table_id
+        .map((row) => projectKdsItem(row, restrictedKdsPayload));      const tableRow = order.table_id
         ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
         : null;
       const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
 
       return {
-        ...projectKdsOrder(order, categoryIds.length > 0),
-        items,
+        ...projectKdsOrder(order, restrictedKdsPayload),        items,
         table,
       };
     });

@@ -418,7 +418,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
               }, 1500);
             }
             ws.close();
-            setLoading(!maintenanceInProgress);
+            setLoading(maintenanceInProgress);
           } else if ((msg.type === 'initial_data' || msg.type === 'orders') && msg.orders) {
             setOrders(msg.orders);
             setCounts(msg.counts || {});

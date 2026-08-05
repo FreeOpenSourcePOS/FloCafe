@@ -256,8 +256,10 @@ export function startKdsServer(): Promise<void> {
       }
       try {
         const db = getDatabase();
-        const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
-        const stationIds = ((req as any).user as KdsRequestUser).stationIds;
+        const kdsUser = (req as any).user as KdsRequestUser;
+        const categoryIds = kdsUser.categoryIds;
+        const stationIds = kdsUser.stationIds;
+        const restrictedKdsPayload = categoryIds.length > 0 || (kdsUser.role === 'chef' && stationIds.length > 0);
         const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
         if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
@@ -312,10 +314,10 @@ export function startKdsServer(): Promise<void> {
           if (allowedProductIds) {
             items = items.filter((item: any) => allowedProductIds!.has(item.product_id));
           }
-          items = items.map((item: any) => projectKdsItem(item, categoryIds.length > 0));
+          items = items.map((item: any) => projectKdsItem(item, restrictedKdsPayload));
 
           return {
-            ...projectKdsOrder(order, categoryIds.length > 0),
+            ...projectKdsOrder(order, restrictedKdsPayload),
             table: order.table_number ? { name: order.table_number } : null,
             items,
           };

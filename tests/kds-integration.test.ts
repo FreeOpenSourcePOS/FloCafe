@@ -72,6 +72,11 @@ async function run() {
       .run('kds-category', 'Kitchen', 1);
     db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)')
       .run('kds-product', 'kds-category', 'KDS Burger', 10);
+    db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+      VALUES ('kds-integration-station', 'Integration Station', ?, 1, ?, ?)`)
+      .run(JSON.stringify(['kds-category']), now(), now());
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)')
+      .run('user-chef-1', 'kds-integration-station', now());
     db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
       VALUES (?, 'takeaway', 'pending', 10, 10, ?, ?)`)
       .run('KDS-WS-001', now(), now());
@@ -144,6 +149,7 @@ async function run() {
       .set('Authorization', `Bearer ${token}`);
     assert(authedOrders.status === 200, 'Authenticated KDS orders request returns 200');
     assert(Array.isArray(authedOrders.body.orders), 'KDS orders returns an orders array');
+    assert(!('unit_price' in (authedOrders.body.orders[0]?.items?.[0] || {})), 'Station-only standalone chef receives redacted item pricing');
 
     // 7. The real WebSocket channel authenticates and receives mutation broadcasts.
     const ws = new WebSocket(`ws://127.0.0.1:${port}/kds`);
@@ -152,7 +158,8 @@ async function run() {
     ws.send(JSON.stringify({ type: 'auth', token }));
     const authMessage = await nextMessage('auth_success');
     assert(authMessage.user.role === 'chef', 'WebSocket authenticates kitchen staff');
-    await nextMessage('initial_data');
+    const initialData = await nextMessage('initial_data');
+    assert(!('unit_price' in (initialData.orders[0]?.items?.[0] || {})), 'Station-only WebSocket chef receives redacted item pricing');
 
     const updatePromise = nextMessage('initial_data');
     const statusRes = await request(`http://127.0.0.1:${port}`)

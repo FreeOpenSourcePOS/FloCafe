@@ -738,16 +738,21 @@ export function captureUserStationSecurityState(dbInstance: Database.Database): 
 
 export function mergeUserStationSecurityState(dbInstance: Database.Database, rows: UserStationSecurityState[], userIds: string[]): void {
   const preservedIds = new Set(userIds);
+  const stationExists = dbInstance.prepare('SELECT 1 FROM kitchen_stations WHERE id = ?');
+  const missingStations = rows
+    .filter((row) => preservedIds.has(row.user_id) && !stationExists.get(row.station_id))
+    .map((row) => `${row.user_id}:${row.station_id}`);
+  if (missingStations.length > 0) {
+    throw new Error(`Restore cannot preserve current station assignment(s): ${missingStations.join(', ')}`);
+  }
+
   const currentUsers = dbInstance.prepare('SELECT id FROM users').all() as { id: string }[];
   for (const user of currentUsers) {
     dbInstance.prepare('DELETE FROM station_users WHERE user_id = ?').run(user.id);
   }
   const insert = dbInstance.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)');
-  const stationExists = dbInstance.prepare('SELECT 1 FROM kitchen_stations WHERE id = ?');
   for (const row of rows) {
-    if (preservedIds.has(row.user_id) && stationExists.get(row.station_id)) {
-      insert.run(row.user_id, row.station_id, now());
-    }
+    if (preservedIds.has(row.user_id)) insert.run(row.user_id, row.station_id, now());
   }
 }
 
@@ -961,7 +966,10 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
     closeDatabase();
 
     try {
-      removeDatabaseFiles(dbPath);
+      const removeFailures = removeDatabaseFiles(dbPath);
+      if (removeFailures.length > 0) {
+        throw new Error(`Could not remove database files: ${removeFailures.join(', ')}`);
+      }
       fs.copyFileSync(backupPath, dbPath);
       initDatabase();
 
@@ -990,7 +998,10 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       // database. Restore the checkpointed safety copy before rethrowing.
       try {
         closeDatabase();
-        removeDatabaseFiles(dbPath);
+        const recoveryRemoveFailures = removeDatabaseFiles(dbPath);
+        if (recoveryRemoveFailures.length > 0) {
+          throw new Error(`Could not remove database files during recovery: ${recoveryRemoveFailures.join(', ')}`);
+        }
         fs.copyFileSync(recoveryPath, dbPath);
         initDatabase();
       } catch (recoveryError: any) {

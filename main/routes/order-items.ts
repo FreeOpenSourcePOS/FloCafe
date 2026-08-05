@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, projectKdsOrder, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
 
@@ -35,10 +35,12 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     const db = getDatabase();
     const userId = (req as any).user?.userId;
     const currentUser = userId
-      ? db.prepare('SELECT category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { category_ids: string | null } | undefined
+      ? db.prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null } | undefined
       : undefined;
     if (!currentUser) return res.status(403).json({ error: 'User account is not active' });
-    const categoryIds = parseCategoryIds(currentUser.category_ids);
+    const categoryIds = currentUser.role === 'manager' || currentUser.role === 'owner'
+      ? []
+      : parseCategoryIds(currentUser.category_ids);
 
     const orderData = withTxn(() => {
       const item = db.prepare(`
@@ -53,6 +55,9 @@ router.patch('/:id/status', (req: Request, res: Response) => {
 
       if (item.status === 'voided') {
         throw new Error('VOIDED_ITEM');
+      }
+      if (item.status === 'void_adjustment') {
+        throw new Error('IMMUTABLE_KDS_ITEM');
       }
 
       if (categoryIds.length > 0 && (!item.category_id || !categoryIds.includes(String(item.category_id)))) {
@@ -80,7 +85,11 @@ router.patch('/:id/status', (req: Request, res: Response) => {
         : null;
       const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
 
-      return { ...order, items, table };
+      return {
+        ...projectKdsOrder(order, categoryIds.length > 0),
+        items,
+        table,
+      };
     });
 
     if (orderData === null) {
@@ -96,6 +105,9 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     }
     if (error.message === 'CATEGORY_FORBIDDEN') {
       return res.status(403).json({ error: 'Not authorized to update this item' });
+    }
+    if (error.message === 'IMMUTABLE_KDS_ITEM') {
+      return res.status(400).json({ error: 'This bill adjustment cannot be updated from KDS' });
     }
     console.error('[OrderItems] Status update error:', error);
     res.status(500).json({ error: "Could not update order item status" });

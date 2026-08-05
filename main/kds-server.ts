@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible } from './db';
+import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
@@ -275,7 +275,7 @@ export function startKdsServer(): Promise<void> {
           }
 
           return {
-            ...order,
+            ...projectKdsOrder(order, categoryIds.length > 0),
             table: order.table_number ? { name: order.table_number } : null,
             items,
           };
@@ -315,6 +315,9 @@ export function startKdsServer(): Promise<void> {
         // #150: locked once voided — see main/routes/order-items.ts for the same rule.
         if (item.status === 'voided') {
           return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
+        }
+        if (item.status === 'void_adjustment') {
+          return res.status(400).json({ error: 'This bill adjustment cannot be updated from KDS' });
         }
 
         const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;

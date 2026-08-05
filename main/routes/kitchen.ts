@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible } from '../db';
+import { getDatabase, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsOrder } from '../db';
 import { requireRole, requireKdsEnabled } from '../middleware/security';
 import { parseCategoryIds } from './auth';
 
@@ -26,10 +26,12 @@ router.get('/orders', (req: Request, res: Response) => {
     const db = getDatabase();
     const userId = (req as any).user?.userId;
     const currentUser = userId
-      ? db.prepare('SELECT category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { category_ids: string | null } | undefined
+      ? db.prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null } | undefined
       : undefined;
     if (!currentUser) return res.status(403).json({ error: 'User account is not active' });
-    const categoryIds = parseCategoryIds(currentUser.category_ids);
+    const categoryIds = currentUser.role === 'manager' || currentUser.role === 'owner'
+      ? []
+      : parseCategoryIds(currentUser.category_ids);
     let allowedProductIds: Set<string> | null = null;
     if (categoryIds.length > 0) {
       const productRows = db.prepare(`
@@ -89,7 +91,11 @@ router.get('/orders', (req: Request, res: Response) => {
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id))))
         .map((i) => addonsByItemId.get(i.id) || i);
       const table = order.table_id ? tablesMap[order.table_id] || null : null;
-      return { ...order, items: visibleItems, table };
+      return {
+        ...projectKdsOrder(order, categoryIds.length > 0),
+        items: visibleItems,
+        table,
+      };
     }).filter((order) => order.items.length > 0);
 
     // Counts are derived from the items we already fetched for these exact

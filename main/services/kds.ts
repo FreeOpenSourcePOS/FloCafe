@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, withTxn } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsOrder, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -304,6 +304,9 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
       if (existingItem.status === 'voided') {
         return { error: 'This item has been voided and can no longer be updated' };
       }
+      if (existingItem.status === 'void_adjustment') {
+        return { error: 'This bill adjustment cannot be updated from KDS' };
+      }
 
       if (client.categoryIds.length > 0 && !client.categoryIds.includes(existingItem.category_id)) {
         return { error: 'Not authorized to update this item' };
@@ -414,7 +417,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
 
     // Normalize: frontend expects table.name, query aliases the join as table_name.
     const table = order.table_name ? { name: order.table_name } : null;
-    return { ...order, items, table };
+    return { ...projectKdsOrder(order, categoryIds.length > 0), items, table };
   }).filter((order: any) => order.items.length > 0);
 
   // Get counts (filtered by category)
@@ -426,7 +429,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     JOIN orders o ON oi.order_id = o.id
     WHERE ${activeOrdersCondition()}
       AND oi.status != 'void_adjustment'
-      AND (oi.status != 'voided' OR oi.voided_at > ?)
+      AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
   `;
   const countParams: any[] = [voidedCutoff];
 
@@ -470,18 +473,5 @@ export function notifyKdsUpdate(): void {
 }
 
 export function notifyOrderUpdated(): void {
-  const msg = JSON.stringify({ type: 'order_updated' });
-  clients.forEach((client) => {
-    if (!isKdsClientAuthorized(client)) {
-      closeKdsClient(client, 'Session expired or revoked');
-      return;
-    }
-    if (client.ws.readyState !== WebSocket.OPEN) return;
-    if (client.categoryIdsChanged) {
-      client.categoryIdsChanged = false;
-      sendActiveOrders(client.ws, client.categoryIds);
-    } else {
-      client.ws.send(msg);
-    }
-  });
+  broadcastOrderUpdate();
 }

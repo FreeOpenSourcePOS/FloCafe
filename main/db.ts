@@ -3218,6 +3218,17 @@ export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boo
   return Date.now() - parseDbTimestamp(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
 }
 
+/** Remove customer/payment/order-financial fields from category-scoped KDS payloads. */
+export function projectKdsOrder(order: any, restricted: boolean): any {
+  if (!restricted) return order;
+  const allowedFields = [
+    'id', 'order_number', 'table_id', 'type', 'guest_count',
+    'special_instructions', 'status', 'created_at', 'updated_at',
+    'table_name', 'table_number', 'floor', 'section',
+  ];
+  return Object.fromEntries(allowedFields.filter((field) => field in order).map((field) => [field, order[field]]));
+}
+
 /**
  * Snapshots an order item's selected addons into the normalized
  * order_item_addons table — the only place selected addons are stored (see

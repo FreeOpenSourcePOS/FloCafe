@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, withTxn } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsOrder, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
@@ -108,7 +108,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         .map((i) => addonsByItemId.get(i.id) || i);
 
       return {
-        ...order,
+        ...projectKdsOrder(order, userCategoryIds.length > 0),
         items: visibleItems,
         table: order.table_name ? { name: order.table_name } : null,
       };
@@ -222,7 +222,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
       JOIN orders o ON oi.order_id = o.id
       LEFT JOIN tables t ON o.table_id = t.id
       WHERE oi.status NOT IN ('completed', 'cancelled', 'served', 'void_adjustment')
-        AND (oi.status != 'voided' OR oi.voided_at > ?)
+        AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         AND o.status != 'cancelled'
     `;
 
@@ -293,6 +293,9 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
       if (item.status === 'voided') {
         throw new Error('VOIDED_ITEM');
       }
+      if (item.status === 'void_adjustment') {
+        throw new Error('IMMUTABLE_KDS_ITEM');
+      }
 
       if (userCategoryIds.length > 0) {
         const product = db.prepare('SELECT category_id FROM products WHERE id = ?').get(item.product_id) as { category_id: string | null } | undefined;
@@ -320,6 +323,9 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     }
     if (error.message === 'CATEGORY_FORBIDDEN') {
       return res.status(403).json({ error: 'Not authorized to update this item' });
+    }
+    if (error.message === 'IMMUTABLE_KDS_ITEM') {
+      return res.status(400).json({ error: 'This bill adjustment cannot be updated from KDS' });
     }
     console.error("[API] KDS item status update error:", error);
     res.status(500).json({ error: "Could not update item status" });

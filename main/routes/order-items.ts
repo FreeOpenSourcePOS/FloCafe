@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
+import { requireKdsEnabled } from '../middleware/security';
 
 const router = Router();
 
@@ -13,7 +14,7 @@ interface OrderItemRow {
 }
 
 // PATCH /api/order-items/:id/status — update a single item's kitchen status
-router.patch('/:id/status', (req: Request, res: Response) => {
+router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const role = (req as any).user?.role;
     if (!role || !['chef', 'manager', 'owner'].includes(role)) {

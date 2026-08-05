@@ -353,6 +353,10 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
 }
 
 function handleStatusUpdate(client: KdsClient, message: any): void {
+  if (!isKdsEnabled()) {
+    closeKdsClient(client, 'KDS is disabled');
+    return;
+  }
   if (!isKdsClientAuthorized(client)) {
     closeKdsClient(client, 'Session expired or revoked');
     return;

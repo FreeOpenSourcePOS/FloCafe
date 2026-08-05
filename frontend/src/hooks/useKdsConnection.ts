@@ -202,6 +202,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const restInitialFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const restRequestSequenceRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionGenerationRef = useRef(0);
   const updatingIdsRef = useRef(new Set<number>());
@@ -220,21 +221,24 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       clearTimeout(restInitialFetchRef.current);
       restInitialFetchRef.current = null;
     }
+    restRequestSequenceRef.current += 1;
   }, []);
 
   const fetchOrdersRest = useCallback(async () => {
     const generation = sessionGenerationRef.current;
+    const requestSequence = ++restRequestSequenceRef.current;
     try {
       const { data } = await api.get(`${ordersPath}?status=pending,preparing,ready,served`);
       if (
         generation !== sessionGenerationRef.current ||
+        requestSequence !== restRequestSequenceRef.current ||
         (typeof window !== 'undefined' && !window.localStorage.getItem('token'))
       ) return;
       setOrders(data.orders || []);
       setCounts(data.counts || {});
       setConnected(true);
     } catch (error: unknown) {
-      if (generation !== sessionGenerationRef.current) return;
+      if (generation !== sessionGenerationRef.current || requestSequence !== restRequestSequenceRef.current) return;
       const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
       const status = axiosError?.response?.status;
       const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
@@ -310,7 +314,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         const statusCode = axiosError.response?.status;
         const errorMessage = axiosError.response?.data?.error || t('kds.failedToUpdateItem');
         const kdsDisabled = /kds is disabled/i.test(errorMessage);
-        if (statusCode === 401 || (statusCode === 403 && !kdsDisabled)) {
+        const authorizationFailure = /invalid|expired|revoked|authentication required|no active kitchen station|only chef|only kitchen staff|user account is not active/i.test(errorMessage);
+        if (statusCode === 401 || (statusCode === 403 && !kdsDisabled && authorizationFailure)) {
           sessionGenerationRef.current += 1;
           if (statusCode === 401) window.localStorage.removeItem('token');
           else markKdsAuthBlocked();

@@ -407,7 +407,10 @@ export function startKdsServer(): Promise<void> {
       }
       try {
         const db = getDatabase();
-        const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
+        const kdsUser = (req as any).user as KdsRequestUser;
+        const stationCategoryIds = getKdsStationCategoryIds(db, kdsUser.stationIds);
+        if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const categoryIds = stationCategoryIds.length > 0 ? stationCategoryIds : kdsUser.categoryIds;
         const categories = categoryIds.length > 0
           ? db.prepare(`SELECT * FROM categories WHERE is_active = 1 AND id IN (${categoryIds.map(() => '?').join(',')}) ORDER BY sort_order`).all(...categoryIds)
           : db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();

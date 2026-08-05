@@ -746,6 +746,21 @@ export function captureKitchenStationSecurityState(dbInstance: Database.Database
   }
 }
 
+export type KdsEnabledSettingState = { present: boolean; value: string | null };
+
+export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {
+  const row = dbInstance.prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as { value: string | null } | undefined;
+  return { present: !!row, value: row?.value ?? null };
+}
+
+export function mergeKdsEnabledSetting(dbInstance: Database.Database, state: KdsEnabledSettingState): void {
+  if (!state.present) return;
+  dbInstance.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES ('kds_enabled', ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(state.value, now());
+}
+
 export function captureUserStationSecurityState(dbInstance: Database.Database): UserStationSecurityState[] {
   try {
     return dbInstance.prepare(`
@@ -975,6 +990,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   const preservedUserSecurity = captureUserSecurityState(currentDb);
   const preservedUserStations = captureUserStationSecurityState(currentDb);
   const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
+  const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -1024,6 +1040,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       const freshDb = getDatabase();
       mergeUserSecurityState(freshDb, preservedUserSecurity);
       mergeUserStationSecurityState(freshDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
+      mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
@@ -1066,7 +1083,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled);
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -1109,6 +1126,7 @@ function dataOnlyRestore(
   preservedUserSecurity: UserSecurityState[] = [],
   preservedUserStations: UserStationSecurityState[] = [],
   preservedStationSecurity: KitchenStationSecurityState[] = [],
+  preservedKdsEnabled: KdsEnabledSettingState = { present: false, value: null },
 ): RestoreResult {
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
@@ -1190,6 +1208,7 @@ function dataOnlyRestore(
 
     mergeUserSecurityState(currentDb, preservedUserSecurity);
     mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
+    mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
     mergeRevocations(currentDb, preservedRevocations);
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));
@@ -3616,7 +3635,7 @@ export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boo
 export function projectKdsOrder(order: any, restricted: boolean): any {
   if (!restricted) return order;
   const allowedFields = [
-    'id', 'order_number', 'table_id', 'type', 'guest_count',
+    'id', 'order_number', 'type', 'guest_count',
     'special_instructions', 'status', 'created_at', 'updated_at',
     'table_name', 'table_number', 'floor', 'section',
   ];

@@ -53,6 +53,8 @@ export default function SetupPage() {
     business_name: '',
   });
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [productUpdates, setProductUpdates] = useState(false);
+  const [marketing, setMarketing] = useState(false);
   const passwordsEntered = form.password.length > 0 && form.confirmPassword.length > 0;
   const passwordsMatch = !passwordsEntered || form.password === form.confirmPassword;
 
@@ -198,6 +200,8 @@ export default function SetupPage() {
         master_pin: masterPinAvailable ? masterPin : undefined,
         cloud_sync_enabled: true,
         cloud_server_url: cloudServerUrl.trim() || DEFAULT_CLOUD_SERVER_URL,
+        email_product_updates: productUpdates,
+        email_marketing: marketing,
         ...countryPayload,
       });
       completeSetup();
@@ -540,6 +544,19 @@ export default function SetupPage() {
                       <summary className="cursor-pointer text-primary">{t('setup.anonymousDataDetails')}</summary>
                       <p className="mt-1">{t('setup.anonymousDataFields')}</p>
                     </details>
+                  </div>
+
+                  <div className="space-y-3 rounded-lg border border-border px-3 py-3 text-sm">
+                    <p className="font-medium text-foreground">Email communication</p>
+                    <p className="text-muted-foreground">We will send a welcome email immediately so you can verify this address. Essential account, service, and security notices are not promotional and cannot be disabled here.</p>
+                    <label className="flex items-start gap-2">
+                      <input type="checkbox" checked={productUpdates} onChange={(e) => setProductUpdates(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
+                      <span>Receive product updates and release notes (optional)</span>
+                    </label>
+                    <label className="flex items-start gap-2">
+                      <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
+                      <span>Receive marketing messages, offers, and surveys (optional)</span>
+                    </label>
                   </div>
 
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
@@ -59,6 +59,7 @@ export default function AppSidebar() {
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
   const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirm();
+  const [emailNeedsAttention, setEmailNeedsAttention] = useState(false);
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
 
   const role = currentTenant?.role || 'cashier';
@@ -92,6 +93,13 @@ export default function AppSidebar() {
       .then((res) => setWhatsappEnabled(!!res.data?.enabled))
       .catch(() => { });
   }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled]);
+
+  useEffect(() => {
+    if (role !== 'owner') return;
+    api.get('/settings/cloud/account')
+      .then((res) => setEmailNeedsAttention(Boolean(res.data?.email) && !res.data?.verified))
+      .catch(() => setEmailNeedsAttention(false));
+  }, [role, pathname]);
 
   return (
     <Sidebar collapsible="icon">
@@ -128,7 +136,12 @@ export default function AppSidebar() {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
                       <Link href={item.href} onClick={closeMobile}>
-                        <item.icon />
+                        <span className="relative shrink-0">
+                          <item.icon />
+                          {item.href === '/settings' && emailNeedsAttention && (
+                            <span aria-label="Email verification required" className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
+                          )}
+                        </span>
                         <span>{t(item.labelKey)}</span>
                       </Link>
                     </SidebarMenuButton>

@@ -733,6 +733,8 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       terms_accepted,
       master_pin,
       cloud_server_url,
+      email_product_updates,
+      email_marketing,
     } = req.body;
     const email = normalizeEmail(req.body.email);
     const displayName = String(name || '').trim();
@@ -842,6 +844,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         // matches how cloud-sync.ts reads this key everywhere else.
         cloud_sync_enabled: cloudSyncEnabled ? '1' : '0',
         cloud_server_url: normalizedCloudServerUrl || DEFAULT_CLOUD_SERVER_URL,
+        email_product_updates: email_product_updates === true ? 'true' : 'false',
+        email_marketing: email_marketing === true ? 'true' : 'false',
+        cloud_services_disabled_by_user: 'false',
       });
 
       seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);

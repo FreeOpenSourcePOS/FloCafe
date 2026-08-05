@@ -109,13 +109,14 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
 }
 
 function SettingsNavItem({
-  label, value, active, onClick, indent,
+  label, value, active, onClick, indent, attention,
 }: {
   label: string;
   value: string;
   active: string;
   onClick: (v: string) => void;
   indent?: boolean;
+  attention?: boolean;
 }) {
   const isActive = active === value;
   return (
@@ -129,7 +130,8 @@ function SettingsNavItem({
           : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' + (indent ? ' border-transparent' : ''),
       ].join(' ')}
     >
-      {label}
+      <span>{label}</span>
+      {attention && <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white" aria-label="Action required">1</span>}
     </button>
   );
 }
@@ -282,12 +284,24 @@ export default function SettingsPage() {
     | { mode: 'import'; payload: { data: ImportPayload; overwrite: boolean } }
     | { mode: 'restore'; payload: { backupPath: string } }
     | { mode: 'delete-backup'; payload: { fileName: string } }
+    | { mode: 'delete-cloud' }
     | null;
   const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   // The mount effect below always fetches backups unconditionally, so this starts true
   // rather than being set synchronously inside that effect.
   const [backupsLoading, setBackupsLoading] = useState(true);
+  const [cloudAccount, setCloudAccount] = useState<{ email?: string; verified?: boolean; verified_at?: string | null; verification_sent_at?: string | null; product_updates?: boolean; marketing?: boolean } | null>(null);
+  const [cloudAccountBusy, setCloudAccountBusy] = useState(false);
+
+  const fetchCloudAccount = async () => {
+    try {
+      const { data } = await api.get('/settings/cloud/account');
+      setCloudAccount(data);
+    } catch {
+      setCloudAccount(null);
+    }
+  };
 
   const fetchMasterPinStatus = async () => {
     try {
@@ -334,6 +348,11 @@ export default function SettingsPage() {
         // ignore — history card just shows empty state until retried
       })
       .finally(() => setBackupsLoading(false));
+    if (currentTenant?.role === 'owner') {
+      api.get('/settings/cloud/account')
+        .then(({ data }) => setCloudAccount(data))
+        .catch(() => setCloudAccount(null));
+    }
 
     if (searchParams?.get('action') === 'health-check') {
       api.get('/db-tools/health-check')
@@ -450,6 +469,19 @@ export default function SettingsPage() {
       } catch (err: unknown) {
         const error = err as { response?: { data?: { error?: string } } };
         return { success: false, error: error.response?.data?.error || t('settings.backupDeleteFailed') };
+      }
+    }
+
+    if (pinGate.mode === 'delete-cloud') {
+      try {
+        await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
+        toast.success('FloCafe cloud data was deleted. Your local POS data remains on this device.');
+        setCloudAccount(null);
+        setPinGate(null);
+        return { success: true };
+      } catch (err: unknown) {
+        const error = err as { response?: { data?: { error?: string } } };
+        return { success: false, error: error.response?.data?.error || 'Cloud data deletion failed' };
       }
     }
 
@@ -1807,7 +1839,7 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupAccount')}</p>
             </div>
-            <SettingsNavItem label={t('settings.account')} value="account" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('settings.account')} value="account" active={activeTab} onClick={setActiveTab} attention={Boolean(cloudAccount?.email && !cloudAccount?.verified)} />
             <SettingsNavItem label={t('settings.tabUpdates')} value="updates" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabAbout')} value="about" active={activeTab} onClick={setActiveTab} />
 
@@ -2717,6 +2749,56 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+            {currentTenant?.role === 'owner' && (
+              <>
+                <div className={`rounded-xl border p-6 ${cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white'}`}>
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h2 className="font-semibold text-gray-900">Contact email</h2>
+                      <p className="mt-1 text-sm text-gray-600">{cloudAccount?.email || user?.email || 'No cloud contact email'}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                      {cloudAccount?.verified ? 'Verified' : 'Pending verification'}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm text-gray-600">Verification is important for product service notices, security updates, and other account communication.</p>
+                  {!cloudAccount?.verified && (
+                    <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
+                      setCloudAccountBusy(true);
+                      try { await api.post('/settings/cloud/account/verification'); toast.success('Verification email queued'); await fetchCloudAccount(); }
+                      catch (err: unknown) {
+                        const error = err as { response?: { data?: { error?: string } } };
+                        toast.error(error.response?.data?.error || 'Could not send verification email');
+                      }
+                      finally { setCloudAccountBusy(false); }
+                    }}>{cloudAccountBusy ? 'Sending…' : 'Send verification email'}</Button>
+                  )}
+                  <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <p className="text-xs text-gray-500">Essential service and security notices are separate from these optional subscriptions.</p>
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-gray-100 bg-white p-6">
+                  <h2 className="font-semibold text-gray-900">Cloud privacy controls</h2>
+                  <p className="mt-2 text-sm text-gray-600">Stopping cloud services is reversible. Deleting cloud data is permanent. Neither action deletes your local orders, bills, customers, products, or database.</p>
+                  <div className="mt-4 flex flex-wrap gap-3">
+                    <Button variant="outline" onClick={async () => {
+                      if (!await confirm('Stop all FloCafe cloud services, identified diagnostics, and future anonymous telemetry on this device? Local POS data will remain available.')) return;
+                      try { await api.post('/settings/cloud/stop-all'); toast.success('All cloud services and telemetry stopped'); }
+                      catch { toast.error('Could not stop cloud services'); }
+                    }}><CloudOff size={16} className="mr-2" />Stop all cloud services</Button>
+                    <Button variant="destructive" onClick={() => {
+                      const phrase = window.prompt('This permanently deletes store-linked data from FloCafe servers. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
+                      if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
+                      else if (phrase !== null) toast.error('Confirmation phrase did not match');
+                    }}><Trash2 size={16} className="mr-2" />Delete my cloud data</Button>
+                  </div>
+                  <p className="mt-3 text-xs text-gray-500">Anonymous telemetry has no store or email link, so existing anonymous events cannot be identified as yours. This action stops future telemetry and rotates the anonymous identifier.</p>
+                </div>
+              </>
+            )}
           </div>
         </TabsContent>
 
@@ -4043,6 +4125,7 @@ export default function SettingsPage() {
           pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('settings.confirmBackupTitle')
           : pinGate?.mode === 'import' ? t('settings.confirmImportTitle')
           : pinGate?.mode === 'restore' ? t('settings.confirmRestoreTitle')
+          : pinGate?.mode === 'delete-cloud' ? 'Confirm cloud data deletion'
           : undefined
         }
         onCancel={() => setPinGate(null)}

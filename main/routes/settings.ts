@@ -3,6 +3,7 @@ import { getDatabase, now } from '../db';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
+import { requireMasterPin } from '../middleware/master-pin';
 
 const router = Router();
 
@@ -409,6 +410,10 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
 
 router.post('/cloud/register', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
   try {
+    upsertSettings(getDatabase(), {
+      cloud_sync_enabled: '1', cloud_reports_enabled: '1', cloud_command_polling_enabled: '1',
+      cloud_services_disabled_by_user: 'false',
+    });
     if (req.body?.cloud_server_url !== undefined) {
       upsertSettings(getDatabase(), {
         cloud_server_url: normalizeCloudServerUrl(req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL),
@@ -431,6 +436,48 @@ router.post('/cloud/test', requireRole('owner', 'manager'), async (_req: Request
   } catch (error: any) {
     console.error('[API] Cloud test failed:', error);
     res.status(502).json({ error: 'Cloud test failed' });
+  }
+});
+
+router.get('/cloud/account', requireRole('owner'), async (_req: Request, res: Response) => {
+  try {
+    res.json(await cloudSync.getEmailPreferences());
+  } catch (error: any) {
+    res.status(502).json({ error: error.message || 'Could not load cloud account status' });
+  }
+});
+
+router.put('/cloud/account/preferences', requireRole('owner'), async (req: Request, res: Response) => {
+  try {
+    res.json(await cloudSync.updateEmailPreferences({
+      product_updates: req.body?.product_updates,
+      marketing: req.body?.marketing,
+    }));
+  } catch (error: any) {
+    res.status(502).json({ error: error.message || 'Could not update email preferences' });
+  }
+});
+
+router.post('/cloud/account/verification', requireRole('owner'), async (_req: Request, res: Response) => {
+  try {
+    res.json(await cloudSync.requestEmailVerification({ source: 'settings' }));
+  } catch (error: any) {
+    res.status(502).json({ error: error.message || 'Could not send verification email' });
+  }
+});
+
+router.post('/cloud/stop-all', requireRole('owner'), async (_req: Request, res: Response) => {
+  res.json(await cloudSync.stopAllCloudServices());
+});
+
+router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, async (req: Request, res: Response) => {
+  if (req.body?.confirmation !== 'DELETE CLOUD DATA') {
+    return res.status(400).json({ error: 'Type DELETE CLOUD DATA to confirm' });
+  }
+  try {
+    res.json(await cloudSync.deleteCloudData());
+  } catch (error: any) {
+    res.status(502).json({ error: error.message || 'Cloud data deletion failed' });
   }
 });
 

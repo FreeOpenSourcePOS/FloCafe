@@ -352,6 +352,18 @@ class CloudSyncService {
         cloud_last_heartbeat: new Date().toISOString(),
       });
       this.reload();
+      if (settings.cloud_verification_welcome_requested !== '1') {
+        try {
+          await this.requestEmailVerification({
+            product_updates: settings.email_product_updates === 'true',
+            marketing: settings.email_marketing === 'true',
+            source: 'signup',
+          });
+          this.upsertSettings({ cloud_verification_welcome_requested: '1' });
+        } catch (emailError) {
+          log.warn('[CloudSync] welcome email request failed (registration remains valid)', (emailError as Error).message);
+        }
+      }
       return this.getStatus();
     } catch (err) {
       const message = (err as Error).message;
@@ -374,6 +386,76 @@ class CloudSyncService {
       cloud_last_heartbeat: new Date().toISOString(),
     });
     return { ok: true, data, status: this.getStatus() };
+  }
+
+  async getEmailPreferences(): Promise<Record<string, unknown>> {
+    const res = await this.signedFetch('/api/pos/email-preferences', { method: 'GET' });
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (!res.ok) throw new Error(String(data.error || `Email status failed (${res.status})`));
+    this.upsertSettings({
+      cloud_email_verified: data.verified ? 'true' : 'false',
+      cloud_email_verification_sent_at: typeof data.verification_sent_at === 'string' ? data.verification_sent_at : '',
+      email_product_updates: data.product_updates ? 'true' : 'false',
+      email_marketing: data.marketing ? 'true' : 'false',
+    });
+    return data;
+  }
+
+  async updateEmailPreferences(preferences: { product_updates?: boolean; marketing?: boolean }): Promise<Record<string, unknown>> {
+    const res = await this.signedFetch('/api/pos/email-preferences', { method: 'PUT', body: JSON.stringify(preferences) });
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (!res.ok) throw new Error(String(data.error || `Preference update failed (${res.status})`));
+    await this.getEmailPreferences();
+    return data;
+  }
+
+  async requestEmailVerification(preferences: { product_updates?: boolean; marketing?: boolean; source?: string } = {}): Promise<Record<string, unknown>> {
+    const res = await this.signedFetch('/api/pos/email/verification', { method: 'POST', body: JSON.stringify(preferences) });
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (!res.ok) throw new Error(String(data.error || `Verification request failed (${res.status})`));
+    this.upsertSettings({
+      cloud_email_verified: data.verified ? 'true' : 'false',
+      cloud_email_verification_sent_at: typeof data.verification_sent_at === 'string' ? data.verification_sent_at : '',
+    });
+    return data;
+  }
+
+  async stopAllCloudServices(): Promise<Record<string, unknown>> {
+    await this.setDiagnosticsConsent(false);
+    this.stop();
+    this.upsertSettings({
+      cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
+      cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
+      anonymous_data_consent: 'false', cloud_services_disabled_by_user: 'true', cloud_connected: 'false',
+    });
+    this.reload();
+    return this.getStatus();
+  }
+
+  async deleteCloudData(): Promise<Record<string, unknown>> {
+    const res = await this.signedFetch('/api/pos/cloud-data/delete', {
+      method: 'POST', body: JSON.stringify({ confirmation: 'DELETE CLOUD DATA' }),
+    });
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (!res.ok) throw new Error(String(data.error || `Cloud deletion failed (${res.status})`));
+    const db = getDatabase();
+    db.transaction(() => {
+      db.prepare("DELETE FROM cloud_sync_outbox").run();
+      db.prepare("DELETE FROM support_ticket_outbox").run();
+      db.prepare("DELETE FROM store_diagnostics_outbox").run();
+      this.upsertSettings({
+        cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
+        cloud_device_created_at: '', cloud_registration_status: 'deleted',
+        cloud_connected: 'false', cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
+        cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
+        anonymous_data_consent: 'false', telemetry_anon_id: crypto.randomUUID(),
+        cloud_services_disabled_by_user: 'true', cloud_email_verified: 'false',
+        cloud_email_verification_sent_at: '', cloud_verification_welcome_requested: '0',
+      });
+    })();
+    this.stop();
+    this.settings = this.loadSettings();
+    return data;
   }
 
   /**
@@ -781,7 +863,7 @@ class CloudSyncService {
   private maybeAutoRegister() {
     const db = getDatabase();
     const settings = this.readSettings(db);
-    if (settings.cloud_sync_enabled !== '1') return;
+    if (settings.cloud_sync_enabled !== '1' || settings.cloud_services_disabled_by_user === 'true') return;
     // initDatabase() runs before first-run setup. Registering seeded defaults at
     // that point creates a permanent-looking blank row in FloAdmin. Setup always
     // writes a non-empty business name (falling back to "Store"), so wait for it.

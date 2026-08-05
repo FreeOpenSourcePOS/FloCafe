@@ -470,17 +470,53 @@ class CloudSyncService {
       db.prepare("DELETE FROM support_ticket_outbox").run();
       db.prepare("DELETE FROM store_diagnostics_outbox").run();
       this.upsertSettings({
-        cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
-        cloud_device_created_at: '', cloud_registration_status: 'deleted',
+        cloud_registration_status: 'deletion_pending',
         cloud_connected: 'false', cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
         cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
         anonymous_data_consent: 'false', telemetry_anon_id: crypto.randomUUID(),
-        cloud_services_disabled_by_user: 'true', cloud_email_verified: 'false',
-        cloud_email_verification_sent_at: '', cloud_verification_welcome_requested: '0',
+        cloud_services_disabled_by_user: 'true',
+        cloud_deletion_request_id: typeof data.request_id === 'string' ? data.request_id : '',
+        cloud_deletion_status_token: typeof data.status_token === 'string' ? data.status_token : '',
+        cloud_deletion_status: typeof data.status === 'string' ? data.status : 'pending',
       });
     })();
     this.stop();
     this.settings = this.loadSettings();
+    return data;
+  }
+
+  async getDeletionRequestStatus(): Promise<Record<string, unknown> | null> {
+    const settings = this.readSettings(getDatabase());
+    const requestId = settings.cloud_deletion_request_id;
+    const statusToken = settings.cloud_deletion_status_token;
+    if (!requestId || !statusToken) return null;
+    const serverUrl = normalizeCloudServerUrl(settings.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
+    const url = endpoint(serverUrl, `/api/cloud-data/deletion-request/status?id=${encodeURIComponent(requestId)}&token=${encodeURIComponent(statusToken)}`);
+    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (!res.ok) throw new Error(String(data.error || `Deletion status failed (${res.status})`));
+    const status = typeof data.status === 'string' ? data.status : 'pending';
+    this.upsertSettings({ cloud_deletion_status: status });
+    if (status === 'approved' && settings.cloud_registration_status !== 'deleted') {
+      this.upsertSettings({
+        cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
+        cloud_device_created_at: '', cloud_registration_status: 'deleted', cloud_email_verified: 'false',
+        cloud_email_verification_sent_at: '', cloud_verification_welcome_requested: '0',
+      });
+      this.settings = this.loadSettings();
+    }
+    return data;
+  }
+
+  async cancelDeletionRequest(): Promise<Record<string, unknown>> {
+    const settings = this.readSettings(getDatabase());
+    if (!settings.cloud_deletion_request_id) throw new Error('No pending deletion request');
+    const res = await this.signedFetch('/api/pos/cloud-data/deletion-request/cancel', {
+      method: 'POST', body: JSON.stringify({ request_id: settings.cloud_deletion_request_id }),
+    });
+    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (!res.ok) throw new Error(String(data.error || `Cancellation failed (${res.status})`));
+    this.upsertSettings({ cloud_deletion_status: 'cancelled', cloud_registration_status: 'registered' });
     return data;
   }
 

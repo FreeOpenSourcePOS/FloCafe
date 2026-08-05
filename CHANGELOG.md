@@ -2,6 +2,22 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.7.8] - 2026-08-05
+
+### Added
+- New installations receive an immediate welcome and email-verification request after cloud registration; owners can resend verification and see verified/pending status from Settings.
+- Product-update and marketing email preferences are separate, optional, unchecked choices with unsubscribe support. Essential service and security notices remain transactional.
+- Settings now provides explicit controls to stop all cloud services and anonymous telemetry without touching the local POS database.
+- Owners can submit a cloud-data deletion request using the Master PIN and typed confirmation. Requests stop cloud activity immediately, remain visible with status in FloCafe, and require manual approval in FloAdmin before irreversible deletion.
+
+### Changed
+- Cloud deletion uses a reviewed request lifecycle with duplicate-request protection, cancellation, approval/rejection notes, and a private status token that remains usable after the store API key is deleted.
+- Cloud order events require the explicit cloud-orders switch. Outbound order/report snapshots strip customer records, customer identifiers, payment details, and free-text fields that could contain personal data, including legacy queued snapshots.
+
+### Fixed
+- Settings and its Account section now show an attention badge while contact email verification or a cloud deletion request requires action.
+- Approved deletion removes store-linked API keys, presence, pairing data, diagnostics, support tickets, integrations, email preferences/outbox entries, and request nonces while preserving all local orders, bills, products, customers, and database backups.
+
 ## [2.7.2] - 2026-08-05
 
 ### Changed

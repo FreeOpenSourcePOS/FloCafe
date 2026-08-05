@@ -285,13 +285,14 @@ export default function SettingsPage() {
     | { mode: 'restore'; payload: { backupPath: string } }
     | { mode: 'delete-backup'; payload: { fileName: string } }
     | { mode: 'delete-cloud' }
+    | { mode: 'cancel-cloud-deletion' }
     | null;
   const [pinGate, setPinGate] = useState<PinGate>(() => searchParams?.get('action') === 'master-pin' ? { mode: 'set' } : null);
   const [backups, setBackups] = useState<BackupInfo[]>([]);
   // The mount effect below always fetches backups unconditionally, so this starts true
   // rather than being set synchronously inside that effect.
   const [backupsLoading, setBackupsLoading] = useState(true);
-  const [cloudAccount, setCloudAccount] = useState<{ email?: string; verified?: boolean; verified_at?: string | null; verification_sent_at?: string | null; product_updates?: boolean; marketing?: boolean } | null>(null);
+  const [cloudAccount, setCloudAccount] = useState<{ email?: string; verified?: boolean; verified_at?: string | null; verification_sent_at?: string | null; product_updates?: boolean; marketing?: boolean; deletion_request?: { id?: string; status?: 'pending' | 'approved' | 'rejected' | 'cancelled'; requested_at?: string; reviewed_at?: string | null; decision_note?: string | null } | null } | null>(null);
   const [cloudAccountBusy, setCloudAccountBusy] = useState(false);
 
   const fetchCloudAccount = async () => {
@@ -475,13 +476,26 @@ export default function SettingsPage() {
     if (pinGate.mode === 'delete-cloud') {
       try {
         await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
-        toast.success('FloCafe cloud data was deleted. Your local POS data remains on this device.');
-        setCloudAccount(null);
+        toast.success('Cloud deletion request submitted for manual review. Cloud services have been stopped on this device.');
+        await fetchCloudAccount();
         setPinGate(null);
         return { success: true };
       } catch (err: unknown) {
         const error = err as { response?: { data?: { error?: string } } };
         return { success: false, error: error.response?.data?.error || 'Cloud data deletion failed' };
+      }
+    }
+
+    if (pinGate.mode === 'cancel-cloud-deletion') {
+      try {
+        await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
+        toast.success('Cloud deletion request cancelled. Cloud services remain off until you explicitly re-enable them.');
+        await fetchCloudAccount();
+        setPinGate(null);
+        return { success: true };
+      } catch (err: unknown) {
+        const error = err as { response?: { data?: { error?: string } } };
+        return { success: false, error: error.response?.data?.error || 'Could not cancel deletion request' };
       }
     }
 
@@ -1839,7 +1853,7 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupAccount')}</p>
             </div>
-            <SettingsNavItem label={t('settings.account')} value="account" active={activeTab} onClick={setActiveTab} attention={Boolean(cloudAccount?.email && !cloudAccount?.verified)} />
+            <SettingsNavItem label={t('settings.account')} value="account" active={activeTab} onClick={setActiveTab} attention={Boolean((cloudAccount?.email && !cloudAccount?.verified) || cloudAccount?.deletion_request?.status === 'pending')} />
             <SettingsNavItem label={t('settings.tabUpdates')} value="updates" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabAbout')} value="about" active={activeTab} onClick={setActiveTab} />
 
@@ -2782,18 +2796,28 @@ export default function SettingsPage() {
 
                 <div className="rounded-xl border border-gray-100 bg-white p-6">
                   <h2 className="font-semibold text-gray-900">Cloud privacy controls</h2>
-                  <p className="mt-2 text-sm text-gray-600">Stopping cloud services is reversible. Deleting cloud data is permanent. Neither action deletes your local orders, bills, customers, products, or database.</p>
+                  <p className="mt-2 text-sm text-gray-600">Stopping cloud services is reversible. A cloud deletion request is reviewed manually in FloAdmin before data is permanently removed. Neither action deletes your local orders, bills, customers, products, or database.</p>
+                  {cloudAccount?.deletion_request && (
+                    <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' ? 'border-green-200 bg-green-50 text-green-800' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
+                      <p className="font-semibold">Deletion request: {cloudAccount.deletion_request.status}</p>
+                      {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs">{cloudAccount.deletion_request.id}</p>}
+                      {cloudAccount.deletion_request.decision_note && <p className="mt-2">{cloudAccount.deletion_request.decision_note}</p>}
+                    </div>
+                  )}
                   <div className="mt-4 flex flex-wrap gap-3">
                     <Button variant="outline" onClick={async () => {
                       if (!await confirm('Stop all FloCafe cloud services, identified diagnostics, and future anonymous telemetry on this device? Local POS data will remain available.')) return;
                       try { await api.post('/settings/cloud/stop-all'); toast.success('All cloud services and telemetry stopped'); }
                       catch { toast.error('Could not stop cloud services'); }
                     }}><CloudOff size={16} className="mr-2" />Stop all cloud services</Button>
-                    <Button variant="destructive" onClick={() => {
-                      const phrase = window.prompt('This permanently deletes store-linked data from FloCafe servers. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
+                    <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'approved'} onClick={() => {
+                      const phrase = window.prompt('This submits a deletion request to FloAdmin for manual review and immediately stops cloud services here. After approval, store-linked server data is permanently deleted. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
                       if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
                       else if (phrase !== null) toast.error('Confirmation phrase did not match');
-                    }}><Trash2 size={16} className="mr-2" />Delete my cloud data</Button>
+                    }}><Trash2 size={16} className="mr-2" />Request cloud data deletion</Button>
+                    {cloudAccount?.deletion_request?.status === 'pending' && (
+                      <Button variant="outline" onClick={() => setPinGate({ mode: 'cancel-cloud-deletion' })}>Cancel deletion request</Button>
+                    )}
                   </div>
                   <p className="mt-3 text-xs text-gray-500">Anonymous telemetry has no store or email link, so existing anonymous events cannot be identified as yours. This action stops future telemetry and rotates the anonymous identifier.</p>
                 </div>
@@ -4125,7 +4149,8 @@ export default function SettingsPage() {
           pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('settings.confirmBackupTitle')
           : pinGate?.mode === 'import' ? t('settings.confirmImportTitle')
           : pinGate?.mode === 'restore' ? t('settings.confirmRestoreTitle')
-          : pinGate?.mode === 'delete-cloud' ? 'Confirm cloud data deletion'
+          : pinGate?.mode === 'delete-cloud' ? 'Confirm cloud deletion request'
+          : pinGate?.mode === 'cancel-cloud-deletion' ? 'Cancel cloud deletion request'
           : undefined
         }
         onCancel={() => setPinGate(null)}

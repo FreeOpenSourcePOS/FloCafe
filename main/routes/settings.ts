@@ -410,6 +410,10 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
 
 router.post('/cloud/register', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
   try {
+    const deletionRequest = await cloudSync.getDeletionRequestStatus();
+    if (deletionRequest?.status === 'pending') {
+      return res.status(409).json({ error: 'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.' });
+    }
     upsertSettings(getDatabase(), {
       cloud_sync_enabled: '1', cloud_reports_enabled: '1', cloud_command_polling_enabled: '1',
       cloud_services_disabled_by_user: 'false',
@@ -441,7 +445,11 @@ router.post('/cloud/test', requireRole('owner', 'manager'), async (_req: Request
 
 router.get('/cloud/account', requireRole('owner'), async (_req: Request, res: Response) => {
   try {
-    res.json(await cloudSync.getEmailPreferences());
+    const deletionRequest = await cloudSync.getDeletionRequestStatus();
+    if (deletionRequest?.status === 'approved') {
+      return res.json({ email: null, verified: false, product_updates: false, marketing: false, deletion_request: deletionRequest });
+    }
+    res.json({ ...(await cloudSync.getEmailPreferences()), deletion_request: deletionRequest });
   } catch (error: any) {
     res.status(502).json({ error: error.message || 'Could not load cloud account status' });
   }
@@ -478,6 +486,14 @@ router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, async 
     res.json(await cloudSync.deleteCloudData());
   } catch (error: any) {
     res.status(502).json({ error: error.message || 'Cloud data deletion failed' });
+  }
+});
+
+router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin, async (_req: Request, res: Response) => {
+  try {
+    res.json(await cloudSync.cancelDeletionRequest());
+  } catch (error: any) {
+    res.status(502).json({ error: error.message || 'Could not cancel deletion request' });
   }
 });
 

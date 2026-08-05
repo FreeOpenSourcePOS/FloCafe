@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "2.7.2",
+  "version": "2.7.8",
   "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
     "node": ">=22.0.0"
@@ -67,7 +67,7 @@
     "test:integration-payments": "node tests/run-electron-node-test.cjs tests/integration-payments.test.ts",
     "test:issue-214": "node tests/run-electron-node-test.cjs tests/issue-214-payment-integrity.test.ts",
     "test:issue-214-auth": "node tests/run-electron-node-test.cjs tests/issue-214-auth-migration.test.ts",
-  "test:issue-214-migration": "node tests/run-electron-node-test.cjs tests/issue-214-migration-integrity.test.ts",
+    "test:issue-214-migration": "node tests/run-electron-node-test.cjs tests/issue-214-migration-integrity.test.ts",
     "test:integration-lifecycle": "node tests/run-electron-node-test.cjs tests/integration-order-lifecycle.test.ts",
     "test:integration-reconciliation": "node tests/run-electron-node-test.cjs tests/integration-bill-reconciliation.test.ts",
     "test:integration-loyalty": "node tests/run-electron-node-test.cjs tests/integration-loyalty.test.ts",

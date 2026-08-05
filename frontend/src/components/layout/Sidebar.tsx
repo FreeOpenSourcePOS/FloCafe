@@ -97,7 +97,7 @@ export default function AppSidebar() {
   useEffect(() => {
     if (role !== 'owner') return;
     api.get('/settings/cloud/account')
-      .then((res) => setEmailNeedsAttention(Boolean(res.data?.email) && !res.data?.verified))
+      .then((res) => setEmailNeedsAttention((Boolean(res.data?.email) && !res.data?.verified) || res.data?.deletion_request?.status === 'pending'))
       .catch(() => setEmailNeedsAttention(false));
   }, [role, pathname]);
 

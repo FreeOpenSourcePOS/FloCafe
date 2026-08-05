@@ -43,6 +43,9 @@ Download the latest installer from [GitHub Releases](https://github.com/FreeOpen
   <a href="https://apps.microsoft.com/detail/9n1md6585p4q">
     <img src="https://img.shields.io/badge/Microsoft_Store-Download-0078D4?logo=microsoft&style=for-the-badge" alt="Download from Microsoft Store">
   </a>
+  <a href="https://snapcraft.io/flocafe">
+    <img src="https://img.shields.io/badge/Snap-Install-82BEA0?logo=snapcraft&logoColor=white&style=for-the-badge" alt="Install from the Snap Store">
+  </a>
 </p>
 
 Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`, `.rpm`, and Snap packages. On Linux:

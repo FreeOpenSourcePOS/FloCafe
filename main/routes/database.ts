@@ -29,7 +29,7 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
 
     const result = withTxn(() => {
       const tables = db.prepare(`
-        SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_flo_meta'
+        SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
       `).all() as { name: string }[];
 
       const exportData: Record<string, any[]> = {};
@@ -332,7 +332,7 @@ router.get('/tables', requireRole('owner'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const tables = db.prepare(`
-      SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_flo_meta'
+      SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
       ORDER BY name
     `).all() as { name: string }[];
 

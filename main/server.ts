@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
 import { getJWTSecret } from './routes/auth';
-import { getDbHealth, isKdsEnabled } from './db';
+import { databaseMaintenanceMiddleware, getDbHealth, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
@@ -151,6 +151,7 @@ export function startServer(): Promise<void> {
       if (req.body === undefined) req.body = {};
       next();
     });
+    app.use(databaseMaintenanceMiddleware);
 
     // ── Global API rate limiting ───────────────────────────────────────
     app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 100 }));

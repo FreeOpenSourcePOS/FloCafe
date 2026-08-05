@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import type { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
 import { app } from 'electron';
 import * as fs from 'fs';
@@ -12,12 +13,55 @@ let dbHealthError: string | null = null;
 // Database backup, restore, and wipe operations must not overlap. The lock is
 // a FIFO promise chain so a rejected operation cannot strand later work.
 let databaseMaintenanceTail: Promise<void> = Promise.resolve();
+let databaseMaintenanceActive = false;
+let activeDatabaseRequests = 0;
+let maintenanceRequestWaiters: (() => void)[] = [];
+
+export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
+  // These handlers acquire the maintenance lock themselves. They must not be
+  // counted as active requests or the lock would wait on its own response.
+  const ownsMaintenanceLock = req.path === '/api/db/import' || req.path === '/api/db-tools/initialize';
+  if (databaseMaintenanceActive && !ownsMaintenanceLock) {
+    res.status(503).json({ error: 'Database maintenance in progress' });
+    return;
+  }
+  if (ownsMaintenanceLock) {
+    next();
+    return;
+  }
+
+  activeDatabaseRequests += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
+    if (activeDatabaseRequests === 0) {
+      const waiters = maintenanceRequestWaiters;
+      maintenanceRequestWaiters = [];
+      waiters.forEach((resolve) => resolve());
+    }
+  };
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+}
 
 export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>): Promise<T> {
   const previous = databaseMaintenanceTail;
   let release!: () => void;
   databaseMaintenanceTail = new Promise<void>((resolve) => { release = resolve; });
-  return previous.then(operation).finally(release);
+  return previous.then(async () => {
+    databaseMaintenanceActive = true;
+    if (activeDatabaseRequests > 0) {
+      await new Promise<void>((resolve) => maintenanceRequestWaiters.push(resolve));
+    }
+    try {
+      return await operation();
+    } finally {
+      databaseMaintenanceActive = false;
+    }
+  }).finally(release);
 }
 
 const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
@@ -568,7 +612,7 @@ function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string
     FROM sqlite_master
     WHERE type IN ('table', 'index', 'trigger', 'view')
       AND name NOT LIKE 'sqlite_%'
-      AND name NOT LIKE '_flo_meta%'
+      AND name <> '_flo_meta'
   `).all() as { type: string; name: string; sql: string | null }[];
   return new Map(rows.map((row) => [
     `${row.type}:${row.name}`,
@@ -589,7 +633,7 @@ export function getTables(dbInstance: Database.Database): string[] {
   try {
     const tables = dbInstance.prepare(`
       SELECT name FROM sqlite_master WHERE type='table' 
-      AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_flo_meta'
+      AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
     `).all() as { name: string }[];
     return tables.map(t => t.name);
   } catch {

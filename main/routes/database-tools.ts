@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
-import * as fs from 'fs';
-import { getDbPath, createBackup, closeDatabase, initDatabase, listBackups, deleteBackup } from '../db';
+import { createBackup, resetDatabaseWithBackup, listBackups, deleteBackup } from '../db';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { runHealthCheck, applySafeFixes } from '../services/schema-health';
@@ -84,25 +83,7 @@ router.post('/initialize', requireRole('owner'), requireMasterPin, async (req: R
     return res.status(400).json({ error: `Type "${INITIALIZE_CONFIRM_PHRASE}" to confirm` });
   }
   try {
-    const { path: backupPath } = await createBackup();
-
-    closeDatabase();
-    const dbPath = getDbPath();
-    try {
-      for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-        if (fs.existsSync(p)) {
-          try {
-            fs.unlinkSync(p);
-          } catch (unlinkErr) {
-            console.warn(`[DB Tools] Warning: Could not remove ${p}:`, unlinkErr);
-          }
-        }
-      }
-    } finally {
-      // Always re-open and run migrations on the database so the application is not left uninitialized
-      initDatabase();
-    }
-
+    const { backupPath } = await resetDatabaseWithBackup();
     res.json({ success: true, backupPath });
   } catch (error: any) {
     console.error('[DB Tools] initialize error:', error);

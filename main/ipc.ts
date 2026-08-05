@@ -1,7 +1,7 @@
 import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getDatabase, createBackup, restoreBackup, restoreBackup as restoreFn, now, getDbPath, getCurrentSchemaVersion, getSchemaVersionFromBackup, closeDatabase, initDatabase } from './db';
+import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock } from './db';
 import { getLocalIP } from './server';
 import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
@@ -114,7 +114,7 @@ export function registerIpcHandlers(): void {
           return { success: false, error: 'Cancelled' };
         }
 
-        const restoreResult = restoreBackup(backupPath, false);
+        const restoreResult = await withDatabaseMaintenanceLock(() => restoreBackup(backupPath, false));
         return {
           success: restoreResult.success,
           mode: restoreResult.mode,
@@ -128,7 +128,7 @@ export function registerIpcHandlers(): void {
         };
       }
 
-      const restoreResult = restoreBackup(backupPath, true);
+      const restoreResult = await withDatabaseMaintenanceLock(() => restoreBackup(backupPath, true));
       return {
         success: restoreResult.success,
         mode: restoreResult.mode,
@@ -173,15 +173,7 @@ export function registerIpcHandlers(): void {
     }
 
     try {
-      const { path: backupPath } = await createBackup();
-
-      closeDatabase();
-      const dbPath = getDbPath();
-      for (const p of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
-        if (fs.existsSync(p)) fs.unlinkSync(p);
-      }
-      initDatabase();
-
+      const { backupPath } = await resetDatabaseWithBackup();
       return { success: true, backupPath };
     } catch (error: any) {
       console.error('[IPC] db-initialize: Error:', error);

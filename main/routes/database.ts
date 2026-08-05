@@ -1,9 +1,8 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { getDatabase, getDbPath, createBackup, getCurrentSchemaVersion, isSafeIdentifier, withTxn } from '../db';
+import { getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, isSafeIdentifier, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
-import * as fs from 'fs';
 import * as path from 'path';
 
 const router = Router();
@@ -96,7 +95,8 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
 router.post('/import', requireRole('owner'),
   (req: Request, res: Response, next: () => void) => (req.body?.overwrite ? requireMasterPin(req, res, next) : next()),
   async (req: Request, res: Response) => {
-  try {
+  return withDatabaseMaintenanceLock(async () => {
+    try {
     const { data, overwrite } = req.body;
 
     if (!data || !data.data || typeof data.data !== 'object') {
@@ -117,7 +117,7 @@ router.post('/import', requireRole('owner'),
       });
     }
 
-    const { path: backupPath } = await createBackup();
+    const { path: backupPath } = await createBackupUnlocked();
     const hasVersionMismatch = importSchemaVersion !== getCurrentSchemaVersion();
 
     if (hasVersionMismatch) {
@@ -178,10 +178,11 @@ router.post('/import', requireRole('owner'),
       db.exec('ROLLBACK');
       throw err;
     }
-  } catch (error: any) {
-    console.error('[DB Import] Error:', error);
-    res.status(500).json({ error: 'Import failed' });
-  }
+    } catch (error: any) {
+      console.error('[DB Import] Error:', error);
+      res.status(500).json({ error: 'Import failed' });
+    }
+  });
 });
 
 function getTableColumns(db: Database.Database, tableName: string): string[] {

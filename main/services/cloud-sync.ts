@@ -173,6 +173,32 @@ function safeJsonParse(value: string | null | undefined): unknown {
   try { return JSON.parse(value); } catch { return value; }
 }
 
+function sanitizeOrderSnapshot(value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  const snapshot = value as Record<string, unknown>;
+  const safe = { ...snapshot };
+  delete safe.customer;
+  delete safe.customer_id;
+  delete safe.special_instructions;
+  delete safe.discount_reason;
+  delete safe.cancellation_reason;
+  if (Array.isArray(safe.items)) {
+    safe.items = safe.items.map((item) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return item;
+      const safeItem = { ...(item as Record<string, unknown>) };
+      delete safeItem.special_instructions;
+      return safeItem;
+    });
+  }
+  if (safe.bill && typeof safe.bill === 'object' && !Array.isArray(safe.bill)) {
+    const safeBill = { ...(safe.bill as Record<string, unknown>) };
+    delete safeBill.payment_details;
+    delete safeBill.customer_id;
+    safe.bill = safeBill;
+  }
+  return safe;
+}
+
 class CloudSyncService {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private outboxTimer: ReturnType<typeof setInterval> | null = null;
@@ -637,6 +663,7 @@ class CloudSyncService {
 
   recordOrderChanged(orderId: number | string, eventType = 'order.updated') {
     try {
+      if (!this.loadSettings()?.orders_enabled) return;
       const snapshot = this.buildOrderSnapshot(orderId);
       if (snapshot) this.enqueueEvent(eventType, 'order', String(orderId), snapshot);
     } catch (err) {
@@ -747,7 +774,7 @@ class CloudSyncService {
         type: row.event_type,
         entity_type: row.entity_type,
         entity_id: row.entity_id,
-        payload: safeJsonParse(row.payload),
+        payload: row.entity_type === 'order' ? sanitizeOrderSnapshot(safeJsonParse(row.payload)) : safeJsonParse(row.payload),
       }));
 
       const updateStmt = db.prepare(`UPDATE cloud_sync_outbox SET status = 'sending', updated_at = ? WHERE id = ?`);
@@ -1271,15 +1298,13 @@ class CloudSyncService {
     const db = getDatabase();
     const items = itemsOverride ?? attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
     const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
-    const customer = order.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) : null;
     const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any;
-    return {
+    return sanitizeOrderSnapshot({
       ...order,
       items,
       table: tableRow ? { ...tableRow, name: tableRow.number } : null,
-      customer,
       bill: bill ? { ...bill, payment_details: safeJsonParse(bill.payment_details) } : null,
-    };
+    });
   }
 
   /** Shared HMAC signing used by every signed HTTP call and the relay WS handshake — see floadmin.md § Identity & request signing. */

@@ -459,6 +459,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             if (wsRef.current !== ws) return;
             if (authTimeout) { clearTimeout(authTimeout); authTimeout = null; }
             const maintenanceInProgress = /database maintenance/i.test(msg.message || '');
+            const kdsDisabled = /kds is disabled/i.test(msg.message || '');
+            const temporaryUnavailable = maintenanceInProgress || kdsDisabled;
             const authorizationFailure = /user not found|only kitchen staff|no active kitchen station|could not load station permissions/i.test(msg.message || '');
             const invalidSession = /invalid|expired|revoked|authentication required/i.test(msg.message || '');
             sessionGenerationRef.current += 1;
@@ -471,14 +473,14 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             stopRestPolling();
             updatingIdsRef.current.clear();
             setUpdating(null);
-            if (!maintenanceInProgress) setUser(null);
+            if (!temporaryUnavailable) setUser(null);
             setOrders([]);
             setCounts({});
             setConnected(false);
             setConnectionMode(null);
             if (authorizationFailure) markKdsAuthBlocked();
             if (invalidSession) window.localStorage.removeItem('token');
-            if (maintenanceInProgress) {
+            if (temporaryUnavailable) {
               setLoading(true);
               reconnectTimerRef.current = setTimeout(() => {
                 if (generation + 1 === sessionGenerationRef.current && window.localStorage.getItem('token') === token) {
@@ -487,7 +489,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
               }, 1500);
             }
             ws.close();
-            setLoading(maintenanceInProgress);
+            setLoading(temporaryUnavailable);
           } else if ((msg.type === 'initial_data' || msg.type === 'orders') && msg.orders) {
             setOrders(msg.orders);
             setCounts(msg.counts || {});

@@ -151,6 +151,11 @@ async function run() {
     assert(authedOrders.status === 200, 'Authenticated KDS orders request returns 200');
     assert(Array.isArray(authedOrders.body.orders), 'KDS orders returns an orders array');
     assert(!('unit_price' in (authedOrders.body.orders[0]?.items?.[0] || {})), 'Station-only standalone chef receives redacted item pricing');
+    const categoriesRes = await request(`http://127.0.0.1:${port}`)
+      .get('/api/categories')
+      .set('Authorization', `Bearer ${token}`);
+    assert(categoriesRes.status === 200, 'Standalone categories request succeeds');
+    assert(categoriesRes.body.categories.every((category: any) => category.id === 'kds-category'), 'Station-only chef receives only permitted categories');
 
     // 7. The real WebSocket channel authenticates and receives mutation broadcasts.
     const ws = new WebSocket(`ws://127.0.0.1:${port}/kds`);

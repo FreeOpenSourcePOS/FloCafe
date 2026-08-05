@@ -404,7 +404,8 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
           WHERE o.id = ?
         `).get(existingItem.order_id) as { kitchen_station_id: string | null } | undefined;
         const stationCategoryIds = getKdsStationCategoryIds(db, client.stationIds);
-        if (!stationCategoryIds || !isKdsStationItemAllowed(client.stationIds, stationCategoryIds, station?.kitchen_station_id, existingItem.category_id)) {
+        const stationRoutingCategoryIds = stationCategoryIds && stationCategoryIds.length > 0 ? stationCategoryIds : client.categoryIds;
+        if (!stationCategoryIds || !stationRoutingCategoryIds || !isKdsStationItemAllowed(client.stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, existingItem.category_id)) {
           return { error: 'Not authorized to update this station' };
         }
       }

@@ -401,13 +401,16 @@ export function startKdsServer(): Promise<void> {
     });
 
     // Get categories for filtering
-    app.get('/api/categories', requireAuth, (_req: Request, res: Response) => {
+    app.get('/api/categories', requireAuth, (req: Request, res: Response) => {
       if (!isKdsEnabled()) {
         return res.status(403).json({ error: 'KDS is disabled for this business' });
       }
       try {
         const db = getDatabase();
-        const categories = db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();
+        const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
+        const categories = categoryIds.length > 0
+          ? db.prepare(`SELECT * FROM categories WHERE is_active = 1 AND id IN (${categoryIds.map(() => '?').join(',')}) ORDER BY sort_order`).all(...categoryIds)
+          : db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();
         res.json({ categories });
       } catch (error: any) {
         console.error("[API] Internal error:", error);

@@ -28,7 +28,7 @@ npm run test:url-allowlist
 npm run audit:db
 ```
 
-`npm run build:linux` produces AppImage, `.deb`, `.rpm`, and Snap packages. `npm run dev:restart` and `npm run dev:reset` are Unix development recovery commands; reset requires confirmation.
+`npm run build:linux` produces AppImage, `.deb`, `.rpm`, and Snap packages. `npm run build:appx` produces the Windows Store AppX package; it passes `--config.npmRebuild=false` to skip native recompilation because `better-sqlite3` uses N-API (ABI-stable) and does not need to be rebuilt per Electron version. If a non-N-API native module is ever added, remove that flag and ensure a Visual Studio C++ toolchain is available in the build environment. `npm run dev:restart` and `npm run dev:reset` are Unix development recovery commands; reset requires confirmation.
 
 ## Data safety
 

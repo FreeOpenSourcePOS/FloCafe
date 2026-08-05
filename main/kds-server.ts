@@ -261,7 +261,7 @@ export function startKdsServer(): Promise<void> {
         const stationIds = kdsUser.stationIds;
         const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
         const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
-        const restrictedKdsPayload = categoryIds.length > 0 || (kdsUser.role === 'chef' && stationIds.length > 0);
+        const restrictedKdsPayload = kdsUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
         if (!stationCategoryIds || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
 
@@ -411,7 +411,9 @@ export function startKdsServer(): Promise<void> {
         const stationCategoryIds = getKdsStationCategoryIds(db, kdsUser.stationIds);
         const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, kdsUser.stationIds, kdsUser.categoryIds);
         if (!stationCategoryIds || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-        const categoryIds = stationRoutingCategoryIds.filter((categoryId) => kdsUser.categoryIds.length === 0 || kdsUser.categoryIds.includes(categoryId));
+        const categoryIds = kdsUser.stationIds.length === 0
+          ? kdsUser.categoryIds
+          : stationRoutingCategoryIds.filter((categoryId) => kdsUser.categoryIds.length === 0 || kdsUser.categoryIds.includes(categoryId));
         const categoryScopeConfigured = stationRoutingCategoryIds.length > 0 || kdsUser.categoryIds.length > 0;
         const categories = categoryScopeConfigured
           ? db.prepare(`SELECT * FROM categories WHERE is_active = 1 AND id IN (${categoryIds.length > 0 ? categoryIds.map(() => '?').join(',') : "''"}) ORDER BY sort_order`).all(...categoryIds)

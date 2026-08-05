@@ -19,7 +19,7 @@ function getKdsUserHasStationAssignments(db: ReturnType<typeof getDatabase>, req
 }
 
 function isRestrictedKdsPayload(req: Request, categoryIds: string[], stationIds: string[]): boolean {
-  return categoryIds.length > 0 || ((req as any).user?.role === 'chef' && stationIds.length > 0);
+  return (req as any).user?.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
 }
 
 function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request): string[] | null {

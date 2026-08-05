@@ -40,7 +40,7 @@ router.get('/orders', (req: Request, res: Response) => {
     if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
     const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, stationIds, categoryIds);
     if (!stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-    const restrictedKdsPayload = categoryIds.length > 0 || ((req as any).user?.role === 'chef' && stationIds.length > 0);
+    const restrictedKdsPayload = (req as any).user?.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
     let allowedProductIds: Set<string> | null = null;
     if (categoryIds.length > 0) {
       const productRows = db.prepare(`

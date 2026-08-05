@@ -204,7 +204,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
         const expiryRefreshNeeded = expiredVoidMarker !== null && expiredVoidMarker !== client.lastExpiredVoidMarker;
         if ((permissionRefreshNeeded || expiryRefreshNeeded) && ws.readyState === WebSocket.OPEN) {
           try {
-            sendActiveOrders(ws, client.categoryIds, client.stationIds, client.categoryIds.length > 0 || (client.role === 'chef' && client.stationIds.length > 0));
+            sendActiveOrders(ws, client.categoryIds, client.stationIds, client.role === 'chef' || client.categoryIds.length > 0 || client.stationIds.length > 0);
             client.categoryIdsChanged = false;
             client.stationIdsChanged = false;
             client.lastExpiredVoidMarker = expiredVoidMarker;
@@ -342,7 +342,7 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
       },
     }));
 
-    sendActiveOrders(ws, client.categoryIds, client.stationIds, client.categoryIds.length > 0 || (client.role === 'chef' && client.stationIds.length > 0));
+    sendActiveOrders(ws, client.categoryIds, client.stationIds, client.role === 'chef' || client.categoryIds.length > 0 || client.stationIds.length > 0);
     client.lastExpiredVoidMarker = getExpiredVoidMarker();
   } catch (error) {
     const message = error instanceof Error && /station|permission/i.test(error.message)
@@ -408,7 +408,7 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
           WHERE o.id = ?
         `).get(existingItem.order_id) as { kitchen_station_id: string | null } | undefined;
         const stationCategoryIds = getKdsStationCategoryIds(db, client.stationIds);
-        const stationRoutingCategoryIds = stationCategoryIds && stationCategoryIds.length > 0 ? stationCategoryIds : client.categoryIds;
+        const stationRoutingCategoryIds = getKdsStationRoutingCategoryIds(db, client.stationIds, client.categoryIds);
         if (!stationCategoryIds || !stationRoutingCategoryIds || !isKdsStationItemAllowed(client.stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, existingItem.category_id)) {
           return { error: 'Not authorized to update this station' };
         }
@@ -602,7 +602,7 @@ function broadcastOrderUpdate(): void {
     }
     if (client.ws.readyState !== WebSocket.OPEN) return;
     try {
-      sendActiveOrders(client.ws, client.categoryIds, client.stationIds, client.categoryIds.length > 0 || (client.role === 'chef' && client.stationIds.length > 0));
+      sendActiveOrders(client.ws, client.categoryIds, client.stationIds, client.role === 'chef' || client.categoryIds.length > 0 || client.stationIds.length > 0);
       client.categoryIdsChanged = false;
       client.stationIdsChanged = false;
       client.lastExpiredVoidMarker = getExpiredVoidMarker();

@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible } from '../db';
 import { requireRole, requireKdsEnabled } from '../middleware/security';
+import { parseCategoryIds } from './auth';
 
 const router = Router();
 
@@ -23,6 +24,19 @@ const ACTIVE_KITCHEN_ORDER_IDS_SQL = `
 router.get('/orders', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    const userId = (req as any).user?.userId;
+    const currentUser = userId
+      ? db.prepare('SELECT category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { category_ids: string | null } | undefined
+      : undefined;
+    if (!currentUser) return res.status(403).json({ error: 'User account is not active' });
+    const categoryIds = parseCategoryIds(currentUser.category_ids);
+    let allowedProductIds: Set<string> | null = null;
+    if (categoryIds.length > 0) {
+      const productRows = db.prepare(`
+        SELECT id FROM products WHERE category_id IN (${categoryIds.map(() => '?').join(',')})
+      `).all(...categoryIds) as { id: string | number }[];
+      allowedProductIds = new Set(productRows.map((product) => String(product.id)));
+    }
 
     const orders = db.prepare(`
       SELECT o.*
@@ -60,7 +74,9 @@ router.get('/orders', (req: Request, res: Response) => {
 
     // Resolve addons for every visible item in one batched call.
     const allVisibleItems = rawItems.filter(
-      (i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+      (i) => i.status !== 'void_adjustment'
+        && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+        && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
     );
     const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson));
     const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
@@ -68,16 +84,18 @@ router.get('/orders', (req: Request, res: Response) => {
     const ordersWithItems = orders.map((order) => {
       const orderRawItems = itemsByOrder[order.id] || [];
       const visibleItems = orderRawItems
-        .filter((i) => i.status !== 'void_adjustment' && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)))
+        .filter((i) => i.status !== 'void_adjustment'
+          && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+          && (!allowedProductIds || allowedProductIds.has(String(i.product_id))))
         .map((i) => addonsByItemId.get(i.id) || i);
       const table = order.table_id ? tablesMap[order.table_id] || null : null;
       return { ...order, items: visibleItems, table };
-    });
+    }).filter((order) => order.items.length > 0);
 
     // Counts are derived from the items we already fetched for these exact
     // active orders — no need to re-run the UNION and re-query order_items.
     const countMap: Record<string, any> = {};
-    for (const item of rawItems) {
+    for (const item of allVisibleItems) {
       countMap[item.status] = (countMap[item.status] || 0) + 1;
     }
 

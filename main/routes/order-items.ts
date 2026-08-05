@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
+import { parseCategoryIds } from './auth';
 
 const router = Router();
 
@@ -31,6 +32,12 @@ router.patch('/:id/status', (req: Request, res: Response) => {
     }
 
     const db = getDatabase();
+    const userId = (req as any).user?.userId;
+    const currentUser = userId
+      ? db.prepare('SELECT category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { category_ids: string | null } | undefined
+      : undefined;
+    if (!currentUser) return res.status(403).json({ error: 'User account is not active' });
+    const categoryIds = parseCategoryIds(currentUser.category_ids);
 
     const orderData = withTxn(() => {
       const item = db.prepare('SELECT * FROM order_items WHERE id = ?').get(itemId) as OrderItemRow | undefined;
@@ -40,6 +47,13 @@ router.patch('/:id/status', (req: Request, res: Response) => {
 
       if (item.status === 'voided') {
         throw new Error('VOIDED_ITEM');
+      }
+
+      if (categoryIds.length > 0) {
+        const product = db.prepare('SELECT category_id FROM products WHERE id = (SELECT product_id FROM order_items WHERE id = ?)').get(itemId) as { category_id: string | null } | undefined;
+        if (!product || !categoryIds.includes(product.category_id || '')) {
+          throw new Error('CATEGORY_FORBIDDEN');
+        }
       }
 
       db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?')
@@ -68,6 +82,9 @@ router.patch('/:id/status', (req: Request, res: Response) => {
   } catch (error: any) {
     if (error.message === 'VOIDED_ITEM') {
       return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
+    }
+    if (error.message === 'CATEGORY_FORBIDDEN') {
+      return res.status(403).json({ error: 'Not authorized to update this item' });
     }
     console.error('[OrderItems] Status update error:', error);
     res.status(500).json({ error: "Could not update order item status" });

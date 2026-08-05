@@ -188,6 +188,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
 
   const wsRef = useRef<WebSocket | null>(null);
   const restIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const restInitialFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionGenerationRef = useRef(0);
   const updatingIdsRef = useRef(new Set<number>());
@@ -201,6 +202,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     if (restIntervalRef.current) {
       clearInterval(restIntervalRef.current);
       restIntervalRef.current = null;
+    }
+    if (restInitialFetchRef.current) {
+      clearTimeout(restInitialFetchRef.current);
+      restInitialFetchRef.current = null;
     }
   }, []);
 
@@ -228,7 +233,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   // same commit.
   const startRestPolling = useCallback(() => {
     stopRestPolling();
-    setTimeout(fetchOrdersRest, 0);
+    restInitialFetchRef.current = setTimeout(() => {
+      restInitialFetchRef.current = null;
+      fetchOrdersRest();
+    }, 0);
     restIntervalRef.current = setInterval(fetchOrdersRest, 5000);
   }, [fetchOrdersRest, stopRestPolling]);
 
@@ -351,6 +359,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
               reconnectTimerRef.current = null;
             }
             stopRestPolling();
+            updatingIdsRef.current.clear();
+            setUpdating(null);
             setUser(null);
             setOrders([]);
             setCounts({});
@@ -453,6 +463,8 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
     }
     if (logoutGeneration !== sessionGenerationRef.current) return;
     stopRestPolling();
+    updatingIdsRef.current.clear();
+    setUpdating(null);
     setUser(null);
     setOrders([]);
     setConnected(false);

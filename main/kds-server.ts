@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, projectKdsOrder } from './db';
+import { getDatabase, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
@@ -273,6 +273,7 @@ export function startKdsServer(): Promise<void> {
           if (allowedProductIds) {
             items = items.filter((item: any) => allowedProductIds!.has(item.product_id));
           }
+          items = items.map((item: any) => projectKdsItem(item, categoryIds.length > 0));
 
           return {
             ...projectKdsOrder(order, categoryIds.length > 0),

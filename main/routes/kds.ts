@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
 import { parseCategoryIds } from './auth';
+import { notifyKdsUpdate } from '../services/kds';
 
 const router = Router();
 
@@ -105,7 +106,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         .filter((i) => i.status !== 'void_adjustment'
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id))))
-        .map((i) => addonsByItemId.get(i.id) || i);
+        .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, userCategoryIds.length > 0));
 
       return {
         ...projectKdsOrder(order, userCategoryIds.length > 0),
@@ -114,7 +115,8 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       };
     }).filter((order) => order.items.length > 0);
 
-    res.json({ orders: ordersWithItems });  } catch (error: any) {
+    res.json({ orders: ordersWithItems });
+  } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
@@ -123,7 +125,15 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
 router.get('/pairing', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const stations = db.prepare('SELECT * FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_order, name').all();
+    const userCategoryIds = getKdsUserCategoryIds(db, req);
+    if (!userCategoryIds) return res.status(403).json({ error: 'User account is not active' });
+    const stations = (db.prepare('SELECT * FROM kitchen_stations WHERE is_active = 1 ORDER BY sort_order, name').all() as any[])
+      .filter((station) => {
+        if (userCategoryIds.length === 0 || !station.category_ids) return true;
+        const stationCategories = parseCategoryIds(station.category_ids);
+        return stationCategories.length === 0 || stationCategories.some((categoryId) => userCategoryIds.includes(categoryId));
+      })
+      .map((station) => projectKdsStation(station, userCategoryIds.length > 0));
 
     res.json({ stations });
   } catch (error: any) {
@@ -235,7 +245,8 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
 
     itemsQuery += ' ORDER BY oi.created_at ASC';
 
-    const items = attachEffectiveAddons(db, db.prepare(itemsQuery).all(...params) as any[]);
+    const items = attachEffectiveAddons(db, db.prepare(itemsQuery).all(...params) as any[])
+      .map((item) => projectKdsItem(item, userCategoryIds.length > 0));
 
     const groupedByOrder: Record<number, any> = {};
     for (const item of items) {
@@ -258,7 +269,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
     }
 
     res.json({
-      station,
+      station: projectKdsStation(station, userCategoryIds.length > 0),
       orders: Object.values(groupedByOrder),
     });
   } catch (error: any) {
@@ -316,7 +327,8 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
       return res.status(404).json({ error: 'Order item not found' });
     }
 
-    res.json({ item: updatedItem });
+    notifyKdsUpdate();
+    res.json({ item: projectKdsItem(updatedItem, userCategoryIds.length > 0) });
   } catch (error: any) {
     if (error.message === 'VOIDED_ITEM') {
       return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });

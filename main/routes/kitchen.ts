@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsOrder } from '../db';
+import { getDatabase, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder } from '../db';
 import { requireRole, requireKdsEnabled } from '../middleware/security';
 import { parseCategoryIds } from './auth';
 
@@ -89,7 +89,7 @@ router.get('/orders', (req: Request, res: Response) => {
         .filter((i) => i.status !== 'void_adjustment'
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id))))
-        .map((i) => addonsByItemId.get(i.id) || i);
+        .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, categoryIds.length > 0));
       const table = order.table_id ? tablesMap[order.table_id] || null : null;
       return {
         ...projectKdsOrder(order, categoryIds.length > 0),

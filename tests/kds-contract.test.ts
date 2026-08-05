@@ -16,7 +16,7 @@ const request = require('supertest');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const {
-  initTestDb, createApp, seedOwnerUser, assertEqual, getResults, closeDatabase, now,
+  initTestDb, createApp, seedOwnerUser, assert, assertEqual, getResults, closeDatabase, now,
 } = require('./helpers/test-setup');
 const { getJWTSecret } = require('../main/routes/auth');
 const { kdsRoutes } = require('../main/routes/kds');
@@ -69,10 +69,12 @@ async function main() {
     const restrictedOrders = await request(app).get('/api/kds/orders').set(chefAuth);
     assertEqual(restrictedOrders.status, 200, 'restricted chef can access embedded KDS orders');
     assertEqual(restrictedOrders.body.orders.some((entry: any) => entry.id === barOrderId), false, 'embedded KDS orders hide unauthorized categories');
+    assert(!('unit_price' in (restrictedOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {})), 'restricted KDS items omit line pricing');
 
     const restrictedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-station').set(chefAuth);
     assertEqual(restrictedDisplay.status, 200, 'restricted chef can access the station display');
     assertEqual(restrictedDisplay.body.orders.some((entry: any) => entry.order_id === barOrderId), false, 'station display hides unauthorized categories');
+    assert(!('subtotal' in (restrictedDisplay.body.orders[0]?.items?.[0] || {})), 'restricted station items omit line totals');
 
     const deniedEmbeddedMutation = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(chefAuth).send({ status: 'ready' });
     assertEqual(deniedEmbeddedMutation.status, 403, 'restricted chef cannot mutate an unauthorized embedded KDS item');

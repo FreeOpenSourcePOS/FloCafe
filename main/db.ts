@@ -3229,6 +3229,23 @@ export function projectKdsOrder(order: any, restricted: boolean): any {
   return Object.fromEntries(allowedFields.filter((field) => field in order).map((field) => [field, order[field]]));
 }
 
+/** Keep category-scoped KDS lines limited to kitchen-operational fields. */
+export function projectKdsItem(item: any, restricted: boolean): any {
+  if (!restricted) return item;
+  const allowedFields = [
+    'id', 'order_id', 'product_id', 'product_name', 'product_sku',
+    'quantity', 'status', 'special_instructions', 'created_at', 'updated_at', 'addons',
+  ];
+  return Object.fromEntries(allowedFields.filter((field) => field in item).map((field) => [field, item[field]]));
+}
+
+/** Avoid exposing printer/network credentials in restricted KDS station metadata. */
+export function projectKdsStation(station: any, restricted: boolean): any {
+  if (!restricted) return station;
+  const allowedFields = ['id', 'name', 'description', 'category_ids', 'sort_order', 'is_active'];
+  return Object.fromEntries(allowedFields.filter((field) => field in station).map((field) => [field, station[field]]));
+}
+
 /**
  * Snapshots an order item's selected addons into the normalized
  * order_item_addons table — the only place selected addons are stored (see

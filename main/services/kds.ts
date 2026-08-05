@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -414,6 +414,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[]): void {
     if (allowedProductIds) {
       items = items.filter((item: any) => allowedProductIds!.has(item.product_id));
     }
+    items = items.map((item: any) => projectKdsItem(item, categoryIds.length > 0));
 
     // Normalize: frontend expects table.name, query aliases the join as table_name.
     const table = order.table_name ? { name: order.table_name } : null;

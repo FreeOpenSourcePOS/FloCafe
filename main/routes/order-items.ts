@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
 
@@ -79,7 +79,8 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       const visibleItems = categoryIds.length > 0
         ? rawItems.filter((row) => row.category_id && categoryIds.includes(String(row.category_id)))
         : rawItems;
-      const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson));
+      const items = attachEffectiveAddons(db, visibleItems.map(parseItemJson))
+        .map((row) => projectKdsItem(row, categoryIds.length > 0));
       const tableRow = order.table_id
         ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any
         : null;

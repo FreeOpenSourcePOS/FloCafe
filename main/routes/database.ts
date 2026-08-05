@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, isSafeIdentifier, mergeUserSecurityState, mergeUserStationSecurityState, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeUserSecurityState, mergeUserStationSecurityState, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
@@ -107,6 +107,7 @@ router.post('/import', requireRole('owner'),
 
     const db = getDatabase();
     const preservedRevocations = db.prepare('SELECT token_hash, expires_at, revoked_at FROM revoked_tokens').all() as { token_hash: string; expires_at: number; revoked_at: string }[];
+    const baselineForeignKeyViolations = getForeignKeyViolationKeys(db);
     const preservedUserSecurity = captureUserSecurityState(db);
     const preservedUserStations = captureUserStationSecurityState(db);
     const importData = data.data as Record<string, any[]>;
@@ -241,9 +242,10 @@ router.post('/import', requireRole('owner'),
       for (const revocation of preservedRevocations) {
         mergeRevocation.run(revocation.token_hash, revocation.expires_at, revocation.revoked_at);
       }
-      const foreignKeyViolations = db.prepare('PRAGMA foreign_key_check').all();
-      if (foreignKeyViolations.length > 0) {
-        throw new Error(`Import would leave ${foreignKeyViolations.length} foreign-key violation(s)`);
+      const newForeignKeyViolations = [...getForeignKeyViolationKeys(db)]
+        .filter((key) => !baselineForeignKeyViolations.has(key));
+      if (newForeignKeyViolations.length > 0) {
+        throw new Error(`Import would introduce ${newForeignKeyViolations.length} new foreign-key violation(s)`);
       }
       db.exec('COMMIT');
       clearUserAuthCache();

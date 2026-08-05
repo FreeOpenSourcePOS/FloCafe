@@ -686,6 +686,45 @@ export function getUserKdsStationIds(dbInstance: Database.Database, userId: stri
   }
 }
 
+export function getKdsStationCategoryIds(dbInstance: Database.Database, stationIds: string[]): string[] | null {
+  if (stationIds.length === 0) return [];
+  try {
+    const placeholders = stationIds.map(() => '?').join(',');
+    const rows = dbInstance.prepare(`SELECT category_ids FROM kitchen_stations WHERE is_active = 1 AND id IN (${placeholders})`).all(...stationIds) as { category_ids: string | null }[];
+    const categories = new Set<string>();
+    for (const row of rows) {
+      if (!row.category_ids) continue;
+      try {
+        const parsed = JSON.parse(row.category_ids);
+        if (Array.isArray(parsed)) for (const categoryId of parsed) if (categoryId != null) categories.add(String(categoryId));
+      } catch { }
+    }
+    return [...categories];
+  } catch {
+    return null;
+  }
+}
+
+export function isKdsStationItemAllowed(
+  stationIds: string[],
+  stationCategoryIds: string[],
+  orderStationId: string | null | undefined,
+  itemCategoryId: string | null | undefined,
+): boolean {
+  if (stationIds.length === 0) return true;
+  if (orderStationId && stationIds.includes(String(orderStationId))) return true;
+  return !!itemCategoryId && stationCategoryIds.includes(String(itemCategoryId));
+}
+
+export function hasUserKdsStationAssignments(dbInstance: Database.Database, userId: string): boolean | null {
+  try {
+    const row = dbInstance.prepare('SELECT EXISTS (SELECT 1 FROM station_users WHERE user_id = ?) AS assigned').get(userId) as { assigned: number };
+    return row.assigned === 1;
+  } catch {
+    return null;
+  }
+}
+
 export function captureUserSecurityState(dbInstance: Database.Database): UserSecurityState[] {
   try {
     return dbInstance.prepare('SELECT id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after FROM users').all() as UserSecurityState[];
@@ -712,7 +751,7 @@ export function mergeUserSecurityState(dbInstance: Database.Database, rows: User
       WHERE id = ?
     `).run(
       row.password, row.pin, row.pin_hash, row.role, row.category_ids,
-      row.is_active === 0 || restored.is_active === 0 ? 0 : 1,
+      row.is_active,
       tokensValidAfter,
       row.id,
     );
@@ -877,6 +916,12 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations);
 }
 
+/** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
+export function getForeignKeyViolationKeys(dbInstance: Database.Database): Set<string> {
+  const rows = dbInstance.prepare('PRAGMA foreign_key_check').all() as Record<string, unknown>[];
+  return new Set(rows.map((row) => JSON.stringify([row.table, row.rowid, row.parent, row.fkid])));
+}
+
 /** Return true only if the string is a safe SQL identifier (letters, digits, underscore). */
 export function isSafeIdentifier(name: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
@@ -906,6 +951,7 @@ function dataOnlyRestore(
   }
 
   const currentDb = getDatabase();
+  const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
   const currentTables = getTables(currentDb);
   const commonTables = backupTables.filter((tableName) => currentTables.includes(tableName));
   const previousForeignKeys = Number(currentDb.pragma('foreign_keys', { simple: true })) === 1;
@@ -970,9 +1016,10 @@ function dataOnlyRestore(
     mergeUserSecurityState(currentDb, preservedUserSecurity);
     mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id));
     mergeRevocations(currentDb, preservedRevocations);
-    const foreignKeyViolations = currentDb.prepare('PRAGMA foreign_key_check').all();
-    if (foreignKeyViolations.length > 0) {
-      throw new Error(`Restore would leave ${foreignKeyViolations.length} foreign-key violation(s)`);
+    const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
+      .filter((key) => !baselineForeignKeyViolations.has(key));
+    if (newForeignKeyViolations.length > 0) {
+      throw new Error(`Restore would introduce ${newForeignKeyViolations.length} new foreign-key violation(s)`);
     }
 
     // SQLite does not allow DETACH while a write transaction is active.

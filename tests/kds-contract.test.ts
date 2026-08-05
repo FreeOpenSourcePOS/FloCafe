@@ -47,6 +47,11 @@ async function main() {
   db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
     VALUES (?, 'kds-contract-bar-product', 'Contract bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(barOrderId, now(), now());
   const barItemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(barOrderId) as any).id;
+  db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+    VALUES ('KDS-CONTRACT-003', 'takeaway', 'pending', 10, 10, ?, ?)`).run(now(), now());
+  const tablelessOrderId = (db.prepare("SELECT id FROM orders WHERE order_number = 'KDS-CONTRACT-003'").get() as any).id;
+  db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+    VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(tablelessOrderId, now(), now());
 
   const chefId = 'kds-contract-chef';
   db.prepare(`INSERT INTO users (id, name, email, password, role, category_ids, is_active, created_at, updated_at)
@@ -55,6 +60,15 @@ async function main() {
   );
   const chefAuth = { Authorization: `Bearer ${jwt.sign({ userId: chefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
   db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(chefId, 'kds-contract-station', now());
+  db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+    VALUES ('kds-contract-inactive-station', 'Inactive Station', ?, 0, ?, ?)`).run(JSON.stringify(['kds-contract-category']), now(), now());
+  const inactiveChefId = 'kds-contract-inactive-chef';
+  db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    VALUES (?, 'Inactive Station Chef', ?, ?, 'chef', 1, ?, ?)`).run(
+    inactiveChefId, 'kds-contract-inactive@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+  );
+  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(inactiveChefId, 'kds-contract-inactive-station', now());
+  const inactiveChefAuth = { Authorization: `Bearer ${jwt.sign({ userId: inactiveChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
 
   const app = createApp({ '/api/kds': kdsRoutes, '/api/order-items': orderItemRoutes });
   try {
@@ -67,9 +81,13 @@ async function main() {
     assertEqual(display.status, 200, 'embedded KDS display request succeeds');
     assertEqual(display.body.orders[0]?.table?.name, '42', 'embedded KDS display uses table.name');
 
+    const inactiveStationOrders = await request(app).get('/api/kds/orders').set(inactiveChefAuth);
+    assertEqual(inactiveStationOrders.status, 403, 'inactive-only station assignments do not fail open');
+
     const restrictedOrders = await request(app).get('/api/kds/orders').set(chefAuth);
     assertEqual(restrictedOrders.status, 200, 'restricted chef can access embedded KDS orders');
     assertEqual(restrictedOrders.body.orders.some((entry: any) => entry.id === barOrderId), false, 'embedded KDS orders hide unauthorized categories');
+    assertEqual(restrictedOrders.body.orders.some((entry: any) => entry.id === tablelessOrderId), true, 'station-scoped KDS includes routed tableless orders');
     assert(!('unit_price' in (restrictedOrders.body.orders.find((entry: any) => entry.id === orderId)?.items?.[0] || {})), 'restricted KDS items omit line pricing');
 
     db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)

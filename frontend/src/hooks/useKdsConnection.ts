@@ -224,7 +224,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
       if (generation !== sessionGenerationRef.current) return;
       const status = (error as { response?: { status?: number } })?.response?.status;
       const tokenMissing = typeof window !== 'undefined' && !window.localStorage.getItem('token');
-      if (status === 401 || status === 403 || tokenMissing) {
+      if (status === 401 || tokenMissing) {
         sessionGenerationRef.current += 1;
         stopRestPolling();
         updatingIdsRef.current.clear();

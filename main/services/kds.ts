@@ -1,5 +1,5 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { getDatabase, getUserKdsStationIds, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
@@ -11,6 +11,7 @@ interface KdsClient {
   role: string | null;
   categoryIds: string[];
   stationIds: string[];
+  stationAssignmentsConfigured: boolean;
   token: string | null;
   isAlive: boolean;
   categoryIdsChanged: boolean;
@@ -39,6 +40,7 @@ function clearClientIdentity(client: KdsClient): void {
   client.role = null;
   client.categoryIds = [];
   client.stationIds = [];
+  client.stationAssignmentsConfigured = false;
   client.token = null;
 }
 
@@ -72,12 +74,16 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
       ? []
       : parseCategoryIds(currentUser.category_ids);
     const nextStationIds = getUserKdsStationIds(getDatabase(), client.userId);
-    if (!nextStationIds) return false;
+    const nextStationAssignmentsConfigured = hasUserKdsStationAssignments(getDatabase(), client.userId);
+    if (!nextStationIds || nextStationAssignmentsConfigured === null) return false;
+    if (nextStationAssignmentsConfigured && nextStationIds.length === 0) return false;
     client.categoryIdsChanged = JSON.stringify(client.categoryIds) !== JSON.stringify(nextCategoryIds);
-    client.stationIdsChanged = JSON.stringify(client.stationIds) !== JSON.stringify(nextStationIds);
+    client.stationIdsChanged = JSON.stringify(client.stationIds) !== JSON.stringify(nextStationIds)
+      || client.stationAssignmentsConfigured !== nextStationAssignmentsConfigured;
     client.role = status.role;
     client.categoryIds = nextCategoryIds;
     client.stationIds = nextStationIds;
+    client.stationAssignmentsConfigured = nextStationAssignmentsConfigured;
     return true;
   } catch {
     return false;
@@ -101,6 +107,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
       role: null,
       categoryIds: [],
       stationIds: [],
+      stationAssignmentsConfigured: false,
       token: null,
       isAlive: true,
       categoryIdsChanged: false,
@@ -263,13 +270,18 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
       ? []
       : parseCategoryIds(user.category_ids);
     const stationIds = getUserKdsStationIds(getDatabase(), user.id);
-    if (!stationIds) throw new Error('Could not load station permissions');
+    const stationAssignmentsConfigured = hasUserKdsStationAssignments(getDatabase(), user.id);
+    if (!stationIds || stationAssignmentsConfigured === null) throw new Error('Could not load station permissions');
+    if (stationAssignmentsConfigured && stationIds.length === 0) {
+      throw new Error('No active kitchen station is assigned to this user');
+    }
 
     client.userId = user.id;
     client.userName = user.name;
     client.role = user.role;
     client.categoryIds = categoryIds;
     client.stationIds = stationIds;
+    client.stationAssignmentsConfigured = stationAssignmentsConfigured;
     client.categoryIdsChanged = false;
     client.stationIdsChanged = false;
     client.token = token;
@@ -343,7 +355,8 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
           FROM orders o LEFT JOIN tables t ON t.id = o.table_id
           WHERE o.id = ?
         `).get(existingItem.order_id) as { kitchen_station_id: string | null } | undefined;
-        if (!station?.kitchen_station_id || !client.stationIds.includes(String(station.kitchen_station_id))) {
+        const stationCategoryIds = getKdsStationCategoryIds(db, client.stationIds);
+        if (!stationCategoryIds || !isKdsStationItemAllowed(client.stationIds, stationCategoryIds, station?.kitchen_station_id, existingItem.category_id)) {
           return { error: 'Not authorized to update this station' };
         }
       }
@@ -402,9 +415,11 @@ function activeOrdersCondition(): string {
 
 function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: string[] = []): void {
   const db = getDatabase();
+  const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
+  if (!stationCategoryIds) throw new Error('Could not load station permissions');
 
   let query = `
-    SELECT o.*, t.number as table_name
+    SELECT o.*, t.number as table_name, t.kitchen_station_id
     FROM orders o
     LEFT JOIN tables t ON o.table_id = t.id
     WHERE ${activeOrdersCondition()}
@@ -412,8 +427,12 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
 
   const orderParams: string[] = [];
   if (stationIds.length > 0) {
-    query += ` AND t.kitchen_station_id IN (${stationIds.map(() => '?').join(',')})`;
-    orderParams.push(...stationIds);
+    const stationPlaceholders = stationIds.map(() => '?').join(',');
+    const categoryRoute = stationCategoryIds.length > 0
+      ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND routed_p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))`
+      : '';
+    query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute})`;
+    orderParams.push(...stationIds, ...stationCategoryIds);
   }
   query += ' ORDER BY o.created_at ASC';
 
@@ -434,7 +453,11 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   const itemsByOrder: Record<string, any[]> = {};
   if (orderIds.length > 0) {
     const placeholders = orderIds.map(() => '?').join(',');
-    const rawItems = db.prepare(`SELECT * FROM order_items WHERE order_id IN (${placeholders}) ORDER BY order_id, id`).all(...orderIds) as any[];
+    const rawItems = db.prepare(`
+      SELECT oi.*, p.category_id
+      FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+      WHERE oi.order_id IN (${placeholders}) ORDER BY oi.order_id, oi.id
+    `).all(...orderIds) as any[];
     for (const item of rawItems) {
       if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
       itemsByOrder[item.order_id].push(item);
@@ -445,7 +468,8 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     .flatMap((o: any) => itemsByOrder[o.id] || [])
     .filter((i: any) => i.status !== 'void_adjustment'
       && !['completed', 'cancelled'].includes(i.status)
-      && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+      && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+      && isKdsStationItemAllowed(stationIds, stationCategoryIds, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id, i.category_id));
   const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]);
   const addonsByItemId = new Map(itemsWithAddons.map((it: any) => [it.id, it]));
 
@@ -455,7 +479,8 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     const visibleItems = (itemsByOrder[order.id] || [])
       .filter((i: any) => i.status !== 'void_adjustment'
         && !['completed', 'cancelled'].includes(i.status)
-        && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)))
+        && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+        && isKdsStationItemAllowed(stationIds, stationCategoryIds, order.kitchen_station_id, i.category_id))
       .map((i: any) => addonsByItemId.get(i.id) || i);
 
     // Filter items by category if user has category restrictions
@@ -485,8 +510,12 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   const countParams: any[] = [voidedCutoff];
 
   if (stationIds.length > 0) {
-    countsQuery += ` AND t.kitchen_station_id IN (${stationIds.map(() => '?').join(',')})`;
-    countParams.push(...stationIds);
+    const stationPlaceholders = stationIds.map(() => '?').join(',');
+    const categoryRoute = stationCategoryIds.length > 0
+      ? ` OR p.category_id IN (${stationCategoryIds.map(() => '?').join(',')})`
+      : '';
+    countsQuery += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute})`;
+    countParams.push(...stationIds, ...stationCategoryIds);
   }
   if (categoryIds.length > 0) {
     countsQuery += ` AND p.category_id IN (${categoryIds.map(() => '?').join(',')})`;

@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { getDatabase, getUserKdsStationIds, now, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder, withTxn } from '../db';
+import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
 
@@ -42,7 +42,11 @@ router.patch('/:id/status', (req: Request, res: Response) => {
       ? []
       : parseCategoryIds(currentUser.category_ids);
     const stationIds = getUserKdsStationIds(db, userId);
-    if (!stationIds) return res.status(403).json({ error: 'User account is not active' });
+    const hasStationAssignments = hasUserKdsStationAssignments(db, userId);
+    if (!stationIds || hasStationAssignments === null) return res.status(403).json({ error: 'User account is not active' });
+    if (hasStationAssignments && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
+    const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
+    if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
 
     const orderData = withTxn(() => {
       const item = db.prepare(`
@@ -74,7 +78,7 @@ router.patch('/:id/status', (req: Request, res: Response) => {
           FROM orders o LEFT JOIN tables t ON t.id = o.table_id
           WHERE o.id = ?
         `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-        if (!station?.kitchen_station_id || !stationIds.includes(String(station.kitchen_station_id))) {
+        if (!isKdsStationItemAllowed(stationIds, stationCategoryIds, station?.kitchen_station_id, item.category_id)) {
           throw new Error('STATION_FORBIDDEN');
         }
       }

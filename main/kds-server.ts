@@ -7,7 +7,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { getDatabase, getUserKdsStationIds, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
+import { getDatabase, getKdsStationCategoryIds, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
@@ -23,6 +23,7 @@ type KdsRequestUser = {
   role: string;
   categoryIds: string[];
   stationIds: string[];
+  stationAssignmentsConfigured: boolean;
 };
 
 function categoryIdsForRole(role: string, categoryIds: string | null): string[] {
@@ -110,13 +111,16 @@ export function startKdsServer(): Promise<void> {
           return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
         }
         const stationIds = getUserKdsStationIds(db, user.id);
-        if (!stationIds) return res.status(401).json({ error: 'Invalid token' });
+        const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, user.id);
+        if (!stationIds || stationAssignmentsConfigured === null) return res.status(401).json({ error: 'Invalid token' });
+        if (stationAssignmentsConfigured && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
         (req as any).user = {
           userId: user.id,
           email: user.email,
           role: user.role,
           categoryIds: categoryIdsForRole(user.role, user.category_ids),
           stationIds,
+          stationAssignmentsConfigured,
         } satisfies KdsRequestUser;
         next();
       } catch (error) {
@@ -185,7 +189,8 @@ export function startKdsServer(): Promise<void> {
         }
 
         const stationIds = getUserKdsStationIds(db, user.id);
-        if (!stationIds) return res.status(500).json({ error: 'Could not load station permissions' });
+        const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, user.id);
+        if (!stationIds || stationAssignmentsConfigured === null) return res.status(500).json({ error: 'Could not load station permissions' });
 
         const token = jwt.sign(
           { userId: user.id, email: user.email, role: user.role, jti: uuidv4() },
@@ -202,6 +207,7 @@ export function startKdsServer(): Promise<void> {
             role: user.role,
             category_ids: categoryIdsForRole(user.role, user.category_ids),
             station_ids: stationIds,
+            station_assignments_configured: stationAssignmentsConfigured,
           },
         });
       } catch (error: any) {
@@ -249,10 +255,12 @@ export function startKdsServer(): Promise<void> {
         const db = getDatabase();
         const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
         const stationIds = ((req as any).user as KdsRequestUser).stationIds;
+        const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
+        if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
 
         let query = `
-          SELECT DISTINCT o.*, t.number as table_number
+          SELECT DISTINCT o.*, t.number as table_number, t.kitchen_station_id
           FROM orders o
           LEFT JOIN tables t ON o.table_id = t.id
           INNER JOIN order_items oi ON oi.order_id = o.id
@@ -263,8 +271,12 @@ export function startKdsServer(): Promise<void> {
         `;
         const orderParams: string[] = [voidedCutoff];
         if (stationIds.length > 0) {
-          query += ` AND EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationIds.map(() => '?').join(',')}))`;
-          orderParams.push(...stationIds);
+          const stationPlaceholders = stationIds.map(() => '?').join(',');
+          const categoryRoute = stationCategoryIds.length > 0
+            ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND routed_p.category_id IN (${stationCategoryIds.map(() => '?').join(',')}))`
+            : '';
+          query += ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationPlaceholders}))${categoryRoute})`;
+          orderParams.push(...stationIds, ...stationCategoryIds);
         }
         query += ' ORDER BY o.created_at ASC';
 
@@ -280,12 +292,17 @@ export function startKdsServer(): Promise<void> {
         }
 
         const ordersWithItems = orders.map((order: any) => {
-          const rawItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id) as any[];
+          const rawItems = db.prepare(`
+            SELECT oi.*, p.category_id
+            FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
+            WHERE oi.order_id = ?
+          `).all(order.id) as any[];
           // #150: hide the void reversal line (bill adjustment, not a kitchen
           // item) and age voided items off the board after their grace period.
           const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment'
             && !['completed', 'cancelled'].includes(i.status)
-            && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at)));
+            && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
+            && isKdsStationItemAllowed(stationIds, stationCategoryIds, order.kitchen_station_id, i.category_id));
           let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
           // Filter by category if provided
@@ -346,12 +363,13 @@ export function startKdsServer(): Promise<void> {
         const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
         const stationIds = ((req as any).user as KdsRequestUser).stationIds;
         if (stationIds.length > 0) {
+          const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
           const station = db.prepare(`
             SELECT t.kitchen_station_id
             FROM orders o LEFT JOIN tables t ON t.id = o.table_id
             WHERE o.id = ?
           `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-          if (!station?.kitchen_station_id || !stationIds.includes(String(station.kitchen_station_id))) {
+          if (!stationCategoryIds || !isKdsStationItemAllowed(stationIds, stationCategoryIds, station?.kitchen_station_id, item.category_id)) {
             return res.status(403).json({ error: 'Not authorized to update this station' });
           }
         }

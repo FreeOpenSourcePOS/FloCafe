@@ -50,7 +50,6 @@ const ALL_NAV_ITEMS = [
   { href: '/settings?tab=kds', labelKey: 'nav.kds', icon: ChefHat, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'nav.customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
   { href: '/staff', labelKey: 'nav.staff', icon: UserCog, roles: ['owner', 'manager'], businessTypes: null },
-  { href: '/support', labelKey: 'nav.support', icon: LifeBuoy, roles: ['owner', 'manager', 'cashier', 'waiter', 'chef'], businessTypes: null },
   { href: '/settings', labelKey: 'nav.settings', icon: Settings, roles: ['owner', 'manager'], businessTypes: null },
 ];
 
@@ -157,6 +156,14 @@ export default function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={pathname === '/support'} tooltip={t('nav.support')}>
+              <Link href="/support" onClick={closeMobile}>
+                <LifeBuoy />
+                <span>{t('nav.support')}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={toggleSidebar} tooltip={t('nav.toggleSidebar')}>
               <PanelLeft />

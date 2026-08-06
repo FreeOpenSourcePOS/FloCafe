@@ -13,7 +13,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthGuard>
-      <SidebarProvider defaultOpen={false}>
+      <SidebarProvider defaultOpen>
         <AppSidebar />
         <SidebarInset className="h-screen overflow-hidden flex flex-col">
           {!isPos && <GlobalNotifications />}

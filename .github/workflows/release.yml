@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - '[0-9]*'
   workflow_dispatch:
 
 permissions:
@@ -37,8 +37,8 @@ jobs:
         # publishing a release with no notes if one is missing.
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          if gh release view "v${VERSION}" --repo FreeOpenSourcePOS/FloCafe >/dev/null 2>&1; then
-            echo "Release v${VERSION} already exists, skipping creation."
+          if gh release view "${VERSION}" --repo FreeOpenSourcePOS/FloCafe >/dev/null 2>&1; then
+            echo "Release ${VERSION} already exists, skipping creation."
             exit 0
           fi
 
@@ -47,15 +47,15 @@ jobs:
             exit 1
           fi
 
-          PREV_TAG=$(git tag --list 'v*' --sort=-v:refname | grep -v "^v${VERSION}\$" | head -1)
+          PREV_TAG=$(git tag --list --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | grep -Ev "^(v)?${VERSION}\$" | head -1)
           if [ -n "$PREV_TAG" ]; then
             echo "" >> /tmp/release-notes.md
-            echo "**Full Changelog**: https://github.com/FreeOpenSourcePOS/FloCafe/compare/${PREV_TAG}...v${VERSION}" >> /tmp/release-notes.md
+            echo "**Full Changelog**: https://github.com/FreeOpenSourcePOS/FloCafe/compare/${PREV_TAG}...${VERSION}" >> /tmp/release-notes.md
           fi
 
-          gh release create "v${VERSION}" \
+          gh release create "${VERSION}" \
             --repo FreeOpenSourcePOS/FloCafe \
-            --title "v${VERSION}" \
+            --title "${VERSION}" \
             --notes-file /tmp/release-notes.md
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,7 +66,7 @@ jobs:
         # per-platform uninstaller (e.g. a broken install).
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          gh release upload "v${VERSION}" \
+          gh release upload "${VERSION}" \
             scripts/uninstallers/uninstall-macos.sh \
             scripts/uninstallers/uninstall-windows.ps1 \
             --repo FreeOpenSourcePOS/FloCafe --clobber
@@ -143,7 +143,7 @@ jobs:
           shopt -s nullglob
           FILES=(release/*.AppImage release/*.deb release/*.rpm release/*.snap)
           [ ${#FILES[@]} -gt 0 ] || { echo "::error::no artifacts produced for ${{ matrix.arch }}"; exit 1; }
-          gh release upload "v${VERSION}" "${FILES[@]}" --repo FreeOpenSourcePOS/FloCafe --clobber
+          gh release upload "${VERSION}" "${FILES[@]}" --repo FreeOpenSourcePOS/FloCafe --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -299,7 +299,7 @@ jobs:
         # has 404'd since v1.6.7 (see main.log: "Cannot find latest-mac.yml").
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          gh release upload "v${VERSION}" \
+          gh release upload "${VERSION}" \
             release/*.dmg \
             release/*.zip \
             release/*.zip.blockmap \
@@ -391,6 +391,6 @@ jobs:
       - name: Upload Windows assets to GitHub release
         run: |
           $VERSION = node -p "require('./package.json').version"
-          gh release upload "v$VERSION" (Get-ChildItem release\*.exe, release\*.exe.blockmap, release\latest.yml | Select-Object -ExpandProperty FullName) --repo FreeOpenSourcePOS/FloCafe --clobber
+          gh release upload "$VERSION" (Get-ChildItem release\*.exe, release\*.exe.blockmap, release\latest.yml | Select-Object -ExpandProperty FullName) --repo FreeOpenSourcePOS/FloCafe --clobber
         env:
           GH_TOKEN: ${{ github.token }}

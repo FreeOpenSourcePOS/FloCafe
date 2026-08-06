@@ -321,7 +321,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         const errorMessage = axiosError.response?.data?.error || t('kds.failedToUpdateItem');
         const kdsDisabled = /kds is disabled/i.test(errorMessage);
         if (statusCode === 409) {
-          if (wsRef.current === null) await fetchOrdersRest();
+          await fetchOrdersRest();
           if (!opts.silent) toast.error(errorMessage);
           return;
         }

@@ -32,9 +32,32 @@ const AUTO_REGISTER_MAX_BACKOFF_MS = 30 * 60_000;
 const CLOUD_DELETION_BLOCKING_STATUSES = new Set([
   'pending', 'processing', 'approved', 'completed', 'deleted', 'failed', 'unknown',
 ]);
+const CLOUD_DELETION_KNOWN_STATUSES = new Set([
+  'pending', 'processing', 'approved', 'completed', 'deleted', 'cancelled', 'rejected',
+]);
+const CLOUD_DELETION_FINAL_STATUSES = new Set(['approved', 'completed', 'deleted']);
 
 function isCloudDeletionBlocking(status?: string): boolean {
   return CLOUD_DELETION_BLOCKING_STATUSES.has(status || '');
+}
+
+function validateCloudDeletionResponse(
+  data: Record<string, unknown> | null,
+  fallbackRequestId = '',
+  fallbackStatusToken = '',
+): { status: string; requestId: string; statusToken: string } {
+  const status = typeof data?.status === 'string' ? data.status.trim().toLowerCase() : '';
+  if (!CLOUD_DELETION_KNOWN_STATUSES.has(status)) {
+    throw new Error('Cloud deletion returned an unknown or missing status');
+  }
+  const requestId = typeof data?.request_id === 'string' && data.request_id.trim()
+    ? data.request_id.trim() : fallbackRequestId;
+  const statusToken = typeof data?.status_token === 'string' && data.status_token.trim()
+    ? data.status_token.trim() : fallbackStatusToken;
+  if ((status === 'pending' || status === 'processing') && (!requestId || !statusToken)) {
+    throw new Error('Cloud deletion response omitted tracking details');
+  }
+  return { status, requestId, statusToken };
 }
 
 type CloudSettings = {
@@ -546,17 +569,22 @@ class CloudSyncService {
       deletionOutcome = 'rejected';
       throw new Error(String(data?.error || `Cloud deletion failed (${res.status})`));
     }
-    if (!data || typeof data !== 'object') throw new Error('Cloud deletion returned an invalid response');
-    const deletionStatus = typeof data.status === 'string' ? data.status : 'pending';
-    const deletionComplete = ['approved', 'completed', 'deleted'].includes(deletionStatus);
+    const deletion = validateCloudDeletionResponse(data);
+    const responseData = data as Record<string, unknown>;
+    if (deletion.status === 'rejected' || deletion.status === 'cancelled') {
+      deletionOutcome = 'rejected';
+      throw new Error(`Cloud deletion was ${deletion.status}`);
+    }
+    const deletionStatus = deletion.status;
+    const deletionComplete = CLOUD_DELETION_FINAL_STATUSES.has(deletionStatus);
     const deletionSettings: Record<string, string> = {
       cloud_registration_status: deletionComplete ? 'deleted' : 'deletion_pending',
       cloud_connected: 'false', cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
       cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
       anonymous_data_consent: 'false', telemetry_anon_id: crypto.randomUUID(),
       cloud_services_disabled_by_user: 'true',
-      cloud_deletion_request_id: deletionComplete ? '' : (typeof data.request_id === 'string' ? data.request_id : ''),
-      cloud_deletion_status_token: deletionComplete ? '' : (typeof data.status_token === 'string' ? data.status_token : ''),
+      cloud_deletion_request_id: deletionComplete ? '' : deletion.requestId,
+      cloud_deletion_status_token: deletionComplete ? '' : deletion.statusToken,
       cloud_deletion_status: deletionStatus, cloud_deletion_outcome: '',
     };
     if (deletionComplete) Object.assign(deletionSettings, {
@@ -572,7 +600,7 @@ class CloudSyncService {
     })();
     this.stop();
     this.settings = this.loadSettings(false);
-    return data;
+    return responseData;
     }).catch((error) => {
       this.upsertSettings({
         cloud_deletion_status: 'failed', cloud_deletion_outcome: deletionOutcome,
@@ -595,9 +623,14 @@ class CloudSyncService {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Deletion status failed (${res.status})`));
-    const status = typeof data.status === 'string' ? data.status : 'pending';
-    this.upsertSettings({ cloud_deletion_status: status });
-    if (['approved', 'completed', 'deleted'].includes(status)) {
+    const deletion = validateCloudDeletionResponse(data, requestId, statusToken);
+    const status = deletion.status;
+    this.upsertSettings({
+      cloud_deletion_status: status,
+      cloud_deletion_request_id: deletion.requestId,
+      cloud_deletion_status_token: deletion.statusToken,
+    });
+    if (CLOUD_DELETION_FINAL_STATUSES.has(status)) {
       this.upsertSettings({
         cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
         cloud_device_created_at: '', cloud_registration_status: 'deleted', cloud_email_verified: 'false',
@@ -613,6 +646,15 @@ class CloudSyncService {
       this.settings = this.loadSettings(false);
     }
     return data;
+    }).catch((error) => {
+      if (!this.cloudDeletionInProgress) {
+        this.upsertSettings({
+          cloud_deletion_status: 'failed', cloud_deletion_outcome: 'unknown',
+          cloud_connected: 'false', cloud_last_error: (error as Error).message,
+        });
+        this.settings = this.loadSettings(false);
+      }
+      throw error;
     });
   }
 

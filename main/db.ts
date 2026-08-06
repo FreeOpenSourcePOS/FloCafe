@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import type { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
+import * as os from 'os';
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
@@ -57,21 +58,12 @@ export function isDatabaseMaintenanceActive(): boolean {
 }
 
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
-  // These handlers acquire the maintenance lock themselves. They must not be
-  // counted as active requests or the lock would wait on its own response.
-  const normalizedPath = req.path.replace(/\/+$/, '') || '/';
-  const ownsMaintenanceLock = [
-    '/api/db/import',
-    '/api/db/backup',
-    '/api/db/download',
-    '/api/db-tools/initialize',
-  ].includes(normalizedPath);
-  if (databaseMaintenanceActive && !ownsMaintenanceLock) {
+  // Maintenance routes acquire the FIFO lock in their handlers. A later
+  // request must still be rejected here, before authentication or route
+  // middleware can query a database handle that the active operation may close
+  // and replace.
+  if (databaseMaintenanceActive) {
     res.status(503).json({ error: 'Database maintenance in progress' });
-    return;
-  }
-  if (ownsMaintenanceLock) {
-    next();
     return;
   }
 
@@ -1677,7 +1669,7 @@ function materializeRestoreSource(sourcePath: string, livePath: string): string 
     if (pathEntryExists(`${sourcePath}-wal`) || pathEntryExists(`${sourcePath}-shm`)) {
       throw new Error('Restore source acquired SQLite sidecars while it was being read');
     }
-    const snapshotDir = fs.mkdtempSync(path.join(path.dirname(sourcePath), '.flo-restore-source-'));
+    const snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-source-'));
     const snapshotPath = path.join(snapshotDir, 'source.db');
     fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });
     setImmediate(() => { try { fs.rmSync(snapshotDir, { recursive: true, force: true }); } catch { } });

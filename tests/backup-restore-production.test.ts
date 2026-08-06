@@ -93,6 +93,21 @@ async function run() {
     const currentVersion = getCurrentSchemaVersion();
     const { path: sameSchemaBackup } = await createBackup();
 
+    // The selected source directory may be read-only (USB/image/network
+    // mounts). Restore stages bytes in an application-owned temp directory and
+    // must not require write access beside the backup itself.
+    const readOnlySourceDir = path.join(testDir, 'read-only-source');
+    fs.mkdirSync(readOnlySourceDir, { recursive: true });
+    const readOnlySource = path.join(readOnlySourceDir, 'backup.db');
+    fs.copyFileSync(sameSchemaBackup, readOnlySource);
+    fs.chmodSync(readOnlySourceDir, 0o500);
+    try {
+      const readOnlyRestore = restoreBackup(readOnlySource, true);
+      assert.equal(readOnlyRestore.success, true, 'restore reads a backup from a read-only source directory');
+    } finally {
+      fs.chmodSync(readOnlySourceDir, 0o700);
+    }
+
     const enabledKdsBackup = path.join(testDir, 'enabled-kds-backup.db');
     copyAndStamp(sameSchemaBackup, enabledKdsBackup, currentVersion);
     const enabledKdsDb = new Database(enabledKdsBackup);

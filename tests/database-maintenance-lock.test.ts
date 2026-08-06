@@ -1,4 +1,6 @@
 import * as assert from 'node:assert/strict';
+import express from 'express';
+import request from 'supertest';
 import { EventEmitter } from 'node:events';
 import { databaseMaintenanceMiddleware, withDatabaseMaintenanceLock } from '../main/db';
 
@@ -64,13 +66,32 @@ async function run() {
   assert.equal(blockedNextCalled, false, 'new requests are rejected during maintenance');
   assert.equal(blockedStatus, 503, 'maintenance requests receive retryable status');
 
-  const ownerResponse = new EventEmitter() as EventEmitter & { status: (code: number) => typeof ownerResponse; json: (body: unknown) => void };
-  ownerResponse.status = () => ownerResponse;
-  ownerResponse.json = () => undefined;
-  let ownerNextCalled = false;
-  databaseMaintenanceMiddleware({ path: '/api/db/backup' } as any, ownerResponse as any, () => { ownerNextCalled = true; });
-  assert.equal(ownerNextCalled, true, 'maintenance-owning backup requests do not wait on themselves');
+  for (const path of ['/api/db/import', '/api/db/backup', '/api/db/download', '/api/db-tools/initialize']) {
+    const ownerResponse = new EventEmitter() as EventEmitter & { status: (code: number) => typeof ownerResponse; json: (body: unknown) => void };
+    let ownerStatus = 0;
+    ownerResponse.status = (code: number) => { ownerStatus = code; return ownerResponse; };
+    ownerResponse.json = () => undefined;
+    let ownerNextCalled = false;
+    databaseMaintenanceMiddleware({ path } as any, ownerResponse as any, () => { ownerNextCalled = true; });
+    assert.equal(ownerNextCalled, false, `${path} is rejected before route/auth middleware during maintenance`);
+    assert.equal(ownerStatus, 503, `${path} receives a retryable maintenance response`);
+  }
   await activeMaintenance;
+
+  // Exercise the middleware at the same position as the production Express
+  // stack: a second maintenance request must be rejected before auth/route
+  // middleware can touch the database.
+  const app = express();
+  app.use(databaseMaintenanceMiddleware);
+  let authTouched = false;
+  app.use((_req, _res, next) => { authTouched = true; next(); });
+  app.post('/api/db/backup', (_req, res) => res.json({ reached: true }));
+  const activeRouteMaintenance = withDatabaseMaintenanceLock(async () => { await delay(20); });
+  await delay(1);
+  const concurrentRoute = await request(app).post('/api/db/backup');
+  assert.equal(concurrentRoute.status, 503, 'concurrent maintenance route receives 503 before auth/route middleware');
+  assert.equal(authTouched, false, 'concurrent maintenance route does not reach later middleware');
+  await activeRouteMaintenance;
 
   console.log('✅ Database maintenance lock tests passed');
 }

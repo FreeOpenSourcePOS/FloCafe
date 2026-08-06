@@ -22,7 +22,7 @@ import { parseDbTimestamp } from '@/lib/utils';
 export interface KdsKanbanBoardProps {
   orders: KdsOrder[];
   updating: number | null;
-  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean }) => Promise<void>;
+  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean; expectedStatus?: KitchenStatus }) => Promise<void>;
 }
 
 interface DropData {
@@ -93,7 +93,7 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     if (sourceData.fromStatus === targetData.status) return;
 
     for (const id of sourceData.itemIds) {
-      await updateItemStatus(id, targetData.status, { silent: true });
+      await updateItemStatus(id, targetData.status, { silent: true, expectedStatus: sourceData.fromStatus });
     }
   }
 
@@ -162,7 +162,7 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
           updating={updating === modalItem.item.id}
           onClose={() => setModalItem(null)}
           onUpdateStatus={(itemId, status) => {
-            updateItemStatus(itemId, status);
+            updateItemStatus(itemId, status, { expectedStatus: statusOf(modalItem.item) });
             setModalItem(null);
           }}
         />

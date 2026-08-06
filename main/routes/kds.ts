@@ -172,7 +172,11 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       };
     }).filter((order) => order.items.length > 0);
 
-    res.json({ orders: ordersWithItems });
+    const counts: Record<string, number> = {};
+    for (const order of ordersWithItems) {
+      for (const item of order.items) counts[item.status] = (counts[item.status] || 0) + 1;
+    }
+    res.json({ orders: ordersWithItems, counts });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -361,7 +365,7 @@ router.get('/display', requireKdsEnabled, (req: Request, res: Response) => {
 
 router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Response) => {
   try {
-    const { status } = req.body;
+    const { status, expected_status: expectedStatus } = req.body;
 
     if (!status) {
       return res.status(400).json({ error: 'Status is required' });
@@ -370,6 +374,9 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     const validStatuses = ['pending', 'preparing', 'ready', 'served'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ error: `Invalid status. Use: ${validStatuses.join(', ')}` });
+    }
+    if (expectedStatus !== undefined && !validStatuses.includes(expectedStatus)) {
+      return res.status(400).json({ error: `Invalid expected status. Use: ${validStatuses.join(', ')}` });
     }
 
     const db = getDatabase();
@@ -421,10 +428,10 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
         }
       }
 
-      db.prepare(`
-        UPDATE order_items SET status = ?, updated_at = ?
-        WHERE id = ?
-      `).run(status, now(), req.params.id);
+      const updateResult = expectedStatus === undefined
+        ? db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), req.params.id)
+        : db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(status, now(), req.params.id, expectedStatus);
+      if (expectedStatus !== undefined && updateResult.changes !== 1) throw new Error('STATUS_CONFLICT');
 
       return db.prepare('SELECT * FROM order_items WHERE id = ?').get(req.params.id);
     });
@@ -446,6 +453,9 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     }
     if (error.message === 'TERMINAL_KDS_ITEM') {
       return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
+    }
+    if (error.message === 'STATUS_CONFLICT') {
+      return res.status(409).json({ error: 'Item status changed; refresh and try again' });
     }
     console.error("[API] KDS item status update error:", error);
     res.status(500).json({ error: "Could not update item status" });

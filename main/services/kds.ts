@@ -362,7 +362,7 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
     return;
   }
 
-  const { order_item_id, status } = message;
+  const { order_item_id, status, expected_status: expectedStatus } = message;
 
   if (!order_item_id || !status) {
     client.ws.send(JSON.stringify({ type: 'error', message: 'order_item_id and status required' }));
@@ -373,6 +373,10 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
   const validStatuses = ['pending', 'preparing', 'ready', 'served'];
   if (!validStatuses.includes(status)) {
     client.ws.send(JSON.stringify({ type: 'error', message: `Invalid status. Use: ${validStatuses.join(', ')}` }));
+    return;
+  }
+  if (expectedStatus !== undefined && !validStatuses.includes(expectedStatus)) {
+    client.ws.send(JSON.stringify({ type: 'error', message: `Invalid expected status. Use: ${validStatuses.join(', ')}` }));
     return;
   }
 
@@ -419,8 +423,12 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
         return { error: 'Not authorized to update this item' };
       }
 
-      db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?')
-        .run(status, now(), order_item_id);
+      const updateResult = expectedStatus === undefined
+        ? db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), order_item_id)
+        : db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(status, now(), order_item_id, expectedStatus);
+      if (expectedStatus !== undefined && updateResult.changes !== 1) {
+        return { error: 'Item status changed; refresh and try again' };
+      }
 
       return { success: true };
     });
@@ -594,12 +602,18 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   const countMap: Record<string, number> = {};
   counts.forEach((c) => { countMap[c.status] = c.count; });
 
+  if (ws.bufferedAmount > 1_000_000) {
+    ws.close(1013, 'KDS client is too slow');
+    return;
+  }
   ws.send(JSON.stringify({
     type: 'initial_data',
     orders: ordersWithItems,
     counts: countMap,
   }));
 }
+
+let broadcastQueued = false;
 
 function broadcastOrderUpdate(): void {
   if (isDatabaseMaintenanceActive()) return;
@@ -625,9 +639,14 @@ function broadcastOrderUpdate(): void {
 }
 
 export function notifyKdsUpdate(): void {
-  broadcastOrderUpdate();
+  if (broadcastQueued) return;
+  broadcastQueued = true;
+  queueMicrotask(() => {
+    broadcastQueued = false;
+    broadcastOrderUpdate();
+  });
 }
 
 export function notifyOrderUpdated(): void {
-  broadcastOrderUpdate();
+  notifyKdsUpdate();
 }

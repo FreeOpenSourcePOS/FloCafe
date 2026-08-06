@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, utcDayBounds, utcTodayDate } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -258,6 +258,10 @@ class CloudSyncService {
         registered: Boolean(cfg.api_key),
       });
     }
+  }
+
+  resumeAfterMaintenance() {
+    if (this.runtimeStarted) this.reload();
   }
 
   stop() {
@@ -739,6 +743,7 @@ class CloudSyncService {
 
   /** HTTP fallback path — used only while the WSS relay is unavailable. */
   private async sendHeartbeat() {
+    return withDatabaseRequest(async () => {
     const cfg = this.settings;
     if (!cfg?.sync_enabled || !cfg.api_key) return;
     try {
@@ -758,10 +763,12 @@ class CloudSyncService {
     } catch (err) {
       this.markError((err as Error).message);
     }
+    });
   }
 
   /** Primary path — heartbeat carried as a frame on the open relay connection. */
   private async sendRelayHeartbeat() {
+    return withDatabaseRequest(async () => {
     const cfg = this.settings;
     if (!cfg?.sync_enabled || !cfg.api_key || this.relaySocket?.readyState !== WebSocket.OPEN) return;
     try {
@@ -775,22 +782,26 @@ class CloudSyncService {
     } catch (err) {
       this.markError((err as Error).message);
     }
+    });
   }
 
   private enqueueEvent(eventType: string, entityType: string, entityId: string, payload: unknown) {
-    const cfg = this.loadSettings();
-    if (!cfg?.sync_enabled) return;
-    const db = getDatabase();
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO cloud_sync_outbox
-        (id, event_type, entity_type, entity_id, payload, status, attempt_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)
-    `).run(id, eventType, entityType, entityId || null, JSON.stringify(payload), now(), now());
-    void this.flushOutbox();
+    void withDatabaseRequest(async () => {
+      const cfg = this.loadSettings();
+      if (!cfg?.sync_enabled) return;
+      const db = getDatabase();
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO cloud_sync_outbox
+          (id, event_type, entity_type, entity_id, payload, status, attempt_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)
+      `).run(id, eventType, entityType, entityId || null, JSON.stringify(payload), now(), now());
+      void this.flushOutbox();
+    }).catch((error) => this.markError((error as Error).message));
   }
 
   private async flushOutbox() {
+    return withDatabaseRequest(async () => {
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.flushing) return;
     this.flushing = true;
@@ -845,6 +856,7 @@ class CloudSyncService {
     } finally {
       this.flushing = false;
     }
+    });
   }
 
   private failSendingRows(message: string) {
@@ -870,6 +882,7 @@ class CloudSyncService {
   }
 
   private async pollCommands() {
+    return withDatabaseRequest(async () => {
     const cfg = this.settings;
     if (!cfg?.command_polling_enabled || !cfg.api_key || this.pollingCommands) return;
     this.pollingCommands = true;
@@ -886,6 +899,7 @@ class CloudSyncService {
     } finally {
       this.pollingCommands = false;
     }
+    });
   }
 
   private async executeCommand(command: CloudCommand) {
@@ -1415,6 +1429,10 @@ class CloudSyncService {
   }
 
   private upsertSettings(entries: Record<string, string | undefined | null>) {
+    if (isDatabaseMaintenanceActive()) {
+      void withDatabaseRequest(() => this.upsertSettings(entries));
+      return;
+    }
     const db = getDatabase();
     const stmt = db.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -1445,3 +1463,5 @@ class CloudSyncService {
 }
 
 export const cloudSync = new CloudSyncService();
+registerDatabaseMaintenanceStartListener(() => cloudSync.stop());
+registerDatabaseMaintenanceEndListener(() => cloudSync.resumeAfterMaintenance());

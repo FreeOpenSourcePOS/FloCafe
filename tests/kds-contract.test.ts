@@ -137,6 +137,10 @@ async function main() {
     assert(!('subtotal' in (stationOnlyDisplay.body.orders[0]?.items?.[0] || {})), 'station-only chef receives redacted station display items');
     assert(!('kitchen_station_id' in (stationOnlyDisplay.body.orders[0]?.table || {})), 'station-only chef receives projected table metadata');
     assertEqual(stationOnlyDisplay.body.orders[0]?.table_id, null, 'station-only display does not expose raw table IDs');
+    const casUpdate = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(authHeader).send({ status: 'preparing', expected_status: 'pending' });
+    assertEqual(casUpdate.status, 200, 'KDS status update accepts the expected current status');
+    const staleCasUpdate = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(authHeader).send({ status: 'ready', expected_status: 'pending' });
+    assertEqual(staleCasUpdate.status, 409, 'KDS status update rejects a stale expected status');
   } finally {
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

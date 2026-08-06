@@ -149,7 +149,7 @@ export interface UseKdsConnectionResult {
   setRememberMe: (v: boolean) => void;
   handleLogin: (e: React.FormEvent) => Promise<void>;
   handleLogout: () => Promise<void>;
-  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean }) => Promise<void>;
+  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean; expectedStatus?: KitchenStatus }) => Promise<void>;
   ConfirmDialog: ReactNode;
 }
 
@@ -299,12 +299,15 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   }, [fetchOrdersRest, stopRestPolling]);
 
   const updateItemStatus = useCallback(
-    async (itemId: number, status: KitchenStatus, opts: { silent?: boolean } = {}) => {
+    async (itemId: number, status: KitchenStatus, opts: { silent?: boolean; expectedStatus?: KitchenStatus } = {}) => {
       const generation = sessionGenerationRef.current;
       updatingIdsRef.current.add(itemId);
       setUpdating(itemId);
       try {
-        await api.patch(itemStatusPath.replace(':itemId', String(itemId)), { status });
+        await api.patch(itemStatusPath.replace(':itemId', String(itemId)), {
+          status,
+          ...(opts.expectedStatus ? { expected_status: opts.expectedStatus } : {}),
+        });
         if (generation === sessionGenerationRef.current && connectionMode === 'rest' && wsRef.current === null) {
           await fetchOrdersRest();
         }
@@ -344,6 +347,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         }
         if (kdsDisabled) {
           sessionGenerationRef.current += 1;
+          restRequestSequenceRef.current += 1;
+          updatingIdsRef.current.clear();
+          setUpdating(null);
           const disabledGeneration = sessionGenerationRef.current;
           const activeWs = wsRef.current;
           wsRef.current = null;

@@ -26,11 +26,14 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
       return res.status(400).json({ error: 'Order item ID is required' });
     }
 
-    const { status } = req.body;
+    const { status, expected_status: expectedStatus } = req.body;
     const validStatuses = ['pending', 'preparing', 'ready', 'served'];
 
     if (!status || !validStatuses.includes(status)) {
       return res.status(400).json({ error: `Valid status required: ${validStatuses.join(', ')}` });
+    }
+    if (expectedStatus !== undefined && !validStatuses.includes(expectedStatus)) {
+      return res.status(400).json({ error: `Invalid expected status. Use: ${validStatuses.join(', ')}` });
     }
 
     const db = getDatabase();
@@ -90,8 +93,10 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
         }
       }
 
-      db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?')
-        .run(status, now(), itemId);
+      const updateResult = expectedStatus === undefined
+        ? db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), itemId)
+        : db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(status, now(), itemId, expectedStatus);
+      if (expectedStatus !== undefined && updateResult.changes !== 1) throw new Error('STATUS_CONFLICT');
 
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(item.order_id) as any;
       if (!order) return null;
@@ -142,6 +147,9 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
     }
     if (error.message === 'TERMINAL_KDS_ITEM') {
       return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
+    }
+    if (error.message === 'STATUS_CONFLICT') {
+      return res.status(409).json({ error: 'Item status changed; refresh and try again' });
     }
     console.error('[OrderItems] Status update error:', error);
     res.status(500).json({ error: "Could not update order item status" });

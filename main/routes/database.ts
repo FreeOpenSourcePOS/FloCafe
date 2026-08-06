@@ -24,7 +24,7 @@ const EXPORT_SETTINGS_REDACT = new Set([
 const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
-const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox']);
+const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'kds_pairing_tokens']);
 
 router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
   try {
@@ -185,6 +185,7 @@ router.post('/import', requireRole('owner'),
       db.exec('BEGIN IMMEDIATE');
       try {
       for (const tableName of importedTables) {
+        if (EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
         // Validate table name to prevent SQL injection
         if (!isSafeIdentifier(tableName)) {
           console.warn(`[DB Import] Skipping unsafe table name: ${tableName}`);
@@ -252,6 +253,7 @@ router.post('/import', requireRole('owner'),
       mergeUserStationSecurityState(db, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
       mergeKdsEnabledSetting(db, preservedKdsEnabled);
       mergeRestoreProtectedSettings(db, preservedProtectedSettings);
+      db.prepare('DELETE FROM kds_pairing_tokens').run();
       const mergeRevocation = db.prepare(`
         INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at)
         VALUES (?, ?, ?)

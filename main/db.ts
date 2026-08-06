@@ -17,10 +17,39 @@ let databaseMaintenanceActive = false;
 let activeDatabaseRequests = 0;
 let maintenanceRequestWaiters: (() => void)[] = [];
 const databaseMaintenanceStartListeners = new Set<() => void>();
+const databaseMaintenanceEndListeners = new Set<() => void>();
+
+function releaseMaintenanceRequestWaiters(): void {
+  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive) return;
+  const waiters = maintenanceRequestWaiters;
+  maintenanceRequestWaiters = [];
+  waiters.forEach((resolve) => resolve());
+}
+
+export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
+  const run = (): Promise<T> => {
+    // Reserve the request synchronously. A maintenance lock scheduled in the
+    // same turn must observe this request before it starts replacing the DB.
+    activeDatabaseRequests += 1;
+    return Promise.resolve().then(operation).finally(() => {
+      activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
+      releaseMaintenanceRequestWaiters();
+    });
+  };
+  if (!databaseMaintenanceActive) return run();
+  return new Promise<T>((resolve, reject) => {
+    maintenanceRequestWaiters.push(() => { run().then(resolve, reject); });
+  });
+}
 
 export function registerDatabaseMaintenanceStartListener(listener: () => void): () => void {
   databaseMaintenanceStartListeners.add(listener);
   return () => databaseMaintenanceStartListeners.delete(listener);
+}
+
+export function registerDatabaseMaintenanceEndListener(listener: () => void): () => void {
+  databaseMaintenanceEndListeners.add(listener);
+  return () => databaseMaintenanceEndListeners.delete(listener);
 }
 
 export function isDatabaseMaintenanceActive(): boolean {
@@ -52,11 +81,7 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
     if (released) return;
     released = true;
     activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
-    if (activeDatabaseRequests === 0) {
-      const waiters = maintenanceRequestWaiters;
-      maintenanceRequestWaiters = [];
-      waiters.forEach((resolve) => resolve());
-    }
+    releaseMaintenanceRequestWaiters();
   };
   res.once('finish', release);
   res.once('close', release);
@@ -79,6 +104,10 @@ export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>):
       return await operation();
     } finally {
       databaseMaintenanceActive = false;
+      for (const listener of databaseMaintenanceEndListeners) {
+        try { listener(); } catch (error) { console.error('[DB] Maintenance end listener failed:', error); }
+      }
+      releaseMaintenanceRequestWaiters();
     }
   }).finally(release);
 }
@@ -139,13 +168,49 @@ function getBackupDir(): string {
   return path.join(userDataPath, 'backups');
 }
 
-export function initDatabase(): void {
+function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string): void {
+  let candidates: string[] = [];
+  try {
+    candidates = fs.readdirSync(backupDir)
+      .filter((name) => /^(?:flo-restore|flo-reset)-recovery-.+\.db$/.test(name))
+      .map((name) => path.join(backupDir, name))
+      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+  } catch {
+    return;
+  }
+  for (const recoveryPath of candidates) {
+    let valid = false;
+    try {
+      const recoveryDb = new Database(recoveryPath, { readonly: true, fileMustExist: true });
+      valid = (recoveryDb.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
+      recoveryDb.close();
+    } catch (error) {
+      console.error('[DB] Interrupted replacement recovery snapshot is invalid:', error);
+    }
+    if (!valid) continue;
+    const failures = removeDatabaseFiles(dbPath);
+    if (failures.length > 0) throw new Error(`Could not clear interrupted database replacement: ${failures.join(', ')}`);
+    fs.copyFileSync(recoveryPath, dbPath);
+    for (const filePath of [`${recoveryPath}-wal`, `${recoveryPath}-shm`]) {
+      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
+    }
+    try { fs.unlinkSync(recoveryPath); } catch { }
+    console.warn(`[DB] Recovered database from interrupted replacement snapshot: ${recoveryPath}`);
+    return;
+  }
+  if (candidates.length > 0) {
+    throw new Error('Interrupted database replacement recovery snapshot could not be validated');
+  }
+}
+
+export function initDatabase(recoverInterruptedReplacement = true): void {
   const dbPath = getDbPath();
   const backupDir = getBackupDir();
 
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }
+  if (recoverInterruptedReplacement) recoverInterruptedDatabaseReplacement(dbPath, backupDir);
 
   console.log(`[DB] Opening database at: ${dbPath}`);
   dbHealthError = null;
@@ -534,14 +599,19 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
   return withDatabaseMaintenanceLock(async () => {
     const { path: backupPath } = await createBackupUnlocked();
     const dbPath = getDbPath();
+    const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
+    let replacementCompleted = false;
+    let recoveryCompleted = false;
 
     try {
+      fs.copyFileSync(backupPath, recoveryPath);
       closeDatabase();
       const failures = removeDatabaseFiles(dbPath);
       if (failures.length > 0) {
         throw new Error(`Could not remove database files: ${failures.join(', ')}`);
       }
-      initDatabase();
+      initDatabase(false);
+      replacementCompleted = true;
       return { backupPath };
     } catch (error: any) {
       // Reopen the pre-wipe snapshot so a partial filesystem failure cannot
@@ -550,7 +620,8 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
         closeDatabase();
         removeDatabaseFiles(dbPath);
         fs.copyFileSync(backupPath, dbPath);
-        initDatabase();
+        initDatabase(false);
+        recoveryCompleted = true;
       } catch (recoveryError: any) {
         throw new Error(
           `Database reset failed: ${error?.message || 'unknown error'}; ` +
@@ -558,6 +629,10 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
         );
       }
       throw error;
+    } finally {
+      if (replacementCompleted || recoveryCompleted) {
+        try { if (fs.existsSync(recoveryPath)) fs.unlinkSync(recoveryPath); } catch { }
+      }
     }
   });
 }
@@ -1135,13 +1210,14 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
         throw new Error(`Could not remove database files: ${removeFailures.join(', ')}`);
       }
       fs.copyFileSync(backupPath, dbPath);
-      initDatabase();
+      initDatabase(false);
 
       const freshDb = getDatabase();
       mergeUserSecurityState(freshDb, preservedUserSecurity);
       mergeUserStationSecurityState(freshDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
       mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
       mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
+      freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
@@ -1170,7 +1246,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
           throw new Error(`Could not remove database files during recovery: ${recoveryRemoveFailures.join(', ')}`);
         }
         fs.copyFileSync(recoveryPath, dbPath);
-        initDatabase();
+        initDatabase(false);
       } catch (recoveryError: any) {
         throw new Error(
           `Direct restore failed: ${error?.message || 'unknown error'}; ` +
@@ -1312,6 +1388,7 @@ function dataOnlyRestore(
     mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
     mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
     mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
+    currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
     mergeRevocations(currentDb, preservedRevocations);
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));
@@ -1334,7 +1411,7 @@ function dataOnlyRestore(
       // already changed.
       try {
         closeDatabase();
-        initDatabase();
+        initDatabase(false);
         attached = false;
       } catch (recoveryError: any) {
         throw new Error(
@@ -1368,7 +1445,7 @@ function dataOnlyRestore(
     if (cleanupFailure) {
       try {
         closeDatabase();
-        initDatabase();
+        initDatabase(false);
         attached = false;
       } catch (recoveryError: any) {
         error = new Error(

@@ -348,11 +348,14 @@ export function startKdsServer(): Promise<void> {
         return res.status(403).json({ error: 'KDS is disabled for this business' });
       }
       try {
-        const { status } = req.body;
+        const { status, expected_status: expectedStatus } = req.body;
         const validStatuses = ['pending', 'preparing', 'ready', 'served'];
 
         if (!status || !validStatuses.includes(status)) {
           return res.status(400).json({ error: `Valid status required: ${validStatuses.join(', ')}` });
+        }
+        if (expectedStatus !== undefined && !validStatuses.includes(expectedStatus)) {
+          return res.status(400).json({ error: `Invalid expected status. Use: ${validStatuses.join(', ')}` });
         }
 
         const db = getDatabase();
@@ -391,11 +394,17 @@ export function startKdsServer(): Promise<void> {
             return { statusCode: 403, error: 'Not authorized to update this item' };
           }
 
-          const updated = db.prepare(`
-            UPDATE order_items
-            SET status = ?, updated_at = datetime('now')
-            WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled')
-          `).run(status, req.params.id);
+          const updated = expectedStatus === undefined
+            ? db.prepare(`
+                UPDATE order_items
+                SET status = ?, updated_at = datetime('now')
+                WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled')
+              `).run(status, req.params.id)
+            : db.prepare(`
+                UPDATE order_items
+                SET status = ?, updated_at = datetime('now')
+                WHERE id = ? AND status = ?
+              `).run(status, req.params.id, expectedStatus);
           return updated.changes === 1
             ? { statusCode: 200, error: null }
             : { statusCode: 409, error: 'The order item changed before it could be updated' };

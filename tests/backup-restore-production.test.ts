@@ -26,6 +26,7 @@ import {
   createBackup,
   getCurrentSchemaVersion,
   getDatabase,
+  getDbPath,
   initDatabase,
   restoreBackup,
 } from '../main/db';
@@ -104,6 +105,7 @@ async function run() {
     enabledKdsDb.prepare("UPDATE settings SET value = 'true' WHERE key IN ('telemetry_enabled', 'diagnostics_consent')").run();
     enabledKdsDb.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code', 'backup-pairing-code', datetime('now'))").run();
     enabledKdsDb.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code_expires_at', '2099-01-01T00:00:00.000Z', datetime('now'))").run();
+    enabledKdsDb.prepare("INSERT INTO kds_pairing_tokens (id, token, station_id, expires_at, created_at) VALUES ('backup-kds-token', 'backup-token-value', NULL, '2099-01-01 00:00:00', datetime('now'))").run();
     enabledKdsDb.close();
     const enabledKdsRestore = restoreBackup(enabledKdsBackup, true);
     assert.equal(enabledKdsRestore.success, true, 'restore succeeds when backup enables KDS');
@@ -117,6 +119,7 @@ async function run() {
     }
 
     assert.equal(getDatabase().prepare("SELECT value FROM settings WHERE key = 'mobile_pairing_code'").get(), undefined, 'restore discards backup mobile pairing codes');
+    assert.equal((getDatabase().prepare('SELECT COUNT(*) AS count FROM kds_pairing_tokens').get() as { count: number }).count, 0, 'restore invalidates backup KDS pairing tokens');
     getDatabase().prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
       VALUES ('restore-current-only-user', 'Current Only', 'restore-current-only@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
     const currentOnlyRestore = restoreBackup(enabledKdsBackup, true);
@@ -245,6 +248,15 @@ async function run() {
     const direct = restoreBackup(sameSchemaBackup, true);
     assert.equal(direct.success, true, 'same-schema direct restore still succeeds');
     assertNoRestoreAttachment();
+
+    const interruptedRecoverySource = (await createBackup()).path;
+    const recoveryMarker = path.join(testDir, 'backups', 'flo-restore-recovery-test.db');
+    fs.copyFileSync(interruptedRecoverySource, recoveryMarker);
+    closeDatabase();
+    fs.unlinkSync(getDbPath());
+    initDatabase();
+    assert.equal((getDatabase().prepare('SELECT name FROM products WHERE id = ?').get('restore-product') as { name: string }).name, 'Restore Product', 'startup recovers a durable interrupted-restore snapshot');
+    assert.equal(fs.existsSync(recoveryMarker), false, 'startup removes the consumed recovery marker');
 
     console.log('✅ Production database restore tests passed');
   } finally {

@@ -1,7 +1,7 @@
 import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock } from './db';
+import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock, withDatabaseRequest } from './db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from './middleware/security';
 import { getLocalIP } from './server';
 import { clearJWTSecretCache } from './routes/auth';
@@ -154,19 +154,23 @@ export function registerIpcHandlers(): void {
 
   // DB health check / master PIN / initialize (menu + tray triggered)
   ipcMain.handle('db-health-check', async () => {
+    return withDatabaseRequest(async () => {
     try {
       return runHealthCheck();
     } catch (error: any) {
       return { error: error.message };
     }
+    });
   });
 
   ipcMain.handle('db-apply-safe-fixes', async (event, findingIds?: string[]) => {
+    return withDatabaseRequest(async () => {
     try {
       return applySafeFixes(findingIds);
     } catch (error: any) {
       return { applied: [], skipped: [], errors: [{ id: 'all', error: error.message }] };
     }
+    });
   });
 
   ipcMain.handle('master-pin-status', async () => {
@@ -194,6 +198,7 @@ export function registerIpcHandlers(): void {
 
   // Settings
   ipcMain.handle('get-settings', async () => {
+    return withDatabaseRequest(async () => {
     try {
       const db = getDatabase();
       const rows = db.prepare('SELECT key, value FROM settings').all() as { key: string; value: string }[];
@@ -205,9 +210,11 @@ export function registerIpcHandlers(): void {
     } catch (error: any) {
       return { error: error.message };
     }
+    });
   });
 
   ipcMain.handle('set-setting', async (event, key: string, value: string) => {
+    return withDatabaseRequest(async () => {
     try {
       if (typeof key !== 'string' || typeof value !== 'string' || value.length > 10_000) {
         return { success: false, error: 'Invalid setting value' };
@@ -222,16 +229,17 @@ export function registerIpcHandlers(): void {
     } catch (error: any) {
       return { success: false, error: error.message };
     }
+    });
   });
 
   // WhatsApp status snapshot for renderer polling on app focus
-  ipcMain.handle('whatsapp-get-status', async () => {
+  ipcMain.handle('whatsapp-get-status', async () => withDatabaseRequest(async () => {
     try {
       return getWhatsAppStatus();
     } catch (err: any) {
       return { error: err.message };
     }
-  });
+  }));
 
   // Module-level reference to ensure single instance
   let activeKdsWindow: BrowserWindow | null = null;
@@ -287,6 +295,7 @@ export function registerIpcHandlers(): void {
 
   // Printers
   ipcMain.handle('get-printers', async () => {
+    return withDatabaseRequest(async () => {
     try {
       const db = getDatabase();
       const printers = db.prepare('SELECT * FROM printers ORDER BY name').all();
@@ -294,9 +303,11 @@ export function registerIpcHandlers(): void {
     } catch (error: any) {
       return { error: error.message };
     }
+    });
   });
 
   ipcMain.handle('save-printer', async (event, printer: any) => {
+    return withDatabaseRequest(async () => {
     try {
       // Validate printer name — reject names with shell metacharacters (command injection defense)
       const PRINTER_NAME_REGEX = /^[a-zA-Z0-9\s\-_.()]+$/;
@@ -324,10 +335,12 @@ export function registerIpcHandlers(): void {
     } catch (error: any) {
       return { success: false, error: error.message };
     }
+    });
   });
 
   // Reports
   ipcMain.handle('get-daily-summary', async () => {
+    return withDatabaseRequest(async () => {
     try {
       const db = getDatabase();
       const today = new Date().toISOString().slice(0, 10);
@@ -356,6 +369,7 @@ export function registerIpcHandlers(): void {
     } catch (error: any) {
       return { error: error.message };
     }
+    });
   });
 
   console.log('[IPC] Handlers registered');

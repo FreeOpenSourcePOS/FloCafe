@@ -18,7 +18,7 @@ import { parseDbTimestamp } from '@/lib/utils';
 export interface KdsTabsViewProps {
   orders: KdsOrder[];
   updating: number | null;
-  updateItemStatus: (itemId: number, status: KitchenStatus) => void;
+  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { expectedStatus?: KitchenStatus }) => void;
 }
 
 interface ModalItem {
@@ -182,7 +182,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
           updating={updating === modalItem.item.id}
           onClose={() => setModalItem(null)}
           onUpdateStatus={(itemId, status) => {
-            updateItemStatus(itemId, status);
+            updateItemStatus(itemId, status, { expectedStatus: (modalItem.item.status || 'pending') as KitchenStatus });
             setModalItem(null);
           }}
         />

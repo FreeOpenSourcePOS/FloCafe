@@ -340,6 +340,9 @@ class CloudSyncService {
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const db = getDatabase();
     const settings = this.readSettings(db);
+    if (['pending', 'processing', 'approved', 'completed'].includes(settings.cloud_deletion_status || '')) {
+      throw new Error('Cloud deletion is pending; cancel it before registering again');
+    }
     const { posHash, deviceSecret } = ensureCloudIdentity();
     const serverUrl = normalizeCloudServerUrl(settings.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
     const owner = db.prepare(
@@ -499,25 +502,37 @@ class CloudSyncService {
     }, true);
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     if (!res.ok) throw new Error(String(data.error || `Cloud deletion failed (${res.status})`));
+    const deletionStatus = typeof data.status === 'string' ? data.status : 'pending';
+    const deletionComplete = ['approved', 'completed', 'deleted'].includes(deletionStatus);
+    const deletionSettings: Record<string, string> = {
+      cloud_registration_status: deletionComplete ? 'deleted' : 'deletion_pending',
+      cloud_connected: 'false', cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
+      cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
+      anonymous_data_consent: 'false', telemetry_anon_id: crypto.randomUUID(),
+      cloud_services_disabled_by_user: 'true',
+      cloud_deletion_request_id: deletionComplete ? '' : (typeof data.request_id === 'string' ? data.request_id : ''),
+      cloud_deletion_status_token: deletionComplete ? '' : (typeof data.status_token === 'string' ? data.status_token : ''),
+      cloud_deletion_status: deletionStatus,
+    };
+    if (deletionComplete) Object.assign(deletionSettings, {
+      cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
+      cloud_device_created_at: '', cloud_email_verified: 'false', cloud_email_verification_sent_at: '',
+      cloud_verification_welcome_requested: '0',
+    });
     const db = getDatabase();
     db.transaction(() => {
       db.prepare("DELETE FROM cloud_sync_outbox").run();
       db.prepare("DELETE FROM support_ticket_outbox").run();
       db.prepare("DELETE FROM store_diagnostics_outbox").run();
-      this.upsertSettings({
-        cloud_registration_status: 'deletion_pending',
-        cloud_connected: 'false', cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
-        cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
-        anonymous_data_consent: 'false', telemetry_anon_id: crypto.randomUUID(),
-        cloud_services_disabled_by_user: 'true',
-        cloud_deletion_request_id: typeof data.request_id === 'string' ? data.request_id : '',
-        cloud_deletion_status_token: typeof data.status_token === 'string' ? data.status_token : '',
-        cloud_deletion_status: typeof data.status === 'string' ? data.status : 'pending',
-      }, true);
+      this.upsertSettings(deletionSettings, true);
     })();
     this.stop();
     this.settings = this.loadSettings(false);
     return data;
+    }).catch((error) => {
+      this.upsertSettings({ cloud_deletion_status: 'failed', cloud_connected: 'false', cloud_last_error: (error as Error).message }, true);
+      this.settings = this.loadSettings(false);
+      throw error;
     }).finally(() => { this.cloudDeletionInProgress = false; });
   }
 
@@ -540,6 +555,7 @@ class CloudSyncService {
         cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
         cloud_device_created_at: '', cloud_registration_status: 'deleted', cloud_email_verified: 'false',
         cloud_email_verification_sent_at: '', cloud_verification_welcome_requested: '0',
+        cloud_deletion_request_id: '', cloud_deletion_status_token: '',
       });
       this.settings = this.loadSettings(false);
     }

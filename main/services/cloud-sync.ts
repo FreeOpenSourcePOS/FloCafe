@@ -411,11 +411,14 @@ class CloudSyncService {
       return this.getStatus();
     } catch (err) {
       const message = (err as Error).message;
-      this.upsertSettings({
-        cloud_registration_status: 'registration_failed',
-        cloud_connected: 'false',
-        cloud_last_error: message,
-      });
+      const currentSettings = this.readSettings(getDatabase());
+      if (!this.cloudDeletionInProgress && currentSettings.cloud_services_disabled_by_user !== 'true') {
+        this.upsertSettings({
+          cloud_registration_status: 'registration_failed',
+          cloud_connected: 'false',
+          cloud_last_error: message,
+        });
+      }
       throw err;
     }
     });
@@ -975,8 +978,9 @@ class CloudSyncService {
     this.pollingCommands = true;
     try {
       const res = await this.signedFetch('/api/pos/commands?limit=5', { method: 'GET' });
-      if (!res.ok) throw new Error(`command poll failed (${res.status})`);
       const data = await res.json().catch(() => ({})) as { commands?: CloudCommand[] };
+      if (this.cloudDeletionInProgress) return;
+      if (!res.ok) throw new Error(`command poll failed (${res.status})`);
       const commands = Array.isArray(data.commands) ? data.commands : [];
       for (const command of commands) {
         if (this.cloudDeletionInProgress) return;
@@ -1052,6 +1056,8 @@ class CloudSyncService {
   }
 
   private attemptAutoRegister() {
+    const settings = this.readSettings(getDatabase());
+    if (this.cloudDeletionInProgress || settings.cloud_sync_enabled !== '1' || settings.cloud_services_disabled_by_user === 'true') return;
     if (this.autoRegisterTimer || this.autoRegisterInFlight) return;
     this.autoRegisterInFlight = true;
     void this.register()
@@ -1061,6 +1067,8 @@ class CloudSyncService {
       })
       .catch(() => {
         this.autoRegisterInFlight = false;
+        const currentSettings = this.readSettings(getDatabase());
+        if (this.cloudDeletionInProgress || currentSettings.cloud_sync_enabled !== '1' || currentSettings.cloud_services_disabled_by_user === 'true') return;
         const delay = Math.min(AUTO_REGISTER_MAX_BACKOFF_MS, 2 ** this.autoRegisterAttempts * 1000);
         this.autoRegisterAttempts++;
         this.autoRegisterTimer = setTimeout(() => {
@@ -1606,6 +1614,9 @@ class CloudSyncService {
   }
 
   private markError(message: string) {
+    if (this.cloudDeletionInProgress) return;
+    const settings = this.readSettings(getDatabase());
+    if (settings.cloud_services_disabled_by_user === 'true') return;
     this.upsertSettings({
       cloud_connected: 'false',
       cloud_last_error: message,

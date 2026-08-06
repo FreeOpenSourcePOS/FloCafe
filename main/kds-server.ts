@@ -271,10 +271,16 @@ export function startKdsServer(): Promise<void> {
           FROM orders o
           LEFT JOIN tables t ON o.table_id = t.id
           INNER JOIN order_items oi ON oi.order_id = o.id
-          WHERE (oi.status IN ('pending', 'preparing', 'ready')
-            OR (oi.status = 'voided' AND (oi.voided_at IS NULL OR oi.voided_at > ?)))
-          AND o.status != 'cancelled'
-          AND o.created_at >= datetime('now', '-24 hours')
+          WHERE o.id IN (
+            SELECT id FROM orders WHERE status IN ('pending', 'preparing', 'ready', 'served')
+            UNION
+            SELECT active_o.id FROM orders active_o
+            JOIN order_items active_oi ON active_oi.order_id = active_o.id
+              AND active_oi.status NOT IN ('served', 'cancelled')
+            WHERE active_o.status NOT IN ('pending', 'preparing', 'ready', 'served', 'cancelled')
+          )
+          AND oi.status NOT IN ('completed', 'cancelled', 'void_adjustment')
+          AND (oi.status != 'voided' OR oi.voided_at IS NULL OR oi.voided_at > ?)
         `;
         const orderParams: string[] = [voidedCutoff];
         if (stationIds.length > 0) {
@@ -325,7 +331,11 @@ export function startKdsServer(): Promise<void> {
           };
         }).filter((order: any) => order.items.length > 0);
 
-        res.json({ orders: ordersWithItems });
+        const counts: Record<string, number> = {};
+        for (const order of ordersWithItems) {
+          for (const item of order.items) counts[item.status] = (counts[item.status] || 0) + 1;
+        }
+        res.json({ orders: ordersWithItems, counts });
       } catch (error: any) {
         console.error("[API] Internal error:", error);
         res.status(500).json({ error: "Internal server error" });
@@ -415,10 +425,13 @@ export function startKdsServer(): Promise<void> {
         const stationScope = getKdsStationRoutingScope(db, kdsUser.stationIds, kdsUser.categoryIds);
         const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
         if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const hasUnrestrictedStation = kdsUser.stationIds.some((stationId) => stationScope.categoryIdsByStation[String(stationId)] === null);
         const categoryIds = kdsUser.stationIds.length === 0
           ? kdsUser.categoryIds
-          : stationRoutingCategoryIds.filter((categoryId) => kdsUser.categoryIds.length === 0 || kdsUser.categoryIds.includes(categoryId));
-        const categoryScopeConfigured = stationRoutingCategoryIds.length > 0 || kdsUser.categoryIds.length > 0;
+          : hasUnrestrictedStation
+            ? []
+            : stationRoutingCategoryIds.filter((categoryId) => kdsUser.categoryIds.length === 0 || kdsUser.categoryIds.includes(categoryId));
+        const categoryScopeConfigured = !hasUnrestrictedStation && (stationRoutingCategoryIds.length > 0 || kdsUser.categoryIds.length > 0);
         const categories = categoryScopeConfigured
           ? db.prepare(`SELECT * FROM categories WHERE is_active = 1 AND id IN (${categoryIds.length > 0 ? categoryIds.map(() => '?').join(',') : "''"}) ORDER BY sort_order`).all(...categoryIds)
           : db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();

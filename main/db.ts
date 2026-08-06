@@ -747,6 +747,34 @@ export function captureKitchenStationSecurityState(dbInstance: Database.Database
 }
 
 export type KdsEnabledSettingState = { present: boolean; value: string | null };
+export type RestoreProtectedSettingState = { key: string; present: boolean; value: string | null };
+const RESTORE_PROTECTED_SETTING_KEYS = [
+  'jwt_secret', 'cloud_api_key', 'cloud_device_secret',
+  'telemetry_enabled', 'diagnostics_consent',
+];
+
+export function captureRestoreProtectedSettings(dbInstance: Database.Database): RestoreProtectedSettingState[] {
+  const rows = dbInstance.prepare(
+    `SELECT key, value FROM settings WHERE key IN (${RESTORE_PROTECTED_SETTING_KEYS.map(() => '?').join(',')})`,
+  ).all(...RESTORE_PROTECTED_SETTING_KEYS) as { key: string; value: string | null }[];
+  const byKey = new Map(rows.map((row) => [row.key, row.value]));
+  return RESTORE_PROTECTED_SETTING_KEYS.map((key) => ({
+    key,
+    present: byKey.has(key),
+    value: byKey.get(key) ?? null,
+  }));
+}
+
+export function mergeRestoreProtectedSettings(dbInstance: Database.Database, states: RestoreProtectedSettingState[]): void {
+  const upsert = dbInstance.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `);
+  for (const state of states) {
+    if (state.present) upsert.run(state.key, state.value, now());
+    else dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
+  }
+}
 
 export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {
   const row = dbInstance.prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as { value: string | null } | undefined;
@@ -1047,6 +1075,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   const preservedUserStations = captureUserStationSecurityState(currentDb);
   const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
   const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
+  const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -1097,6 +1126,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       mergeUserSecurityState(freshDb, preservedUserSecurity);
       mergeUserStationSecurityState(freshDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
       mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
+      mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
@@ -1139,7 +1169,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings);
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -1183,6 +1213,7 @@ function dataOnlyRestore(
   preservedUserStations: UserStationSecurityState[] = [],
   preservedStationSecurity: KitchenStationSecurityState[] = [],
   preservedKdsEnabled: KdsEnabledSettingState = { present: false, value: null },
+  preservedProtectedSettings: RestoreProtectedSettingState[] = [],
 ): RestoreResult {
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
@@ -1265,6 +1296,7 @@ function dataOnlyRestore(
     mergeUserSecurityState(currentDb, preservedUserSecurity);
     mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
     mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
+    mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
     mergeRevocations(currentDb, preservedRevocations);
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));

@@ -83,6 +83,12 @@ async function run() {
       INSERT INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run();
+    for (const [key, value] of [['jwt_secret', 'current-jwt'], ['cloud_api_key', 'current-cloud-key'], ['cloud_device_secret', 'current-device-secret'], ['telemetry_enabled', 'false'], ['diagnostics_consent', 'false']]) {
+      db.prepare(`
+        INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+      `).run(key, value);
+    }
     const currentVersion = getCurrentSchemaVersion();
     const { path: sameSchemaBackup } = await createBackup();
 
@@ -91,6 +97,10 @@ async function run() {
     const enabledKdsDb = new Database(enabledKdsBackup);
     enabledKdsDb.pragma('foreign_keys = OFF');
     enabledKdsDb.prepare("UPDATE settings SET value = 'true' WHERE key = 'kds_enabled'").run();
+    enabledKdsDb.prepare("UPDATE settings SET value = 'backup-jwt' WHERE key = 'jwt_secret'").run();
+    enabledKdsDb.prepare("UPDATE settings SET value = 'backup-cloud-key' WHERE key = 'cloud_api_key'").run();
+    enabledKdsDb.prepare("UPDATE settings SET value = 'backup-device-secret' WHERE key = 'cloud_device_secret'").run();
+    enabledKdsDb.prepare("UPDATE settings SET value = 'true' WHERE key IN ('telemetry_enabled', 'diagnostics_consent')").run();
     enabledKdsDb.close();
     const enabledKdsRestore = restoreBackup(enabledKdsBackup, true);
     assert.equal(enabledKdsRestore.success, true, 'restore succeeds when backup enables KDS');
@@ -99,6 +109,9 @@ async function run() {
       'false',
       'direct restore preserves the current disabled KDS setting',
     );
+    for (const [key, expected] of [['jwt_secret', 'current-jwt'], ['cloud_api_key', 'current-cloud-key'], ['cloud_device_secret', 'current-device-secret'], ['telemetry_enabled', 'false'], ['diagnostics_consent', 'false']]) {
+      assert.equal((getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string }).value, expected, `direct restore preserves current ${key}`);
+    }
 
     const missingStationBackup = path.join(testDir, 'missing-current-station.db');
     copyAndStamp(sameSchemaBackup, missingStationBackup, currentVersion);

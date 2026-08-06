@@ -237,10 +237,22 @@ function getRecoverySchemaReference(): Map<string, string[]> {
   }
 }
 
+function normalizedSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
+  const definitions = dbInstance.prepare(`
+    SELECT type, name, tbl_name, sql FROM sqlite_master
+    WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
+  `).all() as { type: string; name: string; tbl_name: string; sql: string }[];
+  return new Map(definitions.map((row) => [
+    `${row.type}:${row.name}`,
+    row.sql.replace(/\s+/g, ' ').trim().toLowerCase(),
+  ]));
+}
+
 function isHealthyDatabaseFile(filePath: string): boolean {
   try {
     const candidate = new Database(filePath, { readonly: true, fileMustExist: true });
     const integrity = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
+    const foreignKeysClean = (candidate.prepare('PRAGMA foreign_key_check').all() as unknown[]).length === 0;
     const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
     const metadata = candidate.prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
     const tables = new Set(getTables(candidate));
@@ -249,13 +261,23 @@ function isHealthyDatabaseFile(filePath: string): boolean {
       const available = new Set(getColumns(candidate, table));
       return columns.every((column) => available.has(column));
     });
-    candidate.close();
     const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
-    return integrity && schemaVersion > 0 && schemaVersion <= supportedVersion
+    const idealDb = buildIdealSchemaDb();
+    let definitionsValid = false;
+    try {
+      const expectedDefinitions = normalizedSchemaDefinitions(idealDb);
+      const actualDefinitions = normalizedSchemaDefinitions(candidate);
+      definitionsValid = expectedDefinitions.size === actualDefinitions.size
+        && [...expectedDefinitions].every(([key, sql]) => actualDefinitions.get(key) === sql);
+    } finally {
+      idealDb.close();
+    }
+    candidate.close();
+    return integrity && foreignKeysClean && schemaVersion > 0 && schemaVersion <= supportedVersion
       && metadata?.value === String(schemaVersion)
       && tables.size === expectedSchema.size
       && [...expectedSchema.keys()].every((table) => tables.has(table))
-      && columnsValid;
+      && columnsValid && definitionsValid;
   } catch {
     return false;
   }
@@ -298,10 +320,18 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     throw new Error(`Could not inspect database replacement journals: ${error instanceof Error ? error.message : 'unknown error'}`);
   }
   for (const journalPath of journals) {
+    const fallbackRecovery = path.join(path.resolve(backupDir), `${path.basename(journalPath, '.json')}.db`);
+    let journalStat: fs.Stats;
+    try { journalStat = fs.lstatSync(journalPath); } catch {
+      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      continue;
+    }
+    if (journalStat.isSymbolicLink() || !journalStat.isFile()) {
+      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      continue;
+    }
     let journal: ReplacementJournal;
     try {
-      const journalStat = fs.lstatSync(journalPath);
-      if (journalStat.isSymbolicLink() || !journalStat.isFile()) throw new Error('journal is not a regular file');
       const parsed = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
       if ((parsed.phase !== 'prepared' && parsed.phase !== 'committed')
         || typeof parsed.recoveryPath !== 'string'
@@ -1223,8 +1253,11 @@ export function getKdsStationRoutingScope(
       if (row?.category_ids) {
         try {
           const parsed = JSON.parse(row.category_ids);
-          if (Array.isArray(parsed)) stationCategories = parsed.filter((id) => id != null).map(String);
-        } catch { }
+          if (!Array.isArray(parsed)) return null;
+          stationCategories = parsed.filter((id) => id != null).map(String);
+        } catch {
+          return null;
+        }
       }
       const allowed = stationCategories.length > 0
         ? stationCategories.filter((id) => userCategoryIds.length === 0 || userCategoryIds.includes(id))

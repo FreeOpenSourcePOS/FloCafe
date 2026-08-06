@@ -220,7 +220,9 @@ class CloudSyncService {
   private httpFallbackActive = false;
   private relayMode: 'websocket' | 'http_fallback' | 'disconnected' = 'disconnected';
   private supportFlushing = false;
+  private supportFlushPromise: Promise<void> | null = null;
   private diagnosticsFlushing = false;
+  private diagnosticsFlushPromise: Promise<void> | null = null;
 
   // Zero-touch registration state.
   private autoRegisterTimer: ReturnType<typeof setTimeout> | null = null;
@@ -469,9 +471,9 @@ class CloudSyncService {
 
   async deleteCloudData(): Promise<Record<string, unknown>> {
     return withDatabaseRequest(async () => {
-    const activeFlush = this.outboxFlushPromise;
+    const activeFlushes = [this.outboxFlushPromise, this.supportFlushPromise, this.diagnosticsFlushPromise].filter((promise): promise is Promise<void> => promise !== null);
     this.stop();
-    if (activeFlush) await activeFlush;
+    if (activeFlushes.length > 0) await Promise.allSettled(activeFlushes);
     const res = await this.signedFetch('/api/pos/cloud-data/delete', {
       method: 'POST', body: JSON.stringify({ confirmation: 'DELETE CLOUD DATA' }),
     });
@@ -572,8 +574,9 @@ class CloudSyncService {
     });
   }
 
-  private async flushSupportTicketOutbox(): Promise<void> {
-    return withDatabaseRequest(async () => {
+  private flushSupportTicketOutbox(): Promise<void> {
+    if (this.supportFlushPromise) return this.supportFlushPromise;
+    const run = withDatabaseRequest(async () => {
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.supportFlushing) return;
     this.supportFlushing = true;
@@ -627,6 +630,8 @@ class CloudSyncService {
       this.supportFlushing = false;
     }
     });
+    this.supportFlushPromise = run.finally(() => { this.supportFlushPromise = null; });
+    return this.supportFlushPromise;
   }
 
   /**
@@ -648,8 +653,9 @@ class CloudSyncService {
     }).catch((error) => this.markError((error as Error).message));
   }
 
-  private async flushDiagnosticsOutbox(): Promise<void> {
-    return withDatabaseRequest(async () => {
+  private flushDiagnosticsOutbox(): Promise<void> {
+    if (this.diagnosticsFlushPromise) return this.diagnosticsFlushPromise;
+    const run = withDatabaseRequest(async () => {
     if (!isDiagnosticsConsentEnabled()) return;
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.diagnosticsFlushing) return;
@@ -703,6 +709,8 @@ class CloudSyncService {
       this.diagnosticsFlushing = false;
     }
     });
+    this.diagnosticsFlushPromise = run.finally(() => { this.diagnosticsFlushPromise = null; });
+    return this.diagnosticsFlushPromise;
   }
 
   /**

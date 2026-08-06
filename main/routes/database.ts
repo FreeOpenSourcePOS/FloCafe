@@ -117,7 +117,10 @@ router.post('/import', requireRole('owner'),
     const preservedKdsEnabled = captureKdsEnabledSetting(db);
     const preservedProtectedSettings = captureRestoreProtectedSettings(db);
     const importData = data.data as Record<string, any[]>;
-    const importSchemaVersion = parseInt(data.schema_version || '0', 10);
+    const importSchemaVersionRaw = String(data.schema_version ?? '0');
+    const importSchemaVersion = /^(?:0|[1-9]\d*)$/.test(importSchemaVersionRaw)
+      ? Number(importSchemaVersionRaw)
+      : -1;
 
     const requiredTables = ['settings', 'categories', 'products', 'users'];
     const importedTables = Object.keys(importData);

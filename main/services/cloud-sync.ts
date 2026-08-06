@@ -951,6 +951,7 @@ class CloudSyncService {
 
   /** Same as executeCommand, but for a command pushed over the relay socket — result goes back as a frame, not a POST. */
   private async executeRelayCommand(command: CloudCommand) {
+    return withDatabaseRequest(async () => {
     let body: Record<string, unknown>;
     try {
       const result = this.runCommand(command);
@@ -961,6 +962,7 @@ class CloudSyncService {
     if (this.relaySocket?.readyState === WebSocket.OPEN) {
       this.relaySocket.send(JSON.stringify({ type: 'result', id: command.id, ...body }));
     }
+    });
   }
 
   /**

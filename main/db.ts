@@ -201,6 +201,10 @@ function isLiveDatabaseTarget(candidatePath: string, dbPath: string): boolean {
   }
 }
 
+function pathEntryExists(filePath: string): boolean {
+  try { fs.lstatSync(filePath); return true; } catch { return false; }
+}
+
 function syncDirectory(directoryPath: string): boolean {
   try {
     const fd = fs.openSync(directoryPath, 'r');
@@ -219,30 +223,28 @@ function removeReplacementArtifacts(journalPath: string, recoveryPath: string): 
   syncDirectory(path.dirname(journalPath));
 }
 
-const RECOVERY_REQUIRED_TABLES = [
-  'users', 'settings', 'categories', 'products', 'orders', 'order_items',
-  'bills', 'tables', 'kitchen_stations', 'station_users', 'revoked_tokens',
-  'cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox',
-  'kds_pairing_tokens',
-];
-const RECOVERY_REQUIRED_COLUMNS: Record<string, string[]> = {
-  users: ['id', 'password', 'role', 'is_active'],
-  settings: ['key', 'value'],
-  categories: ['id', 'name'],
-  products: ['id', 'category_id'],
-  orders: ['id', 'status'],
-  order_items: ['id', 'order_id', 'status'],
-  kitchen_stations: ['id', 'category_ids', 'is_active'],
-};
+let recoverySchemaReference: Map<string, string[]> | null = null;
 
-function isHealthyDatabaseFile(filePath: string, requiredTables: string[] = RECOVERY_REQUIRED_TABLES): boolean {
+function getRecoverySchemaReference(): Map<string, string[]> {
+  if (recoverySchemaReference) return recoverySchemaReference;
+  const idealDb = buildIdealSchemaDb();
+  try {
+    recoverySchemaReference = new Map(getTables(idealDb).map((table) => [table, getColumns(idealDb, table)]));
+    return recoverySchemaReference;
+  } finally {
+    idealDb.close();
+  }
+}
+
+function isHealthyDatabaseFile(filePath: string): boolean {
   try {
     const candidate = new Database(filePath, { readonly: true, fileMustExist: true });
     const integrity = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
     const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
     const metadata = candidate.prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
     const tables = new Set(getTables(candidate));
-    const columnsValid = Object.entries(RECOVERY_REQUIRED_COLUMNS).every(([table, columns]) => {
+    const expectedSchema = getRecoverySchemaReference();
+    const columnsValid = [...expectedSchema.entries()].every(([table, columns]) => {
       const available = new Set(getColumns(candidate, table));
       return columns.every((column) => available.has(column));
     });
@@ -250,8 +252,9 @@ function isHealthyDatabaseFile(filePath: string, requiredTables: string[] = RECO
     const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
     return integrity && schemaVersion > 0 && schemaVersion <= supportedVersion
       && metadata?.value === String(schemaVersion)
-      && columnsValid
-      && requiredTables.every((table) => tables.has(table));
+      && tables.size === expectedSchema.size
+      && [...expectedSchema.keys()].every((table) => tables.has(table))
+      && columnsValid;
   } catch {
     return false;
   }
@@ -289,7 +292,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     journals = fs.readdirSync(backupDir)
       .filter((name) => /^(?:flo-restore|flo-reset)-recovery-.+\.json$/.test(name))
       .map((name) => path.join(backupDir, name))
-      .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
+      .sort((a, b) => fs.lstatSync(b).mtimeMs - fs.lstatSync(a).mtimeMs);
   } catch (error) {
     throw new Error(`Could not inspect database replacement journals: ${error instanceof Error ? error.message : 'unknown error'}`);
   }
@@ -317,7 +320,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     const recoveryNameValid = `${journalBase}.db` === path.basename(recoveryPath);
     let recoveryStat: fs.Stats;
     try { recoveryStat = fs.lstatSync(recoveryPath); } catch { throw new Error('Interrupted database replacement snapshot is missing'); }
-    const recoverySidecars = fs.existsSync(`${recoveryPath}-wal`) || fs.existsSync(`${recoveryPath}-shm`);
+    const recoverySidecars = pathEntryExists(`${recoveryPath}-wal`) || pathEntryExists(`${recoveryPath}-shm`);
     if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile() || recoverySidecars
       || journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid || !isHealthyDatabaseFile(recoveryPath)) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
@@ -661,7 +664,10 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
     : null;
   let completed = false;
 
-  if (isLiveDatabaseTarget(finalPath, getDbPath())) throw new Error('Backup target cannot be the live database');
+  const liveDatabasePath = getDbPath();
+  if ([liveDatabasePath, `${liveDatabasePath}-wal`, `${liveDatabasePath}-shm`].some((livePath) => isLiveDatabaseTarget(finalPath, livePath))) {
+    throw new Error('Backup target cannot be the live database or its SQLite sidecars');
+  }
   if (stagedTargetPath && fs.existsSync(finalPath) && fs.lstatSync(finalPath).isSymbolicLink()) {
     throw new Error('Backup target cannot be a symbolic link');
   }

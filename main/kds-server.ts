@@ -375,6 +375,7 @@ export function startKdsServer(): Promise<void> {
         const updateResult = db.transaction(() => {
           const currentUser = db.prepare('SELECT role, category_ids, is_active FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number } | undefined;
           if (!currentUser?.is_active) return { statusCode: 403, error: 'User account is not active' };
+          if (!['chef', 'manager', 'owner'].includes(currentUser.role)) return { statusCode: 403, error: 'Not authorized to update KDS items' };
           const currentCategoryIds = categoryIdsForRole(currentUser.role, currentUser.category_ids);
           const currentStationIds = getUserKdsStationIds(db, kdsUser.userId);
           const currentAssignmentsConfigured = hasUserKdsStationAssignments(db, kdsUser.userId);

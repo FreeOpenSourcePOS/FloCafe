@@ -438,6 +438,7 @@ class CloudSyncService {
   async getEmailPreferences(): Promise<Record<string, unknown>> {
     const res = await this.signedFetch('/api/pos/email-preferences', { method: 'GET' });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Email status failed (${res.status})`));
     this.upsertSettings({
       cloud_email_verified: data.verified ? 'true' : 'false',
@@ -451,6 +452,7 @@ class CloudSyncService {
   async updateEmailPreferences(preferences: { product_updates?: boolean; marketing?: boolean }): Promise<Record<string, unknown>> {
     const res = await this.signedFetch('/api/pos/email-preferences', { method: 'PUT', body: JSON.stringify(preferences) });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Preference update failed (${res.status})`));
     await this.getEmailPreferences();
     return data;
@@ -459,6 +461,7 @@ class CloudSyncService {
   async requestEmailVerification(preferences: { product_updates?: boolean; marketing?: boolean; source?: string } = {}): Promise<Record<string, unknown>> {
     const res = await this.signedFetch('/api/pos/email/verification', { method: 'POST', body: JSON.stringify(preferences) });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Verification request failed (${res.status})`));
     this.upsertSettings({
       cloud_email_verified: data.verified ? 'true' : 'false',
@@ -525,6 +528,7 @@ class CloudSyncService {
     const url = endpoint(serverUrl, `/api/cloud-data/deletion-request/status?id=${encodeURIComponent(requestId)}&token=${encodeURIComponent(statusToken)}`);
     const res = await this.trackedFetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Deletion status failed (${res.status})`));
     const status = typeof data.status === 'string' ? data.status : 'pending';
     this.upsertSettings({ cloud_deletion_status: status });
@@ -534,7 +538,7 @@ class CloudSyncService {
         cloud_device_created_at: '', cloud_registration_status: 'deleted', cloud_email_verified: 'false',
         cloud_email_verification_sent_at: '', cloud_verification_welcome_requested: '0',
       });
-      this.settings = this.loadSettings();
+      this.settings = this.loadSettings(false);
     }
     return data;
     });
@@ -550,6 +554,7 @@ class CloudSyncService {
       method: 'POST', body: JSON.stringify({ request_id: settings.cloud_deletion_request_id }),
     });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Cancellation failed (${res.status})`));
     this.upsertSettings({ cloud_deletion_status: 'cancelled', cloud_registration_status: 'registered' });
     return data;
@@ -751,15 +756,16 @@ class CloudSyncService {
       method: 'POST',
       body: JSON.stringify({ revoke_devices: revoke }),
     });
+    const data = await res.json().catch(() => ({})) as { code?: string; expires_at?: string };
     if (!res.ok) throw new Error(`Pairing code request failed (${res.status})`);
-    return res.json() as Promise<{ code: string; expires_at: string }>;
+    return data as { code: string; expires_at: string };
   }
 
   /** Devices (RevFlo installs) currently paired to this store. */
   async listPairedDevices(): Promise<Record<string, unknown>[]> {
     const res = await this.signedFetch('/api/pos/devices', { method: 'GET' });
-    if (!res.ok) throw new Error(`Device list request failed (${res.status})`);
     const data = (await res.json().catch(() => ({ devices: [] }))) as { devices?: Record<string, unknown>[] };
+    if (!res.ok) throw new Error(`Device list request failed (${res.status})`);
     return Array.isArray(data.devices) ? data.devices : [];
   }
 
@@ -821,8 +827,9 @@ class CloudSyncService {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`heartbeat failed (${res.status})`);
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (this.cloudDeletionInProgress) return;
+      if (!res.ok) throw new Error(`heartbeat failed (${res.status})`);
       this.upsertSettings({
         cloud_connected: 'true',
         cloud_last_error: '',

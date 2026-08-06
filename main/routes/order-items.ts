@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder, withTxn } from '../db';
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
-import { requireKdsEnabled } from '../middleware/security';
+import { requireKdsEnabled, isTokenRevoked, isTokenStale } from '../middleware/security';
 
 const router = Router();
 
@@ -58,8 +58,9 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
     let restrictedKdsPayload = currentUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
 
     const orderData = withTxn(() => {
-      const liveUser = db.prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null } | undefined;
-      if (!liveUser || !['chef', 'manager', 'owner'].includes(liveUser.role)) throw new Error('USER_FORBIDDEN');
+      const liveUser = db.prepare('SELECT role, category_ids, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null; tokens_valid_after: string | null } | undefined;
+      const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
+      if (!liveUser || isTokenRevoked(token) || isTokenStale((req as any).user?.iat, liveUser.tokens_valid_after) || !['chef', 'manager', 'owner'].includes(liveUser.role)) throw new Error('USER_FORBIDDEN');
       categoryIds = liveUser.role === 'manager' || liveUser.role === 'owner' ? [] : parseCategoryIds(liveUser.category_ids);
       const liveStationIds = getUserKdsStationIds(db, userId);
       const liveAssignments = hasUserKdsStationAssignments(db, userId);

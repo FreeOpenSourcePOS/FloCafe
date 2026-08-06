@@ -23,6 +23,7 @@ type KdsRequestUser = {
   categoryIds: string[];
   stationIds: string[];
   stationAssignmentsConfigured: boolean;
+  iat?: number;
 };
 
 function categoryIdsForRole(role: string, categoryIds: string | null): string[] {
@@ -121,6 +122,7 @@ export function startKdsServer(): Promise<void> {
           categoryIds: categoryIdsForRole(user.role, user.category_ids),
           stationIds,
           stationAssignmentsConfigured,
+          iat: decoded.iat,
         } satisfies KdsRequestUser;
         next();
       } catch (error) {
@@ -373,8 +375,9 @@ export function startKdsServer(): Promise<void> {
         if (!stationIds || stationAssignmentsConfigured === null) return res.status(403).json({ error: 'Could not load station permissions' });
         if (stationAssignmentsConfigured && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
         const updateResult = db.transaction(() => {
-          const currentUser = db.prepare('SELECT role, category_ids, is_active FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number } | undefined;
-          if (!currentUser?.is_active) return { statusCode: 403, error: 'User account is not active' };
+          const currentUser = db.prepare('SELECT role, category_ids, is_active, tokens_valid_after FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number; tokens_valid_after: string | null } | undefined;
+          const currentToken = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
+          if (!currentUser?.is_active || isTokenRevoked(currentToken) || isTokenStale(kdsUser.iat, currentUser?.tokens_valid_after)) return { statusCode: 403, error: 'User account is not active' };
           if (!['chef', 'manager', 'owner'].includes(currentUser.role)) return { statusCode: 403, error: 'Not authorized to update KDS items' };
           const currentCategoryIds = categoryIdsForRole(currentUser.role, currentUser.category_ids);
           const currentStationIds = getUserKdsStationIds(db, kdsUser.userId);

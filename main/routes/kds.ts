@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, now, attachEffectiveAddons, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder, projectKdsStation, withTxn } from '../db';
 import * as crypto from 'crypto';
 import { randomUUID } from 'crypto';
-import { requireRole, requireKdsEnabled, requireKdsEnabledOr404 } from '../middleware/security';
+import { requireRole, requireKdsEnabled, requireKdsEnabledOr404, isTokenRevoked, isTokenStale } from '../middleware/security';
 import { parseCategoryIds } from './auth';
 import { notifyKdsUpdate } from '../services/kds';
 
@@ -392,10 +392,12 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     let restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
 
     const updatedItem = withTxn(() => {
+      const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
       const currentCategoryIds = getKdsUserCategoryIds(db, req);
       const currentStationIds = getKdsUserStationIds(db, req);
       const currentAssignments = getKdsUserHasStationAssignments(db, req);
-      if (!currentCategoryIds || !currentStationIds || currentAssignments === null) throw new Error('USER_FORBIDDEN');
+      const currentUser = db.prepare('SELECT tokens_valid_after FROM users WHERE id = ?').get((req as any).user?.userId) as { tokens_valid_after: string | null } | undefined;
+      if (!currentCategoryIds || !currentStationIds || currentAssignments === null || !currentUser || isTokenRevoked(token) || isTokenStale((req as any).user?.iat, currentUser.tokens_valid_after)) throw new Error('USER_FORBIDDEN');
       if (currentAssignments && currentStationIds.length === 0) throw new Error('STATION_FORBIDDEN');
       const currentStationCategoryIds = getKdsStationCategoryIds(db, currentStationIds);
       const currentStationScope = getKdsStationRoutingScope(db, currentStationIds, currentCategoryIds);

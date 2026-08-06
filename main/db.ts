@@ -248,13 +248,21 @@ function normalizedSchemaDefinitions(dbInstance: Database.Database): Map<string,
   ]));
 }
 
-function isHealthyDatabaseFile(filePath: string): boolean {
+function isHealthyDatabaseFile(
+  filePath: string,
+  allowExistingForeignKeyViolations = false,
+  requireMetadata = true,
+): boolean {
   try {
     const candidate = new Database(filePath, { readonly: true, fileMustExist: true });
     const integrity = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
-    const foreignKeysClean = (candidate.prepare('PRAGMA foreign_key_check').all() as unknown[]).length === 0;
+    const foreignKeysClean = allowExistingForeignKeyViolations
+      || (candidate.prepare('PRAGMA foreign_key_check').all() as unknown[]).length === 0;
     const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
-    const metadata = candidate.prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+    let metadata: { value: string } | undefined;
+    try {
+      metadata = candidate.prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+    } catch { }
     const tables = new Set(getTables(candidate));
     const expectedSchema = getRecoverySchemaReference();
     const columnsValid = [...expectedSchema.entries()].every(([table, columns]) => {
@@ -274,7 +282,7 @@ function isHealthyDatabaseFile(filePath: string): boolean {
     }
     candidate.close();
     return integrity && foreignKeysClean && schemaVersion > 0 && schemaVersion <= supportedVersion
-      && metadata?.value === String(schemaVersion)
+      && (!requireMetadata || metadata?.value === String(schemaVersion))
       && tables.size === expectedSchema.size
       && [...expectedSchema.keys()].every((table) => tables.has(table))
       && columnsValid && definitionsValid;
@@ -349,18 +357,24 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     const recoveryRoot = path.dirname(recoveryPath);
     const journalBase = path.basename(journalPath, '.json');
     const recoveryNameValid = `${journalBase}.db` === path.basename(recoveryPath);
-    let recoveryStat: fs.Stats;
-    try { recoveryStat = fs.lstatSync(recoveryPath); } catch { throw new Error('Interrupted database replacement snapshot is missing'); }
-    const recoverySidecars = pathEntryExists(`${recoveryPath}-wal`) || pathEntryExists(`${recoveryPath}-shm`);
-    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile() || recoverySidecars
-      || journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid || !isHealthyDatabaseFile(recoveryPath)) {
+    if (journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
-    if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath)) {
+    // A committed replacement is already durable in the live path. Finalize
+    // its journal before touching the old snapshot; legacy installs may have
+    // pre-existing FK violations that are intentionally preserved.
+    if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath, true, false)) {
       removeReplacementArtifacts(journalPath, recoveryPath);
       removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
       console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
       return;
+    }
+    let recoveryStat: fs.Stats;
+    try { recoveryStat = fs.lstatSync(recoveryPath); } catch { throw new Error('Interrupted database replacement snapshot is missing'); }
+    const recoverySidecars = pathEntryExists(`${recoveryPath}-wal`) || pathEntryExists(`${recoveryPath}-shm`);
+    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile() || recoverySidecars
+      || !isHealthyDatabaseFile(recoveryPath, true, false)) {
+      throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
     const failures = removeDatabaseFiles(dbPath);
     if (failures.length > 0) throw new Error(`Could not clear interrupted database replacement: ${failures.join(', ')}`);
@@ -1559,7 +1573,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
     } finally {
       if (recoveryCompleted) {
         removeReplacementArtifacts(journalPath, recoveryPath);
-      } else if (isHealthyDatabaseFile(dbPath) && isHealthyDatabaseFile(recoveryPath)) {
+      } else if (isHealthyDatabaseFile(dbPath, true, false) && isHealthyDatabaseFile(recoveryPath, true, false)) {
         // A committed journal is finalized here; an uncommitted journal is
         // intentionally retained if recovery itself failed.
         try {

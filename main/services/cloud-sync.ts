@@ -340,7 +340,7 @@ class CloudSyncService {
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const db = getDatabase();
     const settings = this.readSettings(db);
-    if (['pending', 'processing', 'approved', 'completed', 'deleted', 'failed'].includes(settings.cloud_deletion_status || '')) {
+    if (['pending', 'processing', 'approved', 'completed', 'deleted'].includes(settings.cloud_deletion_status || '')) {
       throw new Error('Cloud deletion is pending; cancel it before registering again');
     }
     const { posHash, deviceSecret } = ensureCloudIdentity();
@@ -510,6 +510,7 @@ class CloudSyncService {
         cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
         cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
         anonymous_data_consent: 'false', cloud_services_disabled_by_user: 'true',
+        cloud_deletion_request_id: '', cloud_deletion_status_token: '',
         cloud_deletion_status: 'pending', cloud_last_error: '',
       }, true);
     })();
@@ -590,7 +591,10 @@ class CloudSyncService {
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Cancellation failed (${res.status})`));
-    this.upsertSettings({ cloud_deletion_status: 'cancelled', cloud_registration_status: 'registered' });
+    this.upsertSettings({
+      cloud_deletion_status: 'cancelled', cloud_registration_status: 'registered',
+      cloud_deletion_request_id: '', cloud_deletion_status_token: '',
+    });
     return data;
     });
   }

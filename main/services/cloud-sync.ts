@@ -207,6 +207,7 @@ class CloudSyncService {
   private commandTimer: ReturnType<typeof setInterval> | null = null;
   private settings: CloudSettings | null = null;
   private flushing = false;
+  private outboxFlushPromise: Promise<void> | null = null;
   private pollingCommands = false;
 
   // Live-relay channel state (commands + heartbeat) — see § Realtime channel in specs.
@@ -468,6 +469,9 @@ class CloudSyncService {
 
   async deleteCloudData(): Promise<Record<string, unknown>> {
     return withDatabaseRequest(async () => {
+    const activeFlush = this.outboxFlushPromise;
+    this.stop();
+    if (activeFlush) await activeFlush;
     const res = await this.signedFetch('/api/pos/cloud-data/delete', {
       method: 'POST', body: JSON.stringify({ confirmation: 'DELETE CLOUD DATA' }),
     });
@@ -830,8 +834,9 @@ class CloudSyncService {
     }).catch((error) => this.markError((error as Error).message));
   }
 
-  private async flushOutbox() {
-    return withDatabaseRequest(async () => {
+  private flushOutbox(): Promise<void> {
+    if (this.outboxFlushPromise) return this.outboxFlushPromise;
+    const run = withDatabaseRequest(async () => {
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.flushing) return;
     this.flushing = true;
@@ -888,6 +893,8 @@ class CloudSyncService {
       this.flushing = false;
     }
     });
+    this.outboxFlushPromise = run.finally(() => { this.outboxFlushPromise = null; });
+    return this.outboxFlushPromise;
   }
 
   private failSendingRows(message: string) {

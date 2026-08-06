@@ -224,6 +224,7 @@ function removeReplacementArtifacts(journalPath: string, recoveryPath: string): 
 }
 
 let recoverySchemaReference: Map<string, string[]> | null = null;
+let buildingIdealSchema = false;
 
 function getRecoverySchemaReference(): Map<string, string[]> {
   if (recoverySchemaReference) return recoverySchemaReference;
@@ -1354,11 +1355,13 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
 
   let metadataVersion = 0;
+  let metadataStampPresent = false;
   let pragmaVersion = 0;
   let backupDb: Database.Database | undefined;
   try {
     backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
     const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
+    metadataStampPresent = Boolean(metaRow);
     metadataVersion = metaRow ? parseCanonicalSchemaVersion(metaRow.value) ?? 0 : 0;
     pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
   } finally {
@@ -1384,6 +1387,17 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   const preservedOutboxes = captureRestoreOutboxState(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
+
+  if (metadataStampPresent && (metadataVersion <= 0 || metadataVersion !== pragmaVersion)) {
+    return {
+      success: false,
+      mode: forceDirect ? 'direct' : 'data_only',
+      backupSchemaVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: 'Backup schema metadata does not match the SQLite header',
+    };
+  }
 
   if (forceDirect && pragmaVersion > currentVersion) {
     return {
@@ -1755,8 +1769,10 @@ export function buildIdealSchemaDb(): Database.Database {
   const previousDb = db;
   db = idealDb;
   try {
+    buildingIdealSchema = true;
     runMigrations();
   } finally {
+    buildingIdealSchema = false;
     db = previousDb;
   }
   idealDb.pragma('foreign_keys = ON');
@@ -3156,6 +3172,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
+  if (buildingIdealSchema) return;
   let targetPath = '';
   let completed = false;
   try {

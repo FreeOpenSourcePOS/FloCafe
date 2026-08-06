@@ -241,6 +241,7 @@ class CloudSyncService {
   }
 
   reload() {
+    if (this.cloudDeletionInProgress) return;
     this.stop();
     const cfg = this.loadSettings();
     this.settings = cfg;
@@ -331,7 +332,9 @@ class CloudSyncService {
   // Registration carries contact metadata for FloAdmin support. It is not an
   // authentication credential and does not create a cloud owner account.
   async register(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const db = getDatabase();
     const settings = this.readSettings(db);
     const { posHash, deviceSecret } = ensureCloudIdentity();
@@ -371,6 +374,7 @@ class CloudSyncService {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
       if (!res.ok) {
         throw new Error(String(data.error || `Registration failed (${res.status})`));
       }
@@ -415,8 +419,10 @@ class CloudSyncService {
   }
 
   async testConnection(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const res = await this.signedFetch('/api/pos/connection-test', { method: 'POST', body: '{}' });
     const data = await res.json().catch(() => ({}));
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(`Cloud test failed (${res.status})`);
     this.upsertSettings({
       cloud_connected: 'true',
@@ -459,6 +465,7 @@ class CloudSyncService {
   }
 
   async stopAllCloudServices(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     await this.setDiagnosticsConsent(false);
     this.stop();
     this.upsertSettings({
@@ -530,7 +537,9 @@ class CloudSyncService {
   }
 
   async cancelDeletionRequest(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const settings = this.readSettings(getDatabase());
     if (!settings.cloud_deletion_request_id) throw new Error('No pending deletion request');
     const res = await this.signedFetch('/api/pos/cloud-data/deletion-request/cancel', {
@@ -580,8 +589,10 @@ class CloudSyncService {
   }
 
   private flushSupportTicketOutbox(): Promise<void> {
+    if (this.cloudDeletionInProgress) return Promise.resolve();
     if (this.supportFlushPromise) return this.supportFlushPromise;
     const run = withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.supportFlushing) return;
     this.supportFlushing = true;
@@ -660,9 +671,10 @@ class CloudSyncService {
   }
 
   private flushDiagnosticsOutbox(): Promise<void> {
+    if (this.cloudDeletionInProgress) return Promise.resolve();
     if (this.diagnosticsFlushPromise) return this.diagnosticsFlushPromise;
     const run = withDatabaseRequest(async () => {
-    if (!isDiagnosticsConsentEnabled()) return;
+    if (this.cloudDeletionInProgress || !isDiagnosticsConsentEnabled()) return;
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.diagnosticsFlushing) return;
     this.diagnosticsFlushing = true;
@@ -792,6 +804,7 @@ class CloudSyncService {
   /** HTTP fallback path — used only while the WSS relay is unavailable. */
   private async sendHeartbeat() {
     return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings;
     if (!cfg?.sync_enabled || !cfg.api_key) return;
     try {
@@ -817,6 +830,7 @@ class CloudSyncService {
   /** Primary path — heartbeat carried as a frame on the open relay connection. */
   private async sendRelayHeartbeat() {
     return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings;
     if (!cfg?.sync_enabled || !cfg.api_key || this.relaySocket?.readyState !== WebSocket.OPEN) return;
     try {
@@ -851,8 +865,9 @@ class CloudSyncService {
   }
 
   private flushOutbox(): Promise<void> {
-    if (this.outboxFlushPromise) return this.outboxFlushPromise;
+    if (this.cloudDeletionInProgress || this.outboxFlushPromise) return this.outboxFlushPromise || Promise.resolve();
     const run = withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.flushing) return;
     this.flushing = true;

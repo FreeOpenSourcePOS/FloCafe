@@ -1618,6 +1618,20 @@ function dataOnlyRestore(
   }
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
+  try {
+    const sourceStat = fs.lstatSync(backupPath);
+    if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error('Data-only restore source must be a regular file');
+    if (pathEntryExists(`${backupPath}-wal`) || pathEntryExists(`${backupPath}-shm`)) throw new Error('Data-only restore source must not have SQLite sidecars');
+  } catch (error: any) {
+    return {
+      success: false,
+      mode: 'data_only',
+      backupSchemaVersion: backupVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: error?.message || 'Invalid data-only restore source',
+    };
+  }
   let backupDb: Database.Database | undefined;
   let backupTables: string[] = [];
   const backupColumns = new Map<string, string[]>();

@@ -340,7 +340,7 @@ class CloudSyncService {
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const db = getDatabase();
     const settings = this.readSettings(db);
-    if (['pending', 'processing', 'approved', 'completed'].includes(settings.cloud_deletion_status || '')) {
+    if (['pending', 'processing', 'approved', 'completed', 'deleted', 'failed'].includes(settings.cloud_deletion_status || '')) {
       throw new Error('Cloud deletion is pending; cancel it before registering again');
     }
     const { posHash, deviceSecret } = ensureCloudIdentity();
@@ -497,6 +497,22 @@ class CloudSyncService {
     this.stop();
     if (activeFlushes.length > 0) await Promise.allSettled(activeFlushes);
     await this.waitForCloudNetworkIdle();
+    const db = getDatabase();
+    // Persist the disabled/pending intent before the remote purge. If the
+    // process dies after the server accepts the request, restart cannot
+    // resume syncing or auto-register with the old credentials.
+    db.transaction(() => {
+      db.prepare("DELETE FROM cloud_sync_outbox").run();
+      db.prepare("DELETE FROM support_ticket_outbox").run();
+      db.prepare("DELETE FROM store_diagnostics_outbox").run();
+      this.upsertSettings({
+        cloud_registration_status: 'deletion_pending', cloud_connected: 'false',
+        cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
+        cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
+        anonymous_data_consent: 'false', cloud_services_disabled_by_user: 'true',
+        cloud_deletion_status: 'pending', cloud_last_error: '',
+      }, true);
+    })();
     const res = await this.signedFetch('/api/pos/cloud-data/delete', {
       method: 'POST', body: JSON.stringify({ confirmation: 'DELETE CLOUD DATA' }),
     }, true);
@@ -519,7 +535,6 @@ class CloudSyncService {
       cloud_device_created_at: '', cloud_email_verified: 'false', cloud_email_verification_sent_at: '',
       cloud_verification_welcome_requested: '0',
     });
-    const db = getDatabase();
     db.transaction(() => {
       db.prepare("DELETE FROM cloud_sync_outbox").run();
       db.prepare("DELETE FROM support_ticket_outbox").run();
@@ -550,7 +565,7 @@ class CloudSyncService {
     if (!res.ok) throw new Error(String(data.error || `Deletion status failed (${res.status})`));
     const status = typeof data.status === 'string' ? data.status : 'pending';
     this.upsertSettings({ cloud_deletion_status: status });
-    if (status === 'approved' && settings.cloud_registration_status !== 'deleted') {
+    if (['approved', 'completed', 'deleted'].includes(status)) {
       this.upsertSettings({
         cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
         cloud_device_created_at: '', cloud_registration_status: 'deleted', cloud_email_verified: 'false',

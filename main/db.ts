@@ -1616,9 +1616,19 @@ function materializeRestoreSource(sourcePath: string, livePath: string): string 
   const sourceFd = fs.openSync(sourcePath, fs.constants.O_RDONLY | ((fs.constants as any).O_NOFOLLOW || 0));
   try {
     const openedStat = fs.fstatSync(sourceFd);
+    if (openedStat.dev !== sourceStat.dev || openedStat.ino !== sourceStat.ino || openedStat.size !== sourceStat.size) {
+      throw new Error('Restore source changed while it was being opened');
+    }
     const liveStat = fs.lstatSync(livePath);
     if (openedStat.dev === liveStat.dev && openedStat.ino === liveStat.ino) throw new Error('Restore source cannot be the live database');
     const sourceBytes = fs.readFileSync(sourceFd);
+    const finalStat = fs.fstatSync(sourceFd);
+    if (finalStat.dev !== openedStat.dev || finalStat.ino !== openedStat.ino || finalStat.size !== openedStat.size || finalStat.mtimeMs !== openedStat.mtimeMs) {
+      throw new Error('Restore source changed while it was being read');
+    }
+    if (pathEntryExists(`${sourcePath}-wal`) || pathEntryExists(`${sourcePath}-shm`)) {
+      throw new Error('Restore source acquired SQLite sidecars while it was being read');
+    }
     const snapshotDir = fs.mkdtempSync(path.join(path.dirname(sourcePath), '.flo-restore-source-'));
     const snapshotPath = path.join(snapshotDir, 'source.db');
     fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });

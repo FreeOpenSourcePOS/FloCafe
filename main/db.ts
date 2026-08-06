@@ -3213,7 +3213,9 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
     version: 56,
     name: 'persist_station_assignment_scope',
     up: () => {
-      db.exec(`ALTER TABLE users ADD COLUMN station_assignments_configured INTEGER NOT NULL DEFAULT 0`);
+      if (!getColumns(db, 'users').includes('station_assignments_configured')) {
+        db.exec(`ALTER TABLE users ADD COLUMN station_assignments_configured INTEGER NOT NULL DEFAULT 0`);
+      }
       db.exec(`UPDATE users SET station_assignments_configured = 1 WHERE EXISTS (SELECT 1 FROM station_users WHERE station_users.user_id = users.id)`);
     },
   },

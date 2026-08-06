@@ -1396,6 +1396,19 @@ function mergeRevocations(dbInstance: Database.Database, rows: RevocationRow[]):
 
 export function restoreBackup(backupPath: string, forceDirect: boolean = false): RestoreResult {
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
+  try {
+    backupPath = materializeRestoreSource(backupPath, getDbPath());
+  } catch (error: any) {
+    const currentVersion = getCurrentSchemaVersion();
+    return {
+      success: false,
+      mode: forceDirect ? 'direct' : 'data_only',
+      backupSchemaVersion: 0,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: error?.message || 'Invalid restore source',
+    };
+  }
 
   let metadataVersion = 0;
   let metadataStampPresent = false;
@@ -1593,6 +1606,29 @@ export function isSafeIdentifier(name: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
 }
 
+function materializeRestoreSource(sourcePath: string, livePath: string): string {
+  const sourceStat = fs.lstatSync(sourcePath);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error('Restore source must be a regular file');
+  if (pathEntryExists(`${sourcePath}-wal`) || pathEntryExists(`${sourcePath}-shm`)) throw new Error('Restore source must not have SQLite sidecars');
+  if ([livePath, `${livePath}-wal`, `${livePath}-shm`].some((liveTarget) => isLiveDatabaseTarget(sourcePath, liveTarget))) {
+    throw new Error('Restore source cannot be the live database or its SQLite sidecars');
+  }
+  const sourceFd = fs.openSync(sourcePath, fs.constants.O_RDONLY | ((fs.constants as any).O_NOFOLLOW || 0));
+  try {
+    const openedStat = fs.fstatSync(sourceFd);
+    const liveStat = fs.lstatSync(livePath);
+    if (openedStat.dev === liveStat.dev && openedStat.ino === liveStat.ino) throw new Error('Restore source cannot be the live database');
+    const sourceBytes = fs.readFileSync(sourceFd);
+    const snapshotDir = fs.mkdtempSync(path.join(path.dirname(sourcePath), '.flo-restore-source-'));
+    const snapshotPath = path.join(snapshotDir, 'source.db');
+    fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });
+    setImmediate(() => { try { fs.rmSync(snapshotDir, { recursive: true, force: true }); } catch { } });
+    return snapshotPath;
+  } finally {
+    fs.closeSync(sourceFd);
+  }
+}
+
 function dataOnlyRestore(
   backupPath: string,
   backupVersion: number,
@@ -1616,12 +1652,8 @@ function dataOnlyRestore(
       error: 'Data-only restore source cannot be the live database or its SQLite sidecars',
     };
   }
-  // Read metadata and columns before ATTACH. Keeping a separate read-only
-  // handle open while detaching the same file causes SQLITE_BUSY/locked.
   try {
-    const sourceStat = fs.lstatSync(backupPath);
-    if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error('Data-only restore source must be a regular file');
-    if (pathEntryExists(`${backupPath}-wal`) || pathEntryExists(`${backupPath}-shm`)) throw new Error('Data-only restore source must not have SQLite sidecars');
+    backupPath = materializeRestoreSource(backupPath, livePath);
   } catch (error: any) {
     return {
       success: false,

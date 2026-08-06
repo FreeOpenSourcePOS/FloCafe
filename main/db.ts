@@ -180,16 +180,19 @@ function writeReplacementJournal(journalPath: string, journal: ReplacementJourna
   fs.writeFileSync(tempPath, JSON.stringify(journal), { encoding: 'utf8', mode: 0o600 });
   syncFile(tempPath);
   fs.renameSync(tempPath, journalPath);
-  syncDirectory(path.dirname(journalPath));
+  if (!syncDirectory(path.dirname(journalPath)) && process.platform !== 'win32') {
+    throw new Error('Could not durably record database replacement journal');
+  }
 }
 
-function syncDirectory(directoryPath: string): void {
+function syncDirectory(directoryPath: string): boolean {
   try {
     const fd = fs.openSync(directoryPath, 'r');
     try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return true;
   } catch {
-    // Directory fsync is unavailable on some Windows filesystems; the file
-    // itself is still fsynced and startup validation remains conservative.
+    // Directory fsync is unavailable on some Windows filesystems.
+    return false;
   }
 }
 
@@ -203,9 +206,12 @@ function removeReplacementArtifacts(journalPath: string, recoveryPath: string): 
 function isHealthyDatabaseFile(filePath: string): boolean {
   try {
     const candidate = new Database(filePath, { readonly: true, fileMustExist: true });
-    const healthy = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
+    const integrity = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
+    const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
+    const metadata = candidate.prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
     candidate.close();
-    return healthy;
+    const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
+    return integrity && schemaVersion > 0 && schemaVersion <= supportedVersion && metadata?.value === String(schemaVersion);
   } catch {
     return false;
   }
@@ -237,7 +243,10 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
       throw new Error(`Interrupted database replacement journal is invalid: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
     const recoveryPath = journal.recoveryPath;
-    if (journal.dbPath !== dbPath || !isHealthyDatabaseFile(recoveryPath)) {
+    const backupRoot = path.resolve(backupDir);
+    const recoveryRoot = path.dirname(recoveryPath);
+    const recoveryNameValid = /^(?:flo-restore|flo-reset)-recovery-.+\.db$/.test(path.basename(recoveryPath));
+    if (journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid || !isHealthyDatabaseFile(recoveryPath)) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
     if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath)) {
@@ -249,7 +258,9 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     if (failures.length > 0) throw new Error(`Could not clear interrupted database replacement: ${failures.join(', ')}`);
     fs.copyFileSync(recoveryPath, dbPath);
     syncFile(dbPath);
-    syncDirectory(path.dirname(dbPath));
+    if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+      throw new Error('Could not durably install recovered database');
+    }
     removeReplacementArtifacts(journalPath, recoveryPath);
     console.warn(`[DB] Recovered database from interrupted replacement snapshot: ${recoveryPath}`);
     return;
@@ -679,6 +690,10 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
         closeDatabase();
         removeDatabaseFiles(dbPath);
         fs.copyFileSync(backupPath, dbPath);
+        syncFile(dbPath);
+        if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+          throw new Error('Could not durably recover reset database');
+        }
         initDatabase(false);
         recoveryCompleted = true;
       } catch (recoveryError: any) {
@@ -1310,7 +1325,10 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
           throw new Error(`Could not remove database files during recovery: ${recoveryRemoveFailures.join(', ')}`);
         }
         fs.copyFileSync(recoveryPath, dbPath);
-        syncDirectory(path.dirname(dbPath));
+        syncFile(dbPath);
+        if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+          throw new Error('Could not durably recover direct-restore database');
+        }
         initDatabase(false);
       } catch (recoveryError: any) {
         throw new Error(

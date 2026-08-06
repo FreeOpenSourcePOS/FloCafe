@@ -234,6 +234,7 @@ class CloudSyncService {
   private runtimeStarted = false;
 
   start() {
+    if (this.cloudDeletionInProgress) return;
     this.runtimeStarted = true;
     ensureCloudIdentity();
     this.reload();
@@ -309,7 +310,7 @@ class CloudSyncService {
   getStatus() {
     const db = getDatabase();
     const s = this.readSettings(db);
-    ensureCloudIdentity();
+    if (!this.cloudDeletionInProgress) ensureCloudIdentity();
     const refreshed = this.readSettings(db);
     return {
       cloud_server_url: refreshed.cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
@@ -509,7 +510,7 @@ class CloudSyncService {
       }, true);
     })();
     this.stop();
-    this.settings = this.loadSettings();
+    this.settings = this.loadSettings(false);
     return data;
     }).finally(() => { this.cloudDeletionInProgress = false; });
   }
@@ -565,10 +566,11 @@ class CloudSyncService {
    */
   async setDiagnosticsConsent(enabled: boolean): Promise<void> {
     try {
-      await this.signedFetch('/api/pos/diagnostics-consent', {
+      const res = await this.signedFetch('/api/pos/diagnostics-consent', {
         method: 'POST',
         body: JSON.stringify({ enabled }),
       });
+      await this.drainResponse(res);
     } catch (err) {
       log.debug('[CloudSync] diagnostics consent sync failed (non-fatal):', (err as Error).message);
     }
@@ -619,6 +621,7 @@ class CloudSyncService {
           body: row.payload,
         });
         const data = await res.json().catch(() => ({})) as { support_code?: string };
+        if (this.cloudDeletionInProgress) return;
         if (!res.ok) throw new Error(`support ticket submission failed (${res.status})`);
         db.prepare(`
           UPDATE support_ticket_outbox
@@ -700,6 +703,8 @@ class CloudSyncService {
           method: 'POST',
           body: row.payload,
         });
+        await this.drainResponse(res);
+        if (this.cloudDeletionInProgress) return;
         if (!res.ok) throw new Error(`diagnostic event submission failed (${res.status})`);
         db.prepare(`
           UPDATE store_diagnostics_outbox
@@ -907,6 +912,8 @@ class CloudSyncService {
           sent_at: new Date().toISOString(),
         }),
       });
+      await this.drainResponse(res);
+      if (this.cloudDeletionInProgress) return;
       if (!res.ok) throw new Error(`event push failed (${res.status})`);
 
       const markDelivered = db.prepare(`
@@ -990,6 +997,8 @@ class CloudSyncService {
       method: 'POST',
       body: JSON.stringify(body),
     });
+    await this.drainResponse(res);
+    if (this.cloudDeletionInProgress) return;
     if (!res.ok) throw new Error(`command result failed (${res.status})`);
   }
 
@@ -1487,17 +1496,44 @@ class CloudSyncService {
   private async trackedFetch(url: string | URL, init: RequestInit, allowDuringDeletion = false): Promise<Response> {
     if (this.cloudDeletionInProgress && !allowDuringDeletion) throw new Error('Cloud deletion in progress');
     this.cloudNetworkOperations += 1;
-    try {
-      const response = await fetch(url, init);
-      if (this.cloudDeletionInProgress && !allowDuringDeletion) throw new Error('Cloud deletion in progress');
-      return response;
-    } finally {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
       this.cloudNetworkOperations -= 1;
       if (this.cloudNetworkOperations === 0) {
         const waiters = this.cloudNetworkIdleWaiters.splice(0);
         for (const resolve of waiters) resolve();
       }
+    };
+    try {
+      const response = await fetch(url, init);
+      if (this.cloudDeletionInProgress && !allowDuringDeletion) {
+        release();
+        throw new Error('Cloud deletion in progress');
+      }
+      if (!response.body) {
+        release();
+      } else {
+        for (const method of ['arrayBuffer', 'blob', 'formData', 'json', 'text'] as const) {
+          const original = (response[method] as any).bind(response);
+          Object.defineProperty(response, method, {
+            configurable: true,
+            value: async (...args: any[]) => {
+              try { return await original(...args); } finally { release(); }
+            },
+          });
+        }
+      }
+      return response;
+    } catch (error) {
+      release();
+      throw error;
     }
+  }
+
+  private async drainResponse(response: Response): Promise<void> {
+    try { await response.arrayBuffer(); } catch { }
   }
 
   private waitForCloudNetworkIdle(): Promise<void> {
@@ -1505,10 +1541,10 @@ class CloudSyncService {
     return new Promise((resolve) => this.cloudNetworkIdleWaiters.push(resolve));
   }
 
-  private loadSettings(): CloudSettings | null {
+  private loadSettings(ensureIdentity = true): CloudSettings | null {
     try {
       const db = getDatabase();
-      ensureCloudIdentity();
+      if (ensureIdentity) ensureCloudIdentity();
       const s = this.readSettings(db);
       const server_url = normalizeCloudServerUrl(s.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
       return {

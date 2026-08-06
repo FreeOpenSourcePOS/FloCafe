@@ -42,21 +42,37 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
       ? db.prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null } | undefined
       : undefined;
     if (!currentUser) return res.status(403).json({ error: 'User account is not active' });
-    const categoryIds = currentUser.role === 'manager' || currentUser.role === 'owner'
+    let categoryIds = currentUser.role === 'manager' || currentUser.role === 'owner'
       ? []
       : parseCategoryIds(currentUser.category_ids);
-    const stationIds = getUserKdsStationIds(db, userId);
+    const loadedStationIds = getUserKdsStationIds(db, userId);
     const hasStationAssignments = hasUserKdsStationAssignments(db, userId);
-    if (!stationIds || hasStationAssignments === null) return res.status(403).json({ error: 'User account is not active' });
-    if (hasStationAssignments && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
-    const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
+    if (!loadedStationIds || hasStationAssignments === null) return res.status(403).json({ error: 'User account is not active' });
+    if (hasStationAssignments && loadedStationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
+    let stationIds: string[] = loadedStationIds;
+    let stationCategoryIds = getKdsStationCategoryIds(db, stationIds)!;
     if (!stationCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-    const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
+    let stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds)!;
     if (!stationScope) return res.status(403).json({ error: 'Could not load station permissions' });
-    const stationRoutingCategoryIds = stationScope.tablelessCategoryIds;
-    const restrictedKdsPayload = currentUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
+    let stationRoutingCategoryIds = stationScope!.tablelessCategoryIds;
+    let restrictedKdsPayload = currentUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
 
     const orderData = withTxn(() => {
+      const liveUser = db.prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null } | undefined;
+      if (!liveUser || !['chef', 'manager', 'owner'].includes(liveUser.role)) throw new Error('USER_FORBIDDEN');
+      categoryIds = liveUser.role === 'manager' || liveUser.role === 'owner' ? [] : parseCategoryIds(liveUser.category_ids);
+      const liveStationIds = getUserKdsStationIds(db, userId);
+      const liveAssignments = hasUserKdsStationAssignments(db, userId);
+      if (!liveStationIds || liveAssignments === null) throw new Error('USER_FORBIDDEN');
+      if (liveAssignments && liveStationIds.length === 0) throw new Error('STATION_FORBIDDEN');
+      const liveStationCategoryIds = getKdsStationCategoryIds(db, liveStationIds);
+      const liveStationScope = getKdsStationRoutingScope(db, liveStationIds, categoryIds);
+      if (!liveStationCategoryIds || !liveStationScope) throw new Error('PERMISSIONS_UNAVAILABLE');
+      stationIds = liveStationIds;
+      stationCategoryIds = liveStationCategoryIds;
+      stationScope = liveStationScope;
+      stationRoutingCategoryIds = liveStationScope.tablelessCategoryIds;
+      restrictedKdsPayload = liveUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
       const item = db.prepare(`
         SELECT oi.*, p.category_id
         FROM order_items oi
@@ -138,6 +154,9 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
   } catch (error: any) {
     if (error.message === 'VOIDED_ITEM') {
       return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
+    }
+    if (error.message === 'USER_FORBIDDEN' || error.message === 'PERMISSIONS_UNAVAILABLE') {
+      return res.status(403).json({ error: 'Could not load current station permissions' });
     }
     if (error.message === 'CATEGORY_FORBIDDEN' || error.message === 'STATION_FORBIDDEN') {
       return res.status(403).json({ error: 'Not authorized to update this item' });

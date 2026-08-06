@@ -389,9 +389,21 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     const stationScope = getKdsStationRoutingScope(db, userStationIds, userCategoryIds);
     if (!stationCategoryIds || !stationScope) return res.status(403).json({ error: 'Could not load station permissions' });
     const stationRoutingCategoryIds = stationScope.tablelessCategoryIds;
-    const restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
+    let restrictedPayload = isRestrictedKdsPayload(req, userCategoryIds, userStationIds);
 
     const updatedItem = withTxn(() => {
+      const currentCategoryIds = getKdsUserCategoryIds(db, req);
+      const currentStationIds = getKdsUserStationIds(db, req);
+      const currentAssignments = getKdsUserHasStationAssignments(db, req);
+      if (!currentCategoryIds || !currentStationIds || currentAssignments === null) throw new Error('USER_FORBIDDEN');
+      if (currentAssignments && currentStationIds.length === 0) throw new Error('STATION_FORBIDDEN');
+      const currentStationCategoryIds = getKdsStationCategoryIds(db, currentStationIds);
+      const currentStationScope = getKdsStationRoutingScope(db, currentStationIds, currentCategoryIds);
+      if (!currentStationCategoryIds || !currentStationScope) throw new Error('PERMISSIONS_UNAVAILABLE');
+      const currentRoutingCategoryIds = currentStationScope.tablelessCategoryIds;
+      userCategoryIds.splice(0, userCategoryIds.length, ...currentCategoryIds);
+      userStationIds.splice(0, userStationIds.length, ...currentStationIds);
+      restrictedPayload = isRestrictedKdsPayload(req, currentCategoryIds, currentStationIds);
       const item = db.prepare(`
         SELECT oi.*, p.category_id
         FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
@@ -417,13 +429,13 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
           throw new Error('CATEGORY_FORBIDDEN');
         }
       }
-      if (userStationIds.length > 0) {
+      if (currentStationIds.length > 0) {
         const station = db.prepare(`
           SELECT t.kitchen_station_id
           FROM orders o LEFT JOIN tables t ON t.id = o.table_id
           WHERE o.id = ?
         `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-        if (!isKdsStationItemAllowed(userStationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
+        if (!isKdsStationItemAllowed(currentStationIds, currentRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? currentStationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
           throw new Error('STATION_FORBIDDEN');
         }
       }
@@ -444,6 +456,9 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     res.json({ item: projectKdsItem(updatedItem, restrictedPayload) });  } catch (error: any) {
     if (error.message === 'VOIDED_ITEM') {
       return res.status(400).json({ error: 'This item has been voided and can no longer be updated' });
+    }
+    if (error.message === 'USER_FORBIDDEN' || error.message === 'PERMISSIONS_UNAVAILABLE') {
+      return res.status(403).json({ error: 'Could not load current station permissions' });
     }
     if (error.message === 'CATEGORY_FORBIDDEN' || error.message === 'STATION_FORBIDDEN') {
       return res.status(403).json({ error: 'Not authorized to update this item' });

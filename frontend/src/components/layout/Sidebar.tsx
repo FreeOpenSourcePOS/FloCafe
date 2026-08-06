@@ -17,6 +17,7 @@ import {
   ChefHat,
   UserCircle,
   MessageCircle,
+  LifeBuoy,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -49,6 +50,7 @@ const ALL_NAV_ITEMS = [
   { href: '/settings?tab=kds', labelKey: 'nav.kds', icon: ChefHat, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'nav.customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
   { href: '/staff', labelKey: 'nav.staff', icon: UserCog, roles: ['owner', 'manager'], businessTypes: null },
+  { href: '/support', labelKey: 'nav.support', icon: LifeBuoy, roles: ['owner', 'manager', 'cashier', 'waiter', 'chef'], businessTypes: null },
   { href: '/settings', labelKey: 'nav.settings', icon: Settings, roles: ['owner', 'manager'], businessTypes: null },
 ];
 
@@ -136,8 +138,8 @@ export default function AppSidebar() {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
                       <Link href={item.href} onClick={closeMobile}>
-                        <span className="relative shrink-0">
-                          <item.icon />
+                        <span className="relative flex size-4 shrink-0 items-center justify-center">
+                          <item.icon className="size-4 shrink-0" />
                           {item.href === '/settings' && emailNeedsAttention && (
                             <span aria-label="Email verification required" className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
                           )}

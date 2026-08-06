@@ -62,6 +62,7 @@ type OutboxRow = {
 export type SupportTicketInput = {
   client_ticket_id: string;
   subject: string;
+  severity?: 'low' | 'normal' | 'high' | 'urgent';
   event_code?: string;
   correlation_id?: string;
   contact_name?: string;
@@ -543,11 +544,30 @@ class CloudSyncService {
   queueSupportTicket(input: SupportTicketInput): { queued: boolean; client_ticket_id: string } {
     const db = getDatabase();
     const timestamp = now();
+    // FloAdmin's public contract uses a nested contact snapshot. Keep the
+    // local input ergonomic for callers, but persist the exact wire payload
+    // so retries remain byte-for-byte stable and never lose contact details.
+    const payload = {
+      client_ticket_id: input.client_ticket_id,
+      subject: input.subject,
+      message: input.message,
+      severity: input.severity || 'normal',
+      event_code: input.event_code,
+      correlation_id: input.correlation_id,
+      contact: {
+        name: input.contact_name,
+        email: input.contact_email,
+        phone: input.contact_phone,
+      },
+      app_version: require('../../package.json').version,
+      platform: process.platform,
+      diagnostics: input.diagnostics,
+    };
     db.prepare(`
       INSERT OR IGNORE INTO support_ticket_outbox
         (client_ticket_id, payload, status, created_at, updated_at)
       VALUES (?, ?, 'pending', ?, ?)
-    `).run(input.client_ticket_id, JSON.stringify(input), timestamp, timestamp);
+    `).run(input.client_ticket_id, JSON.stringify(payload), timestamp, timestamp);
     void this.flushSupportTicketOutbox();
     return { queued: true, client_ticket_id: input.client_ticket_id };
   }

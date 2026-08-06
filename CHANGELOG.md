@@ -2,6 +2,18 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.8.0] - 2026-08-06
+
+### Added
+- A permanent Help & Support page is available from the sidebar to owners, managers, cashiers, waiters, and chefs. Merchants can request general help, report bugs and printer/account/tax problems, or submit feature requests with urgency and a detailed description.
+- Support requests prefill the restaurant and contact profile and attach safe technical context including app version, platform, architecture, database schema, country/timezone, and cloud status. Customer records, order contents, credentials, and API keys are excluded.
+
+### Changed
+- All support requests use FloCafe's durable offline outbox and retry automatically when connectivity returns.
+
+### Fixed
+- FloCafe now sends contact details using FloAdmin's nested contact contract, so merchant name, email, and phone are no longer silently dropped from printer, tax, or general support tickets.
+
 ## [2.7.8] - 2026-08-05
 
 ### Added

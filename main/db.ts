@@ -1194,6 +1194,7 @@ export type UserSecurityState = {
   category_ids: string | null;
   is_active: number;
   tokens_valid_after: string | null;
+  station_assignments_configured: number;
 };
 
 export function getUserKdsStationIds(dbInstance: Database.Database, userId: string): string[] | null {
@@ -1298,8 +1299,13 @@ export function isKdsStationItemAllowed(
 
 export function hasUserKdsStationAssignments(dbInstance: Database.Database, userId: string): boolean | null {
   try {
-    const row = dbInstance.prepare('SELECT EXISTS (SELECT 1 FROM station_users WHERE user_id = ?) AS assigned').get(userId) as { assigned: number };
-    return row.assigned === 1;
+    const row = dbInstance.prepare(`
+      SELECT station_assignments_configured,
+             EXISTS (SELECT 1 FROM station_users WHERE user_id = ?) AS assigned
+      FROM users WHERE id = ?
+    `).get(userId, userId) as { station_assignments_configured: number; assigned: number } | undefined;
+    if (!row) return null;
+    return row.station_assignments_configured === 1 || row.assigned === 1;
   } catch {
     return null;
   }
@@ -1307,7 +1313,7 @@ export function hasUserKdsStationAssignments(dbInstance: Database.Database, user
 
 export function captureUserSecurityState(dbInstance: Database.Database): UserSecurityState[] {
   try {
-    return dbInstance.prepare('SELECT id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after FROM users').all() as UserSecurityState[];
+    return dbInstance.prepare('SELECT id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, station_assignments_configured FROM users').all() as UserSecurityState[];
   } catch {
     return [];
   }
@@ -1315,7 +1321,7 @@ export function captureUserSecurityState(dbInstance: Database.Database): UserSec
 
 export function mergeUserSecurityState(dbInstance: Database.Database, rows: UserSecurityState[]): void {
   for (const row of rows) {
-    const restored = dbInstance.prepare('SELECT id, is_active, tokens_valid_after FROM users WHERE id = ?').get(row.id) as UserSecurityState | undefined;
+    const restored = dbInstance.prepare('SELECT id, is_active, tokens_valid_after, station_assignments_configured FROM users WHERE id = ?').get(row.id) as UserSecurityState | undefined;
     if (!restored) continue;
     const currentEpoch = row.tokens_valid_after;
     const restoredEpoch = restored.tokens_valid_after;
@@ -1327,12 +1333,13 @@ export function mergeUserSecurityState(dbInstance: Database.Database, rows: User
     dbInstance.prepare(`
       UPDATE users
       SET name = ?, email = ?, password = ?, pin = ?, pin_hash = ?, role = ?, category_ids = ?,
-          is_active = ?, tokens_valid_after = ?
+          is_active = ?, tokens_valid_after = ?, station_assignments_configured = ?
       WHERE id = ?
     `).run(
       row.name, row.email, row.password, row.pin, row.pin_hash, row.role, row.category_ids,
       row.is_active,
       tokensValidAfter,
+      row.station_assignments_configured || 0,
       row.id,
     );
   }
@@ -1348,8 +1355,8 @@ export function mergeUserSecurityState(dbInstance: Database.Database, rows: User
   }
 
   const insertPreservedUser = dbInstance.prepare(`
-    INSERT INTO users (id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO users (id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, station_assignments_configured, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const row of rows) {
     if (restoredIds.has(row.id)) continue;
@@ -1359,7 +1366,7 @@ export function mergeUserSecurityState(dbInstance: Database.Database, rows: User
     if (emailConflict) dbInstance.prepare('UPDATE users SET email = NULL WHERE id = ?').run(emailConflict.id);
     insertPreservedUser.run(
       row.id, row.name, row.email, row.password, row.pin, row.pin_hash, row.role,
-      row.category_ids, row.is_active, row.tokens_valid_after, now(), now(),
+      row.category_ids, row.is_active, row.tokens_valid_after, row.station_assignments_configured || 0, now(), now(),
     );
   }
 }
@@ -3200,6 +3207,14 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
         CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires_at
           ON revoked_tokens(expires_at);
       `);
+    },
+  },
+  {
+    version: 56,
+    name: 'persist_station_assignment_scope',
+    up: () => {
+      db.exec(`ALTER TABLE users ADD COLUMN station_assignments_configured INTEGER NOT NULL DEFAULT 0`);
+      db.exec(`UPDATE users SET station_assignments_configured = 1 WHERE EXISTS (SELECT 1 FROM station_users WHERE station_users.user_id = users.id)`);
     },
   },
 ];

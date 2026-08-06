@@ -148,7 +148,13 @@ router.put('/:id/users', requireRole('owner', 'manager'), (req: Request, res: Re
       }
     }
 
+    const previousUserIds = (db.prepare('SELECT user_id FROM station_users WHERE station_id = ?').all(req.params.id) as { user_id: string }[]).map((row) => row.user_id);
     const applyAssignments = db.transaction((ids: string[]) => {
+      const affectedUserIds = [...new Set([...previousUserIds, ...ids])];
+      if (affectedUserIds.length > 0) {
+        const placeholders = affectedUserIds.map(() => '?').join(',');
+        db.prepare(`UPDATE users SET station_assignments_configured = 1 WHERE id IN (${placeholders})`).run(...affectedUserIds);
+      }
       db.prepare('DELETE FROM station_users WHERE station_id = ?').run(req.params.id);
       const insert = db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)');
       for (const userId of ids) {

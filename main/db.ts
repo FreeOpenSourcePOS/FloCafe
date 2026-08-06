@@ -203,15 +203,25 @@ function removeReplacementArtifacts(journalPath: string, recoveryPath: string): 
   syncDirectory(path.dirname(journalPath));
 }
 
-function isHealthyDatabaseFile(filePath: string): boolean {
+const RECOVERY_REQUIRED_TABLES = [
+  'users', 'settings', 'categories', 'products', 'orders', 'order_items',
+  'bills', 'tables', 'kitchen_stations', 'station_users', 'revoked_tokens',
+  'cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox',
+  'kds_pairing_tokens',
+];
+
+function isHealthyDatabaseFile(filePath: string, requiredTables: string[] = RECOVERY_REQUIRED_TABLES): boolean {
   try {
     const candidate = new Database(filePath, { readonly: true, fileMustExist: true });
     const integrity = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
     const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
     const metadata = candidate.prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+    const tables = new Set(getTables(candidate));
     candidate.close();
     const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
-    return integrity && schemaVersion > 0 && schemaVersion <= supportedVersion && metadata?.value === String(schemaVersion);
+    return integrity && schemaVersion > 0 && schemaVersion <= supportedVersion
+      && (!metadata || metadata.value === String(schemaVersion))
+      && requiredTables.every((table) => tables.has(table));
   } catch {
     return false;
   }
@@ -221,6 +231,8 @@ function removeOlderReplacementJournals(journals: string[], dbPath: string, back
   const backupRoot = path.resolve(backupDir);
   for (const journalPath of journals) {
     try {
+      const journalStat = fs.lstatSync(journalPath);
+      if (journalStat.isSymbolicLink() || !journalStat.isFile()) throw new Error('journal is not a regular file');
       const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
       if ((journal.phase !== 'prepared' && journal.phase !== 'committed')
         || typeof journal.recoveryPath !== 'string'
@@ -231,7 +243,12 @@ function removeOlderReplacementJournals(journals: string[], dbPath: string, back
       }
       removeReplacementArtifacts(journalPath, journal.recoveryPath);
     } catch (error) {
-      throw new Error(`Stale database replacement journal is invalid: ${error instanceof Error ? error.message : 'unknown error'}`);
+      // The newest journal has already established the recovery decision. Do
+      // not let an unrelated stale/corrupt older journal brick every startup;
+      // remove only that journal and its same-basename snapshot.
+      const fallbackRecovery = path.join(backupRoot, `${path.basename(journalPath, '.json')}.db`);
+      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      console.warn(`[DB] Removed stale invalid replacement journal: ${journalPath}`);
     }
   }
 }
@@ -249,6 +266,8 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
   for (const journalPath of journals) {
     let journal: ReplacementJournal;
     try {
+      const journalStat = fs.lstatSync(journalPath);
+      if (journalStat.isSymbolicLink() || !journalStat.isFile()) throw new Error('journal is not a regular file');
       const parsed = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
       if ((parsed.phase !== 'prepared' && parsed.phase !== 'committed')
         || typeof parsed.recoveryPath !== 'string'
@@ -264,8 +283,12 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     const recoveryPath = journal.recoveryPath;
     const backupRoot = path.resolve(backupDir);
     const recoveryRoot = path.dirname(recoveryPath);
-    const recoveryNameValid = /^(?:flo-restore|flo-reset)-recovery-.+\.db$/.test(path.basename(recoveryPath));
-    if (journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid || !isHealthyDatabaseFile(recoveryPath)) {
+    const journalBase = path.basename(journalPath, '.json');
+    const recoveryNameValid = `${journalBase}.db` === path.basename(recoveryPath);
+    let recoveryStat: fs.Stats;
+    try { recoveryStat = fs.lstatSync(recoveryPath); } catch { throw new Error('Interrupted database replacement snapshot is missing'); }
+    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile()
+      || journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid || !isHealthyDatabaseFile(recoveryPath)) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
     if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath)) {
@@ -705,6 +728,9 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
       initDatabase(false);
       getDatabase().pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
+      if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+        throw new Error('Could not durably commit reset database');
+      }
       writeReplacementJournal(journalPath, { phase: 'committed', recoveryPath, dbPath });
       replacementCompleted = true;
       return { backupPath };
@@ -1359,6 +1385,9 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       }
       freshDb.pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
+      if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+        throw new Error('Could not durably commit restored database');
+      }
       writeReplacementJournal(journalPath, { phase: 'committed', recoveryPath, dbPath });
       return {
         success: true,

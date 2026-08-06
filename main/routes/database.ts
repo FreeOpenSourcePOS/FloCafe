@@ -24,7 +24,7 @@ const EXPORT_SETTINGS_REDACT = new Set([
 const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
-const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'kds_pairing_tokens']);
+const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
 
 router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
   try {

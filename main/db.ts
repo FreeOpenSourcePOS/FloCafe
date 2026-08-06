@@ -755,15 +755,21 @@ const RESTORE_PROTECTED_SETTING_KEYS = [
 ];
 
 export function captureRestoreProtectedSettings(dbInstance: Database.Database): RestoreProtectedSettingState[] {
-  const rows = dbInstance.prepare(
+  const fixedRows = dbInstance.prepare(
     `SELECT key, value FROM settings WHERE key IN (${RESTORE_PROTECTED_SETTING_KEYS.map(() => '?').join(',')})`,
   ).all(...RESTORE_PROTECTED_SETTING_KEYS) as { key: string; value: string | null }[];
-  const byKey = new Map(rows.map((row) => [row.key, row.value]));
-  return RESTORE_PROTECTED_SETTING_KEYS.map((key) => ({
+  const cloudRows = dbInstance.prepare("SELECT key, value FROM settings WHERE key LIKE 'cloud_%'").all() as { key: string; value: string | null }[];
+  const byKey = new Map([...fixedRows, ...cloudRows].map((row) => [row.key, row.value]));
+  const keys = [...new Set([...RESTORE_PROTECTED_SETTING_KEYS, ...cloudRows.map((row) => row.key)])];
+  const deviceSecret = byKey.get('cloud_device_secret');
+  return keys.map((key) => ({
     key,
     // Pairing codes are installation-local, short-lived credentials. Never
     // carry one across a restore, even if the live installation had one.
-    present: !key.startsWith('mobile_pairing_code') && byKey.has(key),
+    // A position hash without its device secret is also unsafe to preserve.
+    present: !key.startsWith('mobile_pairing_code')
+      && !(key === 'cloud_pos_hash' && !deviceSecret)
+      && byKey.has(key),
     value: byKey.get(key) ?? null,
   }));
 }
@@ -773,10 +779,16 @@ export function mergeRestoreProtectedSettings(dbInstance: Database.Database, sta
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
   `);
+  // Cloud identity/configuration is installation-local. Remove every backup
+  // cloud key first so a future or backup-only key cannot cross installations.
+  dbInstance.prepare("DELETE FROM settings WHERE key LIKE 'cloud_%'").run();
   for (const state of states) {
     if (state.present) upsert.run(state.key, state.value, now());
-    else dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
+    else if (!state.key.startsWith('cloud_')) dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
   }
+  const hasDeviceSecret = states.some((state) => state.key === 'cloud_device_secret' && state.present);
+  const hasPosHash = states.some((state) => state.key === 'cloud_pos_hash' && state.present);
+  if (!hasDeviceSecret || !hasPosHash) ensureCloudIdentity();
 }
 
 export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {

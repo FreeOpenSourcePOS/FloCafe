@@ -397,6 +397,11 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
     if (cloud_api_key !== undefined && !isMaskedSecret(cloud_api_key)) {
       updates.cloud_api_key = String(cloud_api_key || '');
     }
+    const enablingCloud = [cloud_sync_enabled, cloud_orders_enabled, cloud_reports_enabled, cloud_command_polling_enabled]
+      .some((value) => bool01Flag(value) === '1');
+    if (enablingCloud && cloudSync.getStatus().cloud_deletion_blocked) {
+      return res.status(409).json({ error: 'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.' });
+    }
 
     upsertSettings(db, updates);
     cloudSync.reload();
@@ -414,19 +419,23 @@ router.post('/cloud/register', requireRole('owner', 'manager'), async (req: Requ
     if (deletionRequest?.status === 'pending') {
       return res.status(409).json({ error: 'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.' });
     }
-    upsertSettings(getDatabase(), {
-      cloud_sync_enabled: '1', cloud_reports_enabled: '1', cloud_command_polling_enabled: '1',
-      cloud_services_disabled_by_user: 'false',
-    });
     if (req.body?.cloud_server_url !== undefined) {
       upsertSettings(getDatabase(), {
         cloud_server_url: normalizeCloudServerUrl(req.body.cloud_server_url || DEFAULT_CLOUD_SERVER_URL),
       });
     }
+    if (cloudSync.getStatus().cloud_deletion_blocked) {
+      return res.status(409).json({ error: 'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.' });
+    }
     // Registration sends contact metadata for FloAdmin support; it does not
     // create a cloud owner account or grant authentication access.
-    const result = await cloudSync.register();
-    res.json(result);
+    await cloudSync.register();
+    upsertSettings(getDatabase(), {
+      cloud_sync_enabled: '1', cloud_reports_enabled: '1', cloud_command_polling_enabled: '1',
+      cloud_services_disabled_by_user: 'false',
+    });
+    cloudSync.reload();
+    res.json(cloudSync.getStatus());
   } catch (error: any) {
     console.error('[API] Cloud registration failed:', error);
     res.status(502).json({ error: 'Cloud registration failed' });

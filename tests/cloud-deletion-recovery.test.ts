@@ -18,6 +18,7 @@ import { cloudSync } from '../main/services/cloud-sync';
 
 async function run() {
   const originalFetch = globalThis.fetch;
+  let deleteMode: 'rejected' | 'accepted' | 'transport' = 'rejected';
   try {
     initDatabase();
     const db = getDatabase();
@@ -42,6 +43,8 @@ async function run() {
     globalThis.fetch = (async (input: string | URL) => {
       const url = String(input);
       if (url.endsWith('/api/pos/cloud-data/delete')) {
+        if (deleteMode === 'transport') throw new Error('simulated connection drop after upstream accepted the request');
+        if (deleteMode === 'accepted') return new Response(JSON.stringify({ status: 'deleted' }), { status: 200 });
         return new Response(JSON.stringify({ error: 'simulated upstream failure' }), { status: 503 });
       }
       if (url.endsWith('/api/pos/register')) {
@@ -54,15 +57,26 @@ async function run() {
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_deletion_status'").get() as { value: string }).value, 'failed');
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_connected'").get() as { value: string }).value, 'false');
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_services_disabled_by_user'").get() as { value: string }).value, 'true');
+    assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_deletion_outcome'").get() as { value: string }).value, 'rejected');
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_deletion_request_id'").get() as { value?: string } | undefined)?.value || '', '');
 
-    // A failed request must not permanently strand explicit re-registration.
-    const registered = await cloudSync.register();
-    assert.equal((registered as any).cloud_registration_status, 'registered');
-    assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_api_key'").get() as { value: string }).value, 'new-api-key');
+    // A failed request remains blocked; retrying the deletion is the safe recovery.
+    await assert.rejects(() => cloudSync.register(), /Cloud deletion is pending/);
+    await assert.rejects(() => cloudSync.testConnection(), /Cloud deletion is unresolved/);
+    // A lost response is indeterminate and must not restart cloud activity.
+    deleteMode = 'transport';
+    await assert.rejects(() => cloudSync.deleteCloudData(), /simulated connection drop/);
+    assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_deletion_outcome'").get() as { value: string }).value, 'unknown');
+    await assert.rejects(() => cloudSync.register(), /Cloud deletion is pending/);
+
+    deleteMode = 'accepted';
+    await cloudSync.deleteCloudData();
+    assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_deletion_status'").get() as { value: string }).value, 'deleted');
+    assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_api_key'").get() as { value: string }).value, '');
     console.log('✅ Cloud deletion failure recovery tests passed');
   } finally {
     globalThis.fetch = originalFetch;
+    cloudSync.stop();
     try { closeDatabase(); } catch { }
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });

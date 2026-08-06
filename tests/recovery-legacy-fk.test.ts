@@ -13,7 +13,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-import { closeDatabase, getDatabase, getDbPath, initDatabase } from '../main/db';
+import { closeDatabase, getDatabase, getDbPath, getForeignKeyViolationKeys, initDatabase } from '../main/db';
 
 function journalPath(name: string): string {
   return path.join(testDir, 'backups', `${name}.json`);
@@ -31,6 +31,7 @@ async function run() {
     db.pragma('foreign_keys = OFF');
     db.prepare('INSERT INTO products (id, category_id, name, price) VALUES (?, ?, ?, ?)')
       .run('legacy-orphan-product', 'missing-legacy-category', 'Legacy Orphan', 1);
+    const baselineForeignKeyViolations = [...getForeignKeyViolationKeys(db)];
     db.pragma('wal_checkpoint(TRUNCATE)');
     closeDatabase();
 
@@ -41,6 +42,7 @@ async function run() {
       phase: 'committed',
       recoveryPath: recoveryPath('flo-restore-recovery-committed-legacy'),
       dbPath,
+      baselineForeignKeyViolations,
     }));
     initDatabase();
     assert.equal(
@@ -58,6 +60,7 @@ async function run() {
       phase: 'prepared',
       recoveryPath: recoveryPath(preparedName),
       dbPath,
+      baselineForeignKeyViolations,
     }));
     for (const filePath of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
       try { fs.unlinkSync(filePath); } catch { }

@@ -168,7 +168,12 @@ function getBackupDir(): string {
   return path.join(userDataPath, 'backups');
 }
 
-type ReplacementJournal = { phase: 'prepared' | 'committed'; recoveryPath: string; dbPath: string };
+type ReplacementJournal = {
+  phase: 'prepared' | 'committed';
+  recoveryPath: string;
+  dbPath: string;
+  baselineForeignKeyViolations?: string[];
+};
 
 function syncFile(filePath: string): void {
   const fd = fs.openSync(filePath, 'r');
@@ -250,14 +255,17 @@ function normalizedSchemaDefinitions(dbInstance: Database.Database): Map<string,
 
 function isHealthyDatabaseFile(
   filePath: string,
-  allowExistingForeignKeyViolations = false,
+  allowedForeignKeyViolations: Set<string> | null | undefined = undefined,
   requireMetadata = true,
 ): boolean {
   try {
     const candidate = new Database(filePath, { readonly: true, fileMustExist: true });
     const integrity = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
-    const foreignKeysClean = allowExistingForeignKeyViolations
-      || (candidate.prepare('PRAGMA foreign_key_check').all() as unknown[]).length === 0;
+    const foreignKeyViolations = getForeignKeyViolationKeys(candidate);
+    const foreignKeysClean = allowedForeignKeyViolations === null
+      || (allowedForeignKeyViolations
+        ? [...foreignKeyViolations].every((key) => allowedForeignKeyViolations.has(key))
+        : foreignKeyViolations.size === 0);
     const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
     let metadata: { value: string } | undefined;
     try {
@@ -345,7 +353,10 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
         || typeof parsed.recoveryPath !== 'string'
         || typeof parsed.dbPath !== 'string'
         || !path.isAbsolute(parsed.recoveryPath)
-        || !path.isAbsolute(parsed.dbPath)) {
+        || !path.isAbsolute(parsed.dbPath)
+        || (parsed.baselineForeignKeyViolations !== undefined
+          && (!Array.isArray(parsed.baselineForeignKeyViolations)
+            || parsed.baselineForeignKeyViolations.some((key) => typeof key !== 'string')))) {
         throw new Error('invalid phase or paths');
       }
       journal = parsed as ReplacementJournal;
@@ -360,10 +371,19 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     if (journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
+    // Journals written by this version carry the exact legacy FK baseline.
+    // Older journals predate that field, so retain their compatibility behavior
+    // rather than bricking an installation during an upgrade.
+    const allowedForeignKeyViolations = journal.baselineForeignKeyViolations === undefined
+      ? null
+      : new Set(journal.baselineForeignKeyViolations);
+    // Replacement snapshots are copies of the live database, not backup
+    // artifacts; the live database intentionally has no _flo_meta table.
+    const requireMetadata = false;
     // A committed replacement is already durable in the live path. Finalize
     // its journal before touching the old snapshot; legacy installs may have
     // pre-existing FK violations that are intentionally preserved.
-    if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath, true, false)) {
+    if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath, allowedForeignKeyViolations, requireMetadata)) {
       removeReplacementArtifacts(journalPath, recoveryPath);
       removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
       console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
@@ -373,7 +393,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     try { recoveryStat = fs.lstatSync(recoveryPath); } catch { throw new Error('Interrupted database replacement snapshot is missing'); }
     const recoverySidecars = pathEntryExists(`${recoveryPath}-wal`) || pathEntryExists(`${recoveryPath}-shm`);
     if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile() || recoverySidecars
-      || !isHealthyDatabaseFile(recoveryPath, true, false)) {
+      || !isHealthyDatabaseFile(recoveryPath, allowedForeignKeyViolations, requireMetadata)) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
     const failures = removeDatabaseFiles(dbPath);
@@ -813,6 +833,7 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
   return withDatabaseMaintenanceLock(async () => {
     const { path: backupPath } = await createBackupUnlocked();
     const dbPath = getDbPath();
+    const baselineForeignKeyViolations = getForeignKeyViolationKeys(getDatabase());
     const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
     const journalPath = recoveryPath.replace(/\.db$/, '.json');
     let replacementCompleted = false;
@@ -821,7 +842,10 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
     try {
       fs.copyFileSync(backupPath, recoveryPath);
       syncFile(recoveryPath);
-      writeReplacementJournal(journalPath, { phase: 'prepared', recoveryPath, dbPath });
+      writeReplacementJournal(journalPath, {
+        phase: 'prepared', recoveryPath, dbPath,
+        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+      });
       closeDatabase();
       const failures = removeDatabaseFiles(dbPath);
       if (failures.length > 0) {
@@ -833,7 +857,10 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit reset database');
       }
-      writeReplacementJournal(journalPath, { phase: 'committed', recoveryPath, dbPath });
+      writeReplacementJournal(journalPath, {
+        phase: 'committed', recoveryPath, dbPath,
+        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+      });
       replacementCompleted = true;
       return { backupPath };
     } catch (error: any) {
@@ -1506,7 +1533,10 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       currentDb.pragma('wal_checkpoint(TRUNCATE)');
       fs.copyFileSync(dbPath, recoveryPath);
       syncFile(recoveryPath);
-      writeReplacementJournal(journalPath, { phase: 'prepared', recoveryPath, dbPath });
+      writeReplacementJournal(journalPath, {
+        phase: 'prepared', recoveryPath, dbPath,
+        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+      });
       recoveryCopyReady = true;
       closeDatabase();
       const removeFailures = removeDatabaseFiles(dbPath);
@@ -1538,7 +1568,10 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit restored database');
       }
-      writeReplacementJournal(journalPath, { phase: 'committed', recoveryPath, dbPath });
+      writeReplacementJournal(journalPath, {
+        phase: 'committed', recoveryPath, dbPath,
+        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+      });
       return {
         success: true,
         mode: 'direct',
@@ -1573,7 +1606,8 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
     } finally {
       if (recoveryCompleted) {
         removeReplacementArtifacts(journalPath, recoveryPath);
-      } else if (isHealthyDatabaseFile(dbPath, true, false) && isHealthyDatabaseFile(recoveryPath, true, false)) {
+      } else if (isHealthyDatabaseFile(dbPath, baselineForeignKeyViolations, false)
+        && isHealthyDatabaseFile(recoveryPath, baselineForeignKeyViolations, false)) {
         // A committed journal is finalized here; an uncommitted journal is
         // intentionally retained if recovery itself failed.
         try {

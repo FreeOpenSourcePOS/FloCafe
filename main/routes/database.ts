@@ -15,6 +15,9 @@ const EXPORT_SETTINGS_REDACT = new Set([
   'jwt_secret',
   'cloud_api_key',
   'cloud_device_secret',
+  'cloud_pos_hash',
+  'mobile_pairing_code',
+  'mobile_pairing_code_expires_at',
 ]);
 
 // User columns stripped from export — hashes must never leave the server.

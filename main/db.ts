@@ -749,8 +749,9 @@ export function captureKitchenStationSecurityState(dbInstance: Database.Database
 export type KdsEnabledSettingState = { present: boolean; value: string | null };
 export type RestoreProtectedSettingState = { key: string; present: boolean; value: string | null };
 const RESTORE_PROTECTED_SETTING_KEYS = [
-  'jwt_secret', 'cloud_api_key', 'cloud_device_secret',
+  'jwt_secret', 'cloud_api_key', 'cloud_device_secret', 'cloud_pos_hash',
   'telemetry_enabled', 'diagnostics_consent',
+  'mobile_pairing_code', 'mobile_pairing_code_expires_at',
 ];
 
 export function captureRestoreProtectedSettings(dbInstance: Database.Database): RestoreProtectedSettingState[] {
@@ -760,7 +761,9 @@ export function captureRestoreProtectedSettings(dbInstance: Database.Database): 
   const byKey = new Map(rows.map((row) => [row.key, row.value]));
   return RESTORE_PROTECTED_SETTING_KEYS.map((key) => ({
     key,
-    present: byKey.has(key),
+    // Pairing codes are installation-local, short-lived credentials. Never
+    // carry one across a restore, even if the live installation had one.
+    present: !key.startsWith('mobile_pairing_code') && byKey.has(key),
     value: byKey.get(key) ?? null,
   }));
 }

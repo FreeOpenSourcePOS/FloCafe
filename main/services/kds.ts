@@ -555,7 +555,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   let countsQuery = `
     SELECT oi.status, COUNT(*) as count
     FROM order_items oi
-    JOIN products p ON oi.product_id = p.id
+    LEFT JOIN products p ON oi.product_id = p.id
     JOIN orders o ON oi.order_id = o.id
     LEFT JOIN tables t ON o.table_id = t.id
     WHERE ${activeOrdersCondition()}

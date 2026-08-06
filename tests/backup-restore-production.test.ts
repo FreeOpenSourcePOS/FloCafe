@@ -83,7 +83,7 @@ async function run() {
       INSERT INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'false', datetime('now'))
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
     `).run();
-    for (const [key, value] of [['jwt_secret', 'current-jwt'], ['cloud_api_key', 'current-cloud-key'], ['cloud_device_secret', 'current-device-secret'], ['telemetry_enabled', 'false'], ['diagnostics_consent', 'false']]) {
+    for (const [key, value] of [['jwt_secret', 'current-jwt'], ['cloud_api_key', 'current-cloud-key'], ['cloud_device_secret', 'current-device-secret'], ['cloud_pos_hash', 'current-pos-hash'], ['telemetry_enabled', 'false'], ['diagnostics_consent', 'false']]) {
       db.prepare(`
         INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
@@ -100,7 +100,10 @@ async function run() {
     enabledKdsDb.prepare("UPDATE settings SET value = 'backup-jwt' WHERE key = 'jwt_secret'").run();
     enabledKdsDb.prepare("UPDATE settings SET value = 'backup-cloud-key' WHERE key = 'cloud_api_key'").run();
     enabledKdsDb.prepare("UPDATE settings SET value = 'backup-device-secret' WHERE key = 'cloud_device_secret'").run();
+    enabledKdsDb.prepare("UPDATE settings SET value = 'backup-pos-hash' WHERE key = 'cloud_pos_hash'").run();
     enabledKdsDb.prepare("UPDATE settings SET value = 'true' WHERE key IN ('telemetry_enabled', 'diagnostics_consent')").run();
+    enabledKdsDb.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code', 'backup-pairing-code', datetime('now'))").run();
+    enabledKdsDb.prepare("INSERT INTO settings (key, value, updated_at) VALUES ('mobile_pairing_code_expires_at', '2099-01-01T00:00:00.000Z', datetime('now'))").run();
     enabledKdsDb.close();
     const enabledKdsRestore = restoreBackup(enabledKdsBackup, true);
     assert.equal(enabledKdsRestore.success, true, 'restore succeeds when backup enables KDS');
@@ -109,9 +112,16 @@ async function run() {
       'false',
       'direct restore preserves the current disabled KDS setting',
     );
-    for (const [key, expected] of [['jwt_secret', 'current-jwt'], ['cloud_api_key', 'current-cloud-key'], ['cloud_device_secret', 'current-device-secret'], ['telemetry_enabled', 'false'], ['diagnostics_consent', 'false']]) {
+    for (const [key, expected] of [['jwt_secret', 'current-jwt'], ['cloud_api_key', 'current-cloud-key'], ['cloud_device_secret', 'current-device-secret'], ['cloud_pos_hash', 'current-pos-hash'], ['telemetry_enabled', 'false'], ['diagnostics_consent', 'false']]) {
       assert.equal((getDatabase().prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string }).value, expected, `direct restore preserves current ${key}`);
     }
+
+    assert.equal(getDatabase().prepare("SELECT value FROM settings WHERE key = 'mobile_pairing_code'").get(), undefined, 'restore discards backup mobile pairing codes');
+    getDatabase().prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES ('restore-current-only-user', 'Current Only', 'restore-current-only@flo.local', 'test-hash', 'chef', 1, datetime('now'), datetime('now'))`).run();
+    const currentOnlyRestore = restoreBackup(enabledKdsBackup, true);
+    assert.equal(currentOnlyRestore.success, true, 'restore succeeds with a current-only user');
+    assert.equal((getDatabase().prepare('SELECT is_active FROM users WHERE id = ?').get('restore-current-only-user') as { is_active: number }).is_active, 1, 'current-only users survive restore');
 
     const missingStationBackup = path.join(testDir, 'missing-current-station.db');
     copyAndStamp(sameSchemaBackup, missingStationBackup, currentVersion);

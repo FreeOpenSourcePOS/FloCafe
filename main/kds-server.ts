@@ -261,7 +261,9 @@ export function startKdsServer(): Promise<void> {
         if (!liveUser?.is_active) return res.status(403).json({ error: 'User account is not active' });
         const categoryIds = categoryIdsForRole(liveUser.role, liveUser.category_ids);
         const stationIds = getUserKdsStationIds(db, kdsUser.userId);
-        if (!stationIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, kdsUser.userId);
+        if (!stationIds || stationAssignmentsConfigured === null) return res.status(403).json({ error: 'Could not load station permissions' });
+        if (stationAssignmentsConfigured && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
         const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
         const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
         const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
@@ -367,7 +369,9 @@ export function startKdsServer(): Promise<void> {
         if (!liveUser?.is_active) return res.status(403).json({ error: 'User account is not active' });
         const categoryIds = categoryIdsForRole(liveUser.role, liveUser.category_ids);
         const stationIds = getUserKdsStationIds(db, kdsUser.userId);
-        if (!stationIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, kdsUser.userId);
+        if (!stationIds || stationAssignmentsConfigured === null) return res.status(403).json({ error: 'Could not load station permissions' });
+        if (stationAssignmentsConfigured && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
         const updateResult = db.transaction(() => {
           const item = db.prepare(`
             SELECT oi.*, p.category_id
@@ -441,7 +445,9 @@ export function startKdsServer(): Promise<void> {
         if (!liveUser?.is_active) return res.status(403).json({ error: 'User account is not active' });
         const liveCategoryIds = categoryIdsForRole(liveUser.role, liveUser.category_ids);
         const liveStationIds = getUserKdsStationIds(db, kdsUser.userId);
-        if (!liveStationIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const stationAssignmentsConfigured = hasUserKdsStationAssignments(db, kdsUser.userId);
+        if (!liveStationIds || stationAssignmentsConfigured === null) return res.status(403).json({ error: 'Could not load station permissions' });
+        if (stationAssignmentsConfigured && liveStationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
         const stationCategoryIds = getKdsStationCategoryIds(db, liveStationIds);
         const stationScope = getKdsStationRoutingScope(db, liveStationIds, liveCategoryIds);
         const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;

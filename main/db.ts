@@ -218,7 +218,7 @@ function syncDirectory(directoryPath: string): boolean {
 
 function removeReplacementArtifacts(journalPath: string, recoveryPath: string): void {
   for (const filePath of [journalPath, `${journalPath}.tmp`, recoveryPath, `${recoveryPath}-wal`, `${recoveryPath}-shm`]) {
-    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
+    try { if (pathEntryExists(filePath)) fs.unlinkSync(filePath); } catch { }
   }
   syncDirectory(path.dirname(journalPath));
 }
@@ -718,7 +718,7 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
       fs.unlinkSync(tempPath);
     }
     for (const sidecar of [`${finalPath}-wal`, `${finalPath}-shm`]) {
-      try { if (fs.existsSync(sidecar)) fs.unlinkSync(sidecar); } catch { }
+      try { if (pathEntryExists(sidecar)) fs.unlinkSync(sidecar); } catch { }
     }
     syncFile(finalPath);
     if (!syncDirectory(path.dirname(finalPath)) && process.platform !== 'win32') {
@@ -735,7 +735,7 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
   } finally {
     if (!completed) {
       for (const filePath of [tempPath, stagedTargetPath, `${tempPath}-wal`, `${tempPath}-shm`].filter((value): value is string => Boolean(value))) {
-        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
+        try { if (pathEntryExists(filePath)) fs.unlinkSync(filePath); } catch { }
       }
     }
   }
@@ -749,7 +749,7 @@ function removeDatabaseFiles(dbPath: string): string[] {
   const failures: string[] = [];
   for (const filePath of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
     try {
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      if (pathEntryExists(filePath)) fs.unlinkSync(filePath);
     } catch (error: any) {
       console.warn(`[DB] Could not remove ${filePath}:`, error);
       failures.push(filePath);
@@ -3205,7 +3205,7 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
   } finally {
     if (!completed && targetPath) {
       for (const filePath of [targetPath, `${targetPath}-wal`, `${targetPath}-shm`]) {
-        try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
+        try { if (pathEntryExists(filePath)) fs.unlinkSync(filePath); } catch { }
       }
     }
   }

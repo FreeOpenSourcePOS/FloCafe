@@ -220,7 +220,7 @@ function isHealthyDatabaseFile(filePath: string, requiredTables: string[] = RECO
     candidate.close();
     const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
     return integrity && schemaVersion > 0 && schemaVersion <= supportedVersion
-      && (!metadata || metadata.value === String(schemaVersion))
+      && metadata?.value === String(schemaVersion)
       && requiredTables.every((table) => tables.has(table));
   } catch {
     return false;
@@ -238,7 +238,7 @@ function removeOlderReplacementJournals(journals: string[], dbPath: string, back
         || typeof journal.recoveryPath !== 'string'
         || journal.dbPath !== dbPath
         || path.dirname(journal.recoveryPath) !== backupRoot
-        || !/^(?:flo-restore|flo-reset)-recovery-.+\.db$/.test(path.basename(journal.recoveryPath))) {
+        || `${path.basename(journalPath, '.json')}.db` !== path.basename(journal.recoveryPath)) {
         throw new Error('invalid stale replacement journal');
       }
       removeReplacementArtifacts(journalPath, journal.recoveryPath);
@@ -287,7 +287,8 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     const recoveryNameValid = `${journalBase}.db` === path.basename(recoveryPath);
     let recoveryStat: fs.Stats;
     try { recoveryStat = fs.lstatSync(recoveryPath); } catch { throw new Error('Interrupted database replacement snapshot is missing'); }
-    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile()
+    const recoverySidecars = fs.existsSync(`${recoveryPath}-wal`) || fs.existsSync(`${recoveryPath}-shm`);
+    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile() || recoverySidecars
       || journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid || !isHealthyDatabaseFile(recoveryPath)) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
@@ -624,8 +625,16 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
   // user-selected file, which the sandbox blocks. Writing to userData first
   // avoids that restriction; we copy the final clean file to targetPath.
   const tempPath = path.join(backupDir, `flo-backup-${timestamp}-${uniqueSuffix}.db`);
-  const finalPath = targetPath || tempPath;
+  const finalPath = targetPath ? path.resolve(targetPath) : tempPath;
+  const stagedTargetPath = finalPath !== tempPath
+    ? path.join(path.dirname(finalPath), `.${path.basename(finalPath)}.tmp-${uniqueSuffix}`)
+    : null;
   let completed = false;
+
+  if (finalPath === getDbPath()) throw new Error('Backup target cannot be the live database');
+  if (stagedTargetPath && fs.existsSync(finalPath) && fs.lstatSync(finalPath).isSymbolicLink()) {
+    throw new Error('Backup target cannot be a symbolic link');
+  }
 
   try {
     console.log('[DB] createBackup: Backing up to temp:', tempPath);
@@ -656,8 +665,20 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
       backupDb?.close();
     }
 
-    if (finalPath !== tempPath) {
-      fs.copyFileSync(tempPath, finalPath);
+    if (stagedTargetPath) {
+      fs.copyFileSync(tempPath, stagedTargetPath);
+      syncFile(stagedTargetPath);
+      if (!syncDirectory(path.dirname(stagedTargetPath)) && process.platform !== 'win32') {
+        throw new Error('Could not durably stage backup target');
+      }
+      try {
+        fs.renameSync(stagedTargetPath, finalPath);
+      } catch (error) {
+        if (process.platform !== 'win32' || !fs.existsSync(finalPath)) throw error;
+        fs.unlinkSync(finalPath);
+        fs.renameSync(stagedTargetPath, finalPath);
+      }
+      syncDirectory(path.dirname(finalPath));
       fs.unlinkSync(tempPath);
     }
     for (const sidecar of [`${finalPath}-wal`, `${finalPath}-shm`]) {
@@ -677,7 +698,7 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
     return { path: finalPath, schemaVersion: currentVersion };
   } finally {
     if (!completed) {
-      for (const filePath of [tempPath, `${tempPath}-wal`, `${tempPath}-shm`]) {
+      for (const filePath of [tempPath, stagedTargetPath, `${tempPath}-wal`, `${tempPath}-shm`].filter((value): value is string => Boolean(value))) {
         try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
       }
     }

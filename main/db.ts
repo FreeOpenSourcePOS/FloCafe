@@ -185,6 +185,22 @@ function writeReplacementJournal(journalPath: string, journal: ReplacementJourna
   }
 }
 
+function isLiveDatabaseTarget(candidatePath: string, dbPath: string): boolean {
+  const normalize = (value: string) => process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value;
+  if (normalize(path.resolve(candidatePath)) === normalize(path.resolve(dbPath))) return true;
+  try {
+    const candidateStat = fs.statSync(candidatePath);
+    const dbStat = fs.statSync(dbPath);
+    if (candidateStat.dev === dbStat.dev && candidateStat.ino === dbStat.ino) return true;
+  } catch { }
+  try {
+    const candidateReal = path.join(fs.realpathSync(path.dirname(candidatePath)), path.basename(candidatePath));
+    return normalize(candidateReal) === normalize(fs.realpathSync(dbPath));
+  } catch {
+    return false;
+  }
+}
+
 function syncDirectory(directoryPath: string): boolean {
   try {
     const fd = fs.openSync(directoryPath, 'r');
@@ -209,6 +225,15 @@ const RECOVERY_REQUIRED_TABLES = [
   'cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox',
   'kds_pairing_tokens',
 ];
+const RECOVERY_REQUIRED_COLUMNS: Record<string, string[]> = {
+  users: ['id', 'password', 'role', 'is_active'],
+  settings: ['key', 'value'],
+  categories: ['id', 'name'],
+  products: ['id', 'category_id'],
+  orders: ['id', 'status'],
+  order_items: ['id', 'order_id', 'status'],
+  kitchen_stations: ['id', 'category_ids', 'is_active'],
+};
 
 function isHealthyDatabaseFile(filePath: string, requiredTables: string[] = RECOVERY_REQUIRED_TABLES): boolean {
   try {
@@ -217,10 +242,15 @@ function isHealthyDatabaseFile(filePath: string, requiredTables: string[] = RECO
     const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
     const metadata = candidate.prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
     const tables = new Set(getTables(candidate));
+    const columnsValid = Object.entries(RECOVERY_REQUIRED_COLUMNS).every(([table, columns]) => {
+      const available = new Set(getColumns(candidate, table));
+      return columns.every((column) => available.has(column));
+    });
     candidate.close();
     const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
     return integrity && schemaVersion > 0 && schemaVersion <= supportedVersion
       && metadata?.value === String(schemaVersion)
+      && columnsValid
       && requiredTables.every((table) => tables.has(table));
   } catch {
     return false;
@@ -631,7 +661,7 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
     : null;
   let completed = false;
 
-  if (finalPath === getDbPath()) throw new Error('Backup target cannot be the live database');
+  if (isLiveDatabaseTarget(finalPath, getDbPath())) throw new Error('Backup target cannot be the live database');
   if (stagedTargetPath && fs.existsSync(finalPath) && fs.lstatSync(finalPath).isSymbolicLink()) {
     throw new Error('Backup target cannot be a symbolic link');
   }
@@ -781,13 +811,19 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
   });
 }
 
-/** Reads the schema_version stamp createBackup() writes into _flo_meta. Older backups predating that stamp (or a file that fails to open) return null. */
+/** Reads the canonical schema_version stamp createBackup() writes into _flo_meta. */
+function parseCanonicalSchemaVersion(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 function readBackupSchemaVersion(fullPath: string): number | null {
   let backupDb: Database.Database | undefined;
   try {
     backupDb = new Database(fullPath, { readonly: true, fileMustExist: true });
     const row = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-    return row ? parseInt(row.value, 10) : null;
+    return row ? parseCanonicalSchemaVersion(row.value) : null;
   } catch {
     return null;
   } finally {
@@ -808,6 +844,9 @@ export function listBackups(): { fileName: string; path: string; sizeBytes: numb
 
   return fs.readdirSync(backupDir)
     .filter((fileName) => fileName.startsWith('flo-backup-') && fileName.endsWith('.db'))
+    .filter((fileName) => {
+      try { return fs.lstatSync(path.join(backupDir, fileName)).isFile(); } catch { return false; }
+    })
     .map((fileName) => {
       const fullPath = path.join(backupDir, fileName);
       const stat = fs.statSync(fullPath);
@@ -893,7 +932,7 @@ function validateDirectBackup(backupPath: string, currentDb: Database.Database, 
   try {
     backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
     const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-    const metadataVersion = metaRow ? Number.parseInt(metaRow.value, 10) : 0;
+    const metadataVersion = metaRow ? parseCanonicalSchemaVersion(metaRow.value) ?? 0 : 0;
     const pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
     if (metadataVersion !== currentVersion || pragmaVersion !== currentVersion) {
       return `Direct restore requires matching metadata/header schema v${currentVersion}`;
@@ -1314,7 +1353,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   try {
     backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
     const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-    metadataVersion = metaRow ? Number.parseInt(metaRow.value, 10) : 0;
+    metadataVersion = metaRow ? parseCanonicalSchemaVersion(metaRow.value) ?? 0 : 0;
     pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
   } finally {
     backupDb?.close();

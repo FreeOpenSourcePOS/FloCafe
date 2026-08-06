@@ -257,12 +257,15 @@ export function startKdsServer(): Promise<void> {
       try {
         const db = getDatabase();
         const kdsUser = (req as any).user as KdsRequestUser;
-        const categoryIds = kdsUser.categoryIds;
-        const stationIds = kdsUser.stationIds;
+        const liveUser = db.prepare('SELECT role, category_ids, is_active FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number } | undefined;
+        if (!liveUser?.is_active) return res.status(403).json({ error: 'User account is not active' });
+        const categoryIds = categoryIdsForRole(liveUser.role, liveUser.category_ids);
+        const stationIds = getUserKdsStationIds(db, kdsUser.userId);
+        if (!stationIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
         const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
         const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
-        const restrictedKdsPayload = kdsUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
+        const restrictedKdsPayload = liveUser.role === 'chef' || categoryIds.length > 0 || stationIds.length > 0;
         if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const voidedCutoff = new Date(Date.now() - KDS_VOIDED_ITEM_VISIBILITY_MS).toISOString().replace('T', ' ').replace(/\..*$/, '');
 
@@ -359,8 +362,12 @@ export function startKdsServer(): Promise<void> {
         }
 
         const db = getDatabase();
-        const categoryIds = ((req as any).user as KdsRequestUser).categoryIds;
-        const stationIds = ((req as any).user as KdsRequestUser).stationIds;
+        const kdsUser = (req as any).user as KdsRequestUser;
+        const liveUser = db.prepare('SELECT role, category_ids, is_active FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number } | undefined;
+        if (!liveUser?.is_active) return res.status(403).json({ error: 'User account is not active' });
+        const categoryIds = categoryIdsForRole(liveUser.role, liveUser.category_ids);
+        const stationIds = getUserKdsStationIds(db, kdsUser.userId);
+        if (!stationIds) return res.status(403).json({ error: 'Could not load station permissions' });
         const updateResult = db.transaction(() => {
           const item = db.prepare(`
             SELECT oi.*, p.category_id
@@ -430,17 +437,22 @@ export function startKdsServer(): Promise<void> {
       try {
         const db = getDatabase();
         const kdsUser = (req as any).user as KdsRequestUser;
-        const stationCategoryIds = getKdsStationCategoryIds(db, kdsUser.stationIds);
-        const stationScope = getKdsStationRoutingScope(db, kdsUser.stationIds, kdsUser.categoryIds);
+        const liveUser = db.prepare('SELECT role, category_ids, is_active FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number } | undefined;
+        if (!liveUser?.is_active) return res.status(403).json({ error: 'User account is not active' });
+        const liveCategoryIds = categoryIdsForRole(liveUser.role, liveUser.category_ids);
+        const liveStationIds = getUserKdsStationIds(db, kdsUser.userId);
+        if (!liveStationIds) return res.status(403).json({ error: 'Could not load station permissions' });
+        const stationCategoryIds = getKdsStationCategoryIds(db, liveStationIds);
+        const stationScope = getKdsStationRoutingScope(db, liveStationIds, liveCategoryIds);
         const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
         if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds) return res.status(403).json({ error: 'Could not load station permissions' });
-        const hasUnrestrictedStation = kdsUser.stationIds.some((stationId) => stationScope.categoryIdsByStation[String(stationId)] === null);
-        const categoryIds = kdsUser.stationIds.length === 0
-          ? kdsUser.categoryIds
+        const hasUnrestrictedStation = liveStationIds.some((stationId) => stationScope.categoryIdsByStation[String(stationId)] === null);
+        const categoryIds = liveStationIds.length === 0
+          ? liveCategoryIds
           : hasUnrestrictedStation
             ? []
-            : stationRoutingCategoryIds.filter((categoryId) => kdsUser.categoryIds.length === 0 || kdsUser.categoryIds.includes(categoryId));
-        const categoryScopeConfigured = !hasUnrestrictedStation && (stationRoutingCategoryIds.length > 0 || kdsUser.categoryIds.length > 0);
+            : stationRoutingCategoryIds.filter((categoryId) => liveCategoryIds.length === 0 || liveCategoryIds.includes(categoryId));
+        const categoryScopeConfigured = !hasUnrestrictedStation && (stationRoutingCategoryIds.length > 0 || liveCategoryIds.length > 0);
         const categories = categoryScopeConfigured
           ? db.prepare(`SELECT * FROM categories WHERE is_active = 1 AND id IN (${categoryIds.length > 0 ? categoryIds.map(() => '?').join(',') : "''"}) ORDER BY sort_order`).all(...categoryIds)
           : db.prepare('SELECT * FROM categories WHERE is_active = 1 ORDER BY sort_order').all();

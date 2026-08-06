@@ -180,12 +180,24 @@ function writeReplacementJournal(journalPath: string, journal: ReplacementJourna
   fs.writeFileSync(tempPath, JSON.stringify(journal), { encoding: 'utf8', mode: 0o600 });
   syncFile(tempPath);
   fs.renameSync(tempPath, journalPath);
+  syncDirectory(path.dirname(journalPath));
+}
+
+function syncDirectory(directoryPath: string): void {
+  try {
+    const fd = fs.openSync(directoryPath, 'r');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+  } catch {
+    // Directory fsync is unavailable on some Windows filesystems; the file
+    // itself is still fsynced and startup validation remains conservative.
+  }
 }
 
 function removeReplacementArtifacts(journalPath: string, recoveryPath: string): void {
   for (const filePath of [journalPath, `${journalPath}.tmp`, recoveryPath, `${recoveryPath}-wal`, `${recoveryPath}-shm`]) {
     try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
   }
+  syncDirectory(path.dirname(journalPath));
 }
 
 function isHealthyDatabaseFile(filePath: string): boolean {
@@ -212,11 +224,19 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
   for (const journalPath of journals) {
     let journal: ReplacementJournal;
     try {
-      journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as ReplacementJournal;
+      const parsed = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
+      if ((parsed.phase !== 'prepared' && parsed.phase !== 'committed')
+        || typeof parsed.recoveryPath !== 'string'
+        || typeof parsed.dbPath !== 'string'
+        || !path.isAbsolute(parsed.recoveryPath)
+        || !path.isAbsolute(parsed.dbPath)) {
+        throw new Error('invalid phase or paths');
+      }
+      journal = parsed as ReplacementJournal;
     } catch (error) {
       throw new Error(`Interrupted database replacement journal is invalid: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
-    const recoveryPath = path.resolve(journal.recoveryPath);
+    const recoveryPath = journal.recoveryPath;
     if (journal.dbPath !== dbPath || !isHealthyDatabaseFile(recoveryPath)) {
       throw new Error('Interrupted database replacement recovery snapshot could not be validated');
     }
@@ -229,6 +249,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     if (failures.length > 0) throw new Error(`Could not clear interrupted database replacement: ${failures.join(', ')}`);
     fs.copyFileSync(recoveryPath, dbPath);
     syncFile(dbPath);
+    syncDirectory(path.dirname(dbPath));
     removeReplacementArtifacts(journalPath, recoveryPath);
     console.warn(`[DB] Recovered database from interrupted replacement snapshot: ${recoveryPath}`);
     return;
@@ -1289,6 +1310,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
           throw new Error(`Could not remove database files during recovery: ${recoveryRemoveFailures.join(', ')}`);
         }
         fs.copyFileSync(recoveryPath, dbPath);
+        syncDirectory(path.dirname(dbPath));
         initDatabase(false);
       } catch (recoveryError: any) {
         throw new Error(

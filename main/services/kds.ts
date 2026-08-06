@@ -424,9 +424,9 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
       }
 
       const updateResult = expectedStatus === undefined
-        ? db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), order_item_id)
+        ? db.prepare("UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled')").run(status, now(), order_item_id)
         : db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(status, now(), order_item_id, expectedStatus);
-      if (expectedStatus !== undefined && updateResult.changes !== 1) {
+      if (updateResult.changes !== 1) {
         return { error: 'Item status changed; refresh and try again' };
       }
 

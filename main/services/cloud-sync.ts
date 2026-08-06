@@ -218,6 +218,8 @@ class CloudSyncService {
   private relayReconnectAttempts = 0;
   private httpFallbackActive = false;
   private relayMode: 'websocket' | 'http_fallback' | 'disconnected' = 'disconnected';
+  private supportFlushing = false;
+  private diagnosticsFlushing = false;
 
   // Zero-touch registration state.
   private autoRegisterTimer: ReturnType<typeof setTimeout> | null = null;
@@ -552,8 +554,8 @@ class CloudSyncService {
   }
 
   /** Queue a support request durably; the caller can be offline. */
-  queueSupportTicket(input: SupportTicketInput): { queued: boolean; client_ticket_id: string } {
-    void withDatabaseRequest(() => {
+  async queueSupportTicket(input: SupportTicketInput): Promise<{ queued: boolean; client_ticket_id: string }> {
+    return withDatabaseRequest(async () => {
       const db = getDatabase();
       const timestamp = now();
       db.prepare(`
@@ -562,14 +564,16 @@ class CloudSyncService {
         VALUES (?, ?, 'pending', ?, ?)
       `).run(input.client_ticket_id, JSON.stringify(input), timestamp, timestamp);
       void this.flushSupportTicketOutbox();
-    }).catch((error) => this.markError((error as Error).message));
-    return { queued: true, client_ticket_id: input.client_ticket_id };
+      return { queued: true, client_ticket_id: input.client_ticket_id };
+    });
   }
 
   private async flushSupportTicketOutbox(): Promise<void> {
     return withDatabaseRequest(async () => {
     const cfg = this.settings ?? this.loadSettings();
-    if (!cfg?.sync_enabled || !cfg.api_key) return;
+    if (!cfg?.sync_enabled || !cfg.api_key || this.supportFlushing) return;
+    this.supportFlushing = true;
+    try {
     const db = getDatabase();
     db.prepare("UPDATE support_ticket_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
     const rows = db.prepare(`
@@ -615,6 +619,9 @@ class CloudSyncService {
       }
       this.markError(message);
     }
+    } finally {
+      this.supportFlushing = false;
+    }
     });
   }
 
@@ -641,7 +648,9 @@ class CloudSyncService {
     return withDatabaseRequest(async () => {
     if (!isDiagnosticsConsentEnabled()) return;
     const cfg = this.settings ?? this.loadSettings();
-    if (!cfg?.sync_enabled || !cfg.api_key) return;
+    if (!cfg?.sync_enabled || !cfg.api_key || this.diagnosticsFlushing) return;
+    this.diagnosticsFlushing = true;
+    try {
     const db = getDatabase();
     db.prepare("UPDATE store_diagnostics_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
     const rows = db.prepare(`
@@ -685,6 +694,9 @@ class CloudSyncService {
       }
       // Non-fatal, same as support tickets: diagnostics must never surface a
       // connectivity error as if it were a cloud-sync problem to the merchant.
+    }
+    } finally {
+      this.diagnosticsFlushing = false;
     }
     });
   }

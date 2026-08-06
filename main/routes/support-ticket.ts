@@ -5,7 +5,7 @@ import { cloudSync } from '../services/cloud-sync';
 
 const router = Router();
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), async (req: Request, res: Response) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const subject = String(body.subject || '').trim().slice(0, 255);
   const message = String(body.message || '').trim().slice(0, 5000);
@@ -18,7 +18,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (
   const includeContact = body.include_contact === true;
   const diagnostics = body.diagnostics && typeof body.diagnostics === 'object' && !Array.isArray(body.diagnostics)
     ? body.diagnostics : null;
-  const queued = cloudSync.queueSupportTicket({
+  const queued = await cloudSync.queueSupportTicket({
     client_ticket_id: clientTicketId,
     subject,
     message,

@@ -94,9 +94,9 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
       }
 
       const updateResult = expectedStatus === undefined
-        ? db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ?').run(status, now(), itemId)
+        ? db.prepare("UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status NOT IN ('voided', 'void_adjustment', 'completed', 'cancelled')").run(status, now(), itemId)
         : db.prepare('UPDATE order_items SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(status, now(), itemId, expectedStatus);
-      if (expectedStatus !== undefined && updateResult.changes !== 1) throw new Error('STATUS_CONFLICT');
+      if (updateResult.changes !== 1) throw new Error('STATUS_CONFLICT');
 
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(item.order_id) as any;
       if (!order) return null;

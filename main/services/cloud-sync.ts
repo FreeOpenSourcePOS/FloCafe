@@ -223,6 +223,7 @@ class CloudSyncService {
   private supportFlushPromise: Promise<void> | null = null;
   private diagnosticsFlushing = false;
   private diagnosticsFlushPromise: Promise<void> | null = null;
+  private cloudDeletionInProgress = false;
 
   // Zero-touch registration state.
   private autoRegisterTimer: ReturnType<typeof setTimeout> | null = null;
@@ -470,6 +471,8 @@ class CloudSyncService {
   }
 
   async deleteCloudData(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion already in progress');
+    this.cloudDeletionInProgress = true;
     return withDatabaseRequest(async () => {
     const activeFlushes = [this.outboxFlushPromise, this.supportFlushPromise, this.diagnosticsFlushPromise].filter((promise): promise is Promise<void> => promise !== null);
     this.stop();
@@ -498,7 +501,7 @@ class CloudSyncService {
     this.stop();
     this.settings = this.loadSettings();
     return data;
-    });
+    }).finally(() => { this.cloudDeletionInProgress = false; });
   }
 
   async getDeletionRequestStatus(): Promise<Record<string, unknown> | null> {
@@ -561,7 +564,9 @@ class CloudSyncService {
 
   /** Queue a support request durably; the caller can be offline. */
   async queueSupportTicket(input: SupportTicketInput): Promise<{ queued: boolean; client_ticket_id: string }> {
+    if (this.cloudDeletionInProgress) return { queued: false, client_ticket_id: input.client_ticket_id };
     return withDatabaseRequest(async () => {
+      if (this.cloudDeletionInProgress) return { queued: false, client_ticket_id: input.client_ticket_id };
       const db = getDatabase();
       const timestamp = now();
       db.prepare(`
@@ -640,8 +645,9 @@ class CloudSyncService {
    * callers should not need to check this themselves before every call site.
    */
   reportDiagnostic(input: DiagnosticEventInput): void {
+    if (this.cloudDeletionInProgress) return;
     void withDatabaseRequest(() => {
-      if (!isDiagnosticsConsentEnabled()) return;
+      if (this.cloudDeletionInProgress || !isDiagnosticsConsentEnabled()) return;
       const db = getDatabase();
       const timestamp = now();
       db.prepare(`
@@ -828,7 +834,9 @@ class CloudSyncService {
   }
 
   private enqueueEvent(eventType: string, entityType: string, entityId: string, payload: unknown) {
+    if (this.cloudDeletionInProgress) return;
     void withDatabaseRequest(async () => {
+      if (this.cloudDeletionInProgress) return;
       const cfg = this.loadSettings();
       if (!cfg?.sync_enabled) return;
       const db = getDatabase();

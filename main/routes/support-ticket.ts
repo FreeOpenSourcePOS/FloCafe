@@ -31,7 +31,13 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), a
     } : {}),
     diagnostics,
   });
-  res.status(202).json({ ...queued, status: 'queued', message: 'Your request is queued and will be sent when FloCafe is online.' });
+  res.status(queued.queued ? 202 : 503).json({
+    ...queued,
+    status: queued.queued ? 'queued' : 'unavailable',
+    message: queued.queued
+      ? 'Your request is queued and will be sent when FloCafe is online.'
+      : 'Cloud data deletion is in progress; please try again later.',
+  });
 });
 
 export const supportTicketRoutes = router;

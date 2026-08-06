@@ -373,6 +373,13 @@ export function startKdsServer(): Promise<void> {
         if (!stationIds || stationAssignmentsConfigured === null) return res.status(403).json({ error: 'Could not load station permissions' });
         if (stationAssignmentsConfigured && stationIds.length === 0) return res.status(403).json({ error: 'No active kitchen station is assigned to this user' });
         const updateResult = db.transaction(() => {
+          const currentUser = db.prepare('SELECT role, category_ids, is_active FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number } | undefined;
+          if (!currentUser?.is_active) return { statusCode: 403, error: 'User account is not active' };
+          const currentCategoryIds = categoryIdsForRole(currentUser.role, currentUser.category_ids);
+          const currentStationIds = getUserKdsStationIds(db, kdsUser.userId);
+          const currentAssignmentsConfigured = hasUserKdsStationAssignments(db, kdsUser.userId);
+          if (!currentStationIds || currentAssignmentsConfigured === null) return { statusCode: 403, error: 'Could not load station permissions' };
+          if (currentAssignmentsConfigured && currentStationIds.length === 0) return { statusCode: 403, error: 'No active kitchen station is assigned to this user' };
           const item = db.prepare(`
             SELECT oi.*, p.category_id
             FROM order_items oi
@@ -388,20 +395,20 @@ export function startKdsServer(): Promise<void> {
             return { statusCode: 400, error: 'This terminal item cannot be updated from KDS' };
           }
 
-          if (stationIds.length > 0) {
-            const stationCategoryIds = getKdsStationCategoryIds(db, stationIds);
-            const stationScope = getKdsStationRoutingScope(db, stationIds, categoryIds);
+          if (currentStationIds.length > 0) {
+            const stationCategoryIds = getKdsStationCategoryIds(db, currentStationIds);
+            const stationScope = getKdsStationRoutingScope(db, currentStationIds, currentCategoryIds);
             const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
             const station = db.prepare(`
               SELECT t.kitchen_station_id
               FROM orders o LEFT JOIN tables t ON t.id = o.table_id
               WHERE o.id = ?
             `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-            if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds || !isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
+            if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds || !isKdsStationItemAllowed(currentStationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
               return { statusCode: 403, error: 'Not authorized to update this station' };
             }
           }
-          if (categoryIds.length > 0 && !categoryIds.includes(String(item.category_id))) {
+          if (currentCategoryIds.length > 0 && !currentCategoryIds.includes(String(item.category_id))) {
             return { statusCode: 403, error: 'Not authorized to update this item' };
           }
 

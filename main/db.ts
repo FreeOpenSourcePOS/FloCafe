@@ -967,6 +967,9 @@ export interface RestoreResult {
 function validateDirectBackup(backupPath: string, currentDb: Database.Database, currentVersion: number, baselineForeignKeyViolations: Set<string> = new Set()): string | null {
   let backupDb: Database.Database | undefined;
   try {
+    const sourceStat = fs.lstatSync(backupPath);
+    if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) return 'Direct restore source must be a regular file';
+    if (pathEntryExists(`${backupPath}-wal`) || pathEntryExists(`${backupPath}-shm`)) return 'Direct restore source must not have SQLite sidecars';
     backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
     const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
     const metadataVersion = metaRow ? parseCanonicalSchemaVersion(metaRow.value) ?? 0 : 0;
@@ -1602,6 +1605,17 @@ function dataOnlyRestore(
   preservedProtectedSettings: RestoreProtectedSettingState[] = [],
   preservedOutboxes: RestoreOutboxState = { cloud: [], support: [], diagnostics: [] },
 ): RestoreResult {
+  const livePath = getDbPath();
+  if ([livePath, `${livePath}-wal`, `${livePath}-shm`].some((liveTarget) => isLiveDatabaseTarget(backupPath, liveTarget))) {
+    return {
+      success: false,
+      mode: 'data_only',
+      backupSchemaVersion: backupVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: 'Data-only restore source cannot be the live database or its SQLite sidecars',
+    };
+  }
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
   let backupDb: Database.Database | undefined;
@@ -3262,6 +3276,10 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
       backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('app_version', app.getVersion());
     } finally {
       backupDb?.close();
+    }
+    syncFile(targetPath);
+    if (!syncDirectory(path.dirname(targetPath)) && process.platform !== 'win32') {
+      throw new Error('Could not durably persist pre-migration backup');
     }
 
     completed = true;

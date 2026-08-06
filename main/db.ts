@@ -217,6 +217,25 @@ function isHealthyDatabaseFile(filePath: string): boolean {
   }
 }
 
+function removeOlderReplacementJournals(journals: string[], dbPath: string, backupDir: string): void {
+  const backupRoot = path.resolve(backupDir);
+  for (const journalPath of journals) {
+    try {
+      const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
+      if ((journal.phase !== 'prepared' && journal.phase !== 'committed')
+        || typeof journal.recoveryPath !== 'string'
+        || journal.dbPath !== dbPath
+        || path.dirname(journal.recoveryPath) !== backupRoot
+        || !/^(?:flo-restore|flo-reset)-recovery-.+\.db$/.test(path.basename(journal.recoveryPath))) {
+        throw new Error('invalid stale replacement journal');
+      }
+      removeReplacementArtifacts(journalPath, journal.recoveryPath);
+    } catch (error) {
+      throw new Error(`Stale database replacement journal is invalid: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
+  }
+}
+
 function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string): void {
   let journals: string[] = [];
   try {
@@ -224,8 +243,8 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
       .filter((name) => /^(?:flo-restore|flo-reset)-recovery-.+\.json$/.test(name))
       .map((name) => path.join(backupDir, name))
       .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
-  } catch {
-    return;
+  } catch (error) {
+    throw new Error(`Could not inspect database replacement journals: ${error instanceof Error ? error.message : 'unknown error'}`);
   }
   for (const journalPath of journals) {
     let journal: ReplacementJournal;
@@ -251,6 +270,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
     }
     if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath)) {
       removeReplacementArtifacts(journalPath, recoveryPath);
+      removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
       console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
       return;
     }
@@ -262,6 +282,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
       throw new Error('Could not durably install recovered database');
     }
     removeReplacementArtifacts(journalPath, recoveryPath);
+    removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
     console.warn(`[DB] Recovered database from interrupted replacement snapshot: ${recoveryPath}`);
     return;
   }
@@ -619,6 +640,10 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
     for (const sidecar of [`${finalPath}-wal`, `${finalPath}-shm`]) {
       try { if (fs.existsSync(sidecar)) fs.unlinkSync(sidecar); } catch { }
     }
+    syncFile(finalPath);
+    if (!syncDirectory(path.dirname(finalPath)) && process.platform !== 'win32') {
+      throw new Error('Could not durably persist backup file');
+    }
     if (finalPath !== tempPath) {
       console.log(`[DB] Backup saved to: ${finalPath} (schema v${currentVersion})`);
     } else {
@@ -895,6 +920,11 @@ export function captureKitchenStationSecurityState(dbInstance: Database.Database
 
 export type KdsEnabledSettingState = { present: boolean; value: string | null };
 export type RestoreProtectedSettingState = { key: string; present: boolean; value: string | null };
+export type RestoreOutboxState = {
+  cloud: Record<string, unknown>[];
+  support: Record<string, unknown>[];
+  diagnostics: Record<string, unknown>[];
+};
 const RESTORE_PROTECTED_SETTING_KEYS = [
   'jwt_secret', 'cloud_api_key', 'cloud_device_secret', 'cloud_pos_hash',
   'telemetry_enabled', 'diagnostics_consent',
@@ -936,6 +966,27 @@ export function mergeRestoreProtectedSettings(dbInstance: Database.Database, sta
   const hasDeviceSecret = states.some((state) => state.key === 'cloud_device_secret' && state.present);
   const hasPosHash = states.some((state) => state.key === 'cloud_pos_hash' && state.present);
   if (!hasDeviceSecret || !hasPosHash) ensureCloudIdentity();
+}
+
+export function captureRestoreOutboxState(dbInstance: Database.Database): RestoreOutboxState {
+  const pending = (table: string) => dbInstance.prepare(`SELECT * FROM ${table} WHERE status IN ('pending', 'failed', 'sending')`).all() as Record<string, unknown>[];
+  return { cloud: pending('cloud_sync_outbox'), support: pending('support_ticket_outbox'), diagnostics: pending('store_diagnostics_outbox') };
+}
+
+export function mergeRestoreOutboxState(dbInstance: Database.Database, state: RestoreOutboxState): void {
+  dbInstance.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
+  const cloud = dbInstance.prepare(`INSERT OR REPLACE INTO cloud_sync_outbox
+    (id, event_type, entity_type, entity_id, payload, status, attempt_count, next_attempt_at, last_error, delivered_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const row of state.cloud) cloud.run(row.id, row.event_type, row.entity_type, row.entity_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.delivered_at || null, row.created_at || now(), row.updated_at || now());
+  const support = dbInstance.prepare(`INSERT OR REPLACE INTO support_ticket_outbox
+    (client_ticket_id, payload, status, support_code, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const row of state.support) support.run(row.client_ticket_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.support_code || null, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
+  const diagnostics = dbInstance.prepare(`INSERT OR REPLACE INTO store_diagnostics_outbox
+    (event_id, payload, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const row of state.diagnostics) diagnostics.run(row.event_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
 }
 
 export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {
@@ -1238,6 +1289,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
   const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
   const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
+  const preservedOutboxes = captureRestoreOutboxState(currentDb);
 
   console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
 
@@ -1272,6 +1324,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
     const journalPath = recoveryPath.replace(/\.db$/, '.json');
 
     let recoveryCopyReady = false;
+    let recoveryCompleted = false;
     try {
       // Checkpoint the live WAL before making a synchronous recovery copy.
       currentDb.pragma('wal_checkpoint(TRUNCATE)');
@@ -1293,7 +1346,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
       mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
       freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
-      freshDb.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
+      mergeRestoreOutboxState(freshDb, preservedOutboxes);
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
@@ -1330,6 +1383,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
           throw new Error('Could not durably recover direct-restore database');
         }
         initDatabase(false);
+        recoveryCompleted = true;
       } catch (recoveryError: any) {
         throw new Error(
           `Direct restore failed: ${error?.message || 'unknown error'}; ` +
@@ -1338,7 +1392,9 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       }
       throw error;
     } finally {
-      if (isHealthyDatabaseFile(dbPath) && isHealthyDatabaseFile(recoveryPath)) {
+      if (recoveryCompleted) {
+        removeReplacementArtifacts(journalPath, recoveryPath);
+      } else if (isHealthyDatabaseFile(dbPath) && isHealthyDatabaseFile(recoveryPath)) {
         // A committed journal is finalized here; an uncommitted journal is
         // intentionally retained if recovery itself failed.
         try {
@@ -1350,7 +1406,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, preservedOutboxes);
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -1395,6 +1451,7 @@ function dataOnlyRestore(
   preservedStationSecurity: KitchenStationSecurityState[] = [],
   preservedKdsEnabled: KdsEnabledSettingState = { present: false, value: null },
   preservedProtectedSettings: RestoreProtectedSettingState[] = [],
+  preservedOutboxes: RestoreOutboxState = { cloud: [], support: [], diagnostics: [] },
 ): RestoreResult {
   // Read metadata and columns before ATTACH. Keeping a separate read-only
   // handle open while detaching the same file causes SQLITE_BUSY/locked.
@@ -1479,7 +1536,7 @@ function dataOnlyRestore(
     mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
     mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
     currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
-    currentDb.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
+    mergeRestoreOutboxState(currentDb, preservedOutboxes);
     mergeRevocations(currentDb, preservedRevocations);
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));

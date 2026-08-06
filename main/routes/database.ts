@@ -188,7 +188,19 @@ router.post('/import', requireRole('owner'),
         }
 
         const rows = importData[tableName];
-        if (!rows || !Array.isArray(rows) || rows.length === 0) continue;
+        if (!rows || !Array.isArray(rows)) continue;
+        if (rows.length === 0) {
+          if (overwrite || hasVersionMismatch) {
+            if (tableName === 'settings') {
+              const protectedKeys = Array.from(EXPORT_SETTINGS_REDACT);
+              const placeholders = protectedKeys.map(() => '?').join(', ');
+              db.prepare(`DELETE FROM settings WHERE key NOT IN (${placeholders})`).run(...protectedKeys);
+            } else {
+              db.exec(`DELETE FROM ${tableName}`);
+            }
+          }
+          continue;
+        }
 
         const currentCols = getTableColumns(db, tableName);
         // Validate and filter column names to prevent SQL injection

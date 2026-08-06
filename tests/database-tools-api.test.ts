@@ -145,6 +145,7 @@ async function runTests() {
   assert(unresolvedUserImport.body.error?.includes('redacted user'), 'unresolved user import explains the required staff setup');
 
   // Redacted export fields must never become literal credentials on import.
+  db.prepare("INSERT OR IGNORE INTO categories (id, name, sort_order) VALUES ('stale-import-category', 'Stale', 99)").run();
   const jwtSecretBefore = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
   const redactedImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',
@@ -160,6 +161,7 @@ async function runTests() {
     },
   });
   assert(redactedImport.status === 200, `redacted settings import returns 200 (got ${redactedImport.status}, ${JSON.stringify(redactedImport.body)})`);
+  assert((db.prepare("SELECT COUNT(*) AS count FROM categories WHERE id = 'stale-import-category'").get() as { count: number }).count === 0, 'overwrite import clears tables explicitly present as empty');
   const jwtSecretAfter = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
   assert(
     (jwtSecretAfter?.value ?? null) === (jwtSecretBefore?.value ?? null),

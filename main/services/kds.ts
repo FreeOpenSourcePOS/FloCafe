@@ -565,12 +565,22 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
   const countParams: any[] = [voidedCutoff];
 
   if (stationIds.length > 0) {
-    const stationPlaceholders = stationIds.map(() => '?').join(',');
-    const categoryRoute = stationRoutingCategoryIds.length > 0
-      ? ` OR (o.table_id IS NULL AND p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
-      : '';
-    countsQuery += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute})`;
-    countParams.push(...stationIds, ...stationRoutingCategoryIds);
+    const stationRoutes: string[] = [];
+    for (const stationId of stationIds) {
+      const allowedCategoryIds = stationScope.categoryIdsByStation[String(stationId)];
+      if (allowedCategoryIds === null) {
+        stationRoutes.push('t.kitchen_station_id = ?');
+        countParams.push(stationId);
+      } else if (allowedCategoryIds.length > 0) {
+        stationRoutes.push(`(t.kitchen_station_id = ? AND p.category_id IN (${allowedCategoryIds.map(() => '?').join(',')}))`);
+        countParams.push(stationId, ...allowedCategoryIds);
+      }
+    }
+    if (stationRoutingCategoryIds.length > 0) {
+      stationRoutes.push(`(o.table_id IS NULL AND p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`);
+      countParams.push(...stationRoutingCategoryIds);
+    }
+    countsQuery += ` AND (${stationRoutes.length > 0 ? stationRoutes.join(' OR ') : '0'})`;
   }
   if (categoryIds.length > 0) {
     countsQuery += ` AND p.category_id IN (${categoryIds.map(() => '?').join(',')})`;

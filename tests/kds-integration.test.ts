@@ -86,6 +86,13 @@ async function run() {
       VALUES (?, 'kds-product', 'KDS Burger', 10, 1, 10, 0, 10, 'pending', ?, ?)`)
       .run(orderId, now(), now());
     const itemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any).id;
+    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)').run('kds-bar-category', 'Bar', 2);
+    db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)').run('kds-bar-product', 'kds-bar-category', 'KDS Bar', 12);
+    db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+      VALUES (?, 'takeaway', 'pending', 12, 12, ?, ?)`).run('KDS-WS-BAR', now(), now());
+    const barOrderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-WS-BAR') as any).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-bar-product', 'KDS Bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(barOrderId, now(), now());
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
@@ -166,6 +173,7 @@ async function run() {
     assert(authMessage.user.role === 'chef', 'WebSocket authenticates kitchen staff');
     const initialData = await nextMessage('initial_data');
     assert(!('unit_price' in (initialData.orders[0]?.items?.[0] || {})), 'Station-only WebSocket chef receives redacted item pricing');
+    assert(initialData.counts.pending === 1, 'WebSocket counts exclude unauthorized station categories');
 
     const updatePromise = nextMessage('initial_data');
     const statusRes = await request(`http://127.0.0.1:${port}`)

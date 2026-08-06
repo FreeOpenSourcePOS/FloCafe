@@ -320,6 +320,11 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         const statusCode = axiosError.response?.status;
         const errorMessage = axiosError.response?.data?.error || t('kds.failedToUpdateItem');
         const kdsDisabled = /kds is disabled/i.test(errorMessage);
+        if (statusCode === 409) {
+          if (wsRef.current === null) await fetchOrdersRest();
+          if (!opts.silent) toast.error(errorMessage);
+          return;
+        }
         const authorizationFailure = /invalid|expired|revoked|authentication required|no active kitchen station|only chef|only kitchen staff|user account is not active|not authorized to update (this item|this station)/i.test(errorMessage);
         if (statusCode === 401 || (statusCode === 403 && !kdsDisabled && authorizationFailure)) {
           sessionGenerationRef.current += 1;

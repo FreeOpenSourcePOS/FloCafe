@@ -168,38 +168,70 @@ function getBackupDir(): string {
   return path.join(userDataPath, 'backups');
 }
 
-function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string): void {
-  let candidates: string[] = [];
+type ReplacementJournal = { phase: 'prepared' | 'committed'; recoveryPath: string; dbPath: string };
+
+function syncFile(filePath: string): void {
+  const fd = fs.openSync(filePath, 'r');
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
+
+function writeReplacementJournal(journalPath: string, journal: ReplacementJournal): void {
+  const tempPath = `${journalPath}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(journal), { encoding: 'utf8', mode: 0o600 });
+  syncFile(tempPath);
+  fs.renameSync(tempPath, journalPath);
+}
+
+function removeReplacementArtifacts(journalPath: string, recoveryPath: string): void {
+  for (const filePath of [journalPath, `${journalPath}.tmp`, recoveryPath, `${recoveryPath}-wal`, `${recoveryPath}-shm`]) {
+    try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
+  }
+}
+
+function isHealthyDatabaseFile(filePath: string): boolean {
   try {
-    candidates = fs.readdirSync(backupDir)
-      .filter((name) => /^(?:flo-restore|flo-reset)-recovery-.+\.db$/.test(name))
+    const candidate = new Database(filePath, { readonly: true, fileMustExist: true });
+    const healthy = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
+    candidate.close();
+    return healthy;
+  } catch {
+    return false;
+  }
+}
+
+function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string): void {
+  let journals: string[] = [];
+  try {
+    journals = fs.readdirSync(backupDir)
+      .filter((name) => /^(?:flo-restore|flo-reset)-recovery-.+\.json$/.test(name))
       .map((name) => path.join(backupDir, name))
       .sort((a, b) => fs.statSync(b).mtimeMs - fs.statSync(a).mtimeMs);
   } catch {
     return;
   }
-  for (const recoveryPath of candidates) {
-    let valid = false;
+  for (const journalPath of journals) {
+    let journal: ReplacementJournal;
     try {
-      const recoveryDb = new Database(recoveryPath, { readonly: true, fileMustExist: true });
-      valid = (recoveryDb.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
-      recoveryDb.close();
+      journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as ReplacementJournal;
     } catch (error) {
-      console.error('[DB] Interrupted replacement recovery snapshot is invalid:', error);
+      throw new Error(`Interrupted database replacement journal is invalid: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
-    if (!valid) continue;
+    const recoveryPath = path.resolve(journal.recoveryPath);
+    if (journal.dbPath !== dbPath || !isHealthyDatabaseFile(recoveryPath)) {
+      throw new Error('Interrupted database replacement recovery snapshot could not be validated');
+    }
+    if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath)) {
+      removeReplacementArtifacts(journalPath, recoveryPath);
+      console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
+      return;
+    }
     const failures = removeDatabaseFiles(dbPath);
     if (failures.length > 0) throw new Error(`Could not clear interrupted database replacement: ${failures.join(', ')}`);
     fs.copyFileSync(recoveryPath, dbPath);
-    for (const filePath of [`${recoveryPath}-wal`, `${recoveryPath}-shm`]) {
-      try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { }
-    }
-    try { fs.unlinkSync(recoveryPath); } catch { }
+    syncFile(dbPath);
+    removeReplacementArtifacts(journalPath, recoveryPath);
     console.warn(`[DB] Recovered database from interrupted replacement snapshot: ${recoveryPath}`);
     return;
-  }
-  if (candidates.length > 0) {
-    throw new Error('Interrupted database replacement recovery snapshot could not be validated');
   }
 }
 
@@ -600,17 +632,23 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
     const { path: backupPath } = await createBackupUnlocked();
     const dbPath = getDbPath();
     const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
+    const journalPath = recoveryPath.replace(/\.db$/, '.json');
     let replacementCompleted = false;
     let recoveryCompleted = false;
 
     try {
       fs.copyFileSync(backupPath, recoveryPath);
+      syncFile(recoveryPath);
+      writeReplacementJournal(journalPath, { phase: 'prepared', recoveryPath, dbPath });
       closeDatabase();
       const failures = removeDatabaseFiles(dbPath);
       if (failures.length > 0) {
         throw new Error(`Could not remove database files: ${failures.join(', ')}`);
       }
       initDatabase(false);
+      getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+      syncFile(dbPath);
+      writeReplacementJournal(journalPath, { phase: 'committed', recoveryPath, dbPath });
       replacementCompleted = true;
       return { backupPath };
     } catch (error: any) {
@@ -630,9 +668,7 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
       }
       throw error;
     } finally {
-      if (replacementCompleted || recoveryCompleted) {
-        try { if (fs.existsSync(recoveryPath)) fs.unlinkSync(recoveryPath); } catch { }
-      }
+      if (replacementCompleted || recoveryCompleted) removeReplacementArtifacts(journalPath, recoveryPath);
     }
   });
 }
@@ -1197,12 +1233,15 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
     console.log('[DB] restoreBackup: Direct restore (same schema version)');
     const dbPath = getDbPath();
     const recoveryPath = path.join(getBackupDir(), `flo-restore-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
+    const journalPath = recoveryPath.replace(/\.db$/, '.json');
 
     let recoveryCopyReady = false;
     try {
       // Checkpoint the live WAL before making a synchronous recovery copy.
       currentDb.pragma('wal_checkpoint(TRUNCATE)');
       fs.copyFileSync(dbPath, recoveryPath);
+      syncFile(recoveryPath);
+      writeReplacementJournal(journalPath, { phase: 'prepared', recoveryPath, dbPath });
       recoveryCopyReady = true;
       closeDatabase();
       const removeFailures = removeDatabaseFiles(dbPath);
@@ -1218,6 +1257,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
       mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
       freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
+      freshDb.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
       mergeRevocations(freshDb, preservedRevocations);
       const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
       const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
@@ -1228,6 +1268,9 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       ) {
         throw new Error('Restored database failed integrity validation');
       }
+      freshDb.pragma('wal_checkpoint(TRUNCATE)');
+      syncFile(dbPath);
+      writeReplacementJournal(journalPath, { phase: 'committed', recoveryPath, dbPath });
       return {
         success: true,
         mode: 'direct',
@@ -1255,7 +1298,14 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       }
       throw error;
     } finally {
-      try { if (fs.existsSync(recoveryPath)) fs.unlinkSync(recoveryPath); } catch { }
+      if (isHealthyDatabaseFile(dbPath) && isHealthyDatabaseFile(recoveryPath)) {
+        // A committed journal is finalized here; an uncommitted journal is
+        // intentionally retained if recovery itself failed.
+        try {
+          const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as ReplacementJournal;
+          if (journal.phase === 'committed') removeReplacementArtifacts(journalPath, recoveryPath);
+        } catch { }
+      }
     }
   }
 
@@ -1389,6 +1439,7 @@ function dataOnlyRestore(
     mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
     mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
     currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
+    currentDb.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
     mergeRevocations(currentDb, preservedRevocations);
     const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
       .filter((key) => !baselineForeignKeyViolations.has(key));

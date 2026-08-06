@@ -251,12 +251,15 @@ async function run() {
 
     const interruptedRecoverySource = (await createBackup()).path;
     const recoveryMarker = path.join(testDir, 'backups', 'flo-restore-recovery-test.db');
+    const recoveryJournal = path.join(testDir, 'backups', 'flo-restore-recovery-test.json');
     fs.copyFileSync(interruptedRecoverySource, recoveryMarker);
+    fs.writeFileSync(recoveryJournal, JSON.stringify({ phase: 'prepared', recoveryPath: recoveryMarker, dbPath: getDbPath() }));
     closeDatabase();
     fs.unlinkSync(getDbPath());
     initDatabase();
     assert.equal((getDatabase().prepare('SELECT name FROM products WHERE id = ?').get('restore-product') as { name: string }).name, 'Restore Product', 'startup recovers a durable interrupted-restore snapshot');
     assert.equal(fs.existsSync(recoveryMarker), false, 'startup removes the consumed recovery marker');
+    assert.equal(fs.existsSync(recoveryJournal), false, 'startup removes the consumed recovery journal');
 
     console.log('✅ Production database restore tests passed');
   } finally {

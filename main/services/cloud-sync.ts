@@ -325,6 +325,7 @@ class CloudSyncService {
   // Registration carries contact metadata for FloAdmin support. It is not an
   // authentication credential and does not create a cloud owner account.
   async register(): Promise<Record<string, unknown>> {
+    return withDatabaseRequest(async () => {
     const db = getDatabase();
     const settings = this.readSettings(db);
     const { posHash, deviceSecret } = ensureCloudIdentity();
@@ -404,6 +405,7 @@ class CloudSyncService {
       });
       throw err;
     }
+    });
   }
 
   async testConnection(): Promise<Record<string, unknown>> {
@@ -463,6 +465,7 @@ class CloudSyncService {
   }
 
   async deleteCloudData(): Promise<Record<string, unknown>> {
+    return withDatabaseRequest(async () => {
     const res = await this.signedFetch('/api/pos/cloud-data/delete', {
       method: 'POST', body: JSON.stringify({ confirmation: 'DELETE CLOUD DATA' }),
     });
@@ -487,9 +490,11 @@ class CloudSyncService {
     this.stop();
     this.settings = this.loadSettings();
     return data;
+    });
   }
 
   async getDeletionRequestStatus(): Promise<Record<string, unknown> | null> {
+    return withDatabaseRequest(async () => {
     const settings = this.readSettings(getDatabase());
     const requestId = settings.cloud_deletion_request_id;
     const statusToken = settings.cloud_deletion_status_token;
@@ -510,9 +515,11 @@ class CloudSyncService {
       this.settings = this.loadSettings();
     }
     return data;
+    });
   }
 
   async cancelDeletionRequest(): Promise<Record<string, unknown>> {
+    return withDatabaseRequest(async () => {
     const settings = this.readSettings(getDatabase());
     if (!settings.cloud_deletion_request_id) throw new Error('No pending deletion request');
     const res = await this.signedFetch('/api/pos/cloud-data/deletion-request/cancel', {
@@ -522,6 +529,7 @@ class CloudSyncService {
     if (!res.ok) throw new Error(String(data.error || `Cancellation failed (${res.status})`));
     this.upsertSettings({ cloud_deletion_status: 'cancelled', cloud_registration_status: 'registered' });
     return data;
+    });
   }
 
   /**
@@ -545,21 +553,25 @@ class CloudSyncService {
 
   /** Queue a support request durably; the caller can be offline. */
   queueSupportTicket(input: SupportTicketInput): { queued: boolean; client_ticket_id: string } {
-    const db = getDatabase();
-    const timestamp = now();
-    db.prepare(`
-      INSERT OR IGNORE INTO support_ticket_outbox
-        (client_ticket_id, payload, status, created_at, updated_at)
-      VALUES (?, ?, 'pending', ?, ?)
-    `).run(input.client_ticket_id, JSON.stringify(input), timestamp, timestamp);
-    void this.flushSupportTicketOutbox();
+    void withDatabaseRequest(() => {
+      const db = getDatabase();
+      const timestamp = now();
+      db.prepare(`
+        INSERT OR IGNORE INTO support_ticket_outbox
+          (client_ticket_id, payload, status, created_at, updated_at)
+        VALUES (?, ?, 'pending', ?, ?)
+      `).run(input.client_ticket_id, JSON.stringify(input), timestamp, timestamp);
+      void this.flushSupportTicketOutbox();
+    }).catch((error) => this.markError((error as Error).message));
     return { queued: true, client_ticket_id: input.client_ticket_id };
   }
 
   private async flushSupportTicketOutbox(): Promise<void> {
+    return withDatabaseRequest(async () => {
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key) return;
     const db = getDatabase();
+    db.prepare("UPDATE support_ticket_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
     const rows = db.prepare(`
       SELECT * FROM support_ticket_outbox
        WHERE status IN ('pending', 'failed')
@@ -603,6 +615,7 @@ class CloudSyncService {
       }
       this.markError(message);
     }
+    });
   }
 
   /**
@@ -611,22 +624,26 @@ class CloudSyncService {
    * callers should not need to check this themselves before every call site.
    */
   reportDiagnostic(input: DiagnosticEventInput): void {
-    if (!isDiagnosticsConsentEnabled()) return;
-    const db = getDatabase();
-    const timestamp = now();
-    db.prepare(`
-      INSERT OR IGNORE INTO store_diagnostics_outbox
-        (event_id, payload, status, created_at, updated_at)
-      VALUES (?, ?, 'pending', ?, ?)
-    `).run(input.event_id, JSON.stringify(input), timestamp, timestamp);
-    void this.flushDiagnosticsOutbox();
+    void withDatabaseRequest(() => {
+      if (!isDiagnosticsConsentEnabled()) return;
+      const db = getDatabase();
+      const timestamp = now();
+      db.prepare(`
+        INSERT OR IGNORE INTO store_diagnostics_outbox
+          (event_id, payload, status, created_at, updated_at)
+        VALUES (?, ?, 'pending', ?, ?)
+      `).run(input.event_id, JSON.stringify(input), timestamp, timestamp);
+      void this.flushDiagnosticsOutbox();
+    }).catch((error) => this.markError((error as Error).message));
   }
 
   private async flushDiagnosticsOutbox(): Promise<void> {
+    return withDatabaseRequest(async () => {
     if (!isDiagnosticsConsentEnabled()) return;
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key) return;
     const db = getDatabase();
+    db.prepare("UPDATE store_diagnostics_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
     const rows = db.prepare(`
       SELECT * FROM store_diagnostics_outbox
        WHERE status IN ('pending', 'failed')
@@ -669,6 +686,7 @@ class CloudSyncService {
       // Non-fatal, same as support tickets: diagnostics must never surface a
       // connectivity error as if it were a cloud-sync problem to the merchant.
     }
+    });
   }
 
   /**
@@ -807,6 +825,7 @@ class CloudSyncService {
     this.flushing = true;
     try {
       const db = getDatabase();
+      db.prepare("UPDATE cloud_sync_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
       const rows = db.prepare(`
         SELECT * FROM cloud_sync_outbox
         WHERE status IN ('pending', 'failed')

@@ -321,7 +321,7 @@ jobs:
           DOWNLOAD_DIR=$(mktemp -d)
           VERIFY_DIR=$(mktemp -d)
           trap 'rm -rf "$DOWNLOAD_DIR" "$VERIFY_DIR"' EXIT
-          gh release download "v${VERSION}" --repo FreeOpenSourcePOS/FloCafe --pattern '*.zip' --dir "$DOWNLOAD_DIR"
+          gh release download "${VERSION}" --repo FreeOpenSourcePOS/FloCafe --pattern '*.zip' --dir "$DOWNLOAD_DIR"
           ls "$DOWNLOAD_DIR"/*.zip >/dev/null 2>&1 || { echo "::error::no .zip downloaded from the published release"; exit 1; }
           for ZIP in "$DOWNLOAD_DIR"/*.zip; do
             APP_DIR="$VERIFY_DIR/$(basename "$ZIP" .zip)"

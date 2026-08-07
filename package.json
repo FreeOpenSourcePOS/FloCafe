@@ -330,7 +330,13 @@
       "base": "core24",
       "core24": {
         "confinement": "strict",
-        "useDestructiveMode": true,
+        "useLXD": true,
+        "extensions": [
+          "gnome"
+        ],
+        "stagePackages": [
+          "default"
+        ],
         "plugs": [
           "default",
           "cups-control",

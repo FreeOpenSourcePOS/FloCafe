@@ -9,6 +9,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/hooks/useI18n';
+import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
+import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 
 type SupportProfile = {
   contact_name: string;
@@ -36,6 +38,8 @@ export default function SupportPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submittedId, setSubmittedId] = useState('');
+  const delivery = useSupportTicketStatus(submittedId || null);
+  const diagnosticsPreview = useSupportDiagnosticsPreview(category);
 
   useEffect(() => {
     api.get('/support-ticket/profile')
@@ -85,7 +89,22 @@ export default function SupportPage() {
       {submittedId && (
         <div className="flex gap-3 rounded-xl border border-green-200 bg-green-50 p-4 text-green-900">
           <CheckCircle2 className="mt-0.5 size-5 shrink-0" />
-          <div><p className="font-medium">{t('support.requestQueued')}</p><p className="mt-1 text-xs opacity-80">{t('support.requestId')}: {submittedId}</p></div>
+          <div>
+            <p className="font-medium">{t('support.requestQueued')}</p>
+            {delivery.status === 'delivered' && delivery.supportCode ? (
+              <>
+                <p className="mt-1 text-sm font-semibold">{t('support.supportCode')}: <span className="font-mono">{delivery.supportCode}</span></p>
+                <p className="mt-0.5 text-xs opacity-80">{t('support.supportCodeHint')}</p>
+              </>
+            ) : (
+              <>
+                <p className="mt-1 text-xs opacity-80">{t('support.requestId')}: {submittedId}</p>
+                <p className="mt-0.5 text-xs opacity-80">
+                  {delivery.status === 'failed' ? t('support.stillQueuedLocally') : t('support.confirmingDelivery')}
+                </p>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -154,6 +173,12 @@ export default function SupportPage() {
                 <dt className="text-muted-foreground">{t('support.location')}</dt><dd>{[profile.country, profile.timezone].filter(Boolean).join(' · ') || '—'}</dd>
               </dl>
               <div className="flex gap-2 text-xs text-muted-foreground"><ShieldCheck className="mt-0.5 size-4 shrink-0 text-green-600" /><span>{t('support.privacyHint')}</span></div>
+              {diagnosticsPreview && (
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">{t('support.showPayload')}</summary>
+                  <pre className="mt-2 max-h-40 overflow-auto rounded bg-muted/60 p-2">{JSON.stringify(diagnosticsPreview, null, 2)}</pre>
+                </details>
+              )}
             </CardContent>
           </Card>
         </div>

@@ -24,9 +24,15 @@ const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id
 // validating those specific already-installed rows as trusted, without the
 // underlying tax content living in source. Exported so tests can inject a
 // synthetic id/digest pair instead of depending on real pack content.
+// 'official-in'/'official-th' are the pre-rename ids used before commit
+// 3a75876 renamed them to 'official-india'/'official-thailand'; stores that
+// installed taxes before that rename still carry the old id in their DB and
+// must keep validating too.
 export const LEGACY_TRUSTED_PACK_DIGESTS: Record<string, string> = {
   'official-india': '873e8212625d5eefc4192bf99bcebece107cd2384ce8a1c6ecd44a7095082f2d',
   'official-thailand': '25f4082e56372599e90cad6222a493c426f7846552e00ccf486a71e7aa90d656',
+  'official-in': 'f2b7f10cfb03a6c8bd987382ab30bb384ee154c816a328ca4b97a0a5eb0cdec7',
+  'official-th': 'eb6bcee77ed077b4c218e5446e96e4669e162f8abefcc238cb97e9088309e7c3',
 };
 const APP_VERSION = String(require('../../package.json').version);
 const ENTITY_TYPES = ['product', 'addon', 'packaging', 'delivery', 'service_charge'] as const;

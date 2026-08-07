@@ -2,6 +2,22 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.9.0] - 2026-08-07
+
+### Added
+- Support tickets now confirm delivery: after a request is queued, FloCafe polls for a support code once FloAdmin accepts the ticket, and shows it in place of the local request ID once delivered.
+- The Help & Support page and the in-POS "Get help" prompt (shown on print failures) can preview the exact diagnostics payload that will be attached before sending, pulled from the same code path used on submit so the preview can never drift from what's actually sent.
+- Settings navigation adds dedicated Mobile Access and OrderFlow tabs, and splits Loyalty and Discounts into separate sections instead of one combined page.
+- The printer status control in the POS toolbar now includes a shortcut straight to Settings → Receipts & Printers.
+
+### Changed
+- Upgraded stores that installed the original India/Thailand tax packs under their pre-rename ids (`official-in`/`official-th`) can enable them again; the legacy digest allowlist now covers both the old and renamed pack ids.
+- The sidebar header now shows the store's initial in place of the FloCafe logo image, with the redundant duplicate business-name line removed.
+- Settings navigation groups were renamed for clarity ("Integrations" replaces the former "Data" group; "Tax Config" replaces "Tax configuration").
+
+### Fixed
+- Print-failure support requests submitted from the POS screen now tag their category as `printer` so they route and diagnose the same way as tickets filed from the Help & Support page.
+
 ## [2.8.0] - 2026-08-06
 
 ### Added

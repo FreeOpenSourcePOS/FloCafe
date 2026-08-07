@@ -9,6 +9,7 @@ const router = Router();
 
 const ALLOWED_CATEGORIES = new Set(['general', 'bug', 'feature', 'account', 'printer', 'tax']);
 const ALLOWED_SEVERITIES = new Set(['low', 'normal', 'high', 'urgent']);
+const CLIENT_TICKET_ID_RE = /^[0-9a-f-]{36}$/i;
 type SupportUser = { name?: string; email?: string; role?: string };
 type AuthenticatedRequest = Request & { user?: { userId?: string; role?: string } };
 
@@ -36,40 +37,21 @@ function supportProfile(req: Request) {
   };
 }
 
-router.get('/profile', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
-  const profile = supportProfile(req);
-  res.json({
-    ...profile,
-    app_version: require('../../package.json').version,
-    platform: process.platform,
-  });
-});
+function resolveCategory(value: unknown): string {
+  return ALLOWED_CATEGORIES.has(String(value || '')) ? String(value) : 'general';
+}
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
-  const body = req.body && typeof req.body === 'object' ? req.body : {};
-  const subject = String(body.subject || '').trim().slice(0, 255);
-  const message = String(body.message || '').trim().slice(0, 20000);
-  if (!subject || !message) return res.status(400).json({ error: 'subject and message are required' });
-
-  const clientTicketId = typeof body.client_ticket_id === 'string' && /^[0-9a-f-]{36}$/i.test(body.client_ticket_id)
-    ? body.client_ticket_id
-    : randomUUID();
-  const eventCode = String(body.event_code || '').slice(0, 64) || undefined;
-  const category = ALLOWED_CATEGORIES.has(String(body.category || '')) ? String(body.category) : 'general';
-  const severity = ALLOWED_SEVERITIES.has(String(body.severity || ''))
-    ? String(body.severity) as 'low' | 'normal' | 'high' | 'urgent'
-    : 'normal';
-  const profile = supportProfile(req);
-  const contactEmail = String(body.contact_email || profile.contact_email).trim().slice(0, 255);
-  if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
-    return res.status(400).json({ error: 'contact_email must be a valid email address' });
-  }
+/**
+ * The system-attached fields merged into every ticket's diagnostics.
+ * Shared between the preview route and the submit route so what the
+ * merchant is shown before sending can never drift from what actually
+ * gets attached.
+ */
+function buildSystemDiagnostics(req: Request, category: string) {
   const db = getDatabase();
   const schemaVersion = db.pragma('user_version', { simple: true }) as number;
-  const suppliedDiagnostics = body.diagnostics && typeof body.diagnostics === 'object' && !Array.isArray(body.diagnostics)
-    ? body.diagnostics : {};
-  const diagnostics = {
-    ...suppliedDiagnostics,
+  const profile = supportProfile(req);
+  return {
     category,
     restaurant_name: profile.restaurant_name,
     country: profile.country,
@@ -91,6 +73,66 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (
       };
     })(),
     submitted_by_role: profile.submitted_by_role,
+  };
+}
+
+router.get('/profile', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+  const profile = supportProfile(req);
+  res.json({
+    ...profile,
+    app_version: require('../../package.json').version,
+    platform: process.platform,
+  });
+});
+
+// Lets the UI render an accurate "here's exactly what gets sent" preview
+// before the merchant presses send, using the same fields the submit route
+// attaches — computed the same way, just without persisting anything.
+router.get('/diagnostics-preview', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+  const category = resolveCategory(req.query.category);
+  res.json(buildSystemDiagnostics(req, category));
+});
+
+// Submission is fire-and-forget into a local durable outbox (see
+// cloud-sync.ts), so the real support_code only exists once FloAdmin has
+// accepted the ticket. The UI polls this to learn when that happens.
+router.get('/:clientTicketId/status', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+  const clientTicketId = String(req.params.clientTicketId || '');
+  if (!CLIENT_TICKET_ID_RE.test(clientTicketId)) {
+    return res.status(400).json({ error: 'invalid client_ticket_id' });
+  }
+  const db = getDatabase();
+  const row = db.prepare(
+    'SELECT status, support_code, last_error FROM support_ticket_outbox WHERE client_ticket_id = ?'
+  ).get(clientTicketId) as { status: string; support_code: string | null; last_error: string | null } | undefined;
+  if (!row) return res.status(404).json({ error: 'not found' });
+  res.json({ status: row.status, support_code: row.support_code, last_error: row.last_error });
+});
+
+router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+  const body = req.body && typeof req.body === 'object' ? req.body : {};
+  const subject = String(body.subject || '').trim().slice(0, 255);
+  const message = String(body.message || '').trim().slice(0, 20000);
+  if (!subject || !message) return res.status(400).json({ error: 'subject and message are required' });
+
+  const clientTicketId = typeof body.client_ticket_id === 'string' && CLIENT_TICKET_ID_RE.test(body.client_ticket_id)
+    ? body.client_ticket_id
+    : randomUUID();
+  const eventCode = String(body.event_code || '').slice(0, 64) || undefined;
+  const category = resolveCategory(body.category);
+  const severity = ALLOWED_SEVERITIES.has(String(body.severity || ''))
+    ? String(body.severity) as 'low' | 'normal' | 'high' | 'urgent'
+    : 'normal';
+  const profile = supportProfile(req);
+  const contactEmail = String(body.contact_email || profile.contact_email).trim().slice(0, 255);
+  if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
+    return res.status(400).json({ error: 'contact_email must be a valid email address' });
+  }
+  const suppliedDiagnostics = body.diagnostics && typeof body.diagnostics === 'object' && !Array.isArray(body.diagnostics)
+    ? body.diagnostics : {};
+  const diagnostics = {
+    ...suppliedDiagnostics,
+    ...buildSystemDiagnostics(req, category),
   };
   if (JSON.stringify(diagnostics).length > 15000) {
     return res.status(400).json({ error: 'diagnostics are too large' });

@@ -285,7 +285,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             onChange={handlePhoneChange}
             onKeyDown={handlePhoneKeyDown}
             placeholder={dialCode ? `${dialCode} ${t('pos.phone')}` : t('pos.phone')}
-            className="h-10 w-44 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none"
+            className="h-10 w-48 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none"
           />
           <input
             ref={nameRef}

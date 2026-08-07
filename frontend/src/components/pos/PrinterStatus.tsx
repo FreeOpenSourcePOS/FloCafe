@@ -20,7 +20,9 @@ import {
   Loader2,
   Unplug,
   ChevronDown,
+  Settings,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -70,6 +72,7 @@ export default function PrinterStatus() {
     printMethod, hardwarePrinter,
   } = usePrinterStore();
   const { t } = useI18n();
+  const router = useRouter();
 
   const effectiveStatus: PrinterStatus = hardwarePrinter ? 'connected' : status;
   const cfg = STATUS_CONFIG[effectiveStatus];
@@ -107,7 +110,7 @@ export default function PrinterStatus() {
         <Button
           variant="outline"
           size="sm"
-          className={`flex items-center gap-1.5 ${cfg.color} border-current/30`}
+          className={`h-10 flex items-center gap-1.5 ${cfg.color} border-current/30`}
         >
           <Icon
             size={16}
@@ -188,6 +191,16 @@ export default function PrinterStatus() {
             {t('pos.printerBrowserMode')}
           </div>
         )}
+
+        <DropdownMenuSeparator />
+
+        <DropdownMenuItem
+          onClick={() => router.push('/settings?tab=receipts-printers')}
+          className="text-sm cursor-pointer"
+        >
+          <Settings size={14} className="mr-2" />
+          {t('pos.printerSettings')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

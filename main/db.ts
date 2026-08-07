@@ -2038,6 +2038,25 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 55,
+    name: 'rename_gstin_to_generic_tax_registration_number',
+    up: () => {
+      // "gstin"/"bill_show_gstn" were India-specific names for what is really
+      // a generic tax-registration-number field usable by any country's tax
+      // pack. Copy each business's existing value forward under the new key;
+      // the old row is left in place (harmless) so nothing is lost if a
+      // future build still reads it.
+      const copyIfPresent = (oldKey: string, newKey: string) => {
+        const existing = db.prepare('SELECT value FROM settings WHERE key = ?').get(oldKey) as { value: string } | undefined;
+        if (existing) {
+          db.prepare('INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)').run(newKey, existing.value);
+        }
+      };
+      copyIfPresent('gstin', 'tax_registration_number');
+      copyIfPresent('bill_show_gstn', 'bill_show_tax_id');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -2736,7 +2755,7 @@ function seedInstallDefaults(): void {
   insert('business_phone', '');
   insert('instagram_handle', '');
   insert('tax_registered', 'false');
-  insert('gstin', '');
+  insert('tax_registration_number', '');
   insert('state_code', '');
   insert('tax_scheme', 'regular');
   insert('taxes_enabled', 'false');

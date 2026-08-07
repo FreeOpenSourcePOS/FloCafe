@@ -23,7 +23,7 @@ interface Product {
 }
 
 interface Customer {
-  gstin?: string;
+  taxRegistrationNumber?: string;
   customer_state_code?: string;
 }
 
@@ -159,7 +159,7 @@ export function calculateItemTax(
         transactionDate: new Date().toISOString(),
         customer: customer
           ? {
-            registrationNumber: customer.gstin,
+            registrationNumber: customer.taxRegistrationNumber,
             stateCode: customer.customer_state_code,
           }
           : null,
@@ -306,7 +306,7 @@ export function calculateConfiguredChargeTaxes(
         transactionDate: new Date().toISOString(),
         customer: customer
           ? {
-            registrationNumber: customer.gstin,
+            registrationNumber: customer.taxRegistrationNumber,
             stateCode: customer.customer_state_code,
           }
           : null,

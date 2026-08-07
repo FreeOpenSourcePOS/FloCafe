@@ -1039,15 +1039,15 @@ export default function SettingsPage() {
     billingType: 'postpaid' | 'prepaid';
     tablesRequired: boolean;
     taxRegistered: boolean;
-    gstin: string; businessAddress: string; businessPhone: string; instagramHandle: string;
-    billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowGstn: boolean;
+    taxRegistrationNumber: string; businessAddress: string; businessPhone: string; instagramHandle: string;
+    billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
-    gstin: '', businessAddress: '', businessPhone: '', instagramHandle: '',
-    billShowName: true, billShowAddress: true, billShowPhone: true, billShowGstn: false,
+    taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
+    billShowName: true, billShowAddress: true, billShowPhone: true, billShowTaxId: false,
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
@@ -1140,14 +1140,14 @@ export default function SettingsPage() {
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
         taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
-        gstin: d.gstin || '',
+        taxRegistrationNumber: d.tax_registration_number || '',
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
         billShowName: typeof d.bill_show_name === 'boolean' ? d.bill_show_name : true,
         billShowAddress: typeof d.bill_show_address === 'boolean' ? d.bill_show_address : true,
         billShowPhone: typeof d.bill_show_phone === 'boolean' ? d.bill_show_phone : true,
-        billShowGstn: typeof d.bill_show_gstn === 'boolean' ? d.bill_show_gstn : false,
+        billShowTaxId: typeof d.bill_show_tax_id === 'boolean' ? d.bill_show_tax_id : false,
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1345,14 +1345,14 @@ export default function SettingsPage() {
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
         taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
-        gstin: d.gstin || '',
+        taxRegistrationNumber: d.tax_registration_number || '',
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
         billShowName: typeof d.bill_show_name === 'boolean' ? d.bill_show_name : true,
         billShowAddress: typeof d.bill_show_address === 'boolean' ? d.bill_show_address : true,
         billShowPhone: typeof d.bill_show_phone === 'boolean' ? d.bill_show_phone : true,
-        billShowGstn: typeof d.bill_show_gstn === 'boolean' ? d.bill_show_gstn : false,
+        billShowTaxId: typeof d.bill_show_tax_id === 'boolean' ? d.bill_show_tax_id : false,
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1360,8 +1360,8 @@ export default function SettingsPage() {
       posSettings.setBillShowName(loaded.billShowName);
       posSettings.setBillShowAddress(loaded.billShowAddress);
       posSettings.setBillShowPhone(loaded.billShowPhone);
-      posSettings.setBillShowGstn(loaded.billShowGstn);
-      if (d.gstin) posSettings.setBillGstin(d.gstin);
+      posSettings.setBillShowTaxId(loaded.billShowTaxId);
+      if (d.tax_registration_number) posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
       if (d.business_address) posSettings.setBillAddress(d.business_address);
       if (d.business_phone) posSettings.setBillPhone(d.business_phone);
       posSettings.setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
@@ -1625,14 +1625,14 @@ export default function SettingsPage() {
         billing_type: form.billingType,
         tables_required: form.tablesRequired,
         tax_registered: form.taxRegistered,
-        gstin: form.gstin,
+        tax_registration_number: form.taxRegistrationNumber,
         business_address: form.businessAddress,
         business_phone: form.businessPhone,
         instagram_handle: form.instagramHandle,
         bill_show_name: form.billShowName,
         bill_show_address: form.billShowAddress,
         bill_show_phone: form.billShowPhone,
-        bill_show_gstn: form.billShowGstn,
+        bill_show_tax_id: form.billShowTaxId,
       });
       if (savedBusiness.countryCode !== form.countryCode) {
         const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
@@ -1664,13 +1664,13 @@ export default function SettingsPage() {
         }
       }
       setSavedBusiness(form);
-      posSettings.setBillGstin(form.gstin);
+      posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
       posSettings.setBillPhone(form.businessPhone);
       posSettings.setBillShowName(form.billShowName);
       posSettings.setBillShowAddress(form.billShowAddress);
       posSettings.setBillShowPhone(form.billShowPhone);
-      posSettings.setBillShowGstn(form.billShowGstn);
+      posSettings.setBillShowTaxId(form.billShowTaxId);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode });
@@ -1995,11 +1995,11 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
                     {isAdmin ? (
-                      <input type="text" value={form.gstin} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
+                      <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
                         placeholder={t('settings.taxIdPlaceholder')}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                     ) : (
-                      <p className="font-medium text-gray-900">{form.gstin || '—'}</p>
+                      <p className="font-medium text-gray-900">{form.taxRegistrationNumber || '—'}</p>
                     )}
                   </div>
                 ) : <div className="hidden md:block" />}
@@ -2044,7 +2044,7 @@ export default function SettingsPage() {
                     { label: t('settings.showBusinessName'), key: 'billShowName' as const },
                     { label: t('settings.showAddress'), key: 'billShowAddress' as const },
                     { label: t('settings.showPhoneNumber'), key: 'billShowPhone' as const },
-                    { label: t('settings.showTaxId'), key: 'billShowGstn' as const },
+                    { label: t('settings.showTaxId'), key: 'billShowTaxId' as const },
                   ] as const).map((item) => (
                     <div key={item.key} className="flex items-center justify-between py-2">
                       <span className="text-sm text-gray-700">{item.label}</span>

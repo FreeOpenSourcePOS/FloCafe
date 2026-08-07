@@ -391,7 +391,7 @@ Update `frontend/src/app/setup/page.tsx`:
 
 ### Settings → Tax
 
-The current tax settings are only registration, GSTIN, state and scheme. Replace them with a dedicated Tax Configuration area:
+The current tax settings are only tax-registered flag, tax registration number, state and scheme. Replace them with a dedicated Tax Configuration area:
 
 - Active country profile
 - Installed and available version
@@ -462,7 +462,7 @@ These fields should only appear when required by the active country profile.
 
 ### Receipts and invoices
 
-Current printing contains assumptions such as `GSTIN`, `CGST` and `SGST`. Printing must become profile-driven.
+Current printing uses generic labels (tax registration number, per-component names) sourced from the active country pack, but is not yet profile-driven end to end.
 
 Change:
 
@@ -479,7 +479,7 @@ Relevant files:
 
 - `main/printers/thermal.ts`
 - `frontend/src/lib/printer/receipt-encoder.ts`
-- `frontend/src/lib/printer/gst-bill-encoder.ts`
+- `frontend/src/lib/printer/tax-bill-encoder.ts`
 - `frontend/src/app/(dashboard)/print-test/page.tsx`
 
 ### Reports

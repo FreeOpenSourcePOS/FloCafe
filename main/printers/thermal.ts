@@ -749,7 +749,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
 
   const tpl = normalizeReceiptTemplate(template);
-  const biz = business || { name: 'Store', address: '', phone: '', gstin: '' };
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
 
   try {
     switch (tpl) {
@@ -844,7 +844,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push(bar);
   if (biz.address) lines.push(biz.address);
   if (biz.phone) lines.push('Ph: ' + biz.phone);
-  if (hasTax && biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
+  if (hasTax && biz.taxRegistrationNumber) lines.push(taxIdLabel + ': ' + biz.taxRegistrationNumber);
   lines.push('{CENTER}Thank you!{/CENTER}');
   lines.push('{CUT}');
 
@@ -1036,7 +1036,7 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   lines.push(bar);
   if (biz.address) lines.push('Address: ' + biz.address);
   if (biz.phone) lines.push('Phone: ' + biz.phone);
-  if (hasTax && biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
+  if (hasTax && biz.taxRegistrationNumber) lines.push(taxIdLabel + ': ' + biz.taxRegistrationNumber);
   lines.push('{CENTER}Thank you for your business!{/CENTER}');
   lines.push('{CUT}');
 

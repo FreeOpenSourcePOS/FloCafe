@@ -2,7 +2,7 @@
  * warnings.ts
  *
  * Shared "skip unsupported characters, keep printing" logic for the browser
- * ESC/POS encoders (receipt-encoder.ts, kot-encoder.ts, gst-bill-encoder.ts).
+ * ESC/POS encoders (receipt-encoder.ts, kot-encoder.ts, tax-bill-encoder.ts).
  * Mirrors the equivalent check in the desktop path (main/printers/thermal.ts)
  * so both printing paths degrade the same way: a line with characters a
  * generic thermal printer can't render (Arabic, CJK, emoji, etc.) is skipped

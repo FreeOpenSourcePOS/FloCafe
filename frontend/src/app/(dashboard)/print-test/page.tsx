@@ -15,7 +15,7 @@ import { formatDate } from '@/lib/printer/format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from '@/lib/printer/tax-components';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/hooks/useI18n';
-type TestMode = 'receipt' | 'gst' | 'kot' | 'web-a4' | 'web-a5' | 'whatsapp';
+type TestMode = 'receipt' | 'tax' | 'kot' | 'web-a4' | 'web-a5' | 'whatsapp';
 type PaperWidth = 58 | 80;
 
 export default function PrintTestPage() {
@@ -23,7 +23,7 @@ export default function PrintTestPage() {
   const [paperWidth, setPaperWidth] = useState<PaperWidth>(58);
   const [testing, setTesting] = useState(false);
 
-  const { printBill, printGstBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
+  const { printBill, printTaxBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
   const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
   const { t } = useI18n();
   const effectiveTestMode: TestMode = !kotPrintingEnabled && testMode === 'kot' ? 'receipt' : testMode;
@@ -48,24 +48,24 @@ export default function PrintTestPage() {
             showPrintWarningsToast(printWarnings);
           }
           break;
-        case 'gst':
+        case 'tax':
           if (printMethod === 'browser') {
             const html = generateThermalReceiptHtml(testBill, testTenant, paperWidth, {
               t,
-              gstin: '22AAAAA0000A1Z5',
+              taxRegistrationNumber: 'TAXID-0001',
               address: '123 Main Street, Mumbai - 400001',
               phone: '+91 9876543210',
             });
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('printTest.browserDialogOpened'));
           } else {
-            const printWarnings = await printGstBill(testBill, testTenant, {
+            const printWarnings = await printTaxBill(testBill, testTenant, {
               paperWidth,
-              gstin: '22AAAAA0000A1Z5',
+              taxRegistrationNumber: 'TAXID-0001',
               address: '123 Main Street, Mumbai - 400001',
               phone: '+91 9876543210',
             });
-            toast.success(t('printTest.gstBillPrinted'));
+            toast.success(t('printTest.taxBillPrinted'));
             showPrintWarningsToast(printWarnings);
           }
           break;
@@ -88,11 +88,11 @@ export default function PrintTestPage() {
           }
           break;
         case 'web-a4':
-          printWebBill(testBill, testTenant, { paperSize: 'a4', includeGst: true });
+          printWebBill(testBill, testTenant, { paperSize: 'a4', includeTaxId: true });
           toast.success(t('printTest.a4DialogOpened'));
           break;
         case 'web-a5':
-          printWebBill(testBill, testTenant, { paperSize: 'a5', includeGst: true });
+          printWebBill(testBill, testTenant, { paperSize: 'a5', includeTaxId: true });
           toast.success(t('printTest.a5DialogOpened'));
           break;
         case 'whatsapp':
@@ -113,8 +113,8 @@ export default function PrintTestPage() {
   const handleDownloadHtml = () => {
     const html = generateBillHtml(testBill, testTenant, {
       paperSize: 'a4',
-      includeGst: true,
-      gstin: '22AAAAA0000A1Z5',
+      includeTaxId: true,
+      taxRegistrationNumber: 'TAXID-0001',
       address: '123 Main Street, Mumbai - 400001',
       phone: '+91 9876543210',
     });
@@ -140,7 +140,7 @@ export default function PrintTestPage() {
 
   const testOptions: { value: TestMode; label: string; icon: React.ElementType }[] = [
     { value: 'receipt', label: 'Basic Receipt (Thermal)', icon: Printer },
-    { value: 'gst', label: 'Detailed Tax Bill (Thermal)', icon: Printer },
+    { value: 'tax', label: 'Detailed Tax Bill (Thermal)', icon: Printer },
     // Hidden entirely when KOT printing is disabled — this is a manual
     // "Print KOT" action, which must never be reachable in that state (#133).
     ...(kotPrintingEnabled ? [{ value: 'kot' as TestMode, label: 'KOT (Kitchen Ticket)', icon: Printer }] : []),
@@ -315,7 +315,7 @@ function generateThermalReceiptHtml(
   bill: ReturnType<typeof createTestBill>,
   tenant: ReturnType<typeof createTestTenant>,
   paperWidth: 58 | 80,
-  options?: { gstin?: string; address?: string; phone?: string; t?: (key: string, params?: Record<string, string | number>) => string }
+  options?: { taxRegistrationNumber?: string; address?: string; phone?: string; t?: (key: string, params?: Record<string, string | number>) => string }
 ): string {
   const t = options?.t ?? ((k: string) => k);
   const fontSize = paperWidth === 58 ? '10px' : '12px';
@@ -347,7 +347,7 @@ function generateThermalReceiptHtml(
       <h2 style="margin:0;font-size:${paperWidth === 58 ? '14px' : '16px'};">${tenant.business_name}</h2>
       ${options?.address ? `<p style="margin:2px 0;font-size:${fontSize};">${options.address}</p>` : ''}
       ${options?.phone ? `<p style="margin:2px 0;font-size:${fontSize};">${options.phone}</p>` : ''}
-      ${options?.gstin ? `<p style="margin:2px 0;font-size:${fontSize};">${taxIdLabel}: ${options.gstin}</p>` : ''}
+      ${options?.taxRegistrationNumber ? `<p style="margin:2px 0;font-size:${fontSize};">${taxIdLabel}: ${options.taxRegistrationNumber}</p>` : ''}
       <hr style="border:1px dashed #000;margin:4px 0;">
       <p style="margin:2px 0;">Bill #: ${bill.bill_number}</p>
       <p style="margin:2px 0;">${formatDate(new Date().toISOString(), getCountryByCode(tenant.country ?? 'IN')?.locale)}</p>

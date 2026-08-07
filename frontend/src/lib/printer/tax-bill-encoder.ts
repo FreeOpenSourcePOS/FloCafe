@@ -1,5 +1,5 @@
 /**
- * gst-bill-encoder.ts
+ * tax-bill-encoder.ts
  *
  * Detailed tax billing receipt encoder for ESC/POS thermal printers.
  * Supports both 58mm (2.5") and 80mm (3.5") paper widths.
@@ -14,18 +14,18 @@ import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { safePrinterText, type PrintWarning } from './warnings';
 
-export interface GstBillOptions {
+export interface TaxBillOptions {
   /** 58 mm (2.5", 32 chars) or 80 mm (3.5", 48 chars). Default: 58 */
   paperWidth?: 58 | 80;
   /** Show "Thank you" footer. Default: true */
   showFooter?: boolean;
   /** Business tax registration number */
-  gstin?: string;
+  taxRegistrationNumber?: string;
   /** Business address */
   address?: string;
   /** Business phone */
   phone?: string;
-  /** State code for GST calculation */
+  /** State code for tax calculation */
   stateCode?: string;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
   useUnicode?: boolean;
@@ -44,13 +44,13 @@ function maskPhoneOnReceipt(phone: string): string {
 /**
  * Build a detailed tax bill byte array from a Bill object.
  */
-export function buildGstBillBytes(
+export function buildTaxBillBytes(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
-  opts: GstBillOptions = {},
+  opts: TaxBillOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58, showFooter = true, gstin, address, phone, useUnicode = false } = opts;
+  const { paperWidth = 58, showFooter = true, taxRegistrationNumber, address, phone, useUnicode = false } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
@@ -76,8 +76,8 @@ export function buildGstBillBytes(
   if (phone) {
     safePrinterText(enc, `Ph: ${phone}`, warnings).newline();
   }
-  if (hasTax && gstin) {
-    safePrinterText(enc, `${taxIdLabel}: ${gstin}`, warnings).newline();
+  if (hasTax && taxRegistrationNumber) {
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings).newline();
   }
 
   enc.newline();

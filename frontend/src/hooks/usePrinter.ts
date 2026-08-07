@@ -11,7 +11,7 @@ import {
   type ReceiptOptions,
 } from '@/lib/printer/receipt-encoder';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { buildGstBillBytes, type GstBillOptions } from '@/lib/printer/gst-bill-encoder';
+import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
 import type { PrintWarning } from '@/lib/printer/warnings';
 import api from '@/lib/api';
@@ -19,7 +19,7 @@ import type { Bill, Tenant, Order } from '@/lib/types';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
 
-type PrintModeType = 'receipt' | 'gst' | 'kot';
+type PrintModeType = 'receipt' | 'tax' | 'kot';
 type PaperWidth = 58 | 80;
 
 export interface HardwarePrinter {
@@ -46,7 +46,7 @@ interface PrinterState {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   printBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
-  printGstBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>, opts?: GstBillOptions) => Promise<PrintWarning[]>;
+  printTaxBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
   printKot: (order: Order, opts?: KotOptions) => Promise<PrintWarning[]>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;
@@ -98,8 +98,8 @@ export const usePrinterStore = create<PrinterState>()(
         try {
           const {
             billTemplate,
-            billGstin, billAddress, billPhone, billFooterMessage,
-            billShowName, billShowAddress, billShowPhone, billShowGstn,
+            billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
+            billShowName, billShowAddress, billShowPhone, billShowTaxId,
             webPrintSize,
             printerUseUnicode,
           } = usePosSettingsStore.getState();
@@ -122,8 +122,8 @@ export const usePrinterStore = create<PrinterState>()(
             const { printWebBill } = await import('@/lib/printer/web-print');
             printWebBill(bill, tenant, {
               paperSize: webPrintSize,
-              includeGst: billShowGstn,
-              gstin: billShowGstn && billGstin ? billGstin : undefined,
+              includeTaxId: billShowTaxId,
+              taxRegistrationNumber: billShowTaxId && billTaxRegistrationNumber ? billTaxRegistrationNumber : undefined,
               address: billShowAddress && billAddress ? billAddress : undefined,
               phone: billShowPhone && billPhone ? billPhone : undefined,
               footerNote: billFooterMessage || undefined,
@@ -139,11 +139,11 @@ export const usePrinterStore = create<PrinterState>()(
           const builderOpts: ReceiptOptions = {
             ...opts,
             paperWidth,
-            gstin: billShowGstn && billGstin ? billGstin : undefined,
+            taxRegistrationNumber: billShowTaxId && billTaxRegistrationNumber ? billTaxRegistrationNumber : undefined,
             address: billShowAddress && billAddress ? billAddress : undefined,
             phone: billShowPhone && billPhone ? billPhone : undefined,
             footerNote: billFooterMessage || undefined,
-            showTaxBreakdown: billShowGstn,
+            showTaxBreakdown: billShowTaxId,
             useUnicode: printerUseUnicode,
             isReprint,
           };
@@ -167,13 +167,13 @@ export const usePrinterStore = create<PrinterState>()(
         }
       },
 
-      printGstBill: async (bill, tenant, opts) => {
+      printTaxBill: async (bill, tenant, opts) => {
         set({ lastError: null });
         try {
           const { paperWidth } = get();
           const { printerUseUnicode } = usePosSettingsStore.getState();
           const warnings: PrintWarning[] = [];
-          const bytes = buildGstBillBytes(bill, tenant, { ...opts, paperWidth, useUnicode: printerUseUnicode }, warnings);
+          const bytes = buildTaxBillBytes(bill, tenant, { ...opts, paperWidth, useUnicode: printerUseUnicode }, warnings);
           set({ lastPrintedBytes: bytes });
 
           if (get().printMethod === 'escpos') {
@@ -266,6 +266,16 @@ export const usePrinterStore = create<PrinterState>()(
     {
       name: 'flo-printer-settings',
       partialize: (state) => ({ printMode: state.printMode, paperWidth: state.paperWidth, printMethod: state.printMethod }),
+      // v1: the 'gst' print-mode value was renamed to 'tax'. Carry existing
+      // browsers' saved selection forward instead of silently resetting it.
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = persisted as { printMode?: string };
+        if (version < 1 && state.printMode === 'gst') {
+          state.printMode = 'tax';
+        }
+        return state as unknown as PrinterState;
+      },
     }
   )
 );

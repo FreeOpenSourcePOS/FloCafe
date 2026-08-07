@@ -10,12 +10,12 @@ import { getStatus as getWhatsAppStatus } from './services/whatsapp';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
-// Sensitive keys (jwt_secret, cloud_api_key, cloud_*, gstin, etc.) are excluded.
+// Sensitive keys (jwt_secret, cloud_api_key, cloud_*, tax_registration_number, etc.) are excluded.
 const ALLOWED_IPC_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
   'billing_type', 'bill_show_name', 'bill_show_address',
-  'bill_show_phone', 'bill_show_gstn',
+  'bill_show_phone', 'bill_show_tax_id',
   'tax_scheme',
   'loyalty_enabled',
   'printer_method', 'paper_size', 'bill_template',

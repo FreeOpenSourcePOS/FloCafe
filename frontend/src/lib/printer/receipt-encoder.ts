@@ -29,7 +29,7 @@ export interface ReceiptOptions {
   /** Extra line of custom text printed below the footer. */
   footerNote?: string;
   /** Tax registration number to print in footer / header */
-  gstin?: string;
+  taxRegistrationNumber?: string;
   /** Business address to print */
   address?: string;
   /** Business phone to print */
@@ -121,7 +121,7 @@ export function buildClassicReceiptBytes(
     paperWidth = 58,
     showFooter = true,
     footerNote,
-    gstin,
+    taxRegistrationNumber,
     address,
     phone,
     showTaxBreakdown = false,
@@ -244,8 +244,8 @@ export function buildClassicReceiptBytes(
 
   // Footer
   if (showFooter) {
-    if (gstin) {
-      safePrinterText(enc, padRow(`${taxIdLabel}: ${gstin}`, `Bill #${bill.bill_number}`, cols), warnings).newline();
+    if (taxRegistrationNumber) {
+      safePrinterText(enc, padRow(`${taxIdLabel}: ${taxRegistrationNumber}`, `Bill #${bill.bill_number}`, cols), warnings).newline();
     }
     if (address) {
       enc.align('center');
@@ -376,7 +376,7 @@ export function buildDetailedReceiptBytes(
   opts: ReceiptOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58, footerNote, gstin, address, phone, useUnicode = false, isReprint = false } = opts;
+  const { paperWidth = 58, footerNote, taxRegistrationNumber, address, phone, useUnicode = false, isReprint = false } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
@@ -395,9 +395,9 @@ export function buildDetailedReceiptBytes(
   safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
   enc.width(1).height(1).bold(false).newline();
 
-  if (gstin) {
+  if (taxRegistrationNumber) {
     enc.bold(true);
-    safePrinterText(enc, `${taxIdLabel}: ${gstin}`, warnings);
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings);
     enc.bold(false).newline();
   }
 

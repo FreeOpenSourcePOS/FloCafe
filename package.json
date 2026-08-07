@@ -339,6 +339,7 @@
         ],
         "plugs": [
           "default",
+          "browser-support",
           "cups-control",
           "avahi-observe",
           "avahi-control",

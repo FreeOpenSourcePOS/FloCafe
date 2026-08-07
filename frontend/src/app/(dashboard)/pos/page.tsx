@@ -25,6 +25,7 @@ import PaymentModal from '@/components/pos/PaymentModal';
 import PrepaidCheckoutModal, { type PrepaidPayment, type PrepaidDiscount } from '@/components/pos/PrepaidCheckoutModal';
 import PosTopbar from '@/components/pos/PosTopbar';
 import { usePrinterStore } from '@/hooks/usePrinter';
+import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -178,7 +179,8 @@ export default function POSPage() {
     if (!autoPrintKot) return;
 
     try {
-      await printKot(order);
+      const printWarnings = await printKot(order);
+      showPrintWarningsToast(printWarnings);
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
       const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');
@@ -202,11 +204,12 @@ export default function POSPage() {
     if (!force && !autoPrintBill) return;
 
     try {
-      await printBill(bill, {
+      const printWarnings = await printBill(bill, {
         business_name: currentTenant.business_name,
         currency,
         country: currentTenant.country,
       });
+      showPrintWarningsToast(printWarnings);
     } catch (err) {
       // Non-fatal: print failure should not block the checkout flow.
       const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');

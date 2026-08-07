@@ -345,7 +345,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     console.log('[Print Bill] Print completed', result);
 
     if (result.ok) {
-      res.json({ success: true });
+      res.json({ success: true, warnings: result.warnings || [] });
     } else {
       res.status(502).json({ error: 'Print failed. Check printer connection and settings.', code: result.code, correlation_id: result.correlationId, stage: result.stage });
     }
@@ -448,6 +448,7 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req
     // but kept for any external caller) always prints a single ticket, as before.
     // Otherwise, auto-route items to their configured kitchen stations.
     let success = true;
+    const warnings: NonNullable<Awaited<ReturnType<typeof printKOTDetailed>>['warnings']> = [];
     let failure: Awaited<ReturnType<typeof printKOTDetailed>> | null = null;
     if (stationName || items) {
       const kotItems = items || orderItems;
@@ -455,17 +456,19 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req
       const result = await printKOTDetailed(order, kotItems, station, useUnicode);
       success = result.ok;
       failure = result.ok ? null : result;
+      warnings.push(...(result.warnings || []));
     } else {
       const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
       for (const group of groups) {
         const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined);
         success = success && result.ok;
+        warnings.push(...(result.warnings || []));
         if (!result.ok && !failure) failure = result;
       }
     }
 
     if (success) {
-      res.json({ success: true });
+      res.json({ success: true, warnings });
     } else {
       res.status(502).json({ error: 'KOT print failed. Check printer connection.', code: failure?.code, correlation_id: failure?.correlationId, stage: failure?.stage });
     }

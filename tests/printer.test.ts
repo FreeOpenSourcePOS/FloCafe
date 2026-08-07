@@ -161,6 +161,16 @@ console.log('\n✅ Test 1: buildEscPos emits correct control bytes');
   assert('no stray {TOKEN} markers remain', !/\{[A-Z_/]+\}/.test(buf.toString('utf8')));
 }
 
+console.log('\n✅ Test 1b: Unsupported receipt text is skipped with a warning');
+{
+  const warnings: Array<{ field: string; text: string; message: string }> = [];
+  const buf = buildEscPos(['{INIT}', '{STORE_NAME}{CENTER}مطعم فلوس{/CENTER}', 'TOTAL        ₹100.00', '{CUT}'], true, {}, warnings);
+  const text = buf.toString('utf8');
+  assert('skips unsupported Arabic line', !text.includes('مطعم فلوس'));
+  assert('keeps the rest of the receipt printable', text.includes('TOTAL') && text.includes('₹100.00'));
+  assert('reports the skipped store name', warnings.length === 1 && warnings[0].field === 'store name');
+}
+
 console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
 {
   const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'compact', 48, true);

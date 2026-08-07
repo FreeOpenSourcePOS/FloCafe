@@ -12,6 +12,7 @@ import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
+import { safePrinterText, type PrintWarning } from './warnings';
 
 export interface GstBillOptions {
   /** 58 mm (2.5", 32 chars) or 80 mm (3.5", 48 chars). Default: 58 */
@@ -46,7 +47,8 @@ function maskPhoneOnReceipt(phone: string): string {
 export function buildGstBillBytes(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
-  opts: GstBillOptions = {}
+  opts: GstBillOptions = {},
+  warnings?: PrintWarning[]
 ): Uint8Array {
   const { paperWidth = 58, showFooter = true, gstin, address, phone, useUnicode = false } = opts;
   const cols = CHARS[paperWidth];
@@ -63,17 +65,19 @@ export function buildGstBillBytes(
 
   // ── Header ────────────────────────────────────────────────────────────────
   enc.initialize().align('center');
-  enc.bold(true).width(2).height(2).text(truncate(tenant.business_name, 16)).width(1).height(1);
+  enc.bold(true).width(2).height(2);
+  safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
+  enc.width(1).height(1);
   enc.bold(false).newline();
 
   if (address) {
-    enc.text(truncate(address, cols)).newline();
+    safePrinterText(enc, truncate(address, cols), warnings).newline();
   }
   if (phone) {
-    enc.text(`Ph: ${phone}`).newline();
+    safePrinterText(enc, `Ph: ${phone}`, warnings).newline();
   }
   if (hasTax && gstin) {
-    enc.text(`${taxIdLabel}: ${gstin}`).newline();
+    safePrinterText(enc, `${taxIdLabel}: ${gstin}`, warnings).newline();
   }
 
   enc.newline();
@@ -84,10 +88,10 @@ export function buildGstBillBytes(
   enc.text(`Date: ${formatDate(bill.order?.created_at, locale)}`).newline();
 
   if (order?.table?.name) {
-    enc.text(`Table: ${order.table.name}`).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
   }
   if (order?.customer?.name) {
-    enc.text(`Customer: ${order.customer.name}`);
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings);
     if (order.customer.phone) {
       enc.text(` (${maskPhoneOnReceipt(order.customer.phone)})`);
     }
@@ -104,7 +108,7 @@ export function buildGstBillBytes(
   for (const item of items) {
     const line = `${item.product_name}`;
 
-    enc.text(padRow(line, formatAmount(item.total, currency, locale), cols)).newline();
+    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, locale), cols), warnings).newline();
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
@@ -120,7 +124,7 @@ export function buildGstBillBytes(
         const addonPrice = addon.price && Number(addon.price) > 0
           ? formatAmount(Number(addon.price) * qty * item.quantity, currency, locale)
           : '';
-        enc.text(padRow(addonLine, addonPrice, cols)).newline();
+        safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings).newline();
       }
     }
   }

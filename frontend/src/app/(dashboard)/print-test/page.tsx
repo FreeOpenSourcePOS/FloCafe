@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { Printer, FileText, MessageCircle, Download, Usb, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { usePrinterStore } from '@/hooks/usePrinter';
+import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { createTestBill, createTestOrder, createTestTenant, createTestCustomer } from '@/lib/printer/test-data';
@@ -42,8 +43,9 @@ export default function PrintTestPage() {
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('printTest.browserDialogOpened'));
           } else {
-            await printBill(testBill, testTenant, { paperWidth });
+            const printWarnings = await printBill(testBill, testTenant, { paperWidth });
             toast.success(t('printTest.receiptPrinted'));
+            showPrintWarningsToast(printWarnings);
           }
           break;
         case 'gst':
@@ -57,13 +59,14 @@ export default function PrintTestPage() {
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('printTest.browserDialogOpened'));
           } else {
-            await printGstBill(testBill, testTenant, {
+            const printWarnings = await printGstBill(testBill, testTenant, {
               paperWidth,
               gstin: '22AAAAA0000A1Z5',
               address: '123 Main Street, Mumbai - 400001',
               phone: '+91 9876543210',
             });
             toast.success(t('printTest.gstBillPrinted'));
+            showPrintWarningsToast(printWarnings);
           }
           break;
         case 'kot':
@@ -79,8 +82,9 @@ export default function PrintTestPage() {
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('printTest.browserDialogOpened'));
           } else {
-            await printKot(testOrder, { paperWidth });
+            const printWarnings = await printKot(testOrder, { paperWidth });
             toast.success(t('printTest.kotPrinted'));
+            showPrintWarningsToast(printWarnings);
           }
           break;
         case 'web-a4':

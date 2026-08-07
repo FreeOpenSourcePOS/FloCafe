@@ -13,19 +13,21 @@ import {
   type TaxPackCatalogEntry,
 } from '../tax-packs/catalog';
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from '../tax-packs/trusted-signing-key';
-import legacyIndiaPack from '../tax-packs/in.json';
-import legacyThailandPack from '../tax-packs/th.json';
 
 const router = Router();
 const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
 // India and Thailand were bundled unsigned before country packs moved to the
 // signed release catalog. Existing customer databases still contain those
-// exact artifacts. Trust only an exact canonical match so upgrades work while
-// modified or newly downloaded artifacts continue to require Ed25519.
-const LEGACY_TRUSTED_PACKS_BY_ID = new Map<string, CountryPack>([
-  [legacyIndiaPack.id, legacyIndiaPack as CountryPack],
-  [legacyThailandPack.id, legacyThailandPack as CountryPack],
-]);
+// exact artifacts. Rather than keep the original tax-rate content in the
+// repo just to re-check it byte-for-byte, we keep only the SHA-256 digest of
+// that exact historical JSON (sha256(JSON.stringify(pack))) — enough to keep
+// validating those specific already-installed rows as trusted, without the
+// underlying tax content living in source. Exported so tests can inject a
+// synthetic id/digest pair instead of depending on real pack content.
+export const LEGACY_TRUSTED_PACK_DIGESTS: Record<string, string> = {
+  'official-india': '873e8212625d5eefc4192bf99bcebece107cd2384ce8a1c6ecd44a7095082f2d',
+  'official-thailand': '25f4082e56372599e90cad6222a493c426f7846552e00ccf486a71e7aa90d656',
+};
 const APP_VERSION = String(require('../../package.json').version);
 const ENTITY_TYPES = ['product', 'addon', 'packaging', 'delivery', 'service_charge'] as const;
 const TAX_BEHAVIORS: TaxBehavior[] = ['country_default', 'inclusive', 'exclusive', 'exempt'];
@@ -328,13 +330,13 @@ export function validationChecklist(
     `FloCafe ${APP_VERSION} satisfies minimum compatible version ${pack.minFloVersion}`);
   add(5, version.digest === createHash('sha256').update(version.pack_json).digest('hex'), 'Stored artifact digest matches');
   const bundledDefinition = BUNDLED_PACKS_BY_ID.get(pack.id);
-  const legacyTrustedDefinition = LEGACY_TRUSTED_PACKS_BY_ID.get(pack.id);
+  const legacyTrustedDigest = LEGACY_TRUSTED_PACK_DIGESTS[pack.id];
   const trustedArtifact = pack.publisher === 'local'
     ? version.signature === null
     : Boolean(
       (bundledDefinition && JSON.stringify(bundledDefinition) === JSON.stringify(pack))
-      || (version.signature === null && legacyTrustedDefinition
-        && JSON.stringify(legacyTrustedDefinition) === JSON.stringify(pack))
+      || (version.signature === null && legacyTrustedDigest
+        && createHash('sha256').update(JSON.stringify(pack), 'utf8').digest('hex') === legacyTrustedDigest)
       || (version.signature && verifyTaxPackSignature(version.pack_json, version.signature, publicKey)),
     );
   add(6, trustedArtifact, pack.publisher === 'local'

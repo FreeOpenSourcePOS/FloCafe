@@ -5,7 +5,7 @@ FloCafe's tax system is split in two, per [`docs/tax-engine-v2-spec.md`](tax-eng
 - **Tax packs** (this document) — signed, versioned **data**. No executable code. Covers rate tables, categories, rounding, and jurisdiction rules that are computable offline from information already on the transaction (country, state/province, category, customer status, date).
 - **Capability plugins** (tracked in [#142](https://github.com/FreeOpenSourcePOS/FloCafe/issues/142)) — isolated, executable integrations for things a pack cannot express: fiscal authorization (e.g. ARCA, IRN), payment providers, delivery providers, and address-level jurisdiction lookups. Not yet built; see the note at the bottom of this file.
 
-If you're adding tax support for a new country, you almost always want a **pack**, not a plugin. A pack is enough to cover a state/province rate table (India's CGST/SGST/IGST, for example) or a flat VAT (Thailand). You only need a plugin if the calculation requires calling an external service, holding credentials, or resolving something (like a US address to a rooftop-level rate) that isn't decidable from data already in FloCafe.
+If you're adding tax support for a new country, you almost always want a **pack**, not a plugin. A pack is enough to cover a state/province rate table with multiple regional components, or a single flat consumption tax. You only need a plugin if the calculation requires calling an external service, holding credentials, or resolving something (like a US address to a rooftop-level rate) that isn't decidable from data already in FloCafe.
 
 ## What a pack can and can't do
 
@@ -22,10 +22,10 @@ It must not embed scripts, call network endpoints, or introduce a second tax-cal
 
 ## Authoring a new pack
 
-1. Copy the shape of an existing pack — `main/tax-packs/in.json` (state-split GST) or `main/tax-packs/th.json` (flat VAT) — as your starting point.
+1. Copy the shape of the bundled pack — `main/tax-packs/generic.json` — as your starting point, then add real `categories` and `rules` for your country.
 2. Give it a unique `id` using the lowercase, hyphenated full country name (for example, `official-india`, `official-thailand`, or `official-united-states`). Keep `country` as its ISO alpha-2 code (for example, `IN`, `TH`, or `US`), because FloCafe uses that field to match the store. Set `publisher` to your name/org (anything other than `local` — `local` is reserved for the in-app manual/unbundled pack and can never be published), and fill in `jurisdiction`, `currency`, `taxRounding`, `payableRounding`.
-3. Define `categories` and `rules`. Every category referenced by `defaultCategories` or by a product must exist. `unclassifiedCategoryId` must point at a real category (usually a zero-rate one).
-4. Add the file to `main/tax-packs/` in this repo (not a new repo — see "Where packs live" below) and open a PR. Only the generic/manual no-tax pack is bundled with and auto-activated by a new installation. India, Thailand, and every other official country pack are catalog-only: an owner explicitly enables the matching pack from Settings → Tax Configuration, where FloCafe downloads, verifies, installs, and activates it.
+3. Define `categories` and `rules`. Every category referenced by `defaultCategories` or by a product must exist. `unclassifiedCategoryId` must point at a real category (usually a zero-rate one). A rate table can use multiple regional components (each its own rule) or a single flat rule, depending on how the country's tax works.
+4. Add the file to `main/tax-packs/` in this repo (not a new repo — see "Where packs live" below) and open a PR. Only the generic/manual no-tax pack is bundled with and auto-activated by a new installation. Every official country pack is catalog-only: an owner explicitly enables the matching pack from Settings → Tax Configuration, where FloCafe downloads, verifies, installs, and activates it.
 5. Add test vectors: extend `tests/tax-pack-management.test.ts` (activation validation) and, ideally, `tests/tax-engine.test.ts` / `tests/integration-tax.test.ts` with a scenario proving your rules produce the expected components, totals, and rounding for at least one representative order.
 6. Run `npm run test:tax-engine` and the full `npm test` before opening the PR.
 

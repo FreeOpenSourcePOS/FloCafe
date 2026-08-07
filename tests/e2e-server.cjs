@@ -19,17 +19,21 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../dist/db');
 const { startServer, stopServer } = require('../dist/server');
-const thailandTaxPack = require('../main/tax-packs/th.json');
+const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
+// Country/currency stay TH/THB (this fixture's configured business country)
+// so getActiveCountryPack('TH') actually resolves this pack.
+const testTaxPack = { ...flatRatePackData, id: 'test-th-pack', country: 'TH', currency: 'THB', publisher: 'FreeOpenSourcePOS' };
 
 // BUNDLED_COUNTRY_PACKS (main/tax-packs/bundled.ts) only ships the generic
-// pack — Thailand and India are separately-published "official" packs that
-// must be explicitly installed and activated, same as production's real
-// activation route (main/routes/tax-packs.ts) and the Node test suite's
-// installAndActivateTestTaxPack (tests/helpers/test-setup.ts). Without this,
-// getActiveCountryPack('TH') matches the generic pack's '*' wildcard row
-// before ever falling back to bundled data, and this fixture's 'standard'
-// category resolves to nothing — checkout fails with "no tax rules apply to
-// category standard for business type restaurant" instead of computing VAT.
+// pack — real country packs (e.g. Thailand, India) are separately-published
+// "official" packs that must be explicitly installed and activated, same as
+// production's real activation route (main/routes/tax-packs.ts) and the Node
+// test suite's installAndActivateTestTaxPack (tests/helpers/test-setup.ts).
+// Without this, getActiveCountryPack('TH') matches the generic pack's '*'
+// wildcard row before ever falling back to bundled data, and this fixture's
+// 'standard' category resolves to nothing — checkout fails with "no tax
+// rules apply to category standard for business type restaurant" instead of
+// computing tax.
 function installAndActivateTaxPack(db, pack) {
   const installedAt = now();
   const versionId = `${pack.id}@${pack.version}`;
@@ -108,14 +112,14 @@ function seedPosFixture() {
     ['business_type', 'restaurant'],
     ['tables_required', 'false'],
     // Tax defaults off (migration 40) until explicitly enabled — this fixture's
-    // product carries a real tax_category_id expecting real VAT, so it must
+    // product carries a real tax_category_id expecting real tax, so it must
     // turn taxes on itself rather than rely on a global default.
     ['taxes_enabled', 'true'],
   ]) {
     db.prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
       .run(key, value, createdAt);
   }
-  installAndActivateTaxPack(db, thailandTaxPack);
+  installAndActivateTaxPack(db, testTaxPack);
   db.prepare(
     'INSERT INTO categories (id, name, sort_order, is_active, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)'
   ).run('e2e-category', 'E2E Menu', 1, createdAt, createdAt);

@@ -47,8 +47,18 @@ const {
 const {
   taxPackSha256,
 } = require('../main/tax-packs/catalog');
-const indiaPackDefinition = require('../main/tax-packs/in.json');
-const thailandPackDefinition = require('../main/tax-packs/th.json');
+const { LEGACY_TRUSTED_PACK_DIGESTS } = require('../main/routes/tax-packs');
+const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
+const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
+// Synthetic stand-ins for the pre-signing-era "official-india"/"official-thailand"
+// rows real customer databases still carry. Country/currency stay IN/INR and
+// TH/THB so getActiveCountryPack() and ensure-country resolve them the same
+// way; the digest is injected below instead of depending on real historical
+// tax-pack content, so this test never needs actual GST/VAT data.
+const testIndiaPack = { ...dualRatePackData, id: 'test-legacy-in-pack', country: 'IN', currency: 'INR', publisher: 'FreeOpenSourcePOS' };
+const testThailandPack = { ...flatRatePackData, id: 'test-legacy-th-pack', country: 'TH', currency: 'THB', publisher: 'FreeOpenSourcePOS' };
+LEGACY_TRUSTED_PACK_DIGESTS[testIndiaPack.id] = taxPackSha256(JSON.stringify(testIndiaPack));
+LEGACY_TRUSTED_PACK_DIGESTS[testThailandPack.id] = taxPackSha256(JSON.stringify(testThailandPack));
 
 async function main() {
   console.log('Tax Pack Management Integration Tests');
@@ -75,26 +85,26 @@ async function main() {
     assertEqual(freshListRes.data.packs[0].id, 'local-generic', 'the preinstalled pack is generic');
     assertEqual(freshListRes.data.packs[0].active_for_store, true, 'generic no-tax behavior is active');
 
-    installAndActivateTestTaxPack(db, indiaPackDefinition);
-    installAndActivateTestTaxPack(db, thailandPackDefinition);
+    installAndActivateTestTaxPack(db, testIndiaPack);
+    installAndActivateTestTaxPack(db, testThailandPack);
     // Tax calculation is intentionally zeroed while the merchant toggle is
     // off. Enable it here so the management assertions exercise the active
     // country-plugin path rather than the generic no-tax default.
     db.prepare("UPDATE settings SET value = 'true' WHERE key = 'taxes_enabled'").run();
     const listRes = await api(baseUrl, '/api/tax-packs', { headers: manager.authHeader });
-    const india = listRes.data.packs.find((pack: any) => pack.id === 'official-india');
-    assert(!!india, 'India pack is listed');
-    assertEqual(india.versions[0].version, indiaPackDefinition.version, 'India pack version is shown');
-    assertEqual(india.active_for_store, true, 'India pack is active for the India store');
+    const installedPack = listRes.data.packs.find((pack: any) => pack.id === 'test-legacy-in-pack');
+    assert(!!installedPack, 'legacy pack is listed');
+    assertEqual(installedPack.versions[0].version, testIndiaPack.version, 'legacy pack version is shown');
+    assertEqual(installedPack.active_for_store, true, 'legacy pack is active for its configured country');
 
-    const detailRes = await api(baseUrl, '/api/tax-packs/official-india', { headers: manager.authHeader });
+    const detailRes = await api(baseUrl, '/api/tax-packs/test-legacy-in-pack', { headers: manager.authHeader });
     assertEqual(detailRes.status, 200, 'manager can view active pack details');
     assert(detailRes.data.categories.length > 0, 'categories are available for reference');
     assert(detailRes.data.rules.length > 0, 'rules are available for reference');
     assertEqual(detailRes.data.active_version.validation.checks.length, 24, 'all 24 activation checks are reported');
     assertEqual(detailRes.data.active_version.validation.valid, true,
-      'an exact legacy bundled India artifact remains trusted after upgrade');
-    for (const packId of ['official-thailand', 'local-generic']) {
+      'an exact legacy unsigned artifact remains trusted after upgrade');
+    for (const packId of ['test-legacy-th-pack', 'local-generic']) {
       const packDetail = await api(baseUrl, `/api/tax-packs/${packId}`, { headers: manager.authHeader });
       assertEqual(packDetail.status, 200, `${packId} details are readable`);
       assertEqual(
@@ -109,12 +119,12 @@ async function main() {
       assertEqual(failedCheckIds, '', `${packId} passes activation validation`);
     }
 
-    const legacyIndiaRow = db.prepare(
+    const legacyPackRow = db.prepare(
       'SELECT * FROM country_pack_versions WHERE id = ?'
-    ).get(`${indiaPackDefinition.id}@${indiaPackDefinition.version}`);
-    const tamperedPackJson = JSON.stringify({ ...indiaPackDefinition, currency: 'USD' });
+    ).get(`${testIndiaPack.id}@${testIndiaPack.version}`);
+    const tamperedPackJson = JSON.stringify({ ...testIndiaPack, currency: 'USD' });
     const tamperedValidation = validationChecklist({
-      ...legacyIndiaRow,
+      ...legacyPackRow,
       pack_json: tamperedPackJson,
       digest: taxPackSha256(tamperedPackJson),
     });
@@ -130,10 +140,10 @@ async function main() {
       body: { country: 'IN' },
       headers: owner.authHeader,
     });
-    assertEqual(enableLegacyPack.status, 200, 'owner can enable taxes with the exact legacy India pack');
+    assertEqual(enableLegacyPack.status, 200, 'owner can enable taxes with the exact legacy pack');
     assertEqual(
       db.prepare(`SELECT tax_category_id FROM products WHERE id = 'override-product'`).get().tax_category_id,
-      indiaPackDefinition.defaultCategories.product,
+      testIndiaPack.defaultCategories.product,
       'enabling taxes assigns the official default to uncategorized products',
     );
     db.prepare(`UPDATE products SET tax_category_id = NULL WHERE id = 'override-product'`).run();
@@ -390,23 +400,23 @@ async function main() {
     assertEqual(unconfiguredChargeOrder.data.order.total, 140, 'unconfigured charge total is unchanged');
 
     console.log('\n6. Activation/rollback are owner-gated and installed-only');
-    const versionId = india.active_version_id;
+    const versionId = installedPack.active_version_id;
     const managerActivate = await api(
       baseUrl,
-      `/api/tax-packs/official-india/versions/${encodeURIComponent(versionId)}/activate`,
+      `/api/tax-packs/test-legacy-in-pack/versions/${encodeURIComponent(versionId)}/activate`,
       { method: 'POST', body: {}, headers: manager.authHeader },
     );
     assertEqual(managerActivate.status, 403, 'manager cannot activate a pack');
 
     const ownerActivate = await api(
       baseUrl,
-      `/api/tax-packs/official-india/versions/${encodeURIComponent(versionId)}/activate`,
+      `/api/tax-packs/test-legacy-in-pack/versions/${encodeURIComponent(versionId)}/activate`,
       { method: 'POST', body: {}, headers: owner.authHeader },
     );
     assertEqual(ownerActivate.status, 200, 'owner can select an already-installed version');
     assertEqual(ownerActivate.data.changed, false, 'selecting the active version is a safe no-op');
 
-    const rollbackRes = await api(baseUrl, '/api/tax-packs/official-india/rollback', {
+    const rollbackRes = await api(baseUrl, '/api/tax-packs/test-legacy-in-pack/rollback', {
       method: 'POST',
       body: {},
       headers: owner.authHeader,
@@ -426,14 +436,14 @@ async function main() {
     console.log('\n8. Signed catalog packs install without activating');
     const managerInstall = await api(baseUrl, '/api/tax-packs/catalog/install', {
       method: 'POST',
-      body: { pack_id: 'official-india', version: '1.1.0' },
+      body: { pack_id: 'test-legacy-in-pack', version: '1.1.0' },
       headers: manager.authHeader,
     });
     assertEqual(managerInstall.status, 403, 'manager cannot install a catalog pack');
 
     const { privateKey, publicKey } = generateKeyPairSync('ed25519');
     const downloadedPack = {
-      ...indiaPackDefinition,
+      ...testIndiaPack,
       version: '1.1.0',
       publishedAt: '2026-07-30',
     };
@@ -443,7 +453,7 @@ async function main() {
       Buffer.from(downloadedPackJson, 'utf8'),
       privateKey,
     ).toString('base64');
-    const releaseTag = 'tax-pack-official-india-v1.1.0';
+    const releaseTag = 'tax-pack-test-legacy-in-pack-v1.1.0';
     const releaseBase = `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${releaseTag}`;
     const catalogEntry = {
       id: downloadedPack.id,
@@ -453,8 +463,8 @@ async function main() {
       version: downloadedPack.version,
       publishedAt: downloadedPack.publishedAt,
       minFloVersion: downloadedPack.minFloVersion,
-      downloadUrl: `${releaseBase}/official-india-v1.1.0.json`,
-      signatureUrl: `${releaseBase}/official-india-v1.1.0.json.sig`,
+      downloadUrl: `${releaseBase}/test-legacy-in-pack-v1.1.0.json`,
+      signatureUrl: `${releaseBase}/test-legacy-in-pack-v1.1.0.json.sig`,
       digest: taxPackSha256(downloadedPackJson),
     };
     const fetchImpl = async (input: string | URL | Request) => new Response(
@@ -478,7 +488,7 @@ async function main() {
     assertEqual(storedVersion.signature, downloadedSignature, 'detached signature is persisted');
     const unchangedActiveVersion = db.prepare(
       'SELECT active_version_id FROM country_packs WHERE id = ?'
-    ).get('official-india');
+    ).get('test-legacy-in-pack');
     assertEqual(
       unchangedActiveVersion.active_version_id,
       versionId,
@@ -510,7 +520,7 @@ async function main() {
     // download feature can only ever "install" versions of packs that
     // already shipped in the app.
     const newCountryPack = {
-      ...indiaPackDefinition,
+      ...testIndiaPack,
       id: 'brand-new-country-pack',
       publisher: 'some-third-party',
       version: '1.0.0',
@@ -562,13 +572,13 @@ async function main() {
       Buffer.from(incompatiblePackJson, 'utf8'),
       privateKey,
     ).toString('base64');
-    const incompatibleTag = 'tax-pack-official-india-v1.2.0';
+    const incompatibleTag = 'tax-pack-test-legacy-in-pack-v1.2.0';
     const incompatibleEntry = {
       ...catalogEntry,
       version: incompatiblePack.version,
       minFloVersion: incompatiblePack.minFloVersion,
-      downloadUrl: `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${incompatibleTag}/official-india-v1.2.0.json`,
-      signatureUrl: `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${incompatibleTag}/official-india-v1.2.0.json.sig`,
+      downloadUrl: `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${incompatibleTag}/test-legacy-in-pack-v1.2.0.json`,
+      signatureUrl: `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${incompatibleTag}/test-legacy-in-pack-v1.2.0.json.sig`,
       digest: taxPackSha256(incompatiblePackJson),
     };
     const incompatibleFetch = async (input: string | URL | Request) => new Response(
@@ -598,7 +608,7 @@ async function main() {
     );
     assertEqual(
       db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions WHERE id = ?')
-        .get('official-india@1.2.0').count,
+        .get('test-legacy-in-pack@1.2.0').count,
       0,
       'failed validation leaves no installed version behind',
     );

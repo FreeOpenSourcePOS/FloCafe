@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "id": "official-thailand",
+  "id": "test-flat-rate-pack",
   "publisher": "FreeOpenSourcePOS",
   "version": "1.0.0",
-  "country": "TH",
+  "country": "YY",
   "jurisdiction": "*",
-  "currency": "THB",
+  "currency": "YYY",
   "effectiveFrom": "2026-01-01",
   "publishedAt": "2026-01-01",
   "minFloVersion": "2.4.0",
@@ -13,12 +13,12 @@
   "inclusivePricingDefault": false,
   "registrationNumberLabel": "Tax ID",
   "categories": [
-    { "id": "standard", "label": "Standard", "ruleIds": ["vat"] },
-    { "id": "packaging", "label": "Packaging", "ruleIds": ["vat"] },
-    { "id": "delivery", "label": "Delivery", "ruleIds": ["vat"] },
-    { "id": "service_charge", "label": "Service charge", "ruleIds": ["vat"] },
-    { "id": "addon", "label": "Add-on", "ruleIds": ["vat"] },
-    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["vat"] }
+    { "id": "standard", "label": "Standard", "ruleIds": ["tax"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["tax"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["tax"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["tax"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["tax"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["tax"] }
   ],
   "defaultCategories": {
     "product": "standard",
@@ -30,8 +30,8 @@
   "unclassifiedCategoryId": "unclassified",
   "rules": [
     {
-      "id": "vat",
-      "label": "VAT",
+      "id": "tax",
+      "label": "Tax",
       "type": "percent",
       "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
       "rate": "7"

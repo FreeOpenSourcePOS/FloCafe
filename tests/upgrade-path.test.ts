@@ -257,18 +257,18 @@ function main() {
     console.log('   ✓ the backfilled columns are readable and writable');
   }
 
-  const indiaPack = require('../main/tax-packs/in.json');
-  const preservedVersionId = 'official-india@existing-active';
+  const existingCountryPack = require('./fixtures/synthetic-dual-rate-pack.json');
+  const preservedVersionId = `${existingCountryPack.id}@existing-active`;
   const preservedAt = '2026-07-30T00:00:00.000Z';
   db.prepare(`
     INSERT INTO country_packs (
       id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
     ) VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
   `).run(
-    indiaPack.id,
-    indiaPack.publisher,
-    indiaPack.country,
-    indiaPack.jurisdiction,
+    existingCountryPack.id,
+    existingCountryPack.publisher,
+    existingCountryPack.country,
+    existingCountryPack.jurisdiction,
     preservedVersionId,
     preservedAt,
     preservedAt,
@@ -280,14 +280,14 @@ function main() {
     ) VALUES (?, ?, ?, ?, '{}', ?, ?, NULL, ?, NULL, ?, ?, 'active', ?)
   `).run(
     preservedVersionId,
-    indiaPack.id,
+    existingCountryPack.id,
     'existing-active',
-    indiaPack.schemaVersion,
-    JSON.stringify(indiaPack),
+    existingCountryPack.schemaVersion,
+    JSON.stringify(existingCountryPack),
     'preserved-existing-version',
-    indiaPack.effectiveFrom,
-    indiaPack.minFloVersion,
-    indiaPack.publishedAt,
+    existingCountryPack.effectiveFrom,
+    existingCountryPack.minFloVersion,
+    existingCountryPack.publishedAt,
     preservedAt,
   );
   db.pragma('user_version = 37');
@@ -296,8 +296,8 @@ function main() {
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion);
   assert.equal(runHealthCheck().findings.length, 0);
   const preservedPack = getDatabase().prepare(`
-    SELECT active_version_id, status FROM country_packs WHERE id = 'official-india'
-  `).get() as { active_version_id: string; status: string };
+    SELECT active_version_id, status FROM country_packs WHERE id = ?
+  `).get(existingCountryPack.id) as { active_version_id: string; status: string };
   assert.deepEqual(
     preservedPack,
     { active_version_id: preservedVersionId, status: 'active' },

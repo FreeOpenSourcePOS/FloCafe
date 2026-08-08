@@ -8,13 +8,14 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
-  Download,
   History,
   Lock,
   Plus,
   RefreshCw,
   ShieldCheck,
   SlidersHorizontal,
+  Trash2,
+  Wrench,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
@@ -117,6 +118,34 @@ type Calculation = {
   }>;
 };
 
+// Manual tax builder — a category is just a bucket of named rate components
+// (e.g. "Standard" -> SGST 2.5% + CGST 2.5%) that all apply together. See
+// buildManualPack in main/routes/tax-packs.ts for the server-side mirror.
+type ManualComponent = { key: string; label: string; type: 'percent' | 'fixed'; value: string };
+type ManualCategory = { tempId: string; label: string; components: ManualComponent[] };
+// No "addon" default: an add-on is always taxed as part of its parent item's
+// subtotal (see calculateItemTax in main/services/tax.ts), never its own line.
+type ManualDefaults = { product: string; packaging: string; delivery: string; service_charge: string };
+type ManualPackDefinition = {
+  inclusivePricingDefault: boolean;
+  unclassifiedCategoryId: string;
+  defaultCategories: ManualDefaults;
+  categories: Array<{ id: string; label: string; ruleIds: string[] }>;
+  rules: Array<{ id: string; label: string; type: 'percent' | 'fixed'; rate?: string; amount?: string }>;
+};
+
+let manualIdCounter = 0;
+function manualId(prefix: string): string {
+  manualIdCounter += 1;
+  return `${prefix}_${Date.now().toString(36)}_${manualIdCounter}`;
+}
+function newManualComponent(): ManualComponent {
+  return { key: manualId('component'), label: '', type: 'percent', value: '0' };
+}
+function newManualCategory(label: string): ManualCategory {
+  return { tempId: manualId('category'), label, components: [newManualComponent()] };
+}
+
 const ENTITY_LABELS: Record<OverrideEntityType, string> = {
   product: 'Product',
   addon: 'Add-on',
@@ -129,8 +158,11 @@ const pluginRequestSettingKey = (country: string) => `tax_plugin_request:${count
 
 async function loadPluginRequestId(country: string): Promise<string | null> {
   try {
-    const response = await api.get(`/settings/${pluginRequestSettingKey(country)}`);
-    return response.data.setting?.value || null;
+    // The bulk settings list never 404s for a key that hasn't been written
+    // yet (unlike GET /settings/:key), so a store that has never filed a
+    // plugin request doesn't spam the console with an expected-but-noisy 404.
+    const response = await api.get('/settings');
+    return response.data?.settings?.[pluginRequestSettingKey(country)] || null;
   } catch {
     return null;
   }
@@ -150,6 +182,12 @@ const ACTION_LABELS: Record<string, string> = {
 function apiMessage(error: unknown, fallback: string): string {
   const candidate = error as { response?: { data?: { error?: string } } };
   return candidate.response?.data?.error || fallback;
+}
+
+function taxModeSegmentClass(active: boolean): string {
+  return `px-3 py-1.5 text-sm font-medium rounded-md transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
+    active ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
+  }`;
 }
 
 function dateTime(value: string): string {
@@ -204,6 +242,67 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [taxesEnabled, setTaxesEnabled] = useState(false);
   const [pluginRequested, setPluginRequested] = useState(false);
   const [showAdvancedTools, setShowAdvancedTools] = useState(false);
+
+  const [manualStarter] = useState(() => {
+    const category = newManualCategory('Standard');
+    const id = category.tempId;
+    return { category, defaults: { product: id, packaging: id, delivery: id, service_charge: id } };
+  });
+  const [manualCategories, setManualCategories] = useState<ManualCategory[]>([manualStarter.category]);
+  const [manualInclusive, setManualInclusive] = useState(false);
+  const [manualDefaults, setManualDefaults] = useState<ManualDefaults>(manualStarter.defaults);
+  const [manualSaving, setManualSaving] = useState(false);
+  const [manualLoaded, setManualLoaded] = useState(false);
+  const [manualOverrideConfirm, setManualOverrideConfirm] = useState<string | null>(null);
+  const [manualBuilderOpen, setManualBuilderOpen] = useState(false);
+  // null = not yet checked (or offline) — stays clickable rather than
+  // wrongly disabling the option when we simply don't know yet.
+  const [officialPackAvailable, setOfficialPackAvailable] = useState<boolean | null>(null);
+
+  const applyManualDefinition = useCallback(async (country: string) => {
+    const response = await api.get(`/tax-packs/manual-${country.toLowerCase()}`);
+    const definition = response.data?.active_version?.definition as ManualPackDefinition | undefined;
+    if (!definition || !Array.isArray(definition.categories)) return;
+    const nextCategories: ManualCategory[] = definition.categories
+      .filter((category) => category.id !== definition.unclassifiedCategoryId)
+      .map((category) => ({
+        tempId: category.id,
+        label: category.label,
+        components: (category.ruleIds.length > 0 ? category.ruleIds : [null]).map((ruleId) => {
+          const rule = ruleId ? definition.rules.find((candidate) => candidate.id === ruleId) : undefined;
+          return {
+            key: ruleId || manualId('component'),
+            label: rule?.label || '',
+            type: (rule?.type === 'fixed' ? 'fixed' : 'percent') as 'percent' | 'fixed',
+            value: rule ? (rule.type === 'fixed' ? (rule.amount || '0') : (rule.rate || '0')) : '0',
+          };
+        }),
+      }));
+    if (nextCategories.length === 0) return;
+    setManualCategories(nextCategories);
+    setManualInclusive(Boolean(definition.inclusivePricingDefault));
+    setManualDefaults({
+      product: definition.defaultCategories.product,
+      packaging: definition.defaultCategories.packaging,
+      delivery: definition.defaultCategories.delivery,
+      service_charge: definition.defaultCategories.service_charge,
+    });
+    setManualLoaded(true);
+  }, []);
+
+  const loadManualDetail = useCallback(async (country: string, knownPacks: PackSummary[]) => {
+    if (!country) return;
+    // Only fetch if a manual-<country> pack row actually exists — otherwise
+    // this always 404s on a store that has never saved one (normal, but
+    // noisy in the console for no reason).
+    const packId = `manual-${country.toLowerCase()}`;
+    if (!knownPacks.some((pack) => pack.id === packId)) return;
+    try {
+      await applyManualDefinition(country);
+    } catch {
+      // No manual pack saved yet for this country — the blank starter template stays.
+    }
+  }, [applyManualDefinition]);
 
   const loadList = useCallback(async () => {
     const [response, settingResponse] = await Promise.all([
@@ -273,6 +372,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           nextPacks.find((pack) => pack.active_for_store)?.id || nextPacks[0]?.id || '',
         );
         setAudit(auditResponse.data.audit);
+        if (packResponse.data.store_country) void loadManualDetail(packResponse.data.store_country, nextPacks);
       })
       .catch((error) => {
         if (!cancelled) toast.error(apiMessage(error, 'Could not load tax configuration'));
@@ -281,7 +381,30 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         if (!cancelled) setLoading(false);
       });
     return () => { cancelled = true; };
-  }, []);
+  }, [loadManualDetail]);
+
+  // Best-effort only: greys out "Official Tax Pack" when we're confident no
+  // plugin exists for this country. An already-installed pack (even inactive)
+  // answers this without a network call; otherwise we ask the catalog once.
+  // A failed/offline catalog check leaves it `null` (unknown) rather than
+  // wrongly disabled — FloCafe must keep working without internet access.
+  const officialPackInstalled = useMemo(
+    () => packs.some((pack) => pack.country === storeCountry && pack.publisher !== 'local'),
+    [packs, storeCountry],
+  );
+  useEffect(() => {
+    if (!storeCountry || officialPackInstalled) return;
+    let cancelled = false;
+    api.get('/tax-packs/catalog')
+      .then((response) => {
+        if (cancelled) return;
+        const available = (response.data?.available || []) as Array<{ country: string }>;
+        setOfficialPackAvailable(available.some((entry) => entry.country === storeCountry));
+      })
+      .catch(() => { if (!cancelled) setOfficialPackAvailable(null); });
+    return () => { cancelled = true; };
+  }, [storeCountry, officialPackInstalled]);
+  const officialPackAvailableResolved = officialPackInstalled ? true : officialPackAvailable;
 
   useEffect(() => {
     if (!selectedPackId) return;
@@ -305,6 +428,9 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   }, [selectedPackId]);
 
   const selectedPack = packs.find((pack) => pack.id === selectedPackId);
+  const activePackPublisher = packs.find((pack) => pack.active_for_store)?.publisher;
+  const taxMode: 'off' | 'official' | 'manual' = !taxesEnabled ? 'off' : activePackPublisher === 'local' ? 'manual' : 'official';
+  const manualBuilderVisible = manualBuilderOpen || taxMode === 'manual';
   const targetOptions = entityType === 'product'
     ? detail?.targets.products || []
     : entityType === 'addon'
@@ -405,6 +531,20 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
+  async function turnTaxesOff() {
+    if (!isOwner) return;
+    setSaving(true);
+    try {
+      await api.put('/settings/taxes_enabled', { value: 'false' });
+      setTaxesEnabled(false);
+      setManualBuilderOpen(false);
+      toast.success('Taxes turned off');
+    } catch (error) {
+      toast.error(apiMessage(error, 'Could not disable taxes'));
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function enableCountryTaxes() {
     if (!isOwner || !storeCountry) return;
@@ -415,6 +555,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       setTaxesEnabled(true);
       setCountryPackUnavailable(false);
       setPluginRequested(false);
+      setManualBuilderOpen(false);
       await Promise.all([loadList(), loadAudit()]);
       toast.success(`Taxes enabled for ${storeCountry}`);
     } catch (error) {
@@ -469,6 +610,105 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
+  function addManualCategory() {
+    setManualCategories((current) => [...current, newManualCategory('')]);
+  }
+  function removeManualCategory(tempId: string) {
+    setManualCategories((current) => current.filter((category) => category.tempId !== tempId));
+    setManualDefaults((current) => {
+      const fallback = manualCategories.find((category) => category.tempId !== tempId)?.tempId || '';
+      const next = { ...current };
+      (Object.keys(next) as Array<keyof ManualDefaults>).forEach((key) => {
+        if (next[key] === tempId) next[key] = fallback;
+      });
+      return next;
+    });
+  }
+  function updateManualCategoryLabel(tempId: string, label: string) {
+    setManualCategories((current) => current.map((category) => (category.tempId === tempId ? { ...category, label } : category)));
+  }
+  function addManualComponent(categoryTempId: string) {
+    setManualCategories((current) => current.map((category) => (
+      category.tempId === categoryTempId ? { ...category, components: [...category.components, newManualComponent()] } : category
+    )));
+  }
+  function removeManualComponent(categoryTempId: string, key: string) {
+    setManualCategories((current) => current.map((category) => (
+      category.tempId === categoryTempId
+        ? { ...category, components: category.components.filter((component) => component.key !== key) }
+        : category
+    )));
+  }
+  function updateManualComponent(categoryTempId: string, key: string, patch: Partial<ManualComponent>) {
+    setManualCategories((current) => current.map((category) => (
+      category.tempId === categoryTempId
+        ? { ...category, components: category.components.map((component) => (component.key === key ? { ...component, ...patch } : component)) }
+        : category
+    )));
+  }
+
+  async function saveManualConfig(override = false) {
+    if (!isOwner) return;
+    for (const category of manualCategories) {
+      if (!category.label.trim()) {
+        toast.error('Every tax category needs a name');
+        return;
+      }
+      if (category.components.length === 0) {
+        toast.error(`"${category.label}" needs at least one tax component`);
+        return;
+      }
+      for (const component of category.components) {
+        const value = Number(component.value);
+        if (!Number.isFinite(value) || value < 0 || (component.type === 'percent' && value > 100)) {
+          toast.error(`"${component.label || category.label}" needs a valid rate`);
+          return;
+        }
+      }
+    }
+    setManualSaving(true);
+    try {
+      const payload = {
+        inclusive: manualInclusive,
+        categories: manualCategories.map((category) => ({
+          tempId: category.tempId,
+          label: category.label.trim(),
+          components: category.components.map((component) => ({
+            label: component.label.trim(),
+            type: component.type,
+            value: component.value,
+          })),
+        })),
+        defaultProductCategoryTempId: manualDefaults.product,
+        packagingCategoryTempId: manualDefaults.packaging,
+        deliveryCategoryTempId: manualDefaults.delivery,
+        serviceChargeCategoryTempId: manualDefaults.service_charge,
+        ...(override ? { override: true } : {}),
+      };
+      const response = await api.post('/tax-packs/manual-config', payload);
+      const remapped = (response.data?.remapped || []) as Array<{ entity: string; count: number }>;
+      if (remapped.length > 0) {
+        const summary = remapped.map((row) => `${row.count} ${row.entity}${row.count === 1 ? '' : 's'}`).join(' and ');
+        toast(`${summary} lost their previous tax category and were reassigned to the new default.`, { icon: '⚠️' });
+      }
+      toast.success('Manual tax configuration saved and activated');
+      setManualOverrideConfirm(null);
+      setTaxesEnabled(true);
+      await Promise.all([loadList(), loadAudit(), applyManualDefinition(storeCountry)]);
+      if (selectedPackId) await loadDetail(selectedPackId);
+    } catch (error) {
+      const response = (error as { response?: { status?: number; data?: { can_override?: boolean; active_pack_id?: string; validation?: { checks: Array<{ passed: boolean; message: string }> } } } }).response;
+      if (response?.status === 409 && response.data?.can_override) {
+        setManualOverrideConfirm(response.data.active_pack_id || storeCountry);
+        return;
+      }
+      const failedChecks = response?.data?.validation?.checks?.filter((check) => !check.passed).map((check) => check.message);
+      toast.error(failedChecks?.length ? failedChecks.join('; ') : apiMessage(error, 'Could not save manual tax configuration'));
+    } finally {
+      setManualSaving(false);
+    }
+  }
+
   if (loading && !detail) {
     return <div className="py-16 text-center text-sm text-gray-500">Loading tax configuration…</div>;
   }
@@ -504,61 +744,193 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </div>
       )}
 
-      {!taxesEnabled && (
-        <section className="rounded-xl border border-blue-200 bg-blue-50 p-5">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h3 className="font-semibold text-gray-900">Country taxes are not enabled</h3>
-              <p className="mt-1 text-sm text-gray-600">
-                FloCafe is using the generic no-tax profile. When you enable taxes, FloCafe will
-                automatically install the verified plugin for {storeCountry}.
-              </p>
-            </div>
-            <Button
-              onClick={() => void enableCountryTaxes()}
-              disabled={!isOwner || enablingTaxes}
-              title={!isOwner ? 'Only owners can enable taxes' : undefined}
-              className="shrink-0"
-            >
-              <Download size={15} />
-              {enablingTaxes ? 'Enabling…' : 'Enable taxes'}
-            </Button>
-          </div>
-          {countryPackUnavailable && (
-            <p role="status" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Tax support for {storeCountry} is not available yet. We have requested the plugin
-              from the FloCafe team and will build it soon. Taxes remain off until it is ready.
-              {pluginRequested && ' Your request is queued for the team.'}
-            </p>
-          )}
-        </section>
-      )}
-
-      {taxesEnabled && (
-        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 flex items-center justify-between gap-4">
-          <div>
-            <h3 className="font-semibold text-gray-900">Taxes are enabled</h3>
-            <p className="mt-1 text-sm text-gray-600">FloCafe is using the verified plugin for {storeCountry}.</p>
-          </div>
-          <Button
-            variant="outline"
+      <section className="rounded-xl border border-gray-200 bg-white p-5">
+        <h3 className="font-semibold text-gray-900">Tax mode</h3>
+        <div className="mt-3 inline-flex flex-wrap rounded-lg border border-gray-200 bg-gray-50 p-1">
+          <button
+            type="button"
             disabled={!isOwner || saving}
-            onClick={async () => {
-              setSaving(true);
-              try {
-                await api.put('/settings/taxes_enabled', { value: 'false' });
-                setTaxesEnabled(false);
-                toast.success('Taxes disabled');
-              } catch (error) {
-                toast.error(apiMessage(error, 'Could not disable taxes'));
-              } finally {
-                setSaving(false);
-              }
-            }}
+            onClick={() => { if (taxesEnabled) void turnTaxesOff(); }}
+            className={taxModeSegmentClass(taxMode === 'off')}
           >
-            Turn taxes off
+            Turn Off Tax
+          </button>
+          <button
+            type="button"
+            disabled={!isOwner || enablingTaxes || officialPackAvailableResolved === false}
+            title={officialPackAvailableResolved === false ? `No official tax pack found for ${storeCountry}` : undefined}
+            onClick={() => void enableCountryTaxes()}
+            className={taxModeSegmentClass(taxMode === 'official')}
+          >
+            {enablingTaxes ? 'Enabling…' : 'Official Tax Pack'}
+          </button>
+          <button
+            type="button"
+            disabled={!isOwner}
+            onClick={() => setManualBuilderOpen(true)}
+            className={taxModeSegmentClass(taxMode === 'manual' || manualBuilderOpen)}
+          >
+            Manual Tax Rates
+          </button>
+        </div>
+        <p className="mt-3 text-sm text-gray-600">
+          {taxMode === 'off' && 'FloCafe is using the generic no-tax profile. No tax is calculated or printed.'}
+          {taxMode === 'official' && `FloCafe is using the verified plugin for ${storeCountry}.`}
+          {taxMode === 'manual' && `FloCafe is using your manual tax configuration for ${storeCountry}.`}
+        </p>
+        {countryPackUnavailable && (
+          <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            Tax support for {storeCountry} is not available yet. We have requested the plugin
+            from the FloCafe team and will build it soon. Taxes remain off until it is ready.
+            {pluginRequested && ' Your request is queued for the team.'}
+          </p>
+        )}
+      </section>
+
+      {manualBuilderVisible && (
+      <section className="rounded-xl border border-gray-200 bg-white p-5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Wrench size={20} className="text-brand" />
+            <h3 className="font-semibold text-gray-900">Manual tax builder</h3>
+          </div>
+          {!taxesEnabled && (
+            <button type="button" onClick={() => setManualBuilderOpen(false)} className="text-sm text-gray-400 hover:text-gray-600">Hide</button>
+          )}
+        </div>
+        <p className="mt-1 text-sm text-gray-500">
+          Define your own tax categories for {storeCountry || 'your store'}. Each category can hold more than one
+          named rate — for example a &quot;Standard&quot; category with SGST 2.5% + CGST 2.5%. Use this if there is
+          no official tax pack for your country yet, or to replace one with your own rates.
+        </p>
+
+        <div className="mt-4 space-y-3">
+          {manualCategories.map((category) => (
+            <div key={category.tempId} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
+              <div className="flex items-center gap-2">
+                <input
+                  value={category.label}
+                  onChange={(event) => updateManualCategoryLabel(category.tempId, event.target.value)}
+                  disabled={!isOwner}
+                  placeholder="Category name, e.g. Standard"
+                  className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium disabled:bg-gray-100"
+                />
+                {isOwner && manualCategories.length > 1 && (
+                  <button type="button" onClick={() => removeManualCategory(category.tempId)} className="p-2 text-gray-400 hover:text-red-600" title="Remove category">
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
+              <div className="mt-2 space-y-2">
+                {category.components.map((component) => (
+                  <div key={component.key} className="flex items-center gap-2 pl-4">
+                    <input
+                      value={component.label}
+                      onChange={(event) => updateManualComponent(category.tempId, component.key, { label: event.target.value })}
+                      disabled={!isOwner}
+                      placeholder="e.g. SGST"
+                      className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm disabled:bg-gray-100"
+                    />
+                    <select
+                      value={component.type}
+                      onChange={(event) => updateManualComponent(category.tempId, component.key, { type: event.target.value as 'percent' | 'fixed' })}
+                      disabled={!isOwner}
+                      className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-100"
+                    >
+                      <option value="percent">%</option>
+                      <option value="fixed">Fixed</option>
+                    </select>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={component.value}
+                      onChange={(event) => updateManualComponent(category.tempId, component.key, { value: event.target.value })}
+                      disabled={!isOwner}
+                      className="w-24 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-right disabled:bg-gray-100"
+                    />
+                    {isOwner && category.components.length > 1 && (
+                      <button type="button" onClick={() => removeManualComponent(category.tempId, component.key)} className="p-1.5 text-gray-400 hover:text-red-600" title="Remove component">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {isOwner && (
+                  <button type="button" onClick={() => addManualComponent(category.tempId)} className="ml-4 flex items-center gap-1 text-xs font-medium text-brand">
+                    <Plus size={12} /> Add component
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+          {isOwner && (
+            <button type="button" onClick={addManualCategory} className="flex items-center gap-1 text-sm font-medium text-brand">
+              <Plus size={14} /> Add category
+            </button>
+          )}
+        </div>
+
+        <div className="mt-5 border-t border-gray-100 pt-4">
+          <p className="text-sm font-medium text-gray-800">Menu prices</p>
+          <div className="mt-2 flex gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <input type="radio" checked={!manualInclusive} onChange={() => setManualInclusive(false)} disabled={!isOwner} />
+              Tax-exclusive (added on top of the menu price)
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="radio" checked={manualInclusive} onChange={() => setManualInclusive(true)} disabled={!isOwner} />
+              Tax-inclusive (already baked into the menu price)
+            </label>
+          </div>
+        </div>
+
+        <div className="mt-5 border-t border-gray-100 pt-4">
+          <p className="text-sm font-medium text-gray-800">Default category</p>
+          <p className="text-xs text-gray-500 mb-2">
+            Individual products can still be changed on the Products page. Add-ons always follow their item&apos;s
+            category — they are taxed as part of the item, never on their own.
+          </p>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {([
+              ['product', 'New products'],
+              ['packaging', 'Packaging charges'],
+              ['delivery', 'Delivery charges'],
+              ['service_charge', 'Service charges'],
+            ] as Array<[keyof ManualDefaults, string]>).map(([key, label]) => (
+              <label key={key} className="block">
+                <span className="text-xs text-gray-500">{label}</span>
+                <select
+                  value={manualDefaults[key]}
+                  onChange={(event) => setManualDefaults((current) => ({ ...current, [key]: event.target.value }))}
+                  disabled={!isOwner}
+                  className="mt-1 w-full rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm disabled:bg-gray-100"
+                >
+                  {manualCategories.map((category) => (
+                    <option key={category.tempId} value={category.tempId}>{category.label || 'Untitled category'}</option>
+                  ))}
+                </select>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        {manualOverrideConfirm && (
+          <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span>An official tax pack is already active for {storeCountry}. Saving will replace it with this manual configuration.</span>
+            <div className="flex gap-2 shrink-0">
+              <Button variant="outline" onClick={() => setManualOverrideConfirm(null)}>Cancel</Button>
+              <Button disabled={manualSaving} onClick={() => void saveManualConfig(true)}>Replace</Button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-5 flex justify-end">
+          <Button disabled={!isOwner || manualSaving} onClick={() => void saveManualConfig(false)}>
+            {manualSaving ? 'Saving…' : manualLoaded ? 'Save manual tax configuration' : 'Create manual tax configuration'}
           </Button>
-        </section>
+        </div>
+      </section>
       )}
 
       <button

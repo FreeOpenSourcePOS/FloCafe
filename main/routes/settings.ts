@@ -4,6 +4,7 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
+import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 
 const router = Router();
 
@@ -133,6 +134,16 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
     }
 
     const db = getDatabase();
+    if (tax_registration_number) {
+      const effectiveCountry = country || getAllSettings(db).country || 'IN';
+      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
+      if (!valid && format) {
+        return res.status(400).json({
+          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
+          tax_id_format: format,
+        });
+      }
+    }
     upsertSettings(db, {
       business_name, timezone, currency, country, language,
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
@@ -167,9 +178,31 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
     }
 
     const db = getDatabase();
+    if (tax_registration_number) {
+      const effectiveCountry = country || getAllSettings(db).country || 'IN';
+      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
+      if (!valid && format) {
+        return res.status(400).json({
+          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
+          tax_id_format: format,
+        });
+      }
+    }
     upsertSettings(db, { tax_registered, tax_registration_number, state_code, tax_scheme, country });
     cloudSync.refreshRegistrationProfile();
     res.json(taxShape(getAllSettings(db)));
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Lets the Settings UI show a format hint (and validate client-side) before
+// save — the PUT /business and /tax handlers above remain the source of truth.
+router.get('/tax-id-format', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const country = String(req.query.country || getAllSettings(getDatabase()).country || 'IN').toUpperCase();
+    res.json({ country, format: resolveTaxIdFormat(country) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

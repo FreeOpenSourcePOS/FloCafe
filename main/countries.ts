@@ -1,5 +1,11 @@
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 
+export interface TaxIdFormat {
+  // JS RegExp source (no slashes/flags) — validated case-insensitively.
+  pattern: string;
+  description: string;
+}
+
 export interface Country {
   code: string;
   name: string;
@@ -9,6 +15,11 @@ export interface Country {
   locale: string;
   taxIdLabel?: string;
   taxName?: string;
+  // Only enforced when an official (non-local) tax pack is active for this
+  // country — see resolveTaxIdFormat() in services/tax.ts. Left undefined
+  // for countries we haven't verified a format for; unset means no format
+  // is enforced, never "reject everything".
+  taxIdFormat?: TaxIdFormat;
 }
 
 const dn = new Intl.DisplayNames(['en'], { type: 'region' });
@@ -19,10 +30,15 @@ interface Row {
   tz: string;
   taxIdLabel?: string;
   taxName?: string;
+  taxIdFormat?: TaxIdFormat;
 }
 
 const SUPPORTED: Record<string, Row> = {
-  IN: { locale: 'en-IN', currency: 'INR', tz: 'Asia/Kolkata',                    taxIdLabel: 'GSTIN', taxName: 'GST' },
+  IN: { locale: 'en-IN', currency: 'INR', tz: 'Asia/Kolkata',                    taxIdLabel: 'GSTIN', taxName: 'GST',
+    taxIdFormat: {
+      pattern: '^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$',
+      description: '15 characters: 2-digit state code + 10-character PAN + entity code + "Z" + checksum (e.g. 29ABCDE1234F1Z5)',
+    } },
   AR: { locale: 'es-AR', currency: 'ARS', tz: 'America/Argentina/Buenos_Aires',  taxIdLabel: 'CUIT',  taxName: 'IVA' },
   US: { locale: 'en-US', currency: 'USD', tz: 'America/New_York',                taxIdLabel: 'EIN',   taxName: 'Sales Tax' },
   CA: { locale: 'en-CA', currency: 'CAD', tz: 'America/Toronto',                 taxIdLabel: 'BN',    taxName: 'GST/HST' },
@@ -70,6 +86,7 @@ function build(code: string): Country {
     locale: r.locale,
     taxIdLabel: r.taxIdLabel,
     taxName: r.taxName,
+    taxIdFormat: r.taxIdFormat,
   };
 }
 

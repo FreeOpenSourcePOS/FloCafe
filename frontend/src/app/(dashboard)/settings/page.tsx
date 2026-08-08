@@ -1051,6 +1051,16 @@ export default function SettingsPage() {
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
+  const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
+
+  useEffect(() => {
+    if (!form.countryCode) return;
+    const controller = new AbortController();
+    api.get('/settings/tax-id-format', { params: { country: form.countryCode }, signal: controller.signal })
+      .then((res) => setTaxIdFormat(res.data.format || null))
+      .catch(() => setTaxIdFormat(null));
+    return () => controller.abort();
+  }, [form.countryCode]);
 
   const [cloudSettings, setCloudSettings] = useState({
     cloud_api_key: '',
@@ -1676,7 +1686,10 @@ export default function SettingsPage() {
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode });
       if (!silent) toast.success(t('settings.storeSaved'));
     } catch (err) {
-      if (!silent) toast.error(t('settings.saveFailed'));
+      if (!silent) {
+        const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('settings.saveFailed');
+        toast.error(message);
+      }
       throw err;
     } finally {
       setSavingBusiness(false);
@@ -1996,9 +2009,22 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
                     {isAdmin ? (
-                      <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
-                        placeholder={t('settings.taxIdPlaceholder')}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                      <>
+                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
+                          placeholder={t('settings.taxIdPlaceholder')}
+                          className={`w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-brand ${
+                            taxIdFormat && form.taxRegistrationNumber && !new RegExp(taxIdFormat.pattern, 'i').test(form.taxRegistrationNumber.trim())
+                              ? 'border-red-300' : 'border-gray-200'
+                          }`} />
+                        {taxIdFormat && (
+                          <p className={`text-xs mt-1 ${
+                            form.taxRegistrationNumber && !new RegExp(taxIdFormat.pattern, 'i').test(form.taxRegistrationNumber.trim())
+                              ? 'text-red-600' : 'text-gray-400'
+                          }`}>
+                            {t('settings.taxIdFormatHint', { country: countryName(form.countryCode), description: taxIdFormat.description })}
+                          </p>
+                        )}
+                      </>
                     ) : (
                       <p className="font-medium text-gray-900">{form.taxRegistrationNumber || '—'}</p>
                     )}

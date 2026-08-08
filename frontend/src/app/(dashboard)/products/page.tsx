@@ -55,6 +55,10 @@ const CATEGORY_COLORS = [
 
 type TabType = 'products' | 'categories' | 'addons';
 
+function taxCategoryOptionLabel(tc: { label: string; rate_percent?: number | null }): string {
+  return tc.rate_percent != null ? `${tc.label} (${tc.rate_percent}%)` : tc.label;
+}
+
 export default function ProductsPage() {
   const { t } = useI18n();
   const { currentTenant } = useAuthStore();
@@ -94,7 +98,7 @@ export default function ProductsPage() {
   const [catDeleteModal, setCatDeleteModal] = useState<{ open: boolean; id: number | null; name: string; productCount: number }>({ open: false, id: null, name: '', productCount: 0 });
   const [catReassignTo, setCatReassignTo] = useState<string>('');
 
-  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
+  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]>([]);
   const [defaultTaxCategoryId, setDefaultTaxCategoryId] = useState('');
   const [showBulkTaxModal, setShowBulkTaxModal] = useState(false);
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
@@ -142,7 +146,7 @@ export default function ProductsPage() {
       .finally(() => { setLoading(false); });
     api.get('/tax/categories', { signal: controller.signal })
       .then((res) => {
-        const data = res.data as { categories?: { id: string; label: string }[]; default_category_id?: string | null };
+        const data = res.data as { categories?: { id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]; default_category_id?: string | null };
         setTaxCategories(data.categories || []);
         setDefaultTaxCategoryId(data.default_category_id || '');
       })
@@ -515,9 +519,9 @@ export default function ProductsPage() {
             {products.map((product) => {
               const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
               const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
-              const taxCategoryLabel = taxCategories.find((tc) => tc.id === product.tax_category_id)?.label;
+              const matchedTaxCategory = taxCategories.find((tc) => tc.id === product.tax_category_id);
               const taxLabel = product.tax_category_id
-                ? (taxCategoryLabel || product.tax_category_id)
+                ? (matchedTaxCategory ? taxCategoryOptionLabel(matchedTaxCategory) : product.tax_category_id)
                 : '—';
               return (
               <tr key={product.id} className="hover:bg-gray-50">
@@ -724,7 +728,7 @@ export default function ProductsPage() {
                 <select value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
                   <option value="">— No tax / exempt —</option>
-                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
+                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
                 </select>
                 {taxCategories.length === 0 && (
                   <p className="text-xs text-gray-400 mt-1">No tax groups are available until country taxes are enabled in Settings.</p>
@@ -1101,7 +1105,7 @@ export default function ProductsPage() {
                 <select value={bulkTaxCategoryId} onChange={(e) => setBulkTaxCategoryId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none mb-5">
                   <option value="">{t('products.selectPlaceholder')}</option>
-                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
+                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
                 </select>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setShowBulkTaxModal(false)}>{t('common.cancel')}</Button>

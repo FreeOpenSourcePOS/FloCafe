@@ -22,7 +22,7 @@ import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components'
 import { safePrinterText, type PrintWarning } from './warnings';
 
 export interface ReceiptOptions {
-  /** 58 mm (32 chars) or 80 mm (48 chars). Default: 58 */
+  /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
   paperWidth?: 58 | 80;
   /** Show a "Thank you" footer line. Default: true */
   showFooter?: boolean;
@@ -56,7 +56,8 @@ function printReprintBanner(enc: ReceiptPrinterEncoder): void {
     .align('left');
 }
 
-const CHARS: Record<58 | 80, number> = { 58: 32, 80: 48 };
+// Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
+const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
 
 /**
  * Mask phone number for receipt display — shows only last 4 digits.

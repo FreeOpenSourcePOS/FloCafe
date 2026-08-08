@@ -11,13 +11,14 @@ import { formatTime } from './format-date';
 import { safePrinterText, type PrintWarning } from './warnings';
 
 export interface KotOptions {
-  /** 58 mm (32 chars) or 80 mm (48 chars). Default: 58 */
+  /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
   paperWidth?: 58 | 80;
   /** Kitchen station name to print on KOT */
   stationName?: string;
 }
 
-const CHARS: Record<58 | 80, number> = { 58: 32, 80: 48 };
+// Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
+const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
 
 /**
  * Build a KOT byte array from an Order object.

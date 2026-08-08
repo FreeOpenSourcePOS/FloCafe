@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type PaperSize = 'thermal58' | 'thermal80' | 'a4' | 'a5';
+export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
 export type BillTemplate = 'classic' | 'compact' | 'detailed';
 
@@ -96,7 +96,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       whatsappShareEnabled: true,
       // Web print defaults
       defaultPrintMode: 'thermal',
-      webPrintSize: 'a4',
+      webPrintSize: 'thermal58',
       // Bill template defaults
       billTemplate: 'classic',
       billFooterMessage: '',

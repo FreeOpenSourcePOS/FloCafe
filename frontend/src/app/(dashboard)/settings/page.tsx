@@ -1758,8 +1758,6 @@ export default function SettingsPage() {
   const paperSizeOptions: { value: PaperSize; label: string }[] = [
     { value: 'thermal58', label: t('settings.paperSize58') },
     { value: 'thermal80', label: t('settings.paperSize80') },
-    { value: 'a4', label: t('settings.paperSizeA4') },
-    { value: 'a5', label: t('settings.paperSizeA5') },
   ];
 
   const isDirty = 
@@ -3198,8 +3196,8 @@ export default function SettingsPage() {
                   <select value={printingForm.webPrintSize}
                     onChange={(e) => setPrintingForm((p) => ({ ...p, webPrintSize: e.target.value as PaperSize }))}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand">
-                    <option value="a4">{t('settings.webPrintSizeA4')}</option>
-                    <option value="a5">{t('settings.webPrintSizeA5')}</option>
+                    <option value="thermal58">{t('settings.paperSize58')}</option>
+                    <option value="thermal80">{t('settings.paperSize80')}</option>
                   </select>
                 </div>
               </div>

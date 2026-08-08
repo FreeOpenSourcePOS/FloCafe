@@ -45,7 +45,7 @@ export function printWebBill(
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WebPrintOptions = {}
 ): void {
-  const { paperSize = 'a4', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false } = opts;
+  const { paperSize = 'thermal58', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false } = opts;
 
   const html = generateBillHtml(bill, tenant, { paperSize, includeTaxId, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode, isReprint });
 
@@ -76,7 +76,7 @@ export function generateBillHtml(
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WebPrintOptions = {}
 ): string {
-  const { paperSize = 'a4', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false } = opts;
+  const { paperSize = 'thermal58', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false } = opts;
   const displayName = businessName ?? tenant.business_name;
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency);

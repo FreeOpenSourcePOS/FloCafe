@@ -2,6 +2,15 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.9.2] - 2026-08-09
+
+### Changed
+- Product-level loyalty cashback is now a single field: leave it blank to use the global rate, enter 0 to exclude the product, or enter any other value to override the rate for that product only. The products table shows each product's effective rate when loyalty is enabled.
+- Receipt printing now uses a single unified 58mm column width; the A4 and A5 paper size options have been removed.
+
+### Fixed
+- The Linux Snap package now includes the `browser-support` plug so it can access `/dev/shm`, and builds on core24 in LXD with the gnome extension.
+
 ## [2.9.0] - 2026-08-07
 
 ### Added

@@ -15,7 +15,7 @@ import { formatDate } from '@/lib/printer/format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from '@/lib/printer/tax-components';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/hooks/useI18n';
-type TestMode = 'receipt' | 'tax' | 'kot' | 'web-a4' | 'web-a5' | 'whatsapp';
+type TestMode = 'receipt' | 'tax' | 'kot' | 'web-print' | 'whatsapp';
 type PaperWidth = 58 | 80;
 
 export default function PrintTestPage() {
@@ -25,6 +25,7 @@ export default function PrintTestPage() {
 
   const { printBill, printTaxBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
   const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
+  const webPrintSize = usePosSettingsStore((s) => s.webPrintSize);
   const { t } = useI18n();
   const effectiveTestMode: TestMode = !kotPrintingEnabled && testMode === 'kot' ? 'receipt' : testMode;
 
@@ -87,13 +88,9 @@ export default function PrintTestPage() {
             showPrintWarningsToast(printWarnings);
           }
           break;
-        case 'web-a4':
-          printWebBill(testBill, testTenant, { paperSize: 'a4', includeTaxId: true });
-          toast.success(t('printTest.a4DialogOpened'));
-          break;
-        case 'web-a5':
-          printWebBill(testBill, testTenant, { paperSize: 'a5', includeTaxId: true });
-          toast.success(t('printTest.a5DialogOpened'));
+        case 'web-print':
+          printWebBill(testBill, testTenant, { paperSize: webPrintSize, includeTaxId: true });
+          toast.success(t('printTest.webPrintDialogOpened'));
           break;
         case 'whatsapp':
           shareBillViaWhatsApp(testBill, testCustomer, testTenant, {
@@ -112,7 +109,7 @@ export default function PrintTestPage() {
 
   const handleDownloadHtml = () => {
     const html = generateBillHtml(testBill, testTenant, {
-      paperSize: 'a4',
+      paperSize: webPrintSize,
       includeTaxId: true,
       taxRegistrationNumber: 'TAXID-0001',
       address: '123 Main Street, Mumbai - 400001',
@@ -123,7 +120,7 @@ export default function PrintTestPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'bill-a4-preview.html';
+    a.download = `bill-${webPrintSize}-preview.html`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success('HTML downloaded');
@@ -144,8 +141,7 @@ export default function PrintTestPage() {
     // Hidden entirely when KOT printing is disabled — this is a manual
     // "Print KOT" action, which must never be reachable in that state (#133).
     ...(kotPrintingEnabled ? [{ value: 'kot' as TestMode, label: 'KOT (Kitchen Ticket)', icon: Printer }] : []),
-    { value: 'web-a4', label: 'A4 Web Print', icon: FileText },
-    { value: 'web-a5', label: 'A5 Web Print', icon: FileText },
+    { value: 'web-print', label: 'Web Print (Browser)', icon: FileText },
     { value: 'whatsapp', label: 'WhatsApp Share', icon: MessageCircle },
   ];
 
@@ -273,7 +269,7 @@ export default function PrintTestPage() {
             {testing ? t('printTest.printing') : t('printTest.runTest')}
           </Button>
 
-          {(effectiveTestMode === 'web-a4' || effectiveTestMode === 'web-a5') && (
+          {effectiveTestMode === 'web-print' && (
             <Button
               onClick={handleDownloadHtml}
               variant="outline"

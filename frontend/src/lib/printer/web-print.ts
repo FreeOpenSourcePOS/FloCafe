@@ -1,7 +1,8 @@
 /**
  * web-print.ts
  *
- * A4/A5 bill printing using browser's native print dialog.
+ * Thermal-width bill printing using the browser's native print dialog —
+ * the fallback path for merchants without an ESC/POS hardware printer.
  * Generates HTML that can be printed silently or shown to user.
  */
 
@@ -12,7 +13,7 @@ import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 
-export type PaperSize = 'a4' | 'a5' | 'thermal58' | 'thermal80';
+export type PaperSize = 'thermal58' | 'thermal80';
 
 /** Encodes HTML entity characters so database-sourced values can't inject markup/scripts into the bill print window. */
 function escapeHtml(value: unknown): string {
@@ -237,15 +238,6 @@ function getPaperStyles(size: PaperSize): string {
   `;
 
   switch (size) {
-    case 'a4':
-      return baseStyles + `
-        .bill-container { padding: 40px; max-width: 210mm; min-height: 297mm; }
-      `;
-    case 'a5':
-      return baseStyles + `
-        .bill-container { padding: 20px; max-width: 148mm; min-height: 210mm; font-size: 11px; }
-        .header h1 { font-size: 18px; }
-      `;
     case 'thermal58':
       return baseStyles + `
         .bill-container { padding: 5px; max-width: 58mm; font-size: 10px; }

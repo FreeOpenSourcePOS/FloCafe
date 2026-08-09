@@ -2,14 +2,23 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [2.9.2] - 2026-08-09
+## [2.9.5] - 2026-08-09
+
+### Added
+- Settings → Tax Configuration now includes a manual tax builder: define your own tax categories for any country, each holding multiple independently named rate components (for example "Tax 1" + "Tax 2" on one category), for countries with no official tax pack or to replace one with your own rates. A three-way Turn Off Tax / Official Tax Pack / Manual Tax Rates control replaces the previous enable/disable banners.
+- The product "Tax rate group" selector now shows the resolved tax percentage next to each category (for example "Packaging (18%)"), on both the product edit form and the products list.
+- The store's TAX ID field is validated against the active country's known format (for example India's GSTIN) only while an official tax module is active for that country; manual and unconfigured setups have no format restriction.
 
 ### Changed
 - Product-level loyalty cashback is now a single field: leave it blank to use the global rate, enter 0 to exclude the product, or enter any other value to override the rate for that product only. The products table shows each product's effective rate when loyalty is enabled.
 - Receipt printing now uses a single unified 58mm column width; the A4 and A5 paper size options have been removed.
+- The store details field previously labeled "Tax ID / Registration Number" is now simply "TAX ID".
+- Add-ons always follow their item's own tax category and are never taxed separately; the manual tax builder no longer offers a distinct default category for add-ons.
+- The Settings sidebar's "Store" group is renamed "General"; Printers and Tax Configuration are no longer indented under Store Details. Print Options is merged into the Printers page instead of being a separate tab.
 
 ### Fixed
 - The Linux Snap package now includes the `browser-support` plug so it can access `/dev/shm`, and builds on core24 in LXD with the gnome extension.
+- The Tax Configuration page no longer logs expected "not found yet" lookups (manual pack, plugin request ticket) as console errors on a store that has never configured either.
 
 ## [2.9.0] - 2026-08-07
 

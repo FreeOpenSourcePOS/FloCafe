@@ -199,7 +199,10 @@ type ReplacementJournal = {
 };
 
 function syncFile(filePath: string): void {
-  const fd = fs.openSync(filePath, 'r');
+  // Windows does not allow fsync on a read-only file handle (it reports
+  // EPERM). All callers pass application-owned database, journal, or backup
+  // files, so use a writable handle for portable durability flushing.
+  const fd = fs.openSync(filePath, 'r+');
   try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
 }
 

@@ -139,6 +139,13 @@ async function main() {
   assertEqual(ownerKitchen.status, 200, 'owner can access kitchen orders');
 
   // ── vuln-0005: /api/db/export must redact secrets ─────────────────────────
+  // issue #220: cloud_deletion_status_token is a bearer-like token for
+  // polling a pending cloud account-deletion request (main/services/
+  // cloud-sync.ts) — same exposure risk as the other cloud secrets, but
+  // wasn't originally added to the export redaction set.
+  db.prepare(`
+    INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('cloud_deletion_status_token', 'super-secret-deletion-token', ?)
+  `).run(now());
   const exportRes = await request(app).get('/api/db/export').set(ownerAuth);
   assertEqual(exportRes.status, 200, 'owner can call /api/db/export');
 
@@ -152,6 +159,14 @@ async function main() {
     assert(jwtRow.value === '[REDACTED]', 'jwt_secret value is [REDACTED] in export (vuln-0005)');
     assert(exportBody.redacted_fields.includes('settings.jwt_secret'), 'jwt_secret listed in redacted_fields');
   }
+
+  const deletionTokenRow = settingsRows.find((r: any) => r.key === 'cloud_deletion_status_token');
+  assert(!!deletionTokenRow, 'cloud_deletion_status_token setting is present to be redacted');
+  assert(deletionTokenRow?.value === '[REDACTED]', 'cloud_deletion_status_token value is [REDACTED] in export (issue #220)');
+  assert(
+    exportBody.redacted_fields.includes('settings.cloud_deletion_status_token'),
+    'cloud_deletion_status_token listed in redacted_fields',
+  );
 
   // password and pin_hash must be absent from all user rows
   const userRows: Record<string, any>[] = exportBody.data?.users ?? [];

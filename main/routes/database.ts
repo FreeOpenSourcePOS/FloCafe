@@ -18,6 +18,10 @@ const EXPORT_SETTINGS_REDACT = new Set([
   'cloud_pos_hash',
   'mobile_pairing_code',
   'mobile_pairing_code_expires_at',
+  // Bearer-like token used to poll a pending cloud account-deletion request
+  // (see main/services/cloud-sync.ts) — same exposure risk as the cloud
+  // credentials above.
+  'cloud_deletion_status_token',
 ]);
 
 // User columns stripped from export — hashes must never leave the server.

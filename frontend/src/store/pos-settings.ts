@@ -157,7 +157,13 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // generic billTaxRegistrationNumber/billShowTaxId. Carry existing
       // browsers' saved values forward under the new keys instead of
       // silently resetting them.
-      version: 1,
+      // v2: the Settings page's paper-size selector was narrowed to
+      // thermal-only options (thermal58/thermal80) — 'a4'/'a5' are no
+      // longer offered there, but the web-print A4/A5 layouts themselves
+      // still exist (frontend/src/lib/printer/web-print.ts) and remain
+      // reachable from print-test only. A browser that saved 'a4'/'a5'
+      // before the narrowing would otherwise keep an unselectable value.
+      version: 2,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -170,6 +176,11 @@ export const usePosSettingsStore = create<PosSettingsState>()(
             delete state.billShowGstn;
           }
           delete state.includeGstOnBill;
+        }
+        if (version < 2) {
+          if (state.webPrintSize === 'a4' || state.webPrintSize === 'a5') {
+            state.webPrintSize = 'thermal58';
+          }
         }
         return state as unknown as PosSettingsState;
       },

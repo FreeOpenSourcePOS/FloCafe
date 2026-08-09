@@ -429,8 +429,16 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
 
   const selectedPack = packs.find((pack) => pack.id === selectedPackId);
   const activePackPublisher = packs.find((pack) => pack.active_for_store)?.publisher;
+  // Reflects the real, saved backend state — only changes once something is
+  // actually activated (enableCountryTaxes / saveManualConfig / turnTaxesOff).
   const taxMode: 'off' | 'official' | 'manual' = !taxesEnabled ? 'off' : activePackPublisher === 'local' ? 'manual' : 'official';
   const manualBuilderVisible = manualBuilderOpen || taxMode === 'manual';
+  // The segment control's *displayed* selection: opening the manual editor
+  // is its own state even before anything is saved, so it must outrank
+  // taxMode here — otherwise "Turn Off Tax" (or "Official") stays lit at the
+  // same time purely because the backend hasn't changed yet, which reads as
+  // two segments active at once.
+  const activeSegment: 'off' | 'official' | 'manual' = manualBuilderOpen ? 'manual' : taxMode;
   const targetOptions = entityType === 'product'
     ? detail?.targets.products || []
     : entityType === 'addon'
@@ -750,8 +758,11 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           <button
             type="button"
             disabled={!isOwner || saving}
-            onClick={() => { if (taxesEnabled) void turnTaxesOff(); }}
-            className={taxModeSegmentClass(taxMode === 'off')}
+            onClick={() => {
+              setManualBuilderOpen(false);
+              if (taxesEnabled) void turnTaxesOff();
+            }}
+            className={taxModeSegmentClass(activeSegment === 'off')}
           >
             Turn Off Tax
           </button>
@@ -759,8 +770,11 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             type="button"
             disabled={!isOwner || enablingTaxes || officialPackAvailableResolved === false}
             title={officialPackAvailableResolved === false ? `No official tax pack found for ${storeCountry}` : undefined}
-            onClick={() => void enableCountryTaxes()}
-            className={taxModeSegmentClass(taxMode === 'official')}
+            onClick={() => {
+              setManualBuilderOpen(false);
+              if (taxMode !== 'official') void enableCountryTaxes();
+            }}
+            className={taxModeSegmentClass(activeSegment === 'official')}
           >
             {enablingTaxes ? 'Enabling…' : 'Official Tax Pack'}
           </button>
@@ -768,7 +782,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             type="button"
             disabled={!isOwner}
             onClick={() => setManualBuilderOpen(true)}
-            className={taxModeSegmentClass(taxMode === 'manual' || manualBuilderOpen)}
+            className={taxModeSegmentClass(activeSegment === 'manual')}
           >
             Manual Tax Rates
           </button>
@@ -777,6 +791,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           {taxMode === 'off' && 'FloCafe is using the generic no-tax profile. No tax is calculated or printed.'}
           {taxMode === 'official' && `FloCafe is using the verified plugin for ${storeCountry}.`}
           {taxMode === 'manual' && `FloCafe is using your manual tax configuration for ${storeCountry}.`}
+          {manualBuilderOpen && taxMode !== 'manual' && ' Not saved yet — configure your rates below, then save to activate.'}
         </p>
         {countryPackUnavailable && (
           <p role="status" className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">

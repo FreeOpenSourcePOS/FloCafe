@@ -517,7 +517,14 @@ export function validationChecklist(
     WHERE pack_version_id = ?
       AND json_extract(value_json, '$.categoryId') NOT IN (${categoryIds.map(() => '?').join(',') || "''"})
   `).get(activeVersion.active_version_id, ...categoryIds) as { count: number } : { count: 0 };
-  add(20, overrideConflicts.count === 0, 'Every current merchant override resolves against this version');
+  // Same local-pack carve-out as check 19, and for the same reason: this
+  // check runs before the manual-config route's withTxn block, which is
+  // exactly what remaps every stale override to the new default category
+  // for a local pack. Leaving this a hard block here would reject the save
+  // before that remap ever gets a chance to run, making it impossible to
+  // ever rename/remove a manual category that any override still targets.
+  add(20, overrideConflicts.count === 0 || pack.publisher === 'local',
+    'Every current merchant override resolves against this version');
   add(21, pack.categories.every((category) => Boolean(category.label))
     && pack.rules.every((rule) => Boolean(rule.label)), 'Default-language labels are present');
   add(22, typeof pack === 'object' && !containsUnsafeData(pack), 'Artifact is data-only and contains no executable or unsafe path values');
@@ -968,9 +975,44 @@ router.post('/manual-config', requireRole('owner'), (req: Request, res: Response
       db.prepare(
         `UPDATE addons SET tax_category_id = ? WHERE tax_category_id IS NULL OR tax_category_id NOT IN (${placeholders})`
       ).run(pack.defaultCategories.addon, ...categoryIds);
+
+      // Merchant overrides (product/addon-specific, plus store-wide
+      // packaging/delivery/service_charge picks) are a second, independent
+      // place a removed category id can hide — activateInstalledPack() above
+      // already moved every override's pack_version_id onto this new
+      // version, but never inspected value_json.categoryId itself. Left
+      // alone, resolveTaxCategory (tax-engine.ts) still returns the deleted
+      // id for any line that hits an override, and calculateRawLine throws
+      // "resolved unknown tax category" — checkout rejects an otherwise
+      // valid line. Same policy as products/addons above: reassign to the
+      // new pack's default category for that entity type.
+      const overrideDefaultByEntity: Record<OverrideEntityType, string> = {
+        product: pack.defaultCategories.product,
+        addon: pack.defaultCategories.addon,
+        packaging: pack.defaultCategories.packaging,
+        delivery: pack.defaultCategories.delivery,
+        service_charge: pack.defaultCategories.service_charge,
+      };
+      const overrideRows = db.prepare(
+        `SELECT id, entity_type, value_json FROM tax_overrides WHERE pack_version_id = ? AND field_name = 'tax_category_id'`
+      ).all(versionId) as Array<{ id: string; entity_type: OverrideEntityType; value_json: string }>;
+      const updateOverrideStmt = db.prepare(`UPDATE tax_overrides SET value_json = ?, updated_at = ? WHERE id = ?`);
+      const overrideRemapCounts = new Map<OverrideEntityType, number>();
+      for (const override of overrideRows) {
+        const currentCategoryId = parseJson<{ categoryId?: string }>(override.value_json, {}).categoryId;
+        if (currentCategoryId && categoryIds.includes(currentCategoryId)) continue;
+        const fallbackCategoryId = overrideDefaultByEntity[override.entity_type];
+        updateOverrideStmt.run(JSON.stringify({ categoryId: fallbackCategoryId }), installedAt, override.id);
+        overrideRemapCounts.set(override.entity_type, (overrideRemapCounts.get(override.entity_type) || 0) + 1);
+      }
+
       remapped = [
         ...(staleProducts.total > 0 ? [{ entity: 'product', count: staleProducts.total }] : []),
         ...(staleAddons.total > 0 ? [{ entity: 'addon', count: staleAddons.total }] : []),
+        ...Array.from(overrideRemapCounts.entries()).map(([entityType, count]) => ({
+          entity: `${entityType}_override`,
+          count,
+        })),
       ];
       if (remapped.length > 0) {
         audit('remap_categories', actorUserId(req), pack.id, versionId, null, { remapped });

@@ -72,7 +72,7 @@ export interface TaxRollup {
 }
 
 import { TaxEngine, applyPayableRounding } from './tax-engine';
-import type { CountryPack } from '../tax-packs/types';
+import type { CountryPack, TaxRule } from '../tax-packs/types';
 
 function round(value: number, decimals: number = 2): number {
   if (typeof value !== 'number' || isNaN(value) || !isFinite(value)) return 0;
@@ -139,6 +139,14 @@ export function validateTaxRegistrationNumber(
 // summing every matching percent component (e.g. Tax 1 + Tax 2). Authoritative
 // calculation always goes through TaxEngine.calculate, which also resolves
 // the interstate variant per transaction; this never feeds a checkout total.
+//
+// Rule selection here mirrors calculateRawLine (tax-engine.ts): a rule only
+// counts if the *category* declares it via category.ruleIds, not just if the
+// rule declares the category via rule.categoryIds. A well-formed pack always
+// keeps both sides in sync, but selecting only by rule.categoryIds would show
+// a rate for a rule checkout actually excludes for any pack where they've
+// drifted (e.g. a hand-edited or malformed catalog pack) — showing a price
+// the merchant never actually charges.
 export function previewCategoryRate(
   pack: CountryPack,
   businessType: string,
@@ -146,14 +154,18 @@ export function previewCategoryRate(
 ): { percent: number; label: string } | null {
   const category = pack.categories.find((candidate) => candidate.id === categoryId);
   if (!category) return null;
-  const percentRules = pack.rules.filter((rule) => {
-    if (rule.type !== 'percent' || !rule.categoryIds.includes(categoryId)) return false;
+  const ruleById = new Map(pack.rules.map((rule) => [rule.id, rule]));
+  const percentRules = category.ruleIds.reduce<TaxRule[]>((acc, ruleId) => {
+    const rule = ruleById.get(ruleId);
+    if (!rule || rule.type !== 'percent' || !rule.categoryIds.includes(categoryId)) return acc;
     const conditions = rule.conditions;
-    if (!conditions) return true;
-    if (conditions.businessTypes && !conditions.businessTypes.includes(businessType)) return false;
-    if (conditions.customerStateRelation === 'interstate') return false;
-    return true;
-  });
+    if (conditions) {
+      if (conditions.businessTypes && !conditions.businessTypes.includes(businessType)) return acc;
+      if (conditions.customerStateRelation === 'interstate') return acc;
+    }
+    acc.push(rule);
+    return acc;
+  }, []);
   if (percentRules.length === 0) return null;
   const percent = percentRules.reduce((sum, rule) => sum + Number(rule.rate || 0), 0);
   return {

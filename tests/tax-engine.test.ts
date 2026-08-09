@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TaxEngine, applyPayableRounding, resolveTaxCategory, type TaxEngineLine } from '../main/services/tax-engine';
-import { calculateItemTax } from '../main/services/tax';
+import { calculateItemTax, previewCategoryRate } from '../main/services/tax';
 import type {
   CountryPack,
   PayableRounding,
@@ -418,4 +418,35 @@ test('products without a resolved tax category charge no tax, regardless of lega
     tax_type: 'none',
     tax_snapshot: null,
   });
+});
+
+test('previewCategoryRate only counts rules the category actually claims via ruleIds, matching checkout (issue #220 item 2)', () => {
+  // A deliberately drifted/malformed pack: 'orphan' declares 'standard' in
+  // its own categoryIds, but 'standard' never lists 'orphan' in its ruleIds.
+  // calculateRawLine (tax-engine.ts) only ever selects rules a category
+  // claims via ruleIds, so checkout silently excludes 'orphan'. Before this
+  // fix, previewCategoryRate selected by rule.categoryIds alone and would
+  // have shown the merchant a rate (14%) checkout never actually charges.
+  const realRule: TaxRule = { id: 'real', label: 'Real Tax', type: 'percent', categoryIds: ['standard'], rate: '5' };
+  const orphanRule: TaxRule = { id: 'orphan', label: 'Orphan Tax', type: 'percent', categoryIds: ['standard'], rate: '9' };
+  const pack: CountryPack = {
+    ...packWith([realRule, orphanRule]),
+    categories: [
+      { id: 'standard', label: 'Standard', ruleIds: ['real'] },
+      { id: 'unclassified', label: 'Unclassified', ruleIds: [] },
+    ],
+  };
+
+  const preview = previewCategoryRate(pack, 'restaurant', 'standard');
+  assert.deepEqual(preview, { percent: 5, label: 'Real Tax 5%' },
+    'preview only counts the rule the category actually claims via ruleIds, not every rule that merely names the category');
+
+  const result = calculate(pack, [
+    line({ unitPrice: '100', productCategoryId: 'standard', taxBehavior: 'exclusive' }),
+  ], { businessType: 'restaurant' });
+  assert.deepEqual(
+    result.lines[0].components.map((component) => [component.label, component.amount]),
+    [['Real Tax', '5.00']],
+    'checkout applies the same single rule preview now reports — no more preview/checkout mismatch',
+  );
 });

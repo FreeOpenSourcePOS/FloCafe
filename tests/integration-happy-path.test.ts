@@ -33,14 +33,18 @@ const {
 
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
-const indiaTaxPack = require('../main/tax-packs/in.json');
+const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
+// Country/currency stay IN/INR (the default test business country) so
+// getActiveCountryPack() actually resolves this pack instead of falling
+// through to the generic no-tax default.
+const testTaxPack = { ...dualRatePackData, id: 'test-in-pack', country: 'IN', currency: 'INR', publisher: 'FreeOpenSourcePOS' };
 
 async function main() {
   console.log('Integration Test: Happy Path');
   console.log('='.repeat(50));
 
   const db = initTestDb();
-  installAndActivateTestTaxPack(db, indiaTaxPack);
+  installAndActivateTestTaxPack(db, testTaxPack);
 
   // Seed: owner user, category, 2 products
   const { authHeader } = seedOwnerUser(db);
@@ -80,11 +84,11 @@ async function main() {
     assert(orderId > 0, `order has valid id (${orderId})`);
 
     // Verify initial totals (500 + 300 = 800 subtotal)
-    // India restaurant: 5% GST → 40 tax → total 840
+    // Test restaurant: 5% tax → 40 tax → total 840
     const orderSubtotal = createRes.data.order.subtotal;
     const orderTotal = createRes.data.order.total;
     assertEqual(orderSubtotal, 800, 'order subtotal = 800 (500 + 300)');
-    assertEqual(orderTotal, 840, 'order total = 840 (800 + 5% GST)');
+    assertEqual(orderTotal, 840, 'order total = 840 (800 + 5% tax)');
     assertEqual(createRes.data.order.status, 'pending', 'order status is pending');
 
     // ── Step 2: Apply 10% discount ───────────────────────────────────
@@ -102,7 +106,7 @@ async function main() {
     // Verify total is recalculated (subtotal - discount + tax)
     // discounted subtotal = 720, tax = 5% of 720 = 36, total = 756
     const discountedTotal = discountRes.data.order.total;
-    assertEqual(discountedTotal, 756, 'discounted total = 756 (720 + 5% GST)');
+    assertEqual(discountedTotal, 756, 'discounted total = 756 (720 + 5% tax)');
 
     // ── Step 3: Generate bill ────────────────────────────────────────
     console.log('\n3. Generate bill');

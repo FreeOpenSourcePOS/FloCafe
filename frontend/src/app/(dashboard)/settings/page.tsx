@@ -123,7 +123,7 @@ function SettingsNavItem({
     <button
       onClick={() => onClick(value)}
       className={[
-        'flex items-center w-full text-left text-sm rounded-md py-1.5 transition-colors whitespace-nowrap md:whitespace-normal',
+        'flex items-center w-full text-left text-sm rounded-md py-1.5 transition-colors whitespace-nowrap',
         indent ? 'pl-7 pr-3 border-l-2 ml-2 md:ml-0' : 'px-3',
         isActive
           ? 'bg-brand/10 text-brand font-semibold' + (indent ? ' border-brand' : '')
@@ -1039,18 +1039,28 @@ export default function SettingsPage() {
     billingType: 'postpaid' | 'prepaid';
     tablesRequired: boolean;
     taxRegistered: boolean;
-    gstin: string; businessAddress: string; businessPhone: string; instagramHandle: string;
-    billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowGstn: boolean;
+    taxRegistrationNumber: string; businessAddress: string; businessPhone: string; instagramHandle: string;
+    billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
-    gstin: '', businessAddress: '', businessPhone: '', instagramHandle: '',
-    billShowName: true, billShowAddress: true, billShowPhone: true, billShowGstn: false,
+    taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
+    billShowName: true, billShowAddress: true, billShowPhone: true, billShowTaxId: false,
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
+  const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
+
+  useEffect(() => {
+    if (!form.countryCode) return;
+    const controller = new AbortController();
+    api.get('/settings/tax-id-format', { params: { country: form.countryCode }, signal: controller.signal })
+      .then((res) => setTaxIdFormat(res.data.format || null))
+      .catch(() => setTaxIdFormat(null));
+    return () => controller.abort();
+  }, [form.countryCode]);
 
   const [cloudSettings, setCloudSettings] = useState({
     cloud_api_key: '',
@@ -1140,14 +1150,14 @@ export default function SettingsPage() {
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
         taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
-        gstin: d.gstin || '',
+        taxRegistrationNumber: d.tax_registration_number || '',
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
         billShowName: typeof d.bill_show_name === 'boolean' ? d.bill_show_name : true,
         billShowAddress: typeof d.bill_show_address === 'boolean' ? d.bill_show_address : true,
         billShowPhone: typeof d.bill_show_phone === 'boolean' ? d.bill_show_phone : true,
-        billShowGstn: typeof d.bill_show_gstn === 'boolean' ? d.bill_show_gstn : false,
+        billShowTaxId: typeof d.bill_show_tax_id === 'boolean' ? d.bill_show_tax_id : false,
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1345,14 +1355,14 @@ export default function SettingsPage() {
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
         tablesRequired: typeof d.tables_required === 'boolean' ? d.tables_required : true,
         taxRegistered: d.tax_registered === 'true' || d.tax_registered === true || d.tax_registered === 1,
-        gstin: d.gstin || '',
+        taxRegistrationNumber: d.tax_registration_number || '',
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
         billShowName: typeof d.bill_show_name === 'boolean' ? d.bill_show_name : true,
         billShowAddress: typeof d.bill_show_address === 'boolean' ? d.bill_show_address : true,
         billShowPhone: typeof d.bill_show_phone === 'boolean' ? d.bill_show_phone : true,
-        billShowGstn: typeof d.bill_show_gstn === 'boolean' ? d.bill_show_gstn : false,
+        billShowTaxId: typeof d.bill_show_tax_id === 'boolean' ? d.bill_show_tax_id : false,
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1360,8 +1370,8 @@ export default function SettingsPage() {
       posSettings.setBillShowName(loaded.billShowName);
       posSettings.setBillShowAddress(loaded.billShowAddress);
       posSettings.setBillShowPhone(loaded.billShowPhone);
-      posSettings.setBillShowGstn(loaded.billShowGstn);
-      if (d.gstin) posSettings.setBillGstin(d.gstin);
+      posSettings.setBillShowTaxId(loaded.billShowTaxId);
+      if (d.tax_registration_number) posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
       if (d.business_address) posSettings.setBillAddress(d.business_address);
       if (d.business_phone) posSettings.setBillPhone(d.business_phone);
       posSettings.setBillingType(d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid');
@@ -1625,14 +1635,14 @@ export default function SettingsPage() {
         billing_type: form.billingType,
         tables_required: form.tablesRequired,
         tax_registered: form.taxRegistered,
-        gstin: form.gstin,
+        tax_registration_number: form.taxRegistrationNumber,
         business_address: form.businessAddress,
         business_phone: form.businessPhone,
         instagram_handle: form.instagramHandle,
         bill_show_name: form.billShowName,
         bill_show_address: form.billShowAddress,
         bill_show_phone: form.billShowPhone,
-        bill_show_gstn: form.billShowGstn,
+        bill_show_tax_id: form.billShowTaxId,
       });
       if (savedBusiness.countryCode !== form.countryCode) {
         const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
@@ -1664,19 +1674,22 @@ export default function SettingsPage() {
         }
       }
       setSavedBusiness(form);
-      posSettings.setBillGstin(form.gstin);
+      posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
       posSettings.setBillPhone(form.businessPhone);
       posSettings.setBillShowName(form.billShowName);
       posSettings.setBillShowAddress(form.billShowAddress);
       posSettings.setBillShowPhone(form.billShowPhone);
-      posSettings.setBillShowGstn(form.billShowGstn);
+      posSettings.setBillShowTaxId(form.billShowTaxId);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode });
       if (!silent) toast.success(t('settings.storeSaved'));
     } catch (err) {
-      if (!silent) toast.error(t('settings.saveFailed'));
+      if (!silent) {
+        const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('settings.saveFailed');
+        toast.error(message);
+      }
       throw err;
     } finally {
       setSavingBusiness(false);
@@ -1758,8 +1771,6 @@ export default function SettingsPage() {
   const paperSizeOptions: { value: PaperSize; label: string }[] = [
     { value: 'thermal58', label: t('settings.paperSize58') },
     { value: 'thermal80', label: t('settings.paperSize80') },
-    { value: 'a4', label: t('settings.paperSizeA4') },
-    { value: 'a5', label: t('settings.paperSizeA5') },
   ];
 
   const isDirty = 
@@ -1807,7 +1818,7 @@ export default function SettingsPage() {
       <Tabs orientation="vertical" value={activeTab} onValueChange={setActiveTab} className="flex flex-col md:flex-row gap-6 items-start">
 
         {/* Settings sidebar nav */}
-        <div className="w-full md:w-56 md:min-w-[14rem] shrink-0 md:sticky md:top-0">
+        <div className="w-full md:w-40 md:min-w-[10rem] shrink-0 md:sticky md:top-0">
           <div className="flex items-center gap-3 mb-6">
             <Settings size={28} className="text-brand" />
             <h1 className="text-2xl font-bold text-gray-900">{t('settings.title')}</h1>
@@ -1840,20 +1851,23 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupCustomers')}</p>
             </div>
-            <SettingsNavItem label={t('settings.loyaltyAndDiscounts')} value="loyalty" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('settings.loyalty')} value="loyalty" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('settings.discounts')} value="discounts" active={activeTab} onClick={setActiveTab} />
 
-            {/* Data group */}
+            {/* Integrations group (formerly "Data") */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupData')}</p>
             </div>
+            <SettingsNavItem label={t('settings.tabMobileAccess')} value="mobile-access" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabBackupData')} value="data" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tabIntegrations')} value="integrations" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('settings.tabOrderflow')} value="orderflow" active={activeTab} onClick={setActiveTab} />
 
             {/* Account group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupAccount')}</p>
             </div>
             <SettingsNavItem label={t('settings.account')} value="account" active={activeTab} onClick={setActiveTab} attention={Boolean((cloudAccount?.email && !cloudAccount?.verified) || cloudAccount?.deletion_request?.status === 'pending')} />
+            <SettingsNavItem label={t('settings.privacy')} value="privacy" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabUpdates')} value="updates" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabAbout')} value="about" active={activeTab} onClick={setActiveTab} />
 
@@ -1995,11 +2009,24 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
                     {isAdmin ? (
-                      <input type="text" value={form.gstin} onChange={(e) => setForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
-                        placeholder={t('settings.taxIdPlaceholder')}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                      <>
+                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
+                          placeholder={t('settings.taxIdPlaceholder')}
+                          className={`w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-brand ${
+                            taxIdFormat && form.taxRegistrationNumber && !new RegExp(taxIdFormat.pattern, 'i').test(form.taxRegistrationNumber.trim())
+                              ? 'border-red-300' : 'border-gray-200'
+                          }`} />
+                        {taxIdFormat && (
+                          <p className={`text-xs mt-1 ${
+                            form.taxRegistrationNumber && !new RegExp(taxIdFormat.pattern, 'i').test(form.taxRegistrationNumber.trim())
+                              ? 'text-red-600' : 'text-gray-400'
+                          }`}>
+                            {t('settings.taxIdFormatHint', { country: countryName(form.countryCode), description: taxIdFormat.description })}
+                          </p>
+                        )}
+                      </>
                     ) : (
-                      <p className="font-medium text-gray-900">{form.gstin || '—'}</p>
+                      <p className="font-medium text-gray-900">{form.taxRegistrationNumber || '—'}</p>
                     )}
                   </div>
                 ) : <div className="hidden md:block" />}
@@ -2044,7 +2071,7 @@ export default function SettingsPage() {
                     { label: t('settings.showBusinessName'), key: 'billShowName' as const },
                     { label: t('settings.showAddress'), key: 'billShowAddress' as const },
                     { label: t('settings.showPhoneNumber'), key: 'billShowPhone' as const },
-                    { label: t('settings.showTaxId'), key: 'billShowGstn' as const },
+                    { label: t('settings.showTaxId'), key: 'billShowTaxId' as const },
                   ] as const).map((item) => (
                     <div key={item.key} className="flex items-center justify-between py-2">
                       <span className="text-sm text-gray-700">{item.label}</span>
@@ -2673,8 +2700,11 @@ export default function SettingsPage() {
                 )}
               </div>
             </div>
+          </div>
+        </TabsContent>
 
-
+        <TabsContent value="discounts">
+          <div className="pb-6 max-w-3xl space-y-6">
             {/* Discount Limits */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -2764,64 +2794,104 @@ export default function SettingsPage() {
               </div>
             </div>
             {currentTenant?.role === 'owner' && (
-              <>
-                <div className={`rounded-xl border p-6 ${cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white'}`}>
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h2 className="font-semibold text-gray-900">Contact email</h2>
-                      <p className="mt-1 text-sm text-gray-600">{cloudAccount?.email || user?.email || 'No cloud contact email'}</p>
-                    </div>
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {cloudAccount?.verified ? 'Verified' : 'Pending verification'}
-                    </span>
+              <div className={`rounded-xl border p-6 ${cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white'}`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="font-semibold text-gray-900">Contact email</h2>
+                    <p className="mt-1 text-sm text-gray-600">{cloudAccount?.email || user?.email || 'No cloud contact email'}</p>
                   </div>
-                  <p className="mt-3 text-sm text-gray-600">Verification is important for product service notices, security updates, and other account communication.</p>
-                  {!cloudAccount?.verified && (
-                    <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
-                      setCloudAccountBusy(true);
-                      try { await api.post('/settings/cloud/account/verification'); toast.success('Verification email queued'); await fetchCloudAccount(); }
-                      catch (err: unknown) {
-                        const error = err as { response?: { data?: { error?: string } } };
-                        toast.error(error.response?.data?.error || 'Could not send verification email');
-                      }
-                      finally { setCloudAccountBusy(false); }
-                    }}>{cloudAccountBusy ? 'Sending…' : 'Send verification email'}</Button>
-                  )}
-                  <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <p className="text-xs text-gray-500">Essential service and security notices are separate from these optional subscriptions.</p>
-                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {cloudAccount?.verified ? 'Verified' : 'Pending verification'}
+                  </span>
                 </div>
+                <p className="mt-3 text-sm text-gray-600">Verification is important for product service notices, security updates, and other account communication.</p>
+                {!cloudAccount?.verified && (
+                  <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
+                    setCloudAccountBusy(true);
+                    try { await api.post('/settings/cloud/account/verification'); toast.success('Verification email queued'); await fetchCloudAccount(); }
+                    catch (err: unknown) {
+                      const error = err as { response?: { data?: { error?: string } } };
+                      toast.error(error.response?.data?.error || 'Could not send verification email');
+                    }
+                    finally { setCloudAccountBusy(false); }
+                  }}>{cloudAccountBusy ? 'Sending…' : 'Send verification email'}</Button>
+                )}
+                <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
+                  <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                  <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                  <p className="text-xs text-gray-500">Essential service and security notices are separate from these optional subscriptions.</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </TabsContent>
 
-                <div className="rounded-xl border border-gray-100 bg-white p-6">
-                  <h2 className="font-semibold text-gray-900">Cloud privacy controls</h2>
-                  <p className="mt-2 text-sm text-gray-600">Stopping cloud services is reversible. A cloud deletion request is reviewed manually in FloAdmin before data is permanently removed. Neither action deletes your local orders, bills, customers, products, or database.</p>
-                  {cloudAccount?.deletion_request && (
-                    <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' ? 'border-green-200 bg-green-50 text-green-800' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
-                      <p className="font-semibold">Deletion request: {cloudAccount.deletion_request.status}</p>
-                      {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs">{cloudAccount.deletion_request.id}</p>}
-                      {cloudAccount.deletion_request.decision_note && <p className="mt-2">{cloudAccount.deletion_request.decision_note}</p>}
-                    </div>
-                  )}
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <Button variant="outline" onClick={async () => {
-                      if (!await confirm('Stop all FloCafe cloud services, identified diagnostics, and future anonymous telemetry on this device? Local POS data will remain available.')) return;
-                      try { await api.post('/settings/cloud/stop-all'); toast.success('All cloud services and telemetry stopped'); }
-                      catch { toast.error('Could not stop cloud services'); }
-                    }}><CloudOff size={16} className="mr-2" />Stop all cloud services</Button>
-                    <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'approved'} onClick={() => {
-                      const phrase = window.prompt('This submits a deletion request to FloAdmin for manual review and immediately stops cloud services here. After approval, store-linked server data is permanently deleted. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
-                      if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
-                      else if (phrase !== null) toast.error('Confirmation phrase did not match');
-                    }}><Trash2 size={16} className="mr-2" />Request cloud data deletion</Button>
-                    {cloudAccount?.deletion_request?.status === 'pending' && (
-                      <Button variant="outline" onClick={() => setPinGate({ mode: 'cancel-cloud-deletion' })}>Cancel deletion request</Button>
-                    )}
-                  </div>
-                  <p className="mt-3 text-xs text-gray-500">Anonymous telemetry has no store or email link, so existing anonymous events cannot be identified as yours. This action stops future telemetry and rotates the anonymous identifier.</p>
+        {/* Privacy — anonymous telemetry (from the old Integrations tab) + cloud privacy controls (from Account) */}
+        <TabsContent value="privacy">
+          <div className="pb-6 max-w-3xl space-y-6">
+            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Lock size={20} className="text-gray-500" />
+                <div>
+                  <h2 className="font-semibold text-gray-900">{t('settings.privacy')}</h2>
                 </div>
-              </>
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={telemetryEnabled}
+                  disabled={savingTelemetry}
+                  onChange={(e) => saveTelemetry(e.target.checked)}
+                  className="rounded border-gray-300 text-brand focus:ring-brand"
+                />
+                <span className="text-sm text-gray-700">{t('settings.anonymousTelemetry')}</span>
+              </label>
+              <p className="text-xs text-gray-500">{t('settings.anonymousTelemetryHint')}</p>
+
+              <div className="border-t border-gray-100 pt-4">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={diagnosticsConsent}
+                    disabled={savingDiagnosticsConsent}
+                    onChange={(e) => saveDiagnosticsConsent(e.target.checked)}
+                    className="rounded border-gray-300 text-brand focus:ring-brand"
+                  />
+                  <span className="text-sm text-gray-700">{t('settings.storeDiagnostics')}</span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1">{t('settings.storeDiagnosticsHint')}</p>
+              </div>
+            </div>
+
+            {currentTenant?.role === 'owner' && (
+              <div className="rounded-xl border border-gray-100 bg-white p-6">
+                <h2 className="font-semibold text-gray-900">Cloud privacy controls</h2>
+                <p className="mt-2 text-sm text-gray-600">Stopping cloud services is reversible. A cloud deletion request is reviewed manually in FloAdmin before data is permanently removed. Neither action deletes your local orders, bills, customers, products, or database.</p>
+                {cloudAccount?.deletion_request && (
+                  <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' ? 'border-green-200 bg-green-50 text-green-800' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
+                    <p className="font-semibold">Deletion request: {cloudAccount.deletion_request.status}</p>
+                    {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs">{cloudAccount.deletion_request.id}</p>}
+                    {cloudAccount.deletion_request.decision_note && <p className="mt-2">{cloudAccount.deletion_request.decision_note}</p>}
+                  </div>
+                )}
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Button variant="outline" onClick={async () => {
+                    if (!await confirm('Stop all FloCafe cloud services, identified diagnostics, and future anonymous telemetry on this device? Local POS data will remain available.')) return;
+                    try { await api.post('/settings/cloud/stop-all'); toast.success('All cloud services and telemetry stopped'); }
+                    catch { toast.error('Could not stop cloud services'); }
+                  }}><CloudOff size={16} className="mr-2" />Stop all cloud services</Button>
+                  <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'approved'} onClick={() => {
+                    const phrase = window.prompt('This submits a deletion request to FloAdmin for manual review and immediately stops cloud services here. After approval, store-linked server data is permanently deleted. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
+                    if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
+                    else if (phrase !== null) toast.error('Confirmation phrase did not match');
+                  }}><Trash2 size={16} className="mr-2" />Request cloud data deletion</Button>
+                  {cloudAccount?.deletion_request?.status === 'pending' && (
+                    <Button variant="outline" onClick={() => setPinGate({ mode: 'cancel-cloud-deletion' })}>Cancel deletion request</Button>
+                  )}
+                </div>
+                <p className="mt-3 text-xs text-gray-500">Anonymous telemetry has no store or email link, so existing anonymous events cannot be identified as yours. This action stops future telemetry and rotates the anonymous identifier.</p>
+              </div>
             )}
           </div>
         </TabsContent>
@@ -3152,8 +3222,8 @@ export default function SettingsPage() {
                   <select value={printingForm.webPrintSize}
                     onChange={(e) => setPrintingForm((p) => ({ ...p, webPrintSize: e.target.value as PaperSize }))}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand">
-                    <option value="a4">{t('settings.webPrintSizeA4')}</option>
-                    <option value="a5">{t('settings.webPrintSizeA5')}</option>
+                    <option value="thermal58">{t('settings.paperSize58')}</option>
+                    <option value="thermal80">{t('settings.paperSize80')}</option>
                   </select>
                 </div>
               </div>
@@ -3226,7 +3296,7 @@ export default function SettingsPage() {
         <TabsContent value="data">
           <div className="pb-6 max-w-3xl space-y-6">
             <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">{t('settings.data')}</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('settings.tabBackupData')}</h2>
             {/* Database Export */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -3350,6 +3420,137 @@ export default function SettingsPage() {
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+
+            {/* Google Drive — automated off-device backups (#129) */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <HardDrive size={20} className="text-gray-500" />
+                <div>
+                  <h2 className="font-semibold text-gray-900">{t('settings.googleDrive')}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('settings.googleDriveHint')}</p>
+                </div>
+              </div>
+
+              {!googleDriveStatus.configured ? (
+                <div className="bg-gray-50 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-2">
+                  <div className="p-3 bg-white rounded-full shadow-sm">
+                    <HardDrive className="w-6 h-6 text-gray-400" />
+                  </div>
+                  <p className="text-sm font-medium text-gray-900">{t('settings.googleDriveNotConfigured')}</p>
+                  <p className="text-xs text-gray-500 max-w-sm">{t('settings.googleDriveNotConfiguredHint')}</p>
+                </div>
+              ) : !googleDriveStatus.secure_storage_available ? (
+                <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
+                  <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                  <p className="text-sm text-amber-800">{t('settings.googleDriveSecureStorageUnavailable')}</p>
+                </div>
+              ) : (
+                <>
+                  <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      {googleDriveStatus.connected ? (
+                        <CheckCircle2 size={16} className="text-green-600 shrink-0" />
+                      ) : (
+                        <CloudOff size={16} className="text-gray-400 shrink-0" />
+                      )}
+                      <div>
+                        <p className="text-sm font-medium text-gray-900">
+                          {googleDriveStatus.connected ? t('settings.googleDriveConnected') : t('settings.googleDriveNotConnected')}
+                        </p>
+                        {googleDriveStatus.connected && googleDriveStatus.account_email && (
+                          <p className="text-xs text-gray-500">{t('settings.googleDriveAccount')}: {googleDriveStatus.account_email}</p>
+                        )}
+                      </div>
+                    </div>
+                    {(currentTenant?.role === 'owner') && (
+                      googleDriveStatus.connected ? (
+                        <button
+                          onClick={disconnectGoogleDrive}
+                          disabled={disconnectingGoogleDrive}
+                          className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium shrink-0"
+                        >
+                          {disconnectingGoogleDrive ? t('settings.googleDriveDisconnecting') : t('settings.googleDriveDisconnect')}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={connectGoogleDrive}
+                          disabled={connectingGoogleDrive}
+                          className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
+                        >
+                          {connectingGoogleDrive ? t('settings.googleDriveConnecting') : t('settings.googleDriveConnect')}
+                        </button>
+                      )
+                    )}
+                  </div>
+
+                  {googleDriveStatus.connected && (
+                    <>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.googleDriveFrequency')}</label>
+                          <select
+                            value={googleDriveStatus.frequency}
+                            disabled={savingGoogleDrivePrefs}
+                            onChange={(e) => updateGoogleDrivePrefs({ frequency: e.target.value as 'daily' | 'weekly' })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
+                          >
+                            <option value="daily">{t('settings.googleDriveFrequencyDaily')}</option>
+                            <option value="weekly">{t('settings.googleDriveFrequencyWeekly')}</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.googleDriveRetention')}</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={googleDriveStatus.retention_count}
+                            disabled={savingGoogleDrivePrefs}
+                            onChange={(e) => setGoogleDriveStatus((prev) => ({ ...prev, retention_count: Number(e.target.value) || prev.retention_count }))}
+                            onBlur={(e) => {
+                              const n = Number(e.target.value);
+                              if (Number.isInteger(n) && n >= 1 && n <= 100) updateGoogleDrivePrefs({ retention_count: n });
+                            }}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-xs text-gray-500">{t('settings.googleDriveRetentionHint')}</p>
+
+                      <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
+                        <div className="text-xs text-gray-500">
+                          {googleDriveStatus.last_backup_at ? (
+                            googleDriveStatus.last_backup_status === 'error' ? (
+                              <span className="flex items-center gap-1 text-red-600">
+                                <AlertTriangle size={13} />
+                                {t('settings.googleDriveLastBackupErrorAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
+                              </span>
+                            ) : (
+                              <span className="flex items-center gap-1 text-gray-500">
+                                <CheckCircle2 size={13} className="text-green-600" />
+                                {t('settings.googleDriveLastBackupSuccessAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
+                              </span>
+                            )
+                          ) : (
+                            <span>{t('settings.googleDriveLastBackup')}: {t('settings.googleDriveLastBackupNever')}</span>
+                          )}
+                        </div>
+                        {(currentTenant?.role === 'owner') && (
+                          <button
+                            onClick={backupToGoogleDriveNow}
+                            disabled={backingUpGoogleDrive}
+                            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
+                          >
+                            <UploadCloud size={15} />
+                            {backingUpGoogleDrive ? t('settings.googleDriveBackingUp') : t('settings.googleDriveBackupNow')}
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </>
               )}
             </div>
 
@@ -3515,10 +3716,10 @@ export default function SettingsPage() {
           </div>
         </TabsContent>
 
-        <TabsContent value="integrations">
+        <TabsContent value="mobile-access">
           <div className="pb-6 max-w-3xl space-y-6">
             <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">{t('settings.cloud')}</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('settings.tabMobileAccess')}</h2>
 
             {/* FloAdmin — reporting sync */}
             <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
@@ -3602,195 +3803,6 @@ export default function SettingsPage() {
                   </div>
                 </>
               )}
-            </div>
-
-            {/* Privacy — anonymous telemetry */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <Lock size={20} className="text-gray-500" />
-                <div>
-                  <h2 className="font-semibold text-gray-900">{t('settings.privacy')}</h2>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={telemetryEnabled}
-                  disabled={savingTelemetry}
-                  onChange={(e) => saveTelemetry(e.target.checked)}
-                  className="rounded border-gray-300 text-brand focus:ring-brand"
-                />
-                <span className="text-sm text-gray-700">{t('settings.anonymousTelemetry')}</span>
-              </label>
-              <p className="text-xs text-gray-500">{t('settings.anonymousTelemetryHint')}</p>
-
-              <div className="border-t border-gray-100 pt-4">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={diagnosticsConsent}
-                    disabled={savingDiagnosticsConsent}
-                    onChange={(e) => saveDiagnosticsConsent(e.target.checked)}
-                    className="rounded border-gray-300 text-brand focus:ring-brand"
-                  />
-                  <span className="text-sm text-gray-700">{t('settings.storeDiagnostics')}</span>
-                </label>
-                <p className="text-xs text-gray-500 mt-1">{t('settings.storeDiagnosticsHint')}</p>
-              </div>
-            </div>
-
-            {/* Google Drive — automated off-device backups (#129) */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <HardDrive size={20} className="text-gray-500" />
-                <div>
-                  <h2 className="font-semibold text-gray-900">{t('settings.googleDrive')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('settings.googleDriveHint')}</p>
-                </div>
-              </div>
-
-              {!googleDriveStatus.configured ? (
-                <div className="bg-gray-50 rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-2">
-                  <div className="p-3 bg-white rounded-full shadow-sm">
-                    <HardDrive className="w-6 h-6 text-gray-400" />
-                  </div>
-                  <p className="text-sm font-medium text-gray-900">{t('settings.googleDriveNotConfigured')}</p>
-                  <p className="text-xs text-gray-500 max-w-sm">{t('settings.googleDriveNotConfiguredHint')}</p>
-                </div>
-              ) : !googleDriveStatus.secure_storage_available ? (
-                <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
-                  <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-                  <p className="text-sm text-amber-800">{t('settings.googleDriveSecureStorageUnavailable')}</p>
-                </div>
-              ) : (
-                <>
-                  <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-2">
-                      {googleDriveStatus.connected ? (
-                        <CheckCircle2 size={16} className="text-green-600 shrink-0" />
-                      ) : (
-                        <CloudOff size={16} className="text-gray-400 shrink-0" />
-                      )}
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {googleDriveStatus.connected ? t('settings.googleDriveConnected') : t('settings.googleDriveNotConnected')}
-                        </p>
-                        {googleDriveStatus.connected && googleDriveStatus.account_email && (
-                          <p className="text-xs text-gray-500">{t('settings.googleDriveAccount')}: {googleDriveStatus.account_email}</p>
-                        )}
-                      </div>
-                    </div>
-                    {(currentTenant?.role === 'owner') && (
-                      googleDriveStatus.connected ? (
-                        <button
-                          onClick={disconnectGoogleDrive}
-                          disabled={disconnectingGoogleDrive}
-                          className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium shrink-0"
-                        >
-                          {disconnectingGoogleDrive ? t('settings.googleDriveDisconnecting') : t('settings.googleDriveDisconnect')}
-                        </button>
-                      ) : (
-                        <button
-                          onClick={connectGoogleDrive}
-                          disabled={connectingGoogleDrive}
-                          className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
-                        >
-                          {connectingGoogleDrive ? t('settings.googleDriveConnecting') : t('settings.googleDriveConnect')}
-                        </button>
-                      )
-                    )}
-                  </div>
-
-                  {googleDriveStatus.connected && (
-                    <>
-                      <div className="grid sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.googleDriveFrequency')}</label>
-                          <select
-                            value={googleDriveStatus.frequency}
-                            disabled={savingGoogleDrivePrefs}
-                            onChange={(e) => updateGoogleDrivePrefs({ frequency: e.target.value as 'daily' | 'weekly' })}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
-                          >
-                            <option value="daily">{t('settings.googleDriveFrequencyDaily')}</option>
-                            <option value="weekly">{t('settings.googleDriveFrequencyWeekly')}</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.googleDriveRetention')}</label>
-                          <input
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={googleDriveStatus.retention_count}
-                            disabled={savingGoogleDrivePrefs}
-                            onChange={(e) => setGoogleDriveStatus((prev) => ({ ...prev, retention_count: Number(e.target.value) || prev.retention_count }))}
-                            onBlur={(e) => {
-                              const n = Number(e.target.value);
-                              if (Number.isInteger(n) && n >= 1 && n <= 100) updateGoogleDrivePrefs({ retention_count: n });
-                            }}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
-                          />
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-500">{t('settings.googleDriveRetentionHint')}</p>
-
-                      <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
-                        <div className="text-xs text-gray-500">
-                          {googleDriveStatus.last_backup_at ? (
-                            googleDriveStatus.last_backup_status === 'error' ? (
-                              <span className="flex items-center gap-1 text-red-600">
-                                <AlertTriangle size={13} />
-                                {t('settings.googleDriveLastBackupErrorAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-gray-500">
-                                <CheckCircle2 size={13} className="text-green-600" />
-                                {t('settings.googleDriveLastBackupSuccessAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
-                              </span>
-                            )
-                          ) : (
-                            <span>{t('settings.googleDriveLastBackup')}: {t('settings.googleDriveLastBackupNever')}</span>
-                          )}
-                        </div>
-                        {(currentTenant?.role === 'owner') && (
-                          <button
-                            onClick={backupToGoogleDriveNow}
-                            disabled={backingUpGoogleDrive}
-                            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
-                          >
-                            <UploadCloud size={15} />
-                            {backingUpGoogleDrive ? t('settings.googleDriveBackingUp') : t('settings.googleDriveBackupNow')}
-                          </button>
-                        )}
-                      </div>
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* OrderFlow — online orders */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
-              <div className="flex items-center gap-2">
-                <Zap size={20} className="text-amber-500" />
-                <div>
-                  <h2 className="font-semibold text-gray-900">{t('settings.orderflowOnlineOrders')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('settings.orderflowOnlineOrdersHint')}</p>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={cloudSettings.cloud_orders_enabled}
-                  onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_orders_enabled: e.target.checked })}
-                  className="rounded border-gray-300 text-brand focus:ring-brand"
-                />
-                <span className="text-sm text-gray-700">{t('settings.enableOnlineOrderPolling')}</span>
-              </label>
-
             </div>
 
             {/* RevFlo — consolidated: download/QR + app (pairing) code + paired devices */}
@@ -3921,9 +3933,61 @@ export default function SettingsPage() {
                 </div>
               )}
             </div>
-
           </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="orderflow">
+          <div className="pb-6 max-w-3xl space-y-6">
             <div className="space-y-6">
+            <h2 className="text-lg font-semibold text-gray-900">{t('settings.tabOrderflow')}</h2>
+
+            {/* OrderFlow — online orders */}
+            <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
+              <div className="flex items-center gap-2">
+                <Zap size={20} className="text-amber-500" />
+                <div>
+                  <h2 className="font-semibold text-gray-900">{t('settings.orderflowOnlineOrders')}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('settings.orderflowOnlineOrdersHint')}</p>
+                </div>
+              </div>
+
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={cloudSettings.cloud_orders_enabled}
+                  onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_orders_enabled: e.target.checked })}
+                  className="rounded border-gray-300 text-brand focus:ring-brand"
+                />
+                <span className="text-sm text-gray-700">{t('settings.enableOnlineOrderPolling')}</span>
+              </label>
+
+            </div>
+            </div>
+          </div>
+        </TabsContent>
+
+        {/* About tab */}
+        <TabsContent value="about">
+          <div className="pb-6 max-w-3xl space-y-6">
+            <div className="bg-white rounded-xl border border-gray-100 p-6">
+              <h2 className="font-semibold text-gray-900 mb-4">{t('settings.aboutFloCafe')}</h2>
+              <p className="text-sm text-gray-600 mb-6">
+                {t('settings.aboutDescription')}
+              </p>
+              <div className="space-y-3">
+                <a href="https://github.com/FreeOpenSourcePOS/FloCafe" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
+                  GitHub Repository
+                </a>
+                <a href="https://flopos.com/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+                  App Website
+                </a>
+              </div>
+            </div>
+
+            {/* More Apps — moved here from the old Integrations tab */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Smartphone size={20} className="text-gray-500" />
@@ -3981,29 +4045,6 @@ export default function SettingsPage() {
                   )}
                 </div>
               )}
-            </div>
-          </div>
-          </div>
-        </TabsContent>
-
-        {/* About tab */}
-        <TabsContent value="about">
-          <div className="pb-6 max-w-3xl space-y-6">
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">{t('settings.aboutFloCafe')}</h2>
-              <p className="text-sm text-gray-600 mb-6">
-                {t('settings.aboutDescription')}
-              </p>
-              <div className="space-y-3">
-                <a href="https://github.com/FreeOpenSourcePOS/FloCafe" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-                  GitHub Repository
-                </a>
-                <a href="https://flopos.com/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
-                  App Website
-                </a>
-              </div>
             </div>
           </div>
         </TabsContent>

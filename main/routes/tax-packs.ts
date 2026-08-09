@@ -4,7 +4,7 @@ import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue, now, upsertSettings, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { TaxEngine } from '../services/tax-engine';
-import type { CountryPack, TaxBehavior } from '../tax-packs/types';
+import type { CountryPack, TaxBehavior, TaxCategory, TaxRule } from '../tax-packs/types';
 import { BUNDLED_COUNTRY_PACKS } from '../tax-packs/bundled';
 import {
   downloadAndVerifyTaxPack,
@@ -13,19 +13,27 @@ import {
   type TaxPackCatalogEntry,
 } from '../tax-packs/catalog';
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from '../tax-packs/trusted-signing-key';
-import legacyIndiaPack from '../tax-packs/in.json';
-import legacyThailandPack from '../tax-packs/th.json';
 
 const router = Router();
 const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
 // India and Thailand were bundled unsigned before country packs moved to the
 // signed release catalog. Existing customer databases still contain those
-// exact artifacts. Trust only an exact canonical match so upgrades work while
-// modified or newly downloaded artifacts continue to require Ed25519.
-const LEGACY_TRUSTED_PACKS_BY_ID = new Map<string, CountryPack>([
-  [legacyIndiaPack.id, legacyIndiaPack as CountryPack],
-  [legacyThailandPack.id, legacyThailandPack as CountryPack],
-]);
+// exact artifacts. Rather than keep the original tax-rate content in the
+// repo just to re-check it byte-for-byte, we keep only the SHA-256 digest of
+// that exact historical JSON (sha256(JSON.stringify(pack))) — enough to keep
+// validating those specific already-installed rows as trusted, without the
+// underlying tax content living in source. Exported so tests can inject a
+// synthetic id/digest pair instead of depending on real pack content.
+// 'official-in'/'official-th' are the pre-rename ids used before commit
+// 3a75876 renamed them to 'official-india'/'official-thailand'; stores that
+// installed taxes before that rename still carry the old id in their DB and
+// must keep validating too.
+export const LEGACY_TRUSTED_PACK_DIGESTS: Record<string, string> = {
+  'official-india': '873e8212625d5eefc4192bf99bcebece107cd2384ce8a1c6ecd44a7095082f2d',
+  'official-thailand': '25f4082e56372599e90cad6222a493c426f7846552e00ccf486a71e7aa90d656',
+  'official-in': 'f2b7f10cfb03a6c8bd987382ab30bb384ee154c816a328ca4b97a0a5eb0cdec7',
+  'official-th': 'eb6bcee77ed077b4c218e5446e96e4669e162f8abefcc238cb97e9088309e7c3',
+};
 const APP_VERSION = String(require('../../package.json').version);
 const ENTITY_TYPES = ['product', 'addon', 'packaging', 'delivery', 'service_charge'] as const;
 const TAX_BEHAVIORS: TaxBehavior[] = ['country_default', 'inclusive', 'exclusive', 'exempt'];
@@ -89,6 +97,51 @@ function activateInstalledPack(pack: PackRow, version: VersionRow, actorId: stri
     db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(version.id);
     audit('activate_pack', actorId, pack.id, version.id, null, { previousVersionId, automatic: true });
   });
+}
+
+function persistPackArtifacts(version: VersionRow, definition: CountryPack, installedAt: string): void {
+  const db = getDatabase();
+  db.prepare(`
+    INSERT INTO country_pack_versions (
+      id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
+      effective_from, effective_to, min_flo_version, published_at, status, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installed', ?)
+  `).run(
+    version.id, version.pack_id, version.version, version.schema_version,
+    version.manifest_json, version.pack_json, version.digest, version.signature,
+    version.effective_from, version.effective_to, version.min_flo_version, version.published_at,
+    installedAt,
+  );
+  const insertCategory = db.prepare(`
+    INSERT INTO tax_categories (
+      id, pack_version_id, category_id, label, default_behavior, definition_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const category of definition.categories) {
+    insertCategory.run(
+      `${version.id}:category:${category.id}`,
+      version.id, category.id, category.label,
+      category.defaultBehavior || null,
+      JSON.stringify(category),
+      installedAt,
+    );
+  }
+  const insertRule = db.prepare(`
+    INSERT INTO tax_rules (
+      id, pack_version_id, rule_id, label, calculation_type, rate, amount,
+      applies_per, base_rule_ids, definition_json, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const rule of definition.rules) {
+    insertRule.run(
+      `${version.id}:rule:${rule.id}`,
+      version.id, rule.id, rule.label, rule.type,
+      rule.rate || null, rule.amount || null, rule.appliesPer || null,
+      JSON.stringify(rule.baseRuleIds || []),
+      JSON.stringify(rule),
+      installedAt,
+    );
+  }
 }
 
 function trustStatus(pack: PackRow, overrideCount: number): string {
@@ -328,13 +381,13 @@ export function validationChecklist(
     `FloCafe ${APP_VERSION} satisfies minimum compatible version ${pack.minFloVersion}`);
   add(5, version.digest === createHash('sha256').update(version.pack_json).digest('hex'), 'Stored artifact digest matches');
   const bundledDefinition = BUNDLED_PACKS_BY_ID.get(pack.id);
-  const legacyTrustedDefinition = LEGACY_TRUSTED_PACKS_BY_ID.get(pack.id);
+  const legacyTrustedDigest = LEGACY_TRUSTED_PACK_DIGESTS[pack.id];
   const trustedArtifact = pack.publisher === 'local'
     ? version.signature === null
     : Boolean(
       (bundledDefinition && JSON.stringify(bundledDefinition) === JSON.stringify(pack))
-      || (version.signature === null && legacyTrustedDefinition
-        && JSON.stringify(legacyTrustedDefinition) === JSON.stringify(pack))
+      || (version.signature === null && legacyTrustedDigest
+        && createHash('sha256').update(JSON.stringify(pack), 'utf8').digest('hex') === legacyTrustedDigest)
       || (version.signature && verifyTaxPackSignature(version.pack_json, version.signature, publicKey)),
     );
   add(6, trustedArtifact, pack.publisher === 'local'
@@ -446,7 +499,15 @@ export function validationChecklist(
   const stableIds = !activePack
     || (activePack.categories.every((category) => categoryIds.includes(category.id))
       && activePack.rules.every((rule) => ruleIds.includes(rule.id)));
-  add(19, stableIds, 'Existing IDs remain available, so override aliases are not required');
+  // Official packs must keep category/rule IDs stable across versions so
+  // overrides never silently orphan (spec: "removed or renamed rules require
+  // explicit resolution"). A local/manual pack is edited by re-submitting the
+  // owner's full category list each time, so renaming or deleting a category
+  // is a normal, expected edit there — the manual-config route (routes/
+  // tax-packs.ts) handles that case itself by reassigning affected products/
+  // add-ons to the new default and reporting what moved, so this check is
+  // informational only for local packs rather than a hard block.
+  add(19, stableIds || pack.publisher === 'local', 'Existing IDs remain available, so override aliases are not required');
   const activeVersion = getDatabase().prepare(
     'SELECT active_version_id FROM country_packs WHERE id = ?'
   ).get(version.pack_id) as { active_version_id: string | null } | undefined;
@@ -551,63 +612,7 @@ export async function installCatalogEntry(
     if (versionExists) {
       throw Object.assign(new Error('This tax pack version is already installed'), { statusCode: 409 });
     }
-    db.prepare(`
-      INSERT INTO country_pack_versions (
-        id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
-        effective_from, effective_to, min_flo_version, published_at, status, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'installed', ?)
-    `).run(
-      version.id,
-      version.pack_id,
-      version.version,
-      version.schema_version,
-      version.manifest_json,
-      version.pack_json,
-      version.digest,
-      version.signature,
-      version.effective_from,
-      version.effective_to,
-      version.min_flo_version,
-      version.published_at,
-      version.created_at,
-    );
-    const insertCategory = db.prepare(`
-      INSERT INTO tax_categories (
-        id, pack_version_id, category_id, label, default_behavior, definition_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const category of artifact.pack.categories) {
-      insertCategory.run(
-        `${versionId}:category:${category.id}`,
-        versionId,
-        category.id,
-        category.label,
-        category.defaultBehavior || null,
-        JSON.stringify(category),
-        installedAt,
-      );
-    }
-    const insertRule = db.prepare(`
-      INSERT INTO tax_rules (
-        id, pack_version_id, rule_id, label, calculation_type, rate, amount,
-        applies_per, base_rule_ids, definition_json, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const rule of artifact.pack.rules) {
-      insertRule.run(
-        `${versionId}:rule:${rule.id}`,
-        versionId,
-        rule.id,
-        rule.label,
-        rule.type,
-        rule.rate || null,
-        rule.amount || null,
-        rule.appliesPer || null,
-        JSON.stringify(rule.baseRuleIds || []),
-        JSON.stringify(rule),
-        installedAt,
-      );
-    }
+    persistPackArtifacts(version, artifact.pack, installedAt);
     audit('install_downloaded_pack', options.actorUserId, artifact.pack.id, versionId, null, {
       source: 'github_release',
       version: artifact.pack.version,
@@ -745,6 +750,243 @@ router.post('/ensure-country', requireRole('owner', 'manager'), async (req: Requ
   } catch (error: any) {
     const statusCode = error.statusCode || 502;
     return res.status(statusCode).json({ error: error.message || 'Could not install the country tax plugin' });
+  }
+});
+
+// Manual tax builder: an owner-authored local pack for countries with no
+// official plugin (or to override one). Flat only, by design — no interstate
+// or business-type conditions, no compounding. A tax category is a bucket of
+// N independently-labeled components (e.g. "Standard" -> SGST 2.5% + CGST
+// 2.5%) that all apply together whenever that category is selected; see
+// resolveTaxCategory/calculateRawLine in services/tax-engine.ts, which
+// already sums every matching rule's component with no changes needed here.
+function slugifyTaxId(label: string, used: Set<string>, fallback: string): string {
+  let base = String(label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  if (!base) base = fallback;
+  let candidate = base;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function buildManualPack(body: any, country: string, currency: string): CountryPack {
+  const categoriesInput = Array.isArray(body?.categories) ? body.categories : [];
+  if (categoriesInput.length === 0) {
+    throw Object.assign(new Error('At least one tax category is required'), { statusCode: 400 });
+  }
+  const usedCategoryIds = new Set<string>();
+  const usedRuleIds = new Set<string>();
+  const tempIdToCategoryId = new Map<string, string>();
+  const categories: TaxCategory[] = [];
+  const rules: TaxRule[] = [];
+
+  categoriesInput.forEach((categoryInput: any, categoryIndex: number) => {
+    const label = typeof categoryInput?.label === 'string' ? categoryInput.label.trim() : '';
+    if (!label) {
+      throw Object.assign(new Error(`Category ${categoryIndex + 1} needs a name`), { statusCode: 400 });
+    }
+    const categoryId = slugifyTaxId(label, usedCategoryIds, `category_${categoryIndex + 1}`);
+    const tempId = typeof categoryInput?.tempId === 'string' && categoryInput.tempId
+      ? categoryInput.tempId : `__index_${categoryIndex}`;
+    tempIdToCategoryId.set(tempId, categoryId);
+
+    const componentsInput = Array.isArray(categoryInput?.components) ? categoryInput.components : [];
+    if (componentsInput.length === 0) {
+      throw Object.assign(new Error(`"${label}" needs at least one tax component (use 0% if it should stay tax-free)`), { statusCode: 400 });
+    }
+    const ruleIds: string[] = [];
+    componentsInput.forEach((componentInput: any, componentIndex: number) => {
+      const componentLabel = typeof componentInput?.label === 'string' && componentInput.label.trim()
+        ? componentInput.label.trim() : label;
+      const type: 'percent' | 'fixed' = componentInput?.type === 'fixed' ? 'fixed' : 'percent';
+      let value: Decimal;
+      try {
+        value = new Decimal(componentInput?.value === undefined || componentInput?.value === null ? '' : String(componentInput.value));
+      } catch {
+        throw Object.assign(new Error(`"${componentLabel}" needs a valid number`), { statusCode: 400 });
+      }
+      if (!value.isFinite() || value.isNegative()) {
+        throw Object.assign(new Error(`"${componentLabel}" must be zero or a positive number`), { statusCode: 400 });
+      }
+      if (type === 'percent' && value.gt(100)) {
+        throw Object.assign(new Error(`"${componentLabel}" cannot exceed 100%`), { statusCode: 400 });
+      }
+      const ruleId = slugifyTaxId(`${categoryId}_${componentLabel}`, usedRuleIds, `rule_${categoryIndex + 1}_${componentIndex + 1}`);
+      ruleIds.push(ruleId);
+      rules.push({
+        id: ruleId,
+        label: componentLabel,
+        type,
+        categoryIds: [categoryId],
+        ...(type === 'percent' ? { rate: value.toString() } : { amount: value.toString(), appliesPer: 'line' }),
+      });
+    });
+
+    categories.push({ id: categoryId, label, ruleIds });
+  });
+
+  const resolveDefault = (fieldName: string, tempId: unknown): string => {
+    if (typeof tempId !== 'string' || !tempId) {
+      throw Object.assign(new Error(`Choose a default category for ${fieldName}`), { statusCode: 400 });
+    }
+    const categoryId = tempIdToCategoryId.get(tempId);
+    if (!categoryId) {
+      throw Object.assign(new Error(`Default category for ${fieldName} does not match any category above`), { statusCode: 400 });
+    }
+    return categoryId;
+  };
+  const productCategoryId = resolveDefault('products', body?.defaultProductCategoryTempId);
+  const defaultCategories = {
+    product: productCategoryId,
+    packaging: resolveDefault('packaging charges', body?.packagingCategoryTempId),
+    delivery: resolveDefault('delivery charges', body?.deliveryCategoryTempId),
+    service_charge: resolveDefault('service charges', body?.serviceChargeCategoryTempId),
+    // An add-on is never its own taxable line — calculateItemTax folds its
+    // price into the parent item's subtotal before tax runs (services/tax.ts),
+    // so it is always taxed at the item's rate. `defaultCategories.addon`
+    // only exists because the pack schema requires every TaxLineKind to
+    // resolve to *some* category; mirroring the product default keeps that
+    // requirement satisfied without implying a separate add-on rate exists.
+    addon: productCategoryId,
+  };
+
+  // A hidden zero-rate category always exists so unclassifiedCategoryId
+  // resolves without asking the owner to reason about a bucket that (per
+  // resolveTaxCategory in tax-engine.ts) only applies when nothing else does.
+  const unclassifiedId = slugifyTaxId('unclassified', usedCategoryIds, 'unclassified');
+  categories.push({ id: unclassifiedId, label: 'Unclassified', ruleIds: [] });
+
+  const effectiveFrom = new Date().toISOString().slice(0, 10);
+  return {
+    schemaVersion: 1,
+    id: `manual-${country.toLowerCase()}`,
+    publisher: 'local',
+    version: `1.0.${Date.now()}`,
+    country,
+    jurisdiction: '*',
+    currency,
+    effectiveFrom,
+    publishedAt: effectiveFrom,
+    minFloVersion: '2.4.0',
+    taxPoint: 'finalized_at',
+    inclusivePricingDefault: body?.inclusive !== false,
+    registrationNumberLabel: 'Tax registration',
+    categories,
+    defaultCategories,
+    unclassifiedCategoryId: unclassifiedId,
+    rules,
+    taxRounding: { scope: 'line', method: 'half_up', decimalPlaces: 2, remainderAllocation: 'largest_remainder' },
+    payableRounding: { increment: '0.01', method: 'half_up' },
+  };
+}
+
+router.post('/manual-config', requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const country = String(getSettingValue('country') || '').toUpperCase();
+    if (!/^[A-Z]{2}$/.test(country)) {
+      return res.status(400).json({ error: 'A valid store country must be set in Settings first' });
+    }
+    const currency = String(getSettingValue('currency') || 'USD').toUpperCase();
+
+    const activeForCountry = db.prepare(
+      `SELECT id, publisher FROM country_packs WHERE country = ? AND status = 'active'`
+    ).get(country) as { id: string; publisher: string } | undefined;
+    const replacesOfficial = Boolean(activeForCountry && activeForCountry.publisher !== 'local');
+    if (replacesOfficial && req.body?.override !== true) {
+      return res.status(409).json({
+        error: `An official tax pack is already active for ${country}. Confirm replacing it with your manual configuration.`,
+        active_pack_id: activeForCountry!.id,
+        can_override: true,
+      });
+    }
+
+    const pack = buildManualPack(req.body, country, currency);
+    const packJson = JSON.stringify(pack);
+    const digest = createHash('sha256').update(packJson, 'utf8').digest('hex');
+    const installedAt = now();
+    const versionId = `${pack.id}@${pack.version}`;
+    const version: VersionRow = {
+      id: versionId,
+      pack_id: pack.id,
+      version: pack.version,
+      schema_version: 1,
+      manifest_json: JSON.stringify({
+        id: pack.id, publisher: 'local', country, jurisdiction: '*', version: pack.version, publishedAt: pack.publishedAt,
+      }),
+      pack_json: packJson,
+      digest,
+      signature: null,
+      effective_from: pack.effectiveFrom,
+      effective_to: null,
+      min_flo_version: pack.minFloVersion,
+      published_at: pack.publishedAt,
+      status: 'installed',
+      created_at: installedAt,
+    };
+    const validation = validationChecklist(version);
+    if (!validation.valid) {
+      return res.status(400).json({ error: 'Manual tax configuration failed validation', validation });
+    }
+
+    let remapped: Array<{ entity: string; count: number }> = [];
+    withTxn(() => {
+      const existingPackRow = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(pack.id) as PackRow | undefined;
+      if (!existingPackRow) {
+        db.prepare(`
+          INSERT INTO country_packs (id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at)
+          VALUES (?, 'local', ?, '*', NULL, 'installed', ?, ?)
+        `).run(pack.id, country, installedAt, installedAt);
+      } else {
+        db.prepare('UPDATE country_packs SET updated_at = ? WHERE id = ?').run(installedAt, pack.id);
+      }
+      persistPackArtifacts(version, pack, installedAt);
+
+      const packRow = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(pack.id) as PackRow;
+      activateInstalledPack(packRow, version, actorUserId(req));
+
+      // A category the owner removed or renamed in this edit can no longer be
+      // resolved by the engine (calculateRawLine throws on an unknown
+      // category), so checkout would 400 on every line still pointing at it.
+      // Reassign those rows to the new default and report the count instead
+      // of leaving products silently broken.
+      const categoryIds = pack.categories.map((category) => category.id);
+      const placeholders = categoryIds.map(() => '?').join(',');
+      const staleProducts = db.prepare(
+        `SELECT COUNT(*) AS total FROM products WHERE deleted_at IS NULL AND tax_category_id IS NOT NULL AND tax_category_id NOT IN (${placeholders})`
+      ).get(...categoryIds) as { total: number };
+      const staleAddons = db.prepare(
+        `SELECT COUNT(*) AS total FROM addons WHERE tax_category_id IS NOT NULL AND tax_category_id NOT IN (${placeholders})`
+      ).get(...categoryIds) as { total: number };
+      db.prepare(
+        `UPDATE products SET tax_category_id = ?, updated_at = ? WHERE deleted_at IS NULL AND (tax_category_id IS NULL OR tax_category_id NOT IN (${placeholders}))`
+      ).run(pack.defaultCategories.product, installedAt, ...categoryIds);
+      db.prepare(
+        `UPDATE addons SET tax_category_id = ? WHERE tax_category_id IS NULL OR tax_category_id NOT IN (${placeholders})`
+      ).run(pack.defaultCategories.addon, ...categoryIds);
+      remapped = [
+        ...(staleProducts.total > 0 ? [{ entity: 'product', count: staleProducts.total }] : []),
+        ...(staleAddons.total > 0 ? [{ entity: 'addon', count: staleAddons.total }] : []),
+      ];
+      if (remapped.length > 0) {
+        audit('remap_categories', actorUserId(req), pack.id, versionId, null, { remapped });
+      }
+      audit('save_manual_config', actorUserId(req), pack.id, versionId, null, {
+        replacedOfficialPackId: replacesOfficial ? activeForCountry!.id : null,
+        categoryCount: pack.categories.length,
+        ruleCount: pack.rules.length,
+      });
+    });
+
+    upsertSettings({ taxes_enabled: 'true' });
+    return res.json({ pack_id: pack.id, version_id: versionId, version: pack.version, remapped, validation });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 500;
+    return res.status(statusCode).json({ error: error.message || 'Could not save manual tax configuration' });
   }
 });
 

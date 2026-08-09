@@ -4,6 +4,7 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
+import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 
 const router = Router();
 
@@ -84,7 +85,7 @@ function businessShape(s: Record<string, string>) {
     currency: s.currency || 'INR',
     country: s.country || 'IN',
     language: s.language || 'en',
-    gstin: s.gstin || '',
+    tax_registration_number: s.tax_registration_number || '',
     state_code: s.state_code || '',
     business_address: s.business_address || '',
     business_phone: s.business_phone || '',
@@ -95,14 +96,14 @@ function businessShape(s: Record<string, string>) {
     bill_show_name: s.bill_show_name !== 'false',
     bill_show_address: s.bill_show_address !== 'false',
     bill_show_phone: s.bill_show_phone !== 'false',
-    bill_show_gstn: s.bill_show_gstn === 'true',
+    bill_show_tax_id: s.bill_show_tax_id === 'true',
   };
 }
 
 function taxShape(s: Record<string, string>) {
   return {
     tax_registered: s.tax_registered === 'true',
-    gstin: s.gstin || '',
+    tax_registration_number: s.tax_registration_number || '',
     state_code: s.state_code || '',
     tax_scheme: s.tax_scheme || 'regular',
     country: s.country || 'IN',
@@ -124,20 +125,30 @@ router.get('/business', requireRole('owner', 'manager', 'cashier', 'waiter', 'ch
 router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const { business_name, timezone, currency, country, language,
-      gstin, state_code, business_address, business_phone, instagram_handle,
+      tax_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
-      bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn } = req.body;
+      bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id } = req.body;
 
     if (!validBusinessLocation(timezone, currency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
     }
 
     const db = getDatabase();
+    if (tax_registration_number) {
+      const effectiveCountry = country || getAllSettings(db).country || 'IN';
+      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
+      if (!valid && format) {
+        return res.status(400).json({
+          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
+          tax_id_format: format,
+        });
+      }
+    }
     upsertSettings(db, {
       business_name, timezone, currency, country, language,
-      gstin, state_code, business_address, business_phone, instagram_handle,
+      tax_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
-      bill_show_name, bill_show_address, bill_show_phone, bill_show_gstn,
+      bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
     });
     cloudSync.refreshRegistrationProfile();
 
@@ -160,16 +171,38 @@ router.get('/tax', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'),
 
 router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { tax_registered, gstin, state_code, tax_scheme, country } = req.body;
+    const { tax_registered, tax_registration_number, state_code, tax_scheme, country } = req.body;
 
     if (!validBusinessLocation(undefined, undefined, country)) {
       return res.status(400).json({ error: 'Invalid country' });
     }
 
     const db = getDatabase();
-    upsertSettings(db, { tax_registered, gstin, state_code, tax_scheme, country });
+    if (tax_registration_number) {
+      const effectiveCountry = country || getAllSettings(db).country || 'IN';
+      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
+      if (!valid && format) {
+        return res.status(400).json({
+          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
+          tax_id_format: format,
+        });
+      }
+    }
+    upsertSettings(db, { tax_registered, tax_registration_number, state_code, tax_scheme, country });
     cloudSync.refreshRegistrationProfile();
     res.json(taxShape(getAllSettings(db)));
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Lets the Settings UI show a format hint (and validate client-side) before
+// save — the PUT /business and /tax handlers above remain the source of truth.
+router.get('/tax-id-format', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const country = String(req.query.country || getAllSettings(getDatabase()).country || 'IN').toUpperCase();
+    res.json({ country, format: resolveTaxIdFormat(country) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -563,12 +596,12 @@ router.post('/google-drive/backup-now', requireRole('owner'), async (_req: Reque
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
 
 // Only non-sensitive keys may be updated via the wildcard route.
-// Sensitive keys (cloud_*, gstin, etc.) must use their explicit routes above.
+// Sensitive keys (cloud_*, tax_registration_number, etc.) must use their explicit routes above.
 const ALLOWED_WILDCARD_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
   'billing_type', 'tables_required', 'tax_registered', 'bill_show_name', 'bill_show_address',
-  'bill_show_phone', 'bill_show_gstn',
+  'bill_show_phone', 'bill_show_tax_id',
   'tax_scheme',
   'taxes_enabled',
   'loyalty_enabled',

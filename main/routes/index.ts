@@ -105,7 +105,7 @@ export function registerRoutes(app: Express): void {
   // (installing/updating a pack) is a separate, later feature.
   app.get('/api/tax/categories', requireRole('owner', 'manager'), async (req, res) => {
     try {
-      const { getActiveCountryPack, hasConfiguredTaxCategories } = await import('../services/tax');
+      const { getActiveCountryPack, hasConfiguredTaxCategories, previewCategoryRate } = await import('../services/tax');
       const country = getSettingValue('country') || 'IN';
       const businessType = getSettingValue('business_type') || 'restaurant';
       const pack = getActiveCountryPack(country);
@@ -117,7 +117,15 @@ export function registerRoutes(app: Express): void {
         // placeholder categories as assignable would migrate a product from
         // legacy tax to a zero-tax engine path.
         categories: configurationReady
-          ? pack.categories.map((category) => ({ id: category.id, label: category.label }))
+          ? pack.categories.map((category) => {
+            const preview = previewCategoryRate(pack, businessType, category.id);
+            return {
+              id: category.id,
+              label: category.label,
+              rate_percent: preview?.percent ?? null,
+              rate_label: preview?.label ?? null,
+            };
+          })
           : [],
         default_category_id: configurationReady ? pack.defaultCategories.product : null,
         configuration_ready: configurationReady,

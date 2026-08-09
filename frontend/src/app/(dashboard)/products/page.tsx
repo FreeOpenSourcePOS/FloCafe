@@ -55,6 +55,10 @@ const CATEGORY_COLORS = [
 
 type TabType = 'products' | 'categories' | 'addons';
 
+function taxCategoryOptionLabel(tc: { label: string; rate_percent?: number | null }): string {
+  return tc.rate_percent != null ? `${tc.label} (${tc.rate_percent}%)` : tc.label;
+}
+
 export default function ProductsPage() {
   const { t } = useI18n();
   const { currentTenant } = useAuthStore();
@@ -63,6 +67,7 @@ export default function ProductsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [addonGroups, setAddonGroups] = useState<AddonGroup[]>([]);
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);
+  const [globalCashbackPercent, setGlobalCashbackPercent] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -75,7 +80,7 @@ export default function ProductsPage() {
 
   const [addonList, setAddonList] = useState<{ id?: number | string; name: string; price: number; is_active?: boolean }[]>([]);
   const [form, setForm] = useState({
-    name: '', category_id: '', price: '', cost_price: '', cb_percent_mode: 'global', cb_percent: '', sku: '', barcode: '',
+    name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
     tax_category_id: '', tax_behavior: 'country_default', description: '',
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
@@ -93,7 +98,7 @@ export default function ProductsPage() {
   const [catDeleteModal, setCatDeleteModal] = useState<{ open: boolean; id: number | null; name: string; productCount: number }>({ open: false, id: null, name: '', productCount: 0 });
   const [catReassignTo, setCatReassignTo] = useState<string>('');
 
-  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string }[]>([]);
+  const [taxCategories, setTaxCategories] = useState<{ id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]>([]);
   const [defaultTaxCategoryId, setDefaultTaxCategoryId] = useState('');
   const [showBulkTaxModal, setShowBulkTaxModal] = useState(false);
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
@@ -141,7 +146,7 @@ export default function ProductsPage() {
       .finally(() => { setLoading(false); });
     api.get('/tax/categories', { signal: controller.signal })
       .then((res) => {
-        const data = res.data as { categories?: { id: string; label: string }[]; default_category_id?: string | null };
+        const data = res.data as { categories?: { id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]; default_category_id?: string | null };
         setTaxCategories(data.categories || []);
         setDefaultTaxCategoryId(data.default_category_id || '');
       })
@@ -149,7 +154,10 @@ export default function ProductsPage() {
         if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) setTaxCategories([]);
       });
     api.get('/settings/loyalty', { signal: controller.signal })
-      .then((res) => setLoyaltyEnabled(!!res.data.loyalty_enabled))
+      .then((res) => {
+        setLoyaltyEnabled(!!res.data.loyalty_enabled);
+        setGlobalCashbackPercent(Number(res.data.global_cashback_percent) || 0);
+      })
       .catch(() => {});
     return () => controller.abort();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -217,7 +225,7 @@ export default function ProductsPage() {
 
   const resetForm = () => {
     setForm({
-      name: '', category_id: '', price: '', cost_price: '', cb_percent_mode: 'global', cb_percent: '', sku: '', barcode: '',
+      name: '', category_id: '', price: '', cost_price: '', cb_percent: '', sku: '', barcode: '',
       tax_category_id: '', tax_behavior: 'country_default', description: '',
       track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
       tags: [], customTag: '', addon_group_ids: [], image_url: null,
@@ -240,8 +248,7 @@ export default function ProductsPage() {
       category_id: product.category_id != null ? String(product.category_id) : '',
       price: String(product.price),
       cost_price: String(product.cost_price || ''),
-      cb_percent_mode: product.cb_percent === null || product.cb_percent === undefined ? 'global' : (product.cb_percent === 0 ? 'none' : 'custom'),
-      cb_percent: product.cb_percent === null || product.cb_percent === undefined || product.cb_percent === 0 ? '' : String(product.cb_percent),
+      cb_percent: product.cb_percent === null || product.cb_percent === undefined ? '' : String(product.cb_percent),
       sku: product.sku || '',
       barcode: product.barcode || '',
       tax_category_id: product.tax_category_id || '',
@@ -261,20 +268,15 @@ export default function ProductsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loyaltyEnabled && form.cb_percent_mode === 'custom') {
+    if (loyaltyEnabled && form.cb_percent !== '') {
       const parsed = Number(form.cb_percent);
-      if (!form.cb_percent || isNaN(parsed) || parsed <= 0 || parsed > 100) {
-        toast.error('Please enter a valid custom loyalty earning rate (0.1–100%)');
+      if (isNaN(parsed) || parsed < 0 || parsed > 100) {
+        toast.error('Please enter a valid loyalty cashback rate (0–100%)');
         return;
       }
     }
     try {
-      let cbPercentVal: number | null = null;
-      if (form.cb_percent_mode === 'none') {
-        cbPercentVal = 0;
-      } else if (form.cb_percent_mode === 'custom') {
-        cbPercentVal = Number(form.cb_percent);
-      }
+      const cbPercentVal: number | null = form.cb_percent === '' ? null : Number(form.cb_percent);
 
       const payload: Record<string, unknown> = {
         name: form.name,
@@ -507,6 +509,7 @@ export default function ProductsPage() {
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">Add-ons</th>
               <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnPrice')}</th>
               <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnTax')}</th>
+              {loyaltyEnabled && <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnCashback')}</th>}
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnStock')}</th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnStatus')}</th>
               <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnActions')}</th>
@@ -516,9 +519,9 @@ export default function ProductsPage() {
             {products.map((product) => {
               const parentCat = categories.find((c) => String(c.id) === String(product.category_id || product.category?.id));
               const isCategoryInactive = Boolean(parentCat && !parentCat.is_active);
-              const taxCategoryLabel = taxCategories.find((tc) => tc.id === product.tax_category_id)?.label;
+              const matchedTaxCategory = taxCategories.find((tc) => tc.id === product.tax_category_id);
               const taxLabel = product.tax_category_id
-                ? (taxCategoryLabel || product.tax_category_id)
+                ? (matchedTaxCategory ? taxCategoryOptionLabel(matchedTaxCategory) : product.tax_category_id)
                 : '—';
               return (
               <tr key={product.id} className="hover:bg-gray-50">
@@ -587,6 +590,17 @@ export default function ProductsPage() {
                     )}
                   </div>
                 </td>
+                {loyaltyEnabled && (
+                  <td className="p-4 text-sm text-gray-600">
+                    {product.cb_percent === null || product.cb_percent === undefined ? (
+                      <span>{globalCashbackPercent}% <span className="text-gray-400 text-xs">({t('products.cashbackGlobalBadge')})</span></span>
+                    ) : product.cb_percent === 0 ? (
+                      <span className="text-gray-400">0%</span>
+                    ) : (
+                      <span>{product.cb_percent}%</span>
+                    )}
+                  </td>
+                )}
                 <td className="p-4 text-center">
                   {product.track_inventory ? (
                     <span className={`text-sm font-medium ${product.stock_quantity <= (product.low_stock_threshold || 0) ? 'text-red-600' : 'text-gray-900'}`}>
@@ -693,38 +707,20 @@ export default function ProductsPage() {
                 </div>
               </div>
               {loyaltyEnabled && (
-                <div className="bg-gray-50 p-4 rounded-xl space-y-3">
+                <div className="bg-gray-50 p-4 rounded-xl space-y-2">
                   <label className="block text-sm font-medium text-gray-700">{t('products.cashbackLabel')}</label>
-                  <div className="flex gap-4">
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="radio" name="cb_mode" checked={form.cb_percent_mode === 'none'}
-                        onChange={() => setForm({ ...form, cb_percent_mode: 'none' })}
-                        className="text-brand focus:ring-brand" />
-                      <span>{t('products.loyaltyModeNone')}</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="radio" name="cb_mode" checked={form.cb_percent_mode === 'global'}
-                        onChange={() => setForm({ ...form, cb_percent_mode: 'global' })}
-                        className="text-brand focus:ring-brand" />
-                      <span>{t('products.loyaltyModeGlobal')}</span>
-                    </label>
-                    <label className="flex items-center gap-2 text-sm cursor-pointer">
-                      <input type="radio" name="cb_mode" checked={form.cb_percent_mode === 'custom'}
-                        onChange={() => setForm({ ...form, cb_percent_mode: 'custom' })}
-                        className="text-brand focus:ring-brand" />
-                      <span>{t('products.loyaltyModeCustom')}</span>
-                    </label>
+                  <div className="flex items-center gap-2">
+                    <input type="number" step="0.1" min="0" max="100" value={form.cb_percent}
+                      onChange={(e) => setForm({ ...form, cb_percent: e.target.value })}
+                      placeholder={String(globalCashbackPercent)}
+                      className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
+                    <span className="text-gray-500 font-medium">%</span>
                   </div>
-                  {form.cb_percent_mode === 'custom' && (
-                    <div className="flex items-center gap-2 mt-2">
-                      <input type="number" step="0.1" min="0.1" max="100" value={form.cb_percent}
-                        onChange={(e) => setForm({ ...form, cb_percent: e.target.value })}
-                        placeholder="e.g. 5"
-                        className="w-24 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
-                      <span className="text-gray-500 font-medium">%</span>
-                    </div>
-                  )}
-                  <p className="text-xs text-gray-500">{t('products.cashbackHint')}</p>
+                  <p className="text-xs text-gray-500">
+                    {form.cb_percent === ''
+                      ? t('products.cashbackUsingGlobal', { rate: globalCashbackPercent })
+                      : t('products.cashbackOverrideHint')}
+                  </p>
                 </div>
               )}
               <div>
@@ -732,7 +728,7 @@ export default function ProductsPage() {
                 <select value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
                   <option value="">— No tax / exempt —</option>
-                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
+                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
                 </select>
                 {taxCategories.length === 0 && (
                   <p className="text-xs text-gray-400 mt-1">No tax groups are available until country taxes are enabled in Settings.</p>
@@ -1109,7 +1105,7 @@ export default function ProductsPage() {
                 <select value={bulkTaxCategoryId} onChange={(e) => setBulkTaxCategoryId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none mb-5">
                   <option value="">{t('products.selectPlaceholder')}</option>
-                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{tc.label}</option>)}
+                  {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
                 </select>
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setShowBulkTaxModal(false)}>{t('common.cancel')}</Button>

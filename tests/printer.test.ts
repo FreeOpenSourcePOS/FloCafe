@@ -108,7 +108,7 @@ const fixtureOrder = {
       quantity: 3,
       unit_price: 100,
       total: 315,
-      tax_type: 'gst_5',
+      tax_type: 'tax_5',
       tax_amount: 15,
       addons: [],
     },
@@ -122,8 +122,8 @@ const fixtureBill = {
   discount_amount: 15,
   total: 950,
   tax_breakdown: JSON.stringify([
-    { name: 'CGST', rate: 2.5, amount: 20 },
-    { name: 'SGST', rate: 2.5, amount: 20 },
+    { name: 'Tax A', rate: 2.5, amount: 20 },
+    { name: 'Tax B', rate: 2.5, amount: 20 },
   ]),
   payment_details: JSON.stringify([
     { method: 'Cash', amount: 500 },
@@ -135,7 +135,7 @@ const fixtureBusiness = {
   name: 'Flo Test Cafe',
   address: '42 MG Road, Bengaluru 560001',
   phone: '+91 98765 43210',
-  gstin: '29AAAAA0000A1Z5',
+  taxRegistrationNumber: 'TAXID-0001',
 };
 
 console.log('🧪 FloDesktop Printer Tests');
@@ -161,6 +161,16 @@ console.log('\n✅ Test 1: buildEscPos emits correct control bytes');
   assert('no stray {TOKEN} markers remain', !/\{[A-Z_/]+\}/.test(buf.toString('utf8')));
 }
 
+console.log('\n✅ Test 1b: Unsupported receipt text is skipped with a warning');
+{
+  const warnings: Array<{ field: string; text: string; message: string }> = [];
+  const buf = buildEscPos(['{INIT}', '{STORE_NAME}{CENTER}مطعم فلوس{/CENTER}', 'TOTAL        ₹100.00', '{CUT}'], true, {}, warnings);
+  const text = buf.toString('utf8');
+  assert('skips unsupported Arabic line', !text.includes('مطعم فلوس'));
+  assert('keeps the rest of the receipt printable', text.includes('TOTAL') && text.includes('₹100.00'));
+  assert('reports the skipped store name', warnings.length === 1 && warnings[0].field === 'store name');
+}
+
 console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
 {
   const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'compact', 48, true);
@@ -180,7 +190,7 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   assert('renders TOTAL with grand amount', text.includes('TOTAL') && text.includes('₹950.00'));
   assert('renders Cash payment', text.includes('Cash') && text.includes('₹500.00'));
   assert('renders UPI payment', text.includes('UPI') && text.includes('₹450.00'));
-  assert('renders GSTIN', text.includes('29AAAAA0000A1Z5'));
+  assert('renders tax registration number', text.includes('TAXID-0001'));
   assert('long product name is truncated to fit', !text.includes('Truncated By Formatter'));
   assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
 
@@ -223,17 +233,17 @@ console.log('\n✅ Test 4: Classic receipt template');
   console.log(visiblePreview(buf, 48));
 }
 
-console.log('\n✅ Test 5: Detailed GST invoice template');
+console.log('\n✅ Test 5: Detailed tax invoice template');
 {
-  const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Detailed (GST)', 48, true);
+  const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'detailed', 48, true);
   const text = buf.toString('utf8');
 
   assert('renders TAX INVOICE header', text.includes('TAX INVOICE'));
   assert('renders business name in uppercase', text.includes('FLO TEST CAFE'));
-  assert('renders CGST line', text.includes('CGST'));
-  assert('renders SGST line', text.includes('SGST'));
+  assert('renders Tax A line', text.includes('Tax A'));
+  assert('renders Tax B line', text.includes('Tax B'));
   assert('renders GRAND TOTAL', text.includes('GRAND TOTAL'));
-  assert('renders GSTIN', text.includes('29AAAAA0000A1Z5'));
+  assert('renders tax registration number', text.includes('TAXID-0001'));
 
   console.log('\n   — Rendered detailed —');
   console.log(visiblePreview(buf, 48));
@@ -243,11 +253,11 @@ console.log('\n✅ Test 5b: Template labels normalize to backend templates');
 {
   const classic = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Classic', 48, true).toString('utf8');
   const compact = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Compact', 48, true).toString('utf8');
-  const detailed = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Detailed (GST)', 48, true).toString('utf8');
+  const detailed = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Detailed (Tax)', 48, true).toString('utf8');
 
   assert('Classic label renders classic template', classic.includes('Invoice #:'));
   assert('Compact label renders compact template', compact.includes('Bill #:'));
-  assert('Detailed (GST) label renders detailed template', detailed.includes('TAX INVOICE'));
+  assert('Detailed (Tax) label renders detailed template', detailed.includes('TAX INVOICE'));
 }
 
 console.log('\n✅ Test 5c: Detailed receipt resolves mixed legacy + categorized tax');
@@ -263,7 +273,7 @@ console.log('\n✅ Test 5c: Detailed receipt resolves mixed legacy + categorized
             components: [{ ruleId: 'thai-vat', label: 'VAT', rate: '7', amount: '17.50' }],
           }],
         }),
-        tax_breakdown: JSON.stringify([{ title: 'CGST', rate: 2.5, amount: 99 }]),
+        tax_breakdown: JSON.stringify([{ title: 'Legacy Tax', rate: 2.5, amount: 99 }]),
       },
       {
         ...fixtureOrder.items[1],
@@ -285,8 +295,8 @@ console.log('\n✅ Test 5c: Detailed receipt resolves mixed legacy + categorized
 
   assert('renders categorized VAT component and rate', text.includes('VAT @7%'));
   assert('renders legacy Local Levy component and rate', text.includes('Local Levy @1%'));
-  assert('does not render categorized item legacy copy', !text.includes('CGST'));
-  assert('uses country tax identifier label', text.includes('Tax ID: 29AAAAA0000A1Z5'));
+  assert('does not render categorized item legacy copy', !text.includes('Legacy Tax'));
+  assert('uses country tax identifier label', text.includes('Tax ID: TAXID-0001'));
 }
 
 console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');
@@ -342,7 +352,7 @@ console.log('\n✅ Test 8: Edge cases');
   assert('handles empty item list without throwing', buf.length > 0);
   assert('renders zero total', emptyText.includes('₹0.00'));
   assert('omits tax label when tax amount and breakdown are empty', !emptyText.split('\n').some((line) => line.trimStart().startsWith('Tax')));
-  assert('omits tax identifier when tax amount and breakdown are empty', !emptyText.includes('29AAAAA0000A1Z5'));
+  assert('omits tax identifier when tax amount and breakdown are empty', !emptyText.includes('TAXID-0001'));
 
   const detailedNoTaxText = formatReceipt(
     emptyOrder,
@@ -353,7 +363,7 @@ console.log('\n✅ Test 8: Edge cases');
     true,
   ).toString('utf8');
   assert('zero-tax detailed receipt is an invoice, not a tax invoice', detailedNoTaxText.includes('INVOICE') && !detailedNoTaxText.includes('TAX INVOICE'));
-  assert('zero-tax detailed receipt omits tax identifier', !detailedNoTaxText.includes('29AAAAA0000A1Z5'));
+  assert('zero-tax detailed receipt omits tax identifier', !detailedNoTaxText.includes('TAXID-0001'));
 
   const noDiscountBill = { ...fixtureBill, discount_amount: 0 };
   const buf2 = formatReceipt(fixtureOrder, noDiscountBill, fixtureBusiness, 'compact', 48, true);

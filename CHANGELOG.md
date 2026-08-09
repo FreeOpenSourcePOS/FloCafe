@@ -2,6 +2,43 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.9.2] - 2026-08-09
+
+### Changed
+- Product-level loyalty cashback is now a single field: leave it blank to use the global rate, enter 0 to exclude the product, or enter any other value to override the rate for that product only. The products table shows each product's effective rate when loyalty is enabled.
+- Receipt printing now uses a single unified 58mm column width; the A4 and A5 paper size options have been removed.
+
+### Fixed
+- The Linux Snap package now includes the `browser-support` plug so it can access `/dev/shm`, and builds on core24 in LXD with the gnome extension.
+
+## [2.9.0] - 2026-08-07
+
+### Added
+- Support tickets now confirm delivery: after a request is queued, FloCafe polls for a support code once FloAdmin accepts the ticket, and shows it in place of the local request ID once delivered.
+- The Help & Support page and the in-POS "Get help" prompt (shown on print failures) can preview the exact diagnostics payload that will be attached before sending, pulled from the same code path used on submit so the preview can never drift from what's actually sent.
+- Settings navigation adds dedicated Mobile Access and OrderFlow tabs, and splits Loyalty and Discounts into separate sections instead of one combined page.
+- The printer status control in the POS toolbar now includes a shortcut straight to Settings → Receipts & Printers.
+
+### Changed
+- Upgraded stores that installed the original India/Thailand tax packs under their pre-rename ids (`official-in`/`official-th`) can enable them again; the legacy digest allowlist now covers both the old and renamed pack ids.
+- The sidebar header now shows the store's initial in place of the FloCafe logo image, with the redundant duplicate business-name line removed.
+- Settings navigation groups were renamed for clarity ("Integrations" replaces the former "Data" group; "Tax Config" replaces "Tax configuration").
+
+### Fixed
+- Print-failure support requests submitted from the POS screen now tag their category as `printer` so they route and diagnose the same way as tickets filed from the Help & Support page.
+
+## [2.8.0] - 2026-08-06
+
+### Added
+- A permanent Help & Support page is available from the sidebar to owners, managers, cashiers, waiters, and chefs. Merchants can request general help, report bugs and printer/account/tax problems, or submit feature requests with urgency and a detailed description.
+- Support requests prefill the restaurant and contact profile and attach safe technical context including app version, platform, architecture, database schema, country/timezone, and cloud status. Customer records, order contents, credentials, and API keys are excluded.
+
+### Changed
+- All support requests use FloCafe's durable offline outbox and retry automatically when connectivity returns.
+
+### Fixed
+- FloCafe now sends contact details using FloAdmin's nested contact contract, so merchant name, email, and phone are no longer silently dropped from printer, tax, or general support tickets.
+
 ## [2.7.8] - 2026-08-05
 
 ### Added

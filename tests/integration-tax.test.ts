@@ -1,9 +1,9 @@
 /**
  * Integration Test: Tax Correctness
  *
- * Verifies India GST (5% — 2.5% CGST + 2.5% SGST) is calculated correctly,
- * especially after discount is applied. This is a compliance risk for real
- * restaurants — incorrect GST means wrong filings.
+ * Verifies a dual-component tax split (5% total — 2.5% + 2.5%) is calculated
+ * correctly, especially after discount is applied. This is a compliance risk
+ * for real restaurants — incorrect tax filings on real orders.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/integration-tax.test.ts
  */
@@ -31,8 +31,14 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { registerRoutes } = require('../main/routes/index');
-const indiaTaxPack = require('../main/tax-packs/in.json');
-const thailandTaxPack = require('../main/tax-packs/th.json');
+// Same dual-rate / flat-rate structure the real country tax packs use, kept
+// generic (no brand-specific tax names) — the country/currency fields stay
+// 'IN'/'TH' only so getActiveCountryPack() resolves them and the currency
+// (₹/฿) assertions below keep testing real formatting behavior.
+const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
+const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
+const indiaTaxPack = { ...dualRatePackData, id: 'test-in-pack', country: 'IN', currency: 'INR' };
+const thailandTaxPack = { ...flatRatePackData, id: 'test-th-pack', country: 'TH', currency: 'THB' };
 
 async function main() {
   console.log('Integration Test: Tax Correctness');
@@ -40,7 +46,7 @@ async function main() {
 
   const db = initTestDb();
 
-  // Force India GST settings
+  // Force a dual-rate-tax country's settings
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?)").run(now());
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_type', 'restaurant', ?)").run(now());
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('state_code', '27', ?)").run(now());
@@ -64,7 +70,7 @@ async function main() {
 
   try {
     // ── Step 1: Create order and verify initial tax ──────────────────
-    console.log('\n1. Create order — verify GST on ₹1000');
+    console.log('\n1. Create order — verify tax on ₹1000');
     const createRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {
@@ -76,7 +82,7 @@ async function main() {
     assertEqual(createRes.status, 201, 'order created');
     const orderId = createRes.data.order.id;
 
-    // India restaurant: fixed 5% GST
+    // India restaurant: fixed 5% tax
     const initialTax = createRes.data.order.tax_amount;
     const initialTotal = createRes.data.order.total;
     assertEqual(createRes.data.order.subtotal, 1000, 'subtotal = ₹1000');
@@ -118,8 +124,8 @@ async function main() {
     assertEqual(billRes.data.bill.tax_amount, discountedTax, `bill tax = ₹${discountedTax}`);
     assertEqual(billRes.data.bill.total, discountedTotal, `bill total = ₹${discountedTotal}`);
 
-    // ── Step 4: Verify tax breakdown structure (CGST + SGST) ─────────
-    console.log('\n4. Verify tax breakdown (CGST + SGST)');
+    // ── Step 4: Verify tax breakdown structure (Tax A + Tax B) ─────────
+    console.log('\n4. Verify tax breakdown (Tax A + Tax B)');
     // Check the initial order's tax breakdown (before discount, which has the per-item breakdown)
     const rawBreakdown = createRes.data.order.tax_breakdown;
     assert(rawBreakdown !== null && rawBreakdown !== undefined, 'tax breakdown exists on order');
@@ -128,14 +134,14 @@ async function main() {
       // tax_breakdown is stored as array of per-item breakdowns: [[{title, rate, amount}, ...], ...]
       // Flatten to get all entries
       const allEntries = Array.isArray(parsed[0]) ? parsed.flat() : parsed;
-      const cgstEntry = allEntries.find((b: any) => b.title === 'CGST');
-      const sgstEntry = allEntries.find((b: any) => b.title === 'SGST');
-      assert(cgstEntry !== undefined, 'breakdown contains CGST entry');
-      assert(sgstEntry !== undefined, 'breakdown contains SGST entry');
-      // CGST + SGST should equal initial tax (₹50 on ₹1000)
-      if (cgstEntry && sgstEntry) {
-        const totalBreakdownTax = Math.round((cgstEntry.amount + sgstEntry.amount) * 100) / 100;
-        assertEqual(totalBreakdownTax, initialTax, `CGST (₹${cgstEntry.amount}) + SGST (₹${sgstEntry.amount}) = ₹${initialTax}`);
+      const taxAEntry = allEntries.find((b: any) => b.title === 'Tax A');
+      const taxBEntry = allEntries.find((b: any) => b.title === 'Tax B');
+      assert(taxAEntry !== undefined, 'breakdown contains Tax A entry');
+      assert(taxBEntry !== undefined, 'breakdown contains Tax B entry');
+      // Tax A + Tax B should equal initial tax (₹50 on ₹1000)
+      if (taxAEntry && taxBEntry) {
+        const totalBreakdownTax = Math.round((taxAEntry.amount + taxBEntry.amount) * 100) / 100;
+        assertEqual(totalBreakdownTax, initialTax, `Tax A (₹${taxAEntry.amount}) + Tax B (₹${taxBEntry.amount}) = ₹${initialTax}`);
       }
     }
 
@@ -456,7 +462,7 @@ async function main() {
       SELECT version.id, version.pack_json
       FROM country_packs AS pack
       JOIN country_pack_versions AS version ON version.id = pack.active_version_id
-      WHERE pack.id = 'official-thailand'
+      WHERE pack.id = 'test-th-pack'
     `).get() as { id: string; pack_json: string };
     const coarsePack = JSON.parse(activeThailandVersion.pack_json);
     coarsePack.payableRounding = { increment: '1', method: 'half_up' };

@@ -711,7 +711,7 @@ Get business settings.
   "business_name": "My Restaurant",
   "timezone": "Asia/Kolkata",
   "currency": "INR",
-  "gstin": "22AAAAA0000A1Z5"
+  "tax_registration_number": "22AAAAA0000A1Z5"
 }
 ```
 

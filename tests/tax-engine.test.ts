@@ -9,11 +9,11 @@ import type {
   TaxRounding,
   TaxRule,
 } from '../main/tax-packs/types';
-import indiaPackData from '../main/tax-packs/in.json';
-import thailandPackData from '../main/tax-packs/th.json';
+import dualRatePackData from './fixtures/synthetic-dual-rate-pack.json';
+import flatRatePackData from './fixtures/synthetic-flat-rate-pack.json';
 
-const indiaPack = indiaPackData as CountryPack;
-const thailandPack = thailandPackData as CountryPack;
+const dualRatePack = dualRatePackData as CountryPack;
+const flatRatePack = flatRatePackData as CountryPack;
 
 function packWith(
   rules: TaxRule[],
@@ -143,14 +143,14 @@ test('category resolution follows all six precedence steps', () => {
 
 test('compound percent tax uses acyclic line-local dependencies', () => {
   const pack = packWith([
-    { id: 'gst', label: 'GST', type: 'percent', categoryIds: ['explicit'], rate: '10' },
+    { id: 'base-tax', label: 'Base Tax', type: 'percent', categoryIds: ['explicit'], rate: '10' },
     {
-      id: 'cess',
-      label: 'Cess',
+      id: 'surcharge',
+      label: 'Surcharge',
       type: 'percent',
       categoryIds: ['explicit'],
       rate: '5',
-      baseRuleIds: ['gst'],
+      baseRuleIds: ['base-tax'],
     },
   ]);
   const result = calculate(pack, [line()]);
@@ -313,10 +313,10 @@ test('applyPayableRounding (#170): fractional totals are not force-rounded to a 
   assert.equal(dustyResult.adjustment, 0);
 });
 
-test('catalog India and Thailand packs reproduce current fixed behavior as data', () => {
+test('dual-rate and flat-rate packs reproduce current fixed behavior as data', () => {
   const intra = TaxEngine.calculate({
-    pack: indiaPack,
-    country: 'IN',
+    pack: dualRatePack,
+    country: 'ZZ',
     businessType: 'restaurant',
     storeStateCode: 'KA',
     transactionDate: '2026-07-27',
@@ -329,19 +329,19 @@ test('catalog India and Thailand packs reproduce current fixed behavior as data'
       amount: Number(component.amount),
     })),
     [
-      { title: 'CGST', rate: 2.5, amount: 0.25 },
-      { title: 'SGST', rate: 2.5, amount: 0.26 },
+      { title: 'Tax A', rate: 2.5, amount: 0.26 },
+      { title: 'Tax B', rate: 2.5, amount: 0.25 },
     ],
   );
   assert.equal(intra.lines[0].taxAmount, '0.51');
 
   const inter = TaxEngine.calculate({
-    pack: indiaPack,
-    country: 'IN',
+    pack: dualRatePack,
+    country: 'ZZ',
     businessType: 'salon',
     storeStateCode: 'KA',
     transactionDate: '2026-07-27',
-    customer: { registrationNumber: 'GSTIN', stateCode: 'MH' },
+    customer: { registrationNumber: 'TAXID-0001', stateCode: 'MH' },
     lines: [line({ unitPrice: '100', productCategoryId: 'standard', taxBehavior: 'exclusive' })],
   });
   assert.deepEqual(
@@ -350,46 +350,46 @@ test('catalog India and Thailand packs reproduce current fixed behavior as data'
       rate: Number(component.rate),
       amount: Number(component.amount),
     })),
-    [{ title: 'IGST', rate: 5, amount: 5 }],
+    [{ title: 'Tax C', rate: 5, amount: 5 }],
   );
 
-  const thai = calculate(thailandPack, [
+  const flat = calculate(flatRatePack, [
     line({ unitPrice: '100', productCategoryId: 'standard', taxBehavior: 'exclusive' }),
   ], { businessType: 'restaurant' });
   assert.deepEqual(
-    thai.lines[0].components.map((component) => ({
+    flat.lines[0].components.map((component) => ({
       title: component.label,
       rate: Number(component.rate),
       amount: Number(component.amount),
     })),
-    [{ title: 'VAT', rate: 7, amount: 7 }],
+    [{ title: 'Tax', rate: 7, amount: 7 }],
   );
-  assert.equal(indiaPack.rules.every((rule) => rule.rate !== undefined), true);
-  assert.equal(thailandPack.rules[0].rate, '7');
+  assert.equal(dualRatePack.rules.every((rule) => rule.rate !== undefined), true);
+  assert.equal(flatRatePack.rules[0].rate, '7');
 });
 
 test('unclassified products are taxed at the standard rate, never silently zero', () => {
-  const india = calculate(indiaPack, [
+  const dual = calculate(dualRatePack, [
     line({ unitPrice: '1000', productCategoryId: 'unclassified', taxBehavior: 'exclusive' }),
   ], { businessType: 'restaurant', storeStateCode: 'KA' });
-  assert.equal(india.lines[0].taxAmount, '50.00');
+  assert.equal(dual.lines[0].taxAmount, '50.00');
   assert.deepEqual(
-    india.lines[0].components.map((component) => [component.label, component.amount]),
-    [['CGST', '25.00'], ['SGST', '25.00']],
+    dual.lines[0].components.map((component) => [component.label, component.amount]),
+    [['Tax A', '25.00'], ['Tax B', '25.00']],
   );
 
-  const thailand = calculate(thailandPack, [
+  const flat = calculate(flatRatePack, [
     line({ unitPrice: '100', productCategoryId: 'unclassified', taxBehavior: 'exclusive' }),
   ], { businessType: 'restaurant' });
   assert.deepEqual(
-    thailand.lines[0].components.map((component) => [component.label, component.amount]),
-    [['VAT', '7.00']],
+    flat.lines[0].components.map((component) => [component.label, component.amount]),
+    [['Tax', '7.00']],
   );
 
-  const indiaUnclassified = indiaPack.categories.find((category) => category.id === 'unclassified')!;
-  const thailandUnclassified = thailandPack.categories.find((category) => category.id === 'unclassified')!;
-  assert.ok(indiaUnclassified.ruleIds.length > 0, 'India unclassified category must carry real tax rules');
-  assert.ok(thailandUnclassified.ruleIds.length > 0, 'Thailand unclassified category must carry real tax rules');
+  const dualUnclassified = dualRatePack.categories.find((category) => category.id === 'unclassified')!;
+  const flatUnclassified = flatRatePack.categories.find((category) => category.id === 'unclassified')!;
+  assert.ok(dualUnclassified.ruleIds.length > 0, 'dual-rate unclassified category must carry real tax rules');
+  assert.ok(flatUnclassified.ruleIds.length > 0, 'flat-rate unclassified category must carry real tax rules');
 });
 
 test('products without a resolved tax category charge no tax, regardless of legacy tax_type/tax_rate', () => {

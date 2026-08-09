@@ -17,6 +17,7 @@ import {
   ChefHat,
   UserCircle,
   MessageCircle,
+  LifeBuoy,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -108,16 +109,11 @@ export default function AppSidebar() {
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link href={homeHref}>
-                <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-md bg-sidebar overflow-hidden">
-                  <img src="/logo.png" alt={t('common.logoAlt')} className="w-6 h-6 object-contain" />
+                <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-semibold">
+                  {(currentTenant?.business_name || t('common.brandName')).charAt(0).toUpperCase()}
                 </div>
                 <div className="flex flex-col gap-0.5 min-w-0 leading-none">
                   <span className="font-semibold truncate">{currentTenant?.business_name || t('common.brandName')}</span>
-                  {currentTenant && (
-                    <span className="text-xs text-muted-foreground truncate">
-                      {currentTenant.business_name}
-                    </span>
-                  )}
                 </div>
               </Link>
             </SidebarMenuButton>
@@ -136,8 +132,8 @@ export default function AppSidebar() {
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
                       <Link href={item.href} onClick={closeMobile}>
-                        <span className="relative shrink-0">
-                          <item.icon />
+                        <span className="relative flex size-4 shrink-0 items-center justify-center">
+                          <item.icon className="size-4 shrink-0" />
                           {item.href === '/settings' && emailNeedsAttention && (
                             <span aria-label="Email verification required" className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
                           )}
@@ -155,6 +151,14 @@ export default function AppSidebar() {
 
       <SidebarFooter>
         <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton asChild isActive={pathname === '/support'} tooltip={t('nav.support')}>
+              <Link href="/support" onClick={closeMobile}>
+                <LifeBuoy />
+                <span>{t('nav.support')}</span>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton onClick={toggleSidebar} tooltip={t('nav.toggleSidebar')}>
               <PanelLeft />

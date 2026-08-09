@@ -14,6 +14,7 @@ import type { Order, Bill } from '@/lib/types';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 import { parseDbTimestamp } from '@/lib/utils';
 import { usePrinterStore } from '@/hooks/usePrinter';
+import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter } from 'next/navigation';
@@ -457,7 +458,7 @@ export default function OrdersPage() {
     try {
       // Actually attempt the print first — only log/report success if the printer accepted the job,
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
-      await printBill(
+      const printWarnings = await printBill(
         { ...order.bill, order },
         {
           business_name: currentTenant?.business_name || t('common.businessNameFallback'),
@@ -468,6 +469,7 @@ export default function OrdersPage() {
       );
       await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
       toast.success(isReprint ? t('orders.printReceiptReprint') : t('orders.printReceipt'));
+      showPrintWarningsToast(printWarnings);
       fetchPrintHistory(billId);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'check printer connection';

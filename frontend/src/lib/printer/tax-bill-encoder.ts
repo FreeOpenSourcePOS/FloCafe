@@ -1,5 +1,5 @@
 /**
- * gst-bill-encoder.ts
+ * tax-bill-encoder.ts
  *
  * Detailed tax billing receipt encoder for ESC/POS thermal printers.
  * Supports both 58mm (2.5") and 80mm (3.5") paper widths.
@@ -12,25 +12,27 @@ import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
+import { safePrinterText, type PrintWarning } from './warnings';
 
-export interface GstBillOptions {
-  /** 58 mm (2.5", 32 chars) or 80 mm (3.5", 48 chars). Default: 58 */
+export interface TaxBillOptions {
+  /** 58 mm (2.5", 42 chars) or 80 mm (3.5", 48 chars). Default: 58 */
   paperWidth?: 58 | 80;
   /** Show "Thank you" footer. Default: true */
   showFooter?: boolean;
   /** Business tax registration number */
-  gstin?: string;
+  taxRegistrationNumber?: string;
   /** Business address */
   address?: string;
   /** Business phone */
   phone?: string;
-  /** State code for GST calculation */
+  /** State code for tax calculation */
   stateCode?: string;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
   useUnicode?: boolean;
 }
 
-const CHARS: Record<58 | 80, number> = { 58: 32, 80: 48 };
+// Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
+const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
 
 /**
  * Mask phone number for receipt display — shows only last 4 digits.
@@ -43,12 +45,13 @@ function maskPhoneOnReceipt(phone: string): string {
 /**
  * Build a detailed tax bill byte array from a Bill object.
  */
-export function buildGstBillBytes(
+export function buildTaxBillBytes(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
-  opts: GstBillOptions = {}
+  opts: TaxBillOptions = {},
+  warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58, showFooter = true, gstin, address, phone, useUnicode = false } = opts;
+  const { paperWidth = 58, showFooter = true, taxRegistrationNumber, address, phone, useUnicode = false } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
@@ -63,17 +66,19 @@ export function buildGstBillBytes(
 
   // ── Header ────────────────────────────────────────────────────────────────
   enc.initialize().align('center');
-  enc.bold(true).width(2).height(2).text(truncate(tenant.business_name, 16)).width(1).height(1);
+  enc.bold(true).width(2).height(2);
+  safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
+  enc.width(1).height(1);
   enc.bold(false).newline();
 
   if (address) {
-    enc.text(truncate(address, cols)).newline();
+    safePrinterText(enc, truncate(address, cols), warnings).newline();
   }
   if (phone) {
-    enc.text(`Ph: ${phone}`).newline();
+    safePrinterText(enc, `Ph: ${phone}`, warnings).newline();
   }
-  if (hasTax && gstin) {
-    enc.text(`${taxIdLabel}: ${gstin}`).newline();
+  if (hasTax && taxRegistrationNumber) {
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings).newline();
   }
 
   enc.newline();
@@ -84,10 +89,10 @@ export function buildGstBillBytes(
   enc.text(`Date: ${formatDate(bill.order?.created_at, locale)}`).newline();
 
   if (order?.table?.name) {
-    enc.text(`Table: ${order.table.name}`).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
   }
   if (order?.customer?.name) {
-    enc.text(`Customer: ${order.customer.name}`);
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings);
     if (order.customer.phone) {
       enc.text(` (${maskPhoneOnReceipt(order.customer.phone)})`);
     }
@@ -104,7 +109,7 @@ export function buildGstBillBytes(
   for (const item of items) {
     const line = `${item.product_name}`;
 
-    enc.text(padRow(line, formatAmount(item.total, currency, locale), cols)).newline();
+    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, locale), cols), warnings).newline();
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
@@ -120,7 +125,7 @@ export function buildGstBillBytes(
         const addonPrice = addon.price && Number(addon.price) > 0
           ? formatAmount(Number(addon.price) * qty * item.quantity, currency, locale)
           : '';
-        enc.text(padRow(addonLine, addonPrice, cols)).newline();
+        safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings).newline();
       }
     }
   }

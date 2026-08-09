@@ -31,8 +31,8 @@ export function createTestBill(overrides?: Partial<Bill>): Bill {
       { method: 'cash', amount: 504, timestamp: new Date().toISOString() },
     ],
     tax_breakdown: [
-      { title: 'CGST', rate: 6, amount: 27 },
-      { title: 'SGST', rate: 6, amount: 27 },
+      { title: 'Tax A', rate: 6, amount: 27 },
+      { title: 'Tax B', rate: 6, amount: 27 },
     ],
     order: testOrder,
     ...overrides,

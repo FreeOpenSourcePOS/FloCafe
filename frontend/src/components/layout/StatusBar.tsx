@@ -54,46 +54,61 @@ export default function StatusBar() {
 
   if (typeof window === 'undefined' || !window.electronAPI?.getStatus) return null;
 
+  const isRunning = status?.server === 'running';
+  const isPending = !status && !error;
+
   return (
-    <div className="flex items-center gap-4 px-3 py-1 bg-gray-100 border-t border-gray-200 text-xs text-gray-600">
-      <div className="flex items-center gap-1">
-        {status?.server === 'running' ? (
-          <CheckCircle size={12} className="text-green-500" />
+    <footer
+      role="status"
+      aria-live="polite"
+      className="flex h-8 shrink-0 items-center gap-3 border-t border-border/70 bg-background/95 px-3 text-[11px] text-muted-foreground shadow-[0_-1px_5px_rgba(15,23,42,0.035)] backdrop-blur supports-[backdrop-filter]:bg-background/85"
+    >
+      <div
+        className={`inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 font-medium ring-1 ring-inset ${
+          isRunning
+            ? 'bg-emerald-50 text-emerald-700 ring-emerald-200/80 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-800'
+            : isPending
+              ? 'bg-muted text-muted-foreground ring-border/70'
+              : 'bg-red-50 text-red-700 ring-red-200/80 dark:bg-red-950/40 dark:text-red-300 dark:ring-red-800'
+        }`}
+      >
+        {isRunning ? (
+          <CheckCircle size={13} />
         ) : (
-          <AlertCircle size={12} className="text-red-500" />
+          <AlertCircle size={13} />
         )}
-        <span className={status?.server === 'running' ? 'text-green-600' : 'text-red-600'}>
-          {t('nav.serverLabel')}{status?.server || t('nav.serverUnknown')}
-        </span>
-      </div>
-
-      <div className="flex items-center gap-1">
-        <Server size={12} className="text-gray-400" />
-        <span>:{status?.port || '...'}</span>
-      </div>
-
-      <div className="flex items-center gap-1">
-        <HardDrive size={12} className="text-gray-400" />
-        <span>
-          {t('nav.heapLabel')}{status?.memory.heapUsed || 0} / {status?.memory.heapTotal || 0} MB
-        </span>
-      </div>
-
-      <div className="flex items-center gap-1">
-        <Clock size={12} className="text-gray-400" />
-        <span>{t('nav.uptimeLabel')}{status ? formatUptime(status.uptime) : '...'}</span>
+        <span>{t('nav.serverLabel')}{status?.server || t('nav.serverUnknown')}</span>
       </div>
 
       {error && (
-        <div className="flex items-center gap-1 text-red-500">
-          <AlertCircle size={12} />
-          <span>{error}</span>
-        </div>
+        <span className="hidden text-red-600 sm:inline">{error}</span>
       )}
 
-      <div className="ml-auto">
+      <div className="ml-auto flex h-full items-center divide-x divide-border/70">
+        <div className="flex items-center gap-1.5 px-3" title={t('nav.portLabel')}>
+          <Server size={13} className="text-muted-foreground/70" />
+          <span className="hidden text-muted-foreground lg:inline">{t('nav.portLabel')}</span>
+          <span className="font-medium tabular-nums text-foreground/70">{status?.port || '...'}</span>
+        </div>
+
+        <div className="hidden items-center gap-1.5 px-3 md:flex" title={t('nav.heapLabel').trim()}>
+          <HardDrive size={13} className="text-muted-foreground/70" />
+          <span className="hidden text-muted-foreground xl:inline">{t('nav.heapLabel')}</span>
+          <span className="font-medium tabular-nums text-foreground/70">
+            {status?.memory.heapUsed || 0} / {status?.memory.heapTotal || 0} MB
+          </span>
+        </div>
+
+        <div className="hidden items-center gap-1.5 px-3 sm:flex" title={t('nav.uptimeLabel').trim()}>
+          <Clock size={13} className="text-muted-foreground/70" />
+          <span className="hidden text-muted-foreground xl:inline">{t('nav.uptimeLabel')}</span>
+          <span className="font-medium tabular-nums text-foreground/70">
+            {status ? formatUptime(status.uptime) : '...'}
+          </span>
+        </div>
+
         <UpdateBadge />
       </div>
-    </div>
+    </footer>
   );
 }

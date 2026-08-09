@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue } from '../db';
 import { getBundledCountryPack } from '../tax-packs/bundled';
+import { getCountryByCode, type TaxIdFormat } from '../countries';
 
 interface TenantInfo {
   country: string;
@@ -23,7 +24,7 @@ interface Product {
 }
 
 interface Customer {
-  gstin?: string;
+  taxRegistrationNumber?: string;
   customer_state_code?: string;
 }
 
@@ -101,6 +102,66 @@ export function getActiveCountryPack(country: string): CountryPack {
   return getBundledCountryPack(country);
 }
 
+// "The taxation module is enabled" means an official (non-local) pack is
+// actually active for this country — the bundled/manual local pack never
+// carries a verified registration-number format, so it never gates entry.
+export function isTaxModuleActiveForCountry(country: string): boolean {
+  if (getSettingValue('taxes_enabled') !== 'true') return false;
+  try {
+    return getActiveCountryPack(country).publisher !== 'local';
+  } catch {
+    return false;
+  }
+}
+
+export function resolveTaxIdFormat(country: string): TaxIdFormat | null {
+  if (!isTaxModuleActiveForCountry(country)) return null;
+  return getCountryByCode(country)?.taxIdFormat || null;
+}
+
+export function validateTaxRegistrationNumber(
+  country: string,
+  value: string,
+): { valid: boolean; format: TaxIdFormat | null } {
+  const format = resolveTaxIdFormat(country);
+  if (!format || !value) return { valid: true, format };
+  let regex: RegExp;
+  try {
+    regex = new RegExp(format.pattern, 'i');
+  } catch {
+    return { valid: true, format: null };
+  }
+  return { valid: regex.test(value.trim()), format };
+}
+
+// A representative rate for display only (product tax-category picker,
+// products list) — the intrastate/default rule set for this business type,
+// summing every matching percent component (e.g. CGST + SGST). Authoritative
+// calculation always goes through TaxEngine.calculate, which also resolves
+// the interstate variant per transaction; this never feeds a checkout total.
+export function previewCategoryRate(
+  pack: CountryPack,
+  businessType: string,
+  categoryId: string,
+): { percent: number; label: string } | null {
+  const category = pack.categories.find((candidate) => candidate.id === categoryId);
+  if (!category) return null;
+  const percentRules = pack.rules.filter((rule) => {
+    if (rule.type !== 'percent' || !rule.categoryIds.includes(categoryId)) return false;
+    const conditions = rule.conditions;
+    if (!conditions) return true;
+    if (conditions.businessTypes && !conditions.businessTypes.includes(businessType)) return false;
+    if (conditions.customerStateRelation === 'interstate') return false;
+    return true;
+  });
+  if (percentRules.length === 0) return null;
+  const percent = percentRules.reduce((sum, rule) => sum + Number(rule.rate || 0), 0);
+  return {
+    percent: Math.round(percent * 100) / 100,
+    label: percentRules.map((rule) => `${rule.label} ${rule.rate}%`).join(' + '),
+  };
+}
+
 export function hasConfiguredTaxCategories(pack: CountryPack, businessType: string): boolean {
   return pack.categories.some((category) => category.ruleIds.some((ruleId) => {
     const rule = pack.rules.find((candidate) => candidate.id === ruleId);
@@ -159,7 +220,7 @@ export function calculateItemTax(
         transactionDate: new Date().toISOString(),
         customer: customer
           ? {
-            registrationNumber: customer.gstin,
+            registrationNumber: customer.taxRegistrationNumber,
             stateCode: customer.customer_state_code,
           }
           : null,
@@ -306,7 +367,7 @@ export function calculateConfiguredChargeTaxes(
         transactionDate: new Date().toISOString(),
         customer: customer
           ? {
-            registrationNumber: customer.gstin,
+            registrationNumber: customer.taxRegistrationNumber,
             stateCode: customer.customer_state_code,
           }
           : null,

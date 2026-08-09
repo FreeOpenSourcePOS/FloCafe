@@ -1,24 +1,24 @@
 {
   "schemaVersion": 1,
-  "id": "official-india",
+  "id": "test-dual-rate-pack",
   "publisher": "FreeOpenSourcePOS",
   "version": "1.0.0",
-  "country": "IN",
+  "country": "ZZ",
   "jurisdiction": "*",
-  "currency": "INR",
+  "currency": "ZZZ",
   "effectiveFrom": "2026-01-01",
   "publishedAt": "2026-01-01",
   "minFloVersion": "2.4.0",
   "taxPoint": "finalized_at",
   "inclusivePricingDefault": false,
-  "registrationNumberLabel": "GSTIN",
+  "registrationNumberLabel": "Tax ID",
   "categories": [
-    { "id": "standard", "label": "Standard", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
-    { "id": "packaging", "label": "Packaging", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
-    { "id": "delivery", "label": "Delivery", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
-    { "id": "service_charge", "label": "Service charge", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
-    { "id": "addon", "label": "Add-on", "ruleIds": ["b-cgst", "a-sgst", "igst"] },
-    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["b-cgst", "a-sgst", "igst"] }
+    { "id": "standard", "label": "Standard", "ruleIds": ["rate-a", "rate-b", "rate-c"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["rate-a", "rate-b", "rate-c"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["rate-a", "rate-b", "rate-c"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["rate-a", "rate-b", "rate-c"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["rate-a", "rate-b", "rate-c"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["rate-a", "rate-b", "rate-c"] }
   ],
   "defaultCategories": {
     "product": "standard",
@@ -30,8 +30,8 @@
   "unclassifiedCategoryId": "unclassified",
   "rules": [
     {
-      "id": "b-cgst",
-      "label": "CGST",
+      "id": "rate-a",
+      "label": "Tax A",
       "type": "percent",
       "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
       "rate": "2.5",
@@ -41,8 +41,8 @@
       }
     },
     {
-      "id": "a-sgst",
-      "label": "SGST",
+      "id": "rate-b",
+      "label": "Tax B",
       "type": "percent",
       "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
       "rate": "2.5",
@@ -52,8 +52,8 @@
       }
     },
     {
-      "id": "igst",
-      "label": "IGST",
+      "id": "rate-c",
+      "label": "Tax C",
       "type": "percent",
       "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
       "rate": "5",

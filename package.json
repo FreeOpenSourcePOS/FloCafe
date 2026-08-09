@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "2.7.8",
+  "version": "2.9.2",
   "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
     "node": ">=22.0.0"
@@ -332,9 +332,16 @@
       "base": "core24",
       "core24": {
         "confinement": "strict",
-        "useDestructiveMode": true,
+        "useLXD": true,
+        "extensions": [
+          "gnome"
+        ],
+        "stagePackages": [
+          "default"
+        ],
         "plugs": [
           "default",
+          "browser-support",
           "cups-control",
           "avahi-observe",
           "avahi-control",

@@ -1,0 +1,531 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1280, initial-scale=1">
+  <title>FloCafe GitHub Social Preview</title>
+  <style>
+    :root {
+      --brand: #3248ff;
+      --brand-dark: #1324dc;
+      --ink: #111827;
+      --muted: #6b7280;
+      --line: #e5e7eb;
+      --panel: #ffffff;
+      --soft: #f6f8ff;
+      --success: #00cc61;
+      --teal: #0d9488;
+      --orange: #f97316;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 1280px;
+      height: 640px;
+      margin: 0;
+      overflow: hidden;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 18%, rgba(50, 72, 255, 0.16), transparent 30%),
+        linear-gradient(135deg, #ffffff 0%, #f7f8ff 52%, #eef2ff 100%);
+    }
+
+    .canvas {
+      position: relative;
+      display: grid;
+      grid-template-columns: 410px 1fr;
+      gap: 44px;
+      width: 1280px;
+      height: 640px;
+      padding: 56px 64px;
+    }
+
+    .brand-block {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-width: 0;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 34px;
+    }
+
+    .logo-box {
+      display: grid;
+      width: 76px;
+      height: 76px;
+      place-items: center;
+      border: 1px solid rgba(50, 72, 255, 0.18);
+      border-radius: 18px;
+      background: #ffffff;
+      box-shadow: 0 18px 36px rgba(50, 72, 255, 0.14);
+    }
+
+    .logo-box img {
+      width: 56px;
+      height: 56px;
+    }
+
+    .brand-name {
+      margin: 0;
+      font-size: 56px;
+      line-height: 0.92;
+      letter-spacing: 0;
+      color: #0f172a;
+    }
+
+    .brand-kicker {
+      margin-top: 8px;
+      color: var(--brand);
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .headline {
+      max-width: 390px;
+      margin: 0 0 22px;
+      color: #111827;
+      font-size: 32px;
+      line-height: 1.12;
+      letter-spacing: 0;
+      font-weight: 800;
+    }
+
+    .subhead {
+      max-width: 390px;
+      margin: 0;
+      color: #4b5563;
+      font-size: 18px;
+      line-height: 1.45;
+      font-weight: 500;
+    }
+
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 34px;
+    }
+
+    .chip {
+      padding: 10px 13px;
+      border: 1px solid rgba(50, 72, 255, 0.18);
+      border-radius: 999px;
+      color: #1f2bd8;
+      background: rgba(255, 255, 255, 0.78);
+      font-size: 14px;
+      font-weight: 700;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+
+    .app-frame {
+      align-self: center;
+      width: 680px;
+      height: 510px;
+      overflow: hidden;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+      border-radius: 24px;
+      background: #ffffff;
+      box-shadow:
+        0 40px 80px rgba(15, 23, 42, 0.16),
+        0 0 0 10px rgba(255, 255, 255, 0.68);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 54px;
+      padding: 0 20px;
+      border-bottom: 1px solid var(--line);
+      background: #fbfcff;
+    }
+
+    .traffic {
+      display: flex;
+      gap: 8px;
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: #cbd5e1;
+    }
+
+    .dot:nth-child(1) {
+      background: #ff5f57;
+    }
+
+    .dot:nth-child(2) {
+      background: #ffbd2e;
+    }
+
+    .dot:nth-child(3) {
+      background: #28c840;
+    }
+
+    .sync {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #16a34a;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .sync::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--success);
+      box-shadow: 0 0 0 5px rgba(0, 204, 97, 0.12);
+    }
+
+    .app-body {
+      display: grid;
+      grid-template-columns: 154px 1fr;
+      height: 456px;
+    }
+
+    .sidebar {
+      padding: 18px 12px;
+      border-right: 1px solid var(--line);
+      background: #f8fafc;
+    }
+
+    .mini-brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 22px;
+      padding: 5px 7px;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .mini-brand img {
+      width: 26px;
+      height: 26px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      height: 34px;
+      margin-bottom: 7px;
+      padding: 0 10px;
+      border-radius: 9px;
+      color: #64748b;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .nav-item::before {
+      content: "";
+      width: 12px;
+      height: 12px;
+      border-radius: 4px;
+      background: currentColor;
+      opacity: 0.55;
+    }
+
+    .nav-item.active {
+      color: var(--brand);
+      background: #e8ebff;
+    }
+
+    .content {
+      padding: 24px;
+      background: #ffffff;
+    }
+
+    .content-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+
+    .content-head h2 {
+      margin: 0;
+      font-size: 24px;
+      letter-spacing: 0;
+    }
+
+    .date-pill {
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      color: #475569;
+      background: #ffffff;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .stat {
+      min-height: 100px;
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #f9fafb;
+    }
+
+    .stat.green {
+      border-color: #bbf7d0;
+      background: #f0fdf4;
+    }
+
+    .stat.blue {
+      border-color: #bfdbfe;
+      background: #eff6ff;
+    }
+
+    .stat.teal {
+      border-color: #99f6e4;
+      background: #f0fdfa;
+    }
+
+    .label {
+      margin-bottom: 12px;
+      color: #64748b;
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .value {
+      color: #0f172a;
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .dash-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .panel {
+      overflow: hidden;
+      border: 1px solid #eef2f7;
+      border-radius: 15px;
+      background: var(--panel);
+    }
+
+    .panel-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 14px;
+      border-bottom: 1px solid #eef2f7;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .view-all {
+      color: var(--brand);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 10px 14px;
+      border-bottom: 1px solid #f8fafc;
+      font-size: 12px;
+    }
+
+    .row:last-child {
+      border-bottom: 0;
+    }
+
+    .row-main {
+      min-width: 0;
+    }
+
+    .row-name {
+      margin-bottom: 3px;
+      color: #111827;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .row-meta {
+      color: #94a3b8;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .amount {
+      color: #111827;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .status {
+      color: var(--orange);
+      font-size: 11px;
+      font-weight: 900;
+    }
+
+    .footer-line {
+      position: absolute;
+      left: 64px;
+      bottom: 34px;
+      color: #64748b;
+      font-size: 14px;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <main class="canvas" aria-label="FloCafe social preview">
+    <section class="brand-block">
+      <div class="brand-row">
+        <div class="logo-box">
+          <img src="../logo/Flo.svg" alt="">
+        </div>
+        <div>
+          <h1 class="brand-name">FloCafe</h1>
+          <div class="brand-kicker">from FloPOS</div>
+        </div>
+      </div>
+      <p class="headline">Free, open-source restaurant POS that runs locally.</p>
+      <p class="subhead">Orders, tables, billing, KDS, printers, staff access, and reporting - built for cafes and restaurants that want to own their data.</p>
+      <div class="chips">
+        <span class="chip">Local-first</span>
+        <span class="chip">No subscriptions</span>
+        <span class="chip">Electron + Next.js</span>
+      </div>
+    </section>
+
+    <section class="app-frame">
+      <div class="topbar">
+        <div class="traffic" aria-hidden="true">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+        </div>
+        <div class="sync">Local data stays yours</div>
+      </div>
+      <div class="app-body">
+        <aside class="sidebar">
+          <div class="mini-brand">
+            <img src="../logo/Flo.svg" alt="">
+            <span>FloCafe</span>
+          </div>
+          <div class="nav-item">POS</div>
+          <div class="nav-item active">Dashboard</div>
+          <div class="nav-item">Orders</div>
+          <div class="nav-item">Products</div>
+          <div class="nav-item">Tables</div>
+          <div class="nav-item">KDS</div>
+          <div class="nav-item">Customers</div>
+        </aside>
+        <div class="content">
+          <div class="content-head">
+            <h2>Dashboard</h2>
+            <div class="date-pill">Today</div>
+          </div>
+          <div class="stat-grid">
+            <div class="stat green">
+              <div class="label">Today's Sales</div>
+              <div class="value">₹86,430</div>
+            </div>
+            <div class="stat blue">
+              <div class="label">Running Orders</div>
+              <div class="value">18</div>
+            </div>
+            <div class="stat teal">
+              <div class="label">Avg Order Value</div>
+              <div class="value">₹620</div>
+            </div>
+          </div>
+          <div class="dash-grid">
+            <section class="panel">
+              <div class="panel-title">
+                <span>Recent Orders</span>
+                <span class="view-all">View all</span>
+              </div>
+              <div class="row">
+                <div class="row-main">
+                  <div class="row-name">#FC-1042 <span class="status">preparing</span></div>
+                  <div class="row-meta">Table 7 - 4 items</div>
+                </div>
+                <div class="amount">₹1,240</div>
+              </div>
+              <div class="row">
+                <div class="row-main">
+                  <div class="row-name">#FC-1041</div>
+                  <div class="row-meta">Walk-in - prepaid</div>
+                </div>
+                <div class="amount">₹480</div>
+              </div>
+              <div class="row">
+                <div class="row-main">
+                  <div class="row-name">#FC-1040</div>
+                  <div class="row-meta">Table 3 - served</div>
+                </div>
+                <div class="amount">₹2,180</div>
+              </div>
+            </section>
+            <section class="panel">
+              <div class="panel-title">
+                <span>Top Products Today</span>
+                <span class="view-all">View all</span>
+              </div>
+              <div class="row">
+                <div class="row-main">
+                  <div class="row-name">Cappuccino</div>
+                  <div class="row-meta">46 sold - 38 orders</div>
+                </div>
+                <div class="amount">₹6,900</div>
+              </div>
+              <div class="row">
+                <div class="row-main">
+                  <div class="row-name">Paneer Sandwich</div>
+                  <div class="row-meta">31 sold - 25 orders</div>
+                </div>
+                <div class="amount">₹5,270</div>
+              </div>
+              <div class="row">
+                <div class="row-main">
+                  <div class="row-name">Cold Coffee</div>
+                  <div class="row-meta">29 sold - 24 orders</div>
+                </div>
+                <div class="amount">₹4,640</div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="footer-line">github.com/FreeOpenSourcePOS/FloCafe</div>
+  </main>
+</body>
+</html>

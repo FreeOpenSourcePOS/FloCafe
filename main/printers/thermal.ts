@@ -24,6 +24,13 @@ export type PrintResult = {
   jobId?: number;
   driverName?: string;
   printerStatus?: number;
+  warnings?: PrintWarning[];
+};
+
+export type PrintWarning = {
+  field: string;
+  text: string;
+  message: string;
 };
 
 /** Low-level dispatch result — carries the actual OS/driver reason, not just ok/fail. */
@@ -35,6 +42,7 @@ export type DispatchResult = {
   jobId?: number;
   driverName?: string;
   printerStatus?: number;
+  warnings?: PrintWarning[];
 };
 
 export type PrintFailureClass =
@@ -531,7 +539,7 @@ export async function initPrinter(): Promise<void> {
   }
 }
 
-export async function printReceipt(order: any, bill: any, business?: any, template?: string, useUnicode: boolean = false, isReprint: boolean = false): Promise<DispatchResult> {
+export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false): Promise<DispatchResult> {
   try {
     console.log('[Printer] printReceipt called, template:', template, 'useUnicode:', useUnicode, 'isReprint:', isReprint);
     const printer = getPrinterConfig();
@@ -545,8 +553,9 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
     const cols = getColumnsForPrinter(printer, profile);
 
     let data: Buffer;
+    const warnings: PrintWarning[] = [];
     try {
-      data = formatReceipt(order, bill, business, template, cols, useUnicode, isReprint, profile.cutMode);
+      data = formatReceipt(order, bill, business, template, cols, useUnicode, isReprint, profile.cutMode, warnings);
       console.log('[Printer] Receipt data length:', data.length, 'bytes');
       console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
     } catch (err) {
@@ -554,7 +563,8 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
       throw err;
     }
 
-    return await dispatchPrint(printer, data);
+    const dispatch = await dispatchPrint(printer, data);
+    return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
   } catch (error: any) {
     console.error('[Printer] Print error:', error);
     return { ok: false, detail: error?.message };
@@ -579,9 +589,11 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const locale = biz?.country ? getCountryByCode(biz.country)?.locale ?? 'en-US' : 'en-US';
     const tzOptions = biz?.timezone ? { timeZone: biz.timezone } : undefined;
 
-    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions);
+    const warnings: PrintWarning[] = [];
+    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings);
     console.log('[Printer] KOT data length:', data.length, 'bytes');
-    return await dispatchPrint(printer, data);
+    const dispatch = await dispatchPrint(printer, data);
+    return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
   } catch (error: any) {
     console.error('[Printer] KOT print error:', error);
     return { ok: false, detail: error?.message };
@@ -646,7 +658,7 @@ export async function printReceiptDetailed(...args: Parameters<typeof printRecei
   try {
     const dispatch = await printReceipt(...args);
     const result: PrintResult = dispatch.ok
-      ? { ok: true, correlationId: id, stage: 'dispatch' }
+      ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
       : {
         ok: false,
         code: 'print.receipt.failed',
@@ -658,6 +670,7 @@ export async function printReceiptDetailed(...args: Parameters<typeof printRecei
         jobId: dispatch.jobId,
         driverName: dispatch.driverName,
         printerStatus: dispatch.printerStatus,
+        warnings: dispatch.warnings,
       };
     if (!result.ok) reportPrintFailure('receipt', result);
     return result;
@@ -674,7 +687,7 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
   try {
     const dispatch = await printKOT(...args);
     const result: PrintResult = dispatch.ok
-      ? { ok: true, correlationId: id, stage: 'dispatch' }
+      ? { ok: true, correlationId: id, stage: 'dispatch', warnings: dispatch.warnings }
       : {
         ok: false,
         code: 'print.kot.failed',
@@ -686,6 +699,7 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
         jobId: dispatch.jobId,
         driverName: dispatch.driverName,
         printerStatus: dispatch.printerStatus,
+        warnings: dispatch.warnings,
       };
     if (!result.ok) reportPrintFailure('kot', result);
     return result;
@@ -729,22 +743,22 @@ function getPrinterConfig(): any {
   return db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
 }
 
-export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
+export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
   console.log('[Printer] formatReceipt - template:', template);
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
 
   const tpl = normalizeReceiptTemplate(template);
-  const biz = business || { name: 'Store', address: '', phone: '', gstin: '' };
+  const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
 
   try {
     switch (tpl) {
       case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode);
+        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
       case 'detailed':
-        return formatDetailedReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode);
+        return formatDetailedReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
       default:
-        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode);
+        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
     }
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
@@ -759,7 +773,7 @@ function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' | 'd
   return 'classic';
 }
 
-function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
+function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
 
@@ -778,7 +792,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   lines.push('{INIT}');
   if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  lines.push('{CENTER}{BOLD}' + (biz.name || 'Store') + '{/BOLD}{/CENTER}');
+  lines.push('{STORE_NAME}{CENTER}{BOLD}' + (biz.name || 'Store') + '{/BOLD}{/CENTER}');
   lines.push(bar);
   lines.push('Bill #: ' + (bill.bill_number || order.order_number));
   lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
@@ -830,14 +844,14 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   lines.push(bar);
   if (biz.address) lines.push(biz.address);
   if (biz.phone) lines.push('Ph: ' + biz.phone);
-  if (hasTax && biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
+  if (hasTax && biz.taxRegistrationNumber) lines.push(taxIdLabel + ': ' + biz.taxRegistrationNumber);
   lines.push('{CENTER}Thank you!{/CENTER}');
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode });
+  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
 }
 
-function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
+function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
 
@@ -855,7 +869,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   // Header: store name (Font A, big + bold), then customer name (Font B) and
   // mobile number, each only if the bill actually has that data.
-  lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + (biz.name || 'Store') + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  lines.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + (biz.name || 'Store') + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
   if (biz.customer_name) lines.push('{CENTER}{FONT_B}' + biz.customer_name + '{/FONT_B}{/CENTER}');
   if (biz.customer_phone) lines.push('{CENTER}' + biz.customer_phone + '{/CENTER}');
 
@@ -935,10 +949,10 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode });
+  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
 }
 
-function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full'): Buffer {
+function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
 
@@ -957,7 +971,7 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
 
   lines.push('{INIT}');
   if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  lines.push('{CENTER}{BOLD}' + (biz.name || 'Store').toUpperCase() + '{/BOLD}{/CENTER}');
+  lines.push('{STORE_NAME}{CENTER}{BOLD}' + (biz.name || 'Store').toUpperCase() + '{/BOLD}{/CENTER}');
   lines.push(bar);
   lines.push(`{CENTER}${hasTax ? 'TAX INVOICE' : 'INVOICE'}{/CENTER}`);
   lines.push(bar);
@@ -1022,11 +1036,11 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   lines.push(bar);
   if (biz.address) lines.push('Address: ' + biz.address);
   if (biz.phone) lines.push('Phone: ' + biz.phone);
-  if (hasTax && biz.gstin) lines.push(taxIdLabel + ': ' + biz.gstin);
+  if (hasTax && biz.taxRegistrationNumber) lines.push(taxIdLabel + ': ' + biz.taxRegistrationNumber);
   lines.push('{CENTER}Thank you for your business!{/CENTER}');
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode });
+  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
 }
 
 // Item row layout: [ name (nameLen) ][ qty (4) ][ amount right-aligned (amtLen) ].
@@ -1073,7 +1087,7 @@ function truncate(text: string, length: number): string {
   return text.length > length ? text.substring(0, length - 2) + '..' : text;
 }
 
-export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any): Buffer {
+export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[]): Buffer {
   const lines: string[] = [];
   const bar = '='.repeat(cols);
 
@@ -1106,7 +1120,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   lines.push(bar);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode });
+  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
 }
 
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full'): Buffer {
@@ -1154,7 +1168,7 @@ function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
   return prefix.length >= 2 ? prefix : ' '.repeat(2 - prefix.length) + prefix;
 }
 
-export function buildEscPos(lines: string[], useUnicode: boolean = false, options: { cutMode?: PrinterCutMode } = {}): Buffer {
+export function buildEscPos(lines: string[], useUnicode: boolean = false, options: { cutMode?: PrinterCutMode } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
 
   const resetAllStyles = () => {
@@ -1181,6 +1195,26 @@ export function buildEscPos(lines: string[], useUnicode: boolean = false, option
         buf.push(0x1D, 0x56, 0x42, 0x00);
       } else {
         buf.push(0x1D, 0x56, 0x00);
+      }
+      continue;
+    }
+
+    const isStoreName = line.includes('{STORE_NAME}');
+    line = line.replace(/\{STORE_NAME\}/g, '');
+    let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
+    // Currency symbols are an existing, explicit printer option. Do not treat
+    // them as a conflicting line; unsupported scripts (Arabic, CJK, emoji,
+    // etc.) are different because generic ESC/POS printers cannot shape or
+    // render them reliably.
+    const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
+    if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
+      if (warnings) {
+        const text = printableLine.trim();
+        warnings.push({
+          field: isStoreName ? 'store name' : 'receipt line',
+          text,
+          message: `${isStoreName ? 'Store name' : 'Receipt line'} was not printed because it contains unsupported characters: ${text}`,
+        });
       }
       continue;
     }

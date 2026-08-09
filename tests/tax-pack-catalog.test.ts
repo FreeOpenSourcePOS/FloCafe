@@ -13,9 +13,9 @@ import {
   type TaxPackCatalog,
   type TaxPackCatalogEntry,
 } from '../main/tax-packs/catalog';
-import indiaPack from '../main/tax-packs/in.json';
+import dualRatePack from './fixtures/synthetic-dual-rate-pack.json';
 
-const releaseTag = 'tax-pack-official-india-v1.1.0';
+const releaseTag = 'tax-pack-test-dual-rate-pack-v1.1.0';
 const releaseBase = `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${releaseTag}`;
 
 function response(value: string, status = 200): Response {
@@ -28,7 +28,7 @@ function response(value: string, status = 200): Response {
 function signedFixture() {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   const pack = {
-    ...indiaPack,
+    ...dualRatePack,
     version: '1.1.0',
     publishedAt: '2026-07-30',
   };
@@ -79,7 +79,7 @@ test('catalog discovery finds the newest tax-pack release and verifies its detac
   assert.equal(remote.releaseTag, releaseTag);
   assert.deepEqual(remote.catalog, fixture.catalog);
   const artifact = await downloadAndVerifyTaxPack(fixture.entry, fetchImpl, fixture.publicKey);
-  assert.equal(artifact.pack.id, 'official-india');
+  assert.equal(artifact.pack.id, 'test-dual-rate-pack');
   assert.equal(artifact.pack.version, '1.1.0');
   assert.equal(artifact.signature, fixture.signature);
   assert.equal(verifyTaxPackSignature(fixture.packJson, fixture.signature, fixture.publicKey), true);
@@ -132,22 +132,22 @@ test('release builder signs exact pack bytes and preserves other catalog entries
   const packsDir = path.join(tempDir, 'packs');
   const outputDir = path.join(tempDir, 'out');
   fs.mkdirSync(packsDir);
-  const pack = { ...indiaPack, version: '1.1.0', publishedAt: '2026-07-30' };
-  fs.writeFileSync(path.join(packsDir, 'in.json'), `${JSON.stringify(pack, null, 2)}\n`);
+  const pack = { ...dualRatePack, version: '1.1.0', publishedAt: '2026-07-30' };
+  fs.writeFileSync(path.join(packsDir, 'dual-rate.json'), `${JSON.stringify(pack, null, 2)}\n`);
   const existingCatalogPath = path.join(tempDir, 'catalog.json');
   fs.writeFileSync(existingCatalogPath, JSON.stringify({
     schemaVersion: 1,
     generatedAt: '2026-07-29T00:00:00.000Z',
     packs: [{
-      id: 'official-thailand',
+      id: 'test-flat-rate-pack',
       publisher: 'FreeOpenSourcePOS',
-      country: 'TH',
+      country: 'YY',
       jurisdiction: '*',
       version: '1.0.0',
       publishedAt: '2026-01-01',
       minFloVersion: '2.4.0',
-      downloadUrl: 'https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/tax-pack-official-thailand-v1.0.0/official-thailand-v1.0.0.json',
-      signatureUrl: 'https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/tax-pack-official-thailand-v1.0.0/official-thailand-v1.0.0.json.sig',
+      downloadUrl: 'https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/tax-pack-test-flat-rate-pack-v1.0.0/test-flat-rate-pack-v1.0.0.json',
+      signatureUrl: 'https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/tax-pack-test-flat-rate-pack-v1.0.0/test-flat-rate-pack-v1.0.0.json.sig',
       digest: '0'.repeat(64),
     }],
   }));
@@ -166,13 +166,13 @@ test('release builder signs exact pack bytes and preserves other catalog entries
   const emittedCatalog = JSON.parse(fs.readFileSync(path.join(outputDir, 'catalog.json'), 'utf8'));
   assert.equal(verifyTaxPackSignature(emittedPack, emittedSignature, publicKey), true);
   assert.deepEqual(emittedCatalog.packs.map((entry: TaxPackCatalogEntry) => entry.id), [
-    'official-india',
-    'official-thailand',
+    'test-dual-rate-pack',
+    'test-flat-rate-pack',
   ]);
   assert.equal(emittedCatalog.packs[0].digest, taxPackSha256(emittedPack));
   assert.throws(
     () => prepareRelease({
-      tag: 'tax-pack-official-india-v9.9.9',
+      tag: 'tax-pack-test-dual-rate-pack-v9.9.9',
       packsDirectory: packsDir,
       outputDirectory: outputDir,
       signingKeyValue: privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),

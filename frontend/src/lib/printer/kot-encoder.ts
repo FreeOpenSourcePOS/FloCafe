@@ -8,15 +8,17 @@
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 import type { Order } from '@/lib/types';
 import { formatTime } from './format-date';
+import { safePrinterText, type PrintWarning } from './warnings';
 
 export interface KotOptions {
-  /** 58 mm (32 chars) or 80 mm (48 chars). Default: 58 */
+  /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
   paperWidth?: 58 | 80;
   /** Kitchen station name to print on KOT */
   stationName?: string;
 }
 
-const CHARS: Record<58 | 80, number> = { 58: 32, 80: 48 };
+// Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
+const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
 
 /**
  * Build a KOT byte array from an Order object.
@@ -24,7 +26,8 @@ const CHARS: Record<58 | 80, number> = { 58: 32, 80: 48 };
  */
 export function buildKotBytes(
   order: Order,
-  opts: KotOptions = {}
+  opts: KotOptions = {},
+  warnings?: PrintWarning[]
 ): Uint8Array {
   const { paperWidth = 58 } = opts;
   const cols = CHARS[paperWidth];
@@ -42,14 +45,14 @@ export function buildKotBytes(
   enc.text(`Order #${order.order_number}`).newline();
 
   if (order.table) {
-    enc.text(`Table: ${order.table.name}`).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
   }
 
   const orderType = order.type.replace('_', ' ').toUpperCase();
   enc.text(`Type: ${orderType}`).newline();
 
   if (order.customer) {
-    enc.text(`Customer: ${order.customer.name}`).newline();
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings).newline();
   }
 
   enc.bold(false);
@@ -70,7 +73,8 @@ export function buildKotBytes(
 
     // Item name with quantity
     const qtyName = `${item.quantity}x ${item.product_name}`;
-    enc.bold(true).text(truncate(qtyName, cols)).newline();
+    enc.bold(true);
+    safePrinterText(enc, truncate(qtyName, cols), warnings).newline();
     enc.bold(false);
 
     // Addons can come from older/API paths as a JSON string. Normalize before
@@ -81,14 +85,14 @@ export function buildKotBytes(
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
           const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
-          enc.text(`   + ${truncate(addonText, cols - 4)}`).newline();
+          safePrinterText(enc, `   + ${truncate(addonText, cols - 4)}`, warnings).newline();
         }
       }
     }
 
     // Special instructions
     if (item.special_instructions) {
-      enc.text(`   >> ${truncate(item.special_instructions, cols - 6)}`).newline();
+      safePrinterText(enc, `   >> ${truncate(item.special_instructions, cols - 6)}`, warnings).newline();
     }
 
     enc.newline();

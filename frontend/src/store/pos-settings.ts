@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
-export type PaperSize = 'thermal58' | 'thermal80' | 'a4' | 'a5';
+export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
 export type BillTemplate = 'classic' | 'compact' | 'detailed';
 
@@ -28,17 +28,16 @@ export interface PosSettingsState {
   // Web print settings
   defaultPrintMode: 'thermal' | 'web';
   webPrintSize: PaperSize;
-  includeGstOnBill: boolean;
   // Bill template settings
   billTemplate: BillTemplate;
   billFooterMessage: string;
-  billGstin: string;
+  billTaxRegistrationNumber: string;
   billAddress: string;
   billPhone: string;
   billShowName: boolean;
   billShowAddress: boolean;
   billShowPhone: boolean;
-  billShowGstn: boolean;
+  billShowTaxId: boolean;
   // Thermal printer unicode support
   printerUseUnicode: boolean;
   // Kitchen workflow toggles (issue #133) — business-level settings, synced
@@ -62,16 +61,15 @@ export interface PosSettingsState {
   setWhatsappShareEnabled: (enabled: boolean) => void;
   setDefaultPrintMode: (mode: 'thermal' | 'web') => void;
   setWebPrintSize: (size: PaperSize) => void;
-  setIncludeGstOnBill: (include: boolean) => void;
   setBillTemplate: (t: BillTemplate) => void;
   setBillFooterMessage: (m: string) => void;
-  setBillGstin: (g: string) => void;
+  setBillTaxRegistrationNumber: (g: string) => void;
   setBillAddress: (a: string) => void;
   setBillPhone: (p: string) => void;
   setBillShowName: (v: boolean) => void;
   setBillShowAddress: (v: boolean) => void;
   setBillShowPhone: (v: boolean) => void;
-  setBillShowGstn: (v: boolean) => void;
+  setBillShowTaxId: (v: boolean) => void;
   setBillingType: (v: 'postpaid' | 'prepaid') => void;
   setTablesRequired: (v: boolean) => void;
   setPrinterUseUnicode: (v: boolean) => void;
@@ -98,18 +96,17 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       whatsappShareEnabled: true,
       // Web print defaults
       defaultPrintMode: 'thermal',
-      webPrintSize: 'a4',
-      includeGstOnBill: false,
+      webPrintSize: 'thermal58',
       // Bill template defaults
       billTemplate: 'classic',
       billFooterMessage: '',
-      billGstin: '',
+      billTaxRegistrationNumber: '',
       billAddress: '',
       billPhone: '',
       billShowName: true,
       billShowAddress: true,
       billShowPhone: true,
-      billShowGstn: false,
+      billShowTaxId: false,
       printerUseUnicode: false,
       kdsEnabled: true,
       kotPrintingEnabled: true,
@@ -131,16 +128,15 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setWhatsappShareEnabled: (enabled) => set({ whatsappShareEnabled: enabled }),
       setDefaultPrintMode: (mode) => set({ defaultPrintMode: mode }),
       setWebPrintSize: (size) => set({ webPrintSize: size }),
-      setIncludeGstOnBill: (include) => set({ includeGstOnBill: include }),
       setBillTemplate: (t) => set({ billTemplate: t }),
       setBillFooterMessage: (m) => set({ billFooterMessage: m }),
-      setBillGstin: (g) => set({ billGstin: g }),
+      setBillTaxRegistrationNumber: (g) => set({ billTaxRegistrationNumber: g }),
       setBillAddress: (a) => set({ billAddress: a }),
       setBillPhone: (p) => set({ billPhone: p }),
       setBillShowName: (v) => set({ billShowName: v }),
       setBillShowAddress: (v) => set({ billShowAddress: v }),
       setBillShowPhone: (v) => set({ billShowPhone: v }),
-      setBillShowGstn: (v) => set({ billShowGstn: v }),
+      setBillShowTaxId: (v) => set({ billShowTaxId: v }),
       setBillingType: (v) => set({ billingType: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
       setPrinterUseUnicode: (v) => set({ printerUseUnicode: v }),
@@ -157,6 +153,26 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       partialize: (s) => Object.fromEntries(
         Object.entries(s).filter(([k]) => k !== 'whatsappEnabled'),
       ) as PosSettingsState,
+      // v1: billGstin/billShowGstn (India-specific names) renamed to the
+      // generic billTaxRegistrationNumber/billShowTaxId. Carry existing
+      // browsers' saved values forward under the new keys instead of
+      // silently resetting them.
+      version: 1,
+      migrate: (persisted, version) => {
+        const state = persisted as Record<string, unknown>;
+        if (version < 1) {
+          if ('billGstin' in state) {
+            state.billTaxRegistrationNumber = state.billGstin;
+            delete state.billGstin;
+          }
+          if ('billShowGstn' in state) {
+            state.billShowTaxId = state.billShowGstn;
+            delete state.billShowGstn;
+          }
+          delete state.includeGstOnBill;
+        }
+        return state as unknown as PosSettingsState;
+      },
     }
   )
 );

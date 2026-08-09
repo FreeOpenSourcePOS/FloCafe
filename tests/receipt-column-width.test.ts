@@ -16,27 +16,27 @@ function fits(leftBudget: number, right: string, cols: number): boolean {
   return gap >= 0;
 }
 
-test('receipt column width: en-IN amounts fit in 32-col with TOTAL label', () => {
+test('receipt column width: en-IN amounts fit in 42-col with TOTAL label', () => {
   const samples = [0, 1, 12.5, 123.45, 1234.5, 12345.67, 123456.78, 9999999.99];
   for (const amount of samples) {
     const right = formatCurrency(amount, 'INR', 'en-IN');
-    assert.ok(fits(6, right, 32), `amount=${amount} -> "${right}" overflows 32-col row`);
+    assert.ok(fits(6, right, 42), `amount=${amount} -> "${right}" overflows 42-col row`);
   }
 });
 
-test('receipt column width: es-AR amounts fit in 32-col with TOTAL label', () => {
+test('receipt column width: es-AR amounts fit in 42-col with TOTAL label', () => {
   const samples = [0, 1, 12.5, 123.45, 1234.5, 12345.67, 123456.78, 9999999.99];
   for (const amount of samples) {
     const right = formatCurrency(amount, 'ARS', 'es-AR');
-    assert.ok(fits(6, right, 32), `amount=${amount} -> "${right}" overflows 32-col row`);
+    assert.ok(fits(6, right, 42), `amount=${amount} -> "${right}" overflows 42-col row`);
   }
 });
 
-test('receipt column width: en-US amounts fit in 32-col with TOTAL label', () => {
+test('receipt column width: en-US amounts fit in 42-col with TOTAL label', () => {
   const samples = [0, 1, 12.5, 123.45, 1234.5, 12345.67, 123456.78, 9999999.99];
   for (const amount of samples) {
     const right = formatCurrency(amount, 'USD', 'en-US');
-    assert.ok(fits(6, right, 32), `amount=${amount} -> "${right}" overflows 32-col row`);
+    assert.ok(fits(6, right, 42), `amount=${amount} -> "${right}" overflows 42-col row`);
   }
 });
 

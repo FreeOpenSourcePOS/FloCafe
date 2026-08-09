@@ -756,7 +756,7 @@ router.post('/ensure-country', requireRole('owner', 'manager'), async (req: Requ
 // Manual tax builder: an owner-authored local pack for countries with no
 // official plugin (or to override one). Flat only, by design — no interstate
 // or business-type conditions, no compounding. A tax category is a bucket of
-// N independently-labeled components (e.g. "Standard" -> SGST 2.5% + CGST
+// N independently-labeled components (e.g. "Standard" -> Tax 1 2.5% + Tax 2
 // 2.5%) that all apply together whenever that category is selected; see
 // resolveTaxCategory/calculateRawLine in services/tax-engine.ts, which
 // already sums every matching rule's component with no changes needed here.

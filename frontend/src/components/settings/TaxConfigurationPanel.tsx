@@ -119,7 +119,7 @@ type Calculation = {
 };
 
 // Manual tax builder — a category is just a bucket of named rate components
-// (e.g. "Standard" -> SGST 2.5% + CGST 2.5%) that all apply together. See
+// (e.g. "Standard" -> Tax 1 2.5% + Tax 2 2.5%) that all apply together. See
 // buildManualPack in main/routes/tax-packs.ts for the server-side mirror.
 type ManualComponent = { key: string; label: string; type: 'percent' | 'fixed'; value: string };
 type ManualCategory = { tempId: string; label: string; components: ManualComponent[] };
@@ -815,7 +815,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         </div>
         <p className="mt-1 text-sm text-gray-500">
           Define your own tax categories for {storeCountry || 'your store'}. Each category can hold more than one
-          named rate — for example a &quot;Standard&quot; category with SGST 2.5% + CGST 2.5%. Use this if there is
+          named rate — for example a &quot;Standard&quot; category with Tax 1 2.5% + Tax 2 2.5%. Use this if there is
           no official tax pack for your country yet, or to replace one with your own rates.
         </p>
 
@@ -843,7 +843,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                       value={component.label}
                       onChange={(event) => updateManualComponent(category.tempId, component.key, { label: event.target.value })}
                       disabled={!isOwner}
-                      placeholder="e.g. SGST"
+                      placeholder="e.g. Tax 1"
                       className="flex-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm disabled:bg-gray-100"
                     />
                     <select

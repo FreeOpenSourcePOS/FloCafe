@@ -136,7 +136,7 @@ export function validateTaxRegistrationNumber(
 
 // A representative rate for display only (product tax-category picker,
 // products list) — the intrastate/default rule set for this business type,
-// summing every matching percent component (e.g. CGST + SGST). Authoritative
+// summing every matching percent component (e.g. Tax 1 + Tax 2). Authoritative
 // calculation always goes through TaxEngine.calculate, which also resolves
 // the interstate variant per transaction; this never feeds a checkout total.
 export function previewCategoryRate(

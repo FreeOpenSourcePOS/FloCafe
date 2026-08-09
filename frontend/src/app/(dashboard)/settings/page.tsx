@@ -1826,15 +1826,14 @@ export default function SettingsPage() {
 
            <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible border-b md:border-b-0 md:border-r border-gray-200 pb-2 md:pb-0 md:pr-2">
 
-            {/* Store group */}
+            {/* General group */}
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupStore')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupGeneral')}</p>
             </div>
             <SettingsNavItem label={t('settings.storeDetails')} value="store" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tabPrinters')} value="receipts-printers" active={activeTab} onClick={setActiveTab} indent />
-            <SettingsNavItem label={t('settings.tabPrinting')} value="receipts-printing" active={activeTab} onClick={setActiveTab} indent />
+            <SettingsNavItem label={t('settings.tabPrinters')} value="receipts-printers" active={activeTab} onClick={setActiveTab} />
             {canViewTaxConfiguration && (
-              <SettingsNavItem label={t('settings.taxConfiguration')} value="tax" active={activeTab} onClick={setActiveTab} indent />
+              <SettingsNavItem label={t('settings.taxConfiguration')} value="tax" active={activeTab} onClick={setActiveTab} />
             )}
 
             {/* Operations group */}
@@ -3122,14 +3121,12 @@ export default function SettingsPage() {
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
               <strong>{t('settings.defaultPrinterTipTitle')}</strong> {t('settings.defaultPrinterTipBody')}
             </div>
-          </div>
-          </div>
-        </TabsContent>
 
-        {/* Print Options sub-page */}
-        <TabsContent value="receipts-printing">
-          <div className="pb-6 max-w-3xl">
-          <div className="space-y-6">
+            {/* Print Options — merged into the same Printers page rather than a separate tab */}
+            <div className="pt-4 border-t border-gray-100">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">{t('settings.tabPrinting')}</h2>
+            </div>
+
             {/* KOT printing on/off (issue #133) — coarser than Auto-print KOT
                 below: when this is off, no KOT ever prints, automatic or manual. */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">

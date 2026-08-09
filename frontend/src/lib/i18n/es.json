@@ -797,7 +797,7 @@
   "settings.navGroupCustomers": "Clientes",
   "settings.navGroupData": "Integraciones",
   "settings.navGroupOperations": "Operaciones",
-  "settings.navGroupStore": "Tienda",
+  "settings.navGroupGeneral": "General",
   "settings.tableInfoFailed": "No se pudo obtener la información de las tablas",
   "settings.tablesRequired": "Mesas Requeridas",
   "settings.tablesRequiredNo": "No – la mesa es opcional",

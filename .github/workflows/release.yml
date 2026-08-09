@@ -28,6 +28,28 @@ jobs:
         with:
           fetch-depth: 0 # full tag history — needed for the "Full Changelog" compare link below
 
+      - name: Validate release tag
+        # `on.push.tags: '[0-9]*'` is a glob, not a semver pattern — it
+        # matches any tag starting with a digit (e.g. "2-oops", "99999").
+        # Every step below reads VERSION from package.json, not from the
+        # pushed tag, so a malformed or mismatched tag would silently
+        # create a release titled after whatever package.json happens to
+        # say, under a ref that doesn't match it (issue #220). Fail loudly
+        # here instead, before anything is built or published, if the tag
+        # isn't a strict X.Y.Z and doesn't equal package.json's version.
+        if: github.event_name == 'push'
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION=$(node -p "require('./package.json').version")
+          if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '${TAG}' is not a valid release version (expected strict X.Y.Z, e.g. 2.9.5)."
+            exit 1
+          fi
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::Tag '${TAG}' does not match package.json version '${VERSION}'. Bump package.json and CHANGELOG.md to match the tag (or vice versa) before pushing."
+            exit 1
+          fi
+
       - name: Create GitHub release (if not exists)
         # Release notes come from CHANGELOG.md, not --generate-notes: this repo
         # pushes straight to main instead of merging PRs, so GitHub's PR-based
@@ -116,8 +138,10 @@ jobs:
         # canonical/setup-lxd action provisions it with the lxdbr0 bridge + NAT,
         # which the manual `lxd init --minimal` route failed to do (containers had
         # no network). Pattern mirrors beekeeper-studio#4427, which fixed the same
-        # broken core24 snap builds in production.
-        uses: canonical/setup-lxd@main
+        # broken core24 snap builds in production. Pinned to a commit SHA (issue
+        # #220) rather than @main, which is a mutable ref in a workflow with
+        # write permissions.
+        uses: canonical/setup-lxd@8c6a87bfb56aa48f3fb9b830baa18562d8bfd4ee # v1
 
       - name: Install snapcraft
         # Required for both matrix entries: x64 and arm64 each produce a snap.

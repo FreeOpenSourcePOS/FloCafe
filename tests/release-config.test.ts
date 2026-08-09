@@ -123,6 +123,21 @@ function run() {
   // ── release workflow uploads the auto-update manifests, not just installers ──
   const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release.yml'), 'utf8');
 
+  // issue #220: `on.push.tags: '[0-9]*'` is a glob, not a version pattern —
+  // it matches any tag starting with a digit. Every downstream step reads
+  // VERSION from package.json rather than the pushed tag, so without an
+  // explicit check a malformed or mismatched tag would silently create a
+  // release titled after whatever package.json says under an unrelated ref.
+  const createReleaseJob = workflow.split(/^\s*create-release:/m)[1]?.split(/^\s*release-linux:/m)[0] || '';
+  assert.ok(
+    /\[\[\s*"\$TAG"\s*=~\s*\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$\s*\]\]/.test(createReleaseJob),
+    'create-release job must validate the pushed tag against a strict X.Y.Z pattern before creating a release'
+  );
+  assert.ok(
+    /"\$TAG"\s*!=\s*"\$VERSION"/.test(createReleaseJob),
+    'create-release job must reject a tag that does not equal package.json\'s version'
+  );
+
   const linuxJob = workflow.split(/^\s*release-linux:/m)[1]?.split(/^\s*release-mac:/m)[0] || '';
   assert.ok(
     /update-metainfo\.js/.test(linuxJob),

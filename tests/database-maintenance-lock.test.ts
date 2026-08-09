@@ -21,7 +21,6 @@ async function run() {
     events.push('second-end');
     return 'second';
   });
-
   assert.equal(await first, 'first');
   assert.equal(await second, 'second');
   assert.deepEqual(events, ['first-start', 'first-end', 'second-start', 'second-end'], 'maintenance operations are serialized');
@@ -93,10 +92,24 @@ async function run() {
   assert.equal(authTouched, false, 'concurrent maintenance route does not reach later middleware');
   await activeRouteMaintenance;
 
+  // A maintenance route is excluded from the active-request count by the
+  // production middleware. This verifies that its handler can acquire the
+  // lock and complete its response instead of waiting for itself forever.
+  const routeApp = express();
+  routeApp.use(databaseMaintenanceMiddleware);
+  routeApp.post('/api/db/backup', async (_req, res) => {
+    await withDatabaseMaintenanceLock(async () => { await delay(5); });
+    res.json({ reached: true });
+  });
+  const routeResponse = await request(routeApp).post('/api/db/backup').timeout({ response: 500 });
+  assert.equal(routeResponse.status, 200, 'maintenance route completes through the production middleware');
+  assert.deepEqual(routeResponse.body, { reached: true });
+
   console.log('✅ Database maintenance lock tests passed');
 }
 
+const keepAlive = setInterval(() => undefined, 50);
 run().catch((error) => {
   console.error(error);
   process.exit(1);
-});
+}).finally(() => clearInterval(keepAlive));

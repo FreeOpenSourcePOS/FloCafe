@@ -17,8 +17,16 @@ let databaseMaintenanceTail: Promise<void> = Promise.resolve();
 let databaseMaintenanceActive = false;
 let activeDatabaseRequests = 0;
 let maintenanceRequestWaiters: (() => void)[] = [];
+let maintenanceDrainWaiters: (() => void)[] = [];
 const databaseMaintenanceStartListeners = new Set<() => void>();
 const databaseMaintenanceEndListeners = new Set<() => void>();
+
+function releaseMaintenanceDrainWaiters(): void {
+  if (activeDatabaseRequests !== 0) return;
+  const waiters = maintenanceDrainWaiters;
+  maintenanceDrainWaiters = [];
+  waiters.forEach((resolve) => resolve());
+}
 
 function releaseMaintenanceRequestWaiters(): void {
   if (activeDatabaseRequests !== 0 || databaseMaintenanceActive) return;
@@ -34,6 +42,7 @@ export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise
     activeDatabaseRequests += 1;
     return Promise.resolve().then(operation).finally(() => {
       activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
+      releaseMaintenanceDrainWaiters();
       releaseMaintenanceRequestWaiters();
     });
   };
@@ -57,13 +66,31 @@ export function isDatabaseMaintenanceActive(): boolean {
   return databaseMaintenanceActive;
 }
 
+const DATABASE_MAINTENANCE_ROUTES = new Set([
+  'POST /api/db/import',
+  'POST /api/db/backup',
+  'GET /api/db/download',
+  'POST /api/db-tools/initialize',
+]);
+
+function isDatabaseMaintenanceRoute(req: Request): boolean {
+  return DATABASE_MAINTENANCE_ROUTES.has(`${req.method} ${req.path}`);
+}
+
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
-  // Maintenance routes acquire the FIFO lock in their handlers. A later
-  // request must still be rejected here, before authentication or route
-  // middleware can query a database handle that the active operation may close
-  // and replace.
+  // A later request must still be rejected here, before authentication or
+  // route middleware can query a database handle that the active operation may
+  // close and replace.
   if (databaseMaintenanceActive) {
     res.status(503).json({ error: 'Database maintenance in progress' });
+    return;
+  }
+
+  // These handlers acquire the FIFO lock themselves. Do not count the lock
+  // owner as an active database request: its response cannot finish until the
+  // handler returns, so counting it would make the handler wait for itself.
+  if (isDatabaseMaintenanceRoute(req)) {
+    next();
     return;
   }
 
@@ -73,6 +100,7 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
     if (released) return;
     released = true;
     activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
+    releaseMaintenanceDrainWaiters();
     releaseMaintenanceRequestWaiters();
   };
   res.once('finish', release);
@@ -89,8 +117,11 @@ export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>):
     for (const listener of databaseMaintenanceStartListeners) {
       try { listener(); } catch (error) { console.error('[DB] Maintenance listener failed:', error); }
     }
+    // Maintenance routes are excluded from activeDatabaseRequests by the
+    // middleware above. Any remaining active requests were already in flight
+    // before maintenance began and must drain first.
     if (activeDatabaseRequests > 0) {
-      await new Promise<void>((resolve) => maintenanceRequestWaiters.push(resolve));
+      await new Promise<void>((resolve) => maintenanceDrainWaiters.push(resolve));
     }
     try {
       return await operation();

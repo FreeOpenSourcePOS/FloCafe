@@ -40,6 +40,10 @@ const LOCAL_SETUP_HOSTS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
  */
 let _jwtSecret: string | null = null;
 
+export function clearJWTSecretCache(): void {
+  _jwtSecret = null;
+}
+
 export function getJWTSecret(): string {
   if (_jwtSecret) return _jwtSecret;
 
@@ -375,7 +379,7 @@ router.post('/login', authRateLimit(), async (req: Request, res: Response) => {
 
     const remember = !!rememberMe;
     const token = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, remember },
+      { userId: user.id, email: user.email, role: user.role, remember, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -431,7 +435,7 @@ router.post('/tenants/select', (req: Request, res: Response) => {
     // Re-issue token with tenant context embedded (same payload — desktop is single-tenant)
     const remember = !!decoded.remember;
     const newToken = jwt.sign(
-      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember },
+      { userId: user.id, email: user.email, role: user.role, tenantId: 1, remember, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: expiresInFor(remember) }
     );
@@ -451,7 +455,14 @@ router.post('/tenants/select', (req: Request, res: Response) => {
 router.post('/logout', (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   if (authHeader?.startsWith('Bearer ')) {
-    revokeToken(authHeader.split(' ')[1]);
+    const token = authHeader.slice('Bearer '.length);
+    try {
+      const decoded = jwt.verify(token, getJWTSecret()) as { exp?: number };
+      revokeToken(token, typeof decoded.exp === 'number' ? decoded.exp * 1000 : undefined);
+    } catch {
+      // Logout is intentionally idempotent; invalid credentials are not
+      // persisted as revocations and are still answered successfully.
+    }
   }
   res.json({ message: 'Logged out successfully' });
 });
@@ -799,6 +810,13 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     let userId = '';
     const hashedPassword = bcrypt.hashSync(password, 10);
 
+    // Persist the external Master PIN before committing the owner transaction.
+    // A keyring/filesystem failure must leave setup retryable rather than
+    // returning 500 after the database already contains an owner.
+    if (masterPinRequired) {
+      setMasterPin(String(master_pin));
+    }
+
     db.transaction(() => {
       const userCount = getUserCount(db);
       if (userCount > 0) {
@@ -852,19 +870,23 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       seedSetupProfile(db, normalizedSetupProfile, normalizedServiceModel, language, country);
     })();
 
-    // Written to userData/, outside flo.db and outside this transaction — the
-    // Master PIN is deliberately independent of the database it gates.
-    if (masterPinRequired) {
-      setMasterPin(String(master_pin));
+    // Pick up the cloud settings just written without requiring a restart —
+    // mirrors PUT /api/settings/cloud's own reload() call. Cloud coordination
+    // is best-effort: a network/profile failure must not make a completed local
+    // setup appear to have failed.
+    try {
+      cloudSync.reload();
+    } catch (error) {
+      console.warn('[Auth] Cloud settings reload deferred after setup:', error);
+    }
+    try {
+      cloudSync.refreshRegistrationProfile();
+    } catch (error) {
+      console.warn('[Auth] Cloud registration profile refresh deferred after setup:', error);
     }
 
-    // Pick up the cloud settings just written without requiring a restart —
-    // mirrors PUT /api/settings/cloud's own reload() call.
-    cloudSync.reload();
-    cloudSync.refreshRegistrationProfile();
-
     const token = jwt.sign(
-      { userId, email, role: INITIAL_ADMIN_ROLE },
+      { userId, email, role: INITIAL_ADMIN_ROLE, jti: uuidv4() },
       getJWTSecret(),
       { expiresIn: JWT_EXPIRES_IN }
     );

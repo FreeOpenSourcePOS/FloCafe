@@ -1,6 +1,6 @@
 import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import { WebSocketServer, WebSocket } from 'ws';
+import { WebSocketServer } from 'ws';
 import * as http from 'http';
 import * as os from 'os';
 import * as path from 'path';
@@ -8,7 +8,7 @@ import * as fs from 'fs';
 import jwt from 'jsonwebtoken';
 import { registerRoutes } from './routes';
 import { getJWTSecret } from './routes/auth';
-import { getDbHealth, isKdsEnabled } from './db';
+import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
 import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
@@ -50,7 +50,10 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
 
     // Reject tokens for users deactivated (or deleted) since the token was
     // issued, instead of trusting the JWT's signature/expiry alone (vuln-0001).
-    const status = getUserAuthStatus(decoded.userId);
+    const freshKdsAuth = req.path.startsWith('/api/kds')
+      || req.path.startsWith('/api/kitchen')
+      || req.path.startsWith('/api/order-items');
+    const status = getUserAuthStatus(decoded.userId, { fresh: freshKdsAuth });
     if (!status || !status.isActive) {
       res.status(401).json({ error: 'Invalid or expired token' });
       return;
@@ -148,6 +151,7 @@ export function startServer(): Promise<void> {
       if (req.body === undefined) req.body = {};
       next();
     });
+    app.use(databaseMaintenanceMiddleware);
 
     // ── Global API rate limiting ───────────────────────────────────────
     app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 100 }));
@@ -262,7 +266,17 @@ export function startServer(): Promise<void> {
 
         server.on('upgrade', (request, socket, head) => {
           const pathname = (request.url || '').split('?')[0];
-          if (pathname !== '/kds') return;
+          if (pathname !== '/kds') {
+            socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+            socket.destroy();
+            return;
+          }
+
+          if (isDatabaseMaintenanceActive()) {
+            socket.write('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+            socket.destroy();
+            return;
+          }
 
           if (!isKdsEnabled()) {
             // Pretend the endpoint doesn't exist rather than confirming it's
@@ -273,9 +287,14 @@ export function startServer(): Promise<void> {
             return;
           }
 
-          wss.handleUpgrade(request, socket, head, (ws) => {
-            wss.emit('connection', ws, request);
-          });
+          try {
+            wss.handleUpgrade(request, socket, head, (ws) => {
+              wss.emit('connection', ws, request);
+            });
+          } catch (error) {
+            console.error('[Server] KDS WebSocket upgrade failed:', error);
+            socket.destroy();
+          }
         });
 
         console.log(`[Server] KDS WebSocket running on ws://localhost:${currentPort}/kds`);
@@ -283,7 +302,11 @@ export function startServer(): Promise<void> {
 
       // main/index.ts (Electron) also calls this; dev-server and pm2 boot
       // through here instead and would otherwise start with module defaults.
-      initWhatsAppFromDb();
+      try {
+        initWhatsAppFromDb();
+      } catch (error) {
+        console.error('[Server] WhatsApp startup initialization failed:', error);
+      }
 
       resolve();
     });
@@ -308,8 +331,15 @@ export function startServer(): Promise<void> {
 }
 
 export function stopServer(): void {
-  if (wss) wss.close();
-  if (server) server.close();
+  if (wss) {
+    for (const client of wss.clients) client.terminate();
+    wss.close();
+    wss = null as unknown as WebSocketServer;
+  }
+  if (server) {
+    server.close();
+    server = null;
+  }
   console.log('[Server] HTTP server stopped');
 }
 

@@ -10,7 +10,7 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
-import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, utcDayBounds, utcTodayDate } from '../db';
+import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -29,6 +29,36 @@ const RELAY_FALLBACK_THRESHOLD = 5;
 
 // Zero-touch registration creates the live store immediately.
 const AUTO_REGISTER_MAX_BACKOFF_MS = 30 * 60_000;
+const CLOUD_DELETION_BLOCKING_STATUSES = new Set([
+  'pending', 'processing', 'approved', 'completed', 'deleted', 'failed', 'unknown',
+]);
+const CLOUD_DELETION_KNOWN_STATUSES = new Set([
+  'pending', 'processing', 'approved', 'completed', 'deleted', 'cancelled', 'rejected',
+]);
+const CLOUD_DELETION_FINAL_STATUSES = new Set(['approved', 'completed', 'deleted']);
+
+function isCloudDeletionBlocking(status?: string): boolean {
+  return CLOUD_DELETION_BLOCKING_STATUSES.has(status || '');
+}
+
+function validateCloudDeletionResponse(
+  data: Record<string, unknown> | null,
+  fallbackRequestId = '',
+  fallbackStatusToken = '',
+): { status: string; requestId: string; statusToken: string } {
+  const status = typeof data?.status === 'string' ? data.status.trim().toLowerCase() : '';
+  if (!CLOUD_DELETION_KNOWN_STATUSES.has(status)) {
+    throw new Error('Cloud deletion returned an unknown or missing status');
+  }
+  const requestId = typeof data?.request_id === 'string' && data.request_id.trim()
+    ? data.request_id.trim() : fallbackRequestId;
+  const statusToken = typeof data?.status_token === 'string' && data.status_token.trim()
+    ? data.status_token.trim() : fallbackStatusToken;
+  if ((status === 'pending' || status === 'processing') && (!requestId || !statusToken)) {
+    throw new Error('Cloud deletion response omitted tracking details');
+  }
+  return { status, requestId, statusToken };
+}
 
 type CloudSettings = {
   server_url: string;
@@ -41,6 +71,8 @@ type CloudSettings = {
   reports_enabled: boolean;
   command_polling_enabled: boolean;
   cloud_registration_status: string;
+  cloud_deletion_status: string;
+  cloud_deletion_outcome: string;
 };
 
 type CloudCommand = {
@@ -208,6 +240,7 @@ class CloudSyncService {
   private commandTimer: ReturnType<typeof setInterval> | null = null;
   private settings: CloudSettings | null = null;
   private flushing = false;
+  private outboxFlushPromise: Promise<void> | null = null;
   private pollingCommands = false;
 
   // Live-relay channel state (commands + heartbeat) — see § Realtime channel in specs.
@@ -219,6 +252,13 @@ class CloudSyncService {
   private relayReconnectAttempts = 0;
   private httpFallbackActive = false;
   private relayMode: 'websocket' | 'http_fallback' | 'disconnected' = 'disconnected';
+  private supportFlushing = false;
+  private supportFlushPromise: Promise<void> | null = null;
+  private diagnosticsFlushing = false;
+  private diagnosticsFlushPromise: Promise<void> | null = null;
+  private cloudDeletionInProgress = false;
+  private cloudNetworkOperations = 0;
+  private cloudNetworkIdleWaiters: (() => void)[] = [];
 
   // Zero-touch registration state.
   private autoRegisterTimer: ReturnType<typeof setTimeout> | null = null;
@@ -227,8 +267,10 @@ class CloudSyncService {
   private runtimeStarted = false;
 
   start() {
+    if (this.cloudDeletionInProgress) return;
     this.runtimeStarted = true;
-    ensureCloudIdentity();
+    const settings = this.readSettings(getDatabase());
+    if (!isCloudDeletionBlocking(settings.cloud_deletion_status)) ensureCloudIdentity();
     this.reload();
     // Register once at boot. The v2 endpoint creates/finds the live store and
     // returns a working API key immediately; there is no claim or pending state.
@@ -236,8 +278,12 @@ class CloudSyncService {
   }
 
   reload() {
+    if (this.cloudDeletionInProgress) return;
     this.stop();
-    const cfg = this.loadSettings();
+    const persisted = this.loadSettings(false);
+    this.settings = persisted;
+    if (!persisted || isCloudDeletionBlocking(persisted.cloud_deletion_status)) return;
+    const cfg = this.loadSettings(true);
     this.settings = cfg;
     if (!cfg) return;
 
@@ -259,6 +305,10 @@ class CloudSyncService {
         registered: Boolean(cfg.api_key),
       });
     }
+  }
+
+  resumeAfterMaintenance() {
+    if (this.runtimeStarted) this.reload();
   }
 
   stop() {
@@ -297,7 +347,8 @@ class CloudSyncService {
   getStatus() {
     const db = getDatabase();
     const s = this.readSettings(db);
-    ensureCloudIdentity();
+    const deletionBlocked = isCloudDeletionBlocking(s.cloud_deletion_status);
+    if (!this.cloudDeletionInProgress && !deletionBlocked) ensureCloudIdentity();
     const refreshed = this.readSettings(db);
     return {
       cloud_server_url: refreshed.cloud_server_url || DEFAULT_CLOUD_SERVER_URL,
@@ -312,6 +363,9 @@ class CloudSyncService {
       cloud_last_sync: refreshed.cloud_last_sync || null,
       cloud_last_heartbeat: refreshed.cloud_last_heartbeat || null,
       cloud_last_error: refreshed.cloud_last_error || null,
+      cloud_deletion_status: refreshed.cloud_deletion_status || '',
+      cloud_deletion_outcome: refreshed.cloud_deletion_outcome || '',
+      cloud_deletion_blocked: isCloudDeletionBlocking(refreshed.cloud_deletion_status),
       cloud_relay_mode: this.relayMode,
       outbox_pending: this.countOutbox('pending'),
       outbox_failed: this.countOutbox('failed'),
@@ -322,8 +376,14 @@ class CloudSyncService {
   // Registration carries contact metadata for FloAdmin support. It is not an
   // authentication credential and does not create a cloud owner account.
   async register(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
+    return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const db = getDatabase();
     const settings = this.readSettings(db);
+    if (isCloudDeletionBlocking(settings.cloud_deletion_status)) {
+      throw new Error('Cloud deletion is pending; cancel it before registering again');
+    }
     const { posHash, deviceSecret } = ensureCloudIdentity();
     const serverUrl = normalizeCloudServerUrl(settings.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
     const owner = db.prepare(
@@ -351,7 +411,7 @@ class CloudSyncService {
     };
 
     try {
-      const res = await fetch(endpoint(serverUrl, '/api/pos/register'), {
+      const res = await this.trackedFetch(endpoint(serverUrl, '/api/pos/register'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -361,6 +421,7 @@ class CloudSyncService {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
       if (!res.ok) {
         throw new Error(String(data.error || `Registration failed (${res.status})`));
       }
@@ -376,6 +437,7 @@ class CloudSyncService {
         cloud_registration_status: 'registered',
         cloud_connected: 'true',
         cloud_last_error: '',
+        cloud_deletion_status: '', cloud_deletion_outcome: '',
         cloud_last_heartbeat: new Date().toISOString(),
       });
       this.reload();
@@ -394,18 +456,24 @@ class CloudSyncService {
       return this.getStatus();
     } catch (err) {
       const message = (err as Error).message;
-      this.upsertSettings({
-        cloud_registration_status: 'registration_failed',
-        cloud_connected: 'false',
-        cloud_last_error: message,
-      });
+      const currentSettings = this.readSettings(getDatabase());
+      if (!this.cloudDeletionInProgress && currentSettings.cloud_services_disabled_by_user !== 'true') {
+        this.upsertSettings({
+          cloud_registration_status: 'registration_failed',
+          cloud_connected: 'false',
+          cloud_last_error: message,
+        });
+      }
       throw err;
     }
+    });
   }
 
   async testConnection(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const res = await this.signedFetch('/api/pos/connection-test', { method: 'POST', body: '{}' });
     const data = await res.json().catch(() => ({}));
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(`Cloud test failed (${res.status})`);
     this.upsertSettings({
       cloud_connected: 'true',
@@ -418,6 +486,7 @@ class CloudSyncService {
   async getEmailPreferences(): Promise<Record<string, unknown>> {
     const res = await this.signedFetch('/api/pos/email-preferences', { method: 'GET' });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Email status failed (${res.status})`));
     this.upsertSettings({
       cloud_email_verified: data.verified ? 'true' : 'false',
@@ -431,6 +500,7 @@ class CloudSyncService {
   async updateEmailPreferences(preferences: { product_updates?: boolean; marketing?: boolean }): Promise<Record<string, unknown>> {
     const res = await this.signedFetch('/api/pos/email-preferences', { method: 'PUT', body: JSON.stringify(preferences) });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Preference update failed (${res.status})`));
     await this.getEmailPreferences();
     return data;
@@ -439,6 +509,7 @@ class CloudSyncService {
   async requestEmailVerification(preferences: { product_updates?: boolean; marketing?: boolean; source?: string } = {}): Promise<Record<string, unknown>> {
     const res = await this.signedFetch('/api/pos/email/verification', { method: 'POST', body: JSON.stringify(preferences) });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Verification request failed (${res.status})`));
     this.upsertSettings({
       cloud_email_verified: data.verified ? 'true' : 'false',
@@ -448,6 +519,7 @@ class CloudSyncService {
   }
 
   async stopAllCloudServices(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     await this.setDiagnosticsConsent(false);
     this.stop();
     this.upsertSettings({
@@ -460,65 +532,152 @@ class CloudSyncService {
   }
 
   async deleteCloudData(): Promise<Record<string, unknown>> {
-    const res = await this.signedFetch('/api/pos/cloud-data/delete', {
-      method: 'POST', body: JSON.stringify({ confirmation: 'DELETE CLOUD DATA' }),
-    });
-    const data = await res.json().catch(() => ({})) as Record<string, unknown>;
-    if (!res.ok) throw new Error(String(data.error || `Cloud deletion failed (${res.status})`));
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion already in progress');
+    const currentSettings = this.readSettings(getDatabase());
+    if (isCloudDeletionBlocking(currentSettings.cloud_deletion_status)
+      && currentSettings.cloud_deletion_status !== 'failed') {
+      throw new Error('Cloud deletion is already pending; resolve or retry it before submitting another request');
+    }
+    this.cloudDeletionInProgress = true;
+    let deletionOutcome: 'unknown' | 'rejected' = 'unknown';
+    return withDatabaseRequest(async () => {
+    const activeFlushes = [this.outboxFlushPromise, this.supportFlushPromise, this.diagnosticsFlushPromise].filter((promise): promise is Promise<void> => promise !== null);
+    this.stop();
+    if (activeFlushes.length > 0) await Promise.allSettled(activeFlushes);
+    await this.waitForCloudNetworkIdle();
     const db = getDatabase();
+    // Persist the disabled/pending intent before the remote purge. If the
+    // process dies after the server accepts the request, restart cannot
+    // resume syncing or auto-register with the old credentials.
     db.transaction(() => {
       db.prepare("DELETE FROM cloud_sync_outbox").run();
       db.prepare("DELETE FROM support_ticket_outbox").run();
       db.prepare("DELETE FROM store_diagnostics_outbox").run();
       this.upsertSettings({
-        cloud_registration_status: 'deletion_pending',
-        cloud_connected: 'false', cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
+        cloud_registration_status: 'deletion_pending', cloud_connected: 'false',
+        cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
         cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
-        anonymous_data_consent: 'false', telemetry_anon_id: crypto.randomUUID(),
-        cloud_services_disabled_by_user: 'true',
-        cloud_deletion_request_id: typeof data.request_id === 'string' ? data.request_id : '',
-        cloud_deletion_status_token: typeof data.status_token === 'string' ? data.status_token : '',
-        cloud_deletion_status: typeof data.status === 'string' ? data.status : 'pending',
-      });
+        anonymous_data_consent: 'false', cloud_services_disabled_by_user: 'true',
+        cloud_deletion_request_id: '', cloud_deletion_status_token: '',
+        cloud_deletion_status: 'pending', cloud_deletion_outcome: '', cloud_last_error: '',
+      }, true);
+    })();
+    const res = await this.signedFetch('/api/pos/cloud-data/delete', {
+      method: 'POST', body: JSON.stringify({ confirmation: 'DELETE CLOUD DATA' }),
+    }, true);
+    const data = await res.json().catch(() => null) as Record<string, unknown> | null;
+    if (!res.ok) {
+      deletionOutcome = 'rejected';
+      throw new Error(String(data?.error || `Cloud deletion failed (${res.status})`));
+    }
+    const deletion = validateCloudDeletionResponse(data);
+    const responseData = data as Record<string, unknown>;
+    if (deletion.status === 'rejected' || deletion.status === 'cancelled') {
+      deletionOutcome = 'rejected';
+      throw new Error(`Cloud deletion was ${deletion.status}`);
+    }
+    const deletionStatus = deletion.status;
+    const deletionComplete = CLOUD_DELETION_FINAL_STATUSES.has(deletionStatus);
+    const deletionSettings: Record<string, string> = {
+      cloud_registration_status: deletionComplete ? 'deleted' : 'deletion_pending',
+      cloud_connected: 'false', cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
+      cloud_command_polling_enabled: '0', diagnostics_consent: 'false', telemetry_enabled: 'false',
+      anonymous_data_consent: 'false', telemetry_anon_id: crypto.randomUUID(),
+      cloud_services_disabled_by_user: 'true',
+      cloud_deletion_request_id: deletionComplete ? '' : deletion.requestId,
+      cloud_deletion_status_token: deletionComplete ? '' : deletion.statusToken,
+      cloud_deletion_status: deletionStatus, cloud_deletion_outcome: '',
+    };
+    if (deletionComplete) Object.assign(deletionSettings, {
+      cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
+      cloud_device_created_at: '', cloud_email_verified: 'false', cloud_email_verification_sent_at: '',
+      cloud_verification_welcome_requested: '0',
+    });
+    db.transaction(() => {
+      db.prepare("DELETE FROM cloud_sync_outbox").run();
+      db.prepare("DELETE FROM support_ticket_outbox").run();
+      db.prepare("DELETE FROM store_diagnostics_outbox").run();
+      this.upsertSettings(deletionSettings, true);
     })();
     this.stop();
-    this.settings = this.loadSettings();
-    return data;
+    this.settings = this.loadSettings(false);
+    return responseData;
+    }).catch((error) => {
+      this.upsertSettings({
+        cloud_deletion_status: 'failed', cloud_deletion_outcome: deletionOutcome,
+        cloud_connected: 'false', cloud_last_error: (error as Error).message,
+      }, true);
+      this.settings = this.loadSettings(false);
+      throw error;
+    }).finally(() => { this.cloudDeletionInProgress = false; });
   }
 
   async getDeletionRequestStatus(): Promise<Record<string, unknown> | null> {
+    return withDatabaseRequest(async () => {
     const settings = this.readSettings(getDatabase());
     const requestId = settings.cloud_deletion_request_id;
     const statusToken = settings.cloud_deletion_status_token;
     if (!requestId || !statusToken) return null;
     const serverUrl = normalizeCloudServerUrl(settings.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
     const url = endpoint(serverUrl, `/api/cloud-data/deletion-request/status?id=${encodeURIComponent(requestId)}&token=${encodeURIComponent(statusToken)}`);
-    const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const res = await this.trackedFetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Deletion status failed (${res.status})`));
-    const status = typeof data.status === 'string' ? data.status : 'pending';
-    this.upsertSettings({ cloud_deletion_status: status });
-    if (status === 'approved' && settings.cloud_registration_status !== 'deleted') {
+    const deletion = validateCloudDeletionResponse(data, requestId, statusToken);
+    const status = deletion.status;
+    this.upsertSettings({
+      cloud_deletion_status: status,
+      cloud_deletion_request_id: deletion.requestId,
+      cloud_deletion_status_token: deletion.statusToken,
+    });
+    if (CLOUD_DELETION_FINAL_STATUSES.has(status)) {
       this.upsertSettings({
         cloud_api_key: '', cloud_store_id: '', cloud_pos_id: '', cloud_pos_hash: '', cloud_device_secret: '',
         cloud_device_created_at: '', cloud_registration_status: 'deleted', cloud_email_verified: 'false',
         cloud_email_verification_sent_at: '', cloud_verification_welcome_requested: '0',
+        cloud_deletion_request_id: '', cloud_deletion_status_token: '',
+        cloud_deletion_outcome: '',
       });
-      this.settings = this.loadSettings();
+      this.settings = this.loadSettings(false);
+    } else if (['cancelled', 'rejected'].includes(status)) {
+      this.upsertSettings({
+        cloud_deletion_request_id: '', cloud_deletion_status_token: '', cloud_deletion_outcome: '',
+      });
+      this.settings = this.loadSettings(false);
     }
     return data;
+    }).catch((error) => {
+      if (!this.cloudDeletionInProgress) {
+        this.upsertSettings({
+          cloud_deletion_status: 'failed', cloud_deletion_outcome: 'unknown',
+          cloud_connected: 'false', cloud_last_error: (error as Error).message,
+        });
+        this.settings = this.loadSettings(false);
+      }
+      throw error;
+    });
   }
 
   async cancelDeletionRequest(): Promise<Record<string, unknown>> {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
+    return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const settings = this.readSettings(getDatabase());
     if (!settings.cloud_deletion_request_id) throw new Error('No pending deletion request');
     const res = await this.signedFetch('/api/pos/cloud-data/deletion-request/cancel', {
       method: 'POST', body: JSON.stringify({ request_id: settings.cloud_deletion_request_id }),
-    });
+    }, true);
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Cancellation failed (${res.status})`));
-    this.upsertSettings({ cloud_deletion_status: 'cancelled', cloud_registration_status: 'registered' });
+    this.upsertSettings({
+      cloud_deletion_status: 'cancelled', cloud_registration_status: 'registered',
+      cloud_deletion_request_id: '', cloud_deletion_status_token: '',
+      cloud_deletion_outcome: '',
+    });
     return data;
+    });
   }
 
   /**
@@ -531,22 +690,19 @@ class CloudSyncService {
    */
   async setDiagnosticsConsent(enabled: boolean): Promise<void> {
     try {
-      await this.signedFetch('/api/pos/diagnostics-consent', {
+      const res = await this.signedFetch('/api/pos/diagnostics-consent', {
         method: 'POST',
         body: JSON.stringify({ enabled }),
       });
+      await this.drainResponse(res);
     } catch (err) {
       log.debug('[CloudSync] diagnostics consent sync failed (non-fatal):', (err as Error).message);
     }
   }
 
   /** Queue a support request durably; the caller can be offline. */
-  queueSupportTicket(input: SupportTicketInput): { queued: boolean; client_ticket_id: string } {
-    const db = getDatabase();
-    const timestamp = now();
-    // FloAdmin's public contract uses a nested contact snapshot. Keep the
-    // local input ergonomic for callers, but persist the exact wire payload
-    // so retries remain byte-for-byte stable and never lose contact details.
+  async queueSupportTicket(input: SupportTicketInput): Promise<{ queued: boolean; client_ticket_id: string }> {
+    if (this.cloudDeletionInProgress) return { queued: false, client_ticket_id: input.client_ticket_id };
     const payload = {
       client_ticket_id: input.client_ticket_id,
       subject: input.subject,
@@ -554,28 +710,36 @@ class CloudSyncService {
       severity: input.severity || 'normal',
       event_code: input.event_code,
       correlation_id: input.correlation_id,
-      contact: {
-        name: input.contact_name,
-        email: input.contact_email,
-        phone: input.contact_phone,
-      },
+      contact: { name: input.contact_name, email: input.contact_email, phone: input.contact_phone },
       app_version: require('../../package.json').version,
       platform: process.platform,
       diagnostics: input.diagnostics,
     };
-    db.prepare(`
-      INSERT OR IGNORE INTO support_ticket_outbox
-        (client_ticket_id, payload, status, created_at, updated_at)
-      VALUES (?, ?, 'pending', ?, ?)
-    `).run(input.client_ticket_id, JSON.stringify(payload), timestamp, timestamp);
-    void this.flushSupportTicketOutbox();
-    return { queued: true, client_ticket_id: input.client_ticket_id };
+    return withDatabaseRequest(async () => {
+      if (this.cloudDeletionInProgress) return { queued: false, client_ticket_id: input.client_ticket_id };
+      const db = getDatabase();
+      const timestamp = now();
+      db.prepare(`
+        INSERT OR IGNORE INTO support_ticket_outbox
+          (client_ticket_id, payload, status, created_at, updated_at)
+        VALUES (?, ?, 'pending', ?, ?)
+      `).run(input.client_ticket_id, JSON.stringify(payload), timestamp, timestamp);
+      void this.flushSupportTicketOutbox();
+      return { queued: true, client_ticket_id: input.client_ticket_id };
+    });
   }
 
-  private async flushSupportTicketOutbox(): Promise<void> {
+  private flushSupportTicketOutbox(): Promise<void> {
+    if (this.cloudDeletionInProgress) return Promise.resolve();
+    if (this.supportFlushPromise) return this.supportFlushPromise;
+    const run = withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings ?? this.loadSettings();
-    if (!cfg?.sync_enabled || !cfg.api_key) return;
+    if (!cfg?.sync_enabled || !cfg.api_key || this.supportFlushing) return;
+    this.supportFlushing = true;
+    try {
     const db = getDatabase();
+    db.prepare("UPDATE support_ticket_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
     const rows = db.prepare(`
       SELECT * FROM support_ticket_outbox
        WHERE status IN ('pending', 'failed')
@@ -593,6 +757,7 @@ class CloudSyncService {
           body: row.payload,
         });
         const data = await res.json().catch(() => ({})) as { support_code?: string };
+        if (this.cloudDeletionInProgress) return;
         if (!res.ok) throw new Error(`support ticket submission failed (${res.status})`);
         db.prepare(`
           UPDATE support_ticket_outbox
@@ -619,6 +784,12 @@ class CloudSyncService {
       }
       this.markError(message);
     }
+    } finally {
+      this.supportFlushing = false;
+    }
+    });
+    this.supportFlushPromise = run.finally(() => { this.supportFlushPromise = null; });
+    return this.supportFlushPromise;
   }
 
   /**
@@ -627,22 +798,31 @@ class CloudSyncService {
    * callers should not need to check this themselves before every call site.
    */
   reportDiagnostic(input: DiagnosticEventInput): void {
-    if (!isDiagnosticsConsentEnabled()) return;
-    const db = getDatabase();
-    const timestamp = now();
-    db.prepare(`
-      INSERT OR IGNORE INTO store_diagnostics_outbox
-        (event_id, payload, status, created_at, updated_at)
-      VALUES (?, ?, 'pending', ?, ?)
-    `).run(input.event_id, JSON.stringify(input), timestamp, timestamp);
-    void this.flushDiagnosticsOutbox();
+    if (this.cloudDeletionInProgress) return;
+    void withDatabaseRequest(() => {
+      if (this.cloudDeletionInProgress || !isDiagnosticsConsentEnabled()) return;
+      const db = getDatabase();
+      const timestamp = now();
+      db.prepare(`
+        INSERT OR IGNORE INTO store_diagnostics_outbox
+          (event_id, payload, status, created_at, updated_at)
+        VALUES (?, ?, 'pending', ?, ?)
+      `).run(input.event_id, JSON.stringify(input), timestamp, timestamp);
+      void this.flushDiagnosticsOutbox();
+    }).catch((error) => this.markError((error as Error).message));
   }
 
-  private async flushDiagnosticsOutbox(): Promise<void> {
-    if (!isDiagnosticsConsentEnabled()) return;
+  private flushDiagnosticsOutbox(): Promise<void> {
+    if (this.cloudDeletionInProgress) return Promise.resolve();
+    if (this.diagnosticsFlushPromise) return this.diagnosticsFlushPromise;
+    const run = withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress || !isDiagnosticsConsentEnabled()) return;
     const cfg = this.settings ?? this.loadSettings();
-    if (!cfg?.sync_enabled || !cfg.api_key) return;
+    if (!cfg?.sync_enabled || !cfg.api_key || this.diagnosticsFlushing) return;
+    this.diagnosticsFlushing = true;
+    try {
     const db = getDatabase();
+    db.prepare("UPDATE store_diagnostics_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
     const rows = db.prepare(`
       SELECT * FROM store_diagnostics_outbox
        WHERE status IN ('pending', 'failed')
@@ -659,6 +839,8 @@ class CloudSyncService {
           method: 'POST',
           body: row.payload,
         });
+        await this.drainResponse(res);
+        if (this.cloudDeletionInProgress) return;
         if (!res.ok) throw new Error(`diagnostic event submission failed (${res.status})`);
         db.prepare(`
           UPDATE store_diagnostics_outbox
@@ -685,6 +867,12 @@ class CloudSyncService {
       // Non-fatal, same as support tickets: diagnostics must never surface a
       // connectivity error as if it were a cloud-sync problem to the merchant.
     }
+    } finally {
+      this.diagnosticsFlushing = false;
+    }
+    });
+    this.diagnosticsFlushPromise = run.finally(() => { this.diagnosticsFlushPromise = null; });
+    return this.diagnosticsFlushPromise;
   }
 
   /**
@@ -699,15 +887,16 @@ class CloudSyncService {
       method: 'POST',
       body: JSON.stringify({ revoke_devices: revoke }),
     });
+    const data = await res.json().catch(() => ({})) as { code?: string; expires_at?: string };
     if (!res.ok) throw new Error(`Pairing code request failed (${res.status})`);
-    return res.json() as Promise<{ code: string; expires_at: string }>;
+    return data as { code: string; expires_at: string };
   }
 
   /** Devices (RevFlo installs) currently paired to this store. */
   async listPairedDevices(): Promise<Record<string, unknown>[]> {
     const res = await this.signedFetch('/api/pos/devices', { method: 'GET' });
-    if (!res.ok) throw new Error(`Device list request failed (${res.status})`);
     const data = (await res.json().catch(() => ({ devices: [] }))) as { devices?: Record<string, unknown>[] };
+    if (!res.ok) throw new Error(`Device list request failed (${res.status})`);
     return Array.isArray(data.devices) ? data.devices : [];
   }
 
@@ -759,6 +948,8 @@ class CloudSyncService {
 
   /** HTTP fallback path — used only while the WSS relay is unavailable. */
   private async sendHeartbeat() {
+    return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings;
     if (!cfg?.sync_enabled || !cfg.api_key) return;
     try {
@@ -767,8 +958,9 @@ class CloudSyncService {
         method: 'POST',
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error(`heartbeat failed (${res.status})`);
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (this.cloudDeletionInProgress) return;
+      if (!res.ok) throw new Error(`heartbeat failed (${res.status})`);
       this.upsertSettings({
         cloud_connected: 'true',
         cloud_last_error: '',
@@ -778,10 +970,13 @@ class CloudSyncService {
     } catch (err) {
       this.markError((err as Error).message);
     }
+    });
   }
 
   /** Primary path — heartbeat carried as a frame on the open relay connection. */
   private async sendRelayHeartbeat() {
+    return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings;
     if (!cfg?.sync_enabled || !cfg.api_key || this.relaySocket?.readyState !== WebSocket.OPEN) return;
     try {
@@ -795,27 +990,36 @@ class CloudSyncService {
     } catch (err) {
       this.markError((err as Error).message);
     }
+    });
   }
 
   private enqueueEvent(eventType: string, entityType: string, entityId: string, payload: unknown) {
-    const cfg = this.loadSettings();
-    if (!cfg?.sync_enabled) return;
-    const db = getDatabase();
-    const id = crypto.randomUUID();
-    db.prepare(`
-      INSERT INTO cloud_sync_outbox
-        (id, event_type, entity_type, entity_id, payload, status, attempt_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)
-    `).run(id, eventType, entityType, entityId || null, JSON.stringify(payload), now(), now());
-    void this.flushOutbox();
+    if (this.cloudDeletionInProgress) return;
+    void withDatabaseRequest(async () => {
+      if (this.cloudDeletionInProgress) return;
+      const cfg = this.loadSettings();
+      if (!cfg?.sync_enabled) return;
+      const db = getDatabase();
+      const id = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO cloud_sync_outbox
+          (id, event_type, entity_type, entity_id, payload, status, attempt_count, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)
+      `).run(id, eventType, entityType, entityId || null, JSON.stringify(payload), now(), now());
+      void this.flushOutbox();
+    }).catch((error) => this.markError((error as Error).message));
   }
 
-  private async flushOutbox() {
+  private flushOutbox(): Promise<void> {
+    if (this.cloudDeletionInProgress || this.outboxFlushPromise) return this.outboxFlushPromise || Promise.resolve();
+    const run = withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.sync_enabled || !cfg.api_key || this.flushing) return;
     this.flushing = true;
     try {
       const db = getDatabase();
+      db.prepare("UPDATE cloud_sync_outbox SET status = 'failed', next_attempt_at = ?, updated_at = ? WHERE status = 'sending'").run(now(), now());
       const rows = db.prepare(`
         SELECT * FROM cloud_sync_outbox
         WHERE status IN ('pending', 'failed')
@@ -846,6 +1050,8 @@ class CloudSyncService {
           sent_at: new Date().toISOString(),
         }),
       });
+      await this.drainResponse(res);
+      if (this.cloudDeletionInProgress) return;
       if (!res.ok) throw new Error(`event push failed (${res.status})`);
 
       const markDelivered = db.prepare(`
@@ -865,6 +1071,9 @@ class CloudSyncService {
     } finally {
       this.flushing = false;
     }
+    });
+    this.outboxFlushPromise = run.finally(() => { this.outboxFlushPromise = null; });
+    return this.outboxFlushPromise;
   }
 
   private failSendingRows(message: string) {
@@ -890,15 +1099,19 @@ class CloudSyncService {
   }
 
   private async pollCommands() {
+    return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings;
     if (!cfg?.command_polling_enabled || !cfg.api_key || this.pollingCommands) return;
     this.pollingCommands = true;
     try {
       const res = await this.signedFetch('/api/pos/commands?limit=5', { method: 'GET' });
-      if (!res.ok) throw new Error(`command poll failed (${res.status})`);
       const data = await res.json().catch(() => ({})) as { commands?: CloudCommand[] };
+      if (this.cloudDeletionInProgress) return;
+      if (!res.ok) throw new Error(`command poll failed (${res.status})`);
       const commands = Array.isArray(data.commands) ? data.commands : [];
       for (const command of commands) {
+        if (this.cloudDeletionInProgress) return;
         await this.executeCommand(command);
       }
     } catch (err) {
@@ -906,9 +1119,11 @@ class CloudSyncService {
     } finally {
       this.pollingCommands = false;
     }
+    });
   }
 
   private async executeCommand(command: CloudCommand) {
+    if (this.cloudDeletionInProgress) return;
     let body: Record<string, unknown>;
     try {
       const result = this.runCommand(command);
@@ -921,11 +1136,15 @@ class CloudSyncService {
       method: 'POST',
       body: JSON.stringify(body),
     });
+    await this.drainResponse(res);
+    if (this.cloudDeletionInProgress) return;
     if (!res.ok) throw new Error(`command result failed (${res.status})`);
   }
 
   /** Same as executeCommand, but for a command pushed over the relay socket — result goes back as a frame, not a POST. */
   private async executeRelayCommand(command: CloudCommand) {
+    return withDatabaseRequest(async () => {
+    if (this.cloudDeletionInProgress) return;
     let body: Record<string, unknown>;
     try {
       const result = this.runCommand(command);
@@ -933,9 +1152,10 @@ class CloudSyncService {
     } catch (err) {
       body = { version: 1, correlation_id: command.correlation_id || command.id, ok: false, error: (err as Error).message, completed_at: new Date().toISOString() };
     }
-    if (this.relaySocket?.readyState === WebSocket.OPEN) {
+    if (!this.cloudDeletionInProgress && this.relaySocket?.readyState === WebSocket.OPEN) {
       this.relaySocket.send(JSON.stringify({ type: 'result', id: command.id, ...body }));
     }
+    });
   }
 
   /**
@@ -946,7 +1166,8 @@ class CloudSyncService {
   private maybeAutoRegister() {
     const db = getDatabase();
     const settings = this.readSettings(db);
-    if (settings.cloud_sync_enabled !== '1' || settings.cloud_services_disabled_by_user === 'true') return;
+    if (isCloudDeletionBlocking(settings.cloud_deletion_status)
+      || settings.cloud_sync_enabled !== '1' || settings.cloud_services_disabled_by_user === 'true') return;
     // initDatabase() runs before first-run setup. Registering seeded defaults at
     // that point creates a permanent-looking blank row in FloAdmin. Setup always
     // writes a non-empty business name (falling back to "Store"), so wait for it.
@@ -964,6 +1185,9 @@ class CloudSyncService {
   }
 
   private attemptAutoRegister() {
+    const settings = this.readSettings(getDatabase());
+    if (this.cloudDeletionInProgress || isCloudDeletionBlocking(settings.cloud_deletion_status)
+      || settings.cloud_sync_enabled !== '1' || settings.cloud_services_disabled_by_user === 'true') return;
     if (this.autoRegisterTimer || this.autoRegisterInFlight) return;
     this.autoRegisterInFlight = true;
     void this.register()
@@ -973,6 +1197,9 @@ class CloudSyncService {
       })
       .catch(() => {
         this.autoRegisterInFlight = false;
+        const currentSettings = this.readSettings(getDatabase());
+        if (this.cloudDeletionInProgress || isCloudDeletionBlocking(currentSettings.cloud_deletion_status)
+          || currentSettings.cloud_sync_enabled !== '1' || currentSettings.cloud_services_disabled_by_user === 'true') return;
         const delay = Math.min(AUTO_REGISTER_MAX_BACKOFF_MS, 2 ** this.autoRegisterAttempts * 1000);
         this.autoRegisterAttempts++;
         this.autoRegisterTimer = setTimeout(() => {
@@ -985,6 +1212,7 @@ class CloudSyncService {
   // --- Live-relay connection (WSS primary, HTTP fallback) ---------------------------------
 
   private maybeStartRelay() {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings;
     if (!cfg?.api_key || !(cfg.sync_enabled || cfg.command_polling_enabled)) {
       this.teardownRelay();
@@ -995,6 +1223,7 @@ class CloudSyncService {
   }
 
   private connectRelay() {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings;
     if (!cfg?.api_key || !(cfg.sync_enabled || cfg.command_polling_enabled)) return;
     if (this.relaySocket && (this.relaySocket.readyState === WebSocket.OPEN || this.relaySocket.readyState === WebSocket.CONNECTING)) {
@@ -1021,6 +1250,10 @@ class CloudSyncService {
   }
 
   private onRelayOpen() {
+    if (this.cloudDeletionInProgress) {
+      this.teardownRelay();
+      return;
+    }
     this.relayReconnectAttempts = 0;
     this.relayMode = 'websocket';
     this.stopHttpFallback();
@@ -1052,6 +1285,7 @@ class CloudSyncService {
   }
 
   private onRelayMessage(data: RawData) {
+    if (this.cloudDeletionInProgress) return;
     let frame: any;
     try {
       frame = JSON.parse(data.toString());
@@ -1100,6 +1334,7 @@ class CloudSyncService {
 
   /** Degraded mode — same HTTP command-poll/heartbeat behavior the POS shipped with before the relay existed. */
   private startHttpFallback() {
+    if (this.cloudDeletionInProgress) return;
     const cfg = this.settings;
     if (!cfg?.api_key || this.httpFallbackActive) return;
     this.httpFallbackActive = true;
@@ -1380,7 +1615,12 @@ class CloudSyncService {
     };
   }
 
-  private async signedFetch(pathname: string, init: RequestInit): Promise<Response> {
+  private async signedFetch(pathname: string, init: RequestInit, allowDuringDeletion = false): Promise<Response> {
+    if (this.cloudDeletionInProgress && !allowDuringDeletion) throw new Error('Cloud deletion in progress');
+    const persistedSettings = this.readSettings(getDatabase());
+    if (isCloudDeletionBlocking(persistedSettings.cloud_deletion_status) && !allowDuringDeletion) {
+      throw new Error('Cloud deletion is unresolved; retry or cancel it before using cloud services');
+    }
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.api_key) throw new Error('Cloud POS is not registered');
 
@@ -1390,7 +1630,7 @@ class CloudSyncService {
     const signedPath = `${url.pathname}${url.search}`;
     const signedHeaders = this.buildSignedHeaders(cfg.api_key, cfg.pos_hash, method, signedPath, body);
 
-    return fetch(url, {
+    return this.trackedFetch(url, {
       ...init,
       method,
       headers: {
@@ -1400,13 +1640,61 @@ class CloudSyncService {
       },
       body: method === 'GET' ? undefined : body,
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    });
+    }, allowDuringDeletion);
   }
 
-  private loadSettings(): CloudSettings | null {
+  private async trackedFetch(url: string | URL, init: RequestInit, allowDuringDeletion = false): Promise<Response> {
+    if (this.cloudDeletionInProgress && !allowDuringDeletion) throw new Error('Cloud deletion in progress');
+    this.cloudNetworkOperations += 1;
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      this.cloudNetworkOperations -= 1;
+      if (this.cloudNetworkOperations === 0) {
+        const waiters = this.cloudNetworkIdleWaiters.splice(0);
+        for (const resolve of waiters) resolve();
+      }
+    };
+    try {
+      const response = await fetch(url, init);
+      if (this.cloudDeletionInProgress && !allowDuringDeletion) {
+        release();
+        throw new Error('Cloud deletion in progress');
+      }
+      if (!response.body) {
+        release();
+      } else {
+        for (const method of ['arrayBuffer', 'blob', 'formData', 'json', 'text'] as const) {
+          const original = (response[method] as any).bind(response);
+          Object.defineProperty(response, method, {
+            configurable: true,
+            value: async (...args: any[]) => {
+              try { return await original(...args); } finally { release(); }
+            },
+          });
+        }
+      }
+      return response;
+    } catch (error) {
+      release();
+      throw error;
+    }
+  }
+
+  private async drainResponse(response: Response): Promise<void> {
+    try { await response.arrayBuffer(); } catch { }
+  }
+
+  private waitForCloudNetworkIdle(): Promise<void> {
+    if (this.cloudNetworkOperations === 0) return Promise.resolve();
+    return new Promise((resolve) => this.cloudNetworkIdleWaiters.push(resolve));
+  }
+
+  private loadSettings(ensureIdentity = true): CloudSettings | null {
     try {
       const db = getDatabase();
-      ensureCloudIdentity();
+      if (ensureIdentity) ensureCloudIdentity();
       const s = this.readSettings(db);
       const server_url = normalizeCloudServerUrl(s.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
       return {
@@ -1420,6 +1708,8 @@ class CloudSyncService {
         reports_enabled: s.cloud_reports_enabled === '1',
         command_polling_enabled: s.cloud_command_polling_enabled === '1',
         cloud_registration_status: s.cloud_registration_status || 'unregistered',
+        cloud_deletion_status: s.cloud_deletion_status || '',
+        cloud_deletion_outcome: s.cloud_deletion_outcome || '',
       };
     } catch (err) {
       log.warn('[CloudSync] settings unavailable', (err as Error).message);
@@ -1434,7 +1724,12 @@ class CloudSyncService {
     return s;
   }
 
-  private upsertSettings(entries: Record<string, string | undefined | null>) {
+  private upsertSettings(entries: Record<string, string | undefined | null>, allowDuringDeletion = false) {
+    if (this.cloudDeletionInProgress && !allowDuringDeletion) return;
+    if (isDatabaseMaintenanceActive()) {
+      void withDatabaseRequest(() => this.upsertSettings(entries, allowDuringDeletion));
+      return;
+    }
     const db = getDatabase();
     const stmt = db.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
@@ -1456,6 +1751,9 @@ class CloudSyncService {
   }
 
   private markError(message: string) {
+    if (this.cloudDeletionInProgress) return;
+    const settings = this.readSettings(getDatabase());
+    if (settings.cloud_services_disabled_by_user === 'true') return;
     this.upsertSettings({
       cloud_connected: 'false',
       cloud_last_error: message,
@@ -1465,3 +1763,5 @@ class CloudSyncService {
 }
 
 export const cloudSync = new CloudSyncService();
+registerDatabaseMaintenanceStartListener(() => cloudSync.stop());
+registerDatabaseMaintenanceEndListener(() => cloudSync.resumeAfterMaintenance());

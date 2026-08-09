@@ -72,6 +72,12 @@ async function run() {
       .run('kds-category', 'Kitchen', 1);
     db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)')
       .run('kds-product', 'kds-category', 'KDS Burger', 10);
+    db.prepare('UPDATE users SET category_ids = ? WHERE id = ?').run(JSON.stringify(['kds-category']), 'user-chef-1');
+    db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+      VALUES ('kds-integration-station', 'Integration Station', '[]', 1, ?, ?)`)
+      .run(now(), now());
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)')
+      .run('user-chef-1', 'kds-integration-station', now());
     db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
       VALUES (?, 'takeaway', 'pending', 10, 10, ?, ?)`)
       .run('KDS-WS-001', now(), now());
@@ -80,6 +86,13 @@ async function run() {
       VALUES (?, 'kds-product', 'KDS Burger', 10, 1, 10, 0, 10, 'pending', ?, ?)`)
       .run(orderId, now(), now());
     const itemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any).id;
+    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)').run('kds-bar-category', 'Bar', 2);
+    db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)').run('kds-bar-product', 'kds-bar-category', 'KDS Bar', 12);
+    db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+      VALUES (?, 'takeaway', 'pending', 12, 12, ?, ?)`).run('KDS-WS-BAR', now(), now());
+    const barOrderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-WS-BAR') as any).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-bar-product', 'KDS Bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(barOrderId, now(), now());
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
@@ -109,7 +122,30 @@ async function run() {
     assert(chefLogin.status === 200, 'Chef login succeeds on KDS API');
     assert(!!chefLogin.body.access_token, 'Chef login returns access_token');
 
-    const token = chefLogin.body.access_token;
+    let token = chefLogin.body.access_token;
+
+    const standaloneLogout = await request(`http://127.0.0.1:${port}`)
+      .post('/api/auth/logout')
+      .set('Authorization', `Bearer ${token}`);
+    assert(standaloneLogout.status === 200, 'Standalone KDS logout succeeds');
+    const rejectedAfterLogout = await request(`http://127.0.0.1:${port}`)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    assert(rejectedAfterLogout.status === 401, 'Standalone KDS logout revokes the token');
+
+    const relogin = await request(`http://127.0.0.1:${port}`)
+      .post('/api/auth/login')
+      .send({ email: 'chef@flo.local', password: 'KitchenPass123!' });
+    assert(relogin.status === 200, 'Chef can log in again after standalone logout');
+    token = relogin.body.access_token;
+
+    // A credential cutoff must invalidate this token on every standalone KDS route.
+    db.prepare('UPDATE users SET tokens_valid_after = ? WHERE id = ?').run('2099-01-01 00:00:00', 'user-chef-1');
+    const staleMe = await request(`http://127.0.0.1:${port}`)
+      .get('/api/auth/me')
+      .set('Authorization', `Bearer ${token}`);
+    assert(staleMe.status === 401, 'Standalone KDS rejects a token older than tokens_valid_after');
+    db.prepare('UPDATE users SET tokens_valid_after = NULL WHERE id = ?').run('user-chef-1');
 
     // 5. Unauthenticated request to /api/kds/orders fails with 401
     const unauthedOrders = await request(`http://127.0.0.1:${port}`).get('/api/kds/orders');
@@ -121,6 +157,12 @@ async function run() {
       .set('Authorization', `Bearer ${token}`);
     assert(authedOrders.status === 200, 'Authenticated KDS orders request returns 200');
     assert(Array.isArray(authedOrders.body.orders), 'KDS orders returns an orders array');
+    assert(!('unit_price' in (authedOrders.body.orders[0]?.items?.[0] || {})), 'Station-only standalone chef receives redacted item pricing');
+    const categoriesRes = await request(`http://127.0.0.1:${port}`)
+      .get('/api/categories')
+      .set('Authorization', `Bearer ${token}`);
+    assert(categoriesRes.status === 200, 'Standalone categories request succeeds');
+    assert(categoriesRes.body.categories.every((category: any) => category.id === 'kds-category'), 'Station-only chef receives only permitted categories');
 
     // 7. The real WebSocket channel authenticates and receives mutation broadcasts.
     const ws = new WebSocket(`ws://127.0.0.1:${port}/kds`);
@@ -129,7 +171,9 @@ async function run() {
     ws.send(JSON.stringify({ type: 'auth', token }));
     const authMessage = await nextMessage('auth_success');
     assert(authMessage.user.role === 'chef', 'WebSocket authenticates kitchen staff');
-    await nextMessage('initial_data');
+    const initialData = await nextMessage('initial_data');
+    assert(!('unit_price' in (initialData.orders[0]?.items?.[0] || {})), 'Station-only WebSocket chef receives redacted item pricing');
+    assert(initialData.counts.pending === 1, 'WebSocket counts exclude unauthorized station categories');
 
     const updatePromise = nextMessage('initial_data');
     const statusRes = await request(`http://127.0.0.1:${port}`)
@@ -139,6 +183,12 @@ async function run() {
     assert(statusRes.status === 200, 'KDS item status update succeeds');
     await updatePromise;
     assert((db.prepare('SELECT status FROM order_items WHERE id = ?').get(itemId) as any).status === 'ready', 'WebSocket broadcast follows item mutation');
+    db.prepare("UPDATE order_items SET status = 'voided', voided_at = ? WHERE id = ?").run(now(), itemId);
+    const terminalStatusRes = await request(`http://127.0.0.1:${port}`)
+      .patch(`/api/kds/items/${itemId}/status`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ status: 'preparing' });
+    assert(terminalStatusRes.status === 400, 'Standalone KDS cannot overwrite a voided item');
     ws.close();
     await once(ws, 'close');
 

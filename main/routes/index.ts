@@ -18,7 +18,7 @@ import { kdsRoutes } from './kds';
 import { kdsInfoRoutes } from './kds-info';
 import { posInfoRoutes } from './pos-info';
 import { moreAppsRoutes } from './more-apps';
-import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
+import { notifyKdsUpdate } from '../services/kds';
 import { printerRoutes } from './printers';
 import { databaseRoutes } from './database';
 import { databaseToolsRoutes } from './database-tools';
@@ -470,7 +470,6 @@ export function registerRoutes(app: Express): void {
         result.orderCancelled ? 'order.cancelled' : (isInProgressVoid ? 'order.item_voided' : 'order.item_cancelled'),
       );
       notifyKdsUpdate();
-      notifyOrderUpdated();
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);
@@ -607,7 +606,6 @@ export function registerRoutes(app: Express): void {
 
       cloudSync.recordOrderChanged(orderId, 'order.item_restored');
       notifyKdsUpdate();
-      notifyOrderUpdated();
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Restore item error:', error);

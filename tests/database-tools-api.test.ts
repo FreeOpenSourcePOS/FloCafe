@@ -37,7 +37,7 @@ process.env.JWT_SECRET = 'test-secret-for-db-tools-api';
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
-const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS } = require('../main/db');
+const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS, now } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
@@ -129,6 +129,44 @@ async function runTests() {
   const db = getDatabase();
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('cashier-1', 'Cashier', 'hash', 'cashier', 1)`);
   const cashierToken = tokenFor('cashier-1', 'cashier');
+
+  const unresolvedUserImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [], categories: [], products: [], users: [],
+        orders: [{ id: 'order-with-missing-user', user_id: 'missing-user' }],
+      },
+    },
+  });
+  assert(unresolvedUserImport.status === 400, `imports with unresolved redacted user references are rejected (got ${unresolvedUserImport.status})`);
+  assert(unresolvedUserImport.body.error?.includes('redacted user'), 'unresolved user import explains the required staff setup');
+
+  // Redacted export fields must never become literal credentials on import.
+  db.prepare("INSERT OR IGNORE INTO categories (id, name, sort_order) VALUES ('stale-import-category', 'Stale', 99)").run();
+  const jwtSecretBefore = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
+  const redactedImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [{ key: 'jwt_secret', value: '[REDACTED]', updated_at: now() }],
+        categories: [],
+        products: [],
+        users: [],
+      },
+    },
+  });
+  assert(redactedImport.status === 200, `redacted settings import returns 200 (got ${redactedImport.status}, ${JSON.stringify(redactedImport.body)})`);
+  assert((db.prepare("SELECT COUNT(*) AS count FROM categories WHERE id = 'stale-import-category'").get() as { count: number }).count === 0, 'overwrite import clears tables explicitly present as empty');
+  const jwtSecretAfter = db.prepare("SELECT value FROM settings WHERE key = 'jwt_secret'").get() as { value: string } | undefined;
+  assert(
+    (jwtSecretAfter?.value ?? null) === (jwtSecretBefore?.value ?? null),
+    'redacted jwt_secret is preserved during import',
+  );
 
   // ── Test 2: health-check is owner-gated, not PIN-gated ──────────────────
   console.log('\nTest 2: GET /db-tools/health-check');

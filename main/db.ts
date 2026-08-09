@@ -1,5 +1,7 @@
 import Database from 'better-sqlite3';
+import type { Request, Response, NextFunction } from 'express';
 import * as path from 'path';
+import * as os from 'os';
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
@@ -8,6 +10,130 @@ import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
+
+// Database backup, restore, and wipe operations must not overlap. The lock is
+// a FIFO promise chain so a rejected operation cannot strand later work.
+let databaseMaintenanceTail: Promise<void> = Promise.resolve();
+let databaseMaintenanceActive = false;
+let activeDatabaseRequests = 0;
+let maintenanceRequestWaiters: (() => void)[] = [];
+let maintenanceDrainWaiters: (() => void)[] = [];
+const databaseMaintenanceStartListeners = new Set<() => void>();
+const databaseMaintenanceEndListeners = new Set<() => void>();
+
+function releaseMaintenanceDrainWaiters(): void {
+  if (activeDatabaseRequests !== 0) return;
+  const waiters = maintenanceDrainWaiters;
+  maintenanceDrainWaiters = [];
+  waiters.forEach((resolve) => resolve());
+}
+
+function releaseMaintenanceRequestWaiters(): void {
+  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive) return;
+  const waiters = maintenanceRequestWaiters;
+  maintenanceRequestWaiters = [];
+  waiters.forEach((resolve) => resolve());
+}
+
+export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
+  const run = (): Promise<T> => {
+    // Reserve the request synchronously. A maintenance lock scheduled in the
+    // same turn must observe this request before it starts replacing the DB.
+    activeDatabaseRequests += 1;
+    return Promise.resolve().then(operation).finally(() => {
+      activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
+      releaseMaintenanceDrainWaiters();
+      releaseMaintenanceRequestWaiters();
+    });
+  };
+  if (!databaseMaintenanceActive) return run();
+  return new Promise<T>((resolve, reject) => {
+    maintenanceRequestWaiters.push(() => { run().then(resolve, reject); });
+  });
+}
+
+export function registerDatabaseMaintenanceStartListener(listener: () => void): () => void {
+  databaseMaintenanceStartListeners.add(listener);
+  return () => databaseMaintenanceStartListeners.delete(listener);
+}
+
+export function registerDatabaseMaintenanceEndListener(listener: () => void): () => void {
+  databaseMaintenanceEndListeners.add(listener);
+  return () => databaseMaintenanceEndListeners.delete(listener);
+}
+
+export function isDatabaseMaintenanceActive(): boolean {
+  return databaseMaintenanceActive;
+}
+
+const DATABASE_MAINTENANCE_ROUTES = new Set([
+  'POST /api/db/import',
+  'POST /api/db/backup',
+  'GET /api/db/download',
+  'POST /api/db-tools/initialize',
+]);
+
+function isDatabaseMaintenanceRoute(req: Request): boolean {
+  return DATABASE_MAINTENANCE_ROUTES.has(`${req.method} ${req.path}`);
+}
+
+export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
+  // A later request must still be rejected here, before authentication or
+  // route middleware can query a database handle that the active operation may
+  // close and replace.
+  if (databaseMaintenanceActive) {
+    res.status(503).json({ error: 'Database maintenance in progress' });
+    return;
+  }
+
+  // These handlers acquire the FIFO lock themselves. Do not count the lock
+  // owner as an active database request: its response cannot finish until the
+  // handler returns, so counting it would make the handler wait for itself.
+  if (isDatabaseMaintenanceRoute(req)) {
+    next();
+    return;
+  }
+
+  activeDatabaseRequests += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
+    releaseMaintenanceDrainWaiters();
+    releaseMaintenanceRequestWaiters();
+  };
+  res.once('finish', release);
+  res.once('close', release);
+  next();
+}
+
+export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>): Promise<T> {
+  const previous = databaseMaintenanceTail;
+  let release!: () => void;
+  databaseMaintenanceTail = new Promise<void>((resolve) => { release = resolve; });
+  return previous.then(async () => {
+    databaseMaintenanceActive = true;
+    for (const listener of databaseMaintenanceStartListeners) {
+      try { listener(); } catch (error) { console.error('[DB] Maintenance listener failed:', error); }
+    }
+    // Maintenance routes are excluded from activeDatabaseRequests by the
+    // middleware above. Any remaining active requests were already in flight
+    // before maintenance began and must drain first.
+    if (activeDatabaseRequests > 0) {
+      await new Promise<void>((resolve) => maintenanceDrainWaiters.push(resolve));
+    }
+    try {
+      return await operation();
+    } finally {
+      databaseMaintenanceActive = false;
+      for (const listener of databaseMaintenanceEndListeners) {
+        try { listener(); } catch (error) { console.error('[DB] Maintenance end listener failed:', error); }
+      }
+      releaseMaintenanceRequestWaiters();
+    }
+  }).finally(release);
+}
 
 const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
 
@@ -65,15 +191,259 @@ function getBackupDir(): string {
   return path.join(userDataPath, 'backups');
 }
 
-export function initDatabase(): void {
+type ReplacementJournal = {
+  phase: 'prepared' | 'committed';
+  recoveryPath: string;
+  dbPath: string;
+  baselineForeignKeyViolations?: string[];
+};
+
+function syncFile(filePath: string): void {
+  const fd = fs.openSync(filePath, 'r');
+  try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+}
+
+function writeReplacementJournal(journalPath: string, journal: ReplacementJournal): void {
+  const tempPath = `${journalPath}.tmp`;
+  fs.writeFileSync(tempPath, JSON.stringify(journal), { encoding: 'utf8', mode: 0o600 });
+  syncFile(tempPath);
+  fs.renameSync(tempPath, journalPath);
+  if (!syncDirectory(path.dirname(journalPath)) && process.platform !== 'win32') {
+    throw new Error('Could not durably record database replacement journal');
+  }
+}
+
+function isLiveDatabaseTarget(candidatePath: string, dbPath: string): boolean {
+  const normalize = (value: string) => process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value;
+  if (normalize(path.resolve(candidatePath)) === normalize(path.resolve(dbPath))) return true;
+  try {
+    const candidateStat = fs.statSync(candidatePath);
+    const dbStat = fs.statSync(dbPath);
+    if (candidateStat.dev === dbStat.dev && candidateStat.ino === dbStat.ino) return true;
+  } catch { }
+  try {
+    const candidateReal = path.join(fs.realpathSync(path.dirname(candidatePath)), path.basename(candidatePath));
+    return normalize(candidateReal) === normalize(fs.realpathSync(dbPath));
+  } catch {
+    return false;
+  }
+}
+
+function pathEntryExists(filePath: string): boolean {
+  try { fs.lstatSync(filePath); return true; } catch { return false; }
+}
+
+function syncDirectory(directoryPath: string): boolean {
+  try {
+    const fd = fs.openSync(directoryPath, 'r');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    return true;
+  } catch {
+    // Directory fsync is unavailable on some Windows filesystems.
+    return false;
+  }
+}
+
+function removeReplacementArtifacts(journalPath: string, recoveryPath: string): void {
+  for (const filePath of [journalPath, `${journalPath}.tmp`, recoveryPath, `${recoveryPath}-wal`, `${recoveryPath}-shm`]) {
+    try { if (pathEntryExists(filePath)) fs.unlinkSync(filePath); } catch { }
+  }
+  syncDirectory(path.dirname(journalPath));
+}
+
+let recoverySchemaReference: Map<string, string[]> | null = null;
+let buildingIdealSchema = false;
+
+function getRecoverySchemaReference(): Map<string, string[]> {
+  if (recoverySchemaReference) return recoverySchemaReference;
+  const idealDb = buildIdealSchemaDb();
+  try {
+    recoverySchemaReference = new Map(getTables(idealDb).map((table) => [table, getColumns(idealDb, table)]));
+    return recoverySchemaReference;
+  } finally {
+    idealDb.close();
+  }
+}
+
+function normalizedSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
+  const definitions = dbInstance.prepare(`
+    SELECT type, name, tbl_name, sql FROM sqlite_master
+    WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
+  `).all() as { type: string; name: string; tbl_name: string; sql: string }[];
+  return new Map(definitions.map((row) => [
+    `${row.type}:${row.name}`,
+    row.sql.replace(/\s+/g, ' ').trim().toLowerCase(),
+  ]));
+}
+
+function isHealthyDatabaseFile(
+  filePath: string,
+  allowedForeignKeyViolations: Set<string> | null | undefined = undefined,
+  requireMetadata = true,
+): boolean {
+  try {
+    const candidate = new Database(filePath, { readonly: true, fileMustExist: true });
+    const integrity = (candidate.prepare('PRAGMA integrity_check').get() as { integrity_check: string }).integrity_check === 'ok';
+    const foreignKeyViolations = getForeignKeyViolationKeys(candidate);
+    const foreignKeysClean = allowedForeignKeyViolations === null
+      || (allowedForeignKeyViolations
+        ? [...foreignKeyViolations].every((key) => allowedForeignKeyViolations.has(key))
+        : foreignKeyViolations.size === 0);
+    const schemaVersion = Number(candidate.pragma('user_version', { simple: true }));
+    let metadata: { value: string } | undefined;
+    try {
+      metadata = candidate.prepare("SELECT value FROM _flo_meta WHERE key = 'schema_version'").get() as { value: string } | undefined;
+    } catch { }
+    const tables = new Set(getTables(candidate));
+    const expectedSchema = getRecoverySchemaReference();
+    const columnsValid = [...expectedSchema.entries()].every(([table, columns]) => {
+      const available = new Set(getColumns(candidate, table));
+      return columns.every((column) => available.has(column));
+    });
+    const supportedVersion = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
+    const idealDb = buildIdealSchemaDb();
+    let definitionsValid = false;
+    try {
+      const expectedDefinitions = normalizedSchemaDefinitions(idealDb);
+      const actualDefinitions = normalizedSchemaDefinitions(candidate);
+      definitionsValid = expectedDefinitions.size === actualDefinitions.size
+        && [...expectedDefinitions].every(([key, sql]) => actualDefinitions.get(key) === sql);
+    } finally {
+      idealDb.close();
+    }
+    candidate.close();
+    return integrity && foreignKeysClean && schemaVersion > 0 && schemaVersion <= supportedVersion
+      && (!requireMetadata || metadata?.value === String(schemaVersion))
+      && tables.size === expectedSchema.size
+      && [...expectedSchema.keys()].every((table) => tables.has(table))
+      && columnsValid && definitionsValid;
+  } catch {
+    return false;
+  }
+}
+
+function removeOlderReplacementJournals(journals: string[], dbPath: string, backupDir: string): void {
+  const backupRoot = path.resolve(backupDir);
+  for (const journalPath of journals) {
+    try {
+      const journalStat = fs.lstatSync(journalPath);
+      if (journalStat.isSymbolicLink() || !journalStat.isFile()) throw new Error('journal is not a regular file');
+      const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
+      if ((journal.phase !== 'prepared' && journal.phase !== 'committed')
+        || typeof journal.recoveryPath !== 'string'
+        || journal.dbPath !== dbPath
+        || path.dirname(journal.recoveryPath) !== backupRoot
+        || `${path.basename(journalPath, '.json')}.db` !== path.basename(journal.recoveryPath)) {
+        throw new Error('invalid stale replacement journal');
+      }
+      removeReplacementArtifacts(journalPath, journal.recoveryPath);
+    } catch (error) {
+      // The newest journal has already established the recovery decision. Do
+      // not let an unrelated stale/corrupt older journal brick every startup;
+      // remove only that journal and its same-basename snapshot.
+      const fallbackRecovery = path.join(backupRoot, `${path.basename(journalPath, '.json')}.db`);
+      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      console.warn(`[DB] Removed stale invalid replacement journal: ${journalPath}`);
+    }
+  }
+}
+
+function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string): void {
+  let journals: string[] = [];
+  try {
+    journals = fs.readdirSync(backupDir)
+      .filter((name) => /^(?:flo-restore|flo-reset)-recovery-.+\.json$/.test(name))
+      .map((name) => path.join(backupDir, name))
+      .sort((a, b) => fs.lstatSync(b).mtimeMs - fs.lstatSync(a).mtimeMs);
+  } catch (error) {
+    throw new Error(`Could not inspect database replacement journals: ${error instanceof Error ? error.message : 'unknown error'}`);
+  }
+  for (const journalPath of journals) {
+    const fallbackRecovery = path.join(path.resolve(backupDir), `${path.basename(journalPath, '.json')}.db`);
+    let journalStat: fs.Stats;
+    try { journalStat = fs.lstatSync(journalPath); } catch {
+      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      continue;
+    }
+    if (journalStat.isSymbolicLink() || !journalStat.isFile()) {
+      removeReplacementArtifacts(journalPath, fallbackRecovery);
+      continue;
+    }
+    let journal: ReplacementJournal;
+    try {
+      const parsed = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as Partial<ReplacementJournal>;
+      if ((parsed.phase !== 'prepared' && parsed.phase !== 'committed')
+        || typeof parsed.recoveryPath !== 'string'
+        || typeof parsed.dbPath !== 'string'
+        || !path.isAbsolute(parsed.recoveryPath)
+        || !path.isAbsolute(parsed.dbPath)
+        || (parsed.baselineForeignKeyViolations !== undefined
+          && (!Array.isArray(parsed.baselineForeignKeyViolations)
+            || parsed.baselineForeignKeyViolations.some((key) => typeof key !== 'string')))) {
+        throw new Error('invalid phase or paths');
+      }
+      journal = parsed as ReplacementJournal;
+    } catch (error) {
+      throw new Error(`Interrupted database replacement journal is invalid: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
+    const recoveryPath = journal.recoveryPath;
+    const backupRoot = path.resolve(backupDir);
+    const recoveryRoot = path.dirname(recoveryPath);
+    const journalBase = path.basename(journalPath, '.json');
+    const recoveryNameValid = `${journalBase}.db` === path.basename(recoveryPath);
+    if (journal.dbPath !== dbPath || recoveryRoot !== backupRoot || !recoveryNameValid) {
+      throw new Error('Interrupted database replacement recovery snapshot could not be validated');
+    }
+    // Journals written by this version carry the exact legacy FK baseline.
+    // Older journals predate that field, so retain their compatibility behavior
+    // rather than bricking an installation during an upgrade.
+    const allowedForeignKeyViolations = journal.baselineForeignKeyViolations === undefined
+      ? null
+      : new Set(journal.baselineForeignKeyViolations);
+    // Replacement snapshots are copies of the live database, not backup
+    // artifacts; the live database intentionally has no _flo_meta table.
+    const requireMetadata = false;
+    // A committed replacement is already durable in the live path. Finalize
+    // its journal before touching the old snapshot; legacy installs may have
+    // pre-existing FK violations that are intentionally preserved.
+    if (journal.phase === 'committed' && isHealthyDatabaseFile(dbPath, allowedForeignKeyViolations, requireMetadata)) {
+      removeReplacementArtifacts(journalPath, recoveryPath);
+      removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
+      console.warn(`[DB] Finalized committed database replacement journal: ${journalPath}`);
+      return;
+    }
+    let recoveryStat: fs.Stats;
+    try { recoveryStat = fs.lstatSync(recoveryPath); } catch { throw new Error('Interrupted database replacement snapshot is missing'); }
+    const recoverySidecars = pathEntryExists(`${recoveryPath}-wal`) || pathEntryExists(`${recoveryPath}-shm`);
+    if (recoveryStat.isSymbolicLink() || !recoveryStat.isFile() || recoverySidecars
+      || !isHealthyDatabaseFile(recoveryPath, allowedForeignKeyViolations, requireMetadata)) {
+      throw new Error('Interrupted database replacement recovery snapshot could not be validated');
+    }
+    const failures = removeDatabaseFiles(dbPath);
+    if (failures.length > 0) throw new Error(`Could not clear interrupted database replacement: ${failures.join(', ')}`);
+    fs.copyFileSync(recoveryPath, dbPath);
+    syncFile(dbPath);
+    if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+      throw new Error('Could not durably install recovered database');
+    }
+    removeReplacementArtifacts(journalPath, recoveryPath);
+    removeOlderReplacementJournals(journals.slice(1), dbPath, backupDir);
+    console.warn(`[DB] Recovered database from interrupted replacement snapshot: ${recoveryPath}`);
+    return;
+  }
+}
+
+export function initDatabase(recoverInterruptedReplacement = true): void {
   const dbPath = getDbPath();
   const backupDir = getBackupDir();
 
   if (!fs.existsSync(backupDir)) {
     fs.mkdirSync(backupDir, { recursive: true });
   }
+  if (recoverInterruptedReplacement) recoverInterruptedDatabaseReplacement(dbPath, backupDir);
 
   console.log(`[DB] Opening database at: ${dbPath}`);
+  dbHealthError = null;
   db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('synchronous = NORMAL');
@@ -359,9 +729,11 @@ export function closeDatabase(): void {
   }
 }
 
-export async function createBackup(targetPath?: string): Promise<{ path: string; schemaVersion: number }> {
+export async function createBackupUnlocked(targetPath?: string): Promise<{ path: string; schemaVersion: number }> {
+  // Internal callers must already hold withDatabaseMaintenanceLock().
   console.log('[DB] createBackup: Starting...');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const uniqueSuffix = crypto.randomBytes(4).toString('hex');
   const backupDir = getBackupDir();
 
   if (!fs.existsSync(backupDir)) {
@@ -373,50 +745,186 @@ export async function createBackup(targetPath?: string): Promise<{ path: string;
   // DB in WAL mode would try to create .db-wal/.db-shm siblings next to the
   // user-selected file, which the sandbox blocks. Writing to userData first
   // avoids that restriction; we copy the final clean file to targetPath.
-  const tempPath = path.join(backupDir, `flo-backup-${timestamp}.db`);
-  const finalPath = targetPath || tempPath;
+  const tempPath = path.join(backupDir, `flo-backup-${timestamp}-${uniqueSuffix}.db`);
+  const finalPath = targetPath ? path.resolve(targetPath) : tempPath;
+  const stagedTargetPath = finalPath !== tempPath
+    ? path.join(path.dirname(finalPath), `.${path.basename(finalPath)}.tmp-${uniqueSuffix}`)
+    : null;
+  let completed = false;
 
-  console.log('[DB] createBackup: Backing up to temp:', tempPath);
-  await db.backup(tempPath);
-
-  const backupDb = new Database(tempPath);
-  // Switch to DELETE journal mode: checkpoints WAL and removes .db-wal/.db-shm
-  // so the final file is self-contained with no auxiliary files.
-  backupDb.pragma('journal_mode = DELETE');
-  backupDb.exec(`
-    CREATE TABLE IF NOT EXISTS _flo_meta (
-      key TEXT PRIMARY KEY,
-      value TEXT
-    )
-  `);
-
-  const currentVersion = getCurrentSchemaVersion();
-  backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
-    .run('schema_version', String(currentVersion));
-  backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
-    .run('backup_created_at', new Date().toISOString());
-  backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
-    .run('app_version', app.getVersion());
-  backupDb.close();
-
-  if (finalPath !== tempPath) {
-    fs.copyFileSync(tempPath, finalPath);
-    fs.unlinkSync(tempPath);
-    console.log(`[DB] Backup saved to: ${finalPath} (schema v${currentVersion})`);
-  } else {
-    console.log(`[DB] Backup created: ${finalPath} (schema v${currentVersion})`);
+  const liveDatabasePath = getDbPath();
+  if ([liveDatabasePath, `${liveDatabasePath}-wal`, `${liveDatabasePath}-shm`].some((livePath) => isLiveDatabaseTarget(finalPath, livePath))) {
+    throw new Error('Backup target cannot be the live database or its SQLite sidecars');
+  }
+  if (stagedTargetPath && fs.existsSync(finalPath) && fs.lstatSync(finalPath).isSymbolicLink()) {
+    throw new Error('Backup target cannot be a symbolic link');
   }
 
-  return { path: finalPath, schemaVersion: currentVersion };
+  try {
+    console.log('[DB] createBackup: Backing up to temp:', tempPath);
+    await db.backup(tempPath);
+
+    let currentVersion = 0;
+    let backupDb: Database.Database | undefined;
+    try {
+      backupDb = new Database(tempPath);
+      // Switch to DELETE journal mode: checkpoints WAL and removes
+      // .db-wal/.db-shm so the final file is self-contained.
+      backupDb.pragma('journal_mode = DELETE');
+      backupDb.exec(`
+        CREATE TABLE IF NOT EXISTS _flo_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT
+        )
+      `);
+
+      currentVersion = getCurrentSchemaVersion();
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
+        .run('schema_version', String(currentVersion));
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
+        .run('backup_created_at', new Date().toISOString());
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
+        .run('app_version', app.getVersion());
+    } finally {
+      backupDb?.close();
+    }
+
+    if (stagedTargetPath) {
+      fs.copyFileSync(tempPath, stagedTargetPath);
+      syncFile(stagedTargetPath);
+      if (!syncDirectory(path.dirname(stagedTargetPath)) && process.platform !== 'win32') {
+        throw new Error('Could not durably stage backup target');
+      }
+      try {
+        fs.renameSync(stagedTargetPath, finalPath);
+      } catch (error) {
+        if (process.platform !== 'win32' || !fs.existsSync(finalPath)) throw error;
+        fs.unlinkSync(finalPath);
+        fs.renameSync(stagedTargetPath, finalPath);
+      }
+      syncDirectory(path.dirname(finalPath));
+      fs.unlinkSync(tempPath);
+    }
+    for (const sidecar of [`${finalPath}-wal`, `${finalPath}-shm`]) {
+      try { if (pathEntryExists(sidecar)) fs.unlinkSync(sidecar); } catch { }
+    }
+    syncFile(finalPath);
+    if (!syncDirectory(path.dirname(finalPath)) && process.platform !== 'win32') {
+      throw new Error('Could not durably persist backup file');
+    }
+    if (finalPath !== tempPath) {
+      console.log(`[DB] Backup saved to: ${finalPath} (schema v${currentVersion})`);
+    } else {
+      console.log(`[DB] Backup created: ${finalPath} (schema v${currentVersion})`);
+    }
+
+    completed = true;
+    return { path: finalPath, schemaVersion: currentVersion };
+  } finally {
+    if (!completed) {
+      for (const filePath of [tempPath, stagedTargetPath, `${tempPath}-wal`, `${tempPath}-shm`].filter((value): value is string => Boolean(value))) {
+        try { if (pathEntryExists(filePath)) fs.unlinkSync(filePath); } catch { }
+      }
+    }
+  }
 }
 
-/** Reads the schema_version stamp createBackup() writes into _flo_meta. Older backups predating that stamp (or a file that fails to open) return null. */
+export function createBackup(targetPath?: string): Promise<{ path: string; schemaVersion: number }> {
+  return withDatabaseMaintenanceLock(() => createBackupUnlocked(targetPath));
+}
+
+function removeDatabaseFiles(dbPath: string): string[] {
+  const failures: string[] = [];
+  for (const filePath of [dbPath, `${dbPath}-wal`, `${dbPath}-shm`]) {
+    try {
+      if (pathEntryExists(filePath)) fs.unlinkSync(filePath);
+    } catch (error: any) {
+      console.warn(`[DB] Could not remove ${filePath}:`, error);
+      failures.push(filePath);
+    }
+  }
+  return failures;
+}
+
+/**
+ * Creates the safety backup and resets the live database while holding the
+ * same maintenance lock used by ordinary backups. On a failed wipe/reopen,
+ * restore the safety backup before surfacing the error so callers never see a
+ * false success or an intentionally closed database.
+ */
+export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }> {
+  return withDatabaseMaintenanceLock(async () => {
+    const { path: backupPath } = await createBackupUnlocked();
+    const dbPath = getDbPath();
+    const baselineForeignKeyViolations = getForeignKeyViolationKeys(getDatabase());
+    const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
+    const journalPath = recoveryPath.replace(/\.db$/, '.json');
+    let replacementCompleted = false;
+    let recoveryCompleted = false;
+
+    try {
+      fs.copyFileSync(backupPath, recoveryPath);
+      syncFile(recoveryPath);
+      writeReplacementJournal(journalPath, {
+        phase: 'prepared', recoveryPath, dbPath,
+        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+      });
+      closeDatabase();
+      const failures = removeDatabaseFiles(dbPath);
+      if (failures.length > 0) {
+        throw new Error(`Could not remove database files: ${failures.join(', ')}`);
+      }
+      initDatabase(false);
+      getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+      syncFile(dbPath);
+      if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+        throw new Error('Could not durably commit reset database');
+      }
+      writeReplacementJournal(journalPath, {
+        phase: 'committed', recoveryPath, dbPath,
+        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+      });
+      replacementCompleted = true;
+      return { backupPath };
+    } catch (error: any) {
+      // Reopen the pre-wipe snapshot so a partial filesystem failure cannot
+      // leave the process serving an empty or closed database.
+      try {
+        closeDatabase();
+        removeDatabaseFiles(dbPath);
+        fs.copyFileSync(backupPath, dbPath);
+        syncFile(dbPath);
+        if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+          throw new Error('Could not durably recover reset database');
+        }
+        initDatabase(false);
+        recoveryCompleted = true;
+      } catch (recoveryError: any) {
+        throw new Error(
+          `Database reset failed: ${error?.message || 'unknown error'}; ` +
+          `database recovery also failed: ${recoveryError?.message || 'unknown error'}`,
+        );
+      }
+      throw error;
+    } finally {
+      if (replacementCompleted || recoveryCompleted) removeReplacementArtifacts(journalPath, recoveryPath);
+    }
+  });
+}
+
+/** Reads the canonical schema_version stamp createBackup() writes into _flo_meta. */
+function parseCanonicalSchemaVersion(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^(?:0|[1-9]\d*)$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}
+
 function readBackupSchemaVersion(fullPath: string): number | null {
   let backupDb: Database.Database | undefined;
   try {
     backupDb = new Database(fullPath, { readonly: true, fileMustExist: true });
     const row = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-    return row ? parseInt(row.value, 10) : null;
+    return row ? parseCanonicalSchemaVersion(row.value) : null;
   } catch {
     return null;
   } finally {
@@ -437,6 +945,9 @@ export function listBackups(): { fileName: string; path: string; sizeBytes: numb
 
   return fs.readdirSync(backupDir)
     .filter((fileName) => fileName.startsWith('flo-backup-') && fileName.endsWith('.db'))
+    .filter((fileName) => {
+      try { return fs.lstatSync(path.join(backupDir, fileName)).isFile(); } catch { return false; }
+    })
     .map((fileName) => {
       const fullPath = path.join(backupDir, fileName);
       const stat = fs.statSync(fullPath);
@@ -473,6 +984,20 @@ export function deleteBackup(fileName: string): void {
   fs.unlinkSync(fullPath);
 }
 
+function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
+  const rows = dbInstance.prepare(`
+    SELECT type, name, sql
+    FROM sqlite_master
+    WHERE type IN ('table', 'index', 'trigger', 'view')
+      AND name NOT LIKE 'sqlite_%'
+      AND name <> '_flo_meta'
+  `).all() as { type: string; name: string; sql: string | null }[];
+  return new Map(rows.map((row) => [
+    `${row.type}:${row.name}`,
+    (row.sql || '').replace(/\s+/g, ' ').trim(),
+  ]));
+}
+
 function getColumns(dbInstance: Database.Database, tableName: string): string[] {
   try {
     const columns = dbInstance.prepare(`PRAGMA table_info(${tableName})`).all() as { name: string }[];
@@ -486,7 +1011,7 @@ export function getTables(dbInstance: Database.Database): string[] {
   try {
     const tables = dbInstance.prepare(`
       SELECT name FROM sqlite_master WHERE type='table' 
-      AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_flo_meta'
+      AND name NOT LIKE 'sqlite_%' AND name <> '_flo_meta'
     `).all() as { name: string }[];
     return tables.map(t => t.name);
   } catch {
@@ -503,40 +1028,648 @@ export interface RestoreResult {
   error?: string;
 }
 
+function validateDirectBackup(backupPath: string, currentDb: Database.Database, currentVersion: number, baselineForeignKeyViolations: Set<string> = new Set()): string | null {
+  let backupDb: Database.Database | undefined;
+  try {
+    const sourceStat = fs.lstatSync(backupPath);
+    if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) return 'Direct restore source must be a regular file';
+    if (pathEntryExists(`${backupPath}-wal`) || pathEntryExists(`${backupPath}-shm`)) return 'Direct restore source must not have SQLite sidecars';
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+    const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
+    const metadataVersion = metaRow ? parseCanonicalSchemaVersion(metaRow.value) ?? 0 : 0;
+    const pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
+    if (metadataVersion !== currentVersion || pragmaVersion !== currentVersion) {
+      return `Direct restore requires matching metadata/header schema v${currentVersion}`;
+    }
+
+    const integrity = backupDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
+    if (integrity.some((row) => row.integrity_check !== 'ok')) {
+      return `Backup integrity check failed: ${integrity.map((row) => row.integrity_check).join('; ')}`;
+    }
+    const backupForeignKeyViolations = getForeignKeyViolationKeys(backupDb);
+    const newForeignKeyViolations = [...backupForeignKeyViolations].filter((key) => !baselineForeignKeyViolations.has(key));
+    if (newForeignKeyViolations.length > 0) {
+      return `Backup contains ${newForeignKeyViolations.length} new foreign-key violation(s)`;
+    }
+
+    const currentTables = getTables(currentDb);
+    const backupTables = new Set(getTables(backupDb));
+    const missingTables = currentTables.filter((tableName) => !backupTables.has(tableName));
+    if (missingTables.length > 0) {
+      return `Backup is missing required table(s): ${missingTables.join(', ')}`;
+    }
+
+    for (const tableName of currentTables) {
+      const backupColumns = new Set(getColumns(backupDb, tableName));
+      const missingColumns = getColumns(currentDb, tableName).filter((column) => !backupColumns.has(column));
+      if (missingColumns.length > 0) {
+        return `Backup table ${tableName} is missing required column(s): ${missingColumns.join(', ')}`;
+      }
+    }
+
+    const currentSchema = getSchemaDefinitions(currentDb);
+    const backupSchema = getSchemaDefinitions(backupDb);
+    for (const [key, definition] of currentSchema) {
+      if (backupSchema.get(key) !== definition) {
+        return `Backup schema object ${key} is missing or differs from the current definition`;
+      }
+    }
+    for (const key of backupSchema.keys()) {
+      if (!currentSchema.has(key)) {
+        return `Backup contains unapproved schema object ${key}`;
+      }
+    }
+    return null;
+  } catch (error: any) {
+    return `Backup validation failed: ${error?.message || 'unknown error'}`;
+  } finally {
+    backupDb?.close();
+  }
+}
+
+type RevocationRow = { token_hash: string; expires_at: number; revoked_at: string };
+export type UserStationSecurityState = {
+  user_id: string;
+  station_id: string;
+  is_active: number;
+  category_ids: string | null;
+};
+export type KitchenStationSecurityState = {
+  id: string;
+  is_active: number;
+  category_ids: string | null;
+};
+
+export function captureKitchenStationSecurityState(dbInstance: Database.Database): KitchenStationSecurityState[] {
+  try {
+    return dbInstance.prepare('SELECT id, is_active, category_ids FROM kitchen_stations').all() as KitchenStationSecurityState[];
+  } catch {
+    return [];
+  }
+}
+
+export type KdsEnabledSettingState = { present: boolean; value: string | null };
+export type RestoreProtectedSettingState = { key: string; present: boolean; value: string | null };
+export type RestoreOutboxState = {
+  cloud: Record<string, unknown>[];
+  support: Record<string, unknown>[];
+  diagnostics: Record<string, unknown>[];
+};
+const RESTORE_PROTECTED_SETTING_KEYS = [
+  'jwt_secret', 'cloud_api_key', 'cloud_device_secret', 'cloud_pos_hash',
+  'telemetry_enabled', 'diagnostics_consent',
+  'mobile_pairing_code', 'mobile_pairing_code_expires_at',
+];
+
+export function captureRestoreProtectedSettings(dbInstance: Database.Database): RestoreProtectedSettingState[] {
+  const fixedRows = dbInstance.prepare(
+    `SELECT key, value FROM settings WHERE key IN (${RESTORE_PROTECTED_SETTING_KEYS.map(() => '?').join(',')})`,
+  ).all(...RESTORE_PROTECTED_SETTING_KEYS) as { key: string; value: string | null }[];
+  const cloudRows = dbInstance.prepare("SELECT key, value FROM settings WHERE key LIKE 'cloud_%'").all() as { key: string; value: string | null }[];
+  const byKey = new Map([...fixedRows, ...cloudRows].map((row) => [row.key, row.value]));
+  const keys = [...new Set([...RESTORE_PROTECTED_SETTING_KEYS, ...cloudRows.map((row) => row.key)])];
+  const deviceSecret = byKey.get('cloud_device_secret');
+  return keys.map((key) => ({
+    key,
+    // Pairing codes are installation-local, short-lived credentials. Never
+    // carry one across a restore, even if the live installation had one.
+    // A position hash without its device secret is also unsafe to preserve.
+    present: !key.startsWith('mobile_pairing_code')
+      && !(key === 'cloud_pos_hash' && !deviceSecret)
+      && byKey.has(key),
+    value: byKey.get(key) ?? null,
+  }));
+}
+
+export function mergeRestoreProtectedSettings(dbInstance: Database.Database, states: RestoreProtectedSettingState[]): void {
+  const upsert = dbInstance.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `);
+  // Cloud identity/configuration is installation-local. Remove every backup
+  // cloud key first so a future or backup-only key cannot cross installations.
+  dbInstance.prepare("DELETE FROM settings WHERE key LIKE 'cloud_%'").run();
+  for (const state of states) {
+    if (state.present) upsert.run(state.key, state.value, now());
+    else if (!state.key.startsWith('cloud_')) dbInstance.prepare('DELETE FROM settings WHERE key = ?').run(state.key);
+  }
+  const hasDeviceSecret = states.some((state) => state.key === 'cloud_device_secret' && state.present);
+  const hasPosHash = states.some((state) => state.key === 'cloud_pos_hash' && state.present);
+  if (!hasDeviceSecret || !hasPosHash) ensureCloudIdentity();
+}
+
+export function captureRestoreOutboxState(dbInstance: Database.Database): RestoreOutboxState {
+  const pending = (table: string) => dbInstance.prepare(`SELECT * FROM ${table} WHERE status IN ('pending', 'failed', 'sending')`).all() as Record<string, unknown>[];
+  return { cloud: pending('cloud_sync_outbox'), support: pending('support_ticket_outbox'), diagnostics: pending('store_diagnostics_outbox') };
+}
+
+export function mergeRestoreOutboxState(dbInstance: Database.Database, state: RestoreOutboxState): void {
+  dbInstance.exec('DELETE FROM cloud_sync_outbox; DELETE FROM support_ticket_outbox; DELETE FROM store_diagnostics_outbox');
+  const cloud = dbInstance.prepare(`INSERT OR REPLACE INTO cloud_sync_outbox
+    (id, event_type, entity_type, entity_id, payload, status, attempt_count, next_attempt_at, last_error, delivered_at, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const row of state.cloud) cloud.run(row.id, row.event_type, row.entity_type, row.entity_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.delivered_at || null, row.created_at || now(), row.updated_at || now());
+  const support = dbInstance.prepare(`INSERT OR REPLACE INTO support_ticket_outbox
+    (client_ticket_id, payload, status, support_code, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const row of state.support) support.run(row.client_ticket_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.support_code || null, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
+  const diagnostics = dbInstance.prepare(`INSERT OR REPLACE INTO store_diagnostics_outbox
+    (event_id, payload, status, attempt_count, next_attempt_at, last_error, created_at, updated_at, delivered_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+  for (const row of state.diagnostics) diagnostics.run(row.event_id, row.payload, row.status === 'sending' ? 'failed' : row.status, row.attempt_count || 0, row.next_attempt_at || now(), row.last_error || null, row.created_at || now(), row.updated_at || now(), row.delivered_at || null);
+}
+
+export function captureKdsEnabledSetting(dbInstance: Database.Database): KdsEnabledSettingState {
+  const row = dbInstance.prepare('SELECT value FROM settings WHERE key = ?').get('kds_enabled') as { value: string | null } | undefined;
+  // A missing setting has always meant enabled; preserve that effective
+  // security posture instead of letting an older backup disable KDS.
+  return { present: true, value: row?.value ?? 'true' };
+}
+
+export function mergeKdsEnabledSetting(dbInstance: Database.Database, state: KdsEnabledSettingState): void {
+  if (!state.present) return;
+  dbInstance.prepare(`
+    INSERT INTO settings (key, value, updated_at) VALUES ('kds_enabled', ?, ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+  `).run(state.value, now());
+}
+
+export function captureUserStationSecurityState(dbInstance: Database.Database): UserStationSecurityState[] {
+  try {
+    return dbInstance.prepare(`
+      SELECT su.user_id, su.station_id, ks.is_active, ks.category_ids
+      FROM station_users su
+      JOIN kitchen_stations ks ON ks.id = su.station_id
+    `).all() as UserStationSecurityState[];
+  } catch {
+    return [];
+  }
+}
+
+export function mergeUserStationSecurityState(
+  dbInstance: Database.Database,
+  rows: UserStationSecurityState[],
+  userIds: string[],
+  preservedStations: KitchenStationSecurityState[] = [],
+): void {
+  const preservedIds = new Set(userIds);
+  const currentStation = dbInstance.prepare('SELECT 1 FROM kitchen_stations WHERE id = ?');
+  const missingStations = preservedStations
+    .filter((station) => !currentStation.get(station.id))
+    .map((station) => station.id);
+  if (missingStations.length > 0) {
+    throw new Error(`Restore cannot preserve current kitchen station(s): ${missingStations.join(', ')}`);
+  }
+  const restoreStationSecurity = dbInstance.prepare(
+    'UPDATE kitchen_stations SET is_active = ?, category_ids = ?, updated_at = ? WHERE id = ?',
+  );
+  for (const station of preservedStations) {
+    restoreStationSecurity.run(station.is_active, station.category_ids, now(), station.id);
+  }
+  const stationState = dbInstance.prepare('SELECT is_active, category_ids FROM kitchen_stations WHERE id = ?');
+  const invalidStations = rows
+    .filter((row) => preservedIds.has(row.user_id))
+    .filter((row) => {
+      const restored = stationState.get(row.station_id) as { is_active: number; category_ids: string | null } | undefined;
+      return !restored
+        || restored.is_active !== row.is_active
+        || restored.category_ids !== row.category_ids;
+    })
+    .map((row) => `${row.user_id}:${row.station_id}`);
+  if (invalidStations.length > 0) {
+    throw new Error(`Restore cannot preserve current station security state(s): ${invalidStations.join(', ')}`);
+  }
+
+  const currentUsers = dbInstance.prepare('SELECT id FROM users').all() as { id: string }[];
+  for (const user of currentUsers) {
+    dbInstance.prepare('DELETE FROM station_users WHERE user_id = ?').run(user.id);
+  }
+  const insert = dbInstance.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)');
+  for (const row of rows) {
+    if (preservedIds.has(row.user_id)) insert.run(row.user_id, row.station_id, now());
+  }
+}
+
+export type UserSecurityState = {
+  id: string;
+  name: string;
+  email: string | null;
+  password: string;
+  pin: string | null;
+  pin_hash: string | null;
+  role: string;
+  category_ids: string | null;
+  is_active: number;
+  tokens_valid_after: string | null;
+  station_assignments_configured: number;
+};
+
+export function getUserKdsStationIds(dbInstance: Database.Database, userId: string): string[] | null {
+  try {
+    return (dbInstance.prepare(`
+      SELECT su.station_id
+      FROM station_users su
+      JOIN kitchen_stations ks ON ks.id = su.station_id
+      WHERE su.user_id = ? AND ks.is_active = 1
+    `).all(userId) as { station_id: string }[]).map((row) => String(row.station_id));
+  } catch {
+    return null;
+  }
+}
+
+export function getKdsStationCategoryIds(dbInstance: Database.Database, stationIds: string[]): string[] | null {
+  if (stationIds.length === 0) return [];
+  try {
+    const placeholders = stationIds.map(() => '?').join(',');
+    const rows = dbInstance.prepare(`SELECT category_ids FROM kitchen_stations WHERE is_active = 1 AND id IN (${placeholders})`).all(...stationIds) as { category_ids: string | null }[];
+    const categories = new Set<string>();
+    for (const row of rows) {
+      if (!row.category_ids) continue;
+      try {
+        const parsed = JSON.parse(row.category_ids);
+        if (Array.isArray(parsed)) for (const categoryId of parsed) if (categoryId != null) categories.add(String(categoryId));
+      } catch { }
+    }
+    return [...categories];
+  } catch {
+    return null;
+  }
+}
+
+export type KdsStationRoutingScope = {
+  tablelessCategoryIds: string[];
+  categoryIdsByStation: Record<string, string[] | null>;
+};
+
+export function getKdsStationRoutingScope(
+  dbInstance: Database.Database,
+  stationIds: string[],
+  userCategoryIds: string[],
+): KdsStationRoutingScope | null {
+  if (stationIds.length === 0) return { tablelessCategoryIds: [], categoryIdsByStation: {} };
+  try {
+    const placeholders = stationIds.map(() => '?').join(',');
+    const rows = dbInstance.prepare(`
+      SELECT id, category_ids FROM kitchen_stations
+      WHERE is_active = 1 AND id IN (${placeholders})
+    `).all(...stationIds) as { id: string; category_ids: string | null }[];
+    const byStation: Record<string, string[] | null> = {};
+    const tableless = new Set<string>();
+    for (const stationId of stationIds) {
+      const row = rows.find((candidate) => String(candidate.id) === String(stationId));
+      let stationCategories: string[] = [];
+      if (row?.category_ids) {
+        try {
+          const parsed = JSON.parse(row.category_ids);
+          if (!Array.isArray(parsed)) return null;
+          stationCategories = parsed.filter((id) => id != null).map(String);
+        } catch {
+          return null;
+        }
+      }
+      const allowed = stationCategories.length > 0
+        ? stationCategories.filter((id) => userCategoryIds.length === 0 || userCategoryIds.includes(id))
+        : (userCategoryIds.length > 0 ? [...userCategoryIds] : null);
+      byStation[String(stationId)] = allowed;
+      if (allowed !== null) allowed.forEach((id) => tableless.add(id));
+    }
+    return { tablelessCategoryIds: [...tableless], categoryIdsByStation: byStation };
+  } catch {
+    return null;
+  }
+}
+
+export function getKdsStationRoutingCategoryIds(
+  dbInstance: Database.Database,
+  stationIds: string[],
+  userCategoryIds: string[],
+): string[] | null {
+  return getKdsStationRoutingScope(dbInstance, stationIds, userCategoryIds)?.tablelessCategoryIds ?? null;
+}
+
+export function isKdsStationItemAllowed(
+  stationIds: string[],
+  stationCategoryIds: string[],
+  orderStationId: string | null | undefined,
+  itemCategoryId: string | null | undefined,
+  orderStationCategoryIds?: string[] | null,
+): boolean {
+  if (stationIds.length === 0) return true;
+  if (orderStationId) {
+    if (!stationIds.includes(String(orderStationId))) return false;
+    if (orderStationCategoryIds === undefined) return true;
+    if (orderStationCategoryIds === null) return true;
+    return !!itemCategoryId && orderStationCategoryIds.includes(String(itemCategoryId));
+  }
+  return !!itemCategoryId && stationCategoryIds.includes(String(itemCategoryId));
+}
+
+export function hasUserKdsStationAssignments(dbInstance: Database.Database, userId: string): boolean | null {
+  try {
+    const row = dbInstance.prepare(`
+      SELECT station_assignments_configured,
+             EXISTS (SELECT 1 FROM station_users WHERE user_id = ?) AS assigned
+      FROM users WHERE id = ?
+    `).get(userId, userId) as { station_assignments_configured: number; assigned: number } | undefined;
+    if (!row) return null;
+    return row.station_assignments_configured === 1 || row.assigned === 1;
+  } catch {
+    return null;
+  }
+}
+
+export function captureUserSecurityState(dbInstance: Database.Database): UserSecurityState[] {
+  try {
+    return dbInstance.prepare('SELECT id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, station_assignments_configured FROM users').all() as UserSecurityState[];
+  } catch {
+    return [];
+  }
+}
+
+export function mergeUserSecurityState(dbInstance: Database.Database, rows: UserSecurityState[]): void {
+  for (const row of rows) {
+    const restored = dbInstance.prepare('SELECT id, is_active, tokens_valid_after, station_assignments_configured FROM users WHERE id = ?').get(row.id) as UserSecurityState | undefined;
+    if (!restored) continue;
+    const currentEpoch = row.tokens_valid_after;
+    const restoredEpoch = restored.tokens_valid_after;
+    const currentParsedTime = currentEpoch ? parseDbTimestamp(currentEpoch).getTime() : Number.NaN;
+    const restoredParsedTime = restoredEpoch ? parseDbTimestamp(restoredEpoch).getTime() : Number.NaN;
+    const currentTime = Number.isFinite(currentParsedTime) ? currentParsedTime : Number.NEGATIVE_INFINITY;
+    const restoredTime = Number.isFinite(restoredParsedTime) ? restoredParsedTime : Number.NEGATIVE_INFINITY;
+    const tokensValidAfter = currentTime >= restoredTime ? currentEpoch : restoredEpoch;
+    dbInstance.prepare(`
+      UPDATE users
+      SET name = ?, email = ?, password = ?, pin = ?, pin_hash = ?, role = ?, category_ids = ?,
+          is_active = ?, tokens_valid_after = ?, station_assignments_configured = ?
+      WHERE id = ?
+    `).run(
+      row.name, row.email, row.password, row.pin, row.pin_hash, row.role, row.category_ids,
+      row.is_active,
+      tokensValidAfter,
+      row.station_assignments_configured || 0,
+      row.id,
+    );
+  }
+
+  // Accounts introduced only by an older snapshot must not become a new
+  // login path without an explicit owner reactivation.
+  const preservedIds = new Set(rows.map((row) => row.id));
+  const restoredUsers = dbInstance.prepare('SELECT id FROM users').all() as { id: string }[];
+  const restoredIds = new Set(restoredUsers.map((user) => user.id));
+  const disableRestoredOnly = dbInstance.prepare('UPDATE users SET is_active = 0, tokens_valid_after = ? WHERE id = ?');
+  for (const user of restoredUsers) {
+    if (!preservedIds.has(user.id)) disableRestoredOnly.run(now(), user.id);
+  }
+
+  const insertPreservedUser = dbInstance.prepare(`
+    INSERT INTO users (id, name, email, password, pin, pin_hash, role, category_ids, is_active, tokens_valid_after, station_assignments_configured, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const row of rows) {
+    if (restoredIds.has(row.id)) continue;
+    const emailConflict = row.email
+      ? dbInstance.prepare('SELECT id FROM users WHERE email = ?').get(row.email) as { id: string } | undefined
+      : undefined;
+    if (emailConflict) dbInstance.prepare('UPDATE users SET email = NULL WHERE id = ?').run(emailConflict.id);
+    insertPreservedUser.run(
+      row.id, row.name, row.email, row.password, row.pin, row.pin_hash, row.role,
+      row.category_ids, row.is_active, row.tokens_valid_after, row.station_assignments_configured || 0, now(), now(),
+    );
+  }
+}
+
+function readRevocations(dbInstance: Database.Database): RevocationRow[] {
+  try {
+    return dbInstance.prepare('SELECT token_hash, expires_at, revoked_at FROM revoked_tokens').all() as RevocationRow[];
+  } catch {
+    return [];
+  }
+}
+
+function mergeRevocations(dbInstance: Database.Database, rows: RevocationRow[]): void {
+  if (rows.length === 0) return;
+  const merge = dbInstance.prepare(`
+    INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at)
+    VALUES (?, ?, ?)
+    ON CONFLICT(token_hash) DO UPDATE SET
+      expires_at = MAX(revoked_tokens.expires_at, excluded.expires_at),
+      revoked_at = MIN(revoked_tokens.revoked_at, excluded.revoked_at)
+  `);
+  for (const row of rows) merge.run(row.token_hash, row.expires_at, row.revoked_at);
+}
+
 export function restoreBackup(backupPath: string, forceDirect: boolean = false): RestoreResult {
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
-
-  const backupDb = new Database(backupPath, { readonly: true });
-
-  const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-  const backupSchemaVersion = metaRow ? parseInt(metaRow.value, 10) : 0;
-  backupDb.close();
-
-  const currentDb = getDatabase();
-  const currentVersion = getCurrentSchemaVersion();
-
-  console.log(`[DB] Backup schema version: ${backupSchemaVersion}, Current: ${currentVersion}`);
-
-  if (forceDirect || backupSchemaVersion === currentVersion) {
-    console.log('[DB] restoreBackup: Direct restore (same schema version)');
-    closeDatabase();
-    const dbPath = getDbPath();
-    fs.copyFileSync(backupPath, dbPath);
-    initDatabase();
-
-    // Get fresh DB handle after reinitialization
-    const freshDb = getDatabase();
+  try {
+    backupPath = materializeRestoreSource(backupPath, getDbPath());
+  } catch (error: any) {
+    const currentVersion = getCurrentSchemaVersion();
     return {
-      success: true,
-      mode: 'direct',
-      backupSchemaVersion,
+      success: false,
+      mode: forceDirect ? 'direct' : 'data_only',
+      backupSchemaVersion: 0,
       currentSchemaVersion: currentVersion,
-      tablesRestored: getTables(freshDb).length
+      tablesRestored: 0,
+      error: error?.message || 'Invalid restore source',
     };
   }
 
+  let metadataVersion = 0;
+  let metadataStampPresent = false;
+  let pragmaVersion = 0;
+  let backupDb: Database.Database | undefined;
+  try {
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+    const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
+    metadataStampPresent = Boolean(metaRow);
+    metadataVersion = metaRow ? parseCanonicalSchemaVersion(metaRow.value) ?? 0 : 0;
+    pragmaVersion = Number(backupDb.pragma('user_version', { simple: true }));
+  } finally {
+    backupDb?.close();
+  }
+
+  // The SQLite header is authoritative for what initDatabase() will open. A
+  // forged/stale _flo_meta stamp must not let forceDirect replace the live DB
+  // with a database this build cannot migrate or serve.
+  const backupSchemaVersion = Number.isFinite(metadataVersion) && metadataVersion > 0
+    ? metadataVersion
+    : pragmaVersion;
+  const currentDb = getDatabase();
+  const currentVersion = getCurrentSchemaVersion();
+  // Never let restoring an older snapshot resurrect a token that was revoked
+  // after that snapshot was created.
+  const preservedRevocations = readRevocations(currentDb);
+  const preservedUserSecurity = captureUserSecurityState(currentDb);
+  const preservedUserStations = captureUserStationSecurityState(currentDb);
+  const preservedStationSecurity = captureKitchenStationSecurityState(currentDb);
+  const preservedKdsEnabled = captureKdsEnabledSetting(currentDb);
+  const preservedProtectedSettings = captureRestoreProtectedSettings(currentDb);
+  const preservedOutboxes = captureRestoreOutboxState(currentDb);
+
+  console.log(`[DB] Backup schema version: ${backupSchemaVersion}, SQLite: ${pragmaVersion}, Current: ${currentVersion}`);
+
+  if (metadataStampPresent && (metadataVersion <= 0 || metadataVersion !== pragmaVersion)) {
+    return {
+      success: false,
+      mode: forceDirect ? 'direct' : 'data_only',
+      backupSchemaVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: 'Backup schema metadata does not match the SQLite header',
+    };
+  }
+
+  if (forceDirect && pragmaVersion > currentVersion) {
+    return {
+      success: false,
+      mode: 'direct',
+      backupSchemaVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: `Direct restore rejected: backup schema v${pragmaVersion} is newer than supported schema v${currentVersion}`,
+    };
+  }
+
+  if (forceDirect || backupSchemaVersion === currentVersion) {
+    const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
+    const validationError = validateDirectBackup(backupPath, currentDb, currentVersion, baselineForeignKeyViolations);
+    if (validationError) {
+      return {
+        success: false,
+        mode: 'direct',
+        backupSchemaVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored: 0,
+        error: validationError,
+      };
+    }
+
+    console.log('[DB] restoreBackup: Direct restore (same schema version)');
+    const dbPath = getDbPath();
+    const recoveryPath = path.join(getBackupDir(), `flo-restore-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
+    const journalPath = recoveryPath.replace(/\.db$/, '.json');
+
+    let recoveryCopyReady = false;
+    let recoveryCompleted = false;
+    try {
+      // Checkpoint the live WAL before making a synchronous recovery copy.
+      currentDb.pragma('wal_checkpoint(TRUNCATE)');
+      fs.copyFileSync(dbPath, recoveryPath);
+      syncFile(recoveryPath);
+      writeReplacementJournal(journalPath, {
+        phase: 'prepared', recoveryPath, dbPath,
+        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+      });
+      recoveryCopyReady = true;
+      closeDatabase();
+      const removeFailures = removeDatabaseFiles(dbPath);
+      if (removeFailures.length > 0) {
+        throw new Error(`Could not remove database files: ${removeFailures.join(', ')}`);
+      }
+      fs.copyFileSync(backupPath, dbPath);
+      initDatabase(false);
+
+      const freshDb = getDatabase();
+      mergeUserSecurityState(freshDb, preservedUserSecurity);
+      mergeUserStationSecurityState(freshDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
+      mergeKdsEnabledSetting(freshDb, preservedKdsEnabled);
+      mergeRestoreProtectedSettings(freshDb, preservedProtectedSettings);
+      freshDb.prepare('DELETE FROM kds_pairing_tokens').run();
+      mergeRestoreOutboxState(freshDb, preservedOutboxes);
+      mergeRevocations(freshDb, preservedRevocations);
+      const integrity = freshDb.prepare('PRAGMA integrity_check').all() as { integrity_check: string }[];
+      const newForeignKeyViolations = [...getForeignKeyViolationKeys(freshDb)]
+        .filter((key) => !baselineForeignKeyViolations.has(key));
+      if (
+        integrity.some((row) => row.integrity_check !== 'ok') ||
+        newForeignKeyViolations.length > 0
+      ) {
+        throw new Error('Restored database failed integrity validation');
+      }
+      freshDb.pragma('wal_checkpoint(TRUNCATE)');
+      syncFile(dbPath);
+      if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+        throw new Error('Could not durably commit restored database');
+      }
+      writeReplacementJournal(journalPath, {
+        phase: 'committed', recoveryPath, dbPath,
+        baselineForeignKeyViolations: [...baselineForeignKeyViolations],
+      });
+      return {
+        success: true,
+        mode: 'direct',
+        backupSchemaVersion,
+        currentSchemaVersion: currentVersion,
+        tablesRestored: getTables(freshDb).length,
+      };
+    } catch (error: any) {
+      // A corrupt/incompatible same-version file must not strand the live
+      // database. Restore the checkpointed safety copy before rethrowing.
+      if (!recoveryCopyReady) throw error;
+      try {
+        closeDatabase();
+        const recoveryRemoveFailures = removeDatabaseFiles(dbPath);
+        if (recoveryRemoveFailures.length > 0) {
+          throw new Error(`Could not remove database files during recovery: ${recoveryRemoveFailures.join(', ')}`);
+        }
+        fs.copyFileSync(recoveryPath, dbPath);
+        syncFile(dbPath);
+        if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
+          throw new Error('Could not durably recover direct-restore database');
+        }
+        initDatabase(false);
+        recoveryCompleted = true;
+      } catch (recoveryError: any) {
+        throw new Error(
+          `Direct restore failed: ${error?.message || 'unknown error'}; ` +
+          `live database recovery failed: ${recoveryError?.message || 'unknown error'}`,
+        );
+      }
+      throw error;
+    } finally {
+      if (recoveryCompleted) {
+        removeReplacementArtifacts(journalPath, recoveryPath);
+      } else if (isHealthyDatabaseFile(dbPath, baselineForeignKeyViolations, false)
+        && isHealthyDatabaseFile(recoveryPath, baselineForeignKeyViolations, false)) {
+        // A committed journal is finalized here; an uncommitted journal is
+        // intentionally retained if recovery itself failed.
+        try {
+          const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8')) as ReplacementJournal;
+          if (journal.phase === 'committed') removeReplacementArtifacts(journalPath, recoveryPath);
+        } catch { }
+      }
+    }
+  }
+
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, preservedOutboxes);
+}
+
+/** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
+export function getForeignKeyViolationKeys(dbInstance: Database.Database): Set<string> {
+  const rows = dbInstance.prepare('PRAGMA foreign_key_check').all() as { table: string; rowid: number | string | null; parent: string; fkid: number }[];
+  const keys = new Set<string>();
+  for (const row of rows) {
+    let identity: unknown = row.rowid;
+    try {
+      const tableInfo = dbInstance.prepare(`PRAGMA table_info("${row.table.replace(/"/g, '""')}")`).all() as { name: string; pk: number }[];
+      const primaryKeys = tableInfo.filter((column) => column.pk > 0).sort((a, b) => a.pk - b.pk);
+      const columns = primaryKeys.map((column) => `"${column.name.replace(/"/g, '""')}"`);
+      const foreignKey = (dbInstance.prepare(`PRAGMA foreign_key_list("${row.table.replace(/"/g, '""')}")`).all() as { id: number; from: string }[])
+        .filter((entry) => entry.id === row.fkid)
+        .map((entry) => entry.from);
+      const selectedColumns = [...new Set([...columns, ...foreignKey.map((column) => `"${column.replace(/"/g, '""')}"`)])];
+      if (selectedColumns.length > 0 && row.rowid != null) {
+        const values = dbInstance.prepare(`SELECT ${selectedColumns.join(', ')} FROM "${row.table.replace(/"/g, '""')}" WHERE rowid = ?`).get(row.rowid) as Record<string, unknown> | undefined;
+        if (values) identity = {
+          primary: primaryKeys.map((column) => values[column.name]),
+          foreign: foreignKey.map((column) => values[column]),
+        };
+      }
+    } catch { }
+    keys.add(JSON.stringify([row.table, identity, row.parent, row.fkid]));
+  }
+  return keys;
 }
 
 /** Return true only if the string is a safe SQL identifier (letters, digits, underscore). */
@@ -544,68 +1677,221 @@ export function isSafeIdentifier(name: string): boolean {
   return /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name);
 }
 
-function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersion: number): RestoreResult {
-  const backupDb = new Database(backupPath, { readonly: true });
+function materializeRestoreSource(sourcePath: string, livePath: string): string {
+  const sourceStat = fs.lstatSync(sourcePath);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) throw new Error('Restore source must be a regular file');
+  if (pathEntryExists(`${sourcePath}-wal`) || pathEntryExists(`${sourcePath}-shm`)) throw new Error('Restore source must not have SQLite sidecars');
+  if ([livePath, `${livePath}-wal`, `${livePath}-shm`].some((liveTarget) => isLiveDatabaseTarget(sourcePath, liveTarget))) {
+    throw new Error('Restore source cannot be the live database or its SQLite sidecars');
+  }
+  const sourceFd = fs.openSync(sourcePath, fs.constants.O_RDONLY | ((fs.constants as any).O_NOFOLLOW || 0));
+  try {
+    const openedStat = fs.fstatSync(sourceFd);
+    if (openedStat.dev !== sourceStat.dev || openedStat.ino !== sourceStat.ino || openedStat.size !== sourceStat.size) {
+      throw new Error('Restore source changed while it was being opened');
+    }
+    const liveStat = fs.lstatSync(livePath);
+    if (openedStat.dev === liveStat.dev && openedStat.ino === liveStat.ino) throw new Error('Restore source cannot be the live database');
+    const sourceBytes = fs.readFileSync(sourceFd);
+    const finalStat = fs.fstatSync(sourceFd);
+    if (finalStat.dev !== openedStat.dev || finalStat.ino !== openedStat.ino || finalStat.size !== openedStat.size || finalStat.mtimeMs !== openedStat.mtimeMs) {
+      throw new Error('Restore source changed while it was being read');
+    }
+    if (pathEntryExists(`${sourcePath}-wal`) || pathEntryExists(`${sourcePath}-shm`)) {
+      throw new Error('Restore source acquired SQLite sidecars while it was being read');
+    }
+    const snapshotDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-restore-source-'));
+    const snapshotPath = path.join(snapshotDir, 'source.db');
+    fs.writeFileSync(snapshotPath, sourceBytes, { flag: 'wx', mode: 0o600 });
+    setImmediate(() => { try { fs.rmSync(snapshotDir, { recursive: true, force: true }); } catch { } });
+    return snapshotPath;
+  } finally {
+    fs.closeSync(sourceFd);
+  }
+}
+
+function dataOnlyRestore(
+  backupPath: string,
+  backupVersion: number,
+  currentVersion: number,
+  preservedRevocations: RevocationRow[] = [],
+  preservedUserSecurity: UserSecurityState[] = [],
+  preservedUserStations: UserStationSecurityState[] = [],
+  preservedStationSecurity: KitchenStationSecurityState[] = [],
+  preservedKdsEnabled: KdsEnabledSettingState = { present: false, value: null },
+  preservedProtectedSettings: RestoreProtectedSettingState[] = [],
+  preservedOutboxes: RestoreOutboxState = { cloud: [], support: [], diagnostics: [] },
+): RestoreResult {
+  const livePath = getDbPath();
+  if ([livePath, `${livePath}-wal`, `${livePath}-shm`].some((liveTarget) => isLiveDatabaseTarget(backupPath, liveTarget))) {
+    return {
+      success: false,
+      mode: 'data_only',
+      backupSchemaVersion: backupVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: 'Data-only restore source cannot be the live database or its SQLite sidecars',
+    };
+  }
+  try {
+    backupPath = materializeRestoreSource(backupPath, livePath);
+  } catch (error: any) {
+    return {
+      success: false,
+      mode: 'data_only',
+      backupSchemaVersion: backupVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: error?.message || 'Invalid data-only restore source',
+    };
+  }
+  let backupDb: Database.Database | undefined;
+  let backupTables: string[] = [];
+  const backupColumns = new Map<string, string[]>();
+  try {
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
+    backupTables = getTables(backupDb);
+    for (const tableName of backupTables) {
+      if (isSafeIdentifier(tableName)) backupColumns.set(tableName, getColumns(backupDb, tableName));
+    }
+  } finally {
+    backupDb?.close();
+  }
+
   const currentDb = getDatabase();
-
-  const backupTables = getTables(backupDb);
+  const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
   const currentTables = getTables(currentDb);
-
-  const commonTables = backupTables.filter(t => currentTables.includes(t));
+  const commonTables = backupTables.filter((tableName) => currentTables.includes(tableName));
+  const previousForeignKeys = Number(currentDb.pragma('foreign_keys', { simple: true })) === 1;
+  let attached = false;
+  let inTransaction = false;
   let tablesRestored = 0;
 
-  // Escape single-quotes in the path so the ATTACH string literal is safe
-  // (e.g. macOS paths containing apostrophes like /Users/O'Brien/backup.db)
-  const safeBackupPath = backupPath.replace(/'/g, "''");
-
-  currentDb.exec('BEGIN IMMEDIATE');
+  // Existing failed versions of this function could strand this alias on the
+  // long-lived connection. Remove it before attempting a fresh restore.
+  try {
+    const attachedDatabases = currentDb.prepare('PRAGMA database_list').all() as { name: string }[];
+    if (attachedDatabases.some((entry) => entry.name === '_restore_src')) {
+      currentDb.exec('DETACH DATABASE _restore_src');
+    }
+  } catch (error: any) {
+    return {
+      success: false,
+      mode: 'data_only',
+      backupSchemaVersion: backupVersion,
+      currentSchemaVersion: currentVersion,
+      tablesRestored: 0,
+      error: `Could not clear a previous restore attachment: ${error?.message || 'unknown error'}`,
+    };
+  }
 
   try {
-    // ATTACH once outside the loop — avoids repeated injection attempts and is faster
+    // FK enforcement must be disabled before BEGIN. With it off, deleting a
+    // common parent does not cascade-delete current-only child tables that an
+    // older backup does not contain. The final check below protects commit.
+    currentDb.pragma('foreign_keys = OFF');
+    const safeBackupPath = backupPath.replace(/'/g, "''");
     currentDb.exec(`ATTACH DATABASE '${safeBackupPath}' AS _restore_src`);
+    attached = true;
+    currentDb.exec('BEGIN IMMEDIATE');
+    inTransaction = true;
 
     for (const tableName of commonTables) {
-      // ── Guard: skip tables whose name isn't a plain SQL identifier ──────────
       if (!isSafeIdentifier(tableName)) {
-        console.warn(`[DB] dataOnlyRestore: skipping table with unsafe name: ${JSON.stringify(tableName)}`);
+        console.warn(`[DB] dataOnlyRestore: skipping unsafe table: ${JSON.stringify(tableName)}`);
         continue;
       }
 
-      const backupCols = getColumns(backupDb, tableName);
-      const currentCols = getColumns(currentDb, tableName);
-
-      // ── Guard: skip columns whose name isn't a plain SQL identifier ─────────
-      const commonCols = backupCols
-        .filter(c => currentCols.includes(c))
-        .filter(c => {
-          if (isSafeIdentifier(c)) return true;
-          console.warn(`[DB] dataOnlyRestore: skipping unsafe column: ${JSON.stringify(c)} in ${tableName}`);
+      const currentColumns = getColumns(currentDb, tableName);
+      const commonColumns = (backupColumns.get(tableName) || [])
+        .filter((column) => currentColumns.includes(column))
+        .filter((column) => {
+          if (isSafeIdentifier(column)) return true;
+          console.warn(`[DB] dataOnlyRestore: skipping unsafe column: ${JSON.stringify(column)} in ${tableName}`);
           return false;
         });
 
-      if (commonCols.length === 0) continue;
+      if (commonColumns.length === 0) continue;
 
-      const colList = commonCols.join(', ');
-
+      const columnList = commonColumns.join(', ');
       currentDb.exec(`DELETE FROM ${tableName}`);
-      currentDb.exec(`INSERT INTO ${tableName} (${colList}) SELECT ${colList} FROM _restore_src.${tableName}`);
+      currentDb.exec(`INSERT INTO ${tableName} (${columnList}) SELECT ${columnList} FROM _restore_src.${tableName}`);
 
       tablesRestored++;
-      console.log(`[DB] Restored ${tableName}: ${commonCols.length} columns`);
+      console.log(`[DB] Restored ${tableName}: ${commonColumns.length} columns`);
     }
 
-    currentDb.exec('DETACH DATABASE _restore_src');
+    mergeUserSecurityState(currentDb, preservedUserSecurity);
+    mergeUserStationSecurityState(currentDb, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
+    mergeKdsEnabledSetting(currentDb, preservedKdsEnabled);
+    mergeRestoreProtectedSettings(currentDb, preservedProtectedSettings);
+    currentDb.prepare('DELETE FROM kds_pairing_tokens').run();
+    mergeRestoreOutboxState(currentDb, preservedOutboxes);
+    mergeRevocations(currentDb, preservedRevocations);
+    const newForeignKeyViolations = [...getForeignKeyViolationKeys(currentDb)]
+      .filter((key) => !baselineForeignKeyViolations.has(key));
+    if (newForeignKeyViolations.length > 0) {
+      throw new Error(`Restore would introduce ${newForeignKeyViolations.length} new foreign-key violation(s)`);
+    }
+
+    // SQLite does not allow DETACH while a write transaction is active.
+    // Commit only after the integrity check, then detach the already-closed
+    // source handle immediately so the long-lived connection stays clean.
     currentDb.exec('COMMIT');
+    inTransaction = false;
+    try {
+      currentDb.exec('DETACH DATABASE _restore_src');
+      attached = false;
+    } catch (detachError: any) {
+      // Once committed, a detach failure cannot be rolled back. Reopening the
+      // main connection drops every attachment and gives the caller a clean,
+      // usable handle instead of reporting a false failure with live data
+      // already changed.
+      try {
+        closeDatabase();
+        initDatabase(false);
+        attached = false;
+      } catch (recoveryError: any) {
+        throw new Error(
+          `Restore committed but source cleanup failed: ${detachError?.message || 'unknown error'}; ` +
+          `database reopen also failed: ${recoveryError?.message || 'unknown error'}`,
+        );
+      }
+    }
 
     return {
       success: true,
       mode: 'data_only',
       backupSchemaVersion: backupVersion,
       currentSchemaVersion: currentVersion,
-      tablesRestored
+      tablesRestored,
     };
   } catch (error: any) {
-    currentDb.exec('ROLLBACK');
+    let cleanupFailure: unknown = null;
+    if (inTransaction) {
+      try { currentDb.exec('ROLLBACK'); } catch (rollbackError) { cleanupFailure = rollbackError; }
+      inTransaction = false;
+    }
+    if (attached) {
+      try {
+        currentDb.exec('DETACH DATABASE _restore_src');
+        attached = false;
+      } catch (detachError) {
+        cleanupFailure = cleanupFailure || detachError;
+      }
+    }
+    if (cleanupFailure) {
+      try {
+        closeDatabase();
+        initDatabase(false);
+        attached = false;
+      } catch (recoveryError: any) {
+        error = new Error(
+          `${error?.message || 'Restore failed'}; cleanup failed: ${cleanupFailure instanceof Error ? cleanupFailure.message : 'unknown error'}; ` +
+          `database reopen failed: ${recoveryError?.message || 'unknown error'}`,
+        );
+      }
+    }
     console.error('[DB] dataOnlyRestore failed:', error);
     return {
       success: false,
@@ -613,22 +1899,31 @@ function dataOnlyRestore(backupPath: string, backupVersion: number, currentVersi
       backupSchemaVersion: backupVersion,
       currentSchemaVersion: currentVersion,
       tablesRestored: 0,
-      error: error.message
+      error: error?.message || 'Restore failed',
     };
   } finally {
-    backupDb.close();
+    if (attached) {
+      try { currentDb.exec('DETACH DATABASE _restore_src'); } catch { }
+    }
+    try {
+      getDatabase().pragma(`foreign_keys = ${previousForeignKeys ? 'ON' : 'OFF'}`);
+    } catch { }
   }
 }
 
 
-export function getSchemaVersionFromBackup(backupPath: string): number {
+export function getSchemaVersionFromBackup(backupPath: string): number | null {
+  let backupDb: Database.Database | undefined;
   try {
-    const backupDb = new Database(backupPath, { readonly: true });
+    backupDb = new Database(backupPath, { readonly: true, fileMustExist: true });
     const metaRow = backupDb.prepare(`SELECT value FROM _flo_meta WHERE key = 'schema_version'`).get() as { value: string } | undefined;
-    backupDb.close();
-    return metaRow ? parseInt(metaRow.value, 10) : 0;
+    if (!metaRow) return null;
+    const version = Number.parseInt(metaRow.value, 10);
+    return Number.isFinite(version) && version >= 0 ? version : null;
   } catch {
-    return 0;
+    return null;
+  } finally {
+    backupDb?.close();
   }
 }
 
@@ -655,8 +1950,10 @@ export function buildIdealSchemaDb(): Database.Database {
   const previousDb = db;
   db = idealDb;
   try {
+    buildingIdealSchema = true;
     runMigrations();
   } finally {
+    buildingIdealSchema = false;
     db = previousDb;
   }
   idealDb.pragma('foreign_keys = ON');
@@ -2040,6 +3337,31 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
   },
   {
     version: 55,
+    name: 'durable_token_revocations',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS revoked_tokens (
+          token_hash TEXT PRIMARY KEY,
+          expires_at INTEGER NOT NULL,
+          revoked_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires_at
+          ON revoked_tokens(expires_at);
+      `);
+    },
+  },
+  {
+    version: 56,
+    name: 'persist_station_assignment_scope',
+    up: () => {
+      if (!getColumns(db, 'users').includes('station_assignments_configured')) {
+        db.exec(`ALTER TABLE users ADD COLUMN station_assignments_configured INTEGER NOT NULL DEFAULT 0`);
+      }
+      db.exec(`UPDATE users SET station_assignments_configured = 1 WHERE EXISTS (SELECT 1 FROM station_users WHERE station_users.user_id = users.id)`);
+    },
+  },
+  {
+    version: 57,
     name: 'rename_gstin_to_generic_tax_registration_number',
     up: () => {
       // "gstin"/"bill_show_gstn" were India-specific names for what is really
@@ -2060,6 +3382,9 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
+  if (buildingIdealSchema) return;
+  let targetPath = '';
+  let completed = false;
   try {
     const dbPath = getDbPath();
     const backupDir = getBackupDir();
@@ -2067,7 +3392,7 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
       fs.mkdirSync(backupDir, { recursive: true });
     }
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const targetPath = path.join(backupDir, `flo-backup-${timestamp}-pre-v${fromVersion}-to-v${toVersion}.db`);
+    targetPath = path.join(backupDir, `flo-backup-${timestamp}-pre-v${fromVersion}-to-v${toVersion}.db`);
 
     if (fs.existsSync(dbPath)) {
       db.pragma('wal_checkpoint(TRUNCATE)');
@@ -2078,23 +3403,42 @@ function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void
       fs.writeFileSync(targetPath, '');
     }
 
-    const backupDb = new Database(targetPath);
-    backupDb.pragma('journal_mode = DELETE');
-    backupDb.exec(`
-      CREATE TABLE IF NOT EXISTS _flo_meta (
-        key TEXT PRIMARY KEY,
-        value TEXT
-      )
-    `);
-    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('schema_version', String(getCurrentSchemaVersion()));
-    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('backup_created_at', new Date().toISOString());
-    backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('app_version', app.getVersion());
-    backupDb.close();
+    let backupDb: Database.Database | undefined;
+    try {
+      backupDb = new Database(targetPath);
+      backupDb.pragma('journal_mode = DELETE');
+      backupDb.exec(`
+        CREATE TABLE IF NOT EXISTS _flo_meta (
+          key TEXT PRIMARY KEY,
+          value TEXT
+        )
+      `);
+      // This snapshot predates the migration about to run. Keep both the
+      // metadata stamp and SQLite header aligned with that older version so
+      // restoring it cannot be misclassified as a current-schema backup.
+      backupDb.pragma(`user_version = ${fromVersion}`);
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('schema_version', String(fromVersion));
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('backup_created_at', new Date().toISOString());
+      backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`).run('app_version', app.getVersion());
+    } finally {
+      backupDb?.close();
+    }
+    syncFile(targetPath);
+    if (!syncDirectory(path.dirname(targetPath)) && process.platform !== 'win32') {
+      throw new Error('Could not durably persist pre-migration backup');
+    }
 
+    completed = true;
     console.log(`[DB] Auto-backup before migrating v${fromVersion} → v${toVersion} created at ${targetPath}`);
   } catch (err: any) {
     console.error(`[DB] Auto-backup before migration failed:`, err.message);
     throw new Error(`Pre-migration backup failed; refusing to migrate the database: ${err.message}`);
+  } finally {
+    if (!completed && targetPath) {
+      for (const filePath of [targetPath, `${targetPath}-wal`, `${targetPath}-shm`]) {
+        try { if (pathEntryExists(filePath)) fs.unlinkSync(filePath); } catch { }
+      }
+    }
   }
 }
 
@@ -2939,6 +4283,54 @@ export const KDS_VOIDED_ITEM_VISIBILITY_MS = 15 * 60 * 1000;
 export function isVoidedItemKdsVisible(voidedAt: string | null | undefined): boolean {
   if (!voidedAt) return true;
   return Date.now() - parseDbTimestamp(voidedAt).getTime() < KDS_VOIDED_ITEM_VISIBILITY_MS;
+}
+
+/** Remove customer/payment/order-financial fields from category-scoped KDS payloads. */
+export function projectKdsOrder(order: any, restricted: boolean): any {
+  if (!restricted) return order;
+  const allowedFields = [
+    'id', 'order_number', 'type', 'guest_count',
+    'special_instructions', 'status', 'created_at', 'updated_at',
+    'table_name', 'table_number', 'floor', 'section',
+  ];
+  return Object.fromEntries(allowedFields.filter((field) => field in order).map((field) => [field, order[field]]));
+}
+
+/** Keep category-scoped KDS lines limited to kitchen-operational fields. */
+export function projectKdsItem(item: any, restricted: boolean): any {
+  if (!restricted) return item;
+  const allowedFields = [
+    'id', 'order_id', 'product_id', 'product_name', 'product_sku',
+    'quantity', 'status', 'special_instructions', 'created_at', 'updated_at',
+    'order_number', 'type', 'table_name', 'order_status', 'order_notes', 'order_time',
+  ];
+  const projected = Object.fromEntries(allowedFields.filter((field) => field in item).map((field) => [field, item[field]]));
+  if (Array.isArray(item.addons)) {
+    projected.addons = item.addons.map((addon: any) => {
+      const safeAddon: Record<string, any> = {};
+      for (const field of ['id', 'name', 'quantity']) {
+        if (field in addon) safeAddon[field] = addon[field];
+      }
+      return safeAddon;
+    });
+  }
+  return projected;
+}
+
+/** Avoid exposing printer/network credentials in restricted KDS station metadata. */
+export function projectKdsStation(station: any, restricted: boolean, userCategoryIds: string[] = []): any {
+  if (!restricted) return station;
+  const allowedFields = ['id', 'name', 'description', 'category_ids', 'sort_order', 'is_active'];
+  const projected = Object.fromEntries(allowedFields.filter((field) => field in station).map((field) => [field, station[field]]));
+  if (typeof projected.category_ids === 'string' && userCategoryIds.length > 0) {
+    try {
+      const parsed = JSON.parse(projected.category_ids);
+      if (Array.isArray(parsed)) projected.category_ids = JSON.stringify(parsed.filter((id) => userCategoryIds.includes(String(id))));
+    } catch {
+      projected.category_ids = '[]';
+    }
+  }
+  return projected;
 }
 
 /**

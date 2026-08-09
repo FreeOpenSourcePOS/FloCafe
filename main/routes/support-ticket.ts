@@ -41,12 +41,6 @@ function resolveCategory(value: unknown): string {
   return ALLOWED_CATEGORIES.has(String(value || '')) ? String(value) : 'general';
 }
 
-/**
- * The system-attached fields merged into every ticket's diagnostics.
- * Shared between the preview route and the submit route so what the
- * merchant is shown before sending can never drift from what actually
- * gets attached.
- */
 function buildSystemDiagnostics(req: Request, category: string) {
   const db = getDatabase();
   const schemaVersion = db.pragma('user_version', { simple: true }) as number;
@@ -76,53 +70,39 @@ function buildSystemDiagnostics(req: Request, category: string) {
   };
 }
 
-router.get('/profile', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+const supportRoles = ['owner', 'manager', 'cashier', 'waiter', 'chef'] as const;
+
+router.get('/profile', requireRole(...supportRoles), (req: Request, res: Response) => {
   const profile = supportProfile(req);
-  res.json({
-    ...profile,
-    app_version: require('../../package.json').version,
-    platform: process.platform,
-  });
+  res.json({ ...profile, app_version: require('../../package.json').version, platform: process.platform });
 });
 
-// Lets the UI render an accurate "here's exactly what gets sent" preview
-// before the merchant presses send, using the same fields the submit route
-// attaches — computed the same way, just without persisting anything.
-router.get('/diagnostics-preview', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
-  const category = resolveCategory(req.query.category);
-  res.json(buildSystemDiagnostics(req, category));
+router.get('/diagnostics-preview', requireRole(...supportRoles), (req: Request, res: Response) => {
+  res.json(buildSystemDiagnostics(req, resolveCategory(req.query.category)));
 });
 
-// Submission is fire-and-forget into a local durable outbox (see
-// cloud-sync.ts), so the real support_code only exists once FloAdmin has
-// accepted the ticket. The UI polls this to learn when that happens.
-router.get('/:clientTicketId/status', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/:clientTicketId/status', requireRole(...supportRoles), (req: Request, res: Response) => {
   const clientTicketId = String(req.params.clientTicketId || '');
-  if (!CLIENT_TICKET_ID_RE.test(clientTicketId)) {
-    return res.status(400).json({ error: 'invalid client_ticket_id' });
-  }
-  const db = getDatabase();
-  const row = db.prepare(
+  if (!CLIENT_TICKET_ID_RE.test(clientTicketId)) return res.status(400).json({ error: 'invalid client_ticket_id' });
+  const row = getDatabase().prepare(
     'SELECT status, support_code, last_error FROM support_ticket_outbox WHERE client_ticket_id = ?'
   ).get(clientTicketId) as { status: string; support_code: string | null; last_error: string | null } | undefined;
   if (!row) return res.status(404).json({ error: 'not found' });
   res.json({ status: row.status, support_code: row.support_code, last_error: row.last_error });
 });
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.post('/', requireRole(...supportRoles), async (req: Request, res: Response) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const subject = String(body.subject || '').trim().slice(0, 255);
   const message = String(body.message || '').trim().slice(0, 20000);
   if (!subject || !message) return res.status(400).json({ error: 'subject and message are required' });
 
   const clientTicketId = typeof body.client_ticket_id === 'string' && CLIENT_TICKET_ID_RE.test(body.client_ticket_id)
-    ? body.client_ticket_id
-    : randomUUID();
+    ? body.client_ticket_id : randomUUID();
   const eventCode = String(body.event_code || '').slice(0, 64) || undefined;
   const category = resolveCategory(body.category);
   const severity = ALLOWED_SEVERITIES.has(String(body.severity || ''))
-    ? String(body.severity) as 'low' | 'normal' | 'high' | 'urgent'
-    : 'normal';
+    ? String(body.severity) as 'low' | 'normal' | 'high' | 'urgent' : 'normal';
   const profile = supportProfile(req);
   const contactEmail = String(body.contact_email || profile.contact_email).trim().slice(0, 255);
   if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
@@ -130,14 +110,10 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (
   }
   const suppliedDiagnostics = body.diagnostics && typeof body.diagnostics === 'object' && !Array.isArray(body.diagnostics)
     ? body.diagnostics : {};
-  const diagnostics = {
-    ...suppliedDiagnostics,
-    ...buildSystemDiagnostics(req, category),
-  };
-  if (JSON.stringify(diagnostics).length > 15000) {
-    return res.status(400).json({ error: 'diagnostics are too large' });
-  }
-  const queued = cloudSync.queueSupportTicket({
+  const diagnostics = { ...suppliedDiagnostics, ...buildSystemDiagnostics(req, category) };
+  if (JSON.stringify(diagnostics).length > 15000) return res.status(400).json({ error: 'diagnostics are too large' });
+
+  const queued = await cloudSync.queueSupportTicket({
     client_ticket_id: clientTicketId,
     subject,
     message,
@@ -149,7 +125,13 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (
     contact_phone: String(body.contact_phone || profile.contact_phone).trim().slice(0, 50) || undefined,
     diagnostics,
   });
-  res.status(202).json({ ...queued, status: 'queued', message: 'Your request is queued and will be sent when FloCafe is online.' });
+  res.status(queued.queued ? 202 : 503).json({
+    ...queued,
+    status: queued.queued ? 'queued' : 'unavailable',
+    message: queued.queued
+      ? 'Your request is queued and will be sent when FloCafe is online.'
+      : 'Cloud data deletion is in progress; please try again later.',
+  });
 });
 
 export const supportTicketRoutes = router;

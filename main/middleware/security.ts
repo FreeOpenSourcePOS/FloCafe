@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
-import { getDatabase, isKdsEnabled, parseDbTimestamp } from '../db';
+import { createHash } from 'node:crypto';
+import { getDatabase, isKdsEnabled, now, parseDbTimestamp } from '../db';
 
 interface RateLimitRecord {
   count: number;
@@ -111,8 +112,12 @@ let lastUserAuthCachePruneAt = 0;
  * issued before a password/PIN change (#173), instead of trusting the JWT's
  * signature/expiry alone.
  */
-export function getUserAuthStatus(userId: string): { isActive: boolean; role: string; tokensValidAfter: string | null } | null {
+export function getUserAuthStatus(
+  userId: string,
+  options: { fresh?: boolean } = {},
+): { isActive: boolean; role: string; tokensValidAfter: string | null } | null {
   const now = Date.now();
+  if (options.fresh) userAuthCache.delete(userId);
   if (
     userAuthCache.size > 1000 &&
     now - lastUserAuthCachePruneAt >= USER_AUTH_CACHE_PRUNE_INTERVAL_MS
@@ -124,7 +129,7 @@ export function getUserAuthStatus(userId: string): { isActive: boolean; role: st
   }
 
   const cached = userAuthCache.get(userId);
-  if (cached && cached.expiresAt > now) {
+  if (!options.fresh && cached && cached.expiresAt > now) {
     return { isActive: cached.isActive, role: cached.role, tokensValidAfter: cached.tokensValidAfter };
   }
 
@@ -157,6 +162,11 @@ export function invalidateUserAuthCache(userId: string): void {
   userAuthCache.delete(userId);
 }
 
+export function clearUserAuthCache(): void {
+  userAuthCache.clear();
+  lastUserAuthCachePruneAt = 0;
+}
+
 /**
  * True if a JWT's `iat` (issued-at, seconds since epoch) predates the user's
  * `tokens_valid_after` — i.e. the credentials were changed after this token was
@@ -177,27 +187,86 @@ export function isTokenStale(iat: number | undefined, tokensValidAfter: string |
   return iat < tokensValidAfterSeconds;
 }
 
+// Keep a small in-memory fallback for malformed tokens and for immediate
+// same-process behavior, but persist valid-token hashes so logout survives
+// restart and cannot be defeated by FIFO eviction.
 const revokedTokens = new Set<string>();
+const MAX_IN_MEMORY_REVOKED_TOKENS = 5000;
+const REVOCATION_CLEANUP_INTERVAL_MS = 60 * 1000;
+let lastRevocationCleanupAt = 0;
 
-export function revokeToken(token: string): void {
-  if (token && typeof token === 'string') {
-    if (revokedTokens.has(token)) return;
-    if (revokedTokens.size >= 5000) {
-      // Keep set bounded to prevent unbounded memory growth over long server uptime
+function hashRevokedToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function cleanupExpiredRevocations(db: ReturnType<typeof getDatabase>, nowMs: number): void {
+  if (nowMs - lastRevocationCleanupAt < REVOCATION_CLEANUP_INTERVAL_MS) return;
+  db.prepare('DELETE FROM revoked_tokens WHERE expires_at <= ?').run(nowMs);
+  lastRevocationCleanupAt = nowMs;
+}
+
+export function revokeToken(token: string, verifiedExpiresAtMs?: number): void {
+  if (!token || typeof token !== 'string') return;
+
+  if (!revokedTokens.has(token)) {
+    if (revokedTokens.size >= MAX_IN_MEMORY_REVOKED_TOKENS) {
       const firstToken = revokedTokens.values().next().value;
       if (firstToken !== undefined) revokedTokens.delete(firstToken);
     }
     revokedTokens.add(token);
   }
+
+  const expiresAt = typeof verifiedExpiresAtMs === 'number' && Number.isFinite(verifiedExpiresAtMs)
+    ? verifiedExpiresAtMs
+    : null;
+  if (expiresAt === null || expiresAt <= Date.now()) return;
+
+  try {
+    const db = getDatabase();
+    const nowMs = Date.now();
+    cleanupExpiredRevocations(db, nowMs);
+    db.prepare(`
+      INSERT INTO revoked_tokens (token_hash, expires_at, revoked_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(token_hash) DO UPDATE SET
+        expires_at = excluded.expires_at,
+        revoked_at = excluded.revoked_at
+    `).run(hashRevokedToken(token), expiresAt, now());
+  } catch (error) {
+    // The in-memory fallback still blocks the token in this process. Normal
+    // authenticated requests already fail when the database is unavailable.
+    console.error('[Auth] Could not persist token revocation:', error);
+  }
 }
 
 export function isTokenRevoked(token: string): boolean {
   if (!token || typeof token !== 'string') return true;
-  return revokedTokens.has(token);
+  if (revokedTokens.has(token)) return true;
+
+  try {
+    const db = getDatabase();
+    const nowMs = Date.now();
+    cleanupExpiredRevocations(db, nowMs);
+    const row = db.prepare(
+      'SELECT 1 AS revoked FROM revoked_tokens WHERE token_hash = ? AND expires_at > ?',
+    ).get(hashRevokedToken(token), nowMs) as { revoked: number } | undefined;
+    return row?.revoked === 1;
+  } catch {
+    return false;
+  }
+}
+
+export function clearInMemoryRevokedTokens(): void {
+  revokedTokens.clear();
 }
 
 export function clearRevokedTokens(): void {
-  revokedTokens.clear();
+  clearInMemoryRevokedTokens();
+  try {
+    getDatabase().prepare('DELETE FROM revoked_tokens').run();
+  } catch {
+    // Test cleanup may run after the database has already been closed.
+  }
 }
 
 /**

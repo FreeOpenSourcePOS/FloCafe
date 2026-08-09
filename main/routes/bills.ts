@@ -599,7 +599,7 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
 
     const billStatus = (result.bill as any)?.payment_status;
     if (billStatus === 'paid') notifyKdsUpdate();
-    notifyOrderUpdated();
+    else notifyOrderUpdated();
 
     res.json(result);
   } catch (error: any) {
@@ -633,7 +633,7 @@ router.post('/:id/payments', requireRole('owner', 'manager', 'cashier'), (req: R
 
     const billStatus = (result.bill as any)?.payment_status;
     if (billStatus === 'paid') notifyKdsUpdate();
-    notifyOrderUpdated();
+    else notifyOrderUpdated();
 
     res.json(result);
   } catch (error: any) {

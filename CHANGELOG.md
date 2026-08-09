@@ -2,6 +2,19 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [2.9.7] - 2026-08-10
+
+### Fixed
+- The manual tax builder now correctly moves tax overrides (product- and add-on-specific overrides, and store-wide packaging/delivery/service-charge overrides) onto a category's new default when that category is renamed or removed. Previously, checkout could reject an otherwise valid item whose override still pointed at a removed category.
+- The tax rate shown in the product tax-category picker now always matches the rate checkout actually applies.
+
+### Removed
+- A4/A5 paper sizes have been removed from browser-based bill printing; only thermal receipt widths (58mm/80mm) are supported. A browser that had A4 or A5 saved from before this change is automatically moved to the standard thermal size.
+
+### Security
+- Updated a bundled dependency (nanoid) to fix a high-severity denial-of-service issue.
+- Cloud account-deletion status tokens are now excluded from database exports, matching other cloud credentials.
+
 ## [2.9.5] - 2026-08-09
 
 ### Added

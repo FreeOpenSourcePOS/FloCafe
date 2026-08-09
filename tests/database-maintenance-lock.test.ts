@@ -2,7 +2,11 @@ import * as assert from 'node:assert/strict';
 import express from 'express';
 import request from 'supertest';
 import { EventEmitter } from 'node:events';
-import { databaseMaintenanceMiddleware, withDatabaseMaintenanceLock } from '../main/db';
+import {
+  databaseMaintenanceMiddleware,
+  registerDatabaseMaintenanceStartListener,
+  withDatabaseMaintenanceLock,
+} from '../main/db';
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,12 +89,20 @@ async function run() {
   let authTouched = false;
   app.use((_req, _res, next) => { authTouched = true; next(); });
   app.post('/api/db/backup', (_req, res) => res.json({ reached: true }));
+  let activeRouteMaintenanceStarted = false;
+  const unregisterMaintenanceStart = registerDatabaseMaintenanceStartListener(() => {
+    activeRouteMaintenanceStarted = true;
+  });
   const activeRouteMaintenance = withDatabaseMaintenanceLock(async () => { await delay(20); });
-  await delay(1);
-  const concurrentRoute = await request(app).post('/api/db/backup');
-  assert.equal(concurrentRoute.status, 503, 'concurrent maintenance route receives 503 before auth/route middleware');
-  assert.equal(authTouched, false, 'concurrent maintenance route does not reach later middleware');
-  await activeRouteMaintenance;
+  while (!activeRouteMaintenanceStarted) await delay(1);
+  try {
+    const concurrentRoute = await request(app).post('/api/db/backup');
+    assert.equal(concurrentRoute.status, 503, 'concurrent maintenance route receives 503 before auth/route middleware');
+    assert.equal(authTouched, false, 'concurrent maintenance route does not reach later middleware');
+  } finally {
+    await activeRouteMaintenance;
+    unregisterMaintenanceStart();
+  }
 
   // A maintenance route is excluded from the active-request count by the
   // production middleware. This verifies that its handler can acquire the

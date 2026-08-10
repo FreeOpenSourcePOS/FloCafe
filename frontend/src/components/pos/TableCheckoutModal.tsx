@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { X, ShoppingCart } from 'lucide-react';
+import { X, ShoppingCart, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
@@ -9,6 +9,7 @@ import { useI18n } from '@/hooks/useI18n';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
 import type { Table, Order, Bill, OrderItem } from '@/lib/types';
+import { SplitCheckModal } from '@/components/pos/SplitCheckModal';
 
 interface Props {
   table: Table;
@@ -41,6 +42,8 @@ export default function TableCheckoutModal({
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [addingItems, setAddingItems] = useState(false);
+  const [splitChecksEnabled, setSplitChecksEnabled] = useState(false);
+  const [splitBill, setSplitBill] = useState<Bill | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -64,6 +67,10 @@ export default function TableCheckoutModal({
     return () => controller.abort();
   }, [table.id, t]);
 
+  useEffect(() => {
+    api.get('/settings/split_checks_enabled').then((res) => setSplitChecksEnabled(res.data?.setting?.value === 'true')).catch(() => setSplitChecksEnabled(false));
+  }, []);
+
   const handleCheckout = async () => {
     if (!order) return;
     setGenerating(true);
@@ -80,6 +87,19 @@ export default function TableCheckoutModal({
     } finally {
       setGenerating(false);
     }
+  };
+
+  const handleSplitCheck = async () => {
+    if (!order) return;
+    setGenerating(true);
+    try {
+      const bill = order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
+      setSplitBill(bill);
+    } catch (error: unknown) {
+      const message = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
+      toast.error(message || t('pos.generateBillFailed'));
+    }
+    finally { setGenerating(false); }
   };
 
   const handleAddCartToOrder = async () => {
@@ -118,8 +138,10 @@ export default function TableCheckoutModal({
 
   // Filter active items (not cancelled)
   const activeItems = (order.items || []).filter((item: OrderItem) => item.status !== 'cancelled');
+  const splitBills = (order.bills || []).filter((bill) => Boolean(bill.split_group_id));
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-md max-h-[85vh] flex flex-col">
         <div className="flex justify-between items-center p-5 border-b border-gray-100">
@@ -186,7 +208,10 @@ export default function TableCheckoutModal({
             </div>
           )}
 
+          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-gray-500">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pos.pay', { defaultValue: 'Pay' })}</Button>}</div>)}</div>}
+
           {/* Show different buttons based on cart state */}
+          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="mr-2" />{t('pos.splitCheck', { defaultValue: 'Split check' })}</Button>}
           {cartItemCount > 0 ? (
             // Cart has items - show "Add items to order" option
             <div className="space-y-2">
@@ -203,7 +228,7 @@ export default function TableCheckoutModal({
                 {generating ? t('pos.generating') : t('pos.checkoutInstead')}
               </Button>
             </div>
-          ) : (
+          ) : splitBills.length === 0 ? (
             // Cart empty - show both options
             <div className="grid grid-cols-2 gap-3">
               <Button variant="outline" onClick={() => onAddItems(table, order)}>
@@ -213,9 +238,11 @@ export default function TableCheckoutModal({
                 {generating ? t('pos.generating') : t('pos.checkout')}
               </Button>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
+    {splitBill && <SplitCheckModal bill={splitBill} order={order} onClose={() => setSplitBill(null)} onSplit={(bills) => { setOrder({ ...order, bill: bills[0], bills }); setSplitBill(null); }} />}
+    </>
   );
 }

@@ -38,6 +38,7 @@ async function main() {
   console.log('='.repeat(50));
 
   const db = initTestDb();
+  db.prepare("INSERT INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES ('UPI', 1, 10, ?, ?)").run(now(), now());
 
   // Seed base data
   const { authHeader } = seedOwnerUser(db);
@@ -107,7 +108,7 @@ async function main() {
       : JSON.parse(pay2.data.bill.payment_details);
     assertEqual(payments.length, 2, 'two payments recorded');
     assertEqual(payments[0].method, 'cash', 'first payment is cash');
-    assertEqual(payments[1].method, 'upi', 'second payment is UPI');
+    assertEqual(payments[1].method, 'UPI', 'second payment is UPI');
 
     // ═══════════════════════════════════════════════════════════════════
     // Scenario B: Wallet Double-Spend Prevention

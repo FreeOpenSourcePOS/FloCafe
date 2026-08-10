@@ -229,6 +229,15 @@ function sanitizeOrderSnapshot(value: unknown): unknown {
     delete safeBill.customer_id;
     safe.bill = safeBill;
   }
+  if (Array.isArray(safe.bills)) {
+    safe.bills = safe.bills.map((bill) => {
+      if (!bill || typeof bill !== 'object' || Array.isArray(bill)) return bill;
+      const safeBill = { ...(bill as Record<string, unknown>) };
+      delete safeBill.payment_details;
+      delete safeBill.customer_id;
+      return safeBill;
+    });
+  }
   return safe;
 }
 
@@ -1478,12 +1487,12 @@ class CloudSyncService {
 
     const topItems = db.prepare(`
       SELECT oi.product_id, oi.product_name,
-        COALESCE(SUM(oi.quantity), 0) as quantity,
-        COALESCE(SUM(oi.total), 0) as total
-      FROM order_items oi
-      JOIN orders o ON o.id = oi.order_id
-      JOIN bills b ON b.order_id = o.id
+        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) as quantity,
+        COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) as total
+      FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
+      LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
       WHERE b.payment_status = 'paid'
+        AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
         AND COALESCE(b.paid_at, b.created_at) >= ?
         AND COALESCE(b.paid_at, b.created_at) <= ?
       GROUP BY oi.product_id, oi.product_name
@@ -1510,11 +1519,13 @@ class CloudSyncService {
        WHERE payment_status = 'paid' AND date(COALESCE(paid_at, created_at)) BETWEEN date(?) AND date(?)
     `).get(range.from, range.to) as any;
     const topItems = db.prepare(`
-      SELECT oi.product_name AS name, COALESCE(SUM(oi.quantity), 0) AS qty,
-             COALESCE(SUM(oi.total), 0) AS revenue,
+      SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) AS qty,
+             COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue,
              COALESCE(AVG(oi.unit_price), 0) AS price
-        FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN bills b ON b.order_id = o.id
+        FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
+        LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
        WHERE b.payment_status = 'paid' AND date(COALESCE(b.paid_at, b.created_at)) BETWEEN date(?) AND date(?)
+         AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
        GROUP BY oi.product_id, oi.product_name ORDER BY revenue DESC LIMIT 5
     `).all(range.from, range.to);
     const paymentRows = this.paymentBreakdown(range);
@@ -1548,10 +1559,12 @@ class CloudSyncService {
     const requestedLimit = Number(payload?.limit);
     const limit = Number.isInteger(requestedLimit) ? Math.min(Math.max(requestedLimit, 1), 100) : 50;
     const items = getDatabase().prepare(`
-      SELECT oi.product_name AS name, COALESCE(SUM(oi.quantity), 0) AS qty_sold,
-             COALESCE(SUM(oi.total), 0) AS revenue
-        FROM order_items oi JOIN orders o ON o.id = oi.order_id JOIN bills b ON b.order_id = o.id
+      SELECT oi.product_name AS name, COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.quantity ELSE bi.quantity END), 0) AS qty_sold,
+             COALESCE(SUM(CASE WHEN b.split_group_id IS NULL THEN oi.total ELSE oi.total * bi.quantity / oi.quantity END), 0) AS revenue
+        FROM bills b JOIN orders o ON o.id = b.order_id JOIN order_items oi ON oi.order_id = o.id
+        LEFT JOIN bill_items bi ON bi.bill_id = b.id AND bi.order_item_id = oi.id
        WHERE b.payment_status = 'paid' AND date(COALESCE(b.paid_at, b.created_at)) BETWEEN date(?) AND date(?)
+         AND (b.split_group_id IS NULL OR bi.bill_id IS NOT NULL)
        GROUP BY oi.product_id, oi.product_name ORDER BY revenue DESC LIMIT ?
     `).all(range.from, range.to, limit);
     return { items };
@@ -1569,12 +1582,13 @@ class CloudSyncService {
 
   private paymentBreakdown(range: DateRange) {
     return getDatabase().prepare(`
-      SELECT json_extract(je.value, '$.method') AS method,
+      SELECT COALESCE(pm.name, json_extract(je.value, '$.method')) AS method,
              COUNT(*) AS count, COALESCE(SUM(json_extract(je.value, '$.amount')), 0) AS amount
         FROM bills b, json_each(b.payment_details) je
+        LEFT JOIN payment_methods pm ON pm.id = CAST(json_extract(je.value, '$.payment_method_id') AS INTEGER)
        WHERE b.payment_details IS NOT NULL
          AND date(COALESCE(json_extract(je.value, '$.timestamp'), b.paid_at, b.created_at)) BETWEEN date(?) AND date(?)
-       GROUP BY method ORDER BY amount DESC
+       GROUP BY COALESCE(pm.name, json_extract(je.value, '$.method')) ORDER BY amount DESC
     `).all(range.from, range.to);
   }
 
@@ -1589,12 +1603,14 @@ class CloudSyncService {
     const db = getDatabase();
     const items = itemsOverride ?? attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id).map(parseItemJson) as any[]);
     const tableRow = order.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(order.table_id) as any : null;
-    const bill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order.id) as any;
+    const bills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(order.id) as any[];
+    const bill = bills.find((row) => row.payment_status !== 'paid') || bills[0] || null;
     return sanitizeOrderSnapshot({
       ...order,
       items,
       table: tableRow ? { ...tableRow, name: tableRow.number } : null,
       bill: bill ? { ...bill, payment_details: safeJsonParse(bill.payment_details) } : null,
+      bills: bills.map((row) => ({ ...row, payment_details: safeJsonParse(row.payment_details) })),
     });
   }
 

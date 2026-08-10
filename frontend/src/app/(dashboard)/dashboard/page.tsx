@@ -452,7 +452,7 @@ export default function DashboardPage() {
                 {paymentMethods.map((pm) => {
                   const meta = PAYMENT_METHODS.find((m) => m.key === pm.method);
                   const Icon = meta?.icon ?? Wallet;
-                  const label = meta ? t(meta.labelKey) : t('pos.methodWallet');
+                  const label = meta ? t(meta.labelKey) : pm.method === 'wallet' ? t('pos.methodWallet') : String(pm.method || t('common.unknown'));
                   const percent = paymentMethodsTotal > 0 ? Math.round((Number(pm.total) / paymentMethodsTotal) * 100) : 0;
                   return (
                     <div key={pm.method ?? 'unknown'}>

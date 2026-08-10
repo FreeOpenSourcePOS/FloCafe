@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { Router, Request, Response } from 'express';
 import {
   attachEffectiveAddons,
@@ -22,13 +22,23 @@ import {
   getActiveCountryPack,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
+import { sendEvent } from '../services/telemetry';
 
 const router = Router();
 
-function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number): any {
+function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, billId?: number): any {
   const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
   if (!order) return order;
-  const itemRows = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[];
+  const allocations = billId === undefined ? [] : db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ?').all(billId) as any[];
+  const allocated = new Map(allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]));
+  const itemRows = (db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[])
+    .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
+    .map((item) => {
+      const quantity = allocated.get(Number(item.id));
+      if (quantity === undefined || quantity === Number(item.quantity)) return item;
+      const ratio = quantity / Number(item.quantity);
+      return { ...item, quantity, subtotal: Number((Number(item.subtotal) * ratio).toFixed(2)), tax_amount: Number((Number(item.tax_amount || 0) * ratio).toFixed(2)), total: Number((Number(item.total) * ratio).toFixed(2)) };
+    });
   return {
     ...order,
     items: attachEffectiveAddons(db, itemRows.map(parseItemJson)),
@@ -113,7 +123,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, re
       return res.status(404).json({ error: 'Bill not found' });
     }
 
-    const order = getOrderWithItems(db, (bill as any).order_id);
+    const order = getOrderWithItems(db, (bill as any).order_id, Number((bill as any).id));
     const customer = (bill as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id) : null;
 
     res.json({ bill: { ...bill, order, customer } });
@@ -132,7 +142,7 @@ router.get('/order/:orderId', requireRole('owner', 'manager', 'cashier'), (req: 
       return res.status(404).json({ error: 'Bill not found for this order' });
     }
 
-    const order = getOrderWithItems(db, (bill as any).order_id);
+    const order = getOrderWithItems(db, (bill as any).order_id, Number((bill as any).id));
     const customer = (bill as any).customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get((bill as any).customer_id) : null;
 
     res.json({ bill: { ...bill, order, customer } });
@@ -159,6 +169,7 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
     const result = withTxn(() => {
       const existingBill = db.prepare('SELECT * FROM bills WHERE order_id = ?').get(order_id) as any;
       if (existingBill) {
+        if (existingBill.split_group_id) return { bill: parseRowJson(existingBill), isNew: false };
         // Re-sync bill totals from the order in case discount/adjustments were applied
         // after the bill was first generated (e.g. discount applied → then checkout clicked).
         // Only sync if the bill is still unpaid (partial or full payments must not be changed).
@@ -246,8 +257,97 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
   }
 });
 
+// Divide one unpaid dine-in bill into independently payable guest checks.
+// The kitchen order and inventory rows remain singular; bill_items stores only
+// the whole-unit quantity allocated to each resulting check.
+router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    if (getSettingValue('split_checks_enabled') !== 'true') return res.status(403).json({ error: 'Split checks are not enabled' });
+    const source = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
+    if (!source) return res.status(404).json({ error: 'Bill not found' });
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(source.order_id) as any;
+    if (order?.type !== 'dine_in') return res.status(400).json({ error: 'Only dine-in checks can be split' });
+    if (source.payment_status !== 'unpaid' || Number(source.paid_amount || 0) !== 0 || source.payment_details) {
+      return res.status(409).json({ error: 'A check can only be split before any payment is recorded' });
+    }
+    if (source.split_group_id || Number((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(source.order_id) as any).n) > 1) {
+      return res.status(409).json({ error: 'This check has already been split' });
+    }
+    const checks = req.body?.checks;
+    if (!Array.isArray(checks) || checks.length < 2 || checks.length > 20) return res.status(400).json({ error: 'Create between 2 and 20 guest checks' });
+    const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided') ORDER BY id").all(source.order_id) as any[];
+    const itemById = new Map(activeItems.map((item) => [Number(item.id), item]));
+    const assigned = new Map<number, number>();
+    const normalized = checks.map((check: any, index: number) => {
+      const label = String(check?.label || `Guest ${index + 1}`).trim().slice(0, 40) || `Guest ${index + 1}`;
+      if (!Array.isArray(check?.items) || check.items.length === 0) throw Object.assign(new Error(`${label} must contain at least one item`), { statusCode: 400 });
+      const seenItems = new Set<number>();
+      const items = check.items.map((entry: any) => {
+        const itemId = Number(entry?.order_item_id);
+        const quantity = Number(entry?.quantity);
+        const item = itemById.get(itemId);
+        if (!item || !Number.isSafeInteger(quantity) || quantity < 1) throw Object.assign(new Error(`Invalid item allocation in ${label}`), { statusCode: 400 });
+        if (seenItems.has(itemId)) throw Object.assign(new Error(`${label} contains the same item more than once`), { statusCode: 400 });
+        seenItems.add(itemId);
+        assigned.set(itemId, (assigned.get(itemId) || 0) + quantity);
+        return { item, quantity };
+      });
+      return { label, items };
+    });
+    for (const item of activeItems) {
+      if ((assigned.get(Number(item.id)) || 0) !== Number(item.quantity)) return res.status(400).json({ error: `Allocate all ${item.quantity} × ${item.product_name}` });
+    }
+
+    const result = withTxn(() => {
+      const groupId = randomUUID();
+      const weights = normalized.map((check: { items: { item: any; quantity: number }[] }) => check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0));
+      const totalWeight = weights.reduce((sum, value) => sum + value, 0) || normalized.length;
+      const fields = ['subtotal', 'tax_amount', 'discount_amount', 'delivery_charge', 'packaging_charge', 'round_off', 'total'] as const;
+      const allocations: Record<string, number[]> = {};
+      for (const field of fields) {
+        const totalMinor = Math.round(Number(source[field] || 0) * 100);
+        let used = 0;
+        allocations[field] = normalized.map((_check, index) => {
+          const minor = index === normalized.length - 1 ? totalMinor - used : Math.round(totalMinor * weights[index] / totalWeight);
+          used += minor;
+          return minor / 100;
+        });
+      }
+      const splitBreakdown = (index: number) => {
+        const breakdown = typeof source.tax_breakdown === 'string' ? (() => { try { return JSON.parse(source.tax_breakdown); } catch { return null; } })() : source.tax_breakdown;
+        if (!Array.isArray(breakdown)) return source.tax_breakdown;
+        return JSON.stringify(breakdown.map((line: any) => ({ ...line, amount: Number((Number(line.amount || 0) * weights[index] / totalWeight).toFixed(2)) })));
+      };
+      const billIds: number[] = [];
+      normalized.forEach((check, index) => {
+        let billId: number;
+        if (index === 0) {
+          db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, tax_amount = ?, tax_breakdown = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)
+            .run(groupId, check.label, allocations.subtotal[index], allocations.tax_amount[index], splitBreakdown(index), allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], now(), source.id);
+          billId = Number(source.id);
+        } else {
+          const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)`)
+            .run(generateBillNumber(), source.order_id, source.customer_id, allocations.subtotal[index], allocations.tax_amount[index], splitBreakdown(index), source.tax_snapshot, allocations.discount_amount[index], source.discount_type, source.discount_value, source.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
+          billId = Number(inserted.lastInsertRowid);
+        }
+        billIds.push(billId);
+        const insertItem = db.prepare('INSERT INTO bill_items (bill_id, order_item_id, quantity) VALUES (?, ?, ?)');
+        for (const entry of check.items) insertItem.run(billId, entry.item.id, entry.quantity);
+      });
+      return billIds.map((id) => parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(id)));
+    });
+    void sendEvent('feature_used', { feature: 'split_checks', action: 'created', check_count: result.length });
+    notifyOrderUpdated();
+    res.status(201).json({ bills: result });
+  } catch (error: any) {
+    res.status(error.statusCode || 500).json({ error: error.message || 'Unable to split check' });
+  }
+});
+
 interface PaymentInput {
   method: string;
+  payment_method_id?: number;
   amount?: number | string | null;
   transaction_id?: string;
   notes?: string;
@@ -255,7 +355,7 @@ interface PaymentInput {
 
 // A payment request is prepared and fully validated before any ledger or bill
 // writes. Both endpoints use this one atomic path.
-const PAYMENT_METHODS = new Set(['cash', 'card', 'upi', 'wallet']);
+const PAYMENT_METHODS = new Set(['cash', 'card', 'wallet']);
 const MAX_PAYMENT_LINES = 100;
 const MAX_PAYMENT_METADATA_BYTES = 8192;
 const MAX_IDEMPOTENCY_KEY_LENGTH = 128;
@@ -313,8 +413,9 @@ function validatePaymentFields(payment: PaymentInput, index: number): void {
     throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
   }
   if (!payment.method) throw Object.assign(new Error('Payment method is required'), { statusCode: 400 });
-  if (!PAYMENT_METHODS.has(String(payment.method))) {
-    throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
+  if (typeof payment.method !== 'string' || payment.method.length > 60) throw Object.assign(new Error(`Unsupported payment method at line ${index + 1}`), { statusCode: 400 });
+  if (payment.method === 'custom' && !Number.isSafeInteger(Number(payment.payment_method_id))) {
+    throw Object.assign(new Error(`Custom payment method is required at line ${index + 1}`), { statusCode: 400 });
   }
   if (JSON.stringify(payment).length > MAX_PAYMENT_METADATA_BYTES) {
     throw Object.assign(new Error(`Payment metadata at line ${index + 1} is too large`), { statusCode: 400 });
@@ -331,8 +432,9 @@ function validatePaymentFields(payment: PaymentInput, index: number): void {
 function paymentTransactionKey(payment: unknown): string | null {
   if (!payment || typeof payment !== 'object' || Array.isArray(payment)) return null;
   const candidate = payment as PaymentInput;
-  return typeof candidate.method === 'string' && typeof candidate.transaction_id === 'string'
-    ? JSON.stringify([candidate.method, candidate.transaction_id])
+  const methodKey = candidate.payment_method_id === undefined ? candidate.method : `custom:${candidate.payment_method_id}`;
+  return typeof methodKey === 'string' && typeof candidate.transaction_id === 'string'
+    ? JSON.stringify([methodKey, candidate.transaction_id])
     : null;
 }
 
@@ -372,6 +474,14 @@ function preparePaymentBatch(
     }
   }
   payments.forEach(validatePaymentFields);
+  const resolvedPayments = payments.map((payment, index) => {
+    if (PAYMENT_METHODS.has(payment.method)) return payment;
+    const configured = payment.method === 'custom'
+      ? db.prepare('SELECT id, name FROM payment_methods WHERE id = ? AND is_active = 1').get(payment.payment_method_id) as any
+      : db.prepare('SELECT id, name FROM payment_methods WHERE lower(name) = lower(?) AND is_active = 1').get(payment.method) as any;
+    if (!configured) throw Object.assign(new Error(`Unsupported or inactive custom payment method at line ${index + 1}`), { statusCode: 400 });
+    return { ...payment, method: configured.name, payment_method_id: Number(configured.id) };
+  });
   const requestedCustomerId = bodyCustomerId === undefined || bodyCustomerId === null || bodyCustomerId === ''
     ? null
     : String(bodyCustomerId);
@@ -380,7 +490,7 @@ function preparePaymentBatch(
   if (requestedCustomerId && associatedCustomerId && String(associatedCustomerId) !== requestedCustomerId) {
     throw Object.assign(new Error('Payment customer does not match the bill customer'), { statusCode: 400 });
   }
-  const usesWallet = payments.some((payment) => payment && typeof payment === 'object' && !Array.isArray(payment) && (payment as PaymentInput).method === 'wallet');
+  const usesWallet = resolvedPayments.some((payment) => payment.method === 'wallet');
   if (usesWallet && !associatedCustomerId) {
     throw Object.assign(new Error('Wallet payment requires a customer associated with the bill'), { statusCode: 400 });
   }
@@ -394,30 +504,32 @@ function preparePaymentBatch(
     const transactionKey = paymentTransactionKey(existing);
     if (transactionKey) existingTransactionPayments.set(transactionKey, existing);
   }
-  for (const payment of payments) {
+  for (const payment of resolvedPayments) {
     const transactionKey = paymentTransactionKey(payment);
     if (!transactionKey) continue;
     const candidate = payment as PaymentInput;
-    const reference = db.prepare('SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?').get(candidate.method, candidate.transaction_id) as { bill_id: string } | undefined;
+    const methodKey = candidate.payment_method_id === undefined ? candidate.method : `custom:${candidate.payment_method_id}`;
+    const reference = db.prepare('SELECT bill_id FROM payment_transaction_refs WHERE method = ? AND transaction_id = ?').get(methodKey, candidate.transaction_id) as { bill_id: string } | undefined;
     if (reference && String(reference.bill_id) !== String(billId)) {
       throw Object.assign(new Error('Payment transaction_id has already been used for another bill'), { statusCode: 409 });
     }
     if (reference) existingTransactionKeys.add(transactionKey);
   }
-  const requestTransactionKeys = payments.map(paymentTransactionKey);
+  const requestTransactionKeys = resolvedPayments.map(paymentTransactionKey);
   const transactionMethods = new Map<string, string>();
-  for (const payment of payments) {
+  for (const payment of resolvedPayments) {
     if (typeof payment.transaction_id !== 'string' || payment.transaction_id.trim() === '') continue;
+    const methodKey = payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`;
     const previousMethod = transactionMethods.get(payment.transaction_id);
-    if (previousMethod && previousMethod !== String(payment.method)) {
+    if (previousMethod && previousMethod !== methodKey) {
       throw Object.assign(new Error('A transaction_id cannot be reused across payment methods in one batch'), { statusCode: 400 });
     }
-    transactionMethods.set(payment.transaction_id, String(payment.method));
+    transactionMethods.set(payment.transaction_id, methodKey);
   }
   const replay = requestTransactionKeys.every((key, index) => (
     key !== null
     && existingTransactionKeys.has(key)
-    && transactionPaymentMatches(existingTransactionPayments.get(key), payments[index])
+    && transactionPaymentMatches(existingTransactionPayments.get(key), resolvedPayments[index])
   ));
   if (replay) {
     return { bill, prepared: [], existingPayments, effectiveCustomerId, idempotentReplay: true };
@@ -432,8 +544,7 @@ function preparePaymentBatch(
   if (bill.payment_status === 'paid') throw Object.assign(new Error('Bill is already paid'), { statusCode: 400 });
   const remainingCents = Math.max(0, Math.round((Number(bill.total) - Number(bill.paid_amount || 0)) * 100));
   if (remainingCents <= 0) throw Object.assign(new Error('Bill is already fully paid'), { statusCode: 400 });
-  const raw = payments.map((payment, index) => {
-    validatePaymentFields(payment, index);
+  const raw = resolvedPayments.map((payment) => {
     // Preserve omitted/null compatibility for the legacy single-line contracts.
     // Multi-line batches must state every amount explicitly so allocation is
     // deterministic before any write.
@@ -443,7 +554,10 @@ function preparePaymentBatch(
       ? (supportsOmittedAmount ? remainingCents : undefined)
       : paymentAmountCents(amountValue);
     if (amount === undefined) throw Object.assign(new Error('Payment amount is required for split payments'), { statusCode: 400 });
-    const normalizedPayment: PaymentInput = { method: String(payment.method) };
+    const normalizedPayment: PaymentInput = {
+      method: String(payment.method),
+      ...(payment.payment_method_id !== undefined ? { payment_method_id: payment.payment_method_id } : {}),
+    };
     if (payment.transaction_id !== undefined) normalizedPayment.transaction_id = payment.transaction_id;
     if (payment.notes !== undefined) normalizedPayment.notes = payment.notes;
     return {
@@ -487,11 +601,15 @@ function calculateCashback(db: ReturnType<typeof getDatabase>, bill: any, custom
   const globalRate = parseFloat((db.prepare(`SELECT value FROM settings WHERE key = 'global_cashback_percent'`).get() as any)?.value || '0');
   const order = db.prepare('SELECT subtotal, discount_amount FROM orders WHERE id = ?').get(bill.order_id) as any;
   const items = db.prepare(`SELECT oi.subtotal, p.cb_percent FROM order_items oi JOIN products p ON p.id = oi.product_id WHERE oi.order_id = ? AND oi.status != 'cancelled'`).all(bill.order_id) as { subtotal: number; cb_percent: number | null }[];
-  return items.reduce((sum, item) => {
+  const fullOrderCashback = items.reduce((sum, item) => {
     const discountShare = order?.discount_amount > 0 && order?.subtotal > 0 ? order.discount_amount * item.subtotal / order.subtotal : 0;
     const rate = item.cb_percent !== null ? item.cb_percent : globalRate;
     return sum + (rate > 0 ? Math.floor(Math.max(0, item.subtotal - discountShare) * rate / 100) * LOYALTY_REDEMPTION_RATE : 0);
   }, 0);
+  const splitRatio = Number(order?.subtotal || 0) > 0 && bill.split_group_id
+    ? Math.min(1, Number(bill.subtotal || 0) / Number(order.subtotal))
+    : 1;
+  return Math.floor(fullOrderCashback * splitRatio);
 }
 
 function applyPaymentBatch(
@@ -556,15 +674,22 @@ function applyPaymentBatch(
   const changedAt = now();
   const insertTransactionRef = db.prepare('INSERT INTO payment_transaction_refs (method, transaction_id, bill_id, created_at) VALUES (?, ?, ?, ?)');
   for (const line of prepared) {
-    if (line.payment.transaction_id) insertTransactionRef.run(line.payment.method, line.payment.transaction_id, billId, changedAt);
+    if (line.payment.transaction_id) {
+      const methodKey = line.payment.payment_method_id === undefined ? line.payment.method : `custom:${line.payment.payment_method_id}`;
+      insertTransactionRef.run(methodKey, line.payment.transaction_id, billId, changedAt);
+    }
   }
   if (!bill.customer_id && effectiveCustomerId) db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?').run(effectiveCustomerId, changedAt, billId);
   db.prepare(`UPDATE bills SET paid_amount = ?, balance = ?, payment_status = ?, payment_details = ?, paid_at = CASE WHEN ? = 'paid' THEN ? ELSE paid_at END, updated_at = ? WHERE id = ?`).run(newPaidCents / 100, newBalanceCents / 100, paymentStatus, JSON.stringify(allPayments), paymentStatus, paymentStatus === 'paid' ? changedAt : null, changedAt, billId);
   let loyaltyPointsEarned = 0;
   if (paymentStatus === 'paid') {
-    db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?").run(changedAt, changedAt, bill.order_id);
-    const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(bill.order_id) as any;
-    if (order?.table_id) db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(changedAt, order.table_id);
+    const unpaidSibling = db.prepare(`SELECT 1 FROM bills WHERE order_id = ? AND id != ? AND payment_status != 'paid' LIMIT 1`).get(bill.order_id, bill.id);
+    const orderFullyPaid = !unpaidSibling;
+    if (orderFullyPaid) {
+      db.prepare("UPDATE orders SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?").run(changedAt, changedAt, bill.order_id);
+      const order = db.prepare('SELECT table_id FROM orders WHERE id = ?').get(bill.order_id) as any;
+      if (order?.table_id) db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?").run(changedAt, order.table_id);
+    }
     const cashback = calculateCashback(db, bill, effectiveCustomerId);
     const alreadyCredited = db.prepare(`SELECT id FROM loyalty_ledger WHERE bill_id = ? AND type = 'credit'`).get(bill.id);
     if (cashback > 0 && !alreadyCredited) {

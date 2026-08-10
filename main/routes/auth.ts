@@ -858,6 +858,7 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         anonymous_data_consent: 'true',
         telemetry_enabled: 'true',
         telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',
+        split_checks_enabled: 'false',
         // '1'/'0', not 'true'/'false' — mirrors FloAdmin's own `stores` table and
         // matches how cloud-sync.ts reads this key everywhere else.
         cloud_sync_enabled: cloudSyncEnabled ? '1' : '0',

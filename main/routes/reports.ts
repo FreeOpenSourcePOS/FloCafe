@@ -71,6 +71,7 @@ function paymentMethodBreakdown(
     ), normalized AS (
       SELECT
         COALESCE(NULLIF(json_extract(line, '$.method'), ''), 'unknown') AS method,
+        CAST(json_extract(line, '$.payment_method_id') AS INTEGER) AS payment_method_id,
         json_extract(line, '$.amount') AS amount,
         COALESCE(
           datetime(NULLIF(json_extract(line, '$.timestamp'), '')),
@@ -79,11 +80,11 @@ function paymentMethodBreakdown(
         ) AS payment_time
       FROM payment_lines
     )
-    SELECT method, COUNT(*) AS count,
+    SELECT COALESCE(pm.name, normalized.method) AS method, COUNT(*) AS count,
       COALESCE(SUM(CASE WHEN typeof(amount) IN ('integer', 'real') THEN amount ELSE 0 END), 0) AS total
-    FROM normalized
+    FROM normalized LEFT JOIN payment_methods pm ON pm.id = normalized.payment_method_id
     WHERE payment_time >= datetime(?) AND payment_time < datetime(?)
-    GROUP BY method
+    GROUP BY COALESCE(pm.name, normalized.method)
     ORDER BY total DESC
   `).all(end, start, paidOnly ? 1 : 0, start, end);
 }

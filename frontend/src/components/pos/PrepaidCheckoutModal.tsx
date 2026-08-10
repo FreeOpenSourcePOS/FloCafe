@@ -9,7 +9,7 @@ import { useTaxPreview } from '@/hooks/use-tax-preview';
 import { useI18n } from '@/hooks/useI18n';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
-import { PAYMENT_METHODS } from '@/lib/payment-methods';
+import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 interface LoyaltySettings {
@@ -18,6 +18,7 @@ interface LoyaltySettings {
 
 export interface PrepaidPayment {
   method: string;
+  payment_method_id?: number;
   amount: number;
 }
 
@@ -38,17 +39,9 @@ interface Props {
 // Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
 const LOYALTY_REDEMPTION_RATE = 100;
 
-function distributeEvenly(total: number, count: number): string[] {
-  const totalCents = Math.round(total * 100);
-  const baseCents = Math.floor(totalCents / count);
-  const remainderCents = totalCents - baseCents * count;
-  return Array.from({ length: count }, (_, index) => (
-    (baseCents + (index === 0 ? remainderCents : 0)) / 100
-  ).toFixed(2));
-}
-
 interface Payment {
   method: string;
+  payment_method_id?: number;
   amount: string;
 }
 
@@ -62,6 +55,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
   const [walletAmount, setWalletAmount] = useState('');
   const [processing, setProcessing] = useState(false);
+  const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
 
   // Discount state (applied to the order once checkout is confirmed)
   const [showDiscount, setShowDiscount] = useState(false);
@@ -101,6 +95,9 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     api.get('/settings/discount')
       .then((res) => setDiscountRequiresApproval(!!res.data.discount_requires_approval))
       .catch(() => {});
+    api.get('/payment-methods')
+      .then((res) => setCustomMethods(res.data.payment_methods || []))
+      .catch(() => setCustomMethods([]));
   }, []);
 
   // Reset the stale balance the moment the customer changes, read directly during render
@@ -160,24 +157,19 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
           return { ...p, amount: (cashRemaining * ratio).toFixed(2) };
         }));
-      } else {
-        const amounts = distributeEvenly(cashRemaining, payments.length);
-        setPayments(payments.map((p, i) => ({ ...p, amount: amounts[i] })));
       }
     }
   }
 
-  const updatePayment = (idx: number, field: keyof Payment, value: string) => {
+  const updatePayment = (idx: number, field: 'method' | 'amount', value: string) => {
     if (field === 'amount') setPaymentsTouched(true);
     setPayments(payments.map((p, i) => (i === idx ? { ...p, [field]: value } : p)));
   };
 
   const addSplit = () => {
-    const newPayments = [...payments, { method: 'card' as const, amount: '0' }];
     const walletUsed = parseFloat(walletAmount) || 0;
-    const cashRemaining = Math.max(0, remaining - walletUsed);
-    const amounts = distributeEvenly(cashRemaining, newPayments.length);
-    setPayments(newPayments.map((p, i) => ({ ...p, amount: amounts[i] })));
+    const allocated = payments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) + walletUsed;
+    setPayments([...payments, { method: 'card', amount: Math.max(0, remaining - allocated).toFixed(2) }]);
   };
 
   const removeSplit = (idx: number) => {
@@ -196,7 +188,10 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const handleConfirm = () => {
     if (!preview) return;
     const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,2})?$/.test(value.trim());
-    if (payments.some((p) => !PAYMENT_METHODS.some((allowed) => allowed.key === p.method) || !amountIsValid(p.amount))) {
+    if (payments.some((p) => (
+      !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
+      && !customMethods.some((method) => method.id === p.payment_method_id)
+    ) || !amountIsValid(p.amount))) {
       toast.error(t('pos.paymentFailed'));
       return;
     }
@@ -229,7 +224,11 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     }
 
     const finalPayments: PrepaidPayment[] = payments
-      .map((p) => ({ method: p.method, amount: parseFloat(p.amount) || 0 }))
+      .map((p) => ({
+        method: p.payment_method_id === undefined ? p.method : 'custom',
+        ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
+        amount: parseFloat(p.amount) || 0,
+      }))
       .filter((p) => p.amount > 0);
 
     const discount: PrepaidDiscount | null = showDiscount && preview.discountAmount > 0
@@ -417,23 +416,19 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           {/* Payment Method Splits */}
           {payments.map((p, idx) => (
             <div key={idx} className="bg-gray-50 rounded-xl p-2.5 space-y-1.5">
-              <div className="flex gap-1">
-                {PAYMENT_METHODS.map((m) => {
-                  const Icon = m.icon;
-                  return (
-                    <button
-                      key={m.key}
-                      onClick={() => updatePayment(idx, 'method', m.key)}
-                      className={`flex-1 flex items-center justify-center gap-1 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        p.method === m.key ? 'bg-brand text-white' : 'bg-white text-gray-600 border border-gray-200 hover:border-brand/40'
-                      }`}
-                    >
-                      <Icon size={14} />
-                      {t(m.labelKey)}
-                    </button>
-                  );
-                })}
-              </div>
+              <select
+                value={p.payment_method_id === undefined ? p.method : `custom:${p.payment_method_id}`}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setPayments(payments.map((line, i) => i !== idx ? line : value.startsWith('custom:')
+                    ? { ...line, method: 'custom', payment_method_id: Number(value.slice(7)) }
+                    : { ...line, method: value, payment_method_id: undefined }));
+                }}
+                className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-white outline-none focus:ring-2 focus:ring-brand"
+              >
+                {PAYMENT_METHODS.map((method) => <option key={method.key} value={method.key}>{t(method.labelKey)}</option>)}
+                {customMethods.map((method) => <option key={method.id} value={`custom:${method.id}`}>{method.name}</option>)}
+              </select>
               <div className="flex items-center gap-1.5">
                 <span className="text-gray-400 text-xs">{currency}</span>
                 <input
@@ -457,7 +452,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
             onClick={addSplit}
             className="w-full py-2 text-sm border border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-brand hover:text-brand transition-colors flex items-center justify-center gap-1"
           >
-            <Plus size={14} /> {t('pos.splitPayment')}
+            <Plus size={14} /> {t('pos.addPaymentMethod', { defaultValue: 'Use another payment method' })}
           </button>
 
           {/* Change Returned */}

@@ -422,7 +422,11 @@ export default function POSPage() {
     }));
     const paymentLines = payments
       .filter((p) => p.amount > 0)
-      .map((p) => ({ method: p.method, amount: p.amount }));
+      .map((p) => ({
+        method: p.method,
+        ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
+        amount: p.amount,
+      }));
     if (walletAmount > 0) paymentLines.push({ method: 'wallet', amount: walletAmount });
     const paymentFingerprint = JSON.stringify({ payments: paymentLines, customer_id: cart.customerId });
     const cartFingerprint = JSON.stringify({
@@ -665,6 +669,7 @@ export default function POSPage() {
     setCheckoutTable(null);
     cart.setTableId(table.id);
     cart.setOrderType('dine_in');
+    cart.setGuestCount(order.guest_count || 1);
     cart.setOrderNotes(order.special_instructions || '');
     setPendingOrder(order);
     toast(`${t('pos.addingItemsToOrder', { number: order.order_number })} ${t('pos.placeOrderReady')}`, { icon: 'ℹ️' });

@@ -248,12 +248,14 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     const rows = db.prepare(`SELECT * FROM customers WHERE id IN (${ph})`).all(...customerIds);
     for (const c of rows as any[]) customersById.set(c.id, parseRowJson(c));
   }
-  const billsByOrderId = new Map<number, any>();
+  const billsByOrderId = new Map<number, any[]>();
   const billsById = new Map<number, any>();
   const billRows = db.prepare(`SELECT * FROM bills WHERE order_id IN ${orderIdsCsv}`).all(...ids) as any[];
   for (const b of billRows) {
     const parsed = parseRowJson(b);
-    billsByOrderId.set(parsed.order_id, parsed);
+    const siblings = billsByOrderId.get(parsed.order_id) || [];
+    siblings.push(parsed);
+    billsByOrderId.set(parsed.order_id, siblings);
     billsById.set(parsed.id, parsed);
   }
   const ledgerByBillId = new Map<number, number>();
@@ -269,11 +271,12 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
     const tableRow = order.table_id ? tablesById.get(order.table_id) : null;
     const table = tableRow ? { ...tableRow, name: tableRow.number } : null;
     const customer = order.customer_id ? customersById.get(order.customer_id) : null;
-    const bill = billsByOrderId.get(order.id) || null;
-    if (bill && bill.customer_id) {
-      bill.points_earned = ledgerByBillId.get(bill.id) || 0;
+    const bills = billsByOrderId.get(order.id) || [];
+    for (const billRow of bills) {
+      if (billRow.customer_id) billRow.points_earned = ledgerByBillId.get(billRow.id) || 0;
     }
-    return { ...order, items: itemList, table, customer, bill };
+    const bill = bills.find((row) => row.payment_status !== 'paid') || bills[0] || null;
+    return { ...order, items: itemList, table, customer, bill, bills };
   });
 }
 
@@ -285,7 +288,6 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-
     if (user.role === 'waiter' && (order as any).user_id !== user.userId) {
       return res.status(403).json({ error: 'Waiters can only view their own orders' });
     }
@@ -324,6 +326,9 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
     if (!type || !['dine_in', 'takeaway', 'delivery', 'online'].includes(type)) {
       return res.status(400).json({ error: 'Valid type is required (dine_in, takeaway, delivery, online)' });
+    }
+    if (guest_count !== undefined && guest_count !== null && (!Number.isSafeInteger(guest_count) || guest_count < 1 || guest_count > 99)) {
+      return res.status(400).json({ error: 'guest_count must be a whole number between 1 and 99' });
     }
 
     const pkgCharge = Number(packaging_charge || 0);
@@ -549,6 +554,9 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
+    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
+      return res.status(409).json({ error: 'Items cannot be changed after a check has been split' });
+    }
     const body = req.body || {};
     const { items, special_instructions } = body;
     const idempotencyKey = orderIdempotencyKey(req);
@@ -944,12 +952,9 @@ router.patch('/:id/customer', requireRole('owner', 'manager'), (req: Request, re
       db.prepare('UPDATE orders SET customer_id = ?, updated_at = ? WHERE id = ?')
         .run(customer_id || null, nowStr, req.params.id);
 
-      // Sync bill if it exists
-      const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(req.params.id) as any;
-      if (existingBill) {
-        db.prepare('UPDATE bills SET customer_id = ?, updated_at = ? WHERE id = ?')
-          .run(customer_id || null, nowStr, existingBill.id);
-      }
+      // Keep every unpaid guest check attached to the same customer.
+      db.prepare("UPDATE bills SET customer_id = ?, updated_at = ? WHERE order_id = ? AND payment_status != 'paid'")
+        .run(customer_id || null, nowStr, req.params.id);
 
       return parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)) as any;
     });
@@ -984,6 +989,9 @@ router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashie
       if (['completed', 'cancelled'].includes(order.status)) {
         throw Object.assign(new Error('Cannot convert a completed or cancelled order'), { statusCode: 400 });
       }
+      if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
+        throw Object.assign(new Error('A split dine-in check cannot be converted to takeaway'), { statusCode: 409 });
+      }
 
       db.prepare("UPDATE orders SET type = 'takeaway', table_id = NULL, updated_at = ? WHERE id = ?")
         .run(nowStr, req.params.id);
@@ -1014,6 +1022,9 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
+      return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
     }
 
     // Cannot apply discount to completed or cancelled orders
@@ -1212,6 +1223,9 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
+    }
+    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
+      return res.status(409).json({ error: 'Discounts cannot be changed after a check has been split' });
     }
 
     // Cannot apply discount to completed or cancelled orders

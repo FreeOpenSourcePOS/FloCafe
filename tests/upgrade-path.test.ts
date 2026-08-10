@@ -45,10 +45,14 @@ const legacyOrder = fixtureDb.prepare(`
   INSERT INTO orders (order_number, subtotal, tax_amount, tax_breakdown, total)
   VALUES ('ORD-LEGACY-TAX', 100, 5, ?, 105)
 `).run(legacyTaxBreakdown);
-fixtureDb.prepare(`
+const legacyBill = fixtureDb.prepare(`
   INSERT INTO bills (bill_number, order_id, subtotal, tax_amount, tax_breakdown, total)
   VALUES ('INV-LEGACY-TAX', ?, 100, 5, ?, 105)
 `).run(legacyOrder.lastInsertRowid, legacyTaxBreakdown);
+fixtureDb.prepare(`UPDATE bills SET payment_details = ? WHERE id = ?`).run(
+  JSON.stringify({ method: 'upi', amount: 105, timestamp: '2026-07-01T11:30:00.000Z' }),
+  legacyBill.lastInsertRowid,
+);
 fixtureDb.prepare(`
   INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES
     ('cloud_sync_enabled', '0', '2026-08-01 12:00:00'),
@@ -126,6 +130,16 @@ function main() {
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,
     'migrated old install reaches the same schema version as a fresh install');
   ideal.close();
+
+  const migratedUpi = db.prepare(`
+    SELECT pm.id, pm.name, b.payment_details
+    FROM bills b
+    JOIN payment_methods pm ON pm.id = json_extract(b.payment_details, '$.payment_method_id')
+    WHERE b.bill_number = 'INV-LEGACY-TAX'
+  `).get() as { id: number; name: string; payment_details: string };
+  assert.equal(migratedUpi.name, 'UPI', 'historical UPI is preserved as a custom method on upgrade');
+  assert.equal(JSON.parse(migratedUpi.payment_details).method, 'UPI', 'historical UPI payment is linked to the preserved method');
+  console.log('   ✓ legacy UPI payments are preserved without seeding UPI on fresh installs');
 
   // ── Migration v45: legacy ISO timestamps are normalized to the space form ─
   const isoOrderRow = db.prepare(

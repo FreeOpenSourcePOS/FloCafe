@@ -158,6 +158,7 @@ export interface Order {
   table?: Table;
   customer?: Customer;
   bill?: Bill;
+  bills?: Bill[];
 }
 
 export interface OrderItem {
@@ -197,7 +198,9 @@ export interface Bill {
   paid_amount: number;
   balance: number;
   payment_status: 'unpaid' | 'partial' | 'paid';
-  payment_details: { method: string; amount: number; timestamp: string }[] | null;
+  payment_details: { method: string; payment_method_id?: number; amount: number; timestamp: string }[] | null;
+  split_group_id?: string | null;
+  split_label?: string | null;
   tax_breakdown?: { title: string; rate: number; amount: number }[] | null;
   tax_snapshot?: TaxSnapshot[] | TaxSnapshot | null;
   order?: Order;

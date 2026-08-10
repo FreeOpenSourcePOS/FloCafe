@@ -3,6 +3,7 @@
 import {
   ShoppingCart, UtensilsCrossed, Package, Truck,
   Plus, Minus, Trash2, Pause, MapPin, SquarePen,
+  Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCartStore } from '@/store/cart';
@@ -93,6 +94,17 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               );
             })}
         </div>
+
+        {cart.orderType === 'dine_in' && (
+          <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
+            <div className="flex items-center gap-2 text-sm text-gray-600"><Users size={15} /><span>{t('pos.pax', { defaultValue: 'Pax' })}</span></div>
+            <div className="flex items-center gap-2">
+              <button type="button" aria-label={t('pos.decreasePax', { defaultValue: 'Decrease pax' })} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Minus size={13} /></button>
+              <input aria-label={t('pos.pax', { defaultValue: 'Pax' })} type="number" min="1" max="99" value={cart.guestCount} onChange={(e) => cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))} className="w-10 text-center text-sm font-semibold border-0 outline-none" />
+              <button type="button" aria-label={t('pos.increasePax', { defaultValue: 'Increase pax' })} onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Plus size={13} /></button>
+            </div>
+          </div>
+        )}
 
         {/* Delivery address — shown inline when delivery is selected */}
         {cart.orderType === 'delivery' && (

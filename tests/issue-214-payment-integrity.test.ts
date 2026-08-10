@@ -13,7 +13,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 const {
   initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct,
   seedCustomer, seedWalletCredit, api, assert, assertEqual, assertIncludes,
-  getResults, closeDatabase, getDatabase,
+  getResults, closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
@@ -23,6 +23,7 @@ const { seedSetupProfile } = require('../main/routes/auth');
 async function main() {
   console.log('Issue #214: payment integrity and reports');
   const db = initTestDb();
+  db.prepare("INSERT INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES ('UPI', 1, 10, ?, ?)").run(now(), now());
   const { authHeader } = seedOwnerUser(db);
   const { authHeader: secondUserAuth } = seedManagerUser(db);
   seedCategory(db, 'cat-214', 'Issue 214 menu');

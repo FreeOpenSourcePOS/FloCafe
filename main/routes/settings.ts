@@ -5,6 +5,7 @@ import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
+import { sendEvent } from '../services/telemetry';
 
 const router = Router();
 
@@ -611,6 +612,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'telemetry_enabled',
   'diagnostics_consent',
   'kds_enabled', 'kot_printing_enabled',
+  'split_checks_enabled',
 ]);
 
 function isAllowedWildcardKey(key: string): boolean {
@@ -686,6 +688,9 @@ router.put('/:key', requireRole('owner', 'manager'), (req: Request, res: Respons
     // Best-effort — never blocks the setting save on cloud reachability.
     if (req.params.key === 'diagnostics_consent') {
       void cloudSync.setDiagnosticsConsent(boolFlag(value) === 'true');
+    }
+    if (req.params.key === 'split_checks_enabled' && boolFlag(value) === 'true') {
+      void sendEvent('feature_used', { feature: 'split_checks', action: 'enabled' });
     }
 
     const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);

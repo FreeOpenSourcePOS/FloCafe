@@ -3386,6 +3386,81 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       copyIfPresent('bill_show_gstn', 'bill_show_tax_id');
     },
   },
+  {
+    version: 58,
+    name: 'configurable_manual_payment_methods',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS payment_methods (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+          is_active INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_payment_methods_active_sort ON payment_methods(is_active, sort_order, id);
+        CREATE TABLE IF NOT EXISTS payment_method_merges (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          source_name TEXT NOT NULL,
+          target_name TEXT NOT NULL,
+          affected_payments INTEGER NOT NULL DEFAULT 0,
+          merged_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+
+      // UPI is not a default on new installations. Preserve it only for an
+      // upgrading store that has actually recorded UPI payments before.
+      const legacyUpi = db.prepare(`
+        SELECT 1 FROM bills b, json_each(CASE
+          WHEN json_valid(b.payment_details) AND json_type(b.payment_details) = 'array' THEN b.payment_details
+          WHEN json_valid(b.payment_details) THEN json_array(b.payment_details)
+          ELSE '[]' END) je
+        WHERE lower(json_extract(je.value, '$.method')) = 'upi' LIMIT 1
+      `).get();
+      if (legacyUpi) {
+        db.prepare(`INSERT OR IGNORE INTO payment_methods (name, is_active, sort_order, created_at, updated_at) VALUES ('UPI', 1, 10, ?, ?)`)
+          .run(now(), now());
+        const upiId = Number((db.prepare(`SELECT id FROM payment_methods WHERE name = 'UPI' COLLATE NOCASE`).get() as { id: number }).id);
+        const rows = db.prepare('SELECT id, payment_details FROM bills WHERE payment_details IS NOT NULL').all() as any[];
+        const update = db.prepare('UPDATE bills SET payment_details = ? WHERE id = ?');
+        for (const row of rows) {
+          let parsed: any;
+          try { parsed = JSON.parse(row.payment_details); } catch { continue; }
+          const lines = Array.isArray(parsed) ? parsed : [parsed];
+          let changed = false;
+          for (const line of lines) {
+            if (line && String(line.method || '').toLowerCase() === 'upi') {
+              line.method = 'UPI';
+              line.payment_method_id = upiId;
+              changed = true;
+            }
+          }
+          if (changed) update.run(JSON.stringify(Array.isArray(parsed) ? lines : lines[0]), row.id);
+        }
+      }
+    },
+  },
+  {
+    version: 59,
+    name: 'split_checks_by_item_quantity',
+    up: () => {
+      if (!getColumns(db, 'bills').includes('split_group_id')) db.exec('ALTER TABLE bills ADD COLUMN split_group_id TEXT');
+      if (!getColumns(db, 'bills').includes('split_label')) db.exec('ALTER TABLE bills ADD COLUMN split_label TEXT');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS bill_items (
+          bill_id INTEGER NOT NULL,
+          order_item_id INTEGER NOT NULL,
+          quantity INTEGER NOT NULL CHECK (quantity > 0),
+          PRIMARY KEY (bill_id, order_item_id),
+          FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE,
+          FOREIGN KEY (order_item_id) REFERENCES order_items(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_bill_items_order_item ON bill_items(order_item_id);
+        CREATE INDEX IF NOT EXISTS idx_bills_split_group ON bills(split_group_id);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

@@ -13,6 +13,7 @@ import { kitchenRoutes } from './kitchen';
 import { customerRoutes, parseCustomer, getWalletBalance } from './customers';
 import { staffRoutes } from './staff';
 import { settingsRoutes } from './settings';
+import { paymentMethodRoutes } from './payment-methods';
 import { reportRoutes } from './reports';
 import { kdsRoutes } from './kds';
 import { kdsInfoRoutes } from './kds-info';
@@ -80,6 +81,7 @@ export function registerRoutes(app: Express): void {
   app.use('/api/staff', staffRoutes);   // users with POS roles
   app.use('/api/users', staffRoutes);   // same router, dual-mounted
   app.use('/api/settings', settingsRoutes);
+  app.use('/api/payment-methods', paymentMethodRoutes);
   app.use('/api/reports', reportRoutes);
   app.use('/api/kds', kdsRoutes);
   app.use('/api/kds-info', kdsInfoRoutes);

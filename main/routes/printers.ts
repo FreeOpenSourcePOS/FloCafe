@@ -333,7 +333,16 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     }
 
     // Fetch order items
-    const items: any[] = getEffectiveOrderItems(db, bill.order_id);
+    let items: any[] = getEffectiveOrderItems(db, bill.order_id);
+    const allocations = db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ?').all(bill.id) as any[];
+    if (allocations.length > 0) {
+      const byItem = new Map(allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]));
+      items = items.filter((item) => byItem.has(Number(item.id))).map((item) => {
+        const quantity = byItem.get(Number(item.id))!;
+        const ratio = quantity / Number(item.quantity);
+        return { ...item, quantity, subtotal: Number((Number(item.subtotal) * ratio).toFixed(2)), tax_amount: Number((Number(item.tax_amount || 0) * ratio).toFixed(2)), total: Number((Number(item.total) * ratio).toFixed(2)) };
+      });
+    }
     order.items = items;
 
     // Fetch table info

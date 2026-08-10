@@ -50,7 +50,10 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
 
     const db = getDatabase();
 
-    if (printer_id) {
+    if (printer_id !== undefined && printer_id !== null) {
+      if (typeof printer_id !== 'string' || printer_id.trim().length === 0) {
+        return res.status(400).json({ error: 'printer_id must be a valid printer ID or null' });
+      }
       const printer = db.prepare('SELECT id FROM printers WHERE id = ?').get(printer_id);
       if (!printer) return res.status(400).json({ error: 'printer_id does not match an existing printer' });
     }
@@ -62,7 +65,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     `).run(
       id, name, description || null,
       category_ids ? JSON.stringify(category_ids) : null,
-      printer_id || null,
+      printer_id ?? null,
       printer_ip || null, printer_port || 9100, printer_name || null,
       sort_order || 0, now(), now()
     );
@@ -85,7 +88,10 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       return res.status(404).json({ error: 'Kitchen station not found' });
     }
 
-    if (printer_id) {
+    if (printer_id !== undefined && printer_id !== null) {
+      if (typeof printer_id !== 'string' || printer_id.trim().length === 0) {
+        return res.status(400).json({ error: 'printer_id must be a valid printer ID or null' });
+      }
       const printer = db.prepare('SELECT id FROM printers WHERE id = ?').get(printer_id);
       if (!printer) return res.status(400).json({ error: 'printer_id does not match an existing printer' });
     }

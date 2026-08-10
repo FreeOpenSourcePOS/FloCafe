@@ -30,6 +30,7 @@ const {
   api, assert, assertEqual, getResults, closeDatabase,
 } = require('./helpers/test-setup');
 const { kitchenStationRoutes } = require('../main/routes/kitchen-stations');
+const { printerRoutes } = require('../main/routes/printers');
 
 async function main() {
   console.log('Integration Test: Issue #134 — Station management API');
@@ -56,6 +57,7 @@ async function main() {
     } catch { res.status(401).json({ error: 'Invalid token' }); }
   });
   app.use('/api/kitchen-stations', kitchenStationRoutes);
+  app.use('/api/printers', printerRoutes);
 
   const { baseUrl, server } = await startServer(app);
 
@@ -87,9 +89,66 @@ async function main() {
         headers: authHeader,
       });
       assertEqual(res.status, 400, 'B: rejects an unknown printer_id');
+
+      const emptyCreate = await api(baseUrl, '/api/kitchen-stations', {
+        method: 'POST', body: { name: 'Empty Printer', printer_id: '' }, headers: authHeader,
+      });
+      assertEqual(emptyCreate.status, 400, 'B: rejects an empty printer_id on create');
+
+      const emptyUpdate = await api(baseUrl, `/api/kitchen-stations/${stationId!}`, {
+        method: 'PUT', body: { printer_id: '' }, headers: authHeader,
+      });
+      assertEqual(emptyUpdate.status, 400, 'B: rejects an empty printer_id on update');
+
+      const clearUpdate = await api(baseUrl, `/api/kitchen-stations/${stationId!}`, {
+        method: 'PUT', body: { printer_id: null }, headers: authHeader,
+      });
+      assertEqual(clearUpdate.status, 200, 'B: allows explicit printer clearing');
+      const restoreUpdate = await api(baseUrl, `/api/kitchen-stations/${stationId!}`, {
+        method: 'PUT', body: { printer_id: 'pr-bar' }, headers: authHeader,
+      });
+      assertEqual(restoreUpdate.status, 200, 'B: allows restoring a valid printer assignment');
     }
 
-    console.log('\n─── Scenario C: assigning staff to a station ───');
+    console.log('\n─── Scenario C: printer updates preserve omitted fields and protect defaults ───');
+    {
+      const create = await api(baseUrl, '/api/printers', {
+        method: 'POST', body: { name: 'Receipt Printer', connection_type: 'network', ip_address: '192.168.1.71', port: 9200, is_default: true }, headers: authHeader,
+      });
+      assertEqual(create.status, 201, 'C: printer created');
+      const printerId = create.data.printer.id;
+
+      const invalidType = await api(baseUrl, `/api/printers/${printerId}`, {
+        method: 'PUT', body: { connection_type: 'serial' }, headers: authHeader,
+      });
+      assertEqual(invalidType.status, 400, 'C: rejects invalid connection type on update');
+      const invalidPort = await api(baseUrl, `/api/printers/${printerId}`, {
+        method: 'PUT', body: { port: 0 }, headers: authHeader,
+      });
+      assertEqual(invalidPort.status, 400, 'C: rejects invalid port on update');
+
+      const renamed = await api(baseUrl, `/api/printers/${printerId}`, {
+        method: 'PUT', body: { name: 'Renamed Printer' }, headers: authHeader,
+      });
+      assertEqual(renamed.status, 200, 'C: partial update succeeds');
+      assertEqual(renamed.data.printer.port, 9200, 'C: omitted port is preserved');
+      assertEqual(renamed.data.printer.ip_address, '192.168.1.71', 'C: omitted IP is preserved');
+
+      const second = await api(baseUrl, '/api/printers', {
+        method: 'POST', body: { name: 'Second Printer', connection_type: 'usb' }, headers: authHeader,
+      });
+      assertEqual(second.status, 201, 'C: second printer created');
+      const deleted = await api(baseUrl, `/api/printers/${printerId}`, { method: 'DELETE', headers: authHeader });
+      assertEqual(deleted.status, 200, 'C: default printer deletion succeeds with a replacement');
+      const printers = await api(baseUrl, '/api/printers', { headers: authHeader });
+      assertEqual(printers.data.printers.filter((p: any) => p.is_default === 1).length, 1, 'C: replacement default is selected');
+      const removeSeed = await api(baseUrl, '/api/printers/pr-bar', { method: 'DELETE', headers: authHeader });
+      assertEqual(removeSeed.status, 200, 'C: non-default printer can be deleted');
+      const soleDelete = await api(baseUrl, `/api/printers/${second.data.printer.id}`, { method: 'DELETE', headers: authHeader });
+      assertEqual(soleDelete.status, 409, 'C: prevents deleting the only default printer');
+    }
+
+    console.log('\n─── Scenario D: assigning staff to a station ───');
     {
       const res = await api(baseUrl, `/api/kitchen-stations/${stationId!}/users`, {
         method: 'PUT',
@@ -104,7 +163,7 @@ async function main() {
       assertEqual(getRes.data.kitchenStation.users.length, 1, 'C: GET station reflects the assigned user');
     }
 
-    console.log('\n─── Scenario D: re-assigning replaces the previous set, not additive ───');
+    console.log('\n─── Scenario E: re-assigning replaces the previous set, not additive ───');
     {
       db.prepare(`INSERT INTO users (id, name, email, password, role) VALUES ('u-bar-staff-2', 'Bar Staff 2', 'bar2@test.com', 'x', 'cashier')`).run();
       const res = await api(baseUrl, `/api/kitchen-stations/${stationId!}/users`, {
@@ -117,7 +176,7 @@ async function main() {
       assertEqual(res.data.users[0].id, 'u-bar-staff-2', 'D: the new user replaced the old one, not appended');
     }
 
-    console.log('\n─── Scenario E: assigning an unknown user_id is rejected ───');
+    console.log('\n─── Scenario F: assigning an unknown user_id is rejected ───');
     {
       const res = await api(baseUrl, `/api/kitchen-stations/${stationId!}/users`, {
         method: 'PUT',

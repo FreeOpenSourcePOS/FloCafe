@@ -4,12 +4,14 @@ import { PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom';
 import { DragDropProvider, useDraggable, type DragEndEvent } from '@dnd-kit/react';
 import { Clock } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import toast from 'react-hot-toast';
 import { KdsColumn } from '@/components/kds/KdsColumn';
 import { KdsItemModal } from '@/components/kds/KdsItemModal';
 import { Badge } from '@/components/ui/badge';
 import {
   STATUS_CONFIG,
   STATUS_ORDER,
+  normalizeKitchenStatus,
   ORDER_TYPE_BADGE_STYLES,
   type KitchenStatus,
   type KdsOrder,
@@ -22,7 +24,7 @@ import { parseDbTimestamp } from '@/lib/utils';
 export interface KdsKanbanBoardProps {
   orders: KdsOrder[];
   updating: number | null;
-  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean; expectedStatus?: KitchenStatus }) => Promise<void>;
+  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean; expectedStatus?: KitchenStatus }) => Promise<boolean>;
 }
 
 interface DropData {
@@ -35,7 +37,7 @@ interface DragData {
 }
 
 function statusOf(item: KdsOrderItem): KitchenStatus {
-  return (item.status || 'pending') as KitchenStatus;
+  return normalizeKitchenStatus(item.status);
 }
 
 // The 4 draggable stages, as opposed to the locked 'voided' status (issue
@@ -46,6 +48,9 @@ type BoardStatus = Exclude<KitchenStatus, 'voided'>;
 
 export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanbanBoardProps) {
   const [modalItem, setModalItem] = useState<{ item: KdsOrderItem; orderNumber: string } | null>(null);
+  const resolvedModalItem = modalItem
+    ? { ...modalItem, item: orders.flatMap((order) => order.items || []).find((item) => item.id === modalItem.item.id) || modalItem.item }
+    : null;
 
   // Group by status, then by order. Default rendering matches the tabs view:
   // one card per order, with the order header and a list of items in that status.
@@ -92,8 +97,12 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     if (!event.operation.target || !sourceData || !targetData) return;
     if (sourceData.fromStatus === targetData.status) return;
 
-    for (const id of sourceData.itemIds) {
-      await updateItemStatus(id, targetData.status, { silent: true, expectedStatus: sourceData.fromStatus });
+    const results = await Promise.all(sourceData.itemIds.map((id) =>
+      updateItemStatus(id, targetData.status, { silent: true, expectedStatus: sourceData.fromStatus }),
+    ));
+    const failed = results.filter((result) => !result).length;
+    if (failed > 0) {
+      toast.error(`${failed} item${failed === 1 ? '' : 's'} could not be updated. The board was refreshed.`);
     }
   }
 
@@ -105,7 +114,9 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
   }, []);
 
   const timeSince = (dateStr: string) => {
-    const totalSeconds = Math.max(0, Math.floor((Date.now() - parseDbTimestamp(dateStr).getTime()) / 1000));
+    const timestamp = parseDbTimestamp(dateStr).getTime();
+    if (!Number.isFinite(timestamp)) return '—';
+    const totalSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
@@ -155,15 +166,15 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
         </div>
       </DragDropProvider>
 
-      {modalItem && (
+      {resolvedModalItem && (
         <KdsItemModal
-          item={modalItem.item}
-          orderNumber={modalItem.orderNumber}
-          updating={updating === modalItem.item.id}
+          item={resolvedModalItem.item}
+          orderNumber={resolvedModalItem.orderNumber}
+          updating={updating === resolvedModalItem.item.id}
           onClose={() => setModalItem(null)}
-          onUpdateStatus={(itemId, status) => {
-            updateItemStatus(itemId, status, { expectedStatus: statusOf(modalItem.item) });
-            setModalItem(null);
+          onUpdateStatus={async (itemId, status) => {
+            const updated = await updateItemStatus(itemId, status, { expectedStatus: statusOf(resolvedModalItem.item) });
+            if (updated) setModalItem(null);
           }}
         />
       )}

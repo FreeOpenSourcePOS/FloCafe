@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { randomUUID } from 'crypto';
+import { validateItemNotes, validateOrderNotes } from './orders-validation';
 
 const router = Router();
 
@@ -19,20 +20,109 @@ interface HeldOrderRow {
   updated_at: string;
 }
 
+const MAX_HELD_ORDER_ITEMS = 100;
+const MAX_IDENTIFIER_LENGTH = 128;
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isValidIdentifier(value: unknown): value is string | number {
+  return (typeof value === 'string' && value.trim().length > 0 && value.length <= MAX_IDENTIFIER_LENGTH)
+    || (typeof value === 'number' && Number.isSafeInteger(value) && value > 0);
+}
+
+function validateHeldOrderItem(item: unknown, db: any): void {
+  if (!isRecord(item) || typeof item.id !== 'string' || item.id.length === 0 || item.id.length > MAX_IDENTIFIER_LENGTH) {
+    throw new Error('Each held-order item must have a valid id');
+  }
+  if (!isRecord(item.product) || !isValidIdentifier(item.product.id)) {
+    throw new Error('Each held-order item must have a valid product');
+  }
+  if (!Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+    throw new Error('Each held-order item must have a positive integer quantity');
+  }
+  if (!Array.isArray(item.addons) || item.addons.some((addon: unknown) => !isRecord(addon) || !isValidIdentifier(addon.id))) {
+    throw new Error('Held-order item addons must be an array of valid addons');
+  }
+  if (item.special_instructions !== undefined && typeof item.special_instructions !== 'string') {
+    throw new Error('Item special instructions must be a string');
+  }
+  validateItemNotes(db, item.special_instructions);
+}
+
+function validateHeldOrderInput(body: any, db: any): {
+  tableId: string;
+  items: unknown[];
+  customerId: string | number | null;
+  guestCount: number;
+  orderNotes: string;
+} {
+  if (!isRecord(body)) {
+    throw new Error('Request body must be an object');
+  }
+  const { tableId, items, customerId, guestCount, orderNotes } = body;
+  if (typeof tableId !== 'string' || tableId.trim().length === 0 || tableId.length > MAX_IDENTIFIER_LENGTH) {
+    throw new Error('tableId must be a non-empty string');
+  }
+  if (!Array.isArray(items) || items.length === 0 || items.length > MAX_HELD_ORDER_ITEMS) {
+    throw new Error(`items must contain between 1 and ${MAX_HELD_ORDER_ITEMS} items`);
+  }
+  items.forEach((item) => validateHeldOrderItem(item, db));
+  if (customerId !== undefined && customerId !== null && !isValidIdentifier(customerId)) {
+    throw new Error('customerId must be a valid identifier');
+  }
+  if (guestCount !== undefined && (!Number.isSafeInteger(guestCount) || guestCount <= 0)) {
+    throw new Error('guestCount must be a positive integer');
+  }
+  if (orderNotes !== undefined && orderNotes !== null && typeof orderNotes !== 'string') {
+    throw new Error('orderNotes must be a string');
+  }
+  validateOrderNotes(db, orderNotes);
+  return {
+    tableId,
+    items,
+    customerId: customerId ?? null,
+    guestCount: guestCount ?? 1,
+    orderNotes: orderNotes ?? '',
+  };
+}
+
+function parseStoredHeldOrder(row: HeldOrderRow): Record<string, unknown> | null {
+  try {
+    const items = JSON.parse(row.items);
+    if (!Array.isArray(items) || items.length === 0 || items.length > MAX_HELD_ORDER_ITEMS || items.some((item) => !isRecord(item))) {
+      return null;
+    }
+    return {
+      id: row.id,
+      tableId: row.table_id,
+      items,
+      customerId: row.customer_id,
+      guestCount: Number.isSafeInteger(row.guest_count) && row.guest_count > 0 ? row.guest_count : 1,
+      orderNotes: row.order_notes || '',
+      heldAt: row.created_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
 router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const rows = db.prepare('SELECT * FROM held_orders ORDER BY updated_at DESC').all() as HeldOrderRow[];
-    const orders = rows.map((row) => ({
-      id: row.id,
-      tableId: row.table_id,
-      items: JSON.parse(row.items),
-      customerId: row.customer_id,
-      guestCount: row.guest_count,
-      orderNotes: row.order_notes,
-      heldAt: row.created_at,
-    }));
-    res.json({ orders });
+    const orders: Record<string, unknown>[] = [];
+    let skippedCount = 0;
+    for (const row of rows) {
+      const order = parseStoredHeldOrder(row);
+      if (order) orders.push(order);
+      else {
+        skippedCount++;
+        console.warn(`[API] Skipping malformed held order ${row.id}`);
+      }
+    }
+    res.json({ orders, skippedCount });
   } catch (error: any) {
     console.error("[API] Held orders fetch error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -41,12 +131,14 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
 
 router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
-    const { tableId, items, customerId, guestCount, orderNotes } = req.body;
-    if (!tableId || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'tableId and non-empty items array are required' });
-    }
-
     const db = getDatabase();
+    let input;
+    try {
+      input = validateHeldOrderInput(req.body, db);
+    } catch (error: any) {
+      return res.status(400).json({ error: error.message });
+    }
+    const { tableId, items, customerId, guestCount, orderNotes } = input;
     
     withTxn(() => {
       const existing = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId) as { id: string } | undefined;

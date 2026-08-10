@@ -295,7 +295,7 @@ export function startKdsServer(): Promise<void> {
           const categoryRoute = stationRoutingCategoryIds.length > 0
             ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
             : '';
-          query += ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationPlaceholders}))${categoryRoute})`;
+          query += ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationPlaceholders}))${categoryRoute}${stationScope.hasUnrestrictedStation ? ' OR o.table_id IS NULL' : ''})`;
           orderParams.push(...stationIds, ...stationRoutingCategoryIds);
         }
         query += ' ORDER BY o.created_at ASC';
@@ -322,7 +322,7 @@ export function startKdsServer(): Promise<void> {
           const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment'
             && !['completed', 'cancelled'].includes(i.status)
             && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-            && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope?.categoryIdsByStation[String(order.kitchen_station_id)] : undefined));
+            && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope?.categoryIdsByStation[String(order.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation));
           let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
 
           // Filter by category if provided
@@ -391,6 +391,9 @@ export function startKdsServer(): Promise<void> {
             WHERE oi.id = ?
           `).get(req.params.id) as any;
           if (!item) return { statusCode: 404, error: 'Order item not found' };
+          if (!db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id)) {
+            return { statusCode: 404, error: 'Order item is not attached to an order' };
+          }
 
           // #150: locked once voided — see main/routes/order-items.ts for the same rule.
           if (item.status === 'voided') return { statusCode: 400, error: 'This item has been voided and can no longer be updated' };
@@ -408,7 +411,7 @@ export function startKdsServer(): Promise<void> {
               FROM orders o LEFT JOIN tables t ON t.id = o.table_id
               WHERE o.id = ?
             `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-            if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds || !isKdsStationItemAllowed(currentStationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
+            if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds || !isKdsStationItemAllowed(currentStationIds, stationRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation)) {
               return { statusCode: 403, error: 'Not authorized to update this station' };
             }
           }

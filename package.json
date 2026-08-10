@@ -3,7 +3,7 @@
   "version": "2.9.7",
   "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.12.0"
   },
   "main": "dist/index.js",
   "scripts": {
@@ -19,7 +19,7 @@
     "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",
-    "verify:electron": "bash scripts/verify-electron-runtime.sh",
+    "verify:electron": "node scripts/verify-electron-runtime.cjs",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
     "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx --config.npmRebuild=false",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",

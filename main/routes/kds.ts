@@ -110,14 +110,14 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
       const categoryRoute = stationRoutingCategoryIds.length > 0
         ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
         : '';
-      query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute})`;
+      query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute}${requestedScope.hasUnrestrictedStation ? ' OR o.table_id IS NULL' : ''})`;
       params.push(...userStationIds, ...stationRoutingCategoryIds);
     }
     if (stationId) {
       const categoryRoute = requestedRoutingCategoryIds.length > 0
         ? ` OR EXISTS (SELECT 1 FROM order_items requested_oi JOIN products requested_p ON requested_p.id = requested_oi.product_id WHERE requested_oi.order_id = o.id AND o.table_id IS NULL AND requested_p.category_id IN (${requestedRoutingCategoryIds.map(() => '?').join(',')}))`
         : '';
-      query += ` AND (t.kitchen_station_id = ?${categoryRoute})`;
+      query += ` AND (t.kitchen_station_id = ?${categoryRoute}${requestedScope.hasUnrestrictedStation ? ' OR o.table_id IS NULL' : ''})`;
       params.push(stationId, ...requestedRoutingCategoryIds);
     }
 
@@ -152,7 +152,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
         && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
         && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
-        && isKdsStationItemAllowed(payloadStationIds, requestedRoutingCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id, ordersById.get(i.order_id)?.kitchen_station_id ? requestedScope.categoryIdsByStation[String(ordersById.get(i.order_id)?.kitchen_station_id)] : undefined));
+        && isKdsStationItemAllowed(payloadStationIds, requestedRoutingCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id, ordersById.get(i.order_id)?.kitchen_station_id ? requestedScope.categoryIdsByStation[String(ordersById.get(i.order_id)?.kitchen_station_id)] : undefined, requestedScope.hasUnrestrictedStation));
     const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems);
     const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
 
@@ -164,7 +164,7 @@ router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
           && !['completed', 'cancelled'].includes(i.status)
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
-          && isKdsStationItemAllowed(payloadStationIds, requestedRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? requestedScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined))
+          && isKdsStationItemAllowed(payloadStationIds, requestedRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? requestedScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined, requestedScope.hasUnrestrictedStation))
         .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, restrictedPayload));
       return {
         ...projectKdsOrder(order, restrictedPayload),        items: visibleItems,
@@ -237,7 +237,7 @@ router.post('/pairing', requireRole('owner', 'manager'), (req: Request, res: Res
 
     res.status(201).json({
       pairingToken: {
-        id: result.lastInsertRowid,
+        id: tokenId,
         token,
         station_id,
         expires_at: expiresAt,
@@ -431,13 +431,16 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
           throw new Error('CATEGORY_FORBIDDEN');
         }
       }
+      if (!db.prepare('SELECT id FROM orders WHERE id = ?').get(item.order_id)) {
+        throw new Error('ORPHANED_ORDER_ITEM');
+      }
       if (currentStationIds.length > 0) {
         const station = db.prepare(`
           SELECT t.kitchen_station_id
           FROM orders o LEFT JOIN tables t ON t.id = o.table_id
           WHERE o.id = ?
         `).get(item.order_id) as { kitchen_station_id: string | null } | undefined;
-        if (!isKdsStationItemAllowed(currentStationIds, currentRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? currentStationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
+        if (!isKdsStationItemAllowed(currentStationIds, currentRoutingCategoryIds, station?.kitchen_station_id, item.category_id, station?.kitchen_station_id ? currentStationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined, currentStationScope.hasUnrestrictedStation)) {
           throw new Error('STATION_FORBIDDEN');
         }
       }
@@ -470,6 +473,9 @@ router.patch('/items/:id/status', requireKdsEnabled, (req: Request, res: Respons
     }
     if (error.message === 'TERMINAL_KDS_ITEM') {
       return res.status(400).json({ error: 'This terminal item cannot be updated from KDS' });
+    }
+    if (error.message === 'ORPHANED_ORDER_ITEM') {
+      return res.status(404).json({ error: 'Order item is not attached to an order' });
     }
     if (error.message === 'STATUS_CONFLICT') {
       return res.status(409).json({ error: 'Item status changed; refresh and try again' });

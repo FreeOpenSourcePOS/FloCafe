@@ -52,7 +52,8 @@ router.get('/orders', (req: Request, res: Response) => {
 
     const stationFilter = stationIds.length > 0
       ? ` AND (EXISTS (SELECT 1 FROM tables assigned_table WHERE assigned_table.id = o.table_id AND assigned_table.kitchen_station_id IN (${stationIds.map(() => '?').join(',')}))
-          ${stationRoutingCategoryIds.length > 0 ? `OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))` : ''})`
+          ${stationRoutingCategoryIds.length > 0 ? `OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))` : ''}
+          ${stationScope.hasUnrestrictedStation ? 'OR o.table_id IS NULL' : ''})`
       : '';
     const orders = db.prepare(`
       SELECT o.*, t.kitchen_station_id
@@ -99,7 +100,7 @@ router.get('/orders', (req: Request, res: Response) => {
         && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
         && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
-        && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id, ordersById.get(i.order_id)?.kitchen_station_id ? stationScope.categoryIdsByStation[String(ordersById.get(i.order_id)?.kitchen_station_id)] : undefined)
+        && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, ordersById.get(i.order_id)?.kitchen_station_id, i.category_id, ordersById.get(i.order_id)?.kitchen_station_id ? stationScope.categoryIdsByStation[String(ordersById.get(i.order_id)?.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation)
     );
     const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson));
     const addonsByItemId = new Map(itemsWithAddons.map((it) => [it.id, it]));
@@ -111,7 +112,7 @@ router.get('/orders', (req: Request, res: Response) => {
           && !['completed', 'cancelled'].includes(i.status)
           && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
           && (!allowedProductIds || allowedProductIds.has(String(i.product_id)))
-          && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined))
+          && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation))
         .map((i) => projectKdsItem(addonsByItemId.get(i.id) || i, restrictedKdsPayload));
       const tableRow = order.table_id ? tablesMap[order.table_id] || null : null;
       const table = tableRow && restrictedKdsPayload ? { name: tableRow.name } : tableRow;

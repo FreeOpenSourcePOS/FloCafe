@@ -44,7 +44,13 @@ async function main() {
 
   try {
     const tableId = 'tbl-test-123';
-    const mockItems = [{ id: 1, name: 'Latte', price: 100, quantity: 2 }];
+    const mockItems = [{
+      id: 'latte-line',
+      product: { id: 'product-latte', name: 'Latte', price: 100 },
+      quantity: 2,
+      addons: [],
+      special_instructions: '',
+    }];
     
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario A: POST /held-orders creates a held order ───');
@@ -78,11 +84,28 @@ async function main() {
     assertEqual(held.guestCount, 2, 'Guest count matches');
     assertEqual(held.orderNotes, 'Test Note', 'Notes match');
     assert(Array.isArray(held.items), 'Items is an array');
-    assertEqual(held.items[0].name, 'Latte', 'Items parsed correctly');
+    assertEqual(held.items[0].product.name, 'Latte', 'Items parsed correctly');
     console.log('  ✓ GET /held-orders retrieves held order');
 
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── Scenario C: DELETE /held-orders/:tableId removes order ───');
+    console.log('\n─── Scenario C: POST /held-orders validates request data ───');
+    const invalidRequests = [
+      { tableId: 123, items: mockItems },
+      { tableId, items: mockItems, guestCount: -1 },
+      { tableId, items: mockItems, customerId: {} },
+      { tableId, items: [{ ...mockItems[0], quantity: 0 }] },
+      { tableId, items: mockItems, orderNotes: 'a'.repeat(201) },
+    ];
+    for (const body of invalidRequests) {
+      const invalidRes = await api(baseUrl, '/api/held-orders', {
+        method: 'POST', body, headers: authHeader,
+      });
+      assertEqual(invalidRes.status, 400, 'Invalid held-order input returns 400');
+    }
+    console.log('  ✓ POST /held-orders rejects malformed input');
+
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── Scenario D: DELETE /held-orders/:tableId removes order ───');
     
     const delRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
     assertEqual(delRes.status, 200, 'DELETE /held-orders returns 200');
@@ -91,17 +114,23 @@ async function main() {
     assertEqual(verifyRes.data.orders.length, 0, 'Held orders list is empty after deletion');
     console.log('  ✓ DELETE /held-orders removes order correctly');
 
-    // ─── Scenario D: unexpected errors do not leak implementation details ───
-    console.log('\n─── Scenario D: held-order errors are sanitized ───');
+    // ─── Scenario E: malformed legacy rows do not hide valid rows ───
+    console.log('\n─── Scenario E: malformed legacy rows are isolated ───');
+    db.prepare(`
+      INSERT INTO held_orders (id, table_id, items, customer_id, guest_count, order_notes, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('ho-valid-legacy', 'tbl-valid-legacy', JSON.stringify(mockItems), null, 1, '', now(), now());
     db.prepare(`
       INSERT INTO held_orders (id, table_id, items, customer_id, guest_count, order_notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `).run('ho-malformed', 'tbl-malformed', '{invalid-json', null, 1, '', now(), now());
-    const errorRes = await api(baseUrl, '/api/held-orders', { headers: authHeader });
-    assertEqual(errorRes.status, 500, 'GET /held-orders returns 500 for malformed stored data');
-    assertEqual(errorRes.data.error, 'Internal server error', 'Unexpected error uses generic client message');
-    assert(!String(errorRes.data.error).includes('JSON'), 'Error response does not expose parser details');
-    console.log('  ✓ Held-order errors are sanitized');
+    const malformedRes = await api(baseUrl, '/api/held-orders', { headers: authHeader });
+    assertEqual(malformedRes.status, 200, 'GET /held-orders succeeds with malformed stored data');
+    assertEqual(malformedRes.data.orders.length, 1, 'Valid stored rows remain visible');
+    assertEqual(malformedRes.data.orders[0].tableId, 'tbl-valid-legacy', 'Valid legacy row is returned');
+    assertEqual(malformedRes.data.skippedCount, 1, 'Malformed row count is reported');
+    assert(!JSON.stringify(malformedRes.data).includes('JSON'), 'Parser details are not exposed');
+    console.log('  ✓ Malformed held orders are isolated');
 
     console.log('\n✅ All held orders tests passed');
   } finally {

@@ -94,6 +94,22 @@ async function run() {
     db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
       VALUES (?, 'kds-bar-product', 'KDS Bar', 12, 1, 12, 0, 12, 'pending', ?, ?)`).run(barOrderId, now(), now());
 
+    db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+      VALUES ('kds-unrestricted-station', 'Unrestricted Station', NULL, 1, ?, ?)`).run(now(), now());
+    db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, station_assignments_configured, created_at, updated_at)
+      VALUES ('user-unrestricted-manager', 'Unrestricted Manager', 'unrestricted@flo.local', ?, 'manager', 1, 1, ?, ?)`).run(hashedPass, now(), now());
+    db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)')
+      .run('user-unrestricted-manager', 'kds-unrestricted-station', now());
+    db.prepare('INSERT INTO categories (id, name, sort_order) VALUES (?, ?, ?)')
+      .run('kds-unrestricted-category', 'Unrestricted food', 3);
+    db.prepare('INSERT INTO products (id, category_id, name, price, is_active, sort_order) VALUES (?, ?, ?, ?, 1, 1)')
+      .run('kds-unrestricted-product', 'kds-unrestricted-category', 'Unrestricted food', 10);
+    db.prepare(`INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+      VALUES (?, 'takeaway', 'pending', 10, 10, ?, ?)`).run('KDS-UNRESTRICTED-001', now(), now());
+    const unrestrictedOrderId = (db.prepare('SELECT id FROM orders WHERE order_number = ?').get('KDS-UNRESTRICTED-001') as any).id;
+    db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
+      VALUES (?, 'kds-unrestricted-product', 'Unrestricted food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(unrestrictedOrderId, now(), now());
+
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
       VALUES ('user-waiter-1', 'Waiter User', 'waiter@flo.local', ?, 'waiter', 1)
@@ -158,6 +174,15 @@ async function run() {
     assert(authedOrders.status === 200, 'Authenticated KDS orders request returns 200');
     assert(Array.isArray(authedOrders.body.orders), 'KDS orders returns an orders array');
     assert(!('unit_price' in (authedOrders.body.orders[0]?.items?.[0] || {})), 'Station-only standalone chef receives redacted item pricing');
+
+    const unrestrictedLogin = await request(`http://127.0.0.1:${port}`)
+      .post('/api/auth/login')
+      .send({ email: 'unrestricted@flo.local', password: 'KitchenPass123!' });
+    assert(unrestrictedLogin.status === 200, 'Unrestricted manager can log in to standalone KDS');
+    const unrestrictedOrders = await request(`http://127.0.0.1:${port}`)
+      .get('/api/kds/orders')
+      .set('Authorization', `Bearer ${unrestrictedLogin.body.access_token}`);
+    assert(unrestrictedOrders.body.orders.some((order: any) => order.id === unrestrictedOrderId), 'Standalone unrestricted station receives tableless orders');
     const categoriesRes = await request(`http://127.0.0.1:${port}`)
       .get('/api/categories')
       .set('Authorization', `Bearer ${token}`);
@@ -174,6 +199,16 @@ async function run() {
     const initialData = await nextMessage('initial_data');
     assert(!('unit_price' in (initialData.orders[0]?.items?.[0] || {})), 'Station-only WebSocket chef receives redacted item pricing');
     assert(initialData.counts.pending === 1, 'WebSocket counts exclude unauthorized station categories');
+
+    const unrestrictedWs = new WebSocket(`ws://127.0.0.1:${port}/kds`);
+    const nextUnrestrictedMessage = createMessageQueue(unrestrictedWs);
+    await once(unrestrictedWs, 'open');
+    unrestrictedWs.send(JSON.stringify({ type: 'auth', token: unrestrictedLogin.body.access_token }));
+    await nextUnrestrictedMessage('auth_success');
+    const unrestrictedInitialData = await nextUnrestrictedMessage('initial_data');
+    assert(unrestrictedInitialData.orders.some((order: any) => order.id === unrestrictedOrderId), 'WebSocket unrestricted station receives tableless orders');
+    unrestrictedWs.close();
+    await once(unrestrictedWs, 'close');
 
     const updatePromise = nextMessage('initial_data');
     const statusRes = await request(`http://127.0.0.1:${port}`)

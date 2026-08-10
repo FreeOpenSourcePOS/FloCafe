@@ -53,6 +53,16 @@ async function main() {
   db.prepare(`INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, tax_amount, total, status, created_at, updated_at)
     VALUES (?, 'kds-contract-product', 'Contract food', 10, 1, 10, 0, 10, 'pending', ?, ?)`).run(tablelessOrderId, now(), now());
 
+  db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, is_active, created_at, updated_at)
+    VALUES ('kds-contract-unrestricted-station', 'Unrestricted Station', NULL, 1, ?, ?)`).run(now(), now());
+  const unrestrictedChefId = 'kds-contract-unrestricted-chef';
+  db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, station_assignments_configured, created_at, updated_at)
+    VALUES (?, 'Unrestricted Chef', ?, ?, 'chef', 1, 1, ?, ?)`).run(
+    unrestrictedChefId, 'kds-contract-unrestricted@flo.local', bcrypt.hashSync('testpass123', 10), now(), now(),
+  );
+  db.prepare('INSERT INTO station_users (user_id, station_id, created_at) VALUES (?, ?, ?)').run(unrestrictedChefId, 'kds-contract-unrestricted-station', now());
+  const unrestrictedChefAuth = { Authorization: `Bearer ${jwt.sign({ userId: unrestrictedChefId, role: 'chef' }, getJWTSecret(), { expiresIn: '1h' })}` };
+
   const chefId = 'kds-contract-chef';
   db.prepare(`INSERT INTO users (id, name, email, password, role, category_ids, is_active, created_at, updated_at)
     VALUES (?, 'Restricted Chef', ?, ?, 'chef', ?, 1, ?, ?)`).run(
@@ -141,6 +151,25 @@ async function main() {
     assertEqual(casUpdate.status, 200, 'KDS status update accepts the expected current status');
     const staleCasUpdate = await request(app).patch(`/api/kds/items/${barItemId}/status`).set(authHeader).send({ status: 'ready', expected_status: 'pending' });
     assertEqual(staleCasUpdate.status, 409, 'KDS status update rejects a stale expected status');
+
+    const unrestrictedOrders = await request(app).get('/api/kds/orders').set(unrestrictedChefAuth);
+    assertEqual(unrestrictedOrders.status, 200, 'unrestricted station KDS request succeeds');
+    assertEqual(unrestrictedOrders.body.orders.some((entry: any) => entry.id === tablelessOrderId), true, 'unrestricted station receives tableless orders');
+    const unrestrictedDisplay = await request(app).get('/api/kds/display?station_id=kds-contract-unrestricted-station').set(unrestrictedChefAuth);
+    assertEqual(unrestrictedDisplay.status, 200, 'unrestricted station display request succeeds');
+    assertEqual(unrestrictedDisplay.body.orders.some((entry: any) => entry.order_id === tablelessOrderId), true, 'unrestricted station display receives tableless orders');
+
+    const pairingCreate = await request(app).post('/api/kds/pairing').set(authHeader).send({ station_id: 'kds-contract-station' });
+    assertEqual(pairingCreate.status, 201, 'pairing token creation succeeds');
+    const storedPairing = db.prepare('SELECT id FROM kds_pairing_tokens WHERE token = ?').get(pairingCreate.body.pairingToken.token) as { id: string };
+    assertEqual(pairingCreate.body.pairingToken.id, storedPairing.id, 'pairing response returns stored identifier');
+
+    db.exec('PRAGMA foreign_keys = OFF');
+    db.prepare('UPDATE order_items SET order_id = ? WHERE id = ?').run('missing-order', barItemId);
+    db.exec('PRAGMA foreign_keys = ON');
+    const orphanUpdate = await request(app).patch(`/api/order-items/${barItemId}/status`).set(authHeader).send({ status: 'ready' });
+    assertEqual(orphanUpdate.status, 404, 'orphaned order item update returns 404');
+    assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(barItemId) as any).status, 'preparing', 'orphaned update does not commit a status change');
   } finally {
     closeDatabase();
     fs.rmSync(testDir, { recursive: true, force: true });

@@ -17,6 +17,10 @@ function run() {
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const build = pkg.build;
 
+  assert.equal(pkg.engines?.node, '>=22.12.0', 'root Node engine must match Electron 43 minimum');
+  assert.equal(pkg.scripts?.['verify:electron'], 'node scripts/verify-electron-runtime.cjs', 'Electron runtime verification must be cross-platform');
+  assert.ok(fs.existsSync(path.join(__dirname, '../scripts/verify-electron-runtime.cjs')), 'cross-platform Electron runtime verifier must exist');
+
   // ── electron-builder config ──────────────────────────────────────────
   assert.ok(build?.publish?.provider === 'github', 'build.publish must target GitHub releases');
 
@@ -118,6 +122,11 @@ function run() {
     fs.existsSync(path.join(__dirname, '../scripts/update-metainfo.js')),
     'scripts/update-metainfo.js must exist — it is invoked by the release job to keep ' +
     'assets/com.flo.desktop.metainfo.xml current.'
+  );
+  const metainfoUpdater = fs.readFileSync(path.join(__dirname, '../scripts/update-metainfo.js'), 'utf8');
+  assert.ok(
+    /replace\(\/\(\\s\*<releases\\b\[\^>\]\*\>\)/.test(metainfoUpdater),
+    'metadata updater must insert into attributed and bare <releases> elements'
   );
 
   // ── release workflow uploads the auto-update manifests, not just installers ──

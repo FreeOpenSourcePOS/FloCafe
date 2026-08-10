@@ -414,7 +414,7 @@ function handleStatusUpdate(client: KdsClient, message: any): void {
         const stationCategoryIds = getKdsStationCategoryIds(db, client.stationIds);
         const stationScope = getKdsStationRoutingScope(db, client.stationIds, client.categoryIds);
         const stationRoutingCategoryIds = stationScope?.tablelessCategoryIds;
-        if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds || !isKdsStationItemAllowed(client.stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, existingItem.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined)) {
+        if (!stationCategoryIds || !stationScope || !stationRoutingCategoryIds || !isKdsStationItemAllowed(client.stationIds, stationRoutingCategoryIds, station?.kitchen_station_id, existingItem.category_id, station?.kitchen_station_id ? stationScope.categoryIdsByStation[String(station?.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation)) {
           return { error: 'Not authorized to update this station' };
         }
       }
@@ -495,7 +495,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     const categoryRoute = stationRoutingCategoryIds.length > 0
       ? ` OR EXISTS (SELECT 1 FROM order_items routed_oi JOIN products routed_p ON routed_p.id = routed_oi.product_id WHERE routed_oi.order_id = o.id AND o.table_id IS NULL AND routed_p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`
       : '';
-    query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute})`;
+    query += ` AND (t.kitchen_station_id IN (${stationPlaceholders})${categoryRoute}${stationScope.hasUnrestrictedStation ? ' OR o.table_id IS NULL' : ''})`;
     orderParams.push(...stationIds, ...stationRoutingCategoryIds);
   }
   query += ' ORDER BY o.created_at ASC';
@@ -533,7 +533,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
     .filter((i: any) => i.status !== 'void_adjustment'
       && !['completed', 'cancelled'].includes(i.status)
       && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-      && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id, i.category_id, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id ? stationScope.categoryIdsByStation[String((orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id)] : undefined));
+      && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id, i.category_id, (orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id ? stationScope.categoryIdsByStation[String((orders as any[]).find((order) => order.id === i.order_id)?.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation));
   const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]);
   const addonsByItemId = new Map(itemsWithAddons.map((it: any) => [it.id, it]));
 
@@ -544,7 +544,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
       .filter((i: any) => i.status !== 'void_adjustment'
         && !['completed', 'cancelled'].includes(i.status)
         && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-        && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined))
+        && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope.categoryIdsByStation[String(order.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation))
       .map((i: any) => addonsByItemId.get(i.id) || i);
 
     // Filter items by category if user has category restrictions
@@ -588,6 +588,7 @@ function sendActiveOrders(ws: WebSocket, categoryIds: string[], stationIds: stri
       stationRoutes.push(`(o.table_id IS NULL AND p.category_id IN (${stationRoutingCategoryIds.map(() => '?').join(',')}))`);
       countParams.push(...stationRoutingCategoryIds);
     }
+    if (stationScope.hasUnrestrictedStation) stationRoutes.push('o.table_id IS NULL');
     countsQuery += ` AND (${stationRoutes.length > 0 ? stationRoutes.join(' OR ') : '0'})`;
   }
   if (categoryIds.length > 0) {

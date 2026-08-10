@@ -43,7 +43,7 @@ const entry = `
       </description>
     </release>`;
 
-const updated = xml.replace(/(\s*<releases>)/, `$1${entry}`);
+const updated = xml.replace(/(\s*<releases\b[^>]*>)/, `$1${entry}`);
 if (updated === xml) {
   throw new Error(`could not insert release ${version}: <releases> element was not recognized`);
 }

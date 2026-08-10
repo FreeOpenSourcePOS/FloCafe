@@ -9,6 +9,41 @@ const router = Router();
 
 // Printer name must contain only safe characters (no shell metacharacters)
 const PRINTER_NAME_REGEX = /^[a-zA-Z0-9 _\-\.]+$/;
+const CONNECTION_TYPES = ['network', 'usb', 'webusb'] as const;
+
+function isValidPort(port: unknown): port is number {
+  return typeof port === 'number' && Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
+function validatePrinterFields(body: any, existing?: any): string | null {
+  if (body.name !== undefined && (typeof body.name !== 'string' || body.name.length === 0 || !PRINTER_NAME_REGEX.test(body.name))) {
+    return 'name contains invalid characters. Only letters, numbers, spaces, hyphens, underscores, and dots are allowed.';
+  }
+  if (body.connection_type !== undefined && !CONNECTION_TYPES.includes(body.connection_type)) {
+    return 'connection_type must be network | usb | webusb';
+  }
+  if (body.port !== undefined && !isValidPort(body.port)) {
+    return 'port must be an integer between 1 and 65535';
+  }
+  if (body.is_default !== undefined && typeof body.is_default !== 'boolean') {
+    return 'is_default must be a boolean';
+  }
+
+  const connectionType = body.connection_type !== undefined ? body.connection_type : existing?.connection_type;
+  const ipAddress = body.ip_address !== undefined ? body.ip_address : existing?.ip_address;
+  if (connectionType === 'network' && (typeof ipAddress !== 'string' || ipAddress.trim().length === 0)) {
+    return 'ip_address is required for network printers';
+  }
+  return null;
+}
+
+function ensureDefaultPrinter(db: any): void {
+  const defaultPrinter = db.prepare('SELECT id FROM printers WHERE is_default = 1 LIMIT 1').get();
+  if (!defaultPrinter) {
+    const replacement = db.prepare('SELECT id FROM printers ORDER BY created_at, name LIMIT 1').get() as any;
+    if (replacement) db.prepare('UPDATE printers SET is_default = 1, updated_at = ? WHERE id = ?').run(now(), replacement.id);
+  }
+}
 
 function printerShape(printer: any) {
   if (!printer) return printer;
@@ -18,6 +53,16 @@ function printerShape(printer: any) {
     profile_id: profile.id,
     profile_name: `${profile.make} ${profile.model}`,
   };
+}
+
+// Keep receipt and KOT callers on one item hydration contract. Database rows
+// may still contain legacy JSON fields, while selected add-ons now live in the
+// normalized order_item_addons table.
+export function getEffectiveOrderItems(db: any, orderId: string): any[] {
+  return attachEffectiveAddons(
+    db,
+    (db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[]).map(parseItemJson),
+  );
 }
 
 // GET /api/printers — list all
@@ -54,7 +99,7 @@ router.get('/supported', (_req: Request, res: Response) => {
 router.get('/:id', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
+    const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
     res.json({ printer: printerShape(printer) });
   } catch (error: any) {
@@ -69,41 +114,44 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     const { name, connection_type, ip_address, port, usb_device_path, paper_width, is_default } = req.body;
 
     if (!name) return res.status(400).json({ error: 'name is required' });
-    if (!PRINTER_NAME_REGEX.test(name)) {
+    if (typeof name !== 'string' || !PRINTER_NAME_REGEX.test(name)) {
       return res.status(400).json({ error: 'name contains invalid characters. Only letters, numbers, spaces, hyphens, underscores, and dots are allowed.' });
     }
     if (!connection_type) return res.status(400).json({ error: 'connection_type is required' });
-    if (!['network', 'usb', 'webusb'].includes(connection_type)) {
+    if (!CONNECTION_TYPES.includes(connection_type)) {
       return res.status(400).json({ error: 'connection_type must be network | usb | webusb' });
     }
-    if (connection_type === 'network' && !ip_address) {
-      return res.status(400).json({ error: 'ip_address is required for network printers' });
+    const fieldError = validatePrinterFields(req.body);
+    if (fieldError) return res.status(400).json({ error: fieldError });
+    if (port !== undefined && !isValidPort(port)) {
+      return res.status(400).json({ error: 'port must be an integer between 1 and 65535' });
+    }
+    if (is_default !== undefined && typeof is_default !== 'boolean') {
+      return res.status(400).json({ error: 'is_default must be a boolean' });
     }
 
     const db = getDatabase();
     const id = uuidv4();
 
-    // Check if this is the first printer - auto-set as default
-    const existingPrinters = db.prepare('SELECT COUNT(*) as count FROM printers').get() as any;
-    const isFirstPrinter = existingPrinters?.count === 0;
-    
-    // If new printer should be default, or it's the first printer, clear existing default first
-    if (is_default || isFirstPrinter) {
-      db.prepare('UPDATE printers SET is_default = 0').run();
-    }
-
-    db.prepare(`
-      INSERT INTO printers (id, name, connection_type, ip_address, port, usb_device_path, paper_width, is_default, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id, name, connection_type,
-      ip_address || null,
-      port || 9100,
-      usb_device_path || null,
-      paper_width || '80mm',
-      (is_default || isFirstPrinter) ? 1 : 0,
-      now(), now()
-    );
+    db.transaction(() => {
+      const existingPrinters = db.prepare('SELECT COUNT(*) as count FROM printers').get() as any;
+      const isFirstPrinter = existingPrinters?.count === 0;
+      const shouldBeDefault = Boolean(is_default) || isFirstPrinter;
+      if (shouldBeDefault) db.prepare('UPDATE printers SET is_default = 0').run();
+      db.prepare(`
+        INSERT INTO printers (id, name, connection_type, ip_address, port, usb_device_path, paper_width, is_default, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        id, name, connection_type,
+        ip_address ?? null,
+        port ?? 9100,
+        usb_device_path ?? null,
+        paper_width ?? '80mm',
+        shouldBeDefault ? 1 : 0,
+        now(), now()
+      );
+      ensureDefaultPrinter(db);
+    })();
 
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(id);
     res.status(201).json({ printer: printerShape(printer) });
@@ -122,40 +170,42 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
     const { name, connection_type, ip_address, port, usb_device_path, paper_width, is_default } = req.body;
 
-    if (name && !PRINTER_NAME_REGEX.test(name)) {
-      return res.status(400).json({ error: 'name contains invalid characters. Only letters, numbers, spaces, hyphens, underscores, and dots are allowed.' });
-    }
+    const fieldError = validatePrinterFields(req.body, existing);
+    if (fieldError) return res.status(400).json({ error: fieldError });
 
-    if (is_default) {
-      db.prepare('UPDATE printers SET is_default = 0').run();
-    }
-
-    db.prepare(`
-      UPDATE printers SET
-        name = COALESCE(?, name),
-        connection_type = COALESCE(?, connection_type),
-        ip_address = ?,
-        port = COALESCE(?, port),
-        usb_device_path = ?,
-        paper_width = COALESCE(?, paper_width),
-        is_default = COALESCE(?, is_default),
-        updated_at = ?
-      WHERE id = ?
-    `).run(
-      name || null,
-      connection_type || null,
-      ip_address !== undefined ? (ip_address || null) : existing.ip_address,
-      port || null,
-      usb_device_path !== undefined ? (usb_device_path || null) : existing.usb_device_path,
-      paper_width || null,
-      is_default !== undefined ? (is_default ? 1 : 0) : null,
-      now(), req.params.id
-    );
+    db.transaction(() => {
+      const updatedConnectionType = connection_type !== undefined ? connection_type : existing.connection_type;
+      const updatedIpAddress = ip_address !== undefined ? ip_address : existing.ip_address;
+      const becameDefault = is_default === true;
+      db.prepare(`
+        UPDATE printers SET
+          name = ?, connection_type = ?, ip_address = ?, port = ?, usb_device_path = ?,
+          paper_width = ?, is_default = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        name !== undefined ? name : existing.name,
+        updatedConnectionType,
+        updatedIpAddress === undefined ? null : updatedIpAddress,
+        port !== undefined ? port : existing.port,
+        usb_device_path !== undefined ? usb_device_path : existing.usb_device_path,
+        paper_width !== undefined ? paper_width : existing.paper_width,
+        becameDefault ? 1 : (is_default === false ? 0 : existing.is_default),
+        now(), req.params.id
+      );
+      if (becameDefault) db.prepare('UPDATE printers SET is_default = 0 WHERE id != ?').run(req.params.id);
+      if (is_default === false && existing.is_default) {
+        const replacement = db.prepare('SELECT id FROM printers WHERE id != ? ORDER BY created_at, name LIMIT 1').get(req.params.id) as any;
+        if (!replacement) throw Object.assign(new Error('At least one printer must remain default'), { statusCode: 409 });
+        db.prepare('UPDATE printers SET is_default = 1, updated_at = ? WHERE id = ?').run(now(), replacement.id);
+      }
+      ensureDefaultPrinter(db);
+    })();
 
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
     res.json({ printer: printerShape(printer) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -164,13 +214,24 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
+    const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
-    db.prepare('DELETE FROM printers WHERE id = ?').run(req.params.id);
+    db.transaction(() => {
+      const count = (db.prepare('SELECT COUNT(*) as count FROM printers').get() as any).count;
+      if (printer.is_default && count === 1) {
+        throw Object.assign(new Error('Cannot delete the only default printer'), { statusCode: 409 });
+      }
+      db.prepare('DELETE FROM printers WHERE id = ?').run(req.params.id);
+      if (printer.is_default) {
+        const replacement = db.prepare('SELECT id FROM printers ORDER BY created_at, name LIMIT 1').get() as any;
+        if (replacement) db.prepare('UPDATE printers SET is_default = 1, updated_at = ? WHERE id = ?').run(now(), replacement.id);
+      }
+    })();
     res.json({ message: 'Printer deleted' });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
+    if (error?.statusCode) return res.status(error.statusCode).json({ error: error.message });
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -182,8 +243,10 @@ router.post('/:id/set-default', requireRole('owner', 'manager'), (req: Request, 
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
-    db.prepare('UPDATE printers SET is_default = 0').run();
-    db.prepare('UPDATE printers SET is_default = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);
+    db.transaction(() => {
+      db.prepare('UPDATE printers SET is_default = 0').run();
+      db.prepare('UPDATE printers SET is_default = 1, updated_at = ? WHERE id = ?').run(now(), req.params.id);
+    })();
 
     res.json({ message: 'Default printer set' });
   } catch (error: any) {
@@ -270,11 +333,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     }
 
     // Fetch order items
-    const items: any[] = attachEffectiveAddons(
-      db,
-      (db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(bill.order_id) as any[])
-        .map(parseItemJson),
-    );
+    const items: any[] = getEffectiveOrderItems(db, bill.order_id);
     order.items = items;
 
     // Fetch table info
@@ -434,7 +493,7 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req
     }
 
     // Fetch order items from database
-    const orderItems: any[] = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[]);
+    const orderItems: any[] = getEffectiveOrderItems(db, orderId);
 
     // Fetch table info if available
     if (order.table_id) {

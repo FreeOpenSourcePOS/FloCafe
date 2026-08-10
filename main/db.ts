@@ -1302,6 +1302,7 @@ export function getKdsStationCategoryIds(dbInstance: Database.Database, stationI
 export type KdsStationRoutingScope = {
   tablelessCategoryIds: string[];
   categoryIdsByStation: Record<string, string[] | null>;
+  hasUnrestrictedStation: boolean;
 };
 
 export function getKdsStationRoutingScope(
@@ -1309,7 +1310,7 @@ export function getKdsStationRoutingScope(
   stationIds: string[],
   userCategoryIds: string[],
 ): KdsStationRoutingScope | null {
-  if (stationIds.length === 0) return { tablelessCategoryIds: [], categoryIdsByStation: {} };
+  if (stationIds.length === 0) return { tablelessCategoryIds: [], categoryIdsByStation: {}, hasUnrestrictedStation: false };
   try {
     const placeholders = stationIds.map(() => '?').join(',');
     const rows = dbInstance.prepare(`
@@ -1318,6 +1319,7 @@ export function getKdsStationRoutingScope(
     `).all(...stationIds) as { id: string; category_ids: string | null }[];
     const byStation: Record<string, string[] | null> = {};
     const tableless = new Set<string>();
+    let hasUnrestrictedStation = false;
     for (const stationId of stationIds) {
       const row = rows.find((candidate) => String(candidate.id) === String(stationId));
       let stationCategories: string[] = [];
@@ -1334,9 +1336,10 @@ export function getKdsStationRoutingScope(
         ? stationCategories.filter((id) => userCategoryIds.length === 0 || userCategoryIds.includes(id))
         : (userCategoryIds.length > 0 ? [...userCategoryIds] : null);
       byStation[String(stationId)] = allowed;
+      if (allowed === null) hasUnrestrictedStation = true;
       if (allowed !== null) allowed.forEach((id) => tableless.add(id));
     }
-    return { tablelessCategoryIds: [...tableless], categoryIdsByStation: byStation };
+    return { tablelessCategoryIds: [...tableless], categoryIdsByStation: byStation, hasUnrestrictedStation };
   } catch {
     return null;
   }
@@ -1356,6 +1359,7 @@ export function isKdsStationItemAllowed(
   orderStationId: string | null | undefined,
   itemCategoryId: string | null | undefined,
   orderStationCategoryIds?: string[] | null,
+  hasUnrestrictedStation = false,
 ): boolean {
   if (stationIds.length === 0) return true;
   if (orderStationId) {
@@ -1364,7 +1368,7 @@ export function isKdsStationItemAllowed(
     if (orderStationCategoryIds === null) return true;
     return !!itemCategoryId && orderStationCategoryIds.includes(String(itemCategoryId));
   }
-  return !!itemCategoryId && stationCategoryIds.includes(String(itemCategoryId));
+  return hasUnrestrictedStation || (!!itemCategoryId && stationCategoryIds.includes(String(itemCategoryId)));
 }
 
 export function hasUserKdsStationAssignments(dbInstance: Database.Database, userId: string): boolean | null {

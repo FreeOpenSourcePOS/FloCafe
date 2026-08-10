@@ -52,6 +52,12 @@ export const STATUS_CONFIG = {
 
 export const STATUS_ORDER: Exclude<KitchenStatus, 'voided'>[] = ['pending', 'preparing', 'ready', 'served'];
 
+export function normalizeKitchenStatus(status: unknown): KitchenStatus {
+  return typeof status === 'string' && status in STATUS_CONFIG
+    ? status as KitchenStatus
+    : 'pending';
+}
+
 export const ORDER_TYPE_BADGE_STYLES: Record<string, string> = {
   dine_in: 'bg-blue-50 text-blue-700 border-blue-200',
   takeaway: 'bg-orange-50 text-orange-700 border-orange-200',
@@ -149,7 +155,7 @@ export interface UseKdsConnectionResult {
   setRememberMe: (v: boolean) => void;
   handleLogin: (e: React.FormEvent) => Promise<void>;
   handleLogout: () => Promise<void>;
-  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean; expectedStatus?: KitchenStatus }) => Promise<void>;
+  updateItemStatus: (itemId: number, status: KitchenStatus, opts?: { silent?: boolean; expectedStatus?: KitchenStatus }) => Promise<boolean>;
   ConfirmDialog: ReactNode;
 }
 
@@ -181,7 +187,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const { t } = useI18n();
   const { confirm, ConfirmDialog } = useConfirm();
 
-  const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[s].labelKey);
+  const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[normalizeKitchenStatus(s)].labelKey);
 
   const [user, setUser] = useState<KdsUser | null>(null);
   const [orders, setOrders] = useState<KdsOrder[]>([]);
@@ -314,8 +320,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (generation === sessionGenerationRef.current && !opts.silent) {
           toast.success(t('kds.itemMarked', { status: statusLabel(status) }));
         }
+        return true;
       } catch (error: unknown) {
-        if (generation !== sessionGenerationRef.current) return;
+        if (generation !== sessionGenerationRef.current) return false;
         const axiosError = error as { response?: { status?: number; data?: { error?: string } } };
         const statusCode = axiosError.response?.status;
         const errorMessage = axiosError.response?.data?.error || t('kds.failedToUpdateItem');
@@ -323,7 +330,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         if (statusCode === 409) {
           await fetchOrdersRest();
           if (!opts.silent) toast.error(errorMessage);
-          return;
+          return false;
         }
         const authorizationFailure = /invalid|expired|revoked|authentication required|no active kitchen station|only chef|only kitchen staff|user account is not active|not authorized to update (this item|this station)/i.test(errorMessage);
         if (statusCode === 401 || (statusCode === 403 && !kdsDisabled && authorizationFailure)) {
@@ -348,7 +355,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           setConnectionMode(null);
           setLoading(false);
           setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
-          return;
+          return false;
         }
         if (kdsDisabled) {
           sessionGenerationRef.current += 1;
@@ -372,11 +379,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           setConnectionMode('rest');
           setLoading(false);
           setLoginError(errorMessage);
-          return;
+          return false;
         }
         if (!opts.silent) {
           toast.error(t('kds.failedToUpdateItem'));
         }
+        return false;
       } finally {
         updatingIdsRef.current.delete(itemId);
         if (generation === sessionGenerationRef.current) {

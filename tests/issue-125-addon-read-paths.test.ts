@@ -37,6 +37,7 @@ const { orderRoutes } = require('../main/routes/orders');
 const { kdsRoutes } = require('../main/routes/kds');
 const { kitchenRoutes } = require('../main/routes/kitchen');
 const { orderItemRoutes } = require('../main/routes/order-items');
+const { getEffectiveOrderItems } = require('../main/routes/printers');
 const { attachEffectiveAddons } = require('../main/db');
 
 async function main() {
@@ -174,6 +175,9 @@ async function main() {
 
       const empty = attachEffectiveAddons(db, []);
       assertEqual(empty.length, 0, 'H: empty input returns empty output without querying');
+
+      const printerItems = getEffectiveOrderItems(db, String(orderId));
+      assertEqual(printerItems[0].addons.length, 1, 'H: printer bill/KOT item hydration includes normalized add-ons');
     }
 
   } finally {

@@ -379,7 +379,10 @@ export default function OrdersPage() {
   const filteredOrders = orders.filter((order) => {
     // Tab filter
     if (tabFilter === 'active' && !isOrderActive(order)) return false;
-    if (tabFilter === 'unpaid' && !(order.bill && order.bill.payment_status !== 'paid')) return false;
+    // An order without a bill has not been paid yet. Bills are deliberately
+    // generated only when checkout starts, so filtering on bill existence
+    // hid otherwise payable orders from the Unpaid tab.
+    if (tabFilter === 'unpaid' && !['unpaid', 'partial'].includes(paymentStatusOf(order) || '')) return false;
 
     // Search by order number
     if (filters.search && !order.order_number.toLowerCase().includes(filters.search.toLowerCase())) {

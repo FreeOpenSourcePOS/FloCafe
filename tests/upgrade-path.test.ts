@@ -130,6 +130,12 @@ function main() {
   assert.equal(getCurrentSchemaVersion(), latestSchemaVersion,
     'migrated old install reaches the same schema version as a fresh install');
   ideal.close();
+  assert.equal(
+    (db.prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as { value: string }).value,
+    'false',
+    'existing stores receive the opt-in split-check default during upgrade',
+  );
+  console.log('   ✓ existing stores receive split checks disabled by default');
 
   const migratedUpi = db.prepare(`
     SELECT pm.id, pm.name, b.payment_details
@@ -304,6 +310,7 @@ function main() {
     existingCountryPack.publishedAt,
     preservedAt,
   );
+  db.prepare("UPDATE settings SET value = 'true' WHERE key = 'split_checks_enabled'").run();
   db.pragma('user_version = 37');
   closeDatabase();
   initDatabase();
@@ -320,6 +327,11 @@ function main() {
   assert.ok(
     getDatabase().prepare('SELECT 1 FROM country_pack_versions WHERE id = ?').get(preservedVersionId),
     'the previously installed active pack version is preserved',
+  );
+  assert.equal(
+    (getDatabase().prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as { value: string }).value,
+    'true',
+    'v60 preserves an existing split-check choice',
   );
   getDatabase().prepare(`UPDATE settings SET value = 'false' WHERE key = 'diagnostics_consent'`).run();
   getDatabase().pragma('user_version = 46');

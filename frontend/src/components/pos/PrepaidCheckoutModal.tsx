@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import { X, Sparkles, ArrowLeftRight, CheckCircle2, User, Plus, Trash2, Percent, Wallet } from 'lucide-react';
+import { X, Sparkles, ArrowLeftRight, CheckCircle2, User, Percent, Wallet, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import { useCartStore } from '@/store/cart';
@@ -58,7 +58,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const [customMethods, setCustomMethods] = useState<CustomPaymentMethod[]>([]);
 
   // Discount state (applied to the order once checkout is confirmed)
-  const [showDiscount, setShowDiscount] = useState(false);
+  const [discountOpen, setDiscountOpen] = useState(false);
   const [discountType, setDiscountType] = useState<'percentage' | 'amount'>('percentage');
   const [discountValue, setDiscountValue] = useState('');
   const [discountReason, setDiscountReason] = useState('');
@@ -66,7 +66,6 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const [discountPin, setDiscountPin] = useState('');
 
   const previewDiscount = useMemo(() => {
-    if (!showDiscount) return null;
     const rawValue = Number.parseFloat(discountValue);
     if (!Number.isFinite(rawValue) || rawValue <= 0) return null;
     return {
@@ -75,7 +74,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
         ? Math.min(100, Math.max(0, rawValue))
         : Math.max(0, rawValue),
     };
-  }, [showDiscount, discountType, discountValue]);
+  }, [discountType, discountValue]);
   const { tax, loading: taxLoading } = useTaxPreview(
     cart.items,
     cart.customerId,
@@ -83,7 +82,9 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     previewDiscount,
   );
 
-  const [payments, setPayments] = useState<Payment[]>([{ method: 'cash', amount: '0' }]);
+  const [payments, setPayments] = useState<Payment[]>(
+    PAYMENT_METHODS.map((method) => ({ method: method.key, amount: '' })),
+  );
   // Tracks whether the cashier has manually typed a split amount — once true, we stop
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
   const [paymentsTouched, setPaymentsTouched] = useState(false);
@@ -96,7 +97,14 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       .then((res) => setDiscountRequiresApproval(!!res.data.discount_requires_approval))
       .catch(() => {});
     api.get('/payment-methods')
-      .then((res) => setCustomMethods(res.data.payment_methods || []))
+      .then((res) => {
+        const methods: CustomPaymentMethod[] = res.data.payment_methods || [];
+        setCustomMethods(methods);
+        setPayments((current) => [
+          ...PAYMENT_METHODS.map((method) => current.find((row) => row.method === method.key && row.payment_method_id === undefined) || { method: method.key, amount: '' }),
+          ...methods.map((method) => current.find((row) => row.payment_method_id === method.id) || { method: 'custom', payment_method_id: method.id, amount: '' }),
+        ]);
+      })
       .catch(() => setCustomMethods([]));
   }, []);
 
@@ -148,39 +156,31 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     setSyncedRemaining(remaining);
     const walletUsed = parseFloat(walletAmount) || 0;
     const cashRemaining = Math.max(0, remaining - walletUsed);
-    if (payments.length === 1) {
-      setPayments([{ ...payments[0], amount: cashRemaining.toFixed(2) }]);
-    } else {
-      const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-      if (totalAllocated > 0) {
-        setPayments(payments.map((p) => {
-          const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
-          return { ...p, amount: (cashRemaining * ratio).toFixed(2) };
-        }));
-      }
+    const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    if (totalAllocated > 0) {
+      setPayments(payments.map((p) => {
+        const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
+        return { ...p, amount: (cashRemaining * ratio).toFixed(2) };
+      }));
     }
   }
-
-  const updatePayment = (idx: number, field: 'method' | 'amount', value: string) => {
-    if (field === 'amount') setPaymentsTouched(true);
-    setPayments(payments.map((p, i) => (i === idx ? { ...p, [field]: value } : p)));
-  };
-
-  const addSplit = () => {
-    const walletUsed = parseFloat(walletAmount) || 0;
-    const allocated = payments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) + walletUsed;
-    setPayments([...payments, { method: 'card', amount: Math.max(0, remaining - allocated).toFixed(2) }]);
-  };
-
-  const removeSplit = (idx: number) => {
-    if (payments.length <= 1) return;
-    setPayments(payments.filter((_, i) => i !== idx));
-  };
 
   const walletAmt = parseFloat(walletAmount) || 0;
   const totalPayment = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0) + walletAmt;
 
-  const hasCash = payments.some((p) => p.method === 'cash');
+  const updatePaymentAmount = (idx: number, value: string) => {
+    setPaymentsTouched(true);
+    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
+  };
+
+  const allocateRemainingTo = (idx: number) => {
+    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + (parseFloat(payment.amount) || 0), walletAmt);
+    const due = Math.max(0, remaining - allocatedElsewhere);
+    setPaymentsTouched(true);
+    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: due > 0 ? due.toFixed(2) : '' } : payment));
+  };
+
+  const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
   const change = hasCash && totalPayment > remaining + 0.009
     ? parseFloat((totalPayment - remaining).toFixed(2))
     : 0;
@@ -218,7 +218,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
         return;
       }
     }
-    if (showDiscount && preview.discountAmount > 0 && discountRequiresApproval && !discountPin) {
+    if (preview.discountAmount > 0 && discountRequiresApproval && !discountPin) {
       toast.error(t('pos.managerPinRequired'));
       return;
     }
@@ -231,7 +231,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       }))
       .filter((p) => p.amount > 0);
 
-    const discount: PrepaidDiscount | null = showDiscount && preview.discountAmount > 0
+    const discount: PrepaidDiscount | null = preview.discountAmount > 0
       ? {
         type: discountType,
         value: previewDiscount?.value || 0,
@@ -295,10 +295,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                         <span>− {currencyFmt(preview.discountAmount)}</span>
                       </div>
                     )}
-                    <TaxBreakdown
-                      taxAmount={preview.taxAmount}
-                      taxBreakdown={preview.taxBreakdown}
-                    />
+                    <TaxBreakdown taxAmount={preview.taxAmount} taxBreakdown={preview.taxBreakdown} />
                     {preview.packagingCharge > 0 && (
                       <div className="flex justify-between text-xs text-slate-300">
                         <span>{t('pos.packaging')}</span>
@@ -341,27 +338,16 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
           )}
 
           {/* Discount */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showDiscount}
-                onChange={(e) => {
-                  setShowDiscount(e.target.checked);
-                  setPaymentsTouched(false);
-                  if (!e.target.checked) {
-                    setDiscountValue('');
-                    setDiscountReason('');
-                    setDiscountPin('');
-                  }
-                }}
-                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-              />
-              <span className="text-sm font-medium text-gray-700">{t('pos.applyDiscount')}</span>
-            </label>
+          <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <button type="button" onClick={() => setDiscountOpen((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-left">
+              <span className="text-sm font-medium text-gray-700">
+                {preview?.discountAmount ? `${t('pos.discount')}: -${currencyFmt(preview.discountAmount)}` : t('pos.applyDiscount')}
+              </span>
+              <ChevronDown size={16} className={`text-gray-400 transition-transform ${discountOpen ? 'rotate-180' : ''}`} />
+            </button>
 
-            {showDiscount && (
-              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 space-y-2 ml-6">
+            {discountOpen && (
+              <div className="bg-purple-50 border-t border-purple-200 p-3 space-y-2">
                 <div className="flex rounded-lg overflow-hidden border border-purple-200">
                   <button
                     onClick={() => setDiscountType('percentage')}
@@ -409,51 +395,48 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
                   />
                 )}
+                {discountValue && (
+                  <Button variant="outline" size="sm" className="w-full" onClick={() => {
+                    setDiscountValue('');
+                    setDiscountReason('');
+                    setDiscountPin('');
+                    setPaymentsTouched(false);
+                  }}>
+                    {t('pos.remove')}
+                  </Button>
+                )}
               </div>
             )}
           </div>
 
-          {/* Payment Method Splits */}
-          {payments.map((p, idx) => (
-            <div key={idx} className="bg-gray-50 rounded-xl p-2.5 space-y-1.5">
-              <select
-                value={p.payment_method_id === undefined ? p.method : `custom:${p.payment_method_id}`}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setPayments(payments.map((line, i) => i !== idx ? line : value.startsWith('custom:')
-                    ? { ...line, method: 'custom', payment_method_id: Number(value.slice(7)) }
-                    : { ...line, method: value, payment_method_id: undefined }));
-                }}
-                className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-white outline-none focus:ring-2 focus:ring-brand"
-              >
-                {PAYMENT_METHODS.map((method) => <option key={method.key} value={method.key}>{t(method.labelKey)}</option>)}
-                {customMethods.map((method) => <option key={method.id} value={`custom:${method.id}`}>{method.name}</option>)}
-              </select>
-              <div className="flex items-center gap-1.5">
-                <span className="text-gray-400 text-xs">{currency}</span>
-                <input
-                  type="number"
-                  value={p.amount}
-                  onChange={(e) => updatePayment(idx, 'amount', e.target.value)}
-                  className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-md outline-none focus:ring-2 focus:ring-brand"
-                  step="0.01"
-                  min="0"
-                />
-                {payments.length > 1 && (
-                  <button onClick={() => removeSplit(idx)} className="text-red-400 hover:text-red-600 p-1">
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-
-          <button
-            onClick={addSplit}
-            className="w-full py-2 text-sm border border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-brand hover:text-brand transition-colors flex items-center justify-center gap-1"
-          >
-            <Plus size={14} /> {t('pos.addPaymentMethod', { defaultValue: 'Use another payment method' })}
-          </button>
+          {/* Every method has one compact amount row; clicking its label fills the unallocated balance. */}
+          <div className="space-y-2">
+            {payments.map((payment, idx) => {
+              const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
+              const custom = customMethods.find((method) => method.id === payment.payment_method_id);
+              const label = builtIn ? t(builtIn.labelKey) : custom?.name || t('common.unknown');
+              const Icon = builtIn?.icon;
+              const active = (parseFloat(payment.amount) || 0) > 0;
+              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex h-11">
+                <button type="button" title={label} onClick={() => allocateRemainingTo(idx)} className={`w-36 shrink-0 rounded-l-xl border px-3 flex items-center gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand hover:text-brand'}`}>
+                  {Icon && <Icon size={15} />}
+                  <span className="truncate">{label}</span>
+                </button>
+                <div className="flex flex-1 items-center border border-l-0 border-gray-200 rounded-r-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
+                  <span className="pl-3 text-gray-400 text-xs">{currency}</span>
+                  <input
+                    type="number"
+                    value={payment.amount}
+                    onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                    placeholder="0.00"
+                    className="min-w-0 flex-1 px-2 py-2 text-right text-sm font-semibold outline-none rounded-r-xl"
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
+              </div>;
+            })}
+          </div>
 
           {/* Change Returned */}
           {hasCash && (
@@ -485,51 +468,39 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
             </div>
           )}
 
-          {/* Loyalty Wallet Redemption */}
+          {/* Loyalty wallet uses the same one-method/one-amount interaction. */}
           {customer && walletBalance !== null && (
-            <div className={`border rounded-xl p-3 space-y-2 ${walletBalance > 0 ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Wallet size={16} className={walletBalance > 0 ? 'text-purple-600' : 'text-gray-400'} />
-                  <span className={`text-sm font-medium ${walletBalance > 0 ? 'text-purple-900' : 'text-gray-500'}`}>{t('pos.loyaltyWallet')}</span>
-                </div>
-                <span className={`text-sm font-semibold ${walletBalance > 0 ? 'text-purple-700' : 'text-gray-400'}`}>
-                  {walletBalance > 0
-                    ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) })
-                    : t('pos.noBalance')}
-                </span>
-              </div>
-              {walletBalance > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400 text-sm">{currency}</span>
+            <div className="space-y-1">
+              <div className="flex h-11">
+                <button type="button" disabled={walletBalance <= 0} onClick={() => {
+                  const allocatedElsewhere = payments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                  const maxWallet = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+                  const due = Math.min(maxWallet, Math.max(0, remaining - allocatedElsewhere));
+                  setWalletAmount(due > 0 ? due.toFixed(2) : '');
+                }} className={`w-36 shrink-0 rounded-l-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200'}`}>
+                  <Wallet size={15} /><span className="truncate">{t('pos.loyaltyWallet')}</span>
+                </button>
+                <div className="flex flex-1 items-center border border-l-0 border-purple-200 rounded-r-xl bg-white focus-within:ring-2 focus-within:ring-purple-400">
+                  <span className="pl-3 text-gray-400 text-xs">{currency}</span>
                   <input
                     type="number"
                     value={walletAmount}
                     onChange={(e) => {
-                      const v = e.target.value;
-                      const parsed = parseFloat(v);
-                      const safeV = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
-                      const maxWalletCurrency = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-                      const max = Math.min(maxWalletCurrency, remaining);
-                      const clamped = safeV > max ? max.toFixed(2) : Math.max(0, safeV).toFixed(2);
-                      setWalletAmount(clamped);
-                      const walletUsed = parseFloat(clamped) || 0;
-                      const cashRemaining = Math.max(0, remaining - walletUsed);
-                      setPayments((prev) => {
-                        if (prev.length === 1) return [{ ...prev[0], amount: cashRemaining.toFixed(2) }];
-                        const currentSum = prev.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-                        if (currentSum === 0) return prev.map((p) => ({ ...p, amount: (cashRemaining / prev.length).toFixed(2) }));
-                        return prev.map((p) => ({ ...p, amount: (cashRemaining * ((parseFloat(p.amount) || 0) / currentSum)).toFixed(2) }));
-                      });
+                      const value = e.target.value;
+                      const parsed = parseFloat(value);
+                      const max = Math.min(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE), remaining);
+                      setWalletAmount(Number.isFinite(parsed) && parsed > max ? max.toFixed(2) : value);
                     }}
-                    placeholder={`0 – ${Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)}`}
-                    className="flex-1 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                    placeholder="0.00"
+                    disabled={walletBalance <= 0}
+                    className="min-w-0 flex-1 px-2 py-2 text-right text-sm font-semibold outline-none rounded-r-xl disabled:bg-gray-50"
                     step="0.01"
                     min="0"
                     max={Math.min(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE), remaining)}
                   />
                 </div>
-              )}
+              </div>
+              <p className="px-1 text-[11px] text-gray-400 text-right">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
             </div>
           )}
         </div>

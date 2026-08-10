@@ -9,6 +9,7 @@ import { cloudSync } from './services/cloud-sync';
 import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry';
 import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
+import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter, printReceipt, printKOT } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
 import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from './services/whatsapp';
@@ -416,11 +417,12 @@ function startMdns(): void {
       type: 'http',
       port: PORT,
       host: 'flo',   // resolves as flo.local on the LAN
-      txt: { version: app.getVersion(), kds: `/kds`, kds_port: String(getKdsPort()) },
+      txt: { version: app.getVersion(), kds: `/kds`, kds_port: String(getKdsPort()), server_app: '/server-standalone', server_app_port: String(getServerAppPort()) },
     });
     const ip = getLocalIP();
     console.log(`[mDNS] Advertising flo.local:${PORT}  (IP fallback: http://${ip}:${PORT})`);
     console.log(`[mDNS] KDS available at http://flo.local:${getKdsPort()}  (IP fallback: http://${ip}:${getKdsPort()})`);
+    console.log(`[mDNS] Server App available at http://flo.local:${getServerAppPort()}  (IP fallback: http://${ip}:${getServerAppPort()})`);
   } catch (err) {
     console.warn('[mDNS] Could not start Bonjour:', err);
   }
@@ -543,6 +545,7 @@ function createMenu(): void {
 function showAbout(): void {
   const ip = getLocalIP();
   const kdsPort = getKdsPort();
+  const serverAppPort = getServerAppPort();
   dialog.showMessageBox({
     type: 'info',
     title: 'About Flo',
@@ -557,8 +560,10 @@ function showAbout(): void {
       '',
       `POS URL: http://flo.local:${PORT}`,
       `KDS URL: http://flo.local:${kdsPort}`,
+      `Server App URL: http://flo.local:${serverAppPort}`,
       '',
       `KDS IP fallback: http://${ip}:${kdsPort}`,
+      `Server App IP fallback: http://${ip}:${serverAppPort}`,
     ].join('\n'),
   });
 }
@@ -579,6 +584,9 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Starting KDS server on port 3002...');
     await startKdsServer();
+
+    console.log('[Flo] Starting Server App on port 3003...');
+    await startServerApp();
 
     console.log('[Flo] Initializing WhatsApp service...');
     initWhatsAppFromDb();
@@ -616,6 +624,8 @@ async function initialize(): Promise<void> {
       const mem = process.memoryUsage();
       return {
         server: isServerRunning() ? 'running' : 'stopped',
+        kdsServer: isKdsServerRunning() ? 'running' : 'stopped',
+        serverApp: isServerAppRunning() ? 'running' : 'stopped',
         memory: {
           heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
           heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
@@ -699,6 +709,7 @@ function runCleanup(): void {
   try { googleDrive.stop(); } catch (e) { console.error('[Flo] googleDrive.stop error:', e); }
   try { shutdownWhatsApp(); } catch (e) { console.error('[Flo] shutdownWhatsApp error:', e); }
   try { stopMdns(); } catch (e) { console.error('[Flo] stopMdns error:', e); }
+  try { stopServerApp(); } catch (e) { console.error('[Flo] stopServerApp error:', e); }
   try { stopKdsServer(); } catch (e) { console.error('[Flo] stopKdsServer error:', e); }
   try { stopServer(); } catch (e) { console.error('[Flo] stopServer error:', e); }
   try { closeDatabase(); } catch (e) { console.error('[Flo] closeDatabase error:', e); }

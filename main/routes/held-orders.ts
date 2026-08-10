@@ -182,11 +182,10 @@ router.delete('/:tableId', requireRole('owner', 'manager', 'cashier', 'waiter'),
       }
     });
 
-    if (!deleted) {
-      return res.status(404).json({ error: 'No held order found for table' });
-    }
-
-    res.json({ success: true });
+    // Deletion is intentionally idempotent. A held order may have been resumed
+    // or deleted by another terminal between the UI's last refresh and this
+    // request; that is already the desired end state, not an application error.
+    res.json({ success: true, deleted });
   } catch (error: any) {
     console.error("[API] Delete held order error:", error);
     res.status(500).json({ error: "Could not delete held order" });

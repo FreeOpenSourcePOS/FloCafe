@@ -611,7 +611,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'printer_method', 'paper_size', 'bill_template',
   'telemetry_enabled',
   'diagnostics_consent',
-  'kds_enabled', 'kot_printing_enabled',
+  'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
   'split_checks_enabled',
 ]);
 
@@ -637,6 +637,12 @@ router.get('/:key', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef')
     const db = getDatabase();
     const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
     if (!setting) {
+      // Split checks are explicitly opt-in. Older databases may briefly lack
+      // the row before migration v60 runs, so read the safe default instead of
+      // turning an absent optional setting into a noisy 404.
+      if (req.params.key === 'split_checks_enabled') {
+        return res.json({ setting: { key: 'split_checks_enabled', value: 'false', updated_at: null } });
+      }
       return res.status(404).json({ error: 'Setting not found' });
     }
     res.json({ setting });

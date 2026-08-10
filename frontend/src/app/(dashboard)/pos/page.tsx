@@ -393,7 +393,15 @@ export default function POSPage() {
         clearPostpaidAttempt();
       }
 
-      if (cart.tableId) heldOrders.removeHeldOrder(cart.tableId);
+      if (cart.tableId) {
+        try {
+          await heldOrders.removeHeldOrder(cart.tableId);
+        } catch (heldOrderError) {
+          // The order has already been placed. Do not turn a cleanup failure
+          // into a failed sale or leave an unhandled promise in the console.
+          console.error('Failed to clear held order after placing order', heldOrderError);
+        }
+      }
       cart.clearCart();
       setMobileCartOpen(false);
       await refreshTables();
@@ -586,7 +594,14 @@ export default function POSPage() {
         ? t('pos.orderPaidWithPoints', { number: orderData.order.order_number, points: pointsEarned })
         : t('pos.orderPaid', { number: orderData.order.order_number });
       toast.success(successMsg);
-      if (cart.tableId) heldOrders.removeHeldOrder(cart.tableId);
+      if (cart.tableId) {
+        try {
+          await heldOrders.removeHeldOrder(cart.tableId);
+        } catch (heldOrderError) {
+          // The payment is complete; clearing the held-order record is cleanup.
+          console.error('Failed to clear held order after payment', heldOrderError);
+        }
+      }
       cart.clearCart();
       clearPrepaidAttempt();
       setMobileCartOpen(false);

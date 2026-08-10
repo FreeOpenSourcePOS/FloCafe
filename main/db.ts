@@ -533,6 +533,14 @@ export function isKdsEnabled(): boolean {
 }
 
 /**
+ * Server App on/off switch. Defaults to enabled for new and upgraded installs,
+ * while still allowing owners to hide the tableside ordering surface entirely.
+ */
+export function isServerAppEnabled(): boolean {
+  return getSettingValue('server_app_enabled') !== 'false';
+}
+
+/**
  * KOT ticket printing on/off switch (issue #133) — coarser than
  * `auto_print_kot` (which only gates *automatic* printing on order
  * placement). When this is off, no KOT print command may be sent,
@@ -3461,6 +3469,31 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 60,
+    name: 'seed_split_checks_disabled_setting',
+    up: () => {
+      // Existing stores were already initialized before split checks existed,
+      // so the first-run setup default never runs for them. Keep the feature
+      // opt-in by inserting the default only when no merchant choice exists.
+      db.prepare(`
+        INSERT OR IGNORE INTO settings (key, value, updated_at)
+        VALUES ('split_checks_enabled', 'false', ?)
+      `).run(now());
+    },
+  },
+  {
+    version: 61,
+    name: 'seed_server_app_enabled_setting',
+    up: () => {
+      // Match the Server App runtime default for upgraded stores while still
+      // preserving any owner choice if the setting was already created.
+      db.prepare(`
+        INSERT OR IGNORE INTO settings (key, value, updated_at)
+        VALUES ('server_app_enabled', 'true', ?)
+      `).run(now());
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4201,6 +4234,7 @@ function seedInstallDefaults(): void {
   insert('telemetry_scope', 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics');
   insert('diagnostics_consent', 'true');
   insert('kds_enabled', 'true');
+  insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
   insert('order_number_prefix', 'ORD');
   insert('order_number_include_date', 'true');

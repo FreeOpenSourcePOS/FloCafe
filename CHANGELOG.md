@@ -2,6 +2,23 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.0.0] - 2026-08-11
+
+### Added
+- Payment methods are now merchant-configurable, and checkout supports split payments across built-in, custom, and loyalty-wallet methods.
+- Split checks can be enabled for table checkout, with database defaults keeping the feature opt-in for upgraded stores.
+- A new Server App runs on the local network for waiter/tablet tableside ordering, with Settings pairing URLs, QR codes, role-limited login, and API forwarding to the local POS.
+
+### Changed
+- Checkout payment entry now shows one compact amount row per method instead of adding/removing split rows, making mixed tender faster for cashiers.
+- Discount controls in checkout are collapsed into a smaller panel while preserving manager-PIN approval and recalculation behavior.
+- Development restart/reset tooling and the backend dev server now include the Server App port.
+
+### Fixed
+- Held-order cleanup is now idempotent, so stale terminals or repeated cleanup requests no longer turn a completed sale into an error.
+- POS order placement and payment now await held-order cleanup and log cleanup failures without blocking the completed sale.
+- The Orders page Unpaid tab now includes orders that do not have a bill yet, so payable dine-in orders are no longer hidden before checkout starts.
+
 ## [2.9.7] - 2026-08-10
 
 ### Fixed

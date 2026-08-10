@@ -4,7 +4,7 @@
  * Uses an allowlist approach: identifies Flo by process name/cmdline,
  * then kills only those processes that hold the target ports.
  *
- * Usage: node kill-ports.js 3001 3002
+ * Usage: node kill-ports.js 3001 3002 3003
  */
 const { execSync, exec } = require('child_process');
 const os = require('os');
@@ -15,7 +15,7 @@ const ports = process.argv.slice(2)
   .filter((p) => Number.isInteger(p) && p >= 1 && p <= 65535);
 
 if (ports.length === 0 && require.main === module) {
-  console.log('[kill-ports] No valid ports specified. Usage: node kill-ports.js 3001 3002');
+  console.log('[kill-ports] No valid ports specified. Usage: node kill-ports.js 3001 3002 3003');
   process.exit(0);
 }
 
@@ -37,6 +37,7 @@ const FLO_PATTERNS = [
   /(?:^|\s)flo[_\-]?pos(?:-service)?(?:\.exe)?(?:$|\s)/i,
   /(?:^|\s)electron(?:\s+\S+)*\s+--appName=flo[_\-]?desktop(?:$|\s)/i,
   /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]FloCafe[\\/](?:dev-server\.js|dist[\\/]index\.js)(?:$|\s)/i,
+  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*\s+dev-server\.js(?:$|\s)/i,
 ];
 
 function isFloProcess(cmdline) {

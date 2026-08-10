@@ -61,7 +61,7 @@ echo ""
 echo -e "${BLUE}Step 1: Killing Flo processes${NC}"
 echo "----------------------------------------"
 
-node kill-ports.js 3000 3001 3002 3088
+node kill-ports.js 3000 3001 3002 3003 3088
 sleep 1
 
 echo -e "${GREEN}Flo processes stopped${NC}"

@@ -9,7 +9,7 @@ echo "FloCafe - restarting development app"
 
 # kill-ports.js scopes termination to FloCafe listeners; do not kill by generic
 # process names such as electron, next, or node.
-node kill-ports.js 3000 3001 3002 3088
+node kill-ports.js 3000 3001 3002 3003 3088
 
 rm -rf -- "$ROOT_DIR/frontend/.next" "$ROOT_DIR/dist"
 

@@ -114,6 +114,14 @@ async function main() {
     assertEqual(verifyRes.data.orders.length, 0, 'Held orders list is empty after deletion');
     console.log('  ✓ DELETE /held-orders removes order correctly');
 
+    // A stale screen or another terminal may send the same delete after the
+    // record is already gone. That must be safe to retry.
+    const repeatDeleteRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
+    assertEqual(repeatDeleteRes.status, 200, 'Repeated DELETE is a successful no-op');
+    assertEqual(repeatDeleteRes.data.success, true, 'Repeated DELETE returns success');
+    assertEqual(repeatDeleteRes.data.deleted, false, 'Repeated DELETE reports that nothing remained to delete');
+    console.log('  ✓ DELETE /held-orders is idempotent');
+
     // ─── Scenario E: malformed legacy rows do not hide valid rows ───
     console.log('\n─── Scenario E: malformed legacy rows are isolated ───');
     db.prepare(`

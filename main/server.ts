@@ -167,7 +167,7 @@ export function startServer(): Promise<void> {
         "style-src 'self' 'unsafe-inline'; " +
         "img-src 'self' data:; " +
         "font-src 'self' data:; " +
-        "connect-src 'self' http://localhost:3000 http://localhost:3001 http://localhost:3002 ws://localhost:3001 ws://localhost:3002; " +
+        "connect-src 'self' http://localhost:3000 http://localhost:3001 http://localhost:3002 http://localhost:3003 ws://localhost:3001 ws://localhost:3002; " +
         "frame-ancestors 'none'"
       );
       next();

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { X, Wallet, Plus, Trash2, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send } from 'lucide-react';
+import { X, Wallet, ArrowLeftRight, CheckCircle2, Sparkles, User, Percent, Send, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -50,9 +50,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [justPaid, setJustPaid] = useState(false);
   const [sendingWa, setSendingWa] = useState(false);
   const [pointsEarned, setPointsEarned] = useState(0);
-  const [payments, setPayments] = useState<Payment[]>([
-    { method: 'cash', amount: remaining.toString() },
-  ]);
+  const [payments, setPayments] = useState<Payment[]>(
+    PAYMENT_METHODS.map((method) => ({ method: method.key, amount: '' })),
+  );
   // Tracks whether the cashier has manually typed a split amount — once true, we stop
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
   const [paymentsTouched, setPaymentsTouched] = useState(false);
@@ -97,16 +97,12 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const [syncedRemaining, setSyncedRemaining] = useState(remaining);
   if (!paymentsTouched && remaining !== syncedRemaining) {
     setSyncedRemaining(remaining);
-    if (payments.length === 1) {
-      setPayments([{ ...payments[0], amount: remaining.toString() }]);
-    } else {
-      const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
-      if (totalAllocated > 0) {
-        setPayments(payments.map(p => {
-          const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
-          return { ...p, amount: (remaining * ratio).toFixed(2) };
-        }));
-      }
+    const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
+    if (totalAllocated > 0) {
+      setPayments(payments.map(p => {
+        const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
+        return { ...p, amount: (remaining * ratio).toFixed(2) };
+      }));
     }
   }
 
@@ -126,29 +122,33 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       .then((res) => setDiscountRequiresApproval(!!res.data.discount_requires_approval))
       .catch(() => {});
     api.get('/payment-methods')
-      .then((res) => setCustomMethods(res.data.payment_methods || []))
+      .then((res) => {
+        const methods: CustomPaymentMethod[] = res.data.payment_methods || [];
+        setCustomMethods(methods);
+        setPayments((current) => [
+          ...PAYMENT_METHODS.map((method) => current.find((row) => row.method === method.key && row.payment_method_id === undefined) || { method: method.key, amount: '' }),
+          ...methods.map((method) => current.find((row) => row.payment_method_id === method.id) || { method: 'custom', payment_method_id: method.id, amount: '' }),
+        ]);
+      })
       .catch(() => setCustomMethods([]));
   }, [bill.customer_id, cartCustomerId]);
-
-  const updatePayment = (idx: number, field: 'method' | 'amount', value: string) => {
-    if (field === 'amount') setPaymentsTouched(true);
-    setPayments(payments.map((p, i) => i === idx ? { ...p, [field]: value } : p));
-  };
-
-  const addSplit = () => {
-    const allocated = payments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0) + walletAmt;
-    setPayments([...payments, { method: 'card', amount: Math.max(0, remaining - allocated).toFixed(2) }]);
-  };
-
-  const removeSplit = (idx: number) => {
-    if (payments.length <= 1) return;
-    setPayments(payments.filter((_, i) => i !== idx));
-  };
 
   const walletAmt = parseFloat(walletAmount) || 0;
   const totalPayment = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0) + walletAmt;
 
-  const hasCash = payments.some((p) => p.method === 'cash');
+  const updatePaymentAmount = (idx: number, value: string) => {
+    setPaymentsTouched(true);
+    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: value } : payment));
+  };
+
+  const allocateRemainingTo = (idx: number) => {
+    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + (parseFloat(payment.amount) || 0), walletAmt);
+    const due = Math.max(0, remaining - allocatedElsewhere);
+    setPaymentsTouched(true);
+    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: due > 0 ? due.toFixed(2) : '' } : payment));
+  };
+
+  const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
 
   const change = hasCash && totalPayment > remaining + 0.009
     ? parseFloat((totalPayment - remaining).toFixed(2))
@@ -357,7 +357,6 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
               )}
             </div>
 
-            {/* Bill breakdown — always shown so cashier has full context */}
             <div className="border-t border-white/10 pt-3 space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-300">
                 <span>{t('pos.subtotal')}</span>
@@ -369,10 +368,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                   <span>− {currencyFmt(Number(bill.discount_amount))}</span>
                 </div>
               )}
-              <TaxBreakdown
-                taxAmount={Number(bill.tax_amount)}
-                taxBreakdown={bill.tax_breakdown}
-              />
+              <TaxBreakdown taxAmount={Number(bill.tax_amount)} taxBreakdown={bill.tax_breakdown} />
               {Number(bill.delivery_charge) > 0 && (
                 <div className="flex justify-between text-slate-300">
                   <span>{t('pos.delivery')}</span>
@@ -414,32 +410,18 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           )}
 
           {/* Discount */}
-          {!bill.split_group_id && <div className="space-y-2">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showDiscount || Number(bill.discount_amount) > 0}
-                onChange={async (e) => {
-                  const checked = e.target.checked;
-                  if (!checked && Number(bill.discount_amount) > 0) {
-                    if (await confirm(t('pos.removeDiscountConfirm'), { destructive: true, confirmLabel: t('pos.remove') })) {
-                      handleApplyDiscount(0);
-                    }
-                  } else {
-                    setShowDiscount(checked);
-                  }
-                }}
-                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500"
-              />
+          {!bill.split_group_id && <div className="rounded-xl border border-gray-200 overflow-hidden">
+            <button type="button" onClick={() => setShowDiscount((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-left">
               <span className="text-sm font-medium text-gray-700">
                 {Number(bill.discount_amount) > 0
                   ? `${t('pos.discount')}: -${currencyFmt(Number(bill.discount_amount))}`
                   : t('pos.applyDiscount')}
               </span>
-            </label>
+              <ChevronDown size={16} className={`text-gray-400 transition-transform ${showDiscount ? 'rotate-180' : ''}`} />
+            </button>
 
             {showDiscount && (
-              <div className="bg-purple-50 border border-purple-200 rounded-xl p-3 space-y-2 ml-6">
+              <div className="bg-purple-50 border-t border-purple-200 p-3 space-y-2">
                 <div className="flex rounded-lg overflow-hidden border border-purple-200">
                   <button
                     onClick={() => { setDiscountType('percentage'); }}
@@ -497,50 +479,44 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                     ? t('pos.applyingDiscount')
                     : Number(bill.discount_amount) > 0 ? t('pos.updateDiscount') : t('pos.applyDiscount')}
                 </Button>
+                {Number(bill.discount_amount) > 0 && (
+                  <Button variant="outline" size="sm" className="w-full" onClick={async () => {
+                    if (await confirm(t('pos.removeDiscountConfirm'), { destructive: true, confirmLabel: t('pos.remove') })) void handleApplyDiscount(0);
+                  }}>
+                    {t('pos.remove')}
+                  </Button>
+                )}
               </div>
             )}
           </div>}
 
-          {payments.map((p, idx) => (
-            <div key={idx} className="bg-gray-50 rounded-xl p-2.5 space-y-1.5">
-              <select
-                value={p.payment_method_id === undefined ? p.method : `custom:${p.payment_method_id}`}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setPayments(payments.map((line, i) => i !== idx ? line : value.startsWith('custom:')
-                    ? { ...line, method: 'custom', payment_method_id: Number(value.slice(7)) }
-                    : { ...line, method: value, payment_method_id: undefined }));
-                }}
-                className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded-md bg-white outline-none focus:ring-2 focus:ring-brand"
-              >
-                {PAYMENT_METHODS.map((method) => <option key={method.key} value={method.key}>{t(method.labelKey)}</option>)}
-                {customMethods.map((method) => <option key={method.id} value={`custom:${method.id}`}>{method.name}</option>)}
-              </select>
-              <div className="flex items-center gap-1.5">
-                <span className="text-gray-400 text-xs">{currency}</span>
-                <input
-                  type="number"
-                  value={p.amount}
-                  onChange={(e) => updatePayment(idx, 'amount', e.target.value)}
-                  className="flex-1 px-2 py-1.5 text-sm border border-gray-200 rounded-md outline-none focus:ring-2 focus:ring-brand"
-                  step="0.01"
-                  min="0"
-                />
-                {payments.length > 1 && (
-                  <button onClick={() => removeSplit(idx)} className="text-red-400 hover:text-red-600 p-1">
-                    <Trash2 size={14} />
-                  </button>
-                )}
-              </div>
-            </div>
-          ))}
-
-          <button
-            onClick={addSplit}
-            className="w-full py-2 text-sm border border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-brand hover:text-brand transition-colors flex items-center justify-center gap-1"
-          >
-            <Plus size={14} /> {t('pos.addPaymentMethod', { defaultValue: 'Use another payment method' })}
-          </button>
+          <div className="space-y-2">
+            {payments.map((payment, idx) => {
+              const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
+              const custom = customMethods.find((method) => method.id === payment.payment_method_id);
+              const label = builtIn ? t(builtIn.labelKey) : custom?.name || t('common.unknown');
+              const Icon = builtIn?.icon;
+              const active = (parseFloat(payment.amount) || 0) > 0;
+              return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex h-11">
+                <button type="button" title={label} onClick={() => allocateRemainingTo(idx)} className={`w-36 shrink-0 rounded-l-xl border px-3 flex items-center gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand hover:text-brand'}`}>
+                  {Icon && <Icon size={15} />}
+                  <span className="truncate">{label}</span>
+                </button>
+                <div className="flex flex-1 items-center border border-l-0 border-gray-200 rounded-r-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
+                  <span className="pl-3 text-gray-400 text-xs">{currency}</span>
+                  <input
+                    type="number"
+                    value={payment.amount}
+                    onChange={(e) => updatePaymentAmount(idx, e.target.value)}
+                    placeholder="0.00"
+                    className="min-w-0 flex-1 px-2 py-2 text-right text-sm font-semibold outline-none rounded-r-xl"
+                    step="0.01"
+                    min="0"
+                  />
+                </div>
+              </div>;
+            })}
+          </div>
 
           {/* Change Returned */}
           {hasCash && (
@@ -573,45 +549,38 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
           )}
 
           {bill.customer_id && walletBalance !== null && (
-            <div className={`border rounded-xl p-3 space-y-2 ${walletBalance > 0 ? 'bg-purple-50 border-purple-200' : 'bg-gray-50 border-gray-200'}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Wallet size={16} className={walletBalance > 0 ? 'text-purple-600' : 'text-gray-400'} />
-                  <span className={`text-sm font-medium ${walletBalance > 0 ? 'text-purple-900' : 'text-gray-500'}`}>{t('pos.loyaltyWallet')}</span>
-                </div>
-                <span className={`text-sm font-semibold ${walletBalance > 0 ? 'text-purple-700' : 'text-gray-400'}`}>
-                  {walletBalance > 0
-                    ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
-                    : t('pos.noBalance')}
-                </span>
-              </div>
-              {walletBalance > 0 && (
-                <div className="flex items-center gap-2">
-                  <span className="text-gray-400 text-sm">{currency}</span>
+            <div className="space-y-1">
+              <div className="flex h-11">
+                <button type="button" disabled={walletBalance <= 0} onClick={() => {
+                  const allocatedElsewhere = payments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
+                  const maxWallet = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+                  const due = Math.min(maxWallet, Math.max(0, remaining - allocatedElsewhere));
+                  setWalletAmount(due > 0 ? due.toFixed(2) : '');
+                }} className={`w-36 shrink-0 rounded-l-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200'}`}>
+                  <Wallet size={15} /><span className="truncate">{t('pos.loyaltyWallet')}</span>
+                </button>
+                <div className="flex flex-1 items-center border border-l-0 border-purple-200 rounded-r-xl bg-white focus-within:ring-2 focus-within:ring-purple-400">
+                  <span className="pl-3 text-gray-400 text-xs">{currency}</span>
                   <input
                     type="number"
                     value={walletAmount}
                     onChange={(e) => {
                       const v = e.target.value;
-                      // Max is wallet points / redemption rate (converted to currency), capped at remaining
                       const maxWalletCurrency = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
                       const max = Math.min(maxWalletCurrency, remaining);
                       const clamped = parseFloat(v) > max ? max.toFixed(2) : v;
                       setWalletAmount(clamped);
-                      // Auto-reduce first payment so total stays at remaining
-                      const walletUsed = parseFloat(clamped) || 0;
-                      setPayments((prev) => prev.map((p, i) =>
-                        i === 0 ? { ...p, amount: Math.max(0, remaining - walletUsed).toFixed(2) } : p
-                      ));
                     }}
-                    placeholder={`0 – ${Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))}`}
-                    className="flex-1 px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                    placeholder="0.00"
+                    disabled={walletBalance <= 0}
+                    className="min-w-0 flex-1 px-2 py-2 text-right text-sm font-semibold outline-none rounded-r-xl disabled:bg-gray-50"
                     step="0.01"
                     min="0"
                     max={Math.min(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE)), remaining)}
                   />
                 </div>
-              )}
+              </div>
+              <p className="px-1 text-[11px] text-gray-400 text-right">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
             </div>
           )}
         </div>

@@ -71,14 +71,15 @@ Module._load = function (request, parent, isMain) {
 // ── Now load and start the compiled backend ───────────────────────────────────
 const { initDatabase } = require('./dist/db');
 const { closeDatabase } = require('./dist/db');
-const { startServer, getServerPort } = require('./dist/server');
-const { startKdsServer, stopKdsServer } = require('./dist/kds-server');
-const { stopServer, getKdsPort } = require('./dist/kds-server');
+const { startServer, stopServer, getServerPort } = require('./dist/server');
+const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/kds-server');
+const { startServerApp, stopServerApp, getServerAppPort } = require('./dist/server-app');
 
 let shuttingDown = false;
 async function shutdown(exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
+  try { await Promise.resolve(stopServerApp()); } catch (err) { console.error('[DevServer] Server App shutdown failed:', err); exitCode = 1; }
   try { await Promise.resolve(stopServer()); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); exitCode = 1; }
   try { await Promise.resolve(stopKdsServer()); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); exitCode = 1; }
   try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); exitCode = 1; }
@@ -102,12 +103,14 @@ process.once('unhandledRejection', (err) => {
     console.log('[DevServer] Initializing database...');
     initDatabase();
 
-    console.log('[DevServer] Starting Express server & KDS server...');
+    console.log('[DevServer] Starting Express, KDS, and Server App servers...');
     await startServer();
     await startKdsServer();
+    await startServerApp();
 
     console.log(`[DevServer] ✅ Main API running on http://localhost:${getServerPort()}`);
     console.log(`[DevServer] ✅ KDS Server running on http://localhost:${getKdsPort()}`);
+    console.log(`[DevServer] ✅ Server App running on http://localhost:${getServerAppPort()}`);
     console.log('[DevServer]    Frontend dev server: http://localhost:3000');
     console.log('[DevServer]    API health: http://localhost:3001/api/health');
   } catch (err) {

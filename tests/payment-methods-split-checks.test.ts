@@ -25,6 +25,11 @@ async function main() {
   const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes, '/api/payment-methods': paymentMethodRoutes, '/api/settings': settingsRoutes });
   const { baseUrl, server } = await startServer(app);
   try {
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as any).value, 'false', 'fresh database seeds split checks disabled');
+    db.prepare("DELETE FROM settings WHERE key = 'split_checks_enabled'").run();
+    const missingSplitSetting = await api(baseUrl, '/api/settings/split_checks_enabled', { headers: authHeader });
+    assertEqual(missingSplitSetting.status, 200, 'missing split-check setting reads as a safe default');
+    assertEqual(missingSplitSetting.data.setting.value, 'false', 'fallback keeps split checks disabled');
     const freshMethods = await api(baseUrl, '/api/payment-methods', { headers: authHeader });
     assertEqual(freshMethods.data.payment_methods.length, 0, 'fresh install has no custom methods and no seeded UPI');
     const add = await api(baseUrl, '/api/payment-methods', { method: 'POST', body: { name: 'Google Pay' }, headers: authHeader });

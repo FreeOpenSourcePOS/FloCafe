@@ -461,6 +461,15 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
     }
     const enablingCloud = [cloud_sync_enabled, cloud_orders_enabled, cloud_reports_enabled, cloud_command_polling_enabled]
       .some((value) => bool01Flag(value) === '1');
+    const resumingStoppedCloud = cloudSync.getStatus().cloud_services_disabled_by_user && enablingCloud;
+    if (resumingStoppedCloud) {
+      // Stop All disables every cloud feature. Re-enabling the Cloud Services
+      // control is a resume action, not just a sync preference change.
+      updates.cloud_sync_enabled = '1';
+      updates.cloud_orders_enabled = '1';
+      updates.cloud_reports_enabled = '1';
+      updates.cloud_command_polling_enabled = '1';
+    }
     if (enablingCloud) updates.cloud_services_disabled_by_user = 'false';
     if (enablingCloud && cloudSync.getStatus().cloud_deletion_blocked) {
       return res.status(409).json({ error: 'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.' });

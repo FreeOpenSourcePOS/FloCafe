@@ -143,12 +143,63 @@ async function run() {
       .send({});
     assertEqual(stoppedRegisterWithoutDeletion.status, 409, 'stopped registration without a deletion request is rejected locally');
     assertEqual(upstreamCalls, 0, 'stopped registration never calls FloAdmin without a deletion request');
-    setSettings({ cloud_deletion_request_id: 'deletion-id', cloud_deletion_status_token: 'deletion-status-token', cloud_deletion_status: 'pending' });
 
+    // Stop All disables every cloud feature. Re-enabling the single Cloud
+    // Services control must restore the order relay as well as sync.
+    setSettings({
+      cloud_api_key: 'registered-api-key',
+      cloud_pos_hash: 'registered-pos-hash',
+      cloud_registration_status: 'registered',
+      cloud_services_disabled_by_user: 'true',
+      cloud_deletion_request_id: '',
+      cloud_deletion_status_token: '',
+      cloud_deletion_status: '',
+    });
+    await cloudSync.stopAllCloudServices();
+    globalThis.fetch = (async () => new Response('{}', { status: 200 })) as typeof fetch;
+    const reenabledCloud = await request(app)
+      .put('/api/settings/cloud')
+      .set(owner.authHeader)
+      .send({ cloud_sync_enabled: true, cloud_orders_enabled: false });
+    assertEqual(reenabledCloud.status, 200, 're-enabling Cloud Services succeeds');
+    for (const key of ['cloud_sync_enabled', 'cloud_orders_enabled', 'cloud_reports_enabled', 'cloud_command_polling_enabled']) {
+      assertEqual((db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value: string }).value, '1', `${key} is restored when Cloud Services resume`);
+    }
+    const orderId = Number(db.prepare(`
+      INSERT INTO orders (order_number, type, status, subtotal, total, created_at, updated_at)
+      VALUES ('cloud-reenable-order', 'takeaway', 'pending', 10, 10, datetime('now'), datetime('now'))
+    `).run().lastInsertRowid);
+    cloudSync.recordOrderChanged(orderId);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert((db.prepare("SELECT COUNT(*) AS count FROM cloud_sync_outbox WHERE entity_type = 'order' AND entity_id = ?").get(String(orderId)) as { count: number }).count > 0, 'order changes enter the cloud outbox after Cloud Services resume');
+    cloudSync.stop();
+
+    upstreamCalls = 0;
+    setSettings({ cloud_deletion_request_id: 'deletion-id', cloud_deletion_status_token: 'deletion-status-token', cloud_deletion_status: 'pending', cloud_registration_status: 'deletion_pending', cloud_services_disabled_by_user: 'true' });
+    let remoteDeletionStatus: 'cancelled' | 'rejected' | 'approved' = 'cancelled';
     globalThis.fetch = (async () => {
       upstreamCalls++;
-      return new Response(JSON.stringify({ status: 'approved', request_id: 'deletion-id', status_token: 'new-status-token' }), { status: 200 });
+      return new Response(JSON.stringify({ status: remoteDeletionStatus, request_id: 'deletion-id', status_token: 'new-status-token' }), { status: 200 });
     }) as typeof fetch;
+    const cancelledDeletion = await request(app)
+      .get('/api/settings/cloud/delete-data/status')
+      .set(owner.authHeader);
+    assertEqual(cancelledDeletion.status, 200, 'remote cancelled deletion status refresh succeeds');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'cloud_registration_status'").get() as { value: string }).value, 'registered', 'remote cancellation restores registered state');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'cloud_services_disabled_by_user'").get() as { value: string }).value, 'true', 'remote cancellation keeps services stopped');
+
+    setSettings({ cloud_deletion_request_id: 'deletion-id', cloud_deletion_status_token: 'deletion-status-token', cloud_deletion_status: 'pending', cloud_registration_status: 'deletion_pending', cloud_services_disabled_by_user: 'true' });
+    remoteDeletionStatus = 'rejected';
+    const rejectedDeletion = await request(app)
+      .get('/api/settings/cloud/delete-data/status')
+      .set(owner.authHeader);
+    assertEqual(rejectedDeletion.status, 200, 'remote rejected deletion status refresh succeeds');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'cloud_registration_status'").get() as { value: string }).value, 'registered', 'remote rejection restores registered state');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'cloud_services_disabled_by_user'").get() as { value: string }).value, 'true', 'remote rejection keeps services stopped');
+
+    setSettings({ cloud_deletion_request_id: 'deletion-id', cloud_deletion_status_token: 'deletion-status-token', cloud_deletion_status: 'pending', cloud_registration_status: 'deletion_pending', cloud_services_disabled_by_user: 'true' });
+    remoteDeletionStatus = 'approved';
+    upstreamCalls = 0;
     const refreshedDeletion = await request(app)
       .get('/api/settings/cloud/delete-data/status')
       .set(owner.authHeader);

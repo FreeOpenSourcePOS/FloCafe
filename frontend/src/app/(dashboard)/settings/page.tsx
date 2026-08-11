@@ -27,6 +27,12 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 
+const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
+
+function notifyCloudAccountStatusChanged(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(CLOUD_ACCOUNT_STATUS_CHANGED_EVENT));
+}
+
 const CLASSIC_PREVIEW = `   STORE NAME
    Jane Doe
   +91 98765...
@@ -490,10 +496,12 @@ export default function SettingsPage() {
         await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
         toast.success('Cloud deletion request submitted for manual review. Cloud services have been stopped on this device.');
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+        notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
       } catch (err: unknown) {
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+        notifyCloudAccountStatusChanged();
         const error = err as { response?: { data?: { error?: string } } };
         return { success: false, error: error.response?.data?.error || 'Cloud data deletion failed' };
       }
@@ -504,6 +512,7 @@ export default function SettingsPage() {
         await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
         toast.success('Cloud deletion request cancelled. Cloud services remain off until you explicitly re-enable them.');
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+        notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
       } catch (err: unknown) {
@@ -1154,6 +1163,7 @@ export default function SettingsPage() {
     try {
       await api.get('/settings/cloud/delete-data/status');
       await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+      notifyCloudAccountStatusChanged();
       toast.success('Cloud deletion status refreshed');
     } catch {
       toast.error('Could not refresh cloud deletion status');
@@ -1471,9 +1481,12 @@ export default function SettingsPage() {
   const saveCloud = async (silent = false) => {
     setSavingCloud(true);
     try {
+      const resumingStoppedCloud = cloudServicesStopped && cloudSettings.cloud_sync_enabled;
       const res = await api.put('/settings/cloud', {
         cloud_sync_enabled: cloudSettings.cloud_sync_enabled,
-        cloud_orders_enabled: cloudSettings.cloud_orders_enabled,
+        cloud_orders_enabled: resumingStoppedCloud ? true : cloudSettings.cloud_orders_enabled,
+        cloud_reports_enabled: resumingStoppedCloud ? true : undefined,
+        cloud_command_polling_enabled: resumingStoppedCloud ? true : undefined,
       });
       const next = { ...cloudSettings, ...res.data };
       setCloudSettings(next);
@@ -1488,6 +1501,7 @@ export default function SettingsPage() {
         cloud_deletion_status: res.data.cloud_deletion_status || '',
       });
       await fetchCloudAccount();
+      notifyCloudAccountStatusChanged();
       if (!silent) toast.success(t('settings.cloudSaved'));
     } catch (err) {
       if (!silent) toast.error(t('settings.cloudSaveFailed'));
@@ -1520,6 +1534,7 @@ export default function SettingsPage() {
         cloud_store_id: res.data.cloud_store_id || prev.cloud_store_id,
       }));
       await fetchCloudAccount();
+      notifyCloudAccountStatusChanged();
       if (res.data.cloud_registration_status === 'registered') {
         toast.success(t('settings.cloudRegistrationSuccess'));
       }
@@ -3144,6 +3159,7 @@ export default function SettingsPage() {
                       setTelemetryEnabled(false);
                       setDiagnosticsConsent(false);
                       await fetchCloudAccount();
+                      notifyCloudAccountStatusChanged();
                       toast.success('All cloud services and telemetry stopped');
                     }
                     catch { toast.error('Could not stop cloud services'); }

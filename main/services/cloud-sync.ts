@@ -679,6 +679,7 @@ class CloudSyncService {
       this.settings = this.loadSettings(false);
     } else if (['cancelled', 'rejected'].includes(status)) {
       this.upsertSettings({
+        cloud_registration_status: 'registered',
         cloud_deletion_request_id: '', cloud_deletion_status_token: '', cloud_deletion_outcome: '',
       });
       this.settings = this.loadSettings(false);

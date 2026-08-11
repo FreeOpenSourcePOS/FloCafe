@@ -85,7 +85,7 @@ const isMasBuild =
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
 
 const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
-const RECEIPT_BRANDING_URL = 'https://flospos.com';
+const RECEIPT_BRANDING_URL = 'https://flopos.com';
 
 let defaultPrinter: any = null;
 

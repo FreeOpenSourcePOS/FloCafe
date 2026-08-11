@@ -191,7 +191,7 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   assert('renders Cash payment', text.includes('Cash') && text.includes('₹500.00'));
   assert('renders UPI payment', text.includes('UPI') && text.includes('₹450.00'));
   assert('renders tax registration number', text.includes('TAXID-0001'));
-  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flospos.com'));
+  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flopos.com'));
   assert('long product name is truncated to fit', !text.includes('Truncated By Formatter'));
   assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
 
@@ -275,7 +275,7 @@ console.log('\n✅ Test 4: Classic receipt template');
 
   assert('renders business name', text.includes('Flo Test Cafe'));
   assert('renders item and total', text.includes('Cheeseburger') && text.includes('₹950.00'));
-  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flospos.com'));
+  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flopos.com'));
   assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x00]));
 
   console.log('\n   — Rendered classic —');
@@ -293,7 +293,7 @@ console.log('\n✅ Test 5: Detailed tax invoice template');
   assert('renders Tax B line', text.includes('Tax B'));
   assert('renders GRAND TOTAL', text.includes('GRAND TOTAL'));
   assert('renders tax registration number', text.includes('TAXID-0001'));
-  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flospos.com'));
+  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flopos.com'));
 
   console.log('\n   — Rendered detailed —');
   console.log(visiblePreview(buf, 48));

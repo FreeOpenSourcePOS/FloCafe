@@ -1,0 +1,204 @@
+name: macOS TestFlight
+
+on:
+  schedule:
+    - cron: '30 0 * * *' # Nightly after the full nightly matrix starts.
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: TestFlight destination for a manually selected source
+        required: true
+        type: choice
+        options:
+          - internal
+          - external
+        default: internal
+      source_ref:
+        description: main for internal testing, or a protected release/* branch/strict X.Y.Z-rc.N tag for external testing
+        required: true
+        type: string
+        default: main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-testflight-${{ github.event_name == 'schedule' && 'nightly' || inputs.source_ref }}
+  cancel-in-progress: false
+
+jobs:
+  upload-testflight:
+    # Manual runs must execute the workflow definition from the default branch;
+    # source_ref is validated below and is only the code being tested.
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: macos-14
+    # Scheduled nightlies use a non-approval environment. Any manual run,
+    # including internal or external beta testing, uses the reviewer-protected
+    # beta environment and cannot access credentials until approved.
+    environment:
+      name: ${{ github.event_name == 'schedule' && 'macos-testflight-nightly' || 'macos-testflight-beta' }}
+    timeout-minutes: 100
+    env:
+      TESTFLIGHT_CHANNEL: ${{ github.event_name == 'schedule' && 'internal' || inputs.channel }}
+      SOURCE_REF: ${{ github.event_name == 'schedule' && 'main' || inputs.source_ref }}
+      MAS_BUNDLE_ID: com.flo.desktop
+    steps:
+      - name: Validate TestFlight source policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$TESTFLIGHT_CHANNEL" == "internal" && "$SOURCE_REF" != "main" ]]; then
+            echo "::error::Internal TestFlight runs must build main; received '$SOURCE_REF'."
+            exit 1
+          fi
+          if [[ "$TESTFLIGHT_CHANNEL" == "external" ]] &&
+             [[ ! "$SOURCE_REF" =~ ^release/ ]] &&
+             [[ ! "$SOURCE_REF" =~ ^[0-9]+\.[0-9]+\.[0-9]+-rc\.[0-9]+$ ]]; then
+            echo "::error::External TestFlight runs require a release/* branch or strict X.Y.Z-rc.N tag; received '$SOURCE_REF'."
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: ruby/setup-ruby@4a9ddd6f338a97768b8006bf671dfbad383215f4 # v1.207.0
+        with:
+          ruby-version: '3.3'
+          bundler: none
+
+      - name: Install npm dependencies
+        run: npm ci
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Install pinned Fastlane
+        run: gem install fastlane --version 2.237.0 --no-document
+
+      - name: Check MAS signing credentials
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.MAS_MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAS_MAC_CERTS_PASSWORD }}
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_PRIVATE_KEY: ${{ secrets.ASC_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -z "$CSC_LINK" ]] && missing+=(MAS_MAC_CERTS)
+          [[ -z "$CSC_KEY_PASSWORD" ]] && missing+=(MAS_MAC_CERTS_PASSWORD)
+          [[ -z "$MAS_PROVISIONING_PROFILE" ]] && missing+=(MAS_PROVISIONING_PROFILE)
+          [[ -z "$ASC_API_KEY_ID" ]] && missing+=(ASC_API_KEY_ID)
+          [[ -z "$ASC_API_ISSUER_ID" ]] && missing+=(ASC_API_ISSUER_ID)
+          [[ -z "$ASC_API_PRIVATE_KEY" ]] && missing+=(ASC_API_PRIVATE_KEY)
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing required macOS TestFlight secret(s): ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Install MAS provisioning profile
+        shell: bash
+        env:
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+        run: |
+          set -euo pipefail
+          echo "$MAS_PROVISIONING_PROFILE" | base64 --decode > build/flo.provisionprofile
+          security cms -D -i build/flo.provisionprofile >/dev/null
+          chmod 600 build/flo.provisionprofile
+
+      - name: Build signed MAS package
+        run: npm run build:mas
+        env:
+          MAS_BUILD: 1
+          BUILD_NUMBER: ${{ github.run_number }}
+          CSC_LINK: ${{ secrets.MAS_MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAS_MAC_CERTS_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          APPLE_TEAM_ID: BKDY677XJA
+
+      - name: Verify MAS package
+        id: verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          packages=(release/*.pkg)
+          if (( ${#packages[@]} != 1 )); then
+            echo "::error::Expected exactly one MAS .pkg, found ${#packages[@]}."
+            exit 1
+          fi
+          pkg="${packages[0]}"
+          pkgutil --check-signature "$pkg"
+          expanded="$RUNNER_TEMP/flo-mas-expanded"
+          pkgutil --expand-full "$pkg" "$expanded"
+          app=$(find "$expanded" -type d -name '*.app' -print -quit)
+          [[ -n "$app" ]] || { echo "::error::MAS package contains no .app bundle"; exit 1; }
+          codesign --verify --deep --strict --verbose=2 "$app"
+          bundle_id=$(plutil -extract CFBundleIdentifier raw -o - "$app/Contents/Info.plist")
+          version=$(plutil -extract CFBundleShortVersionString raw -o - "$app/Contents/Info.plist")
+          build_version=$(plutil -extract CFBundleVersion raw -o - "$app/Contents/Info.plist")
+          expected_version=$(node -p "require('./package.json').version")
+          [[ "$bundle_id" == "$MAS_BUNDLE_ID" ]] || { echo "::error::Bundle ID '$bundle_id' does not match '$MAS_BUNDLE_ID'."; exit 1; }
+          [[ "$version" == "$expected_version" ]] || { echo "::error::Marketing version '$version' does not match '$expected_version'."; exit 1; }
+          [[ "$build_version" == *".${GITHUB_RUN_NUMBER}" ]] || { echo "::error::Build version '$build_version' does not contain CI build number '${GITHUB_RUN_NUMBER}'."; exit 1; }
+          echo "MAS_PKG=$pkg" >> "$GITHUB_OUTPUT"
+          echo "MAS_VERSION=$version" >> "$GITHUB_OUTPUT"
+          echo "MAS_BUILD_NUMBER=$build_version" >> "$GITHUB_OUTPUT"
+          echo "Verified $pkg: bundle=$bundle_id version=$version build=$build_version"
+
+      - name: Prepare App Store Connect API key
+        shell: bash
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_PRIVATE_KEY: ${{ secrets.ASC_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/AuthKey_${ASC_API_KEY_ID}.p8"
+          echo "$ASC_API_PRIVATE_KEY" | base64 --decode > "$key_path"
+          chmod 600 "$key_path"
+          echo "ASC_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Upload package to TestFlight
+        env:
+          MAS_PKG: ${{ steps.verify.outputs.MAS_PKG }}
+          TESTFLIGHT_GROUP: ${{ vars.TESTFLIGHT_GROUP }}
+          TESTFLIGHT_CHANGELOG: ${{ vars.TESTFLIGHT_CHANGELOG }}
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          MAS_BUNDLE_ID: com.flo.desktop
+        run: fastlane upload_testflight
+
+      - name: Write TestFlight promotion manifest
+        shell: bash
+        env:
+          MAS_VERSION: ${{ steps.verify.outputs.MAS_VERSION }}
+          MAS_BUILD_NUMBER: ${{ steps.verify.outputs.MAS_BUILD_NUMBER }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/macos-testflight-manifest.json" <<EOF
+          {
+            "bundleId": "com.flo.desktop",
+            "marketingVersion": "$MAS_VERSION",
+            "buildNumber": "$MAS_BUILD_NUMBER",
+            "sourceRef": "$SOURCE_REF",
+            "sourceSha": "$SOURCE_SHA",
+            "testflightChannel": "$TESTFLIGHT_CHANNEL"
+          }
+          EOF
+
+      - name: Upload TestFlight promotion manifest
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: macos-testflight-manifest-${{ github.run_id }}
+          path: ${{ runner.temp }}/macos-testflight-manifest.json
+          if-no-files-found: error
+          retention-days: 90

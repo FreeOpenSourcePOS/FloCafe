@@ -23,7 +23,7 @@
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
     "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx --config.npmRebuild=false",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",
-    "build:mas": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac mas --universal",
+    "build:mas": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac mas --universal --publish never",
     "build:mas-dev": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac masDev",
     "build:linux": "npm run build:frontend && npm run build && electron-builder --linux",
     "release:linux": "npm run build:frontend && npm run build && electron-builder --linux --publish always",

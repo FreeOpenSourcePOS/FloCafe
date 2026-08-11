@@ -1,0 +1,60 @@
+# Flo Cafe App Store Connect lanes.
+# Authentication is supplied by the workflow through an App Store Connect API key;
+# no Apple ID password or interactive 2FA is used in CI.
+
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_API_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_API_ISSUER_ID"),
+    key_filepath: ENV.fetch("ASC_API_KEY_PATH"),
+    duration: 1200,
+    in_house: false
+  )
+end
+
+platform :mac do
+  desc "Upload a signed macOS MAS package to TestFlight"
+  lane :upload_testflight do
+    channel = ENV.fetch("TESTFLIGHT_CHANNEL")
+    group = ENV.fetch("TESTFLIGHT_GROUP", "").strip
+    if channel == "external" && group.empty?
+      UI.user_error!("TESTFLIGHT_GROUP is required for external TestFlight distribution")
+    end
+
+    upload_to_testflight(
+      api_key: asc_api_key,
+      pkg: ENV.fetch("MAS_PKG"),
+      app_identifier: ENV.fetch("MAS_BUNDLE_ID"),
+      changelog: ENV.fetch("TESTFLIGHT_CHANGELOG", ""),
+      groups: group.empty? ? nil : [group],
+      distribute_external: channel == "external",
+      notify_external_testers: false,
+      # Submit the processed build to TestFlight for both channels. Internal
+      # distribution does not require external beta review; external
+      # distribution may trigger Apple's first-build beta review.
+      skip_submission: false,
+      skip_waiting_for_build_processing: false
+    )
+  end
+
+  desc "Submit an already-processed TestFlight build to the Mac App Store"
+  lane :submit_store do
+    mode = ENV.fetch("MACOS_STORE_RELEASE_MODE", "manual")
+    unless %w[manual automatic phased].include?(mode)
+      UI.user_error!("MACOS_STORE_RELEASE_MODE must be manual, automatic, or phased")
+    end
+
+    deliver(
+      api_key: asc_api_key,
+      app_identifier: ENV.fetch("MAS_BUNDLE_ID"),
+      app_version: ENV.fetch("MAS_VERSION"),
+      build_number: ENV.fetch("MAS_BUILD_NUMBER"),
+      skip_binary_upload: true,
+      skip_metadata: true,
+      submit_for_review: true,
+      automatic_release: mode != "manual",
+      phased_release: mode == "phased",
+      force: true
+    )
+  end
+end

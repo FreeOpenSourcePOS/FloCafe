@@ -19,6 +19,7 @@ function run() {
 
   assert.equal(pkg.engines?.node, '>=22.12.0', 'root Node engine must match Electron 43 minimum');
   assert.equal(pkg.scripts?.['verify:electron'], 'node scripts/verify-electron-runtime.cjs', 'Electron runtime verification must be cross-platform');
+  assert.ok(pkg.scripts?.['build:mas']?.includes('--publish never'), 'MAS builds must never implicitly publish from the build command');
   assert.ok(fs.existsSync(path.join(__dirname, '../scripts/verify-electron-runtime.cjs')), 'cross-platform Electron runtime verifier must exist');
 
   // ── electron-builder config ──────────────────────────────────────────
@@ -200,6 +201,38 @@ function run() {
   for (const secret of ['AZURE_AD_TENANT_ID', 'AZURE_AD_APPLICATION_CLIENT_ID', 'AZURE_AD_APPLICATION_SECRET', 'SELLER_ID']) {
     assert.ok(storePublishJob.includes(`secrets.${secret}`), `Store publishing must read ${secret} from GitHub secrets`);
   }
+
+  // ── macOS Store: MAS/TestFlight and production promotion paths ───────
+  const testflightWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/macos-testflight.yml'), 'utf8');
+  assert.ok(testflightWorkflow.includes("github.event_name == 'schedule'"), 'macOS TestFlight must have a scheduled nightly path');
+  assert.ok(testflightWorkflow.includes("github.ref == 'refs/heads/main'"), 'manual TestFlight dispatch must use the workflow definition from main');
+  assert.ok(testflightWorkflow.includes('release/* branch or strict X.Y.Z-rc.N tag'), 'external TestFlight runs must be restricted to release candidates');
+  assert.ok(testflightWorkflow.includes('environment:\n      name: ${{ github.event_name == \'schedule\' && \'macos-testflight-nightly\' || \'macos-testflight-beta\' }}'), 'manual TestFlight runs must use the reviewer-protected beta environment');
+  assert.ok(testflightWorkflow.includes('npm run build:mas'), 'TestFlight must build the MAS target, not direct-distribution DMG/ZIP artifacts');
+  assert.ok(testflightWorkflow.includes('BUILD_NUMBER: ${{ github.run_number }}'), 'TestFlight builds must receive a unique CI build number');
+  assert.ok(testflightWorkflow.includes('pkgutil --check-signature'), 'TestFlight must verify the MAS package signature before upload');
+  assert.ok(testflightWorkflow.includes('gem install fastlane --version 2.237.0'), 'TestFlight must install a pinned Fastlane version');
+  assert.ok(testflightWorkflow.includes('fastlane upload_testflight'), 'TestFlight must upload through the pinned Fastlane lane');
+  for (const secret of ['MAS_MAC_CERTS', 'MAS_MAC_CERTS_PASSWORD', 'MAS_PROVISIONING_PROFILE', 'ASC_API_KEY_ID', 'ASC_API_ISSUER_ID', 'ASC_API_PRIVATE_KEY']) {
+    assert.ok(testflightWorkflow.includes(`secrets.${secret}`), `TestFlight must read ${secret} from the protected environment`);
+  }
+
+  const appStoreSubmitWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/macos-app-store-submit.yml'), 'utf8');
+  assert.ok(appStoreSubmitWorkflow.includes('workflow_dispatch:'), 'Mac App Store promotion must be explicitly dispatched');
+  assert.ok(appStoreSubmitWorkflow.includes("github.ref == 'refs/heads/main'"), 'Mac App Store promotion must use the workflow definition from main');
+  assert.ok(appStoreSubmitWorkflow.includes('environment:\n      name: production-release'), 'Mac App Store promotion must use the protected production-release environment');
+  assert.ok(appStoreSubmitWorkflow.includes('version:'), 'Mac App Store promotion must require an explicit marketing version');
+  assert.ok(appStoreSubmitWorkflow.includes('build_number:'), 'Mac App Store promotion must require the exact processed build number');
+  assert.ok(appStoreSubmitWorkflow.includes('release_mode:'), 'Mac App Store promotion must make manual/automatic/phased release explicit');
+  assert.ok(appStoreSubmitWorkflow.includes('gem install fastlane --version 2.237.0'), 'Mac App Store promotion must install a pinned Fastlane version');
+  assert.ok(appStoreSubmitWorkflow.includes('fastlane submit_store'), 'Mac App Store promotion must submit the selected build through Fastlane');
+  assert.ok(appStoreSubmitWorkflow.includes('MACOS_STORE_RELEASE_MODE'), 'Mac App Store promotion must pass the release mode to Fastlane');
+
+  const fastfile = fs.readFileSync(path.join(__dirname, '../fastlane/Fastfile'), 'utf8');
+  assert.ok(fastfile.includes('upload_to_testflight'), 'Fastlane must define the TestFlight upload lane');
+  assert.ok(fastfile.includes('deliver('), 'Fastlane must define the App Store submission lane');
+  assert.ok(fastfile.includes('automatic_release: mode != "manual"'), 'Fastlane must keep manual release as the safe default');
+  assert.ok(fastfile.includes('phased_release: mode == "phased"'), 'Fastlane must support an explicit phased release mode');
 
   console.log('✅ Release config + workflow integrity checks passed');
 }

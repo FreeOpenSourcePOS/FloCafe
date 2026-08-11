@@ -1,0 +1,111 @@
+name: macOS App Store submission
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: App Store marketing version already uploaded to TestFlight (X.Y.Z)
+        required: true
+        type: string
+      build_number:
+        description: Exact processed TestFlight build number to submit
+        required: true
+        type: string
+      release_mode:
+        description: Release after Apple approval automatically, in phases, or manually
+        required: true
+        type: choice
+        options:
+          - manual
+          - automatic
+          - phased
+        default: manual
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-app-store-submit-${{ inputs.version }}-${{ inputs.build_number }}
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    # The workflow file must be selected from the default branch. It promotes
+    # an already-processed App Store Connect build and never builds arbitrary
+    # workflow-dispatch source code.
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-14
+    environment:
+      name: production-release
+    timeout-minutes: 45
+    env:
+      MAS_BUNDLE_ID: com.flo.desktop
+      MAS_VERSION: ${{ inputs.version }}
+      MAS_BUILD_NUMBER: ${{ inputs.build_number }}
+      MACOS_STORE_RELEASE_MODE: ${{ inputs.release_mode }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Only the committed Fastfile is needed; do not checkout an
+          # arbitrary input ref for this production submission.
+          ref: main
+
+      - uses: ruby/setup-ruby@4a9ddd6f338a97768b8006bf671dfbad383215f4 # v1.207.0
+        with:
+          ruby-version: '3.3'
+          bundler: none
+
+      - name: Install pinned Fastlane
+        run: gem install fastlane --version 2.237.0 --no-document
+
+      - name: Validate production submission inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$MAS_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "::error::version must be strict X.Y.Z; received '$MAS_VERSION'."
+            exit 1
+          }
+          [[ "$MAS_BUILD_NUMBER" =~ ^[0-9]+(\.[0-9]+)*$ ]] || {
+            echo "::error::build_number must be a numeric CFBundleVersion; received '$MAS_BUILD_NUMBER'."
+            exit 1
+          }
+          case "$MACOS_STORE_RELEASE_MODE" in
+            manual|automatic|phased) ;;
+            *) echo "::error::release_mode must be manual, automatic, or phased."; exit 1 ;;
+          esac
+
+      - name: Check App Store Connect credentials
+        shell: bash
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_PRIVATE_KEY: ${{ secrets.ASC_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [[ -z "$ASC_API_KEY_ID" ]] && missing+=(ASC_API_KEY_ID)
+          [[ -z "$ASC_API_ISSUER_ID" ]] && missing+=(ASC_API_ISSUER_ID)
+          [[ -z "$ASC_API_PRIVATE_KEY" ]] && missing+=(ASC_API_PRIVATE_KEY)
+          if (( ${#missing[@]} > 0 )); then
+            echo "::error::Missing required App Store Connect secret(s): ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Write App Store Connect API key
+        shell: bash
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_PRIVATE_KEY: ${{ secrets.ASC_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          key_path="$RUNNER_TEMP/AuthKey_${ASC_API_KEY_ID}.p8"
+          echo "$ASC_API_PRIVATE_KEY" | base64 --decode > "$key_path"
+          chmod 600 "$key_path"
+          echo "ASC_API_KEY_PATH=$key_path" >> "$GITHUB_ENV"
+
+      - name: Submit exact build to Mac App Store review
+        env:
+          ASC_API_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: fastlane submit_store

@@ -460,6 +460,7 @@ jobs:
       - name: Validate Store package identity and version
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $packages = @(Get-ChildItem release\*.appx -File -ErrorAction SilentlyContinue)
           if ($packages.Count -ne 1) {
             throw "Expected exactly one AppX package, found $($packages.Count)."
@@ -534,6 +535,7 @@ jobs:
           MSSTORE_FLIGHT_ID: ${{ vars.MSSTORE_FLIGHT_ID }}
           MSSTORE_NO_COMMIT: ${{ vars.MSSTORE_NO_COMMIT }}
         run: |
+          $ErrorActionPreference = 'Stop'
           if ([string]::IsNullOrWhiteSpace($env:AZURE_AD_TENANT_ID) -or
               [string]::IsNullOrWhiteSpace($env:AZURE_AD_APPLICATION_CLIENT_ID) -or
               [string]::IsNullOrWhiteSpace($env:AZURE_AD_APPLICATION_SECRET) -or

@@ -4,7 +4,7 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
-import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
+import { validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
 
 const router = Router();
@@ -47,6 +47,13 @@ const SENSITIVE_SETTING_KEYS = new Set([
   'cloud_deletion_status_token',
   'cloud_last_error',
 ]);
+
+const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
+  bill_template: 'classic',
+  bill_footer_message: '',
+  printer_trim_decimals: 'false',
+  split_checks_enabled: 'false',
+};
 
 function maskSetting(key: string, value: string): string {
   if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
@@ -101,6 +108,10 @@ function businessShape(s: Record<string, string>) {
     bill_show_address: s.bill_show_address !== 'false',
     bill_show_phone: s.bill_show_phone !== 'false',
     bill_show_tax_id: s.bill_show_tax_id === 'true',
+    bill_show_tax_breakdown: s.bill_show_tax_breakdown !== 'false',
+    bill_show_customer_name: s.bill_show_customer_name !== 'false',
+    bill_show_customer_phone: s.bill_show_customer_phone !== 'false',
+    bill_show_table_number: s.bill_show_table_number !== 'false',
   };
 }
 
@@ -131,7 +142,8 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
     const { business_name, timezone, currency, country, language,
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
-      bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id } = req.body;
+      bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
+      bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number } = req.body;
 
     if (!validBusinessLocation(timezone, currency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
@@ -153,6 +165,7 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
+      bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
     });
     cloudSync.refreshRegistrationProfile();
 
@@ -195,18 +208,6 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
     upsertSettings(db, { tax_registered, tax_registration_number, state_code, tax_scheme, country });
     cloudSync.refreshRegistrationProfile();
     res.json(taxShape(getAllSettings(db)));
-  } catch (error: any) {
-    console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// Lets the Settings UI show a format hint (and validate client-side) before
-// save — the PUT /business and /tax handlers above remain the source of truth.
-router.get('/tax-id-format', requireRole('owner', 'manager'), (req: Request, res: Response) => {
-  try {
-    const country = String(req.query.country || getAllSettings(getDatabase()).country || 'IN').toUpperCase();
-    res.json({ country, format: resolveTaxIdFormat(country) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -678,13 +679,14 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
   'billing_type', 'tables_required', 'tax_registered', 'bill_show_name', 'bill_show_address',
-  'bill_show_phone', 'bill_show_tax_id',
+  'bill_show_phone', 'bill_show_tax_id', 'bill_show_tax_breakdown', 'bill_show_customer_name',
+  'bill_show_customer_phone', 'bill_show_table_number',
   'tax_scheme',
   'taxes_enabled',
   'loyalty_enabled',
   'language',
   'kds_default_view',
-  'printer_method', 'paper_size', 'bill_template', 'printer_trim_decimals',
+  'printer_method', 'paper_size', 'bill_template', 'bill_footer_message', 'printer_trim_decimals',
   'telemetry_enabled',
   'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
@@ -710,14 +712,13 @@ router.get('/:key', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef')
     if (SENSITIVE_SETTING_KEYS.has(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting is sensitive and cannot be read directly' });
     }
+    const key = String(req.params.key);
     const db = getDatabase();
-    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(req.params.key);
+    const setting = db.prepare('SELECT * FROM settings WHERE key = ?').get(key);
     if (!setting) {
-      // Split checks are explicitly opt-in. Older databases may briefly lack
-      // the row before migration v60 runs, so read the safe default instead of
-      // turning an absent optional setting into a noisy 404.
-      if (req.params.key === 'split_checks_enabled') {
-        return res.json({ setting: { key: 'split_checks_enabled', value: 'false', updated_at: null } });
+      const defaultValue = OPTIONAL_SETTING_DEFAULTS[key];
+      if (defaultValue !== undefined) {
+        return res.json({ setting: { key, value: defaultValue, updated_at: null } });
       }
       return res.status(404).json({ error: 'Setting not found' });
     }

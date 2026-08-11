@@ -2,11 +2,19 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [3.0.2] - 2026-08-11
+## [3.0.5] - 2026-08-12
+
+### Added
+- Printer settings now include bill template controls, footer text, and per-field bill visibility options for store details, customer details, table numbers, and tax breakdowns.
+- ESC/POS printer configuration now supports explicit printable-column widths per printer, with refresh and migration coverage for legacy printer records.
 
 ### Fixed
-- Printer settings now support explicit printable-column widths per configured printer, so ESC/POS receipts and KOT tickets can be matched to narrow, safe, or wide thermal driver layouts.
-- Receipt and tax-bill formatting use the selected column width for row spacing, wrapping, dividers, totals, and currency alignment.
+- Cloud account status, registration, preference, verification, and deletion-status flows now handle unregistered or manually stopped cloud services locally without leaking deletion status tokens or attempting unnecessary upstream calls.
+- Re-enabling Cloud Services after Stop All now restores sync, orders, reports, and command polling together so order changes resume reaching the cloud outbox.
+- Receipt, KOT, and tax-bill output now consistently use the selected printer width for wrapping, dividers, totals, add-ons, tax lines, and currency alignment.
+- Tax-bill content options now survive upgrades and preserve existing merchant template/footer choices.
+- Legacy USB printer records no longer keep the ignored `usb_device_path` column after upgrade, while preserving the printer row and selected paper width.
+- The in-app receipt branding website URL now points to `flopos.com`.
 
 ## [3.0.0] - 2026-08-11
 

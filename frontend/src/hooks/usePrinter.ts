@@ -28,7 +28,6 @@ export interface HardwarePrinter {
   connection_type: 'network' | 'usb' | 'webusb';
   ip_address?: string | null;
   port?: number | null;
-  usb_device_path?: string | null;
   paper_width?: string | null;
   is_default: number;
 }
@@ -100,7 +99,8 @@ export const usePrinterStore = create<PrinterState>()(
             billTemplate,
             billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
-            webPrintSize,
+            billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
+            printerPaperSize,
             printerUseUnicode,
             printerTrimDecimals,
           } = usePosSettingsStore.getState();
@@ -122,13 +122,18 @@ export const usePrinterStore = create<PrinterState>()(
             // Browser / A4 print path
             const { printWebBill } = await import('@/lib/printer/web-print');
             printWebBill(bill, tenant, {
-              paperSize: webPrintSize,
+              paperSize: printerPaperSize,
               includeTaxId: billShowTaxId,
               taxRegistrationNumber: billShowTaxId && billTaxRegistrationNumber ? billTaxRegistrationNumber : undefined,
               address: billShowAddress && billAddress ? billAddress : undefined,
               phone: billShowPhone && billPhone ? billPhone : undefined,
               footerNote: billFooterMessage || undefined,
-              businessName: billShowName ? tenant.business_name : undefined,
+              businessName: tenant.business_name,
+              showBusinessName: billShowName,
+              showTaxBreakdown: billShowTaxBreakdown,
+              showCustomerName: billShowCustomerName,
+              showCustomerPhone: billShowCustomerPhone,
+              showTableNumber: billShowTableNumber,
               useUnicode: printerUseUnicode,
               isReprint,
               trimDecimals: printerTrimDecimals,
@@ -137,15 +142,19 @@ export const usePrinterStore = create<PrinterState>()(
           }
 
           // ESC/POS thermal path
-          const { paperWidth } = get();
+          const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
           const builderOpts: ReceiptOptions = {
             ...opts,
-            paperWidth,
+            paperWidth: opts?.paperWidth ?? configuredPaperWidth,
             taxRegistrationNumber: billShowTaxId && billTaxRegistrationNumber ? billTaxRegistrationNumber : undefined,
             address: billShowAddress && billAddress ? billAddress : undefined,
             phone: billShowPhone && billPhone ? billPhone : undefined,
             footerNote: billFooterMessage || undefined,
-            showTaxBreakdown: billShowTaxId,
+            showBusinessName: billShowName,
+            showTaxBreakdown: billShowTaxBreakdown,
+            showCustomerName: billShowCustomerName,
+            showCustomerPhone: billShowCustomerPhone,
+            showTableNumber: billShowTableNumber,
             useUnicode: printerUseUnicode,
             isReprint,
             trimDecimals: printerTrimDecimals,
@@ -173,10 +182,30 @@ export const usePrinterStore = create<PrinterState>()(
       printTaxBill: async (bill, tenant, opts) => {
         set({ lastError: null });
         try {
-          const { paperWidth } = get();
-          const { printerUseUnicode, printerTrimDecimals } = usePosSettingsStore.getState();
+          const {
+            printerUseUnicode, printerTrimDecimals, printerPaperSize,
+            billTaxRegistrationNumber, billAddress, billPhone,
+            billShowName, billShowAddress, billShowPhone, billShowTaxId,
+            billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
+          } = usePosSettingsStore.getState();
+          const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
           const warnings: PrintWarning[] = [];
-          const bytes = buildTaxBillBytes(bill, tenant, { ...opts, paperWidth, useUnicode: printerUseUnicode, trimDecimals: printerTrimDecimals }, warnings);
+          const bytes = buildTaxBillBytes(bill, tenant, {
+            ...opts,
+            paperWidth: opts?.paperWidth ?? configuredPaperWidth,
+            taxRegistrationNumber: billShowTaxId
+              ? (opts?.taxRegistrationNumber || billTaxRegistrationNumber || undefined)
+              : undefined,
+            address: billShowAddress ? (opts?.address || billAddress || undefined) : undefined,
+            phone: billShowPhone ? (opts?.phone || billPhone || undefined) : undefined,
+            showBusinessName: billShowName,
+            showTaxBreakdown: billShowTaxBreakdown,
+            showCustomerName: billShowCustomerName,
+            showCustomerPhone: billShowCustomerPhone,
+            showTableNumber: billShowTableNumber,
+            useUnicode: printerUseUnicode,
+            trimDecimals: printerTrimDecimals,
+          }, warnings);
           set({ lastPrintedBytes: bytes });
 
           if (get().printMethod === 'escpos') {

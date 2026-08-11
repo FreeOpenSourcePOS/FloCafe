@@ -87,8 +87,6 @@ const isMasBuild =
 const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
 const RECEIPT_BRANDING_URL = 'https://flopos.com';
 
-let defaultPrinter: any = null;
-
 export interface PrinterInfo {
   name: string;
   make: string;
@@ -531,9 +529,9 @@ function detectLinuxPrinters(): PrinterInfo[] {
 export async function initPrinter(): Promise<void> {
   try {
     const db = getDatabase();
-    defaultPrinter = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
-    if (defaultPrinter) {
-      console.log(`[Printer] Default printer: ${defaultPrinter.name} (${defaultPrinter.connection_type})`);
+    const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as any;
+    if (printer) {
+      console.log(`[Printer] Default printer: ${printer.name} (${printer.connection_type})`);
     } else {
       console.log('[Printer] No default printer configured');
     }
@@ -545,26 +543,10 @@ export async function initPrinter(): Promise<void> {
 export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false): Promise<DispatchResult> {
   try {
     console.log('[Printer] printReceipt called, template:', template, 'useUnicode:', useUnicode, 'isReprint:', isReprint);
-    const printer = getPrinterConfig();
-    if (!printer) {
-      console.log('[Printer] No printer configured');
-      return { ok: false, detail: 'No printer configured' };
-    }
-    console.log('[Printer] Using printer:', printer.name, printer.connection_type);
-
-    const profile = resolvePrinterProfile(printer);
-    const cols = getColumnsForPrinter(printer, profile);
-
-    let data: Buffer;
-    const warnings: PrintWarning[] = [];
-    try {
-      data = formatReceipt(order, bill, business, template, cols, useUnicode, isReprint, profile.cutMode, warnings);
-      console.log('[Printer] Receipt data length:', data.length, 'bytes');
-      console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
-    } catch (err) {
-      console.error('[Printer] formatReceipt failed:', err);
-      throw err;
-    }
+    const { printer, data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint);
+    console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
+    console.log('[Printer] Receipt data length:', data.length, 'bytes');
+    console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
 
     const dispatch = await dispatchPrint(printer, data);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
@@ -760,9 +742,24 @@ async function dispatchPrint(printer: any, data: Buffer): Promise<DispatchResult
 }
 
 function getPrinterConfig(): any {
-  if (defaultPrinter) return defaultPrinter;
   const db = getDatabase();
   return db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+}
+
+export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false): {
+  printer: any;
+  data: Buffer;
+  warnings: PrintWarning[];
+  columns: number;
+} {
+  const printer = getPrinterConfig();
+  if (!printer) throw new Error('No printer configured');
+
+  const profile = resolvePrinterProfile(printer);
+  const columns = getColumnsForPrinter(printer, profile);
+  const warnings: PrintWarning[] = [];
+  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings);
+  return { printer, data, warnings, columns };
 }
 
 export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
@@ -813,17 +810,21 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
+  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
   const hasTax = Number(bill.tax_amount) !== 0
-    || resolveTaxComponents({ ...bill, items: order.items }).some((component) => component.amount !== 0);
+    || taxComponents.some((component) => component.amount !== 0);
 
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
   lines.push('{INIT}');
   if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  lines.push('{STORE_NAME}{CENTER}{BOLD}' + (biz.name || 'Store') + '{/BOLD}{/CENTER}');
+  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + biz.name + '{/BOLD}{/CENTER}');
   lines.push(bar);
   lines.push('Bill #: ' + (bill.bill_number || order.order_number));
   lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
+  if (biz.show_table_number !== false && order.table?.name) lines.push('Table: ' + order.table.name);
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push('Customer: ' + biz.customer_name);
+  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('Customer No: ' + biz.customer_phone);
   lines.push(dash);
   lines.push(itemHeader(itemNameLen, amtLen));
   lines.push(dash);
@@ -847,7 +848,14 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (bill.discount_amount > 0) {
     lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - 8));
   }
-  if (Number(bill.tax_amount) !== 0) {
+  if (biz.show_tax_breakdown === true && taxComponents.length > 0) {
+    for (const tax of taxComponents) {
+      if (tax.amount === 0) continue;
+      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
+      const label = truncate(rawLabel, cols - 12);
+      lines.push(label + rightAlign(formatCurrency(tax.amount, prefix, locale, trimDecimals), cols - label.length));
+    }
+  } else if (Number(bill.tax_amount) !== 0) {
     lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols - 3));
   }
   lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - 5) + '{/BOLD}');
@@ -870,10 +878,11 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   }
 
   lines.push(bar);
-  if (biz.address) pushWrapped(lines, biz.address, cols);
-  if (biz.phone) pushWrapped(lines, 'Ph: ' + biz.phone, cols);
-  if (hasTax && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
-  lines.push('{CENTER}Thank you!{/CENTER}');
+  if (biz.show_address !== false && biz.address) pushWrapped(lines, biz.address, cols);
+  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, 'Ph: ' + biz.phone, cols);
+  if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
+  if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
+  else lines.push('{CENTER}Thank you!{/CENTER}');
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
@@ -891,6 +900,9 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
+  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
+  const hasTax = Number(bill.tax_amount) !== 0
+    || taxComponents.some((component) => component.amount !== 0);
 
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
@@ -899,13 +911,14 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   // Header: store name (Font A, big + bold), then customer name (Font B) and
   // mobile number, each only if the bill actually has that data.
-  lines.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + (biz.name || 'Store') + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  if (biz.customer_name) lines.push('{CENTER}{FONT_B}' + biz.customer_name + '{/FONT_B}{/CENTER}');
-  if (biz.customer_phone) lines.push('{CENTER}' + biz.customer_phone + '{/CENTER}');
+  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + biz.name + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push('{CENTER}{FONT_B}' + biz.customer_name + '{/FONT_B}{/CENTER}');
+  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('{CENTER}' + biz.customer_phone + '{/CENTER}');
 
   lines.push(dash);
   lines.push('{CENTER}Invoice #: ' + (bill.bill_number || order.order_number) + '{/CENTER}');
   lines.push('{CENTER}' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
+  if (biz.show_table_number !== false && order.table?.name) lines.push('{CENTER}Table: ' + order.table.name + '{/CENTER}');
   lines.push(dash);
 
   lines.push(itemHeader(itemNameLen, amtLen));
@@ -937,7 +950,14 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   }
 
   lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - 8));
-  if (Number(bill.tax_amount) !== 0) {
+  if (biz.show_tax_breakdown === true && taxComponents.length > 0) {
+    for (const tax of taxComponents) {
+      if (tax.amount === 0) continue;
+      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
+      const label = truncate(rawLabel, cols - 12);
+      lines.push(label + rightAlign(formatCurrency(tax.amount, prefix, locale, trimDecimals), cols - label.length));
+    }
+  } else if (Number(bill.tax_amount) !== 0) {
     lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols - 3));
   }
   lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - 5) + '{/BOLD}');
@@ -969,13 +989,16 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   // Footer: store contact details, only the ones actually configured.
   const footerLines: string[] = [];
-  if (biz.address) footerLines.push(biz.address);
-  if (biz.phone) footerLines.push('Ph: ' + biz.phone);
+  if (biz.show_address !== false && biz.address) footerLines.push(biz.address);
+  if (biz.show_phone !== false && biz.phone) footerLines.push('Ph: ' + biz.phone);
+  if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) footerLines.push((getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID') + ': ' + biz.taxRegistrationNumber);
   if (biz.instagram_handle) footerLines.push(biz.instagram_handle);
   if (footerLines.length > 0) {
     lines.push(dash);
     for (const footerLine of footerLines) pushCenteredWrapped(lines, footerLine, cols);
   }
+
+  if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
 
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
@@ -1003,13 +1026,16 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
 
   lines.push('{INIT}');
   if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  lines.push('{STORE_NAME}{CENTER}{BOLD}' + (biz.name || 'Store').toUpperCase() + '{/BOLD}{/CENTER}');
+  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + String(biz.name).toUpperCase() + '{/BOLD}{/CENTER}');
   lines.push(bar);
   lines.push(`{CENTER}${hasTax ? 'TAX INVOICE' : 'INVOICE'}{/CENTER}`);
   lines.push(bar);
   lines.push('Invoice #: ' + (bill.bill_number || order.order_number));
   lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
   lines.push('Time: ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
+  if (biz.show_table_number !== false && order.table?.name) lines.push('Table: ' + order.table.name);
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push('Customer: ' + biz.customer_name);
+  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('Customer No: ' + biz.customer_phone);
   lines.push(dash);
   lines.push(itemHeader(itemNameLen, 10));
   lines.push(dash);
@@ -1034,7 +1060,7 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
     lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - 8));
   }
 
-  if (taxComponents.length > 0) {
+  if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
@@ -1066,10 +1092,11 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   }
 
   lines.push(bar);
-  if (biz.address) pushWrapped(lines, 'Address: ' + biz.address, cols);
-  if (biz.phone) pushWrapped(lines, 'Phone: ' + biz.phone, cols);
-  if (hasTax && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
-  lines.push('{CENTER}Thank you for your business!{/CENTER}');
+  if (biz.show_address !== false && biz.address) pushWrapped(lines, 'Address: ' + biz.address, cols);
+  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, 'Phone: ' + biz.phone, cols);
+  if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
+  if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
+  else lines.push('{CENTER}Thank you for your business!{/CENTER}');
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
@@ -1339,6 +1366,44 @@ export function buildEscPos(lines: string[], useUnicode: boolean = false, option
   }
 
   return Buffer.from(buf);
+}
+
+/** Convert the command subset emitted by buildEscPos() into a paperless text preview. */
+export function escPosToText(data: Buffer | Uint8Array): string {
+  const bytes = Buffer.from(data);
+  const text: number[] = [];
+
+  for (let i = 0; i < bytes.length;) {
+    const byte = bytes[i];
+    if (byte === 0x1B) {
+      const command = bytes[i + 1];
+      if (command === 0x40) {
+        i += 2;
+      } else if (command === 0x21 || command === 0x45 || command === 0x61) {
+        i += 3;
+      } else if (command === 0x64) {
+        const feedLines = bytes[i + 2] || 0;
+        for (let line = 0; line < feedLines; line++) text.push(0x0A);
+        i += 3;
+      } else {
+        i += Math.min(2, bytes.length - i);
+      }
+      continue;
+    }
+    if (byte === 0x1D && bytes[i + 1] === 0x56) {
+      const mode = bytes[i + 2];
+      i += mode === 0x41 || mode === 0x42 ? 4 : 3;
+      continue;
+    }
+    if (byte === 0x0D) {
+      i += 1;
+      continue;
+    }
+    text.push(byte);
+    i += 1;
+  }
+
+  return Buffer.from(text).toString('utf8').replace(/\n+$/, '');
 }
 
 export async function printViaNetwork(ip: string, port: number, data: Buffer): Promise<DispatchResult> {

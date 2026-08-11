@@ -34,6 +34,11 @@ export interface WebPrintOptions {
   phone?: string;
   footerNote?: string;
   businessName?: string;
+  showBusinessName?: boolean;
+  showTaxBreakdown?: boolean;
+  showCustomerName?: boolean;
+  showCustomerPhone?: boolean;
+  showTableNumber?: boolean;
   useUnicode?: boolean;
   /** Show a large "REPRINT" banner so a reprinted bill can't be mistaken for the original. */
   isReprint?: boolean;
@@ -49,9 +54,7 @@ export function printWebBill(
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WebPrintOptions = {}
 ): void {
-  const { paperSize = 'thermal58', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false, trimDecimals = false } = opts;
-
-  const html = generateBillHtml(bill, tenant, { paperSize, includeTaxId, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode, isReprint, trimDecimals });
+  const html = generateBillHtml(bill, tenant, opts);
 
   // Create a new window with the bill HTML
   const printWindow = window.open('', '_blank', 'width=800,height=600');
@@ -80,8 +83,24 @@ export function generateBillHtml(
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WebPrintOptions = {}
 ): string {
-  const { paperSize = 'thermal58', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false, trimDecimals = false } = opts;
-  const displayName = businessName ?? tenant.business_name;
+  const {
+    paperSize = 'thermal58',
+    includeTaxId = false,
+    taxRegistrationNumber,
+    address,
+    phone,
+    footerNote,
+    businessName,
+    showBusinessName = true,
+    showTaxBreakdown = true,
+    showCustomerName = true,
+    showCustomerPhone = true,
+    showTableNumber = true,
+    useUnicode = false,
+    isReprint = false,
+    trimDecimals = false,
+  } = opts;
+  const displayName = showBusinessName ? (businessName ?? tenant.business_name) : '';
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
@@ -117,7 +136,7 @@ export function generateBillHtml(
       ${displayName ? `<h1>${escapeHtml(displayName)}</h1>` : ''}
       ${address ? `<p>${escapeHtml(address).replace(/\n/g, '<br>')}</p>` : ''}
       ${phone ? `<p>Ph: ${escapeHtml(phone)}</p>` : ''}
-      ${hasTax && taxRegistrationNumber ? `<p>${escapeHtml(taxIdLabel)}: ${escapeHtml(taxRegistrationNumber)}</p>` : ''}
+      ${includeTaxId && taxRegistrationNumber ? `<p>${escapeHtml(taxIdLabel)}: ${escapeHtml(taxRegistrationNumber)}</p>` : ''}
     </div>
 
     <!-- Bill Details -->
@@ -127,8 +146,9 @@ export function generateBillHtml(
           <td><strong>Bill #:</strong> ${escapeHtml(bill.bill_number)}</td>
           <td><strong>Date:</strong> ${formatDate(order?.created_at, locale)}</td>
         </tr>
-        ${order?.table?.name ? `<tr><td><strong>Table:</strong> ${escapeHtml(order.table.name)}</td><td></td></tr>` : ''}
-        ${order?.customer?.name ? `<tr><td><strong>Customer:</strong> ${escapeHtml(order.customer.name)}${order.customer.phone ? ` (${escapeHtml(order.customer.phone)})` : ''}</td><td></td></tr>` : ''}
+        ${showTableNumber && order?.table?.name ? `<tr><td><strong>Table:</strong> ${escapeHtml(order.table.name)}</td><td></td></tr>` : ''}
+        ${showCustomerName && order?.customer?.name ? `<tr><td><strong>Customer:</strong> ${escapeHtml(order.customer.name)}</td><td></td></tr>` : ''}
+        ${showCustomerPhone && order?.customer?.phone ? `<tr><td><strong>Customer No:</strong> ${escapeHtml(order.customer.phone)}</td><td></td></tr>` : ''}
       </table>
     </div>
 
@@ -159,7 +179,7 @@ export function generateBillHtml(
     </table>
 
     <!-- Tax Breakdown -->
-    ${includeTaxId && taxComponents.length > 0 ? `
+    ${showTaxBreakdown && taxComponents.length > 0 ? `
     <table class="tax-table">
       <thead>
         <tr><th colspan="2">Tax Details</th></tr>
@@ -199,7 +219,7 @@ export function generateBillHtml(
     <!-- Footer -->
     <div class="footer">
       ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : '<p>Thank you for your visit!</p>'}
-      ${includeTaxId && taxComponents.length > 0 ? '<p>Tax included where applicable</p>' : ''}
+      ${hasTax ? '<p>Tax included where applicable</p>' : ''}
       <p class="powered-by">${escapeHtml(RECEIPT_BRANDING_NAME)}<br>${escapeHtml(RECEIPT_BRANDING_URL)}</p>
     </div>
   </div>

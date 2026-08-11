@@ -25,7 +25,7 @@ export default function PrintTestPage() {
 
   const { printBill, printTaxBill, printKot, printMethod, setPrintMethod, downloadLastReceipt, lastPrintedBytes, status } = usePrinterStore();
   const kotPrintingEnabled = usePosSettingsStore((s) => s.kotPrintingEnabled);
-  const webPrintSize = usePosSettingsStore((s) => s.webPrintSize);
+  const printerPaperSize = usePosSettingsStore((s) => s.printerPaperSize);
   const { t } = useI18n();
   const effectiveTestMode: TestMode = !kotPrintingEnabled && testMode === 'kot' ? 'receipt' : testMode;
 
@@ -89,7 +89,7 @@ export default function PrintTestPage() {
           }
           break;
         case 'web-print':
-          printWebBill(testBill, testTenant, { paperSize: webPrintSize, includeTaxId: true });
+          printWebBill(testBill, testTenant, { paperSize: printerPaperSize, includeTaxId: true });
           toast.success(t('printTest.webPrintDialogOpened'));
           break;
         case 'whatsapp':
@@ -109,7 +109,7 @@ export default function PrintTestPage() {
 
   const handleDownloadHtml = () => {
     const html = generateBillHtml(testBill, testTenant, {
-      paperSize: webPrintSize,
+      paperSize: printerPaperSize,
       includeTaxId: true,
       taxRegistrationNumber: 'TAXID-0001',
       address: '123 Main Street, Mumbai - 400001',
@@ -120,7 +120,7 @@ export default function PrintTestPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `bill-${webPrintSize}-preview.html`;
+    a.download = `bill-${printerPaperSize}-preview.html`;
     a.click();
     URL.revokeObjectURL(url);
     toast.success('HTML downloaded');

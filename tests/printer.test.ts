@@ -12,6 +12,7 @@ import {
   formatKOT,
   buildEscPos,
   buildTestPage,
+  escPosToText,
   detectConnectedPrinters,
   printViaUSB,
   printViaNetwork,
@@ -171,6 +172,14 @@ console.log('\n✅ Test 1b: Unsupported receipt text is skipped with a warning')
   assert('reports the skipped store name', warnings.length === 1 && warnings[0].field === 'store name');
 }
 
+console.log('\n✅ Test 1c: ESC/POS output can be previewed without a printer');
+{
+  const buf = buildEscPos(['{INIT}', '{CENTER}{BOLD}HEADER{/BOLD}{/CENTER}', 'Item       Rs63.00', '{CUT}']);
+  const text = escPosToText(buf);
+  assert('paperless preview keeps receipt text', text.includes('HEADER') && text.includes('Item       Rs63.00'));
+  assert('paperless preview strips ESC/POS commands', !text.includes('\x1b') && !text.includes('\x1d'));
+}
+
 console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
 {
   const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'compact', 48, true);
@@ -308,6 +317,18 @@ console.log('\n✅ Test 5b: Template labels normalize to backend templates');
   assert('Classic label renders classic template', classic.includes('Invoice #:'));
   assert('Compact label renders compact template', compact.includes('Bill #:'));
   assert('Detailed (Tax) label renders detailed template', detailed.includes('TAX INVOICE'));
+  assert('all three templates produce distinct output', new Set([classic, compact, detailed]).size === 3);
+}
+
+console.log('\n✅ Test 5bb: Custom footer is rendered by every backend template');
+{
+  for (const template of ['compact', 'classic', 'detailed']) {
+    const text = formatReceipt(fixtureOrder, fixtureBill, {
+      ...fixtureBusiness,
+      footer_note: 'Please visit us again',
+    }, template, 48, true).toString('utf8');
+    assert(`${template}: renders the configured footer message`, text.includes('Please visit us again'));
+  }
 }
 
 console.log('\n✅ Test 5c: Detailed receipt resolves mixed legacy + categorized tax');
@@ -347,6 +368,51 @@ console.log('\n✅ Test 5c: Detailed receipt resolves mixed legacy + categorized
   assert('renders legacy Local Levy component and rate', text.includes('Local Levy @1%'));
   assert('does not render categorized item legacy copy', !text.includes('Legacy Tax'));
   assert('uses country tax identifier label', text.includes('Tax ID: TAXID-0001'));
+}
+
+console.log('\n✅ Test 5d: Bill content toggles are optional and never block printing');
+{
+  const customerBusiness = {
+    ...fixtureBusiness,
+    customer_name: 'Ada Customer',
+    customer_phone: '+91 90000 12345',
+  };
+  const hiddenBusiness = {
+    ...customerBusiness,
+    show_name: false,
+    show_address: false,
+    show_phone: false,
+    show_tax_id: false,
+    show_tax_breakdown: false,
+    show_customer_name: false,
+    show_customer_phone: false,
+    show_table_number: false,
+  };
+
+  for (const template of ['compact', 'classic', 'detailed']) {
+    const hidden = formatReceipt(fixtureOrder, fixtureBill, hiddenBusiness, template, 48, true);
+    const text = hidden.toString('utf8');
+    assert(`${template}: hidden optional fields stay hidden`,
+      !text.includes('Flo Test Cafe')
+      && !text.includes('42 MG Road')
+      && !text.includes('+91 98765')
+      && !text.includes('TAXID-0001')
+      && !text.includes('Ada Customer')
+      && !text.includes('+91 90000')
+      && !text.includes('Table: T3')
+      && !text.includes('Tax A'));
+    assert(`${template}: disabled details still print total and cut`,
+      text.includes('TOTAL') && bytesContain(hidden, [GS, 0x56, 0x00]));
+
+    const missing = formatReceipt(fixtureOrder, fixtureBill, {
+      name: '', address: '', phone: '', taxRegistrationNumber: '',
+      show_name: true, show_address: true, show_phone: true, show_tax_id: true,
+      show_tax_breakdown: true, show_customer_name: true,
+      show_customer_phone: true, show_table_number: true,
+    }, template, 48, true);
+    assert(`${template}: enabled but missing values do not stop printing`,
+      missing.toString('utf8').includes('TOTAL') && bytesContain(missing, [GS, 0x56, 0x00]));
+  }
 }
 
 console.log('\n✅ Test 6: KOT (Kitchen Order Ticket)');

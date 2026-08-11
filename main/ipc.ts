@@ -17,10 +17,11 @@ const ALLOWED_IPC_KEYS = new Set([
   'business_name', 'timezone', 'currency', 'country',
   'state_code', 'business_address', 'business_phone',
   'billing_type', 'bill_show_name', 'bill_show_address',
-  'bill_show_phone', 'bill_show_tax_id',
+  'bill_show_phone', 'bill_show_tax_id', 'bill_show_tax_breakdown',
+  'bill_show_customer_name', 'bill_show_customer_phone', 'bill_show_table_number',
   'tax_scheme',
   'loyalty_enabled',
-  'printer_method', 'paper_size', 'bill_template',
+  'printer_method', 'paper_size', 'bill_template', 'bill_footer_message',
   'telemetry_enabled',
 ]);
 

@@ -27,7 +27,6 @@ export interface PosSettingsState {
   whatsappShareEnabled: boolean;
   // Web print settings
   defaultPrintMode: 'thermal' | 'web';
-  webPrintSize: PaperSize;
   // Bill template settings
   billTemplate: BillTemplate;
   billFooterMessage: string;
@@ -38,6 +37,10 @@ export interface PosSettingsState {
   billShowAddress: boolean;
   billShowPhone: boolean;
   billShowTaxId: boolean;
+  billShowTaxBreakdown: boolean;
+  billShowCustomerName: boolean;
+  billShowCustomerPhone: boolean;
+  billShowTableNumber: boolean;
   // Thermal printer unicode support
   printerUseUnicode: boolean;
   // Receipt amount formatting
@@ -62,7 +65,6 @@ export interface PosSettingsState {
   setAutoPrintBill: (enabled: boolean) => void;
   setWhatsappShareEnabled: (enabled: boolean) => void;
   setDefaultPrintMode: (mode: 'thermal' | 'web') => void;
-  setWebPrintSize: (size: PaperSize) => void;
   setBillTemplate: (t: BillTemplate) => void;
   setBillFooterMessage: (m: string) => void;
   setBillTaxRegistrationNumber: (g: string) => void;
@@ -72,6 +74,10 @@ export interface PosSettingsState {
   setBillShowAddress: (v: boolean) => void;
   setBillShowPhone: (v: boolean) => void;
   setBillShowTaxId: (v: boolean) => void;
+  setBillShowTaxBreakdown: (v: boolean) => void;
+  setBillShowCustomerName: (v: boolean) => void;
+  setBillShowCustomerPhone: (v: boolean) => void;
+  setBillShowTableNumber: (v: boolean) => void;
   setBillingType: (v: 'postpaid' | 'prepaid') => void;
   setTablesRequired: (v: boolean) => void;
   setPrinterUseUnicode: (v: boolean) => void;
@@ -99,7 +105,6 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       whatsappShareEnabled: true,
       // Web print defaults
       defaultPrintMode: 'thermal',
-      webPrintSize: 'thermal58',
       // Bill template defaults
       billTemplate: 'classic',
       billFooterMessage: '',
@@ -110,6 +115,10 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowAddress: true,
       billShowPhone: true,
       billShowTaxId: false,
+      billShowTaxBreakdown: true,
+      billShowCustomerName: true,
+      billShowCustomerPhone: true,
+      billShowTableNumber: true,
       printerUseUnicode: false,
       printerTrimDecimals: false,
       kdsEnabled: true,
@@ -131,7 +140,6 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setAutoPrintBill: (enabled) => set({ autoPrintBill: enabled }),
       setWhatsappShareEnabled: (enabled) => set({ whatsappShareEnabled: enabled }),
       setDefaultPrintMode: (mode) => set({ defaultPrintMode: mode }),
-      setWebPrintSize: (size) => set({ webPrintSize: size }),
       setBillTemplate: (t) => set({ billTemplate: t }),
       setBillFooterMessage: (m) => set({ billFooterMessage: m }),
       setBillTaxRegistrationNumber: (g) => set({ billTaxRegistrationNumber: g }),
@@ -141,6 +149,10 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillShowAddress: (v) => set({ billShowAddress: v }),
       setBillShowPhone: (v) => set({ billShowPhone: v }),
       setBillShowTaxId: (v) => set({ billShowTaxId: v }),
+      setBillShowTaxBreakdown: (v) => set({ billShowTaxBreakdown: v }),
+      setBillShowCustomerName: (v) => set({ billShowCustomerName: v }),
+      setBillShowCustomerPhone: (v) => set({ billShowCustomerPhone: v }),
+      setBillShowTableNumber: (v) => set({ billShowTableNumber: v }),
       setBillingType: (v) => set({ billingType: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
       setPrinterUseUnicode: (v) => set({ printerUseUnicode: v }),
@@ -167,7 +179,9 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // negligible real-world usage didn't justify keeping a second paper
       // layout alive. A browser that saved 'a4'/'a5' before the removal
       // would otherwise keep a value nothing in the app still recognizes.
-      version: 2,
+      // v3: web print now shares the main printerPaperSize setting, and bill
+      // content controls gained explicit customer/table/tax-breakdown flags.
+      version: 3,
       migrate: (persisted, version) => {
         const state = persisted as Record<string, unknown>;
         if (version < 1) {
@@ -185,6 +199,14 @@ export const usePosSettingsStore = create<PosSettingsState>()(
           if (state.webPrintSize === 'a4' || state.webPrintSize === 'a5') {
             state.webPrintSize = 'thermal58';
           }
+        }
+        if (version < 3) {
+          if (!state.printerPaperSize && state.webPrintSize) state.printerPaperSize = state.webPrintSize;
+          delete state.webPrintSize;
+          state.billShowTaxBreakdown ??= true;
+          state.billShowCustomerName ??= true;
+          state.billShowCustomerPhone ??= true;
+          state.billShowTableNumber ??= true;
         }
         return state as unknown as PosSettingsState;
       },

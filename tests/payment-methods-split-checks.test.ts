@@ -14,6 +14,7 @@ const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { paymentMethodRoutes } = require('../main/routes/payment-methods');
 const { settingsRoutes } = require('../main/routes/settings');
+const { MIGRATIONS } = require('../main/db');
 
 async function main() {
   const db = initTestDb();
@@ -30,6 +31,43 @@ async function main() {
     const missingSplitSetting = await api(baseUrl, '/api/settings/split_checks_enabled', { headers: authHeader });
     assertEqual(missingSplitSetting.status, 200, 'missing split-check setting reads as a safe default');
     assertEqual(missingSplitSetting.data.setting.value, 'false', 'fallback keeps split checks disabled');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'printer_trim_decimals'").get() as any).value, 'false', 'fresh database seeds printer decimal trimming disabled');
+    db.prepare("DELETE FROM settings WHERE key = 'printer_trim_decimals'").run();
+    const missingPrinterTrimSetting = await api(baseUrl, '/api/settings/printer_trim_decimals', { headers: authHeader });
+    assertEqual(missingPrinterTrimSetting.status, 200, 'missing printer decimal-trim setting reads as a safe default');
+    assertEqual(missingPrinterTrimSetting.data.setting.value, 'false', 'fallback keeps printer decimal trimming disabled');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value, 'classic', 'fresh database seeds the classic bill template');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any).value, '', 'fresh database seeds an empty bill footer');
+    db.prepare("UPDATE settings SET value = 'compact' WHERE key = 'bill_template'").run();
+    db.prepare("UPDATE settings SET value = 'See you soon' WHERE key = 'bill_footer_message'").run();
+    MIGRATIONS.find((migration: any) => migration.version === 66).up();
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value, 'compact', 'bill-template migration preserves an existing template choice');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any).value, 'See you soon', 'bill-template migration preserves an existing footer');
+    db.prepare("DELETE FROM settings WHERE key IN ('bill_template', 'bill_footer_message')").run();
+    const missingBillTemplate = await api(baseUrl, '/api/settings/bill_template', { headers: authHeader });
+    const missingBillFooter = await api(baseUrl, '/api/settings/bill_footer_message', { headers: authHeader });
+    assertEqual(missingBillTemplate.status, 200, 'missing bill template reads as a safe default');
+    assertEqual(missingBillTemplate.data.setting.value, 'classic', 'missing bill template falls back to classic');
+    assertEqual(missingBillFooter.status, 200, 'missing bill footer reads as a safe default');
+    assertEqual(missingBillFooter.data.setting.value, '', 'missing bill footer falls back to an empty message');
+    const billContentDefaults = Object.fromEntries(
+      db.prepare("SELECT key, value FROM settings WHERE key LIKE 'bill_show_%'").all()
+        .map((row: any) => [row.key, row.value]),
+    );
+    assertEqual(billContentDefaults.bill_show_name, 'true', 'fresh database shows restaurant name by default');
+    assertEqual(billContentDefaults.bill_show_tax_id, 'false', 'fresh database hides tax ID by default');
+    assertEqual(billContentDefaults.bill_show_tax_breakdown, 'true', 'fresh database shows tax breakdown by default');
+    assertEqual(billContentDefaults.bill_show_customer_name, 'true', 'fresh database shows customer name by default');
+    assertEqual(billContentDefaults.bill_show_customer_phone, 'true', 'fresh database shows customer number by default');
+    assertEqual(billContentDefaults.bill_show_table_number, 'true', 'fresh database shows table number by default');
+    const saveTemplate = await api(baseUrl, '/api/settings/bill_template', { method: 'PUT', body: { value: 'detailed' }, headers: authHeader });
+    const saveFooter = await api(baseUrl, '/api/settings/bill_footer_message', { method: 'PUT', body: { value: 'Please visit us again' }, headers: authHeader });
+    assertEqual(saveTemplate.status, 200, 'bill template setting can be saved for backend invoice printing');
+    assertEqual(saveFooter.status, 200, 'bill footer setting can be saved for backend invoice printing');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value, 'detailed', 'backend printer reads the persisted template choice');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any).value, 'Please visit us again', 'backend printer reads the persisted footer message');
+    const printerColumns = db.prepare('PRAGMA table_info(printers)').all().map((column: any) => column.name);
+    assert(!printerColumns.includes('usb_device_path'), 'fresh printer schema does not keep ignored USB device path column');
     const freshMethods = await api(baseUrl, '/api/payment-methods', { headers: authHeader });
     assertEqual(freshMethods.data.payment_methods.length, 0, 'fresh install has no custom methods and no seeded UPI');
     const add = await api(baseUrl, '/api/payment-methods', { method: 'POST', body: { name: 'Google Pay' }, headers: authHeader });

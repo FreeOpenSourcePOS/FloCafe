@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import api from '@/lib/api';
 import { useAuthStore } from '@/store/auth';
 import { Button } from '@/components/ui/button';
-import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban } from 'lucide-react';
+import { CreditCard, Trash2, RotateCcw, Clock, MessageCircle, Printer, XCircle, Lock, Percent, Banknote, Search, Plus, ChevronDown, ChevronRight, UserPlus, User, ShoppingBag, Send, Loader2, Ban, Download } from 'lucide-react';
 import toast from 'react-hot-toast';
 import PaymentModal from '@/components/pos/PaymentModal';
 import { shareBillViaWhatsApp, sendBillViaFlo } from '@/lib/whatsapp-share';
@@ -96,11 +96,12 @@ export default function OrdersPage() {
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { setTablesRequired, autoPrintBill } = usePosSettingsStore();
+  const { setTablesRequired, autoPrintBill, printerUseUnicode } = usePosSettingsStore();
   const { t } = useI18n();
   const { formatTime, formatDateTime } = useFormatDate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [previewingBillId, setPreviewingBillId] = useState<number | null>(null);
   // Snapshot of "now" for the "Xm ago" timestamps below — Date.now() can't be called directly
   // during render (impure), so it's held in state and refreshed periodically instead.
   const [now, setNow] = useState(() => Date.now());
@@ -480,6 +481,36 @@ export default function OrdersPage() {
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);
+    }
+  };
+
+  const handleDownloadPrintPreview = async (billId: number) => {
+    setPreviewingBillId(billId);
+    try {
+      const isReprint = (printHistory[billId]?.length ?? 0) > 0;
+      const { data } = await api.post<{
+        columns: number;
+        printer: { name: string };
+        text: string;
+      }>('/printers/print-bill', {
+        billId,
+        useUnicode: printerUseUnicode,
+        isReprint,
+        preview: true,
+      });
+      const contents = `Printer: ${data.printer.name}\nColumns: ${data.columns}\n\n${data.text}\n`;
+      const url = URL.createObjectURL(new Blob([contents], { type: 'text/plain;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `receipt-${billId}-${data.columns}cols.txt`;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success(t('orders.printPreviewDownloaded'));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : t('orders.printPreviewFailed');
+      toast.error(`${t('orders.printPreviewFailed')}: ${message}`);
+    } finally {
+      setPreviewingBillId(null);
     }
   };
 
@@ -1257,6 +1288,19 @@ export default function OrdersPage() {
                 onClick={() => setConfirmPrintBillId(null)}
               >
                 {t('common.cancel')}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleDownloadPrintPreview(confirmPrintBillId)}
+                disabled={previewingBillId === confirmPrintBillId}
+                title={t('orders.downloadPrintPreview')}
+                aria-label={t('orders.downloadPrintPreview')}
+                className="w-9 px-0"
+              >
+                {previewingBillId === confirmPrintBillId
+                  ? <Loader2 size={14} className="animate-spin" />
+                  : <Download size={14} />}
               </Button>
               <Button
                 size="sm"

@@ -136,6 +136,17 @@ function main() {
     'existing stores receive the opt-in split-check default during upgrade',
   );
   console.log('   ✓ existing stores receive split checks disabled by default');
+  assert.equal(
+    (db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as { value: string }).value,
+    'classic',
+    'existing stores receive the classic bill template during upgrade',
+  );
+  assert.equal(
+    (db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as { value: string }).value,
+    '',
+    'existing stores receive an empty bill footer during upgrade',
+  );
+  console.log('   ✓ existing stores receive bill template defaults without requiring a first save');
 
   const migratedUpi = db.prepare(`
     SELECT pm.id, pm.name, b.payment_details

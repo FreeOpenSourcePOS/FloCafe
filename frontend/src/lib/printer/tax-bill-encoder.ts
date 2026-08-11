@@ -26,6 +26,16 @@ export interface TaxBillOptions {
   address?: string;
   /** Business phone */
   phone?: string;
+  /** Show the restaurant name when available. Default: true */
+  showBusinessName?: boolean;
+  /** Show per-tax-rate breakdown lines. Default: true */
+  showTaxBreakdown?: boolean;
+  /** Show the customer name when available. Default: true */
+  showCustomerName?: boolean;
+  /** Show the customer phone when available. Default: true */
+  showCustomerPhone?: boolean;
+  /** Show the table number when available. Default: true */
+  showTableNumber?: boolean;
   /** State code for tax calculation */
   stateCode?: string;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
@@ -66,7 +76,20 @@ export function buildTaxBillBytes(
   opts: TaxBillOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58, showFooter = true, taxRegistrationNumber, address, phone, useUnicode = false, trimDecimals = false } = opts;
+  const {
+    paperWidth = 58,
+    showFooter = true,
+    taxRegistrationNumber,
+    address,
+    phone,
+    showBusinessName = true,
+    showTaxBreakdown = true,
+    showCustomerName = true,
+    showCustomerPhone = true,
+    showTableNumber = true,
+    useUnicode = false,
+    trimDecimals = false,
+  } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
@@ -81,10 +104,12 @@ export function buildTaxBillBytes(
 
   // ── Header ────────────────────────────────────────────────────────────────
   enc.initialize().align('center');
-  enc.bold(true).width(2).height(2);
-  safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
-  enc.width(1).height(1);
-  enc.bold(false).newline();
+  if (showBusinessName && tenant.business_name) {
+    enc.bold(true).width(2).height(2);
+    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
+    enc.width(1).height(1);
+    enc.bold(false).newline();
+  }
 
   if (address) {
     safePrinterText(enc, truncate(address, cols), warnings).newline();
@@ -92,7 +117,7 @@ export function buildTaxBillBytes(
   if (phone) {
     safePrinterText(enc, `Ph: ${phone}`, warnings).newline();
   }
-  if (hasTax && taxRegistrationNumber) {
+  if (taxRegistrationNumber) {
     safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings).newline();
   }
 
@@ -103,15 +128,14 @@ export function buildTaxBillBytes(
   enc.text(`Bill #: ${bill.bill_number}`).newline();
   enc.text(`Date: ${formatDate(bill.order?.created_at, locale)}`).newline();
 
-  if (order?.table?.name) {
+  if (showTableNumber && order?.table?.name) {
     safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
   }
-  if (order?.customer?.name) {
-    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings);
-    if (order.customer.phone) {
-      enc.text(` (${maskPhoneOnReceipt(order.customer.phone)})`);
-    }
-    enc.newline();
+  if (showCustomerName && order?.customer?.name) {
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings).newline();
+  }
+  if (showCustomerPhone && order?.customer?.phone) {
+    enc.text(`Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`).newline();
   }
 
   enc.rule({ style: 'single' });
@@ -148,7 +172,7 @@ export function buildTaxBillBytes(
   enc.rule({ style: 'single' });
 
   // ── Tax Breakdown ───────────────────────────────────────────────────────
-  if (taxComponents.length > 0) {
+  if (showTaxBreakdown && taxComponents.length > 0) {
     enc.text('Tax Details:').newline();
     for (const component of taxComponents) {
       enc.text(
@@ -202,7 +226,7 @@ export function buildTaxBillBytes(
     enc.newline().align('center');
     enc.text('Thank you for your visit!').newline();
     enc.text('Please come again').newline();
-    if (taxComponents.length > 0) {
+    if (hasTax) {
       enc.text('Tax included where applicable').newline();
     }
   }

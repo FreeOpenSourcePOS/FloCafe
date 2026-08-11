@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
-import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash } from 'lucide-react';
+import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
@@ -731,18 +731,18 @@ export default function SettingsPage() {
   // ── Printers ─────────────────────────────────────────────────────────────
   type HwPrinter = {
     id: string; name: string; connection_type: 'network' | 'usb' | 'webusb';
-    ip_address?: string; port?: number; usb_device_path?: string;
+    ip_address?: string; port?: number;
     paper_width: string; is_default: number; profile_id?: string; profile_name?: string;
   };
 
   type PrinterForm = {
     name: string; connection_type: 'network' | 'usb' | 'webusb';
-    ip_address: string; port: string; usb_device_path: string; paper_width: string;
+    ip_address: string; port: string; paper_width: string;
   };
 
   const emptyPrinterForm: PrinterForm = {
     name: '', connection_type: 'network', ip_address: '', port: '9100',
-    usb_device_path: '/dev/usb/lp0', paper_width: 'cols-42',
+    paper_width: 'cols-42',
   };
 
   type DetectedPrinter = {
@@ -764,6 +764,7 @@ export default function SettingsPage() {
   // the manual "refresh" button, still sets it explicitly for that path).
   const [detectingPrinters, setDetectingPrinters] = useState(true);
   const [addingDetectedName, setAddingDetectedName] = useState<string | null>(null);
+  const [installedPrintersOpen, setInstalledPrintersOpen] = useState(false);
 
   const normalizePrinterWidthValue = (value?: string | null): string => {
     if (value === '58mm') return 'cols-32';
@@ -830,7 +831,6 @@ export default function SettingsPage() {
     setPrinterForm({
       name: p.name, connection_type: p.connection_type,
       ip_address: p.ip_address || '', port: String(p.port || 9100),
-      usb_device_path: p.usb_device_path || '/dev/usb/lp0',
       paper_width: normalizePrinterWidthValue(p.paper_width),
     });
     setEditingPrinterId(p.id);
@@ -846,7 +846,6 @@ export default function SettingsPage() {
         connection_type: printerForm.connection_type,
         ip_address: printerForm.connection_type === 'network' ? printerForm.ip_address : undefined,
         port: printerForm.connection_type === 'network' ? Number(printerForm.port) : undefined,
-        usb_device_path: printerForm.connection_type === 'usb' ? printerForm.usb_device_path : undefined,
         paper_width: printerForm.paper_width,
       };
       if (editingPrinterId) {
@@ -1042,9 +1041,11 @@ export default function SettingsPage() {
     printerEnabled: boolean; printerPaperSize: PaperSize;
     printMethod: 'escpos' | 'browser';
     autoPrintKot: boolean; autoPrintBill: boolean;
-    webPrintSize: PaperSize; whatsappShareEnabled: boolean;
+    whatsappShareEnabled: boolean;
     printerUseUnicode: boolean;
     printerTrimDecimals: boolean;
+    billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
+    billShowTaxBreakdown: boolean; billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
   };
   const initPrinting = (): PrintingForm => ({
     printerEnabled: posSettings.printerEnabled,
@@ -1052,10 +1053,17 @@ export default function SettingsPage() {
     printMethod: printMethod as 'escpos' | 'browser',
     autoPrintKot: posSettings.autoPrintKot,
     autoPrintBill: posSettings.autoPrintBill,
-    webPrintSize: posSettings.webPrintSize,
     whatsappShareEnabled: posSettings.whatsappShareEnabled,
     printerUseUnicode: posSettings.printerUseUnicode,
     printerTrimDecimals: posSettings.printerTrimDecimals,
+    billShowName: posSettings.billShowName,
+    billShowAddress: posSettings.billShowAddress,
+    billShowPhone: posSettings.billShowPhone,
+    billShowTaxId: posSettings.billShowTaxId,
+    billShowTaxBreakdown: posSettings.billShowTaxBreakdown,
+    billShowCustomerName: posSettings.billShowCustomerName,
+    billShowCustomerPhone: posSettings.billShowCustomerPhone,
+    billShowTableNumber: posSettings.billShowTableNumber,
   });
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
@@ -1065,11 +1073,30 @@ export default function SettingsPage() {
     setPrintMethod(printingForm.printMethod);
     posSettings.setAutoPrintKot(printingForm.autoPrintKot);
     posSettings.setAutoPrintBill(printingForm.autoPrintBill);
-    posSettings.setWebPrintSize(printingForm.webPrintSize);
     posSettings.setWhatsappShareEnabled(printingForm.whatsappShareEnabled);
     posSettings.setPrinterUseUnicode(printingForm.printerUseUnicode);
     posSettings.setPrinterTrimDecimals(printingForm.printerTrimDecimals);
-    await api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' });
+    posSettings.setBillShowName(printingForm.billShowName);
+    posSettings.setBillShowAddress(printingForm.billShowAddress);
+    posSettings.setBillShowPhone(printingForm.billShowPhone);
+    posSettings.setBillShowTaxId(printingForm.billShowTaxId);
+    posSettings.setBillShowTaxBreakdown(printingForm.billShowTaxBreakdown);
+    posSettings.setBillShowCustomerName(printingForm.billShowCustomerName);
+    posSettings.setBillShowCustomerPhone(printingForm.billShowCustomerPhone);
+    posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
+    await Promise.all([
+      api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
+      ...([
+        ['bill_show_name', printingForm.billShowName],
+        ['bill_show_address', printingForm.billShowAddress],
+        ['bill_show_phone', printingForm.billShowPhone],
+        ['bill_show_tax_id', printingForm.billShowTaxId],
+        ['bill_show_tax_breakdown', printingForm.billShowTaxBreakdown],
+        ['bill_show_customer_name', printingForm.billShowCustomerName],
+        ['bill_show_customer_phone', printingForm.billShowCustomerPhone],
+        ['bill_show_table_number', printingForm.billShowTableNumber],
+      ] as const).map(([key, value]) => api.put(`/settings/${key}`, { value: value ? 'true' : 'false' })),
+    ]);
     setSavedPrinting(printingForm);
     if (!silent) toast.success(t('settings.printingSettingsSaved'));
   };
@@ -1083,9 +1110,13 @@ export default function SettingsPage() {
   });
   const [billForm, setBillForm] = useState<BillTemplateForm>(initBillTemplate);
   const [savedBillForm, setSavedBillForm] = useState<BillTemplateForm>(initBillTemplate);
-  const saveBillTemplate = (silent: boolean = false) => {
+  const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
+    await Promise.all([
+      api.put('/settings/bill_template', { value: billForm.billTemplate }),
+      api.put('/settings/bill_footer_message', { value: billForm.billFooterMessage }),
+    ]);
     setSavedBillForm(billForm);
     if (!silent) toast.success(t('settings.billTemplateSaved'));
   };
@@ -1098,27 +1129,15 @@ export default function SettingsPage() {
     tablesRequired: boolean;
     taxRegistered: boolean;
     taxRegistrationNumber: string; businessAddress: string; businessPhone: string; instagramHandle: string;
-    billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
-    billShowName: true, billShowAddress: true, billShowPhone: true, billShowTaxId: false,
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
-  const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
-
-  useEffect(() => {
-    if (!form.countryCode) return;
-    const controller = new AbortController();
-    api.get('/settings/tax-id-format', { params: { country: form.countryCode }, signal: controller.signal })
-      .then((res) => setTaxIdFormat(res.data.format || null))
-      .catch(() => setTaxIdFormat(null));
-    return () => controller.abort();
-  }, [form.countryCode]);
 
   const [cloudSettings, setCloudSettings] = useState({
     cloud_api_key: '',
@@ -1263,13 +1282,29 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
-        billShowName: typeof d.bill_show_name === 'boolean' ? d.bill_show_name : true,
-        billShowAddress: typeof d.bill_show_address === 'boolean' ? d.bill_show_address : true,
-        billShowPhone: typeof d.bill_show_phone === 'boolean' ? d.bill_show_phone : true,
-        billShowTaxId: typeof d.bill_show_tax_id === 'boolean' ? d.bill_show_tax_id : false,
       };
       setSavedBusiness(loaded);
       setForm(loaded);
+      const billDisplay = {
+        billShowName: d.bill_show_name !== false,
+        billShowAddress: d.bill_show_address !== false,
+        billShowPhone: d.bill_show_phone !== false,
+        billShowTaxId: d.bill_show_tax_id === true,
+        billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
+        billShowCustomerName: d.bill_show_customer_name !== false,
+        billShowCustomerPhone: d.bill_show_customer_phone !== false,
+        billShowTableNumber: d.bill_show_table_number !== false,
+      };
+      setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
+      setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
+      posSettings.setBillShowName(billDisplay.billShowName);
+      posSettings.setBillShowAddress(billDisplay.billShowAddress);
+      posSettings.setBillShowPhone(billDisplay.billShowPhone);
+      posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
+      posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
+      posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
+      posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
+      posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
 
       setLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
       setSavedLoyaltyEnabled(!!loyaltyRes.data.loyalty_enabled);
@@ -1416,6 +1451,21 @@ export default function SettingsPage() {
       setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
+    Promise.all([
+      api.get('/settings/bill_template').catch(() => null),
+      api.get('/settings/bill_footer_message').catch(() => null),
+    ]).then(([templateResponse, footerResponse]) => {
+      const storedTemplate = templateResponse?.data.setting?.value;
+      const billTemplate: BillTemplate = ['classic', 'compact', 'detailed'].includes(storedTemplate)
+        ? storedTemplate as BillTemplate
+        : posSettings.billTemplate;
+      const billFooterMessage = footerResponse?.data.setting?.value ?? posSettings.billFooterMessage;
+      const loadedBillForm = { billTemplate, billFooterMessage };
+      posSettings.setBillTemplate(billTemplate);
+      posSettings.setBillFooterMessage(billFooterMessage);
+      setBillForm(loadedBillForm);
+      setSavedBillForm(loadedBillForm);
+    });
 
     api.get('/settings/order-numbering').then((res) => {
       const loaded: OrderNumberForm = {
@@ -1480,18 +1530,30 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
-        billShowName: typeof d.bill_show_name === 'boolean' ? d.bill_show_name : true,
-        billShowAddress: typeof d.bill_show_address === 'boolean' ? d.bill_show_address : true,
-        billShowPhone: typeof d.bill_show_phone === 'boolean' ? d.bill_show_phone : true,
-        billShowTaxId: typeof d.bill_show_tax_id === 'boolean' ? d.bill_show_tax_id : false,
       };
       setSavedBusiness(loaded);
       setForm(loaded);
       // Sync to pos-settings store for bill printing
-      posSettings.setBillShowName(loaded.billShowName);
-      posSettings.setBillShowAddress(loaded.billShowAddress);
-      posSettings.setBillShowPhone(loaded.billShowPhone);
-      posSettings.setBillShowTaxId(loaded.billShowTaxId);
+      const billDisplay = {
+        billShowName: d.bill_show_name !== false,
+        billShowAddress: d.bill_show_address !== false,
+        billShowPhone: d.bill_show_phone !== false,
+        billShowTaxId: d.bill_show_tax_id === true,
+        billShowTaxBreakdown: d.bill_show_tax_breakdown !== false,
+        billShowCustomerName: d.bill_show_customer_name !== false,
+        billShowCustomerPhone: d.bill_show_customer_phone !== false,
+        billShowTableNumber: d.bill_show_table_number !== false,
+      };
+      setPrintingForm((previous) => ({ ...previous, ...billDisplay }));
+      setSavedPrinting((previous) => ({ ...previous, ...billDisplay }));
+      posSettings.setBillShowName(billDisplay.billShowName);
+      posSettings.setBillShowAddress(billDisplay.billShowAddress);
+      posSettings.setBillShowPhone(billDisplay.billShowPhone);
+      posSettings.setBillShowTaxId(billDisplay.billShowTaxId);
+      posSettings.setBillShowTaxBreakdown(billDisplay.billShowTaxBreakdown);
+      posSettings.setBillShowCustomerName(billDisplay.billShowCustomerName);
+      posSettings.setBillShowCustomerPhone(billDisplay.billShowCustomerPhone);
+      posSettings.setBillShowTableNumber(billDisplay.billShowTableNumber);
       if (d.tax_registration_number) posSettings.setBillTaxRegistrationNumber(d.tax_registration_number);
       if (d.business_address) posSettings.setBillAddress(d.business_address);
       if (d.business_phone) posSettings.setBillPhone(d.business_phone);
@@ -1796,10 +1858,6 @@ export default function SettingsPage() {
         business_address: form.businessAddress,
         business_phone: form.businessPhone,
         instagram_handle: form.instagramHandle,
-        bill_show_name: form.billShowName,
-        bill_show_address: form.billShowAddress,
-        bill_show_phone: form.billShowPhone,
-        bill_show_tax_id: form.billShowTaxId,
       });
       if (savedBusiness.countryCode !== form.countryCode) {
         const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
@@ -1834,10 +1892,6 @@ export default function SettingsPage() {
       posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
       posSettings.setBillPhone(form.businessPhone);
-      posSettings.setBillShowName(form.billShowName);
-      posSettings.setBillShowAddress(form.billShowAddress);
-      posSettings.setBillShowPhone(form.billShowPhone);
-      posSettings.setBillShowTaxId(form.billShowTaxId);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode });
@@ -1889,7 +1943,7 @@ export default function SettingsPage() {
     try {
       await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
       await savePrinting(true);
-      saveBillTemplate(true);
+      await saveBillTemplate(true);
       toast.success(t('settings.allSaved'));
     } catch {
       toast.error(t('settings.allSaveFailed'));
@@ -2167,22 +2221,9 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
                     {isAdmin ? (
-                      <>
-                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
-                          placeholder={t('settings.taxIdPlaceholder')}
-                          className={`w-full px-3 py-2 text-sm border rounded-lg outline-none focus:ring-2 focus:ring-brand ${
-                            taxIdFormat && form.taxRegistrationNumber && !new RegExp(taxIdFormat.pattern, 'i').test(form.taxRegistrationNumber.trim())
-                              ? 'border-red-300' : 'border-gray-200'
-                          }`} />
-                        {taxIdFormat && (
-                          <p className={`text-xs mt-1 ${
-                            form.taxRegistrationNumber && !new RegExp(taxIdFormat.pattern, 'i').test(form.taxRegistrationNumber.trim())
-                              ? 'text-red-600' : 'text-gray-400'
-                          }`}>
-                            {t('settings.taxIdFormatHint', { country: countryName(form.countryCode), description: taxIdFormat.description })}
-                          </p>
-                        )}
-                      </>
+                      <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
+                        placeholder={t('settings.taxIdPlaceholder')}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                     ) : (
                       <p className="font-medium text-gray-900">{form.taxRegistrationNumber || '—'}</p>
                     )}
@@ -2218,27 +2259,6 @@ export default function SettingsPage() {
                     <p className="font-medium text-gray-900">{form.instagramHandle || '—'}</p>
                   )}
                   <p className="text-xs text-gray-500 mt-1">{t('settings.instagramHint')}</p>
-                </div>
-              </div>
-
-              {/* Bill display toggles */}
-              <div className="mt-5 pt-5 border-t border-gray-100">
-                <p className="text-sm font-semibold text-gray-700 mb-3">{t('settings.showOnInvoice')}</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {([
-                    { label: t('settings.showBusinessName'), key: 'billShowName' as const },
-                    { label: t('settings.showAddress'), key: 'billShowAddress' as const },
-                    { label: t('settings.showPhoneNumber'), key: 'billShowPhone' as const },
-                    { label: t('settings.showTaxId'), key: 'billShowTaxId' as const },
-                  ] as const).map((item) => (
-                    <div key={item.key} className="flex items-center justify-between py-2">
-                      <span className="text-sm text-gray-700">{item.label}</span>
-                      <Toggle
-                        value={form[item.key]}
-                        onChange={isAdmin ? (v) => setForm((p) => ({ ...p, [item.key]: v })) : () => {}}
-                      />
-                    </div>
-                  ))}
                 </div>
               </div>
 
@@ -3209,7 +3229,7 @@ export default function SettingsPage() {
 
         {/* Printers sub-page */}
         <TabsContent value="receipts-printers">
-          <div className="pb-6 max-w-3xl space-y-6">
+          <div className="pb-6 max-w-6xl space-y-6">
             <div className="space-y-6">
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center justify-between mb-4">
@@ -3235,15 +3255,25 @@ export default function SettingsPage() {
               {/* Detected (OS-installed) printers — one-click add */}
               {!showPrinterForm && (
                 <div className="mb-5">
-                  <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{t('settings.installedOnThisComputer')}</h3>
-                  {detectingPrinters && detectedPrinters.length === 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setInstalledPrintersOpen((open) => !open)}
+                    className="flex w-full items-center justify-between gap-3 border-y border-gray-100 py-3 text-left"
+                    aria-expanded={installedPrintersOpen}
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      {t('settings.installedOnThisComputer')} ({detectedPrinters.length})
+                    </span>
+                    <ChevronDown size={16} className={`text-gray-400 transition-transform ${installedPrintersOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {installedPrintersOpen && (detectingPrinters && detectedPrinters.length === 0 ? (
                     <div className="py-6 text-center text-gray-400 text-sm">{t('settings.scanningForPrinters')}</div>
                   ) : detectedPrinters.length === 0 ? (
-                    <div className="py-6 text-center text-gray-400 text-sm border border-dashed border-gray-200 rounded-lg">
+                    <div className="mt-2 py-6 text-center text-gray-400 text-sm border border-dashed border-gray-200 rounded-lg">
                       {t('settings.noInstalledPrinters')}
                     </div>
                   ) : (
-                    <div className="space-y-2">
+                    <div className="mt-2 space-y-2">
                       {detectedPrinters.map((p) => {
                         const alreadyAdded = hwPrinters.some((h) => h.name.toLowerCase() === p.name.toLowerCase());
                         const isAdding = addingDetectedName === p.name;
@@ -3283,7 +3313,7 @@ export default function SettingsPage() {
                         );
                       })}
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
 
@@ -3315,7 +3345,7 @@ export default function SettingsPage() {
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {p.connection_type === 'network' ? `${p.ip_address}:${p.port}` :
-                         p.connection_type === 'usb' ? (p.usb_device_path || '/dev/usb/lp0') :
+                         p.connection_type === 'usb' ? t('settings.connectionUsb') :
                          t('settings.browserWebusb')}
                         {' · '}{printWidthLabel(p.paper_width)}
                         {p.profile_name ? ` · ${p.profile_name}` : ''}
@@ -3388,17 +3418,6 @@ export default function SettingsPage() {
                       </div>
                     </>)}
 
-                    {printerForm.connection_type === 'usb' && (
-                      <div className="md:col-span-2">
-                        <label className="block text-xs text-gray-500 mb-1">{t('settings.usbDevicePath')}</label>
-                        <input type="text" value={printerForm.usb_device_path}
-                          onChange={(e) => setPrinterForm((p) => ({ ...p, usb_device_path: e.target.value }))}
-                          placeholder={t('settings.usbDevicePathPlaceholder')}
-                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
-                        <p className="text-xs text-gray-400 mt-1">{t('settings.usbDevicePathHint')}</p>
-                      </div>
-                    )}
-
                     {printerForm.connection_type === 'webusb' && (
                       <div className="md:col-span-2 bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
                         {t('settings.webusbHint')}
@@ -3443,26 +3462,6 @@ export default function SettingsPage() {
               <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">{t('settings.tabPrinting')}</h2>
             </div>
 
-            {/* KOT printing on/off (issue #133) — coarser than Auto-print KOT
-                below: when this is off, no KOT ever prints, automatic or manual. */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900">{t('settings.kotPrintingEnabledToggle', { defaultValue: 'KOT Ticket Printing' })}</p>
-                  <p className="text-sm text-gray-500">{t('settings.kotPrintingEnabledToggleHint', { defaultValue: 'Allow KOT tickets to print at all, automatically or manually. Turn this off if this business doesn’t use a KOT printer.' })}</p>
-                </div>
-                <Toggle value={kotPrintingEnabledSetting} onChange={(v) => { if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v); }} />
-              </div>
-              {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
-                <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                  <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
-                  <p className="text-xs text-amber-800">
-                    {t('settings.kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
-                  </p>
-                </div>
-              )}
-            </div>
-
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Printer size={20} className="text-gray-500" />
@@ -3500,6 +3499,13 @@ export default function SettingsPage() {
                       : t('settings.printMethodBrowserHint')}
                   </p>
                 </div>
+                <div className="flex items-center justify-between gap-4 border-t border-gray-100 pt-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900">{t('settings.kotPrintingEnabledToggle', { defaultValue: 'KOT Ticket Printing' })}</p>
+                    <p className="text-sm text-gray-500">{t('settings.kotPrintingEnabledToggleHint', { defaultValue: 'Allow KOT tickets to print at all, automatically or manually. Turn this off if this business doesn’t use a KOT printer.' })}</p>
+                  </div>
+                  <Toggle value={kotPrintingEnabledSetting} onChange={(v) => { if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v); }} />
+                </div>
                 <div className={`flex items-center justify-between gap-4 ${!kotPrintingEnabledSetting ? 'opacity-50' : ''}`}>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900">{t('settings.autoPrintKot')}</p>
@@ -3514,6 +3520,14 @@ export default function SettingsPage() {
                     onChange={(v) => { if (kotPrintingEnabledSetting) setPrintingForm((p) => ({ ...p, autoPrintKot: v })); }}
                   />
                 </div>
+                {!kdsEnabledSetting && !kotPrintingEnabledSetting && (
+                  <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-amber-800">
+                      {t('settings.kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
+                    </p>
+                  </div>
+                )}
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900">{t('settings.autoPrintBill')}</p>
@@ -3537,14 +3551,38 @@ export default function SettingsPage() {
                   </div>
                   <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }))} />
                 </div>
-                <div>
-                  <p className="font-medium text-gray-900 mb-2">{t('settings.webPrintSize')}</p>
-                  <select value={printingForm.webPrintSize}
-                    onChange={(e) => setPrintingForm((p) => ({ ...p, webPrintSize: e.target.value as PaperSize }))}
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand">
-                    <option value="thermal58">{t('settings.paperSize58')}</option>
-                    <option value="thermal80">{t('settings.paperSize80')}</option>
-                  </select>
+                <div className="pt-4 border-t border-gray-100">
+                  <p className="font-medium text-gray-900 mb-1">{t('settings.billContent')}</p>
+                  <p className="text-sm text-gray-500 mb-3">{t('settings.billContentHint')}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
+                    {([
+                      { label: t('settings.showRestaurantName'), key: 'billShowName' as const },
+                      { label: t('settings.showRestaurantAddress'), key: 'billShowAddress' as const },
+                      { label: t('settings.showRestaurantPhone'), key: 'billShowPhone' as const },
+                      { label: t('settings.showTaxId'), key: 'billShowTaxId' as const },
+                      { label: t('settings.showTaxBreakdown'), key: 'billShowTaxBreakdown' as const },
+                      { label: t('settings.showCustomerName'), key: 'billShowCustomerName' as const },
+                      { label: t('settings.showCustomerPhone'), key: 'billShowCustomerPhone' as const },
+                      { label: t('settings.showTableNumber'), key: 'billShowTableNumber' as const },
+                    ] as const).map((item) => (
+                      <div key={item.key} className="flex min-h-11 items-center justify-between gap-3 py-1">
+                        <span className="text-sm text-gray-700">{item.label}</span>
+                        <Toggle
+                          value={printingForm[item.key]}
+                          onChange={(value) => setPrintingForm((previous) => ({ ...previous, [item.key]: value }))}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-4 border-t border-gray-100 pt-4">
+                    <label htmlFor="footer-message" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.footerMessage')}</label>
+                    <textarea id="footer-message" rows={2}
+                      placeholder={t('settings.footerMessagePlaceholder')}
+                      value={billForm.billFooterMessage}
+                      onChange={(e) => setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }))}
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
+                    <p className="text-xs text-gray-400 mt-1">{t('settings.footerMessageHint')}</p>
+                  </div>
                 </div>
               </div>
             </div>
@@ -3570,7 +3608,7 @@ export default function SettingsPage() {
                 <FileText size={20} className="text-gray-500" />
                 <h2 className="font-semibold text-gray-900">{t('settings.billTemplate')}</h2>
               </div>
-              <div className="grid grid-cols-1 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {TEMPLATE_CARDS.map((card) => {
                   const isSelected = billForm.billTemplate === card.id;
                   return (
@@ -3595,18 +3633,6 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">{t('settings.footerMessage')}</h2>
-              <div>
-                <label htmlFor="footer-message" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.footerMessage')}</label>
-                <textarea id="footer-message" rows={2}
-                  placeholder={t('settings.footerMessagePlaceholder')}
-                  value={billForm.billFooterMessage}
-                  onChange={(e) => setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }))}
-                  className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
-                <p className="text-xs text-gray-400 mt-1">{t('settings.footerMessageHint')}</p>
-              </div>
-            </div>
           </div>
           </div>
         </TabsContent>

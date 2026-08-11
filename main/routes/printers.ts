@@ -1,7 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
 import { v4 as uuidv4 } from 'uuid';
-import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters } from '../printers/thermal';
+import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 
@@ -49,7 +49,15 @@ function printerShape(printer: any) {
   if (!printer) return printer;
   const profile = resolvePrinterProfile(printer);
   return {
-    ...printer,
+    id: printer.id,
+    name: printer.name,
+    connection_type: printer.connection_type,
+    ip_address: printer.ip_address,
+    port: printer.port,
+    is_default: printer.is_default,
+    paper_width: printer.paper_width,
+    created_at: printer.created_at,
+    updated_at: printer.updated_at,
     profile_id: profile.id,
     profile_name: `${profile.make} ${profile.model}`,
   };
@@ -111,7 +119,7 @@ router.get('/:id', (req: Request, res: Response) => {
 // POST /api/printers — create
 router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { name, connection_type, ip_address, port, usb_device_path, paper_width, is_default } = req.body;
+    const { name, connection_type, ip_address, port, paper_width, is_default } = req.body;
 
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (typeof name !== 'string' || !PRINTER_NAME_REGEX.test(name)) {
@@ -139,13 +147,12 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       const shouldBeDefault = Boolean(is_default) || isFirstPrinter;
       if (shouldBeDefault) db.prepare('UPDATE printers SET is_default = 0').run();
       db.prepare(`
-        INSERT INTO printers (id, name, connection_type, ip_address, port, usb_device_path, paper_width, is_default, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, is_default, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, name, connection_type,
         ip_address ?? null,
         port ?? 9100,
-        usb_device_path ?? null,
         paper_width ?? 'cols-42',
         shouldBeDefault ? 1 : 0,
         now(), now()
@@ -168,7 +175,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const existing = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
     if (!existing) return res.status(404).json({ error: 'Printer not found' });
 
-    const { name, connection_type, ip_address, port, usb_device_path, paper_width, is_default } = req.body;
+    const { name, connection_type, ip_address, port, paper_width, is_default } = req.body;
 
     const fieldError = validatePrinterFields(req.body, existing);
     if (fieldError) return res.status(400).json({ error: fieldError });
@@ -179,7 +186,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       const becameDefault = is_default === true;
       db.prepare(`
         UPDATE printers SET
-          name = ?, connection_type = ?, ip_address = ?, port = ?, usb_device_path = ?,
+          name = ?, connection_type = ?, ip_address = ?, port = ?,
           paper_width = ?, is_default = ?, updated_at = ?
         WHERE id = ?
       `).run(
@@ -187,7 +194,6 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         updatedConnectionType,
         updatedIpAddress === undefined ? null : updatedIpAddress,
         port !== undefined ? port : existing.port,
-        usb_device_path !== undefined ? usb_device_path : existing.usb_device_path,
         paper_width !== undefined ? paper_width : existing.paper_width,
         becameDefault ? 1 : (is_default === false ? 0 : existing.is_default),
         now(), req.params.id
@@ -296,8 +302,8 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
 // POST /api/printers/print-bill — print bill via backend (desktop app)
 router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
   try {
-    const { billId, orderId, useUnicode = false, isReprint = false } = req.body;
-    console.log('[Print Bill] Request received', { useUnicode, isReprint });
+    const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
+    console.log('[Print Bill] Request received', { useUnicode, isReprint, preview });
     
     if (!billId && !orderId) {
       console.log('[Print Bill] Rejected: missing bill or order reference');
@@ -387,7 +393,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     }
 
     const business = {
-      name: settings.business_name || 'Store',
+      name: settings.business_name || '',
       address: settings.business_address || '',
       phone: settings.business_phone || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
@@ -404,9 +410,31 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
       points_redeemed: pointsRedeemed,
       points_balance: pointsBalance,
       trim_decimals: settings.printer_trim_decimals === 'true',
+      show_name: settings.bill_show_name !== 'false',
+      show_address: settings.bill_show_address !== 'false',
+      show_phone: settings.bill_show_phone !== 'false',
+      show_tax_id: settings.bill_show_tax_id === 'true',
+      show_tax_breakdown: settings.bill_show_tax_breakdown !== 'false',
+      show_customer_name: settings.bill_show_customer_name !== 'false',
+      show_customer_phone: settings.bill_show_customer_phone !== 'false',
+      show_table_number: settings.bill_show_table_number !== 'false',
+      footer_note: settings.bill_footer_message || '',
     };
     const billTemplate = settings.bill_template;
     console.log('[Print Bill] Preparing receipt', { template: billTemplate || 'classic' });
+
+    if (preview === true) {
+      const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint);
+      return res.json({
+        success: true,
+        preview: true,
+        columns: prepared.columns,
+        printer: { id: prepared.printer.id, name: prepared.printer.name },
+        text: escPosToText(prepared.data),
+        escpos_base64: prepared.data.toString('base64'),
+        warnings: prepared.warnings,
+      });
+    }
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');

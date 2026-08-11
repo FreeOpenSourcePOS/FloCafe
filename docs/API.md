@@ -814,7 +814,7 @@ Create a printer. `connection_type` must be `network`, `usb`, or `webusb`. Netwo
 }
 ```
 
-USB configurations may include `usb_device_path`. A WebUSB entry stores the paper-width preference; the browser selects the physical device.
+A WebUSB entry stores the paper-width preference; the browser selects the physical device.
 
 ### PUT `/api/printers/:id`
 

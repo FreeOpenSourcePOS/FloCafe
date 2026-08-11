@@ -3508,6 +3508,60 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `).run(now());
     },
   },
+  {
+    version: 63,
+    name: 'seed_printer_trim_decimals_setting',
+    up: () => {
+      // Keep receipt amount formatting unchanged for upgraded stores unless
+      // the merchant explicitly enables trimmed decimals in printer settings.
+      db.prepare(`
+        INSERT OR IGNORE INTO settings (key, value, updated_at)
+        VALUES ('printer_trim_decimals', 'false', ?)
+      `).run(now());
+    },
+  },
+  {
+    version: 64,
+    name: 'drop_unused_printer_usb_device_path',
+    up: () => {
+      if (getColumns(db, 'printers').includes('usb_device_path')) {
+        db.exec('ALTER TABLE printers DROP COLUMN usb_device_path');
+      }
+    },
+  },
+  {
+    version: 65,
+    name: 'seed_bill_content_visibility_settings',
+    up: () => {
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO settings (key, value, updated_at)
+        VALUES (?, ?, ?)
+      `);
+      const defaults = [
+        ['bill_show_name', 'true'],
+        ['bill_show_address', 'true'],
+        ['bill_show_phone', 'true'],
+        ['bill_show_tax_id', 'false'],
+        ['bill_show_tax_breakdown', 'true'],
+        ['bill_show_customer_name', 'true'],
+        ['bill_show_customer_phone', 'true'],
+        ['bill_show_table_number', 'true'],
+      ];
+      for (const [key, value] of defaults) insert.run(key, value, now());
+    },
+  },
+  {
+    version: 66,
+    name: 'seed_bill_template_settings',
+    up: () => {
+      const insert = db.prepare(`
+        INSERT OR IGNORE INTO settings (key, value, updated_at)
+        VALUES (?, ?, ?)
+      `);
+      insert.run('bill_template', 'classic', now());
+      insert.run('bill_footer_message', '', now());
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -3922,7 +3976,6 @@ function createSchema(): void {
       connection_type TEXT NOT NULL CHECK (connection_type IN ('network', 'usb', 'webusb')),
       ip_address TEXT,
       port INTEGER DEFAULT 9100,
-      usb_device_path TEXT,
       is_default INTEGER DEFAULT 0,
       paper_width TEXT DEFAULT '80mm',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -4250,6 +4303,17 @@ function seedInstallDefaults(): void {
   insert('kds_enabled', 'true');
   insert('server_app_enabled', 'true');
   insert('kot_printing_enabled', 'true');
+  insert('printer_trim_decimals', 'false');
+  insert('bill_template', 'classic');
+  insert('bill_footer_message', '');
+  insert('bill_show_name', 'true');
+  insert('bill_show_address', 'true');
+  insert('bill_show_phone', 'true');
+  insert('bill_show_tax_id', 'false');
+  insert('bill_show_tax_breakdown', 'true');
+  insert('bill_show_customer_name', 'true');
+  insert('bill_show_customer_phone', 'true');
+  insert('bill_show_table_number', 'true');
   insert('order_number_prefix', 'ORD');
   insert('order_number_include_date', 'true');
   insert('order_number_reset_daily', 'true');

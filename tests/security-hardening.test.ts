@@ -146,6 +146,9 @@ async function main() {
   db.prepare(`
     INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('cloud_deletion_status_token', 'super-secret-deletion-token', ?)
   `).run(now());
+  db.prepare(`
+    INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('cloud_last_error', 'legacy-upstream-token-reflection', ?)
+  `).run(now());
   const exportRes = await request(app).get('/api/db/export').set(ownerAuth);
   assertEqual(exportRes.status, 200, 'owner can call /api/db/export');
 
@@ -167,6 +170,11 @@ async function main() {
     exportBody.redacted_fields.includes('settings.cloud_deletion_status_token'),
     'cloud_deletion_status_token listed in redacted_fields',
   );
+
+  const cloudLastErrorRow = settingsRows.find((r: any) => r.key === 'cloud_last_error');
+  assert(!!cloudLastErrorRow, 'cloud_last_error setting is present to be redacted');
+  assert(cloudLastErrorRow?.value === '[REDACTED]', 'legacy cloud_last_error is redacted in export');
+  assert(exportBody.redacted_fields.includes('settings.cloud_last_error'), 'cloud_last_error listed in redacted_fields');
 
   // password and pin_hash must be absent from all user rows
   const userRows: Record<string, any>[] = exportBody.data?.users ?? [];

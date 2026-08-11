@@ -28,9 +28,12 @@ const SENSITIVE_SETTING_KEYS = new Set([
   'jwt_secret',
   'cloud_api_key',
   'cloud_device_secret',
+  'cloud_deletion_status_token',
+  'cloud_last_error',
 ]);
 
 function maskSetting(key: string, value: string): string {
+  if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
   if (!SENSITIVE_SETTING_KEYS.has(key)) return value;
   return value ? `****${value.slice(-4)}` : '';
 }

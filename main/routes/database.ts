@@ -22,6 +22,9 @@ const EXPORT_SETTINGS_REDACT = new Set([
   // (see main/services/cloud-sync.ts) — same exposure risk as the cloud
   // credentials above.
   'cloud_deletion_status_token',
+  // Legacy builds persisted arbitrary upstream errors here; keep exports
+  // from carrying that text even before an upgraded database is reopened.
+  'cloud_last_error',
 ]);
 
 // User columns stripped from export — hashes must never leave the server.

@@ -97,10 +97,30 @@ export default function AppSidebar() {
 
   useEffect(() => {
     if (role !== 'owner') return;
-    api.get('/settings/cloud/account')
-      .then((res) => setEmailNeedsAttention((Boolean(res.data?.email) && !res.data?.verified) || res.data?.deletion_request?.status === 'pending'))
-      .catch(() => setEmailNeedsAttention(false));
-  }, [role, pathname]);
+    let active = true;
+    const refreshCloudAttention = async () => {
+      try {
+        const [accountResponse, cloudResponse] = await Promise.all([
+          api.get('/settings/cloud/account'),
+          api.get('/settings/cloud'),
+        ]);
+        if (!active) return;
+        const deletionStatus = accountResponse.data?.deletion_request?.status || cloudResponse.data?.cloud_deletion_status;
+        setEmailNeedsAttention(
+          (accountResponse.data?.cloud_account_available !== false && Boolean(accountResponse.data?.email) && !accountResponse.data?.verified)
+          || ['pending', 'processing', 'failed'].includes(deletionStatus)
+        );
+      } catch {
+        if (active) setEmailNeedsAttention(false);
+      }
+    };
+    void refreshCloudAttention();
+    window.addEventListener('flo:cloud-account-status-changed', refreshCloudAttention);
+    return () => {
+      active = false;
+      window.removeEventListener('flo:cloud-account-status-changed', refreshCloudAttention);
+    };
+  }, [role]);
 
   return (
     <Sidebar collapsible="icon">

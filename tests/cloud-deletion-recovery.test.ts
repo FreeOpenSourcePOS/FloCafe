@@ -50,7 +50,7 @@ async function run() {
       }
       if (url.endsWith('/api/pos/cloud-data/delete')) {
         if (deleteMode === 'transport') throw new Error('simulated connection drop after upstream accepted the request');
-        if (deleteMode === 'accepted') return new Response(JSON.stringify({ status: 'deleted' }), { status: 200 });
+        if (deleteMode === 'accepted') return new Response(JSON.stringify({ status: 'deleted', status_token: 'must-not-leak' }), { status: 200 });
         if (deleteMode === 'pending-missing') return new Response(JSON.stringify({ status: 'pending' }), { status: 200 });
         if (deleteMode === 'unknown') return new Response(JSON.stringify({ status: 'queued', request_id: 'queued-id', status_token: 'queued-token' }), { status: 200 });
         return new Response(JSON.stringify({ error: 'simulated upstream failure' }), { status: 503 });
@@ -66,6 +66,7 @@ async function run() {
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_connected'").get() as { value: string }).value, 'false');
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_services_disabled_by_user'").get() as { value: string }).value, 'true');
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_deletion_outcome'").get() as { value: string }).value, 'rejected');
+    assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_last_error'").get() as { value: string }).value, 'Cloud data deletion failed');
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_deletion_request_id'").get() as { value?: string } | undefined)?.value || '', '');
 
     // Missing tracking details and unknown statuses become a blocked but
@@ -99,7 +100,9 @@ async function run() {
     await assert.rejects(() => cloudSync.register(), /Cloud deletion is pending/);
 
     deleteMode = 'accepted';
-    await cloudSync.deleteCloudData();
+    const deletionResult = await cloudSync.deleteCloudData();
+    assert.equal((deletionResult as any).status, 'deleted');
+    assert.equal(!('status_token' in (deletionResult as any)), true, 'cloud deletion result does not expose the status token');
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_deletion_status'").get() as { value: string }).value, 'deleted');
     assert.equal((db.prepare("SELECT value FROM settings WHERE key = 'cloud_api_key'").get() as { value: string }).value, '');
     console.log('✅ Cloud deletion failure recovery tests passed');

@@ -27,6 +27,12 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 
+const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
+
+function notifyCloudAccountStatusChanged(): void {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(CLOUD_ACCOUNT_STATUS_CHANGED_EVENT));
+}
+
 const CLASSIC_PREVIEW = `   STORE NAME
    Jane Doe
   +91 98765...
@@ -293,15 +299,23 @@ export default function SettingsPage() {
   // The mount effect below always fetches backups unconditionally, so this starts true
   // rather than being set synchronously inside that effect.
   const [backupsLoading, setBackupsLoading] = useState(true);
-  const [cloudAccount, setCloudAccount] = useState<{ email?: string; verified?: boolean; verified_at?: string | null; verification_sent_at?: string | null; product_updates?: boolean; marketing?: boolean; deletion_request?: { id?: string; status?: 'pending' | 'approved' | 'rejected' | 'cancelled'; requested_at?: string; reviewed_at?: string | null; decision_note?: string | null } | null } | null>(null);
+  const [cloudAccount, setCloudAccount] = useState<{ email?: string | null; cloud_account_available?: boolean; verified?: boolean; verified_at?: string | null; verification_sent_at?: string | null; product_updates?: boolean; marketing?: boolean; deletion_request?: { id?: string; status?: 'pending' | 'processing' | 'approved' | 'completed' | 'deleted' | 'failed' | 'rejected' | 'cancelled'; requested_at?: string; reviewed_at?: string | null; decision_note?: string | null } | null } | null>(null);
   const [cloudAccountBusy, setCloudAccountBusy] = useState(false);
+  const [cloudAccountLoadFailed, setCloudAccountLoadFailed] = useState(false);
+  const [refreshingDeletionStatus, setRefreshingDeletionStatus] = useState(false);
+  const cloudAccountAvailable = !cloudAccountLoadFailed && cloudAccount?.cloud_account_available !== false;
+  const cloudDeletionStatus = cloudAccount?.deletion_request?.status || '';
+  const cloudDeletionPending = cloudDeletionStatus === 'pending';
+  const cloudDeletionNeedsResolution = ['pending', 'processing', 'failed'].includes(cloudDeletionStatus);
+  const cloudDeletionCanCancel = ['pending', 'processing'].includes(cloudDeletionStatus) && Boolean(cloudAccount?.deletion_request?.id);
 
   const fetchCloudAccount = async () => {
     try {
       const { data } = await api.get('/settings/cloud/account');
       setCloudAccount(data);
+      setCloudAccountLoadFailed(false);
     } catch {
-      setCloudAccount(null);
+      setCloudAccountLoadFailed(true);
     }
   };
 
@@ -352,8 +366,11 @@ export default function SettingsPage() {
       .finally(() => setBackupsLoading(false));
     if (currentTenant?.role === 'owner') {
       api.get('/settings/cloud/account')
-        .then(({ data }) => setCloudAccount(data))
-        .catch(() => setCloudAccount(null));
+        .then(({ data }) => {
+          setCloudAccount(data);
+          setCloudAccountLoadFailed(false);
+        })
+        .catch(() => setCloudAccountLoadFailed(true));
     }
 
     if (searchParams?.get('action') === 'health-check') {
@@ -478,10 +495,13 @@ export default function SettingsPage() {
       try {
         await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
         toast.success('Cloud deletion request submitted for manual review. Cloud services have been stopped on this device.');
-        await fetchCloudAccount();
+        await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+        notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
       } catch (err: unknown) {
+        await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+        notifyCloudAccountStatusChanged();
         const error = err as { response?: { data?: { error?: string } } };
         return { success: false, error: error.response?.data?.error || 'Cloud data deletion failed' };
       }
@@ -491,7 +511,8 @@ export default function SettingsPage() {
       try {
         await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
         toast.success('Cloud deletion request cancelled. Cloud services remain off until you explicitly re-enable them.');
-        await fetchCloudAccount();
+        await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+        notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
       } catch (err: unknown) {
@@ -1109,15 +1130,64 @@ export default function SettingsPage() {
   const [savedCloudSettings, setSavedCloudSettings] = useState(cloudSettings);
   const [cloudStatus, setCloudStatus] = useState({
     cloud_registration_status: 'unregistered',
+    cloud_services_disabled_by_user: false,
     cloud_connected: false,
     cloud_relay_mode: 'disconnected',
     cloud_last_heartbeat: null as string | null,
     cloud_last_error: null as string | null,
+    cloud_deletion_status: '',
   });
    
   const [savingCloud, setSavingCloud] = useState(false);
   const [registeringCloud, setRegisteringCloud] = useState(false);
   const [showInitializeCloudConfirm, setShowInitializeCloudConfirm] = useState(false);
+
+  const cloudServicesStopped = cloudStatus.cloud_services_disabled_by_user;
+  const cloudDeletionFinal = cloudStatus.cloud_registration_status === 'deleted' || ['approved', 'completed', 'deleted'].includes(cloudStatus.cloud_deletion_status);
+  const cloudDeletionNeedsAction = !cloudDeletionFinal && (cloudDeletionNeedsResolution || ['processing', 'failed'].includes(cloudStatus.cloud_deletion_status));
+
+  const refreshCloudStatus = async () => {
+    try {
+      const { data } = await api.get('/settings/cloud');
+      setCloudStatus({
+        cloud_registration_status: data.cloud_registration_status || 'unregistered',
+        cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
+        cloud_connected: !!data.cloud_connected,
+        cloud_relay_mode: data.cloud_relay_mode || 'disconnected',
+        cloud_last_heartbeat: data.cloud_last_heartbeat || null,
+        cloud_last_error: data.cloud_last_error || null,
+        cloud_deletion_status: data.cloud_deletion_status || '',
+      });
+      setCloudSettings((previous) => ({
+        ...previous,
+        cloud_sync_enabled: !!data.cloud_sync_enabled,
+        cloud_orders_enabled: !!data.cloud_orders_enabled,
+        cloud_last_sync: data.cloud_last_sync || null,
+      }));
+      setSavedCloudSettings((previous) => ({
+        ...previous,
+        cloud_sync_enabled: !!data.cloud_sync_enabled,
+        cloud_orders_enabled: !!data.cloud_orders_enabled,
+        cloud_last_sync: data.cloud_last_sync || null,
+      }));
+    } catch {
+      // Keep the last known status if the local settings request fails.
+    }
+  };
+
+  const refreshDeletionStatus = async () => {
+    setRefreshingDeletionStatus(true);
+    try {
+      await api.get('/settings/cloud/delete-data/status');
+      await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
+      notifyCloudAccountStatusChanged();
+      toast.success('Cloud deletion status refreshed');
+    } catch {
+      toast.error('Could not refresh cloud deletion status');
+    } finally {
+      setRefreshingDeletionStatus(false);
+    }
+  };
 
   const [telemetryEnabled, setTelemetryEnabled] = useState(false);
   const [savingTelemetry, setSavingTelemetry] = useState(false);
@@ -1370,10 +1440,12 @@ export default function SettingsPage() {
       setSavedCloudSettings(settings);
       setCloudStatus({
         cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
+        cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
         cloud_connected: !!res.data.cloud_connected,
         cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
         cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
         cloud_last_error: res.data.cloud_last_error || null,
+        cloud_deletion_status: res.data.cloud_deletion_status || '',
       });
 
       // Mobile pairing requires cloud registration — skip the requests entirely
@@ -1432,13 +1504,27 @@ export default function SettingsPage() {
   const saveCloud = async (silent = false) => {
     setSavingCloud(true);
     try {
+      const resumingStoppedCloud = cloudServicesStopped && cloudSettings.cloud_sync_enabled;
       const res = await api.put('/settings/cloud', {
         cloud_sync_enabled: cloudSettings.cloud_sync_enabled,
-        cloud_orders_enabled: cloudSettings.cloud_orders_enabled,
+        cloud_orders_enabled: resumingStoppedCloud ? true : cloudSettings.cloud_orders_enabled,
+        cloud_reports_enabled: resumingStoppedCloud ? true : undefined,
+        cloud_command_polling_enabled: resumingStoppedCloud ? true : undefined,
       });
       const next = { ...cloudSettings, ...res.data };
       setCloudSettings(next);
       setSavedCloudSettings(next);
+      setCloudStatus({
+        cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
+        cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
+        cloud_connected: !!res.data.cloud_connected,
+        cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
+        cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
+        cloud_last_error: res.data.cloud_last_error || null,
+        cloud_deletion_status: res.data.cloud_deletion_status || '',
+      });
+      await fetchCloudAccount();
+      notifyCloudAccountStatusChanged();
       if (!silent) toast.success(t('settings.cloudSaved'));
     } catch (err) {
       if (!silent) toast.error(t('settings.cloudSaveFailed'));
@@ -1458,16 +1544,20 @@ export default function SettingsPage() {
       const res = await api.post('/settings/cloud/register', { email });
       setCloudStatus({
         cloud_registration_status: res.data.cloud_registration_status || 'unregistered',
+        cloud_services_disabled_by_user: !!res.data.cloud_services_disabled_by_user,
         cloud_connected: !!res.data.cloud_connected,
         cloud_relay_mode: res.data.cloud_relay_mode || 'disconnected',
         cloud_last_heartbeat: res.data.cloud_last_heartbeat || null,
         cloud_last_error: res.data.cloud_last_error || null,
+        cloud_deletion_status: res.data.cloud_deletion_status || '',
       });
       setCloudSettings((prev) => ({
         ...prev,
         cloud_api_key: res.data.cloud_api_key || prev.cloud_api_key,
         cloud_store_id: res.data.cloud_store_id || prev.cloud_store_id,
       }));
+      await fetchCloudAccount();
+      notifyCloudAccountStatusChanged();
       if (res.data.cloud_registration_status === 'registered') {
         toast.success(t('settings.cloudRegistrationSuccess'));
       }
@@ -1934,7 +2024,7 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupAccount')}</p>
             </div>
-            <SettingsNavItem label={t('settings.account')} value="account" active={activeTab} onClick={setActiveTab} attention={Boolean((cloudAccount?.email && !cloudAccount?.verified) || cloudAccount?.deletion_request?.status === 'pending')} />
+            <SettingsNavItem label={t('settings.account')} value="account" active={activeTab} onClick={setActiveTab} attention={cloudDeletionNeedsAction || (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))} />
             <SettingsNavItem label={t('settings.privacy')} value="privacy" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabUpdates')} value="updates" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('settings.tabAbout')} value="about" active={activeTab} onClick={setActiveTab} />
@@ -2987,18 +3077,21 @@ export default function SettingsPage() {
               </div>
             </div>
             {currentTenant?.role === 'owner' && (
-              <div className={`rounded-xl border p-6 ${cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white'}`}>
+              <div className={`rounded-xl border p-6 ${cloudAccountAvailable && cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h2 className="font-semibold text-gray-900">Contact email</h2>
-                    <p className="mt-1 text-sm text-gray-600">{cloudAccount?.email || user?.email || 'No cloud contact email'}</p>
+                    <p className="mt-1 text-sm text-gray-600">{cloudAccountLoadFailed ? 'Unable to load cloud account status' : cloudAccountAvailable ? (cloudAccount?.email || user?.email || 'No cloud contact email') : 'Cloud account services are currently unavailable'}</p>
                   </div>
-                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {cloudAccount?.verified ? 'Verified' : 'Pending verification'}
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!cloudAccountAvailable ? 'bg-gray-100 text-gray-600' : cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {cloudAccountLoadFailed ? 'Status unavailable' : !cloudAccountAvailable ? 'Unavailable' : cloudAccount?.verified ? 'Verified' : 'Pending verification'}
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-gray-600">Verification is important for product service notices, security updates, and other account communication.</p>
-                {!cloudAccount?.verified && (
+                <p className="mt-3 text-sm text-gray-600">{cloudAccountLoadFailed ? 'Check the local API connection and retry. No cloud account changes were made.' : cloudAccountAvailable ? 'Verification is important for product service notices, security updates, and other account communication.' : cloudDeletionPending ? 'A cloud deletion request is pending review. Cancel it or wait for review before re-enabling Cloud Services.' : cloudDeletionStatus === 'processing' ? 'Cloud deletion is being processed. Refresh its status or cancel it if cancellation is available.' : cloudDeletionStatus === 'failed' || cloudStatus.cloud_deletion_status === 'failed' ? 'The cloud deletion request needs attention. Refresh its status or retry the request from the privacy controls.' : 'Enable Cloud Services from Mobile Access to use cloud account features.'}</p>
+                {cloudAccountLoadFailed && (
+                  <Button variant="outline" className="mt-4" onClick={() => void fetchCloudAccount()}>Retry</Button>
+                )}
+                {cloudAccountAvailable && !cloudAccount?.verified && (
                   <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
                     setCloudAccountBusy(true);
                     try { await api.post('/settings/cloud/account/verification'); toast.success('Verification email queued'); await fetchCloudAccount(); }
@@ -3009,11 +3102,13 @@ export default function SettingsPage() {
                     finally { setCloudAccountBusy(false); }
                   }}>{cloudAccountBusy ? 'Sending…' : 'Send verification email'}</Button>
                 )}
-                <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
-                  <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
-                  <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
-                  <p className="text-xs text-gray-500">Essential service and security notices are separate from these optional subscriptions.</p>
-                </div>
+                {cloudAccountAvailable && (
+                  <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <p className="text-xs text-gray-500">Essential service and security notices are separate from these optional subscriptions.</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -3062,7 +3157,7 @@ export default function SettingsPage() {
                 <h2 className="font-semibold text-gray-900">Cloud privacy controls</h2>
                 <p className="mt-2 text-sm text-gray-600">Stopping cloud services is reversible. A cloud deletion request is reviewed manually in FloAdmin before data is permanently removed. Neither action deletes your local orders, bills, customers, products, or database.</p>
                 {cloudAccount?.deletion_request && (
-                  <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' ? 'border-green-200 bg-green-50 text-green-800' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
+                  <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' || cloudAccount.deletion_request.status === 'processing' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' || cloudAccount.deletion_request.status === 'completed' || cloudAccount.deletion_request.status === 'deleted' ? 'border-green-200 bg-green-50 text-green-800' : cloudAccount.deletion_request.status === 'failed' ? 'border-red-200 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
                     <p className="font-semibold">Deletion request: {cloudAccount.deletion_request.status}</p>
                     {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs">{cloudAccount.deletion_request.id}</p>}
                     {cloudAccount.deletion_request.decision_note && <p className="mt-2">{cloudAccount.deletion_request.decision_note}</p>}
@@ -3071,16 +3166,39 @@ export default function SettingsPage() {
                 <div className="mt-4 flex flex-wrap gap-3">
                   <Button variant="outline" onClick={async () => {
                     if (!await confirm('Stop all FloCafe cloud services, identified diagnostics, and future anonymous telemetry on this device? Local POS data will remain available.')) return;
-                    try { await api.post('/settings/cloud/stop-all'); toast.success('All cloud services and telemetry stopped'); }
+                    try {
+                      const { data } = await api.post('/settings/cloud/stop-all');
+                      setCloudStatus({
+                        cloud_registration_status: data.cloud_registration_status || 'unregistered',
+                        cloud_services_disabled_by_user: !!data.cloud_services_disabled_by_user,
+                        cloud_connected: !!data.cloud_connected,
+                        cloud_relay_mode: data.cloud_relay_mode || 'disconnected',
+                        cloud_last_heartbeat: data.cloud_last_heartbeat || null,
+                        cloud_last_error: data.cloud_last_error || null,
+                        cloud_deletion_status: data.cloud_deletion_status || '',
+                      });
+                      setCloudSettings((previous) => ({ ...previous, cloud_sync_enabled: !!data.cloud_sync_enabled, cloud_orders_enabled: !!data.cloud_orders_enabled, cloud_last_sync: data.cloud_last_sync || null }));
+                      setSavedCloudSettings((previous) => ({ ...previous, cloud_sync_enabled: !!data.cloud_sync_enabled, cloud_orders_enabled: !!data.cloud_orders_enabled, cloud_last_sync: data.cloud_last_sync || null }));
+                      setTelemetryEnabled(false);
+                      setDiagnosticsConsent(false);
+                      await fetchCloudAccount();
+                      notifyCloudAccountStatusChanged();
+                      toast.success('All cloud services and telemetry stopped');
+                    }
                     catch { toast.error('Could not stop cloud services'); }
                   }}><CloudOff size={16} className="mr-2" />Stop all cloud services</Button>
-                  <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'approved'} onClick={() => {
+                  {!cloudDeletionFinal && <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'processing' || cloudAccount?.deletion_request?.status === 'approved' || cloudStatus.cloud_deletion_status === 'processing'} onClick={() => {
                     const phrase = window.prompt('This submits a deletion request to FloAdmin for manual review and immediately stops cloud services here. After approval, store-linked server data is permanently deleted. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
                     if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
                     else if (phrase !== null) toast.error('Confirmation phrase did not match');
-                  }}><Trash2 size={16} className="mr-2" />Request cloud data deletion</Button>
-                  {cloudAccount?.deletion_request?.status === 'pending' && (
-                    <Button variant="outline" onClick={() => setPinGate({ mode: 'cancel-cloud-deletion' })}>Cancel deletion request</Button>
+                  }}><Trash2 size={16} className="mr-2" />Request cloud data deletion</Button>}
+                  {cloudDeletionNeedsAction && (
+                    <>
+                      <Button variant="outline" onClick={() => void refreshDeletionStatus()} disabled={refreshingDeletionStatus}>
+                        {refreshingDeletionStatus ? 'Refreshing…' : 'Refresh deletion status'}
+                      </Button>
+                      {cloudDeletionCanCancel && <Button variant="outline" onClick={() => setPinGate({ mode: 'cancel-cloud-deletion' })}>Cancel deletion request</Button>}
+                    </>
                   )}
                 </div>
                 <p className="mt-3 text-xs text-gray-500">Anonymous telemetry has no store or email link, so existing anonymous events cannot be identified as yours. This action stops future telemetry and rotates the anonymous identifier.</p>
@@ -3953,26 +4071,36 @@ export default function SettingsPage() {
                 <>
                   <div className="rounded-lg border border-gray-100 px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-2">
-                  {cloudStatus.cloud_registration_status === 'registered' ? (
+                  {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped ? (
                     <CheckCircle2 size={16} className="text-green-600 shrink-0" />
                   ) : (
                     <CloudOff size={16} className="text-gray-400 shrink-0" />
                   )}
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      {cloudStatus.cloud_registration_status === 'registered' && (cloudStatus.cloud_connected ? t('settings.connectedToFloadmin') : t('settings.registeredReconnecting'))}
+                      {cloudStatus.cloud_registration_status === 'registered' && cloudServicesStopped && 'Cloud services stopped'}
+                      {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped && (cloudStatus.cloud_connected ? t('settings.connectedToFloadmin') : t('settings.registeredReconnecting'))}
                       {cloudStatus.cloud_registration_status === 'rejected' && t('settings.registrationRejected')}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && (cloudStatus.cloud_last_error || cloudStatus.cloud_deletion_status === 'failed') && 'Cloud deletion request failed'}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && cloudStatus.cloud_deletion_status === 'processing' && 'Cloud deletion processing'}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && !cloudStatus.cloud_last_error && cloudStatus.cloud_deletion_status !== 'failed' && cloudStatus.cloud_deletion_status !== 'processing' && 'Cloud deletion request pending'}
+                      {cloudStatus.cloud_registration_status === 'deleted' && 'Cloud data deleted'}
                       {(cloudStatus.cloud_registration_status === 'unregistered' || cloudStatus.cloud_registration_status === 'registration_failed') && t('settings.notRegistered')}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {cloudStatus.cloud_registration_status === 'registered' && (cloudStatus.cloud_last_heartbeat ? t('settings.liveChannelHeartbeat', { mode: cloudStatus.cloud_relay_mode.replace('_', ' '), time: formatTime(cloudStatus.cloud_last_heartbeat) }) : t('settings.liveChannel', { mode: cloudStatus.cloud_relay_mode.replace('_', ' ') }))}
+                      {cloudStatus.cloud_registration_status === 'registered' && cloudServicesStopped && 'Enable Cloud Services below and save changes to resume cloud services.'}
+                      {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped && (cloudStatus.cloud_last_heartbeat ? t('settings.liveChannelHeartbeat', { mode: cloudStatus.cloud_relay_mode.replace('_', ' '), time: formatTime(cloudStatus.cloud_last_heartbeat) }) : t('settings.liveChannel', { mode: cloudStatus.cloud_relay_mode.replace('_', ' ') }))}
                       {cloudStatus.cloud_registration_status === 'rejected' && t('settings.registrationContactSupport')}
                       {cloudStatus.cloud_registration_status === 'registration_failed' && (cloudStatus.cloud_last_error ? t('settings.registrationLastError', { error: cloudStatus.cloud_last_error }) : t('settings.registrationLastFailed'))}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && (cloudStatus.cloud_last_error || cloudStatus.cloud_deletion_status === 'failed') && 'The deletion request failed. You can refresh its status or retry the request from the privacy controls below.'}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && cloudStatus.cloud_deletion_status === 'processing' && 'Cloud deletion is being processed. Refresh its status or cancel it if cancellation is available.'}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && !cloudStatus.cloud_last_error && cloudStatus.cloud_deletion_status !== 'failed' && cloudStatus.cloud_deletion_status !== 'processing' && 'Cloud services remain stopped until the deletion request is resolved.'}
+                      {cloudStatus.cloud_registration_status === 'deleted' && 'Cloud data has been deleted from FloCafe servers. Cloud services cannot be re-enabled on this installation.'}
                       {cloudStatus.cloud_registration_status === 'unregistered' && t('settings.registrationRegisterHelp')}
                     </p>
                   </div>
                 </div>
-                {cloudStatus.cloud_registration_status !== 'registered' && (
+                {cloudStatus.cloud_registration_status !== 'registered' && cloudStatus.cloud_registration_status !== 'deletion_pending' && cloudStatus.cloud_registration_status !== 'deleted' && (
                   <button
                     onClick={() => registerCloud('')}
                     disabled={registeringCloud}
@@ -3983,6 +4111,7 @@ export default function SettingsPage() {
                 )}
               </div>
 
+              {cloudStatus.cloud_registration_status !== 'deleted' && (
               <div className="space-y-3">
                 <p className="text-sm text-gray-600">{t('settings.cloudManagedAutomatically')}</p>
 
@@ -3994,8 +4123,8 @@ export default function SettingsPage() {
                     className="mt-0.5 rounded border-gray-300 text-brand focus:ring-brand"
                   />
                   <div>
-                    <span className="text-sm font-medium text-gray-900 block">{t('settings.enableBillSync')}</span>
-                    <p className="text-xs text-gray-500 mt-1">{t('settings.enableBillSyncHint')}</p>
+                    <span className="text-sm font-medium text-gray-900 block">{cloudServicesStopped ? 'Enable Cloud Services' : t('settings.enableBillSync')}</span>
+                    <p className="text-xs text-gray-500 mt-1">{cloudServicesStopped ? 'Resume cloud services and bill sync on this device.' : t('settings.enableBillSyncHint')}</p>
                   </div>
                 </label>
 
@@ -4003,6 +4132,7 @@ export default function SettingsPage() {
                       <p className="text-xs text-gray-400">{t('settings.lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
                     )}
                   </div>
+              )}
                 </>
               )}
             </div>

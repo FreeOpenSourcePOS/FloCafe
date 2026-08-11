@@ -44,9 +44,12 @@ const SENSITIVE_SETTING_KEYS = new Set([
   'jwt_secret',
   'cloud_api_key',
   'cloud_device_secret',
+  'cloud_deletion_status_token',
+  'cloud_last_error',
 ]);
 
 function maskSetting(key: string, value: string): string {
+  if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
   if (!SENSITIVE_SETTING_KEYS.has(key)) return value;
   return value ? `****${value.slice(-4)}` : '';
 }
@@ -394,6 +397,31 @@ router.put('/order-numbering', requireRole('owner', 'manager'), (req: Request, r
   }
 });
 
+function publicDeletionRequest(request: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!request) return null;
+  const safe: Record<string, unknown> = {};
+  const requestId = request.request_id ?? request.id;
+  if (typeof requestId === 'string' && requestId) safe.id = requestId;
+  if (typeof request.status === 'string') safe.status = request.status;
+  if (typeof request.requested_at === 'string') safe.requested_at = request.requested_at;
+  if (typeof request.reviewed_at === 'string' || request.reviewed_at === null) safe.reviewed_at = request.reviewed_at;
+  if (typeof request.decision_note === 'string') safe.decision_note = request.decision_note;
+  return safe;
+}
+
+function publicEmailPreferences(data: Record<string, unknown>): Record<string, unknown> {
+  return {
+    email: typeof data.email === 'string' ? data.email : null,
+    verified: data.verified === true,
+    verified_at: typeof data.verified_at === 'string' || data.verified_at === null ? data.verified_at : null,
+    verification_sent_at: typeof data.verification_sent_at === 'string' || data.verification_sent_at === null ? data.verification_sent_at : null,
+    product_updates: data.product_updates === true,
+    marketing: data.marketing === true,
+  };
+}
+
+const CLOUD_ACCOUNT_UNAVAILABLE_ERROR = 'Cloud account services are unavailable while Cloud services are stopped or unregistered';
+
 // ─── Cloud Sync settings (must come BEFORE /:key wildcard) ──────────────────
 
 router.get('/cloud', requireRole('owner', 'manager'), (req: Request, res: Response) => {
@@ -433,6 +461,16 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
     }
     const enablingCloud = [cloud_sync_enabled, cloud_orders_enabled, cloud_reports_enabled, cloud_command_polling_enabled]
       .some((value) => bool01Flag(value) === '1');
+    const resumingStoppedCloud = cloudSync.getStatus().cloud_services_disabled_by_user && enablingCloud;
+    if (resumingStoppedCloud) {
+      // Stop All disables every cloud feature. Re-enabling the Cloud Services
+      // control is a resume action, not just a sync preference change.
+      updates.cloud_sync_enabled = '1';
+      updates.cloud_orders_enabled = '1';
+      updates.cloud_reports_enabled = '1';
+      updates.cloud_command_polling_enabled = '1';
+    }
+    if (enablingCloud) updates.cloud_services_disabled_by_user = 'false';
     if (enablingCloud && cloudSync.getStatus().cloud_deletion_blocked) {
       return res.status(409).json({ error: 'Cloud deletion is unresolved; retry or cancel it before re-enabling cloud services.' });
     }
@@ -449,9 +487,14 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
 
 router.post('/cloud/register', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
   try {
-    const deletionRequest = await cloudSync.getDeletionRequestStatus();
+    const deletionRequest = await cloudSync.getDeletionRequestStatus({
+      allowRemote: cloudSync.isCloudAccountAvailable(),
+    });
     if (deletionRequest?.status === 'pending') {
       return res.status(409).json({ error: 'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.' });
+    }
+    if (cloudSync.getStatus().cloud_services_disabled_by_user) {
+      return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
     }
     if (req.body?.cloud_server_url !== undefined) {
       upsertSettings(getDatabase(), {
@@ -488,32 +531,65 @@ router.post('/cloud/test', requireRole('owner', 'manager'), async (_req: Request
 
 router.get('/cloud/account', requireRole('owner'), async (_req: Request, res: Response) => {
   try {
-    const deletionRequest = await cloudSync.getDeletionRequestStatus();
-    if (deletionRequest?.status === 'approved') {
-      return res.json({ email: null, verified: false, product_updates: false, marketing: false, deletion_request: deletionRequest });
+    const cloudAccountAvailable = cloudSync.isCloudAccountAvailable();
+    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: cloudAccountAvailable });
+    const safeDeletionRequest = publicDeletionRequest(deletionRequest);
+    if (deletionRequest?.status === 'approved' || !cloudSync.isCloudAccountAvailable()) {
+      return res.json({
+        email: null,
+        verified: false,
+        verified_at: null,
+        verification_sent_at: null,
+        product_updates: false,
+        marketing: false,
+        cloud_account_available: false,
+        deletion_request: safeDeletionRequest,
+      });
     }
-    res.json({ ...(await cloudSync.getEmailPreferences()), deletion_request: deletionRequest });
-  } catch (error: any) {
-    res.status(502).json({ error: error.message || 'Could not load cloud account status' });
+    res.json({
+      ...publicEmailPreferences(await cloudSync.getEmailPreferences()),
+      cloud_account_available: true,
+      deletion_request: safeDeletionRequest,
+    });
+  } catch {
+    res.status(502).json({ error: 'Could not load cloud account status' });
   }
 });
 
 router.put('/cloud/account/preferences', requireRole('owner'), async (req: Request, res: Response) => {
+  if (!cloudSync.isCloudAccountAvailable()) {
+    return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
+  }
   try {
-    res.json(await cloudSync.updateEmailPreferences({
+    res.json(publicEmailPreferences(await cloudSync.updateEmailPreferences({
       product_updates: req.body?.product_updates,
       marketing: req.body?.marketing,
-    }));
-  } catch (error: any) {
-    res.status(502).json({ error: error.message || 'Could not update email preferences' });
+    })));
+  } catch {
+    res.status(502).json({ error: 'Could not update email preferences' });
   }
 });
 
 router.post('/cloud/account/verification', requireRole('owner'), async (_req: Request, res: Response) => {
+  if (!cloudSync.isCloudAccountAvailable()) {
+    return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
+  }
   try {
-    res.json(await cloudSync.requestEmailVerification({ source: 'settings' }));
-  } catch (error: any) {
-    res.status(502).json({ error: error.message || 'Could not send verification email' });
+    res.json(publicEmailPreferences(await cloudSync.requestEmailVerification({ source: 'settings' })));
+  } catch {
+    res.status(502).json({ error: 'Could not send verification email' });
+  }
+});
+
+router.get('/cloud/delete-data/status', requireRole('owner'), async (_req: Request, res: Response) => {
+  try {
+    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: true });
+    res.json({
+      cloud_account_available: cloudSync.isCloudAccountAvailable(),
+      deletion_request: publicDeletionRequest(deletionRequest),
+    });
+  } catch {
+    res.status(502).json({ error: 'Could not refresh cloud deletion status' });
   }
 });
 
@@ -527,16 +603,16 @@ router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, async 
   }
   try {
     res.json(await cloudSync.deleteCloudData());
-  } catch (error: any) {
-    res.status(502).json({ error: error.message || 'Cloud data deletion failed' });
+  } catch {
+    res.status(502).json({ error: 'Cloud data deletion failed' });
   }
 });
 
 router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin, async (_req: Request, res: Response) => {
   try {
     res.json(await cloudSync.cancelDeletionRequest());
-  } catch (error: any) {
-    res.status(502).json({ error: error.message || 'Could not cancel deletion request' });
+  } catch {
+    res.status(502).json({ error: 'Could not cancel deletion request' });
   }
 });
 

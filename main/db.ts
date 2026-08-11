@@ -3494,6 +3494,20 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `).run(now());
     },
   },
+  {
+    version: 62,
+    name: 'normalize_cloud_last_error',
+    up: () => {
+      // Older builds persisted upstream error text here. It can contain
+      // reflected credentials, so replace all legacy values before exposing
+      // settings or exporting the database.
+      db.prepare(`
+        UPDATE settings
+        SET value = 'Cloud service request failed', updated_at = ?
+        WHERE key = 'cloud_last_error' AND value <> ''
+      `).run(now());
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

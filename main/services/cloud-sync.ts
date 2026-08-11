@@ -353,6 +353,19 @@ class CloudSyncService {
     this.relayMode = 'disconnected';
   }
 
+  /**
+   * Email preferences are an optional cloud-account feature. Keep callers
+   * from attempting an outbound request when this install has no usable
+   * cloud account or the owner explicitly stopped cloud services.
+   */
+  isCloudAccountAvailable(): boolean {
+    const settings = this.readSettings(getDatabase());
+    return settings.cloud_registration_status === 'registered'
+      && Boolean(settings.cloud_api_key)
+      && settings.cloud_services_disabled_by_user !== 'true'
+      && !isCloudDeletionBlocking(settings.cloud_deletion_status);
+  }
+
   getStatus() {
     const db = getDatabase();
     const s = this.readSettings(db);
@@ -368,10 +381,17 @@ class CloudSyncService {
       cloud_reports_enabled: refreshed.cloud_reports_enabled === '1',
       cloud_command_polling_enabled: refreshed.cloud_command_polling_enabled === '1',
       cloud_registration_status: refreshed.cloud_registration_status || 'unregistered',
+      cloud_services_disabled_by_user: refreshed.cloud_services_disabled_by_user === 'true',
       cloud_connected: refreshed.cloud_connected === 'true',
       cloud_last_sync: refreshed.cloud_last_sync || null,
       cloud_last_heartbeat: refreshed.cloud_last_heartbeat || null,
-      cloud_last_error: refreshed.cloud_last_error || null,
+      cloud_last_error: refreshed.cloud_last_error
+        ? (refreshed.cloud_registration_status === 'registration_failed'
+          ? 'Cloud registration failed'
+          : refreshed.cloud_deletion_status === 'failed'
+            ? 'Cloud deletion request failed'
+            : 'Cloud service request failed')
+        : null,
       cloud_deletion_status: refreshed.cloud_deletion_status || '',
       cloud_deletion_outcome: refreshed.cloud_deletion_outcome || '',
       cloud_deletion_blocked: isCloudDeletionBlocking(refreshed.cloud_deletion_status),
@@ -470,7 +490,7 @@ class CloudSyncService {
         this.upsertSettings({
           cloud_registration_status: 'registration_failed',
           cloud_connected: 'false',
-          cloud_last_error: message,
+          cloud_last_error: 'Cloud registration failed',
         });
       }
       throw err;
@@ -481,7 +501,7 @@ class CloudSyncService {
   async testConnection(): Promise<Record<string, unknown>> {
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     const res = await this.signedFetch('/api/pos/connection-test', { method: 'POST', body: '{}' });
-    const data = await res.json().catch(() => ({}));
+    await res.json().catch(() => ({}));
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(`Cloud test failed (${res.status})`);
     this.upsertSettings({
@@ -489,7 +509,7 @@ class CloudSyncService {
       cloud_last_error: '',
       cloud_last_heartbeat: new Date().toISOString(),
     });
-    return { ok: true, data, status: this.getStatus() };
+    return { ok: true, status: this.getStatus() };
   }
 
   async getEmailPreferences(): Promise<Record<string, unknown>> {
@@ -580,7 +600,8 @@ class CloudSyncService {
       throw new Error(String(data?.error || `Cloud deletion failed (${res.status})`));
     }
     const deletion = validateCloudDeletionResponse(data);
-    const responseData = data as Record<string, unknown>;
+    const responseData: Record<string, unknown> = { status: deletion.status };
+    if (deletion.requestId) responseData.request_id = deletion.requestId;
     if (deletion.status === 'rejected' || deletion.status === 'cancelled') {
       deletionOutcome = 'rejected';
       throw new Error(`Cloud deletion was ${deletion.status}`);
@@ -614,19 +635,25 @@ class CloudSyncService {
     }).catch((error) => {
       this.upsertSettings({
         cloud_deletion_status: 'failed', cloud_deletion_outcome: deletionOutcome,
-        cloud_connected: 'false', cloud_last_error: (error as Error).message,
+        cloud_connected: 'false', cloud_last_error: 'Cloud data deletion failed',
       }, true);
       this.settings = this.loadSettings(false);
       throw error;
     }).finally(() => { this.cloudDeletionInProgress = false; });
   }
 
-  async getDeletionRequestStatus(): Promise<Record<string, unknown> | null> {
+  async getDeletionRequestStatus(options: { allowRemote?: boolean } = {}): Promise<Record<string, unknown> | null> {
     return withDatabaseRequest(async () => {
     const settings = this.readSettings(getDatabase());
     const requestId = settings.cloud_deletion_request_id;
     const statusToken = settings.cloud_deletion_status_token;
     if (!requestId || !statusToken) return null;
+    if (options.allowRemote === false) {
+      return {
+        request_id: requestId,
+        status: settings.cloud_deletion_status || 'pending',
+      };
+    }
     const serverUrl = normalizeCloudServerUrl(settings.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
     const url = endpoint(serverUrl, `/api/cloud-data/deletion-request/status?id=${encodeURIComponent(requestId)}&token=${encodeURIComponent(statusToken)}`);
     const res = await this.trackedFetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
@@ -639,6 +666,7 @@ class CloudSyncService {
       cloud_deletion_status: status,
       cloud_deletion_request_id: deletion.requestId,
       cloud_deletion_status_token: deletion.statusToken,
+      cloud_last_error: '',
     });
     if (CLOUD_DELETION_FINAL_STATUSES.has(status)) {
       this.upsertSettings({
@@ -660,7 +688,7 @@ class CloudSyncService {
       if (!this.cloudDeletionInProgress) {
         this.upsertSettings({
           cloud_deletion_status: 'failed', cloud_deletion_outcome: 'unknown',
-          cloud_connected: 'false', cloud_last_error: (error as Error).message,
+          cloud_connected: 'false', cloud_last_error: 'Cloud deletion status check failed',
         });
         this.settings = this.loadSettings(false);
       }
@@ -685,7 +713,7 @@ class CloudSyncService {
       cloud_deletion_request_id: '', cloud_deletion_status_token: '',
       cloud_deletion_outcome: '',
     });
-    return data;
+    return { status: typeof data.status === 'string' ? data.status : 'cancelled' };
     });
   }
 
@@ -1639,6 +1667,9 @@ class CloudSyncService {
     }
     const cfg = this.settings ?? this.loadSettings();
     if (!cfg?.api_key) throw new Error('Cloud POS is not registered');
+    if (!allowDuringDeletion && !this.isCloudAccountAvailable()) {
+      throw new Error('Cloud account services are unavailable while Cloud services are stopped');
+    }
 
     const method = (init.method || 'GET').toUpperCase();
     const url = endpoint(cfg.server_url, pathname);
@@ -1772,7 +1803,7 @@ class CloudSyncService {
     if (settings.cloud_services_disabled_by_user === 'true') return;
     this.upsertSettings({
       cloud_connected: 'false',
-      cloud_last_error: message,
+      cloud_last_error: 'Cloud service request failed',
     });
     log.warn('[CloudSync]', message);
   }

@@ -427,3 +427,124 @@ jobs:
           gh release upload "$VERSION" (Get-ChildItem release\*.exe, release\*.exe.blockmap, release\latest.yml | Select-Object -ExpandProperty FullName) --repo "${{ github.repository }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+
+  # The Store package is a separate Windows distribution channel. It is built
+  # from the same validated tag as NSIS, but is not uploaded to GitHub Releases:
+  # Windows Store users receive updates from the Store, not electron-updater.
+  # Deliberately tag-only: workflow_dispatch can select arbitrary branch code,
+  # so it must not be allowed to submit a Store package to production.
+  release-windows-store:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    needs: create-release
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build Microsoft Store package
+        # electron-builder's stable `appx` target produces the AppX/MSIX
+        # package submitted to Partner Center. Do not use the NSIS target here.
+        run: npm run build:frontend && npm run build && npx electron-builder --win appx --config.npmRebuild=false --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Validate Store package identity and version
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem release\*.appx -File -ErrorAction SilentlyContinue)
+          if ($packages.Count -ne 1) {
+            throw "Expected exactly one AppX package, found $($packages.Count)."
+          }
+
+          $expectedIdentity = node -p "require('./package.json').build.appx.identityName"
+          $expectedPublisher = node -p "require('./package.json').build.appx.publisher"
+          $expectedVersion = "$(node -p "require('./package.json').version").0"
+          $manifestDir = Join-Path $env:RUNNER_TEMP 'flo-appx-manifest'
+          $archivePath = Join-Path $env:RUNNER_TEMP 'flo-appx-package.zip'
+          Copy-Item $packages[0].FullName $archivePath -Force
+          Expand-Archive -LiteralPath $archivePath -DestinationPath $manifestDir -Force
+          [xml]$manifest = Get-Content -Raw (Join-Path $manifestDir 'AppxManifest.xml')
+          $identity = $manifest.SelectSingleNode("/*[local-name()='Package']/*[local-name()='Identity']")
+
+          if ($null -eq $identity) { throw 'AppxManifest.xml has no Package/Identity element.' }
+          if ($identity.Name -ne $expectedIdentity) {
+            throw "AppX identity '$($identity.Name)' does not match '$expectedIdentity'."
+          }
+          if ($identity.Publisher -ne $expectedPublisher) {
+            throw "AppX publisher '$($identity.Publisher)' does not match the configured Store publisher."
+          }
+          if ($identity.Version -ne $expectedVersion) {
+            throw "AppX version '$($identity.Version)' does not match package.json version '$expectedVersion'."
+          }
+
+          Write-Host "Validated $($packages[0].Name): identity=$($identity.Name), version=$($identity.Version)."
+
+      - name: Upload Microsoft Store package artifact
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: microsoft-store-package-${{ github.ref_name }}
+          path: release/*.appx
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-windows-store:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    runs-on: windows-latest
+    needs: release-windows-store
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    environment:
+      name: production-release
+    concurrency:
+      group: publish-windows-store-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - name: Download Microsoft Store package
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: microsoft-store-package-${{ github.ref_name }}
+          path: release
+
+      - name: Configure Microsoft Store CLI
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
+        with:
+          version: v0.3.9
+
+      - name: Publish package to Microsoft Store
+        shell: pwsh
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          MSSTORE_PRODUCT_ID: 9n1md6585p4q
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:AZURE_AD_TENANT_ID) -or
+              [string]::IsNullOrWhiteSpace($env:AZURE_AD_APPLICATION_CLIENT_ID) -or
+              [string]::IsNullOrWhiteSpace($env:AZURE_AD_APPLICATION_SECRET) -or
+              [string]::IsNullOrWhiteSpace($env:SELLER_ID)) {
+            throw 'Microsoft Store credentials are missing from the production-release environment.'
+          }
+
+          & msstore reconfigure `
+            --tenantId $env:AZURE_AD_TENANT_ID `
+            --sellerId $env:SELLER_ID `
+            --clientId $env:AZURE_AD_APPLICATION_CLIENT_ID `
+            --clientSecret $env:AZURE_AD_APPLICATION_SECRET
+          if ($LASTEXITCODE -ne 0) { throw "msstore reconfigure failed with exit code $LASTEXITCODE." }
+
+          $packages = @(Get-ChildItem release\*.appx -File -ErrorAction SilentlyContinue)
+          if ($packages.Count -ne 1) { throw "Expected exactly one downloaded AppX package, found $($packages.Count)." }
+
+          & msstore publish $packages[0].FullName --appId $env:MSSTORE_PRODUCT_ID
+          if ($LASTEXITCODE -ne 0) { throw "Microsoft Store publish failed with exit code $LASTEXITCODE." }

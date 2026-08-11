@@ -23,6 +23,8 @@ function run() {
 
   // ── electron-builder config ──────────────────────────────────────────
   assert.ok(build?.publish?.provider === 'github', 'build.publish must target GitHub releases');
+  assert.equal(build?.appx?.identityName, 'CodifyAppsPrivateLimited.FloCafe', 'AppX identityName must remain bound to the published Store listing');
+  assert.equal(build?.appx?.publisher, 'CN=34AFD24D-EC88-44B8-B309-08BB8A6BB5F7', 'AppX publisher must remain bound to the published Store listing');
 
   const macTargets = (build?.mac?.target || []).map((t: any) => t.target);
   assert.ok(
@@ -170,9 +172,32 @@ function run() {
   assert.ok(/release\/\*\.zip\b/.test(macJob), 'release-mac job must upload the .zip artifact');
   assert.ok(macJob.includes('.zip.blockmap'), 'release-mac job must upload the .zip.blockmap');
 
-  const winJob = workflow.split(/^\s*release-windows:/m)[1] || '';
+  const winJob = workflow.split(/^\s*release-windows:/m)[1]?.split(/^\s*release-windows-store:/m)[0] || '';
   assert.ok(winJob.includes('latest.yml'), 'release-windows job must upload latest.yml');
   assert.ok(winJob.includes('.exe.blockmap'), 'release-windows job must upload the .exe.blockmap');
+
+  // ── Microsoft Store: AppX build is credential-free and publish is gated ──
+  const storeBuildJob = workflow.split(/^\s*release-windows-store:/m)[1]?.split(/^\s*publish-windows-store:/m)[0] || '';
+  assert.ok(storeBuildJob.includes('electron-builder --win appx'), 'release-windows-store must build the AppX target, not only NSIS');
+  assert.ok(storeBuildJob.includes('Validate Store package identity and version'), 'Store package identity/version must be validated before upload');
+  assert.ok(storeBuildJob.includes('upload-artifact@'), 'Store package must cross the build/publish job boundary as an artifact');
+  assert.ok(storeBuildJob.includes('path: release/*.appx'), 'Store build must upload the generated AppX package');
+  assert.ok(storeBuildJob.includes('Copy-Item $packages[0].FullName $archivePath'), 'Store validation must copy AppX to a .zip before extraction');
+  assert.ok(storeBuildJob.includes('Expand-Archive -LiteralPath $archivePath'), 'Store validation must extract the temporary zip archive');
+  assert.ok(storeBuildJob.includes('CSC_IDENTITY_AUTO_DISCOVERY: false'), 'Store build must not discover an unrelated Windows signing identity');
+  assert.ok(storeBuildJob.includes("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')"), 'Store build must run only for pushed release tags, never arbitrary workflow_dispatch branches');
+
+  const storePublishJob = workflow.split(/^\s*publish-windows-store:/m)[1] || '';
+  assert.ok(storePublishJob.includes('needs: release-windows-store'), 'Store publishing must wait for the validated package build');
+  assert.ok(storePublishJob.includes('environment:\n      name: production-release'), 'Store publishing must use the protected production-release environment');
+  assert.ok(storePublishJob.includes("if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')"), 'Store publishing must run only for pushed release tags, never arbitrary workflow_dispatch branches');
+  assert.ok(storePublishJob.includes('microsoft-store-apppublisher@'), 'Store publishing must install Microsoft Store CLI through the Microsoft action');
+  assert.ok(storePublishJob.includes('version: v0.3.9'), 'Microsoft Store CLI version must be pinned for reproducible releases');
+  assert.ok(storePublishJob.includes('msstore reconfigure'), 'Store publishing must configure Partner Center credentials at runtime');
+  assert.ok(storePublishJob.includes('msstore publish'), 'Store publishing must submit the validated AppX package');
+  for (const secret of ['AZURE_AD_TENANT_ID', 'AZURE_AD_APPLICATION_CLIENT_ID', 'AZURE_AD_APPLICATION_SECRET', 'SELLER_ID']) {
+    assert.ok(storePublishJob.includes(`secrets.${secret}`), `Store publishing must read ${secret} from GitHub secrets`);
+  }
 
   console.log('✅ Release config + workflow integrity checks passed');
 }

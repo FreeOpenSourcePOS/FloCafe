@@ -102,6 +102,7 @@ export const usePrinterStore = create<PrinterState>()(
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
             webPrintSize,
             printerUseUnicode,
+            printerTrimDecimals,
           } = usePosSettingsStore.getState();
 
           const isReprint = opts?.isReprint ?? false;
@@ -130,6 +131,7 @@ export const usePrinterStore = create<PrinterState>()(
               businessName: billShowName ? tenant.business_name : undefined,
               useUnicode: printerUseUnicode,
               isReprint,
+              trimDecimals: printerTrimDecimals,
             });
             return [];
           }
@@ -146,6 +148,7 @@ export const usePrinterStore = create<PrinterState>()(
             showTaxBreakdown: billShowTaxId,
             useUnicode: printerUseUnicode,
             isReprint,
+            trimDecimals: printerTrimDecimals,
           };
 
           const warnings: PrintWarning[] = [];
@@ -171,9 +174,9 @@ export const usePrinterStore = create<PrinterState>()(
         set({ lastError: null });
         try {
           const { paperWidth } = get();
-          const { printerUseUnicode } = usePosSettingsStore.getState();
+          const { printerUseUnicode, printerTrimDecimals } = usePosSettingsStore.getState();
           const warnings: PrintWarning[] = [];
-          const bytes = buildTaxBillBytes(bill, tenant, { ...opts, paperWidth, useUnicode: printerUseUnicode }, warnings);
+          const bytes = buildTaxBillBytes(bill, tenant, { ...opts, paperWidth, useUnicode: printerUseUnicode, trimDecimals: printerTrimDecimals }, warnings);
           set({ lastPrintedBytes: bytes });
 
           if (get().printMethod === 'escpos') {

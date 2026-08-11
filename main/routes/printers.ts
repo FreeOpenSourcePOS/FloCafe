@@ -146,7 +146,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
         ip_address ?? null,
         port ?? 9100,
         usb_device_path ?? null,
-        paper_width ?? '80mm',
+        paper_width ?? 'cols-42',
         shouldBeDefault ? 1 : 0,
         now(), now()
       );
@@ -403,6 +403,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
       points_earned: pointsEarned,
       points_redeemed: pointsRedeemed,
       points_balance: pointsBalance,
+      trim_decimals: settings.printer_trim_decimals === 'true',
     };
     const billTemplate = settings.bill_template;
     console.log('[Print Bill] Preparing receipt', { template: billTemplate || 'classic' });

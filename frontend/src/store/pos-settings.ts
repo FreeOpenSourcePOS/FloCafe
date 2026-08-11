@@ -40,6 +40,8 @@ export interface PosSettingsState {
   billShowTaxId: boolean;
   // Thermal printer unicode support
   printerUseUnicode: boolean;
+  // Receipt amount formatting
+  printerTrimDecimals: boolean;
   // Kitchen workflow toggles (issue #133) — business-level settings, synced
   // from the backend (default true, matching pre-toggle always-on behavior).
   kdsEnabled: boolean;
@@ -73,6 +75,7 @@ export interface PosSettingsState {
   setBillingType: (v: 'postpaid' | 'prepaid') => void;
   setTablesRequired: (v: boolean) => void;
   setPrinterUseUnicode: (v: boolean) => void;
+  setPrinterTrimDecimals: (v: boolean) => void;
   setKdsEnabled: (v: boolean) => void;
   setKotPrintingEnabled: (v: boolean) => void;
   setWhatsappEnabled: (v: boolean) => void;
@@ -108,6 +111,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowPhone: true,
       billShowTaxId: false,
       printerUseUnicode: false,
+      printerTrimDecimals: false,
       kdsEnabled: true,
       kotPrintingEnabled: true,
       // Default false so the sidebar hides the WhatsApp nav entry until the
@@ -140,6 +144,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillingType: (v) => set({ billingType: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
       setPrinterUseUnicode: (v) => set({ printerUseUnicode: v }),
+      setPrinterTrimDecimals: (v) => set({ printerTrimDecimals: v }),
       setKdsEnabled: (v) => set({ kdsEnabled: v }),
       setKotPrintingEnabled: (v) => set({ kotPrintingEnabled: v }),
       setWhatsappEnabled: (v: boolean) => set({ whatsappEnabled: v }),

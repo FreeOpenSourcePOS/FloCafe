@@ -111,7 +111,7 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
 
     const requesterRole = (req as any).user.role;
     if (requesterRole === 'manager' && !isOperationalRole(role)) {
-      return res.status(403).json({ error: 'Managers can only create operational staff accounts (cashier, waiter, chef)' });
+      return res.status(403).json({ error: 'Managers can only create operational staff accounts (cashier, server, chef)' });
     }
 
     if (isOperationalRole(role) && hasNonEmptyPin(pin)) {

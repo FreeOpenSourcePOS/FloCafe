@@ -20,6 +20,7 @@ import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { safePrinterText, type PrintWarning } from './warnings';
+import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 
 export interface ReceiptOptions {
   /** 58 mm (42 chars) or 80 mm (48 chars). Default: 58 */
@@ -40,6 +41,8 @@ export interface ReceiptOptions {
   useUnicode?: boolean;
   /** Print a large "REPRINT" banner at the top so a reprinted receipt can't be mistaken for the original. */
   isReprint?: boolean;
+  /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
+  trimDecimals?: boolean;
 }
 
 function printReprintBanner(enc: ReceiptPrinterEncoder): void {
@@ -53,6 +56,18 @@ function printReprintBanner(enc: ReceiptPrinterEncoder): void {
     .height(1)
     .bold(false)
     .newline()
+    .align('left');
+}
+
+function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
+  enc
+    .align('center')
+    .size('small')
+    .text(RECEIPT_BRANDING_NAME)
+    .newline()
+    .text(RECEIPT_BRANDING_URL)
+    .newline()
+    .size('normal')
     .align('left');
 }
 
@@ -98,13 +113,14 @@ function col4Row(
   amount: number | string,
   currency: string,
   cols: number,
-  locale: string
+  locale: string,
+  trimDecimals: boolean = false
 ): string {
   const [w0, w1, w2, w3] = col4Widths(cols);
   const nameStr = truncate(name, w0).padEnd(w0);
   const qtyStr = String(qty).padStart(w1);
-  const rateStr = formatAmount(rate, currency, locale).padStart(w2);
-  const amtStr = formatAmount(amount, currency, locale).padStart(w3);
+  const rateStr = formatAmount(rate, currency, locale, trimDecimals).padStart(w2);
+  const amtStr = formatAmount(amount, currency, locale, trimDecimals).padStart(w3);
   return nameStr + qtyStr + rateStr + amtStr;
 }
 
@@ -128,6 +144,7 @@ export function buildClassicReceiptBytes(
     showTaxBreakdown = false,
     useUnicode = false,
     isReprint = false,
+    trimDecimals = false,
   } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
@@ -176,7 +193,7 @@ export function buildClassicReceiptBytes(
   for (const item of items) {
     safePrinterText(
       enc,
-      col4Row(item.product_name, item.quantity, item.unit_price, item.total, currency, cols, locale),
+      col4Row(item.product_name, item.quantity, item.unit_price, item.total, currency, cols, locale, trimDecimals),
       warnings
     ).newline();
 
@@ -187,7 +204,7 @@ export function buildClassicReceiptBytes(
         const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
         if (addon.price && Number(addon.price) > 0) {
           const addonTotal = Number(addon.price) * qty * item.quantity;
-          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale), cols), warnings).newline();
+          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings).newline();
         } else {
           safePrinterText(enc, addonLabel, warnings).newline();
         }
@@ -203,24 +220,24 @@ export function buildClassicReceiptBytes(
   enc.rule({ style: 'single' });
 
   // Totals
-  enc.text(padRow('Subtotal', formatAmount(bill.subtotal, currency, locale), cols)).newline();
+  enc.text(padRow('Subtotal', formatAmount(bill.subtotal, currency, locale, trimDecimals), cols)).newline();
   if (Number(bill.discount_amount) > 0) {
-    enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale)}`, cols)).newline();
+    enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`, cols)).newline();
   }
   if (Number(bill.tax_amount) > 0) {
-    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale), cols)).newline();
+    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale, trimDecimals), cols)).newline();
   }
   if (Number(bill.service_charge) > 0) {
-    enc.text(padRow('Service Charge', formatAmount(bill.service_charge, currency, locale), cols)).newline();
+    enc.text(padRow('Service Charge', formatAmount(bill.service_charge, currency, locale, trimDecimals), cols)).newline();
   }
   if (Number(bill.delivery_charge) > 0) {
-    enc.text(padRow('Delivery', formatAmount(bill.delivery_charge, currency, locale), cols)).newline();
+    enc.text(padRow('Delivery', formatAmount(bill.delivery_charge, currency, locale, trimDecimals), cols)).newline();
   }
 
   enc.rule({ style: 'double' });
   enc
     .bold(true)
-    .text(padRow('TOTAL', formatAmount(bill.total, currency, locale), cols))
+    .text(padRow('TOTAL', formatAmount(bill.total, currency, locale, trimDecimals), cols))
     .bold(false)
     .newline();
   enc.rule({ style: 'single' });
@@ -228,7 +245,7 @@ export function buildClassicReceiptBytes(
   // Payment methods
   if (bill.payment_details && bill.payment_details.length > 0) {
     for (const p of bill.payment_details) {
-      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale), cols)).newline();
+      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale, trimDecimals), cols)).newline();
     }
   }
 
@@ -238,7 +255,7 @@ export function buildClassicReceiptBytes(
   if (showTaxBreakdown && taxComponents.length > 0) {
     for (const component of taxComponents) {
       enc
-        .text(padRow(` ${formatTaxComponentLabel(component)}`, formatAmount(component.amount, currency, locale), cols))
+        .text(padRow(` ${formatTaxComponentLabel(component)}`, formatAmount(component.amount, currency, locale, trimDecimals), cols))
         .newline();
     }
   }
@@ -263,8 +280,8 @@ export function buildClassicReceiptBytes(
     if (footerNote) {
       safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
     }
-    enc.align('left');
   }
+  printPoweredByFooter(enc);
 
   enc.newline().newline().newline().cut();
 
@@ -281,7 +298,7 @@ export function buildCompactReceiptBytes(
   opts: ReceiptOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58, footerNote, useUnicode = false, isReprint = false } = opts;
+  const { paperWidth = 58, footerNote, useUnicode = false, isReprint = false, trimDecimals = false } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
@@ -316,10 +333,10 @@ export function buildCompactReceiptBytes(
   // Items — compact: one line per item with total, qty x rate below if qty > 1
   const items = order?.items ?? [];
   for (const item of items) {
-    const nameMax = cols - formatAmount(item.total, currency, locale).length - 1;
+    const nameMax = cols - formatAmount(item.total, currency, locale, trimDecimals).length - 1;
     safePrinterText(
       enc,
-      padRow(truncate(item.product_name, nameMax), formatAmount(item.total, currency, locale), cols),
+      padRow(truncate(item.product_name, nameMax), formatAmount(item.total, currency, locale, trimDecimals), cols),
       warnings
     ).newline();
 
@@ -327,7 +344,7 @@ export function buildCompactReceiptBytes(
       enc
         .size('small')
         .align('right')
-        .text(`${item.quantity} x ${formatAmount(item.unit_price, currency, locale)}`)
+        .text(`${item.quantity} x ${formatAmount(item.unit_price, currency, locale, trimDecimals)}`)
         .newline()
         .size('normal')
         .align('left');
@@ -337,22 +354,22 @@ export function buildCompactReceiptBytes(
   enc.rule({ style: 'single' });
 
   if (Number(bill.discount_amount) > 0) {
-    enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale)}`, cols)).newline();
+    enc.text(padRow('Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`, cols)).newline();
   }
   if (Number(bill.tax_amount) > 0) {
-    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale), cols)).newline();
+    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale, trimDecimals), cols)).newline();
   }
 
   enc.rule({ style: 'double' });
   enc
     .bold(true)
-    .text(padRow('TOTAL', formatAmount(bill.total, currency, locale), cols))
+    .text(padRow('TOTAL', formatAmount(bill.total, currency, locale, trimDecimals), cols))
     .bold(false)
     .newline();
 
   if (bill.payment_details && bill.payment_details.length > 0) {
     for (const p of bill.payment_details) {
-      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale), cols)).newline();
+      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale, trimDecimals), cols)).newline();
     }
   }
 
@@ -360,7 +377,7 @@ export function buildCompactReceiptBytes(
   if (footerNote) {
     safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
   }
-  enc.align('left');
+  printPoweredByFooter(enc);
 
   enc.newline().newline().newline().cut();
 
@@ -377,7 +394,7 @@ export function buildDetailedReceiptBytes(
   opts: ReceiptOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58, footerNote, taxRegistrationNumber, address, phone, useUnicode = false, isReprint = false } = opts;
+  const { paperWidth = 58, footerNote, taxRegistrationNumber, address, phone, useUnicode = false, isReprint = false, trimDecimals = false } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
@@ -443,7 +460,7 @@ export function buildDetailedReceiptBytes(
   for (const item of items) {
     safePrinterText(
       enc,
-      col4Row(item.product_name, item.quantity, item.unit_price, item.total, currency, cols, locale),
+      col4Row(item.product_name, item.quantity, item.unit_price, item.total, currency, cols, locale, trimDecimals),
       warnings
     ).newline();
 
@@ -453,7 +470,7 @@ export function buildDetailedReceiptBytes(
         const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
         if (addon.price && Number(addon.price) > 0) {
           const addonTotal = Number(addon.price) * qty * item.quantity;
-          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale), cols), warnings).newline();
+          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings).newline();
         } else {
           safePrinterText(enc, addonLabel, warnings).newline();
         }
@@ -469,7 +486,7 @@ export function buildDetailedReceiptBytes(
 
   // Subtotal (excl. tax)
   enc
-    .text(padRow('Subtotal (excl. tax)', formatAmount(bill.subtotal, currency, locale), cols))
+    .text(padRow('Subtotal (excl. tax)', formatAmount(bill.subtotal, currency, locale, trimDecimals), cols))
     .newline();
 
   enc.rule({ style: 'single' });
@@ -478,17 +495,17 @@ export function buildDetailedReceiptBytes(
   if (taxComponents.length > 0) {
     for (const component of taxComponents) {
       enc
-        .text(padRow(` ${formatTaxComponentLabel(component)}`, formatAmount(component.amount, currency, locale), cols))
+        .text(padRow(` ${formatTaxComponentLabel(component)}`, formatAmount(component.amount, currency, locale, trimDecimals), cols))
         .newline();
     }
   } else if (Number(bill.tax_amount) > 0) {
-    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale), cols)).newline();
+    enc.text(padRow('Tax', formatAmount(bill.tax_amount, currency, locale, trimDecimals), cols)).newline();
   }
 
   enc.rule({ style: 'double' });
   enc
     .bold(true)
-    .text(padRow('TOTAL', formatAmount(bill.total, currency, locale), cols))
+    .text(padRow('TOTAL', formatAmount(bill.total, currency, locale, trimDecimals), cols))
     .bold(false)
     .newline();
   enc.rule({ style: 'single' });
@@ -496,7 +513,7 @@ export function buildDetailedReceiptBytes(
   // Payment methods
   if (bill.payment_details && bill.payment_details.length > 0) {
     for (const p of bill.payment_details) {
-      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale), cols)).newline();
+      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale, trimDecimals), cols)).newline();
     }
   }
 
@@ -512,7 +529,7 @@ export function buildDetailedReceiptBytes(
   if (footerNote) {
     safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
   }
-  enc.align('left');
+  printPoweredByFooter(enc);
 
   enc.newline().newline().newline().cut();
 
@@ -541,9 +558,12 @@ function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '\u2026' : str;
 }
 
-function formatAmount(value: number | string, currency: string, locale: string): string {
-  return `${currency}${Number(value).toLocaleString(locale, {
-    minimumFractionDigits: 2,
+function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false): string {
+  const amount = Number(value);
+  const numeric = Number.isFinite(amount) ? amount : 0;
+  const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
+  return `${currency}${numeric.toLocaleString(locale, {
+    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
     maximumFractionDigits: 2,
   })}`;
 }

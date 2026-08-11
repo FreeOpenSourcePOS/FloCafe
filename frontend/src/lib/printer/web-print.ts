@@ -12,6 +12,7 @@ import { normalizeCurrencyToAscii } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
+import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 
@@ -36,6 +37,8 @@ export interface WebPrintOptions {
   useUnicode?: boolean;
   /** Show a large "REPRINT" banner so a reprinted bill can't be mistaken for the original. */
   isReprint?: boolean;
+  /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
+  trimDecimals?: boolean;
 }
 
 /**
@@ -46,9 +49,9 @@ export function printWebBill(
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WebPrintOptions = {}
 ): void {
-  const { paperSize = 'thermal58', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false } = opts;
+  const { paperSize = 'thermal58', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false, trimDecimals = false } = opts;
 
-  const html = generateBillHtml(bill, tenant, { paperSize, includeTaxId, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode, isReprint });
+  const html = generateBillHtml(bill, tenant, { paperSize, includeTaxId, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode, isReprint, trimDecimals });
 
   // Create a new window with the bill HTML
   const printWindow = window.open('', '_blank', 'width=800,height=600');
@@ -77,7 +80,7 @@ export function generateBillHtml(
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   opts: WebPrintOptions = {}
 ): string {
-  const { paperSize = 'thermal58', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false } = opts;
+  const { paperSize = 'thermal58', includeTaxId = false, taxRegistrationNumber, address, phone, footerNote, businessName, useUnicode = false, isReprint = false, trimDecimals = false } = opts;
   const displayName = businessName ?? tenant.business_name;
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency);
@@ -148,8 +151,8 @@ export function generateBillHtml(
               ${item.special_instructions ? `<br><small class="text-italic">${escapeHtml(item.special_instructions)}</small>` : ''}
             </td>
             <td class="text-right">${item.quantity}</td>
-            <td class="text-right">${formatAmount(Number(item.unit_price), currency, locale)}</td>
-            <td class="text-right">${formatAmount(item.total, currency, locale)}</td>
+            <td class="text-right">${formatAmount(Number(item.unit_price), currency, locale, trimDecimals)}</td>
+            <td class="text-right">${formatAmount(item.total, currency, locale, trimDecimals)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -163,7 +166,7 @@ export function generateBillHtml(
       </thead>
       <tbody>
         ${taxComponents.map((component) => `
-          <tr><td>${escapeHtml(formatTaxComponentLabel(component))}</td><td class="text-right">${formatAmount(component.amount, currency, locale)}</td></tr>
+          <tr><td>${escapeHtml(formatTaxComponentLabel(component))}</td><td class="text-right">${formatAmount(component.amount, currency, locale, trimDecimals)}</td></tr>
         `).join('')}
       </tbody>
     </table>
@@ -171,12 +174,12 @@ export function generateBillHtml(
 
     <!-- Totals -->
     <table class="totals-table">
-      <tr><td>Subtotal</td><td class="text-right">${formatAmount(bill.subtotal, currency, locale)}</td></tr>
-      ${Number(bill.discount_amount) > 0 ? `<tr><td>Discount</td><td class="text-right">-${formatAmount(bill.discount_amount, currency, locale)}</td></tr>` : ''}
-      ${Number(bill.tax_amount) > 0 ? `<tr><td>Total Tax</td><td class="text-right">${formatAmount(bill.tax_amount, currency, locale)}</td></tr>` : ''}
-      ${Number(bill.service_charge) > 0 ? `<tr><td>Service Charge</td><td class="text-right">${formatAmount(bill.service_charge, currency, locale)}</td></tr>` : ''}
-      ${Number(bill.delivery_charge) > 0 ? `<tr><td>Delivery Charge</td><td class="text-right">${formatAmount(bill.delivery_charge, currency, locale)}</td></tr>` : ''}
-      <tr class="total-row"><td><strong>Grand Total</strong></td><td class="text-right"><strong>${formatAmount(bill.total, currency, locale)}</strong></td></tr>
+      <tr><td>Subtotal</td><td class="text-right">${formatAmount(bill.subtotal, currency, locale, trimDecimals)}</td></tr>
+      ${Number(bill.discount_amount) > 0 ? `<tr><td>Discount</td><td class="text-right">-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}</td></tr>` : ''}
+      ${Number(bill.tax_amount) > 0 ? `<tr><td>Total Tax</td><td class="text-right">${formatAmount(bill.tax_amount, currency, locale, trimDecimals)}</td></tr>` : ''}
+      ${Number(bill.service_charge) > 0 ? `<tr><td>Service Charge</td><td class="text-right">${formatAmount(bill.service_charge, currency, locale, trimDecimals)}</td></tr>` : ''}
+      ${Number(bill.delivery_charge) > 0 ? `<tr><td>Delivery Charge</td><td class="text-right">${formatAmount(bill.delivery_charge, currency, locale, trimDecimals)}</td></tr>` : ''}
+      <tr class="total-row"><td><strong>Grand Total</strong></td><td class="text-right"><strong>${formatAmount(bill.total, currency, locale, trimDecimals)}</strong></td></tr>
     </table>
 
     <!-- Payments -->
@@ -187,7 +190,7 @@ export function generateBillHtml(
       </thead>
       <tbody>
         ${bill.payment_details.map(p => `
-          <tr><td>${capitalize(p.method)}</td><td class="text-right">${formatAmount(p.amount, currency, locale)}</td></tr>
+          <tr><td>${capitalize(p.method)}</td><td class="text-right">${formatAmount(p.amount, currency, locale, trimDecimals)}</td></tr>
         `).join('')}
       </tbody>
     </table>
@@ -197,6 +200,7 @@ export function generateBillHtml(
     <div class="footer">
       ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : '<p>Thank you for your visit!</p>'}
       ${includeTaxId && taxComponents.length > 0 ? '<p>Tax included where applicable</p>' : ''}
+      <p class="powered-by">${escapeHtml(RECEIPT_BRANDING_NAME)}<br>${escapeHtml(RECEIPT_BRANDING_URL)}</p>
     </div>
   </div>
 
@@ -232,6 +236,7 @@ function getPaperStyles(size: PaperSize): string {
     .totals-table td { padding: 6px 8px; }
     .total-row { border-top: 2px solid #333; font-size: 16px; }
     .footer { text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; }
+    .powered-by { font-size: 10px; margin-top: 8px; color: #555; }
     .text-right { text-align: right !important; }
     .text-muted { color: #666; }
     .text-italic { font-style: italic; color: #888; }
@@ -254,10 +259,14 @@ function getPaperStyles(size: PaperSize): string {
   }
 }
 
-function formatAmount(value: number | string, currency: string, locale: string): string {
+function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false): string {
   const num = Number(value);
-  if (isNaN(num)) return `${currency}0.00`;
-  return `${currency}${num.toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const numeric = Number.isNaN(num) ? 0 : num;
+  const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
+  return `${currency}${numeric.toLocaleString(locale, {
+    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function capitalize(str: string): string {

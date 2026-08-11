@@ -183,14 +183,15 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   assert('renders addon "Bacon"', text.includes('Bacon'));
   assert('renders special instruction', text.includes('No onions'));
   assert('renders subtotal ₹925.00', text.includes('₹925.00'));
-  // Currency slot is always padded to 2 columns, so a 1-char unicode symbol
-  // gets a leading space — the minus sign sits outside that slot.
-  assert('renders discount line with negative sign', text.includes('- ₹15.00'));
+  // Currency slot reserves up to 3 chars for labels such as USD/EUR/INR; the
+  // minus sign sits outside that slot.
+  assert('renders discount line with negative sign', /-\s*₹15\.00/.test(text));
   assert('renders tax total ₹40.00', text.includes('₹40.00'));
   assert('renders TOTAL with grand amount', text.includes('TOTAL') && text.includes('₹950.00'));
   assert('renders Cash payment', text.includes('Cash') && text.includes('₹500.00'));
   assert('renders UPI payment', text.includes('UPI') && text.includes('₹450.00'));
   assert('renders tax registration number', text.includes('TAXID-0001'));
+  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flospos.com'));
   assert('long product name is truncated to fit', !text.includes('Truncated By Formatter'));
   assert('ends with cut byte sequence', bytesContain(buf, [GS, 0x56, 0x00]));
 
@@ -204,20 +205,67 @@ console.log('\n✅ Test 2: Compact receipt (80mm, 48 cols)');
   console.log(visiblePreview(buf, 48));
 }
 
-console.log('\n✅ Test 3: Compact receipt on 58mm paper (42 cols)');
+console.log('\n✅ Test 3: Compact receipt on 58mm paper (32 cols)');
 {
-  const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'compact', 42, true);
+  const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'compact', 32, true);
   const text = buf.toString('utf8');
 
   assert('still renders business name', text.includes('Flo Test Cafe'));
   assert('still renders TOTAL', text.includes('TOTAL'));
 
-  const textLines = visiblePreview(buf, 42).split('\n').slice(1, -1);
-  const overLong = textLines.filter((l) => l.length > 42);
-  assert('no content line exceeds 42 cols', overLong.length === 0, overLong.length ? `${overLong.length} lines too long` : undefined);
+  const textLines = visiblePreview(buf, 32).split('\n').slice(1, -1);
+  const overLong = textLines.filter((l) => l.length > 32);
+  assert('no content line exceeds 32 cols', overLong.length === 0, overLong.length ? `${overLong.length} lines too long` : undefined);
 
   console.log('\n   — Rendered compact (58mm) —');
-  console.log(visiblePreview(buf, 42));
+  console.log(visiblePreview(buf, 32));
+}
+
+console.log('\n✅ Test 3b: Compact receipt on narrow 36-col printer');
+{
+  const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'compact', 36, true);
+  const text = buf.toString('utf8');
+
+  assert('still renders TOTAL on 36-col printer', text.includes('TOTAL'));
+  assert('keeps amount together on one line', text.includes('Rs950.00') || text.includes('₹950.00'));
+
+  const textLines = visiblePreview(buf, 36).split('\n').slice(1, -1);
+  const overLong = textLines.filter((l) => l.length > 36);
+  assert('no content line exceeds 36 cols', overLong.length === 0, overLong.length ? `${overLong.length} lines too long` : undefined);
+
+  console.log('\n   — Rendered compact (36 cols) —');
+  console.log(visiblePreview(buf, 36));
+}
+
+console.log('\n✅ Test 3c: Narrow receipt reserves 3-char currency codes');
+{
+  const usdBusiness = { ...fixtureBusiness, currency_symbol: 'USD', country: 'US' };
+  const buf = formatReceipt(fixtureOrder, fixtureBill, usdBusiness, 'compact', 36, false);
+  const text = buf.toString('utf8');
+
+  assert('renders USD amount without splitting currency code', text.includes('USD950.00'));
+
+  const textLines = visiblePreview(buf, 36).split('\n').slice(1, -1);
+  const overLong = textLines.filter((l) => l.length > 36);
+  assert('USD receipt has no line over 36 cols', overLong.length === 0, overLong.length ? `${overLong.length} lines too long` : undefined);
+}
+
+console.log('\n✅ Test 3d: Trim decimals hides only trailing .00');
+{
+  const trimBusiness = { ...fixtureBusiness, trim_decimals: true };
+  const roundedText = formatReceipt(fixtureOrder, fixtureBill, trimBusiness, 'compact', 36, true).toString('utf8');
+  assert('trim decimals removes trailing .00 from whole amounts', roundedText.includes('₹950') && !roundedText.includes('₹950.00'));
+
+  const fractionalBill = {
+    ...fixtureBill,
+    subtotal: 75,
+    tax_amount: 3.75,
+    discount_amount: 0,
+    total: 78.75,
+    payment_details: JSON.stringify([{ method: 'cash', amount: 78.75 }]),
+  };
+  const fractionalText = formatReceipt(fixtureOrder, fractionalBill, trimBusiness, 'compact', 36, true).toString('utf8');
+  assert('trim decimals keeps non-zero decimals', fractionalText.includes('₹78.75') && fractionalText.includes('₹3.75'));
 }
 
 console.log('\n✅ Test 4: Classic receipt template');
@@ -227,6 +275,7 @@ console.log('\n✅ Test 4: Classic receipt template');
 
   assert('renders business name', text.includes('Flo Test Cafe'));
   assert('renders item and total', text.includes('Cheeseburger') && text.includes('₹950.00'));
+  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flospos.com'));
   assert('ends with cut', bytesContain(buf, [GS, 0x56, 0x00]));
 
   console.log('\n   — Rendered classic —');
@@ -244,6 +293,7 @@ console.log('\n✅ Test 5: Detailed tax invoice template');
   assert('renders Tax B line', text.includes('Tax B'));
   assert('renders GRAND TOTAL', text.includes('GRAND TOTAL'));
   assert('renders tax registration number', text.includes('TAXID-0001'));
+  assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flospos.com'));
 
   console.log('\n   — Rendered detailed —');
   console.log(visiblePreview(buf, 48));
@@ -327,8 +377,9 @@ console.log('\n✅ Test 7: Test page builder');
   const xprinter = buildTestPage('80mm', 'partial');
   assert('80mm test page renders title', buf80.toString('utf8').includes('Flo Printer Test'));
   assert('58mm test page renders title', buf58.toString('utf8').includes('Flo Printer Test'));
-  assert('80mm test page reports correct paper width', buf80.toString('utf8').includes('80mm'));
-  assert('58mm test page reports correct paper width', buf58.toString('utf8').includes('58mm'));
+  assert('80mm test page reports correct column width', buf80.toString('utf8').includes('Columns: 48'));
+  assert('58mm test page reports correct column width', buf58.toString('utf8').includes('Columns: 32'));
+  assert('test page includes a ruler and edge probe', buf58.toString('utf8').includes('1234567890') && buf58.toString('utf8').includes('XXXXXXXXXXXXXXXX'));
   assert('test page has cut byte', bytesContain(buf80, [GS, 0x56, 0x00]));
   assert('partial cut profile emits GS V B 0', bytesContain(xprinter, [GS, 0x56, 0x42, 0x00]));
 }

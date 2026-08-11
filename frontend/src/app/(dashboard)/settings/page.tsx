@@ -721,7 +721,7 @@ export default function SettingsPage() {
 
   const emptyPrinterForm: PrinterForm = {
     name: '', connection_type: 'network', ip_address: '', port: '9100',
-    usb_device_path: '/dev/usb/lp0', paper_width: '80mm',
+    usb_device_path: '/dev/usb/lp0', paper_width: 'cols-42',
   };
 
   type DetectedPrinter = {
@@ -743,6 +743,19 @@ export default function SettingsPage() {
   // the manual "refresh" button, still sets it explicitly for that path).
   const [detectingPrinters, setDetectingPrinters] = useState(true);
   const [addingDetectedName, setAddingDetectedName] = useState<string | null>(null);
+
+  const normalizePrinterWidthValue = (value?: string | null): string => {
+    if (value === '58mm') return 'cols-32';
+    if (value === '58mm-36') return 'cols-36';
+    if (value === '80mm-42') return 'cols-42';
+    if (value === '80mm') return 'cols-48';
+    return /^cols-(32|36|40|42|44|48)$/.test(value || '') ? value! : 'cols-42';
+  };
+
+  const printWidthLabel = (value?: string | null): string => {
+    const cols = normalizePrinterWidthValue(value).replace('cols-', '');
+    return t('settings.printColumnsShort', { cols });
+  };
 
   const fetchPrinters = () => {
     api.get('/printers').then((res) => setHwPrinters(res.data.printers || [])).catch(() => {});
@@ -768,7 +781,7 @@ export default function SettingsPage() {
       } = {
         name: p.name,
         connection_type: p.connectionType === 'network' ? 'network' : 'usb',
-        paper_width: p.paperWidth || '80mm',
+        paper_width: normalizePrinterWidthValue(p.paperWidth),
       };
       if (p.connectionType === 'network') {
         payload.ip_address = p.ipAddress || '';
@@ -797,7 +810,7 @@ export default function SettingsPage() {
       name: p.name, connection_type: p.connection_type,
       ip_address: p.ip_address || '', port: String(p.port || 9100),
       usb_device_path: p.usb_device_path || '/dev/usb/lp0',
-      paper_width: p.paper_width || '80mm',
+      paper_width: normalizePrinterWidthValue(p.paper_width),
     });
     setEditingPrinterId(p.id);
     setShowPrinterForm(true);
@@ -1010,6 +1023,7 @@ export default function SettingsPage() {
     autoPrintKot: boolean; autoPrintBill: boolean;
     webPrintSize: PaperSize; whatsappShareEnabled: boolean;
     printerUseUnicode: boolean;
+    printerTrimDecimals: boolean;
   };
   const initPrinting = (): PrintingForm => ({
     printerEnabled: posSettings.printerEnabled,
@@ -1020,10 +1034,11 @@ export default function SettingsPage() {
     webPrintSize: posSettings.webPrintSize,
     whatsappShareEnabled: posSettings.whatsappShareEnabled,
     printerUseUnicode: posSettings.printerUseUnicode,
+    printerTrimDecimals: posSettings.printerTrimDecimals,
   });
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
-  const savePrinting = (silent: boolean = false) => {
+  const savePrinting = async (silent: boolean = false) => {
     posSettings.setPrinterEnabled(printingForm.printerEnabled);
     posSettings.setPrinterPaperSize(printingForm.printerPaperSize);
     setPrintMethod(printingForm.printMethod);
@@ -1032,6 +1047,8 @@ export default function SettingsPage() {
     posSettings.setWebPrintSize(printingForm.webPrintSize);
     posSettings.setWhatsappShareEnabled(printingForm.whatsappShareEnabled);
     posSettings.setPrinterUseUnicode(printingForm.printerUseUnicode);
+    posSettings.setPrinterTrimDecimals(printingForm.printerTrimDecimals);
+    await api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' });
     setSavedPrinting(printingForm);
     if (!silent) toast.success(t('settings.printingSettingsSaved'));
   };
@@ -1322,6 +1339,12 @@ export default function SettingsPage() {
       const enabled = res.data.setting?.value !== 'false';
       setKotPrintingEnabledSetting(enabled);
       posSettings.setKotPrintingEnabled(enabled);
+    }).catch(() => {});
+    api.get('/settings/printer_trim_decimals').then((res) => {
+      const enabled = res.data.setting?.value === 'true';
+      posSettings.setPrinterTrimDecimals(enabled);
+      setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
+      setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
 
     api.get('/settings/order-numbering').then((res) => {
@@ -1775,7 +1798,7 @@ export default function SettingsPage() {
   const saveAllSettings = async () => {
     try {
       await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
-      savePrinting(true);
+      await savePrinting(true);
       saveBillTemplate(true);
       toast.success(t('settings.allSaved'));
     } catch {
@@ -3124,7 +3147,7 @@ export default function SettingsPage() {
                               <p className="text-xs text-gray-500 mt-0.5 truncate">
                                 {p.make !== 'Unknown' ? `${p.make} ${p.model}` : p.model}
                                 {p.connectionType === 'network' && p.ipAddress ? ` · ${p.ipAddress}${p.port ? ':' + p.port : ''}` : ''}
-                                {p.paperWidth ? ` · ${p.paperWidth}` : ''}
+                                {p.paperWidth ? ` · ${printWidthLabel(p.paperWidth)}` : ''}
                                 {p.profileId ? ` · ${t('settings.printerSupportedProfile')}` : ''}
                               </p>
                             </div>
@@ -3176,7 +3199,7 @@ export default function SettingsPage() {
                         {p.connection_type === 'network' ? `${p.ip_address}:${p.port}` :
                          p.connection_type === 'usb' ? (p.usb_device_path || '/dev/usb/lp0') :
                          t('settings.browserWebusb')}
-                        {' · '}{p.paper_width}
+                        {' · '}{printWidthLabel(p.paper_width)}
                         {p.profile_name ? ` · ${p.profile_name}` : ''}
                       </p>
                     </div>
@@ -3269,8 +3292,12 @@ export default function SettingsPage() {
                       <select value={printerForm.paper_width}
                         onChange={(e) => setPrinterForm((p) => ({ ...p, paper_width: e.target.value }))}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand">
-                        <option value="58mm">{t('settings.paperWidth58')}</option>
-                        <option value="80mm">{t('settings.paperWidth80')}</option>
+                        <option value="cols-32">{t('settings.printColumns32')}</option>
+                        <option value="cols-36">{t('settings.printColumns36')}</option>
+                        <option value="cols-40">{t('settings.printColumns40')}</option>
+                        <option value="cols-42">{t('settings.printColumns42')}</option>
+                        <option value="cols-44">{t('settings.printColumns44')}</option>
+                        <option value="cols-48">{t('settings.printColumns48')}</option>
                       </select>
                     </div>
                   </div>
@@ -3384,6 +3411,13 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <Toggle value={printingForm.printerUseUnicode} onChange={(v) => setPrintingForm((p) => ({ ...p, printerUseUnicode: v }))} />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900">{t('settings.trimDecimals')}</p>
+                    <p className="text-sm text-gray-500">{t('settings.trimDecimalsHint')}</p>
+                  </div>
+                  <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }))} />
                 </div>
                 <div>
                   <p className="font-medium text-gray-900 mb-2">{t('settings.webPrintSize')}</p>

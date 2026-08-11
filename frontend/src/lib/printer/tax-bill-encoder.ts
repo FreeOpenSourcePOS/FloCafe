@@ -13,6 +13,7 @@ import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { safePrinterText, type PrintWarning } from './warnings';
+import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 
 export interface TaxBillOptions {
   /** 58 mm (2.5", 42 chars) or 80 mm (3.5", 48 chars). Default: 58 */
@@ -29,10 +30,24 @@ export interface TaxBillOptions {
   stateCode?: string;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
   useUnicode?: boolean;
+  /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
+  trimDecimals?: boolean;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
 const CHARS: Record<58 | 80, number> = { 58: 42, 80: 48 };
+
+function printPoweredByFooter(enc: ReceiptPrinterEncoder): void {
+  enc
+    .align('center')
+    .size('small')
+    .text(RECEIPT_BRANDING_NAME)
+    .newline()
+    .text(RECEIPT_BRANDING_URL)
+    .newline()
+    .size('normal')
+    .align('left');
+}
 
 /**
  * Mask phone number for receipt display — shows only last 4 digits.
@@ -51,7 +66,7 @@ export function buildTaxBillBytes(
   opts: TaxBillOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58, showFooter = true, taxRegistrationNumber, address, phone, useUnicode = false } = opts;
+  const { paperWidth = 58, showFooter = true, taxRegistrationNumber, address, phone, useUnicode = false, trimDecimals = false } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
   const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
@@ -109,7 +124,7 @@ export function buildTaxBillBytes(
   for (const item of items) {
     const line = `${item.product_name}`;
 
-    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, locale), cols), warnings).newline();
+    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, locale, trimDecimals), cols), warnings).newline();
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
@@ -123,7 +138,7 @@ export function buildTaxBillBytes(
         const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
         const addonLine = `   + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
         const addonPrice = addon.price && Number(addon.price) > 0
-          ? formatAmount(Number(addon.price) * qty * item.quantity, currency, locale)
+          ? formatAmount(Number(addon.price) * qty * item.quantity, currency, locale, trimDecimals)
           : '';
         safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings).newline();
       }
@@ -137,7 +152,7 @@ export function buildTaxBillBytes(
     enc.text('Tax Details:').newline();
     for (const component of taxComponents) {
       enc.text(
-        padRow(formatTaxComponentLabel(component), formatAmount(component.amount, currency, locale), cols),
+        padRow(formatTaxComponentLabel(component), formatAmount(component.amount, currency, locale, trimDecimals), cols),
       ).newline();
     }
   }
@@ -146,23 +161,23 @@ export function buildTaxBillBytes(
   enc.rule({ style: 'single' });
 
   const totals: [string, string][] = [
-    ['Subtotal', formatAmount(bill.subtotal, currency, locale)],
+    ['Subtotal', formatAmount(bill.subtotal, currency, locale, trimDecimals)],
   ];
 
   if (Number(bill.discount_amount) > 0) {
-    totals.push(['Discount', `-${formatAmount(bill.discount_amount, currency, locale)}`]);
+    totals.push(['Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`]);
   }
 
   if (Number(bill.tax_amount) > 0) {
-    totals.push(['Total Tax', formatAmount(bill.tax_amount, currency, locale)]);
+    totals.push(['Total Tax', formatAmount(bill.tax_amount, currency, locale, trimDecimals)]);
   }
 
   if (Number(bill.service_charge) > 0) {
-    totals.push(['Service Chg', formatAmount(bill.service_charge, currency, locale)]);
+    totals.push(['Service Chg', formatAmount(bill.service_charge, currency, locale, trimDecimals)]);
   }
 
   if (Number(bill.delivery_charge) > 0) {
-    totals.push(['Delivery', formatAmount(bill.delivery_charge, currency, locale)]);
+    totals.push(['Delivery', formatAmount(bill.delivery_charge, currency, locale, trimDecimals)]);
   }
 
   for (const [label, value] of totals) {
@@ -170,7 +185,7 @@ export function buildTaxBillBytes(
   }
 
   enc.rule({ style: 'double' });
-  enc.bold(true).width(2).text(padRow('TOTAL', formatAmount(bill.total, currency, locale), cols)).width(1);
+  enc.bold(true).width(2).text(padRow('TOTAL', formatAmount(bill.total, currency, locale, trimDecimals), cols)).width(1);
   enc.bold(false).newline();
 
   // ── Payment Details ───────────────────────────────────────────────────────
@@ -178,7 +193,7 @@ export function buildTaxBillBytes(
     enc.newline();
     enc.text('Payments:').newline();
     for (const p of bill.payment_details) {
-      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale), cols)).newline();
+      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale, trimDecimals), cols)).newline();
     }
   }
 
@@ -191,6 +206,7 @@ export function buildTaxBillBytes(
       enc.text('Tax included where applicable').newline();
     }
   }
+  printPoweredByFooter(enc);
 
   enc.newline().newline().newline().cut();
 
@@ -211,9 +227,14 @@ function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
-function formatAmount(value: number | string, currency: string, locale: string): string {
+function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false): string {
   const amount = Number(value);
-  return `${currency}${(Number.isFinite(amount) ? amount : 0).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const numeric = Number.isFinite(amount) ? amount : 0;
+  const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
+  return `${currency}${numeric.toLocaleString(locale, {
+    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 function capitalize(str: string): string {

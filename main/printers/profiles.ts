@@ -7,7 +7,7 @@ export interface SupportedPrinterProfile {
   model: string;
   aliases: string[];
   commandSet: PrinterCommandSet;
-  defaultPaperWidth: '58mm' | '80mm';
+  defaultPaperWidth: 'cols-32' | 'cols-36' | 'cols-40' | 'cols-42' | 'cols-44' | 'cols-48' | '58mm' | '58mm-36' | '80mm-42' | '80mm';
   defaultPort: number;
   fontAColumns: number;
   fontBColumns: number;
@@ -23,9 +23,9 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     model: 'XP-V320M / XP-V330M',
     aliases: ['xprinter xp-v320m', 'xprinter xp-v330m', 'xp-v320m', 'xp-v330m', 'v320m', 'v330m'],
     commandSet: 'escpos',
-    defaultPaperWidth: '80mm',
+    defaultPaperWidth: 'cols-42',
     defaultPort: 9100,
-    fontAColumns: 48,
+    fontAColumns: 42,
     fontBColumns: 64,
     printWidthMm: 72,
     cutMode: 'partial',
@@ -37,7 +37,7 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     model: 'TM Series ESC/POS',
     aliases: ['epson tm', 'tm-t88', 'tm-t82', 'tm-t20', 'tm-m30'],
     commandSet: 'escpos',
-    defaultPaperWidth: '80mm',
+    defaultPaperWidth: 'cols-48',
     defaultPort: 9100,
     fontAColumns: 48,
     fontBColumns: 64,
@@ -49,9 +49,9 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     model: 'ESC/POS 80mm',
     aliases: ['generic 80mm', '80mm thermal', 'thermal 80'],
     commandSet: 'escpos',
-    defaultPaperWidth: '80mm',
+    defaultPaperWidth: 'cols-42',
     defaultPort: 9100,
-    fontAColumns: 48,
+    fontAColumns: 42,
     fontBColumns: 64,
     cutMode: 'full',
   },
@@ -61,9 +61,9 @@ export const SUPPORTED_PRINTER_PROFILES: SupportedPrinterProfile[] = [
     model: 'ESC/POS 58mm',
     aliases: ['generic 58mm', '58mm thermal', 'thermal 58'],
     commandSet: 'escpos',
-    defaultPaperWidth: '58mm',
+    defaultPaperWidth: 'cols-32',
     defaultPort: 9100,
-    fontAColumns: 42,
+    fontAColumns: 32,
     fontBColumns: 56,
     cutMode: 'full',
   },
@@ -101,7 +101,7 @@ export function resolvePrinterProfile(printer: any): SupportedPrinterProfile {
   if (matched) return matched;
 
   const paperWidth = printer?.paper_width || printer?.paperWidth;
-  return paperWidth === '58mm'
+  return String(paperWidth || '').startsWith('58mm')
     ? SUPPORTED_PRINTER_PROFILES.find((p) => p.id === 'generic-escpos-58')!
     : SUPPORTED_PRINTER_PROFILES.find((p) => p.id === 'generic-escpos-80')!;
 }

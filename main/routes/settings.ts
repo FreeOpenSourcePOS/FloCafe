@@ -608,7 +608,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'loyalty_enabled',
   'language',
   'kds_default_view',
-  'printer_method', 'paper_size', 'bill_template',
+  'printer_method', 'paper_size', 'bill_template', 'printer_trim_decimals',
   'telemetry_enabled',
   'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',

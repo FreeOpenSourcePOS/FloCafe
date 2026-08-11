@@ -84,6 +84,9 @@ const isMasBuild =
   process.env.MAS_BUILD === '1' ||
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
 
+const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
+const RECEIPT_BRANDING_URL = 'https://flospos.com';
+
 let defaultPrinter: any = null;
 
 export interface PrinterInfo {
@@ -105,8 +108,8 @@ function guessPaperWidth(name: string, model: string): string {
   const profile = matchSupportedPrinterProfile(name, model);
   if (profile) return profile.defaultPaperWidth;
   const s = (name + ' ' + model).toLowerCase();
-  if (s.includes('58')) return '58mm';
-  return '80mm';
+  if (s.includes('58')) return 'cols-32';
+  return 'cols-42';
 }
 
 function annotateProfile(info: Omit<PrinterInfo, 'profileId'>): PrinterInfo {
@@ -713,8 +716,27 @@ export async function printKOTDetailed(...args: Parameters<typeof printKOT>): Pr
 
 function getColumnsForPrinter(printer: any, profile: SupportedPrinterProfile): number {
   const paperWidth = printer.paper_width || profile.defaultPaperWidth || '80mm';
-  if (paperWidth === '58mm') return 42;
+  const explicitColumns = columnsForPaperWidth(paperWidth);
+  if (explicitColumns) return explicitColumns;
   return profile.fontAColumns || 48;
+}
+
+function columnsForPaperWidth(paperWidth: string): number | null {
+  const colsMatch = String(paperWidth || '').match(/^cols-(3[2-9]|4[0-8])$/);
+  if (colsMatch) return Number(colsMatch[1]);
+
+  switch (paperWidth) {
+    case '58mm':
+      return 32;
+    case '58mm-36':
+      return 36;
+    case '80mm-42':
+      return 42;
+    case '80mm':
+      return null;
+    default:
+      return null;
+  }
 }
 
 async function dispatchPrint(printer: any, data: Buffer): Promise<DispatchResult> {
@@ -773,6 +795,11 @@ function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' | 'd
   return 'classic';
 }
 
+function appendPoweredByFooter(lines: string[]): void {
+  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_NAME + '{/FONT_B}{/CENTER}');
+  lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
+}
+
 function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
@@ -780,9 +807,10 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
 
-  const itemNameLen = cols === 42 ? 28 : 34;
   const amtLen = 10;
+  const itemNameLen = itemNameWidth(cols, amtLen);
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
   const hasTax = Number(bill.tax_amount) !== 0
@@ -802,11 +830,11 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(itemRow(item, itemNameLen, amtLen, prefix, locale));
+      lines.push(itemRow(item, itemNameLen, amtLen, prefix, locale, trimDecimals));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
-        lines.push(addonRow(addon, itemNameLen, amtLen, cols, prefix, locale));
+        lines.push(addonRow(addon, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
       }
       if (item.special_instructions) {
         lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
@@ -815,14 +843,14 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   }
 
   lines.push(dash);
-  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale), cols - 8));
+  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - 8));
   if (bill.discount_amount > 0) {
-    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale), cols - 8));
+    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - 8));
   }
   if (Number(bill.tax_amount) !== 0) {
-    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
+    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols - 3));
   }
-  lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale), cols - 5) + '{/BOLD}');
+  lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - 5) + '{/BOLD}');
 
   if (bill.payment_details) {
     lines.push(dash);
@@ -832,7 +860,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
         for (const payment of payments) {
           if (payment && payment.method) {
             const methodLabel = truncate(String(payment.method), cols - 12);
-            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - methodLabel.length));
+            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale, trimDecimals), cols - methodLabel.length));
           }
         }
       }
@@ -842,10 +870,11 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   }
 
   lines.push(bar);
-  if (biz.address) lines.push(biz.address);
-  if (biz.phone) lines.push('Ph: ' + biz.phone);
-  if (hasTax && biz.taxRegistrationNumber) lines.push(taxIdLabel + ': ' + biz.taxRegistrationNumber);
+  if (biz.address) pushWrapped(lines, biz.address, cols);
+  if (biz.phone) pushWrapped(lines, 'Ph: ' + biz.phone, cols);
+  if (hasTax && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
   lines.push('{CENTER}Thank you!{/CENTER}');
+  appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
   return buildEscPos(lines, useUnicode, { cutMode }, warnings);
@@ -857,9 +886,10 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   const dash = '-'.repeat(cols);
 
-  const itemNameLen = cols === 42 ? 28 : 34;
   const amtLen = 10;
+  const itemNameLen = itemNameWidth(cols, amtLen);
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
 
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
@@ -883,11 +913,11 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(itemRow(item, itemNameLen, amtLen, prefix, locale));
+      lines.push(itemRow(item, itemNameLen, amtLen, prefix, locale, trimDecimals));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
-        lines.push(addonRow(addon, itemNameLen, amtLen, cols, prefix, locale));
+        lines.push(addonRow(addon, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
       }
       if (item.special_instructions) {
         lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
@@ -899,18 +929,18 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   // Discount / redeemed points sit above the subtotal, each only if present.
   if (bill.discount_amount > 0) {
-    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale), cols - 8));
+    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - 8));
   }
   if (biz.points_redeemed > 0) {
     const label = 'Points Redeemed';
     lines.push(label + rightAlign('-' + biz.points_redeemed + ' pts', cols - label.length));
   }
 
-  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale), cols - 8));
+  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - 8));
   if (Number(bill.tax_amount) !== 0) {
-    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
+    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols - 3));
   }
-  lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale), cols - 5) + '{/BOLD}');
+  lines.push('{BOLD}TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - 5) + '{/BOLD}');
 
   if (bill.payment_details) {
     try {
@@ -919,7 +949,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
         for (const payment of payments) {
           if (payment && payment.method) {
             const methodLabel = truncate(String(payment.method), cols - 12);
-            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - methodLabel.length));
+            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale, trimDecimals), cols - methodLabel.length));
           }
         }
       }
@@ -944,9 +974,10 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   if (biz.instagram_handle) footerLines.push(biz.instagram_handle);
   if (footerLines.length > 0) {
     lines.push(dash);
-    for (const footerLine of footerLines) lines.push('{CENTER}' + footerLine + '{/CENTER}');
+    for (const footerLine of footerLines) pushCenteredWrapped(lines, footerLine, cols);
   }
 
+  appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
   return buildEscPos(lines, useUnicode, { cutMode }, warnings);
@@ -959,8 +990,9 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   const bar = '='.repeat(cols);
   const dash = '-'.repeat(cols);
 
-  const itemNameLen = cols === 42 ? 28 : 34;
+  const itemNameLen = itemNameWidth(cols, 10);
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
@@ -984,11 +1016,11 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
 
   if (order.items) {
     for (const item of order.items) {
-      lines.push(itemRow(item, itemNameLen, 10, prefix, locale));
+      lines.push(itemRow(item, itemNameLen, 10, prefix, locale, trimDecimals));
 
       const addons = parseAddons(item.addons);
       for (const addon of addons) {
-        lines.push(addonRow(addon, itemNameLen, 10, cols, prefix, locale));
+        lines.push(addonRow(addon, itemNameLen, 10, cols, prefix, locale, trimDecimals));
       }
       if (item.special_instructions) {
         lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
@@ -997,9 +1029,9 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   }
 
   lines.push(dash);
-  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale), cols - 8));
+  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - 8));
   if (bill.discount_amount > 0) {
-    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale), cols - 8));
+    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - 8));
   }
 
   if (taxComponents.length > 0) {
@@ -1007,14 +1039,14 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
       if (tax.amount === 0) continue;
       const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
       const label = truncate(rawLabel, cols - 12);
-      lines.push(label + rightAlign(formatCurrency(tax.amount, prefix, locale), cols - label.length));
+      lines.push(label + rightAlign(formatCurrency(tax.amount, prefix, locale, trimDecimals), cols - label.length));
     }
   } else if (bill.tax_amount) {
-    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale), cols - 3));
+    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols - 3));
   }
 
   lines.push(bar);
-  lines.push('{BOLD}GRAND TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale), cols - 12) + '{/BOLD}');
+  lines.push('{BOLD}GRAND TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - 12) + '{/BOLD}');
 
   if (bill.payment_details) {
     lines.push(dash);
@@ -1024,7 +1056,7 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
         for (const payment of payments) {
           if (payment && payment.method) {
             const methodLabel = truncate(String(payment.method), cols - 12);
-            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale), cols - methodLabel.length));
+            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale, trimDecimals), cols - methodLabel.length));
           }
         }
       }
@@ -1034,10 +1066,11 @@ function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 4
   }
 
   lines.push(bar);
-  if (biz.address) lines.push('Address: ' + biz.address);
-  if (biz.phone) lines.push('Phone: ' + biz.phone);
-  if (hasTax && biz.taxRegistrationNumber) lines.push(taxIdLabel + ': ' + biz.taxRegistrationNumber);
+  if (biz.address) pushWrapped(lines, 'Address: ' + biz.address, cols);
+  if (biz.phone) pushWrapped(lines, 'Phone: ' + biz.phone, cols);
+  if (hasTax && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
   lines.push('{CENTER}Thank you for your business!{/CENTER}');
+  appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
   return buildEscPos(lines, useUnicode, { cutMode }, warnings);
@@ -1055,19 +1088,23 @@ function itemHeader(nameLen: number, amtLen: number): string {
   );
 }
 
-function itemRow(item: any, nameLen: number, amtLen: number, prefix: string, locale: string = 'en-US'): string {
+function itemNameWidth(cols: number, amtLen: number): number {
+  return Math.max(12, cols - 4 - amtLen);
+}
+
+function itemRow(item: any, nameLen: number, amtLen: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string {
   const qtyW = 4;
   const name = truncate(item.product_name, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
-  const amt = rightAlign(formatCurrency(item.total, prefix, locale), amtLen);
+  const amt = rightAlign(formatCurrency(item.total, prefix, locale, trimDecimals), amtLen);
   return name + qty + amt;
 }
 
-function addonRow(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US'): string {
+function addonRow(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string {
   const midW = cols - nameLen - amtLen;
   const label = truncate('  + ' + addon.name, nameLen).padEnd(nameLen);
   const spacer = ' '.repeat(Math.max(0, midW));
-  const price = addon.price ? rightAlign(formatCurrency(addon.price, prefix, locale), amtLen) : ' '.repeat(amtLen);
+  const price = addon.price ? rightAlign(formatCurrency(addon.price, prefix, locale, trimDecimals), amtLen) : ' '.repeat(amtLen);
   return label + spacer + price;
 }
 
@@ -1075,8 +1112,13 @@ function parseAddons(addons: any): any[] {
   return Array.isArray(addons) ? addons : [];
 }
 
-function formatCurrency(amount: number, prefix: string, locale: string = 'en-US'): string {
-  return prefix + (Number(amount) || 0).toLocaleString(locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function formatCurrency(amount: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string {
+  const numeric = Number(amount) || 0;
+  const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
+  return prefix + numeric.toLocaleString(locale, {
+    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
+    maximumFractionDigits: 2,
+  });
 }
 
 function rightAlign(text: string, width: number = 24): string {
@@ -1085,6 +1127,44 @@ function rightAlign(text: string, width: number = 24): string {
 
 function truncate(text: string, length: number): string {
   return text.length > length ? text.substring(0, length - 2) + '..' : text;
+}
+
+function wrapText(text: string, cols: number): string[] {
+  const words = String(text || '').trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    if (word.length > cols) {
+      if (current) {
+        lines.push(current);
+        current = '';
+      }
+      for (let i = 0; i < word.length; i += cols) {
+        lines.push(word.slice(i, i + cols));
+      }
+      continue;
+    }
+
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= cols) {
+      current = candidate;
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines.length > 0 ? lines : [''];
+}
+
+function pushWrapped(lines: string[], text: string, cols: number): void {
+  for (const line of wrapText(text, cols)) lines.push(line);
+}
+
+function pushCenteredWrapped(lines: string[], text: string, cols: number): void {
+  for (const line of wrapText(text, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
 export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[]): Buffer {
@@ -1124,8 +1204,10 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
 }
 
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full'): Buffer {
-  const width = paperWidth === '58mm' ? 42 : 48;
+  const width = columnsForPaperWidth(paperWidth) || 48;
   const bar = '='.repeat(width);
+  const ruler = Array.from({ length: width }, (_, i) => String((i + 1) % 10)).join('');
+  const edgeProbe = 'X'.repeat(width);
   const lines = [
     '{INIT}',
     '{CENTER}{BOLD}Flo Printer Test{/BOLD}{/CENTER}',
@@ -1134,7 +1216,12 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
     '{CENTER}Network / USB test print{/CENTER}',
     bar,
     '',
-    `Paper: ${paperWidth}`,
+    `Columns: ${width}`,
+    'If the next line wraps, choose',
+    'a smaller column value.',
+    ruler,
+    edgeProbe,
+    bar,
     `Time: ${new Date().toLocaleString('en-US-u-nu-latn')}`,
     '',
     bar,
@@ -1145,27 +1232,28 @@ export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMo
   return buildEscPos(lines, false, { cutMode });
 }
 
-// Every ASCII fallback is exactly 2 characters, so the currency slot on a
-// printed line is always 2 columns wide whether or not unicode is enabled.
+// Every ASCII fallback is no wider than 3 characters, so currency labels such
+// as USD/EUR/INR have a stable reserved slot in receipt amount columns.
 const CURRENCY_ASCII_MAP: Record<string, string> = {
-  '₹': 'Rs', '₨': 'Rs', '€': 'Eu', '£': 'Pd', '¥': 'Yn',
-  '₩': 'Kw', '₺': 'Tl', '₫': 'Vd', '₪': 'Ns', '₽': 'Rb',
-  '฿': 'Bh', '₱': 'Ph', '₴': 'Uh', '₦': 'Ng', '₵': 'Gh',
-  '₡': 'Cr', '₲': 'Pg', 'د.إ': 'Dh', '﷼': 'Rl', '৳': 'Tk',
-  'E£': 'Ep',
+  '₹': 'Rs', '₨': 'Rs', '€': 'EUR', '£': 'GBP', '¥': 'Yen',
+  '₩': 'KRW', '₺': 'TRY', '₫': 'VND', '₪': 'ILS', '₽': 'RUB',
+  '฿': 'THB', '₱': 'PHP', '₴': 'UAH', '₦': 'NGN', '₵': 'GHS',
+  '₡': 'CRC', '₲': 'PYG', 'د.إ': 'AED', '﷼': 'SAR', '৳': 'BDT',
+  'E£': 'EGP',
 };
 
 // Resolves the currency symbol into the exact text that will be printed,
-// padded to a fixed 2-column slot (leading space if it's a single-width
+// padded to a fixed 3-column slot (leading spaces for shorter symbols/codes).
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
 function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
   const isAsciiSafe = /^[\x00-\x7F]+$/.test(symbol);
-  const prefix = (useUnicode || isAsciiSafe)
+  const rawPrefix = (useUnicode || isAsciiSafe)
     ? symbol
-    : (CURRENCY_ASCII_MAP[symbol] || symbol.slice(0, 2).toUpperCase() || 'Rs');
-  return prefix.length >= 2 ? prefix : ' '.repeat(2 - prefix.length) + prefix;
+    : (CURRENCY_ASCII_MAP[symbol] || symbol.slice(0, 3).toUpperCase() || 'Rs');
+  const prefix = rawPrefix.length > 3 ? rawPrefix.slice(0, 3) : rawPrefix;
+  return prefix.length >= 3 ? prefix : ' '.repeat(3 - prefix.length) + prefix;
 }
 
 export function buildEscPos(lines: string[], useUnicode: boolean = false, options: { cutMode?: PrinterCutMode } = {}, warnings?: PrintWarning[]): Buffer {

@@ -275,7 +275,7 @@ export default function ServerStandalonePage() {
             <p className="mt-1 text-sm text-gray-500">Tableside ordering for service staff</p>
           </div>
           <div className="space-y-3">
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="waiter@flo.local" required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" placeholder="server@flo.local" required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
             <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder="Password" required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="rounded border-gray-300 text-brand focus:ring-brand" />

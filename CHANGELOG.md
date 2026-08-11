@@ -2,6 +2,12 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.0.2] - 2026-08-11
+
+### Fixed
+- Printer settings now support explicit printable-column widths per configured printer, so ESC/POS receipts and KOT tickets can be matched to narrow, safe, or wide thermal driver layouts.
+- Receipt and tax-bill formatting use the selected column width for row spacing, wrapping, dividers, totals, and currency alignment.
+
 ## [3.0.0] - 2026-08-11
 
 ### Added

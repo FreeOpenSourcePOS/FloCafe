@@ -21,6 +21,10 @@ type ServerAppUser = {
   iat?: number;
 };
 
+function normalizeEmail(email: unknown): string {
+  return String(email || '').trim().toLowerCase();
+}
+
 export function isServerAppRunning(): boolean {
   return serverApp !== null;
 }
@@ -150,13 +154,22 @@ export function startServerApp(): Promise<void> {
     app.post('/api/auth/login', authRateLimit(), (req: Request, res: Response) => {
       if (!isServerAppEnabled()) return res.status(404).json({ error: 'Not found' });
       try {
-        const { email, password, remember_me } = req.body;
+        const email = normalizeEmail(req.body?.email);
+        const { password, remember_me } = req.body;
         if (!email || !password) return res.status(400).json({ error: 'Email and password required' });
 
         const db = getDatabase();
         const bcrypt = require('bcryptjs');
         const user = db.prepare('SELECT * FROM users WHERE email = ? AND is_active = 1').get(email) as any;
-        if (!user || !bcrypt.compareSync(password, user.password)) {
+        let passwordMatches = false;
+        if (user) {
+          try {
+            passwordMatches = bcrypt.compareSync(password, user.password);
+          } catch {
+            passwordMatches = false;
+          }
+        }
+        if (!user || !passwordMatches) {
           return res.status(401).json({ error: 'Invalid credentials' });
         }
         if (!['waiter', 'manager', 'owner'].includes(user.role)) {

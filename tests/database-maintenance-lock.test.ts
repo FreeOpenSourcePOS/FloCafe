@@ -89,17 +89,27 @@ async function run() {
   let authTouched = false;
   app.use((_req, _res, next) => { authTouched = true; next(); });
   app.post('/api/db/backup', (_req, res) => res.json({ reached: true }));
-  let activeRouteMaintenanceStarted = false;
-  const unregisterMaintenanceStart = registerDatabaseMaintenanceStartListener(() => {
-    activeRouteMaintenanceStarted = true;
+  let routeMaintenanceStarted!: () => void;
+  const routeMaintenanceStartedSignal = new Promise<void>((resolve) => {
+    routeMaintenanceStarted = resolve;
   });
-  const activeRouteMaintenance = withDatabaseMaintenanceLock(async () => { await delay(20); });
-  while (!activeRouteMaintenanceStarted) await delay(1);
+  const unregisterMaintenanceStart = registerDatabaseMaintenanceStartListener(() => {
+    routeMaintenanceStarted();
+  });
+  let releaseMaintenance!: () => void;
+  const maintenanceHold = new Promise<void>((resolve) => {
+    releaseMaintenance = resolve;
+  });
+  const activeRouteMaintenance = withDatabaseMaintenanceLock(async () => {
+    await maintenanceHold;
+  });
+  await routeMaintenanceStartedSignal;
   try {
     const concurrentRoute = await request(app).post('/api/db/backup');
     assert.equal(concurrentRoute.status, 503, 'concurrent maintenance route receives 503 before auth/route middleware');
     assert.equal(authTouched, false, 'concurrent maintenance route does not reach later middleware');
   } finally {
+    releaseMaintenance();
     await activeRouteMaintenance;
     unregisterMaintenanceStart();
   }

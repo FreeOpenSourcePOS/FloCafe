@@ -194,7 +194,9 @@ function run() {
   assert.ok(storePublishJob.includes('microsoft-store-apppublisher@'), 'Store publishing must install Microsoft Store CLI through the Microsoft action');
   assert.ok(storePublishJob.includes('version: v0.3.9'), 'Microsoft Store CLI version must be pinned for reproducible releases');
   assert.ok(storePublishJob.includes('msstore reconfigure'), 'Store publishing must configure Partner Center credentials at runtime');
-  assert.ok(storePublishJob.includes('msstore publish'), 'Store publishing must submit the validated AppX package');
+  assert.ok(storePublishJob.includes('MSSTORE_FLIGHT_ID'), 'Store publishing must support an optional Partner Center flight for first-run validation');
+  assert.ok(storePublishJob.includes('MSSTORE_NO_COMMIT'), 'Store publishing must support leaving the first submission as a draft');
+  assert.ok(storePublishJob.includes('msstore @publishArgs'), 'Store publishing must pass optional flight/draft flags through the CLI argument array');
   for (const secret of ['AZURE_AD_TENANT_ID', 'AZURE_AD_APPLICATION_CLIENT_ID', 'AZURE_AD_APPLICATION_SECRET', 'SELLER_ID']) {
     assert.ok(storePublishJob.includes(`secrets.${secret}`), `Store publishing must read ${secret} from GitHub secrets`);
   }

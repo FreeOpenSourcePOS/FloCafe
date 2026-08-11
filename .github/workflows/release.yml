@@ -528,6 +528,11 @@ jobs:
           AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
           SELLER_ID: ${{ secrets.SELLER_ID }}
           MSSTORE_PRODUCT_ID: 9n1md6585p4q
+          # Optional environment variables for the first Store validation run.
+          # Set MSSTORE_NO_COMMIT=true to leave the submission as a draft, or
+          # set MSSTORE_FLIGHT_ID to submit to a Partner Center flight.
+          MSSTORE_FLIGHT_ID: ${{ vars.MSSTORE_FLIGHT_ID }}
+          MSSTORE_NO_COMMIT: ${{ vars.MSSTORE_NO_COMMIT }}
         run: |
           if ([string]::IsNullOrWhiteSpace($env:AZURE_AD_TENANT_ID) -or
               [string]::IsNullOrWhiteSpace($env:AZURE_AD_APPLICATION_CLIENT_ID) -or
@@ -546,5 +551,13 @@ jobs:
           $packages = @(Get-ChildItem release\*.appx -File -ErrorAction SilentlyContinue)
           if ($packages.Count -ne 1) { throw "Expected exactly one downloaded AppX package, found $($packages.Count)." }
 
-          & msstore publish $packages[0].FullName --appId $env:MSSTORE_PRODUCT_ID
+          $publishArgs = @('publish', $packages[0].FullName, '--appId', $env:MSSTORE_PRODUCT_ID)
+          if (-not [string]::IsNullOrWhiteSpace($env:MSSTORE_FLIGHT_ID)) {
+            $publishArgs += @('--flightId', $env:MSSTORE_FLIGHT_ID)
+          }
+          if ($env:MSSTORE_NO_COMMIT -eq 'true') {
+            $publishArgs += '--noCommit'
+          }
+
+          & msstore @publishArgs
           if ($LASTEXITCODE -ne 0) { throw "Microsoft Store publish failed with exit code $LASTEXITCODE." }

@@ -660,6 +660,11 @@ export default function ProductsPage() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
               </div>
               <div>
+                <label htmlFor="product-description" className="block text-sm font-medium text-gray-700 mb-1">{t('products.categoryDescription')}</label>
+                <textarea id="product-description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" rows={2} />
+              </div>
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldImage')}</label>
                 <ImageUploader
                   value={form.image_url}

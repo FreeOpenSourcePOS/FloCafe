@@ -13,6 +13,8 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
   await expect(page.getByRole('button', { name: 'Tax ฿4.20' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
   await expect(page.getByText('Round off', { exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Cash' }).click();
+  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeEnabled();
 
   const orderResponse = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -53,6 +55,8 @@ test('prepaid checkout never reports success when the payment response is partia
   await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
   await page.getByRole('button', { name: 'Place Order' }).click();
   await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeVisible();
+  await page.getByRole('button', { name: 'Cash' }).click();
+  await expect(page.getByRole('button', { name: 'Confirm Payment · ฿64.20' })).toBeEnabled();
 
   let paymentBatchRequests = 0;
   await page.route('**/api/bills/*/payments', async (route) => {

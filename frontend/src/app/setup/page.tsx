@@ -99,7 +99,7 @@ export default function SetupPage() {
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
   const q = countryQuery.trim().toLowerCase();
-  const languageOptions: Language[] = browserLanguage === 'es' ? ['es', 'pt', 'en'] : browserLanguage === 'pt' ? ['pt', 'es', 'en'] : ['en', 'es', 'pt'];
+  const languageOptions: Language[] = browserLanguage === 'es' ? ['es', 'pt', 'en' , 'fa'] : browserLanguage === 'pt' ? ['pt', 'es', 'en' , 'fa'] : ['en', 'es', 'pt' , 'fa'];
   const filteredCountries = COUNTRIES.filter((c) => {
     if (!q) return true;
     return (
@@ -247,21 +247,37 @@ export default function SetupPage() {
                 <div className="grid gap-3 sm:grid-cols-2">
                   {languageOptions.map((option) => {
                     const selected = language === option;
-                    const label = option === 'es' ? t('setup.languageSpanish') : option === 'pt' ? t('setup.languagePortuguese') : t('setup.languageEnglish');
+
+                    const label =
+                      option === 'es'
+                        ? t('setup.languageSpanish')
+                        : option === 'pt'
+                          ? t('setup.languagePortuguese')
+                          : option === 'fa'
+                            ? t('setup.languagePersian')
+                            : t('setup.languageEnglish');
+
                     return (
                       <button
                         key={option}
                         onClick={() => setLanguage(option)}
                         className={`p-4 rounded-xl border-2 text-left transition-all ${
-                          selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
+                          selected
+                            ? 'border-primary bg-primary/5'
+                            : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <div className="font-semibold">{label}</div>
-                            <div className="text-xs text-muted-foreground mt-1">{option.toUpperCase()}</div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {option.toUpperCase()}
+                            </div>
                           </div>
-                          {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
+
+                          {selected && (
+                            <Check className="w-5 h-5 text-primary shrink-0" />
+                          )}
                         </div>
                       </button>
                     );

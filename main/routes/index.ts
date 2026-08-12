@@ -279,7 +279,7 @@ export function registerRoutes(app: Express): void {
       // the whole-order-cancel override pattern below (routes/orders.ts
       // ~L580-609), and leaves a negative bill line so the removal stays
       // visible on the bill rather than the item just vanishing.
-      const isInProgressVoid = ['preparing', 'ready'].includes(item.status);
+      const isInProgressVoid = ['preparing', 'ready'].includes(item.status) || ['preparing', 'ready'].includes(order.status);
       const isPrivilegedRole = ['owner', 'manager'].includes(userRole);
       const canUseOverride = ['cashier', 'waiter'].includes(userRole) && isInProgressVoid;
       if (!isPrivilegedRole && !canUseOverride) {
@@ -320,6 +320,18 @@ export function registerRoutes(app: Express): void {
 
       // BUG #17 FIX: Wrap cancel + total recalc in transaction
       const result = withTxn(() => {
+        const currentItem = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
+        if (!currentItem) {
+          throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
+        }
+
+        // Idempotent no-op if item is already cancelled or voided
+        if (['cancelled', 'voided', 'void_adjustment'].includes(currentItem.status)) {
+          const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+          const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
+          return { updatedOrder, items, orderCancelled: updatedOrder.status === 'cancelled' };
+        }
+
         if (isInProgressVoid) {
           // Leave the original line alone (it's a true record of what was
           // ordered and prepared) and add a mirrored negative line instead of
@@ -333,28 +345,33 @@ export function registerRoutes(app: Express): void {
               variant_selection, modifier_selection, status, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
           `).run(
-            orderId, item.product_id, `Void: ${item.product_name}`, item.product_sku,
-            -item.unit_price, item.quantity, -item.subtotal, -(item.tax_amount || 0),
-            invertTaxBreakdown(item.tax_breakdown), invertTaxSnapshot(item.tax_snapshot), item.tax_type,
-            -(item.discount_amount || 0), -item.total,
-            item.variant_selection, item.modifier_selection, now(), now(),
+            orderId, currentItem.product_id, `Void: ${currentItem.product_name}`, currentItem.product_sku,
+            -currentItem.unit_price, currentItem.quantity, -currentItem.subtotal, -(currentItem.tax_amount || 0),
+            invertTaxBreakdown(currentItem.tax_breakdown), invertTaxSnapshot(currentItem.tax_snapshot), currentItem.tax_type,
+            -(currentItem.discount_amount || 0), -currentItem.total,
+            currentItem.variant_selection, currentItem.modifier_selection, now(), now(),
           );
           // #150 Q1-Q4 decision: mark 'voided', not 'cancelled' — a distinct,
-          // terminal status. Item stage-change endpoints (routes/kds.ts,
-          // routes/order-items.ts, kds-server.ts) reject any further
+          // terminal status. Item stage-change endpoints reject any further
           // transition once status is 'voided', and inventory is
           // deliberately left alone: it was already deducted when the item
           // was added, and voiding an already-prepared item must not restock it.
           db.prepare("UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?")
             .run(now(), now(), itemId);
         } else {
-          // Soft delete - mark as cancelled
+          // Soft delete - mark as cancelled and restore stock for tracked product
           db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
             .run(now(), itemId);
+
+          const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
+          if (product && product.track_inventory) {
+            db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
+              .run(currentItem.quantity, now(), product.id);
+          }
         }
 
-        // Recalculate order totals excluding cancelled items
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'")
+        // Recalculate order totals excluding cancelled, voided, and void_adjustment items
+        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')")
           .all(orderId) as any[];
         let subtotal = 0;
         let totalTax = 0;
@@ -426,20 +443,10 @@ export function registerRoutes(app: Express): void {
         // #132 FIX: cancelling the last active item leaves nothing to serve or
         // bill — treat it as the whole order being cancelled, the same way the
         // explicit order-level cancel (routes/orders.ts) does: free the table,
-        // restore tracked inventory, and stamp cancelled_at/cancellation_reason.
-        // Without this the order silently stayed "active" with zero items,
-        // cluttering the Active list and permanently holding its table.
+        // and stamp cancelled_at/cancellation_reason. (Item stock was already restored above).
         const orderCancelled = activeItems.length === 0 && order.status !== 'cancelled';
 
         if (orderCancelled) {
-          const allItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[];
-          for (const i of allItems) {
-            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(i.product_id) as any;
-            if (product?.track_inventory) {
-              db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-                .run(i.quantity, now(), product.id);
-            }
-          }
           db.prepare(`
             UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
               status = 'cancelled', cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?
@@ -515,12 +522,34 @@ export function registerRoutes(app: Express): void {
 
       // BUG #17 FIX: Wrap restore + total recalc in transaction
       const result = withTxn(() => {
+        const currentItem = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
+        if (!currentItem) {
+          throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
+        }
+
+        // Only cancelled items can be restored; ignore if already active or voided
+        if (currentItem.status !== 'cancelled') {
+          const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+          const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
+          return { updatedOrder, items };
+        }
+
+        // Re-deduct stock for tracked product if available
+        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
+        if (product && product.track_inventory) {
+          if (product.stock_quantity < currentItem.quantity) {
+            throw Object.assign(new Error(`Insufficient stock to restore item (Available: ${product.stock_quantity}, Required: ${currentItem.quantity})`), { statusCode: 400 });
+          }
+          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
+            .run(currentItem.quantity, now(), product.id);
+        }
+
         // Restore - mark as pending
         db.prepare("UPDATE order_items SET status = 'pending', updated_at = ? WHERE id = ?")
           .run(now(), itemId);
 
         // Recalculate order totals
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'")
+        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')")
           .all(orderId) as any[];
         let subtotal = 0;
         let totalTax = 0;

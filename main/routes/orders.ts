@@ -863,6 +863,30 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
     const nowStr = now();
 
     const { updatedOrder, orderItems, table } = withTxn(() => {
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+
+      if (['completed', 'cancelled'].includes(currentOrder.status)) {
+        if (currentOrder.status === status) {
+          // Idempotent same-state request for terminal order
+          const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
+          const tableRow = currentOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(currentOrder.table_id) as any : null;
+          const tableObj = tableRow ? { ...tableRow, name: tableRow.number } : null;
+          return { updatedOrder: currentOrder, orderItems: items, table: tableObj };
+        }
+        throw Object.assign(new Error(`Cannot change status of a ${currentOrder.status} order`), { statusCode: 400 });
+      }
+
+      if (currentOrder.status === status) {
+        // Idempotent same-state request for active order
+        const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
+        const tableRow = currentOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(currentOrder.table_id) as any : null;
+        const tableObj = tableRow ? { ...tableRow, name: tableRow.number } : null;
+        return { updatedOrder: currentOrder, orderItems: items, table: tableObj };
+      }
+
       switch (status) {
         case 'preparing':
           db.prepare('UPDATE orders SET status = ?, cooking_started_at = ?, updated_at = ? WHERE id = ?')
@@ -886,27 +910,38 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
             UPDATE order_items SET status = 'served', updated_at = ?
             WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
           `).run(nowStr, req.params.id);
-          if ((order as any).table_id) {
+          if (currentOrder.table_id) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-              .run(nowStr, (order as any).table_id);
+              .run(nowStr, currentOrder.table_id);
           }
           break;
 
         case 'cancelled': {
-          const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id) as any[];
-          for (const item of items) {
+          // Select only items eligible for restocking (exclude already cancelled, voided, or accounting adjustments)
+          const eligibleItems = db.prepare(`
+            SELECT * FROM order_items
+            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')
+          `).all(req.params.id) as any[];
+
+          for (const item of eligibleItems) {
             const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
             if (product && product.track_inventory) {
               db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
                 .run(item.quantity, nowStr, product.id);
             }
           }
+
+          db.prepare(`
+            UPDATE order_items SET status = 'cancelled', updated_at = ?
+            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')
+          `).run(nowStr, req.params.id);
+
           db.prepare('UPDATE orders SET status = ?, cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?')
             .run(status, nowStr, reason, nowStr, req.params.id);
           // Only free table if explicitly requested (default: true for backward compatibility)
-          if ((order as any).table_id && free_table !== false) {
+          if (currentOrder.table_id && free_table !== false) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-              .run(nowStr, (order as any).table_id);
+              .run(nowStr, currentOrder.table_id);
           }
           break;
         }
@@ -925,7 +960,7 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 

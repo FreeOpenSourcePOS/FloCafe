@@ -106,7 +106,7 @@
     "test:e2e-argentina-flow": "ts-node --transpile-only -P tests/tsconfig.json tests/e2e-argentina-flow.test.ts",
     "test:translations": "ts-node --transpile-only -P tests/tsconfig.json tests/translations.test.ts",
     "test:phone": "ts-node --transpile-only -P tests/tsconfig.json tests/phone.test.ts",
-    "test:currency": "ts-node --transpile-only -P tests/tsconfig.json tests/currency.test.ts",
+    "test:currency": "ts-node --transpile-only -P tests/tsconfig.json tests/currency.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/country-profile.test.ts",
     "test:tax-engine": "ts-node --transpile-only -P tests/tsconfig.json tests/tax-engine.test.ts",
     "test:tax-components": "ts-node --transpile-only -P tests/tsconfig.json tests/tax-components.test.ts",
     "test:tax-pack-catalog": "ts-node --transpile-only -P tests/tsconfig.json tests/tax-pack-catalog.test.ts",

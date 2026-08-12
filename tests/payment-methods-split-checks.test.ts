@@ -136,30 +136,34 @@ async function main() {
     const oneCentSum = Number(oneCentSplit.data.bills.reduce((sum: number, b: any) => sum + b.total, 0).toFixed(2));
     assertEqual(oneCentSum, 0.01, 'one-cent split totals sum exactly to $0.01');
 
-    // C. Uneven Weight Allocation
-    const unevenOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 3, items: [{ product_id: 'split-coffee', quantity: 3 }] }, headers: authHeader });
-    const unevenItem = unevenOrderRes.data.order.items[0];
+    // C. Unequal Weight Allocation
+    seedProduct(db, 'split-unequal-a', 'split-cat', 'Product A', 6.00);
+    seedProduct(db, 'split-unequal-b', 'split-cat', 'Product B', 4.00);
+    const unevenOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-unequal-a', quantity: 1 }, { product_id: 'split-unequal-b', quantity: 1 }] }, headers: authHeader });
+    const itemA = unevenOrderRes.data.order.items.find((i: any) => i.product_id === 'split-unequal-a');
+    const itemB = unevenOrderRes.data.order.items.find((i: any) => i.product_id === 'split-unequal-b');
     const unevenBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: unevenOrderRes.data.order.id }, headers: authHeader });
-    db.prepare('UPDATE bills SET subtotal = 10.00, total = 10.00, balance = 10.00 WHERE id = ?').run(unevenBillRes.data.bill.id);
+    db.prepare('UPDATE bills SET subtotal = 10.01, total = 10.01, balance = 10.01 WHERE id = ?').run(unevenBillRes.data.bill.id);
     const unevenSplit = await api(baseUrl, `/api/bills/${unevenBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
-      { label: 'Guest 1', items: [{ order_item_id: unevenItem.id, quantity: 1 }] },
-      { label: 'Guest 2', items: [{ order_item_id: unevenItem.id, quantity: 1 }] },
-      { label: 'Guest 3', items: [{ order_item_id: unevenItem.id, quantity: 1 }] },
+      { label: 'Guest 1 (Product A)', items: [{ order_item_id: itemA.id, quantity: 1 }] },
+      { label: 'Guest 2 (Product B)', items: [{ order_item_id: itemB.id, quantity: 1 }] },
     ] }, headers: authHeader });
-    assertEqual(unevenSplit.status, 201, 'uneven weight split returns 201');
-    assertEqual(JSON.stringify(unevenSplit.data.bills.map((b: any) => b.total)), JSON.stringify([3.34, 3.33, 3.33]), 'largest remainder distributes $10.00 deterministically into 3.34, 3.33, 3.33');
+    assertEqual(unevenSplit.status, 201, 'unequal weight split returns 201');
+    assertEqual(JSON.stringify(unevenSplit.data.bills.map((b: any) => b.total)), JSON.stringify([6.01, 4.00]), 'largest remainder distributes $10.01 into 6.01 and 4.00 according to 60/40 item weights');
     const unevenSum = Number(unevenSplit.data.bills.reduce((sum: number, b: any) => sum + b.total, 0).toFixed(2));
-    assertEqual(unevenSum, 10.00, 'uneven split totals reconcile exactly to $10.00');
+    assertEqual(unevenSum, 10.01, 'unequal split totals reconcile exactly to $10.01');
 
     // D. Void Adjustment Exclusion
     const { registerRoutes } = require('../main/routes/index');
     registerRoutes(app);
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', datetime('now'))").run();
     const mgrUser = seedManagerUser(db);
     const voidOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }, { product_id: 'split-toast', quantity: 1 }] }, headers: authHeader });
     const voidOrder = voidOrderRes.data.order;
     const voidItemToCancel = voidOrder.items.find((i: any) => i.product_id === 'split-toast');
     const activeItemToKeep = voidOrder.items.find((i: any) => i.product_id === 'split-coffee');
-    db.prepare("UPDATE order_items SET status = 'preparing' WHERE id = ?").run(voidItemToCancel.id);
+    const prepRes = await api(baseUrl, `/api/order-items/${voidItemToCancel.id}/status`, { method: 'PATCH', body: { status: 'preparing' }, headers: authHeader });
+    assertEqual(prepRes.status, 200, 'item moved to preparing via order-items API');
     const cancelRes = await api(baseUrl, `/api/orders/${voidOrder.id}/items/${voidItemToCancel.id}/cancel`, { method: 'PATCH', body: { override_pin: '1234' }, headers: mgrUser.authHeader });
     assertEqual(cancelRes.status, 200, 'in-progress item voided with manager PIN');
     const voidAdjRow = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status = 'void_adjustment'").get(voidOrder.id) as any;
@@ -211,6 +215,77 @@ async function main() {
     assertEqual(concStatuses[1], 409, 'concurrent HTTP request: duplicate request returns 409');
     const concSplitGroups = db.prepare("SELECT COUNT(DISTINCT split_group_id) AS n FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL").get(concOrderRes.data.order.id) as any;
     assertEqual(concSplitGroups.n, 1, 'concurrent HTTP request: exactly one split group exists in database');
+
+    // G. Nested Tax Breakdown Allocation & Reconciliation
+    const taxOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }] }, headers: authHeader });
+    const taxItem = taxOrderRes.data.order.items[0];
+    const taxBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: taxOrderRes.data.order.id }, headers: authHeader });
+    const nestedBreakdown = [
+      [
+        { title: 'Tax A', rate: 2.5, amount: 0.01 },
+        { title: 'Tax B', rate: 2.5, amount: 0.01 },
+      ],
+    ];
+    db.prepare('UPDATE bills SET subtotal = 1.00, tax_amount = 0.02, tax_breakdown = ?, total = 1.02, balance = 1.02 WHERE id = ?')
+      .run(JSON.stringify(nestedBreakdown), taxBillRes.data.bill.id);
+
+    const taxSplit = await api(baseUrl, `/api/bills/${taxBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: taxItem.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: taxItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+
+    assertEqual(taxSplit.status, 201, 'nested tax breakdown split returns 201');
+    assertEqual(taxSplit.data.bills.length, 2, 'returns 2 split bills');
+
+    let totalTaxA = 0;
+    let totalTaxB = 0;
+    let totalTaxAmount = 0;
+
+    for (const b of taxSplit.data.bills) {
+      const dbRow = db.prepare('SELECT tax_breakdown FROM bills WHERE id = ?').get(b.id) as any;
+      const dbBreakdown = JSON.parse(dbRow.tax_breakdown);
+      assert(Array.isArray(dbBreakdown), 'persisted DB tax_breakdown is an array');
+      assert(Array.isArray(dbBreakdown[0]), 'persisted DB tax_breakdown outer array preserved as nested array');
+
+      assert(Array.isArray(b.tax_breakdown), 'API response tax_breakdown is an array');
+      const innerComps = b.tax_breakdown;
+      const compSum = Number(innerComps.reduce((s: number, c: any) => s + Number(c.amount || 0), 0).toFixed(2));
+      assertEqual(compSum, b.tax_amount, 'sum of check component amounts equals bill tax_amount exactly');
+      totalTaxAmount = Number((totalTaxAmount + b.tax_amount).toFixed(2));
+
+      for (const comp of innerComps) {
+        if (comp.title === 'Tax A') totalTaxA = Number((totalTaxA + comp.amount).toFixed(2));
+        if (comp.title === 'Tax B') totalTaxB = Number((totalTaxB + comp.amount).toFixed(2));
+      }
+    }
+
+    assertEqual(totalTaxAmount, 0.02, 'sum of split tax_amounts equals source tax_amount 0.02');
+    assertEqual(totalTaxA, 0.01, 'Tax A reconciles across checks to 0.01');
+    assertEqual(totalTaxB, 0.01, 'Tax B reconciles across checks to 0.01');
+
+    // H. Legacy Flat Tax Breakdown Allocation
+    const flatOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }] }, headers: authHeader });
+    const flatItem = flatOrderRes.data.order.items[0];
+    const flatBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: flatOrderRes.data.order.id }, headers: authHeader });
+    const flatBreakdown = [
+      { title: 'State Tax', rate: 5.0, amount: 0.50 },
+      { title: 'Local Tax', rate: 2.0, amount: 0.20 },
+    ];
+    db.prepare('UPDATE bills SET subtotal = 10.00, tax_amount = 0.70, tax_breakdown = ?, total = 10.70, balance = 10.70 WHERE id = ?')
+      .run(JSON.stringify(flatBreakdown), flatBillRes.data.bill.id);
+
+    const flatSplit = await api(baseUrl, `/api/bills/${flatBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: flatItem.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: flatItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+
+    assertEqual(flatSplit.status, 201, 'flat tax breakdown split returns 201');
+    for (const b of flatSplit.data.bills) {
+      assert(Array.isArray(b.tax_breakdown), 'flat tax_breakdown is an array');
+      assert(!Array.isArray(b.tax_breakdown[0]), 'flat tax_breakdown elements are objects, not nested arrays');
+      const compSum = Number(b.tax_breakdown.reduce((s: number, c: any) => s + Number(c.amount || 0), 0).toFixed(2));
+      assertEqual(compSum, b.tax_amount, 'sum of flat component amounts equals bill tax_amount exactly');
+    }
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     closeDatabase();

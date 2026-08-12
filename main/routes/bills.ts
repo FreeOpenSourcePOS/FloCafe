@@ -285,6 +285,40 @@ router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Reque
   }
 });
 
+function allocateMinorUnits(sourceMinor: number, weights: number[]): number[] {
+  const n = weights.length;
+  if (n === 0) return [];
+  const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+  const effectiveWeights = totalWeight === 0 ? Array(n).fill(1) : weights;
+  const effectiveTotalWeight = effectiveWeights.reduce((sum, w) => sum + w, 0);
+
+  const base: number[] = new Array(n);
+  const remainders: { index: number; remainder: number }[] = new Array(n);
+  let used = 0;
+
+  for (let i = 0; i < n; i++) {
+    const exact = (sourceMinor * effectiveWeights[i]) / effectiveTotalWeight;
+    const b = Math.floor(exact);
+    base[i] = b;
+    used += b;
+    remainders[i] = { index: i, remainder: exact - b };
+  }
+
+  let left = sourceMinor - used;
+  remainders.sort((a, b) => {
+    if (Math.abs(b.remainder - a.remainder) > 1e-9) {
+      return b.remainder - a.remainder;
+    }
+    return a.index - b.index;
+  });
+
+  for (let i = 0; i < left; i++) {
+    base[remainders[i].index] += 1;
+  }
+
+  return base;
+}
+
 // Divide one unpaid dine-in bill into independently payable guest checks.
 // The kitchen order and inventory rows remain singular; bill_items stores only
 // the whole-unit quantity allocated to each resulting check.
@@ -304,7 +338,7 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
     }
     const checks = req.body?.checks;
     if (!Array.isArray(checks) || checks.length < 2 || checks.length > 20) return res.status(400).json({ error: 'Create between 2 and 20 guest checks' });
-    const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided') ORDER BY id").all(source.order_id) as any[];
+    const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment') ORDER BY id").all(source.order_id) as any[];
     const itemById = new Map(activeItems.map((item) => [Number(item.id), item]));
     const assigned = new Map<number, number>();
     const normalized = checks.map((check: any, index: number) => {
@@ -328,35 +362,69 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
     }
 
     const result = withTxn(() => {
+      const txnSource = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
+      if (!txnSource) throw Object.assign(new Error('Bill not found'), { statusCode: 404 });
+      const txnOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(txnSource.order_id) as any;
+      if (txnOrder?.type !== 'dine_in') throw Object.assign(new Error('Only dine-in checks can be split'), { statusCode: 400 });
+      if (txnSource.payment_status !== 'unpaid' || Number(txnSource.paid_amount || 0) !== 0 || txnSource.payment_details) {
+        throw Object.assign(new Error('A check can only be split before any payment is recorded'), { statusCode: 409 });
+      }
+      if (txnSource.split_group_id || Number((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(txnSource.order_id) as any).n) > 1) {
+        throw Object.assign(new Error('This check has already been split'), { statusCode: 409 });
+      }
+      const txnActiveItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment') ORDER BY id").all(txnSource.order_id) as any[];
+      if (txnActiveItems.length !== activeItems.length) {
+        throw Object.assign(new Error('Order items changed during request'), { statusCode: 400 });
+      }
+      for (const item of txnActiveItems) {
+        if ((assigned.get(Number(item.id)) || 0) !== Number(item.quantity)) {
+          throw Object.assign(new Error(`Allocate all ${item.quantity} × ${item.product_name}`), { statusCode: 400 });
+        }
+      }
+
       const groupId = randomUUID();
-      const weights = normalized.map((check: { items: { item: any; quantity: number }[] }) => check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0));
-      const totalWeight = weights.reduce((sum, value) => sum + value, 0) || normalized.length;
+      const weights = normalized.map((check: { items: { item: any; quantity: number }[] }) =>
+        check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
+      );
       const fields = ['subtotal', 'tax_amount', 'discount_amount', 'delivery_charge', 'packaging_charge', 'round_off', 'total'] as const;
       const allocations: Record<string, number[]> = {};
       for (const field of fields) {
-        const totalMinor = Math.round(Number(source[field] || 0) * 100);
-        let used = 0;
-        allocations[field] = normalized.map((_check, index) => {
-          const minor = index === normalized.length - 1 ? totalMinor - used : Math.round(totalMinor * weights[index] / totalWeight);
-          used += minor;
-          return minor / 100;
-        });
+        const totalMinor = Math.round(Number(txnSource[field] || 0) * 100);
+        const allocatedMinors = allocateMinorUnits(totalMinor, weights);
+        allocations[field] = allocatedMinors.map((minor) => minor / 100);
       }
-      const splitBreakdown = (index: number) => {
-        const breakdown = typeof source.tax_breakdown === 'string' ? (() => { try { return JSON.parse(source.tax_breakdown); } catch { return null; } })() : source.tax_breakdown;
-        if (!Array.isArray(breakdown)) return source.tax_breakdown;
-        return JSON.stringify(breakdown.map((line: any) => ({ ...line, amount: Number((Number(line.amount || 0) * weights[index] / totalWeight).toFixed(2)) })));
-      };
+
+      const parsedBreakdown = typeof txnSource.tax_breakdown === 'string'
+        ? (() => { try { return JSON.parse(txnSource.tax_breakdown); } catch { return null; } })()
+        : txnSource.tax_breakdown;
+
+      let checkTaxBreakdowns: (string | null)[] = normalized.map(() => (typeof txnSource.tax_breakdown === 'string' ? txnSource.tax_breakdown : JSON.stringify(txnSource.tax_breakdown || null)));
+      if (Array.isArray(parsedBreakdown)) {
+        const linesPerCheck: any[][] = normalized.map(() => []);
+        for (const line of parsedBreakdown) {
+          const lineMinor = Math.round(Number(line?.amount || 0) * 100);
+          const lineMinors = allocateMinorUnits(lineMinor, weights);
+          lineMinors.forEach((minor, checkIdx) => {
+            linesPerCheck[checkIdx].push({
+              ...line,
+              amount: minor / 100,
+            });
+          });
+        }
+        checkTaxBreakdowns = linesPerCheck.map((lines) => JSON.stringify(lines));
+      }
+
       const billIds: number[] = [];
       normalized.forEach((check, index) => {
         let billId: number;
+        const splitBk = checkTaxBreakdowns[index];
         if (index === 0) {
           db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, tax_amount = ?, tax_breakdown = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)
-            .run(groupId, check.label, allocations.subtotal[index], allocations.tax_amount[index], splitBreakdown(index), allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], now(), source.id);
-          billId = Number(source.id);
+            .run(groupId, check.label, allocations.subtotal[index], allocations.tax_amount[index], splitBk, allocations.discount_amount[index], allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], now(), txnSource.id);
+          billId = Number(txnSource.id);
         } else {
           const inserted = db.prepare(`INSERT INTO bills (bill_number, order_id, customer_id, subtotal, tax_amount, tax_breakdown, tax_snapshot, discount_amount, discount_type, discount_value, discount_reason, delivery_charge, packaging_charge, round_off, total, paid_amount, balance, payment_status, split_group_id, split_label, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, 'unpaid', ?, ?, ?, ?)`)
-            .run(generateBillNumber(), source.order_id, source.customer_id, allocations.subtotal[index], allocations.tax_amount[index], splitBreakdown(index), source.tax_snapshot, allocations.discount_amount[index], source.discount_type, source.discount_value, source.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
+            .run(generateBillNumber(), txnSource.order_id, txnSource.customer_id, allocations.subtotal[index], allocations.tax_amount[index], splitBk, txnSource.tax_snapshot, allocations.discount_amount[index], txnSource.discount_type, txnSource.discount_value, txnSource.discount_reason, allocations.delivery_charge[index], allocations.packaging_charge[index], allocations.round_off[index], allocations.total[index], allocations.total[index], groupId, check.label, now(), now());
           billId = Number(inserted.lastInsertRowid);
         }
         billIds.push(billId);

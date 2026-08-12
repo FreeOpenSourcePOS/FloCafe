@@ -9,7 +9,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initTestDb, createApp, startServer, seedOwnerUser, seedCategory, seedProduct, api, assert, assertEqual, getResults, closeDatabase, now } = require('./helpers/test-setup');
+const { initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct, api, assert, assertEqual, getResults, closeDatabase, now } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
 const { billRoutes } = require('../main/routes/bills');
 const { paymentMethodRoutes } = require('../main/routes/payment-methods');
@@ -102,6 +102,115 @@ async function main() {
     const rewritten = JSON.parse((db.prepare('SELECT payment_details FROM bills WHERE id = ?').get(split.data.bills[1].id) as any).payment_details);
     assertEqual(rewritten[0].method, 'GPay', 'historical payment name replaced');
     assertEqual((db.prepare('SELECT COUNT(*) AS n FROM payment_method_merges').get() as any).n, 1, 'one compact local merge record retained');
+
+    // ── Issue #253 Regression Tests ──────────────────────────────────────────
+    // A. Two-Cent / Four-Check Underflow
+    seedProduct(db, 'split-tiny', 'split-cat', 'Tiny Product', 0.02);
+    const underflowOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 4, items: [{ product_id: 'split-tiny', quantity: 4 }] }, headers: authHeader });
+    const underflowItem = underflowOrderRes.data.order.items[0];
+    const underflowBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: underflowOrderRes.data.order.id }, headers: authHeader });
+    db.prepare('UPDATE bills SET subtotal = 0.02, total = 0.02, balance = 0.02 WHERE id = ?').run(underflowBillRes.data.bill.id);
+    const underflowSplit = await api(baseUrl, `/api/bills/${underflowBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: underflowItem.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: underflowItem.id, quantity: 1 }] },
+      { label: 'Guest 3', items: [{ order_item_id: underflowItem.id, quantity: 1 }] },
+      { label: 'Guest 4', items: [{ order_item_id: underflowItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(underflowSplit.status, 201, 'underflow $0.02 split across 4 checks returns 201');
+    assert(underflowSplit.data.bills.every((b: any) => b.total >= 0 && b.balance >= 0), 'no resulting total or balance is negative');
+    const underflowSum = Number(underflowSplit.data.bills.reduce((sum: number, b: any) => sum + b.total, 0).toFixed(2));
+    assertEqual(underflowSum, 0.02, 'allocated totals sum exactly to source total $0.02');
+
+    // B. One-Cent Split
+    seedProduct(db, 'split-1cent', 'split-cat', '1 Cent Product', 0.01);
+    const oneCentOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-1cent', quantity: 2 }] }, headers: authHeader });
+    const oneCentItem = oneCentOrderRes.data.order.items[0];
+    const oneCentBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: oneCentOrderRes.data.order.id }, headers: authHeader });
+    db.prepare('UPDATE bills SET subtotal = 0.01, total = 0.01, balance = 0.01 WHERE id = ?').run(oneCentBillRes.data.bill.id);
+    const oneCentSplit = await api(baseUrl, `/api/bills/${oneCentBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: oneCentItem.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: oneCentItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(oneCentSplit.status, 201, 'one-cent split across 2 checks returns 201');
+    assert(oneCentSplit.data.bills.every((b: any) => b.total >= 0), 'one-cent split has no negative totals');
+    const oneCentSum = Number(oneCentSplit.data.bills.reduce((sum: number, b: any) => sum + b.total, 0).toFixed(2));
+    assertEqual(oneCentSum, 0.01, 'one-cent split totals sum exactly to $0.01');
+
+    // C. Uneven Weight Allocation
+    const unevenOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 3, items: [{ product_id: 'split-coffee', quantity: 3 }] }, headers: authHeader });
+    const unevenItem = unevenOrderRes.data.order.items[0];
+    const unevenBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: unevenOrderRes.data.order.id }, headers: authHeader });
+    db.prepare('UPDATE bills SET subtotal = 10.00, total = 10.00, balance = 10.00 WHERE id = ?').run(unevenBillRes.data.bill.id);
+    const unevenSplit = await api(baseUrl, `/api/bills/${unevenBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: unevenItem.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: unevenItem.id, quantity: 1 }] },
+      { label: 'Guest 3', items: [{ order_item_id: unevenItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(unevenSplit.status, 201, 'uneven weight split returns 201');
+    assertEqual(JSON.stringify(unevenSplit.data.bills.map((b: any) => b.total)), JSON.stringify([3.34, 3.33, 3.33]), 'largest remainder distributes $10.00 deterministically into 3.34, 3.33, 3.33');
+    const unevenSum = Number(unevenSplit.data.bills.reduce((sum: number, b: any) => sum + b.total, 0).toFixed(2));
+    assertEqual(unevenSum, 10.00, 'uneven split totals reconcile exactly to $10.00');
+
+    // D. Void Adjustment Exclusion
+    const { registerRoutes } = require('../main/routes/index');
+    registerRoutes(app);
+    const mgrUser = seedManagerUser(db);
+    const voidOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }, { product_id: 'split-toast', quantity: 1 }] }, headers: authHeader });
+    const voidOrder = voidOrderRes.data.order;
+    const voidItemToCancel = voidOrder.items.find((i: any) => i.product_id === 'split-toast');
+    const activeItemToKeep = voidOrder.items.find((i: any) => i.product_id === 'split-coffee');
+    db.prepare("UPDATE order_items SET status = 'preparing' WHERE id = ?").run(voidItemToCancel.id);
+    const cancelRes = await api(baseUrl, `/api/orders/${voidOrder.id}/items/${voidItemToCancel.id}/cancel`, { method: 'PATCH', body: { override_pin: '1234' }, headers: mgrUser.authHeader });
+    assertEqual(cancelRes.status, 200, 'in-progress item voided with manager PIN');
+    const voidAdjRow = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status = 'void_adjustment'").get(voidOrder.id) as any;
+    assert(voidAdjRow !== undefined, 'void_adjustment row created in order_items');
+    const voidBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: voidOrder.id }, headers: authHeader });
+    const voidSplit = await api(baseUrl, `/api/bills/${voidBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: activeItemToKeep.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: activeItemToKeep.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(voidSplit.status, 201, 'split check succeeds allocating only physical active items without allocating void_adjustment');
+    const billItemRows = db.prepare('SELECT * FROM bill_items WHERE bill_id IN (?, ?)').all(voidSplit.data.bills[0].id, voidSplit.data.bills[1].id) as any[];
+    assert(!billItemRows.some((bi: any) => bi.order_item_id === voidAdjRow.id), 'bill_items rows do not reference void_adjustment item ID');
+
+    // E. Repeat Safety
+    const repeatOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }] }, headers: authHeader });
+    const repeatItem = repeatOrderRes.data.order.items[0];
+    const repeatBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: repeatOrderRes.data.order.id }, headers: authHeader });
+    const repeatSplitPayload = { checks: [
+      { label: 'Guest 1', items: [{ order_item_id: repeatItem.id, quantity: 1 }] },
+      { label: 'Guest 2', items: [{ order_item_id: repeatItem.id, quantity: 1 }] },
+    ] };
+    const firstRepeatSplit = await api(baseUrl, `/api/bills/${repeatBillRes.data.bill.id}/split-check`, { method: 'POST', body: repeatSplitPayload, headers: authHeader });
+    assertEqual(firstRepeatSplit.status, 201, 'first split request returns 201');
+    const secondRepeatSplit = await api(baseUrl, `/api/bills/${repeatBillRes.data.bill.id}/split-check`, { method: 'POST', body: repeatSplitPayload, headers: authHeader });
+    assertEqual(secondRepeatSplit.status, 409, 'repeated split request returns 409 Conflict');
+    const childSplit = await api(baseUrl, `/api/bills/${firstRepeatSplit.data.bills[1].id}/split-check`, { method: 'POST', body: repeatSplitPayload, headers: authHeader });
+    assertEqual(childSplit.status, 409, 'splitting child bill returns 409 Conflict');
+    const totalSplitGroups = db.prepare("SELECT COUNT(DISTINCT split_group_id) AS n FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL").get(repeatOrderRes.data.order.id) as any;
+    assertEqual(totalSplitGroups.n, 1, 'only one split group exists in database for order');
+
+    // F. Concurrent HTTP Request Regression
+    const concOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }] }, headers: authHeader });
+    const concItem = concOrderRes.data.order.items[0];
+    const concBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: concOrderRes.data.order.id }, headers: authHeader });
+    const concPayload1 = { checks: [
+      { label: 'Group A Guest 1', items: [{ order_item_id: concItem.id, quantity: 1 }] },
+      { label: 'Group A Guest 2', items: [{ order_item_id: concItem.id, quantity: 1 }] },
+    ] };
+    const concPayload2 = { checks: [
+      { label: 'Group B Guest 1', items: [{ order_item_id: concItem.id, quantity: 1 }] },
+      { label: 'Group B Guest 2', items: [{ order_item_id: concItem.id, quantity: 1 }] },
+    ] };
+    const [concRes1, concRes2] = await Promise.all([
+      api(baseUrl, `/api/bills/${concBillRes.data.bill.id}/split-check`, { method: 'POST', body: concPayload1, headers: authHeader }),
+      api(baseUrl, `/api/bills/${concBillRes.data.bill.id}/split-check`, { method: 'POST', body: concPayload2, headers: authHeader }),
+    ]);
+    const concStatuses = [concRes1.status, concRes2.status].sort();
+    assertEqual(concStatuses[0], 201, 'concurrent HTTP request: exactly one request returns 201');
+    assertEqual(concStatuses[1], 409, 'concurrent HTTP request: duplicate request returns 409');
+    const concSplitGroups = db.prepare("SELECT COUNT(DISTINCT split_group_id) AS n FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL").get(concOrderRes.data.order.id) as any;
+    assertEqual(concSplitGroups.n, 1, 'concurrent HTTP request: exactly one split group exists in database');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     closeDatabase();

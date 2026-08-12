@@ -12,7 +12,7 @@ import type { Bill, Order, OrderItem } from '@/lib/types';
 export function SplitCheckModal({ bill, order, onClose, onSplit }: { bill: Bill; order: Order; onClose: () => void; onSplit: (bills: Bill[]) => void }) {
   const { t } = useI18n();
   const fmt = useFormatCurrency();
-  const items = (order.items || []).filter((item) => !['cancelled', 'voided'].includes(item.status));
+  const items = (order.items || []).filter((item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status));
   const initialCount = Math.min(8, Math.max(2, order.guest_count || 2));
   const [count, setCount] = useState(initialCount);
   const [labels, setLabels] = useState(() => Array.from({ length: initialCount }, (_, i) => `Guest ${i + 1}`));

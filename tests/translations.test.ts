@@ -30,6 +30,7 @@ const FILES = [
   { lang: 'en', file: path.join(I18N_DIR, 'en.json') },
   { lang: 'es', file: path.join(I18N_DIR, 'es.json') },
   { lang: 'pt', file: path.join(I18N_DIR, 'pt.json') },
+  { lang: 'fa', file: path.join(I18N_DIR, 'fa.json') },
 ] as const;
 
 function assert(condition: boolean, msg: string): void {

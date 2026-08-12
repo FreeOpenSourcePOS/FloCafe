@@ -291,6 +291,128 @@ function allocateMinorUnits(sourceMinor: number, weights: number[]): number[] {
   return base;
 }
 
+function allocateTaxBreakdown(
+  sourceBreakdownRaw: any,
+  checkTaxMinors: number[],
+  weights: number[],
+): (string | null)[] {
+  const numChecks = weights.length;
+  const parsed = typeof sourceBreakdownRaw === 'string'
+    ? (() => { try { return JSON.parse(sourceBreakdownRaw); } catch { return null; } })()
+    : sourceBreakdownRaw;
+
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    return new Array(numChecks).fill(typeof sourceBreakdownRaw === 'string' ? sourceBreakdownRaw : JSON.stringify(sourceBreakdownRaw || null));
+  }
+
+  const isNested = Array.isArray(parsed[0]);
+
+  interface TaxCompRef {
+    outerIndex?: number;
+    innerIndex: number;
+    component: any;
+    minorAmount: number;
+  }
+
+  const components: TaxCompRef[] = [];
+
+  if (isNested) {
+    parsed.forEach((outer: any, outerIndex: number) => {
+      if (Array.isArray(outer)) {
+        outer.forEach((comp: any, innerIndex: number) => {
+          if (comp && typeof comp === 'object') {
+            components.push({
+              outerIndex,
+              innerIndex,
+              component: comp,
+              minorAmount: Math.round(Number(comp.amount || 0) * 100),
+            });
+          }
+        });
+      }
+    });
+  } else {
+    parsed.forEach((comp: any, innerIndex: number) => {
+      if (comp && typeof comp === 'object') {
+        components.push({
+          innerIndex,
+          component: comp,
+          minorAmount: Math.round(Number(comp.amount || 0) * 100),
+        });
+      }
+    });
+  }
+
+  if (components.length === 0) {
+    return new Array(numChecks).fill(typeof sourceBreakdownRaw === 'string' ? sourceBreakdownRaw : JSON.stringify(sourceBreakdownRaw || null));
+  }
+
+  const compAllocations: number[][] = components.map((comp) => allocateMinorUnits(comp.minorAmount, weights));
+
+  const checkCompSums = new Array(numChecks).fill(0);
+  for (let m = 0; m < components.length; m++) {
+    for (let k = 0; k < numChecks; k++) {
+      checkCompSums[k] += compAllocations[m][k];
+    }
+  }
+
+  const deltas = checkTaxMinors.map((target, k) => target - checkCompSums[k]);
+
+  while (true) {
+    const deficitIdx = deltas.findIndex((d) => d > 0);
+    const excessIdx = deltas.findIndex((d) => d < 0);
+
+    if (deficitIdx === -1 || excessIdx === -1) break;
+
+    let transferredCompIdx = -1;
+    for (let m = 0; m < components.length; m++) {
+      if (compAllocations[m][excessIdx] > 0) {
+        transferredCompIdx = m;
+        break;
+      }
+    }
+
+    if (transferredCompIdx === -1) break;
+
+    compAllocations[transferredCompIdx][excessIdx] -= 1;
+    compAllocations[transferredCompIdx][deficitIdx] += 1;
+
+    deltas[excessIdx] += 1;
+    deltas[deficitIdx] -= 1;
+  }
+
+  const result: (string | null)[] = [];
+
+  for (let k = 0; k < numChecks; k++) {
+    if (isNested) {
+      const clonedNested = parsed.map((outer: any[], outerIdx: number) => {
+        if (!Array.isArray(outer)) return outer;
+        return outer.map((comp: any, innerIdx: number) => {
+          const compIdx = components.findIndex((c) => c.outerIndex === outerIdx && c.innerIndex === innerIdx);
+          const minor = compIdx !== -1 ? compAllocations[compIdx][k] : Math.round(Number(comp?.amount || 0) * 100);
+          return {
+            ...comp,
+            amount: minor / 100,
+          };
+        });
+      });
+      result.push(JSON.stringify(clonedNested));
+    } else {
+      const clonedFlat = parsed.map((comp: any, innerIdx: number) => {
+        const compIdx = components.findIndex((c) => c.innerIndex === innerIdx);
+        const minor = compIdx !== -1 ? compAllocations[compIdx][k] : Math.round(Number(comp?.amount || 0) * 100);
+        return {
+          ...comp,
+          amount: minor / 100,
+        };
+      });
+      result.push(JSON.stringify(clonedFlat));
+    }
+  }
+
+  return result;
+}
+
 // Divide one unpaid dine-in bill into independently payable guest checks.
 // The kitchen order and inventory rows remain singular; bill_items stores only
 // the whole-unit quantity allocated to each resulting check.
@@ -345,19 +467,37 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
         throw Object.assign(new Error('This check has already been split'), { statusCode: 409 });
       }
       const txnActiveItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment') ORDER BY id").all(txnSource.order_id) as any[];
-      if (txnActiveItems.length !== activeItems.length) {
-        throw Object.assign(new Error('Order items changed during request'), { statusCode: 400 });
-      }
+      const txnItemById = new Map(txnActiveItems.map((item) => [Number(item.id), item]));
+      const txnAssigned = new Map<number, number>();
+
+      const txnNormalized = checks.map((check: any, index: number) => {
+        const label = String(check?.label || `Guest ${index + 1}`).trim().slice(0, 40) || `Guest ${index + 1}`;
+        if (!Array.isArray(check?.items) || check.items.length === 0) throw Object.assign(new Error(`${label} must contain at least one item`), { statusCode: 400 });
+        const seenItems = new Set<number>();
+        const items = check.items.map((entry: any) => {
+          const itemId = Number(entry?.order_item_id);
+          const quantity = Number(entry?.quantity);
+          const item = txnItemById.get(itemId);
+          if (!item || !Number.isSafeInteger(quantity) || quantity < 1) throw Object.assign(new Error(`Invalid item allocation in ${label}`), { statusCode: 400 });
+          if (seenItems.has(itemId)) throw Object.assign(new Error(`${label} contains the same item more than once`), { statusCode: 400 });
+          seenItems.add(itemId);
+          txnAssigned.set(itemId, (txnAssigned.get(itemId) || 0) + quantity);
+          return { item, quantity };
+        });
+        return { label, items };
+      });
+
       for (const item of txnActiveItems) {
-        if ((assigned.get(Number(item.id)) || 0) !== Number(item.quantity)) {
+        if ((txnAssigned.get(Number(item.id)) || 0) !== Number(item.quantity)) {
           throw Object.assign(new Error(`Allocate all ${item.quantity} × ${item.product_name}`), { statusCode: 400 });
         }
       }
 
       const groupId = randomUUID();
-      const weights = normalized.map((check: { items: { item: any; quantity: number }[] }) =>
+      const weights = txnNormalized.map((check: { items: { item: any; quantity: number }[] }) =>
         check.items.reduce((sum: number, entry: { item: any; quantity: number }) => sum + Number(entry.item.total || entry.item.subtotal || 0) * entry.quantity / Number(entry.item.quantity), 0)
       );
+
       const fields = ['subtotal', 'tax_amount', 'discount_amount', 'delivery_charge', 'packaging_charge', 'round_off', 'total'] as const;
       const allocations: Record<string, number[]> = {};
       for (const field of fields) {
@@ -366,28 +506,11 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
         allocations[field] = allocatedMinors.map((minor) => minor / 100);
       }
 
-      const parsedBreakdown = typeof txnSource.tax_breakdown === 'string'
-        ? (() => { try { return JSON.parse(txnSource.tax_breakdown); } catch { return null; } })()
-        : txnSource.tax_breakdown;
-
-      let checkTaxBreakdowns: (string | null)[] = normalized.map(() => (typeof txnSource.tax_breakdown === 'string' ? txnSource.tax_breakdown : JSON.stringify(txnSource.tax_breakdown || null)));
-      if (Array.isArray(parsedBreakdown)) {
-        const linesPerCheck: any[][] = normalized.map(() => []);
-        for (const line of parsedBreakdown) {
-          const lineMinor = Math.round(Number(line?.amount || 0) * 100);
-          const lineMinors = allocateMinorUnits(lineMinor, weights);
-          lineMinors.forEach((minor, checkIdx) => {
-            linesPerCheck[checkIdx].push({
-              ...line,
-              amount: minor / 100,
-            });
-          });
-        }
-        checkTaxBreakdowns = linesPerCheck.map((lines) => JSON.stringify(lines));
-      }
+      const checkTaxMinors = allocations.tax_amount.map((amt) => Math.round(amt * 100));
+      const checkTaxBreakdowns = allocateTaxBreakdown(txnSource.tax_breakdown, checkTaxMinors, weights);
 
       const billIds: number[] = [];
-      normalized.forEach((check, index) => {
+      txnNormalized.forEach((check, index) => {
         let billId: number;
         const splitBk = checkTaxBreakdowns[index];
         if (index === 0) {

@@ -8,6 +8,7 @@
  * 4. Pending item in a preparing order follows pending cancellation/restock contract (not voided).
  * 5. Item cancellation & restoration are idempotent and state-conditional.
  * 6. Auto-cancellation when cancelling the final active item does not double-restock.
+ * 7. Concurrent whole-order cancellation requests execute safely without double restocking inventory.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/issue-252-order-lifecycle-inventory.test.ts
  */

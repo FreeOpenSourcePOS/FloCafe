@@ -3,7 +3,7 @@
  *
  * Tests:
  * 1. Repeated whole-order cancellation is idempotent (stock is restored exactly once).
- * 2. Terminal states (cancelled, completed) reject invalid outbound transitions.
+ * 2. Order lifecycle transition matrix enforcement (monotonic active state progress & terminal state lock).
  * 3. Whole-order cancellation excludes voided items and void_adjustment rows from restocking in multi-item orders.
  * 4. Pending item in a preparing order follows pending cancellation/restock contract (not voided).
  * 5. Item cancellation & restoration are idempotent and state-conditional.
@@ -49,8 +49,10 @@ async function main() {
   seedTable(db, 'tbl-252-2', 2, 2);
 
   const { orderRoutes } = require('../main/routes/orders');
+  const { orderItemRoutes } = require('../main/routes/order-items');
   const app = createApp({
     '/api/orders': orderRoutes,
+    '/api/order-items': orderItemRoutes,
   });
   registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
@@ -95,50 +97,72 @@ async function main() {
     assertEqual(stock1, 10, 'Stock MUST remain 10 after second cancel (no double-restock)');
 
     // ═══════════════════════════════════════════════════════════════════
-    // 2. Terminal State Transitions Guard
+    // 2. Order Lifecycle Transition Matrix Enforcement
     // ═══════════════════════════════════════════════════════════════════
-    console.log('\n─── 2. Terminal State Transitions Guard ───');
+    console.log('\n─── 2. Order Lifecycle Transition Matrix Enforcement ───');
 
-    // Attempt to transition cancelled order to preparing
-    const reopenCancel = await api(baseUrl, `/api/orders/${order1Id}/status`, {
-      method: 'PATCH',
-      headers: authHeader,
-      body: { status: 'preparing' },
-    });
-    assertEqual(reopenCancel.status, 400, 'Cancelled order cannot reopen to preparing');
-
-    const order1Status = db.prepare('SELECT status FROM orders WHERE id = ?').get(order1Id).status;
-    assertEqual(order1Status, 'cancelled', 'Order status remains cancelled');
-
-    // Create completed order
-    const order2 = await api(baseUrl, '/api/orders', {
+    // Valid forward transitions: pending -> preparing -> ready -> served -> completed
+    const orderFwd = await api(baseUrl, '/api/orders', {
       method: 'POST',
       headers: authHeader,
-      body: { type: 'takeaway', items: [{ product_id: 'prod-track-1', quantity: 1 }] },
+      body: { type: 'dine_in', table_id: 'tbl-252-2', items: [{ product_id: 'prod-untrack', quantity: 1 }] },
     });
-    const order2Id = order2.data.order.id;
+    const fwdId = orderFwd.data.order.id;
 
-    await api(baseUrl, `/api/orders/${order2Id}/status`, {
-      method: 'PATCH',
-      headers: authHeader,
-      body: { status: 'completed' },
-    });
+    const toPrep = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'preparing' } });
+    assertEqual(toPrep.status, 200, 'pending -> preparing is valid');
 
-    const stockBeforeCompletedCancel = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity;
+    const toReady = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'ready' } });
+    assertEqual(toReady.status, 200, 'preparing -> ready is valid');
 
-    // Attempt to cancel completed order
-    const cancelCompleted = await api(baseUrl, `/api/orders/${order2Id}/status`, {
-      method: 'PATCH',
-      headers: authHeader,
-      body: { status: 'cancelled' },
-    });
-    assertEqual(cancelCompleted.status, 400, 'Completed order cannot transition to cancelled');
+    // Backward transition rejections:
+    const readyToPrep = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'preparing' } });
+    assertEqual(readyToPrep.status, 400, 'ready -> preparing rejected (backward transition)');
 
-    const order2Status = db.prepare('SELECT status FROM orders WHERE id = ?').get(order2Id).status;
-    assertEqual(order2Status, 'completed', 'Order status remains completed');
+    const toServed = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'served' } });
+    assertEqual(toServed.status, 200, 'ready -> served is valid');
 
-    const stockAfterCompletedCancel = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity;
-    assertEqual(stockAfterCompletedCancel, stockBeforeCompletedCancel, 'Stock unchanged when attempting to cancel completed order');
+    const servedToPrep = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'preparing' } });
+    assertEqual(servedToPrep.status, 400, 'served -> preparing rejected (backward transition)');
+
+    const servedToReady = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'ready' } });
+    assertEqual(servedToReady.status, 400, 'served -> ready rejected (backward transition)');
+
+    // Same-state idempotent request
+    const sameServed = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'served' } });
+    assertEqual(sameServed.status, 200, 'same-state served -> served is idempotent 200');
+
+    const toComp = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'completed' } });
+    assertEqual(toComp.status, 200, 'served -> completed is valid');
+
+    // Terminal state locks (completed & cancelled)
+    const compToPrep = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'preparing' } });
+    assertEqual(compToPrep.status, 400, 'completed -> preparing rejected');
+
+    const compToCancel = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'cancelled' } });
+    assertEqual(compToCancel.status, 400, 'completed -> cancelled rejected');
+
+    const sameComp = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'completed' } });
+    assertEqual(sameComp.status, 200, 'completed -> completed is idempotent 200');
+
+    // Cancellation supported from every active state (pending, preparing, ready, served)
+    for (const activeState of ['pending', 'preparing', 'ready', 'served']) {
+      const activeOrder = await api(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: authHeader,
+        body: { type: 'takeaway', items: [{ product_id: 'prod-untrack', quantity: 1 }] },
+      });
+      const aId = activeOrder.data.order.id;
+      if (activeState !== 'pending') {
+        await api(baseUrl, `/api/orders/${aId}/status`, { method: 'PATCH', headers: authHeader, body: { status: activeState } });
+      }
+      const canRes = await api(baseUrl, `/api/orders/${aId}/status`, {
+        method: 'PATCH',
+        headers: authHeader,
+        body: { status: 'cancelled', override_pin: '1234' },
+      });
+      assertEqual(canRes.status, 200, `cancellation from ${activeState} is supported`);
+    }
 
     // ═══════════════════════════════════════════════════════════════════
     // 3. Whole-Order Cancel with Voided Item in Multi-Item Order
@@ -162,8 +186,13 @@ async function main() {
     const itemA = order3.data.order.items.find((i: any) => i.product_id === 'prod-track-1');
     const itemB = order3.data.order.items.find((i: any) => i.product_id === 'prod-track-2');
 
-    // Establish that Item A itself is in preparing status (in kitchen)
-    db.prepare("UPDATE order_items SET status = 'preparing' WHERE id = ?").run(itemA.id);
+    // Establish that Item A itself is in preparing status using order-items API
+    const itemAStatusRes = await api(baseUrl, `/api/order-items/${itemA.id}/status`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: { status: 'preparing' },
+    });
+    assertEqual(itemAStatusRes.status, 200, 'Item A moved to preparing via order-items API');
 
     // Void Item A (in progress void requires PIN)
     const voidRes = await api(baseUrl, `/api/orders/${order3Id}/items/${itemA.id}/cancel`, {

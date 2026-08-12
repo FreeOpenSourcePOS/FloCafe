@@ -868,23 +868,26 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
 
-      if (['completed', 'cancelled'].includes(currentOrder.status)) {
-        if (currentOrder.status === status) {
-          // Idempotent same-state request for terminal order
-          const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
-          const tableRow = currentOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(currentOrder.table_id) as any : null;
-          const tableObj = tableRow ? { ...tableRow, name: tableRow.number } : null;
-          return { updatedOrder: currentOrder, orderItems: items, table: tableObj };
-        }
-        throw Object.assign(new Error(`Cannot change status of a ${currentOrder.status} order`), { statusCode: 400 });
-      }
-
       if (currentOrder.status === status) {
-        // Idempotent same-state request for active order
+        // Idempotent same-state request for order
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
         const tableRow = currentOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(currentOrder.table_id) as any : null;
         const tableObj = tableRow ? { ...tableRow, name: tableRow.number } : null;
         return { updatedOrder: currentOrder, orderItems: items, table: tableObj };
+      }
+
+      const VALID_TRANSITIONS: Record<string, string[]> = {
+        pending: ['preparing', 'ready', 'served', 'completed', 'cancelled'],
+        preparing: ['ready', 'served', 'completed', 'cancelled'],
+        ready: ['served', 'completed', 'cancelled'],
+        served: ['completed', 'cancelled'],
+        completed: [],
+        cancelled: [],
+      };
+
+      const allowedTargets = VALID_TRANSITIONS[currentOrder.status] || [];
+      if (!allowedTargets.includes(status)) {
+        throw Object.assign(new Error(`Cannot transition order status from '${currentOrder.status}' to '${status}'`), { statusCode: 400 });
       }
 
       switch (status) {

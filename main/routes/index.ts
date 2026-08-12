@@ -279,7 +279,7 @@ export function registerRoutes(app: Express): void {
       // the whole-order-cancel override pattern below (routes/orders.ts
       // ~L580-609), and leaves a negative bill line so the removal stays
       // visible on the bill rather than the item just vanishing.
-      const isInProgressVoid = ['preparing', 'ready'].includes(item.status) || ['preparing', 'ready'].includes(order.status);
+      const isInProgressVoid = ['preparing', 'ready'].includes(item.status);
       const isPrivilegedRole = ['owner', 'manager'].includes(userRole);
       const canUseOverride = ['cashier', 'waiter'].includes(userRole) && isInProgressVoid;
       if (!isPrivilegedRole && !canUseOverride) {
@@ -320,19 +320,21 @@ export function registerRoutes(app: Express): void {
 
       // BUG #17 FIX: Wrap cancel + total recalc in transaction
       const result = withTxn(() => {
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const currentItem = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
-        if (!currentItem) {
-          throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
+        if (!currentItem || !currentOrder) {
+          throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
         }
 
         // Idempotent no-op if item is already cancelled or voided
         if (['cancelled', 'voided', 'void_adjustment'].includes(currentItem.status)) {
-          const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
           const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
-          return { updatedOrder, items, orderCancelled: updatedOrder.status === 'cancelled' };
+          return { updatedOrder: currentOrder, items, orderCancelled: currentOrder.status === 'cancelled' };
         }
 
-        if (isInProgressVoid) {
+        const isItemVoid = ['preparing', 'ready'].includes(currentItem.status);
+
+        if (isItemVoid) {
           // Leave the original line alone (it's a true record of what was
           // ordered and prepared) and add a mirrored negative line instead of
           // deleting anything — the bill total nets to the refund/comp
@@ -444,16 +446,16 @@ export function registerRoutes(app: Express): void {
         // bill — treat it as the whole order being cancelled, the same way the
         // explicit order-level cancel (routes/orders.ts) does: free the table,
         // and stamp cancelled_at/cancellation_reason. (Item stock was already restored above).
-        const orderCancelled = activeItems.length === 0 && order.status !== 'cancelled';
+        const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
 
         if (orderCancelled) {
           db.prepare(`
             UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
               status = 'cancelled', cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?
           `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), 'All items cancelled', now(), orderId);
-          if (order.table_id) {
+          if (currentOrder.table_id) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-              .run(now(), order.table_id);
+              .run(now(), currentOrder.table_id);
           }
         } else {
           db.prepare(`
@@ -522,16 +524,20 @@ export function registerRoutes(app: Express): void {
 
       // BUG #17 FIX: Wrap restore + total recalc in transaction
       const result = withTxn(() => {
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const currentItem = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
-        if (!currentItem) {
-          throw Object.assign(new Error('Item not found in this order'), { statusCode: 404 });
+        if (!currentItem || !currentOrder) {
+          throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
+        }
+
+        if (['completed', 'cancelled'].includes(currentOrder.status)) {
+          throw Object.assign(new Error('Cannot restore items on completed or cancelled orders'), { statusCode: 400 });
         }
 
         // Only cancelled items can be restored; ignore if already active or voided
         if (currentItem.status !== 'cancelled') {
-          const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
           const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
-          return { updatedOrder, items };
+          return { updatedOrder: currentOrder, items };
         }
 
         // Re-deduct stock for tracked product if available

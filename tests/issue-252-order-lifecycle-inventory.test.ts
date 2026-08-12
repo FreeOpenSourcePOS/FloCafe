@@ -386,6 +386,46 @@ async function main() {
     const stockTrack2_afterAutoCancel = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-2').stock_quantity;
     assertEqual(stockTrack2_afterAutoCancel, stockTrack2 + 1, 'Stock track-2 restored exactly once on auto-cancel (+1)');
 
+    // ═══════════════════════════════════════════════════════════════════
+    // 7. Concurrent Whole-Order Cancellation
+    // ═══════════════════════════════════════════════════════════════════
+    console.log('\n─── 7. Concurrent Whole-Order Cancellation ───');
+
+    seedProduct(db, 'prod-concurrent', 'cat-252', 'Concurrent Burger', 120, { track_inventory: true, stock_quantity: 10 });
+
+    const orderConc = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'dine_in', table_id: 'tbl-252-2', items: [{ product_id: 'prod-concurrent', quantity: 2 }] },
+    });
+    const concOrderId = orderConc.data.order.id;
+
+    let stockConc = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-concurrent').stock_quantity;
+    assertEqual(stockConc, 8, 'Stock deducted on creation (10 -> 8)');
+
+    // Send two real HTTP whole-order cancellation requests concurrently
+    const [resConcA, resConcB] = await Promise.all([
+      api(baseUrl, `/api/orders/${concOrderId}/status`, {
+        method: 'PATCH',
+        headers: authHeader,
+        body: { status: 'cancelled', reason: 'Concurrent cancellation request A' },
+      }),
+      api(baseUrl, `/api/orders/${concOrderId}/status`, {
+        method: 'PATCH',
+        headers: authHeader,
+        body: { status: 'cancelled', reason: 'Concurrent cancellation request B' },
+      }),
+    ]);
+
+    assertEqual(resConcA.status, 200, 'Concurrent cancel request A returned 200');
+    assertEqual(resConcB.status, 200, 'Concurrent cancel request B returned 200');
+
+    const finalOrderConc = db.prepare('SELECT status FROM orders WHERE id = ?').get(concOrderId);
+    assertEqual(finalOrderConc.status, 'cancelled', 'Final order status is cancelled');
+
+    stockConc = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-concurrent').stock_quantity;
+    assertEqual(stockConc, 10, 'Inventory restored exactly once (8 -> 10, NOT 12) under concurrent requests');
+
   } finally {
     server.close();
     closeDatabase();

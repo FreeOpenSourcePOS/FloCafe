@@ -420,40 +420,8 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
   try {
     const db = getDatabase();
     if (getSettingValue('split_checks_enabled') !== 'true') return res.status(403).json({ error: 'Split checks are not enabled' });
-    const source = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;
-    if (!source) return res.status(404).json({ error: 'Bill not found' });
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(source.order_id) as any;
-    if (order?.type !== 'dine_in') return res.status(400).json({ error: 'Only dine-in checks can be split' });
-    if (source.payment_status !== 'unpaid' || Number(source.paid_amount || 0) !== 0 || source.payment_details) {
-      return res.status(409).json({ error: 'A check can only be split before any payment is recorded' });
-    }
-    if (source.split_group_id || Number((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ?').get(source.order_id) as any).n) > 1) {
-      return res.status(409).json({ error: 'This check has already been split' });
-    }
     const checks = req.body?.checks;
     if (!Array.isArray(checks) || checks.length < 2 || checks.length > 20) return res.status(400).json({ error: 'Create between 2 and 20 guest checks' });
-    const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment') ORDER BY id").all(source.order_id) as any[];
-    const itemById = new Map(activeItems.map((item) => [Number(item.id), item]));
-    const assigned = new Map<number, number>();
-    const normalized = checks.map((check: any, index: number) => {
-      const label = String(check?.label || `Guest ${index + 1}`).trim().slice(0, 40) || `Guest ${index + 1}`;
-      if (!Array.isArray(check?.items) || check.items.length === 0) throw Object.assign(new Error(`${label} must contain at least one item`), { statusCode: 400 });
-      const seenItems = new Set<number>();
-      const items = check.items.map((entry: any) => {
-        const itemId = Number(entry?.order_item_id);
-        const quantity = Number(entry?.quantity);
-        const item = itemById.get(itemId);
-        if (!item || !Number.isSafeInteger(quantity) || quantity < 1) throw Object.assign(new Error(`Invalid item allocation in ${label}`), { statusCode: 400 });
-        if (seenItems.has(itemId)) throw Object.assign(new Error(`${label} contains the same item more than once`), { statusCode: 400 });
-        seenItems.add(itemId);
-        assigned.set(itemId, (assigned.get(itemId) || 0) + quantity);
-        return { item, quantity };
-      });
-      return { label, items };
-    });
-    for (const item of activeItems) {
-      if ((assigned.get(Number(item.id)) || 0) !== Number(item.quantity)) return res.status(400).json({ error: `Allocate all ${item.quantity} × ${item.product_name}` });
-    }
 
     const result = withTxn(() => {
       const txnSource = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id) as any;

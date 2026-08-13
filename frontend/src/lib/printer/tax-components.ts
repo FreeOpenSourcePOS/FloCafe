@@ -244,7 +244,12 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
     const snapshot = snapshotComponents(document.tax_snapshot);
     usedSnapshot = snapshot.present;
     components.push(
-      ...(snapshot.present ? snapshot.components : legacyComponents(document.tax_breakdown)),
+      ...(snapshot.present
+        ? [
+          ...snapshot.components,
+          ...documentLegacyComponents(document, snapshot.components),
+        ]
+        : legacyComponents(document.tax_breakdown)),
     );
   }
 

@@ -268,7 +268,12 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
 
   const snapshot = flattenSnapshots(document.tax_snapshot);
   const components = mergeComponents(
-    snapshot.present ? snapshot.components : flattenLegacyBreakdown(document.tax_breakdown),
+    snapshot.present
+      ? [
+        ...snapshot.components,
+        ...documentLegacyComponents(document, snapshot.components),
+      ]
+      : flattenLegacyBreakdown(document.tax_breakdown),
   );
   return reconcileTotal(
     components,

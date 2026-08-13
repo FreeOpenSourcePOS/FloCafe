@@ -250,6 +250,25 @@ test('marked child snapshots consume mirrored document components before residua
   assert.deepEqual(resolveFrontendTaxComponents(document), expected);
 });
 
+test('itemless generated bills retain residual document legacy tax beside mirrored snapshots', () => {
+  const document = {
+    tax_amount: 1.75,
+    tax_snapshot: JSON.stringify({
+      lines: [{ components: [{ label: 'Item Tax', rate: '5', amount: '1.00' }] }],
+    }),
+    tax_breakdown: [
+      { title: 'Item Tax', rate: 5, amount: 1 },
+      { title: 'Legacy Charge Tax', rate: 2, amount: 0.75 },
+    ],
+  };
+  const expected = [
+    { title: 'Item Tax', rate: 5, amount: 1 },
+    { title: 'Legacy Charge Tax', rate: 2, amount: 0.75 },
+  ];
+  assert.deepEqual(resolveBackendTaxComponents(document), expected);
+  assert.deepEqual(resolveFrontendTaxComponents(document), expected);
+});
+
 test('frontend split printing keeps the child-scoped order payload', () => {
   const childOrder = {
     items: [{

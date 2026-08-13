@@ -4,7 +4,10 @@ import {
   aggregateTaxComponents,
   resolveTaxComponents as resolveBackendTaxComponents,
 } from '../main/services/tax-components';
-import { resolveTaxComponents as resolveFrontendTaxComponents } from '../frontend/src/lib/printer/tax-components';
+import {
+  preferChildScopedBill,
+  resolveTaxComponents as resolveFrontendTaxComponents,
+} from '../frontend/src/lib/printer/tax-components';
 
 const taxSnapshot = {
   lines: [{
@@ -176,4 +179,50 @@ test('charge snapshots are added once and stay unscaled by item discounts', () =
     backend.reduce((sum, component) => sum + component.amount, 0),
     10,
   );
+});
+
+test('frontend split printing keeps the child-scoped order payload', () => {
+  const childOrder = {
+    items: [{
+      status: 'pending',
+      tax_snapshot: null,
+      tax_breakdown: [{ title: 'Legacy Tax', rate: 2, amount: 0.1 }],
+    }],
+  };
+  const unscopedOrder = {
+    items: [
+      ...childOrder.items,
+      { status: 'pending', tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Tax', rate: 2, amount: 0.1 }] },
+    ],
+  };
+  const childBill = {
+    tax_amount: 1,
+    tax_snapshot: JSON.stringify({
+      splitAllocation: 'minor-unit-v1',
+      lines: [{ components: [{ label: 'Item Tax', rate: '5', amount: '0.70' }, { label: 'Charge Tax', rate: '5', amount: '0.20' }] }],
+    }),
+    order: childOrder,
+  };
+  const printableBill = preferChildScopedBill(childBill as any, unscopedOrder as any);
+  assert.equal(printableBill.order, childOrder);
+  assert.deepEqual(resolveFrontendTaxComponents(printableBill), [
+    { title: 'Item Tax', rate: 5, amount: 0.7 },
+    { title: 'Charge Tax', rate: 5, amount: 0.2 },
+    { title: 'Legacy Tax', rate: 2, amount: 0.1 },
+  ]);
+});
+
+test('frontend split resolution excludes void adjustment tax evidence', () => {
+  const document = {
+    tax_amount: 0.1,
+    tax_breakdown: [],
+    items: [
+      { status: 'pending', tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Tax', rate: 2, amount: 0.1 }] },
+      { status: 'voided', tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Tax', rate: 2, amount: 0.1 }] },
+      { status: 'void_adjustment', tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Tax', rate: 2, amount: -0.1 }] },
+    ],
+  };
+  assert.deepEqual(resolveFrontendTaxComponents(document), [
+    { title: 'Legacy Tax', rate: 2, amount: 0.1 },
+  ]);
 });

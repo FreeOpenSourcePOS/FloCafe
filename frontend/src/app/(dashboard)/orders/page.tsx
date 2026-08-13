@@ -33,6 +33,7 @@ import {
   type AppendAttempt,
   type AppendAttemptStorage,
 } from '@/lib/append-attempt';
+import { preferChildScopedBill } from '@/lib/printer/tax-components';
 
 const itemStatusConfig: Record<string, { dot: string; color: string; labelKey: string }> = {
   pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', labelKey: 'orders.itemStatusWaiting' },
@@ -489,24 +490,22 @@ export default function OrdersPage() {
     fetchOrders();
 
     if (bill && autoPrintBill) {
-      const order = orders.find((o) => o.bill?.id === bill.id);
-      if (order) {
-        try {
-          const { data } = await api.get(`/bills/${bill.id}`);
-          const latestBill = data.bill as Bill;
-          await printBill(
-            { ...latestBill, order },
-            {
-              business_name: currentTenant?.business_name || t('common.businessNameFallback'),
-              currency,
-              country: currentTenant?.country || 'IN',
-            },
-            { isReprint: false }
-          );
-          await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
-        } catch {
-          toast.error(t('orders.receiptPrintFailedHint'));
-        }
+      try {
+        const fallbackOrder = orders.find((o) => o.bill?.id === bill.id);
+        const { data } = await api.get(`/bills/${bill.id}`);
+        const latestBill = preferChildScopedBill(data.bill as Bill, fallbackOrder);
+        await printBill(
+          latestBill,
+          {
+            business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+            currency,
+            country: currentTenant?.country || 'IN',
+          },
+          { isReprint: false }
+        );
+        await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
+      } catch {
+        toast.error(t('orders.receiptPrintFailedHint'));
       }
     }
   };
@@ -520,10 +519,12 @@ export default function OrdersPage() {
     const isReprint = (printHistory[billId]?.length ?? 0) > 0;
     setPrintingBillId(billId);
     try {
+      const { data } = await api.get(`/bills/${billId}`);
+      const latestBill = preferChildScopedBill(data.bill as Bill, order);
       // Actually attempt the print first — only log/report success if the printer accepted the job,
       // otherwise a disconnected printer would silently report "success" (it was only logging before).
       const printWarnings = await printBill(
-        { ...order.bill, order },
+        latestBill,
         {
           business_name: currentTenant?.business_name || t('common.businessNameFallback'),
           currency,

@@ -1,3 +1,5 @@
+import type { Bill, Order } from '@/lib/types';
+
 export interface DisplayTaxComponent {
   title: string;
   rate: number | null;
@@ -16,6 +18,11 @@ interface TaxDocument extends TaxSource {
 }
 
 const SPLIT_TAX_SNAPSHOT_VERSION = 'minor-unit-v1';
+
+export function preferChildScopedBill(bill: Bill, fallbackOrder?: Order): Bill {
+  if (bill.order || !fallbackOrder) return bill;
+  return { ...bill, order: fallbackOrder };
+}
 
 function parseJson(value: unknown): unknown {
   if (typeof value !== 'string') return value;
@@ -132,7 +139,7 @@ function reconcileSplitSnapshotComponents(
 
 function legacyItemComponents(items: Array<TaxSource & { status?: string | null }> | undefined): DisplayTaxComponent[] {
   return (items || []).filter(
-    (item) => item.status !== 'cancelled' && item.status !== 'voided',
+    (item) => item.status !== 'cancelled' && item.status !== 'voided' && item.status !== 'void_adjustment',
   ).flatMap((item) => {
     const snapshot = snapshotComponents(item.tax_snapshot);
     return snapshot.present ? [] : legacyComponents(item.tax_breakdown);
@@ -159,7 +166,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
 
   const items = document.order?.items ?? document.items;
   const activeItems = items?.filter(
-    (item) => item.status !== 'cancelled' && item.status !== 'voided',
+    (item) => item.status !== 'cancelled' && item.status !== 'voided' && item.status !== 'void_adjustment',
   );
   const components: DisplayTaxComponent[] = [];
   let usedSnapshot = false;

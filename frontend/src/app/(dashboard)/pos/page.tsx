@@ -37,6 +37,7 @@ import {
   clearAppendAttempt,
   createSafeAppendAttemptStorage,
   getOrCreateAppendAttempt,
+  LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY,
   getPostpaidOrderAttemptStorageKey,
   migrateLegacyAppendAttempt,
   readAppendAttempt,

@@ -66,6 +66,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     $fallbackInstallPath = 'C:\Flo Cafe Fixture\Programs\Flo Cafe'
     $intermediateId = 9899
     $descendantId = 9900
+    $lateDescendantId = 9902
     $entry = [pscustomobject]@{
       DisplayName     = 'Flo Cafe'
       PSChildName     = 'FloCafe'
@@ -83,6 +84,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       RootRunning         = $true
       IntermediateRunning = $false
       DescendantRunning   = $true
+      LateDescendantRunning = $true
       TreeCalls           = 0
       RootQueries         = 0
     }
@@ -97,6 +99,7 @@ Describe 'Flo Cafe Windows uninstaller' {
         if ($Id -eq $child.Id -and $state.RootRunning) { return @([pscustomobject]@{ Id = $child.Id }) }
         if ($Id -eq $intermediateId -and $state.IntermediateRunning) { return @([pscustomobject]@{ Id = $intermediateId }) }
         if ($Id -eq $descendantId -and $state.DescendantRunning) { return @([pscustomobject]@{ Id = $descendantId }) }
+        if ($Id -eq $lateDescendantId -and $state.LateDescendantRunning) { return @([pscustomobject]@{ Id = $lateDescendantId }) }
         return @()
       }
       Mock Get-ItemProperty { @($entry) }
@@ -111,6 +114,7 @@ Describe 'Flo Cafe Windows uninstaller' {
         param($Id)
         if ($Id -eq $child.Id) { $state.RootRunning = $false }
         if ($Id -eq $descendantId) { $state.DescendantRunning = $false }
+        if ($Id -eq $lateDescendantId) { $state.LateDescendantRunning = $false }
       }
       Mock Remove-Item {
         param($LiteralPath)
@@ -129,7 +133,11 @@ Describe 'Flo Cafe Windows uninstaller' {
         if ($state.TreeCalls -eq 1) {
           return @([pscustomobject]@{ ProcessId = $intermediateId; ParentProcessId = $child.Id })
         }
-        return @([pscustomobject]@{ ProcessId = $descendantId; ParentProcessId = $intermediateId })
+        $processes = @([pscustomobject]@{ ProcessId = $descendantId; ParentProcessId = $intermediateId })
+        if ($state.TreeCalls -ge 4) {
+          $processes += [pscustomobject]@{ ProcessId = $lateDescendantId; ParentProcessId = $child.Id }
+        }
+        return $processes
       }
 
       $result = Invoke-FloCafeUninstall
@@ -137,8 +145,9 @@ Describe 'Flo Cafe Windows uninstaller' {
       $result.Complete | Should -BeFalse
       ($result.Issues -join "`n") | Should -Match 'did not exit within'
       $state.InstallExists | Should -BeFalse
-      Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq 9898 -and $Force }
-      Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq $descendantId -and $Force }
+      Should -Invoke Stop-Process -Times 2 -Exactly -ParameterFilter { $Id -eq 9898 -and $Force }
+      Should -Invoke Stop-Process -Times 2 -Exactly -ParameterFilter { $Id -eq $descendantId -and $Force }
+      Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq $lateDescendantId -and $Force }
       Should -Invoke Remove-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $fallbackInstallPath }
       Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter { $PassThru -and -not $Wait }
     } finally {
@@ -334,5 +343,76 @@ Describe 'Flo Cafe Windows uninstaller' {
     $state.RegistryExists | Should -BeFalse
     Should -Invoke Remove-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $readableEntry.PSPath -and $Recurse -and $Force }
     Should -Invoke Get-ItemProperty -Times 3 -Exactly
+  }
+
+  It 'processes and verifies every matching registry installation entry' {
+    $firstInstallPath = 'C:\Flo Cafe First'
+    $secondInstallPath = 'C:\Flo Cafe Second'
+    $firstUninstaller = 'C:\Flo Cafe First\uninstall.exe'
+    $secondUninstaller = 'C:\Flo Cafe Second\uninstall.exe'
+    $entries = @(
+      [pscustomobject]@{
+        DisplayName     = 'Flo Cafe'
+        PSChildName     = 'FloCafeFirst'
+        PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafeFirst'
+        InstallLocation = $firstInstallPath
+        UninstallString = "`"$firstUninstaller`""
+      }
+      [pscustomobject]@{
+        DisplayName     = 'Flo Cafe'
+        PSChildName     = 'FloCafeSecond'
+        PSPath          = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafeSecond'
+        InstallLocation = $secondInstallPath
+        UninstallString = "`"$secondUninstaller`""
+      }
+    )
+    $children = @(
+      [pscustomobject]@{ Id = 9910; ExitCode = 0 }
+      [pscustomobject]@{ Id = 9911; ExitCode = 0 }
+    )
+    foreach ($child in $children) {
+      $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+        param([int]$Milliseconds)
+        return $true
+      }
+    }
+    $remainingPaths = @{
+      $firstUninstaller = $true
+      $secondUninstaller = $true
+      $firstInstallPath = $true
+      $secondInstallPath = $true
+      $entries[0].PSPath = $true
+      $entries[1].PSPath = $true
+    }
+    $removedPaths = New-Object 'System.Collections.Generic.List[string]'
+
+    Mock Get-Process { @() }
+    Mock Get-ItemProperty { $entries }
+    Mock Test-Path {
+      param($LiteralPath)
+      if ($remainingPaths.ContainsKey($LiteralPath)) { return $remainingPaths[$LiteralPath] }
+      return $false
+    }
+    Mock Start-Process {
+      param($FilePath)
+      if ($FilePath -eq $firstUninstaller) { return $children[0] }
+      if ($FilePath -eq $secondUninstaller) { return $children[1] }
+      throw "unexpected uninstaller $FilePath"
+    }
+    Mock Get-CimInstance { @() }
+    Mock Remove-Item {
+      param($LiteralPath)
+      [void]$removedPaths.Add($LiteralPath)
+      if ($remainingPaths.ContainsKey($LiteralPath)) { $remainingPaths[$LiteralPath] = $false }
+    }
+
+    $result = Invoke-FloCafeUninstall
+
+    $result.Complete | Should -BeFalse
+    Should -Invoke Start-Process -Times 2 -Exactly
+    ($removedPaths -contains $entries[0].PSPath) | Should -BeTrue
+    ($removedPaths -contains $entries[1].PSPath) | Should -BeTrue
+    ($result.Issues -join "`n") | Should -Match 'C:\Flo Cafe First'
+    ($result.Issues -join "`n") | Should -Match 'C:\Flo Cafe Second'
   }
 }

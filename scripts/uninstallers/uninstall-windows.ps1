@@ -320,18 +320,23 @@ function Wait-ForChildUninstallerExit($process, $timeoutSeconds) {
 }
 
 function Stop-ChildUninstallerTree($deadline) {
+  $quiescentSnapshots = 0
   do {
     if ([DateTime]::UtcNow -ge $deadline) { break }
     if (-not (Update-ChildUninstallerProcessTree $deadline)) { return $false }
     $stopped = Test-ProcessIdsStopped $script:ChildUninstallerProcessIds
     if ($null -eq $stopped) { return $false }
-    if ($stopped) { return $true }
-
-    foreach ($processId in @($script:ChildUninstallerProcessIds | Sort-Object -Descending)) {
-      try {
-        Stop-Process -Id $processId -Force -ErrorAction Stop
-      } catch {
-        Mark-Partial ("could not stop the app uninstaller process {0}: {1}" -f $processId, $_.Exception.Message)
+    if ($stopped) {
+      $quiescentSnapshots++
+      if ($quiescentSnapshots -ge 2) { return $true }
+    } else {
+      $quiescentSnapshots = 0
+      foreach ($processId in @($script:ChildUninstallerProcessIds | Sort-Object -Descending)) {
+        try {
+          Stop-Process -Id $processId -Force -ErrorAction Stop
+        } catch {
+          Mark-Partial ("could not stop the app uninstaller process {0}: {1}" -f $processId, $_.Exception.Message)
+        }
       }
     }
     if ([DateTime]::UtcNow -ge $deadline) { break }
@@ -339,8 +344,7 @@ function Stop-ChildUninstallerTree($deadline) {
     Start-Sleep -Milliseconds ([Math]::Max(1, [Math]::Min(250, [int]$remainingMilliseconds)))
   } while ($true)
 
-  $stopped = Test-ProcessIdsStopped $script:ChildUninstallerProcessIds
-  return ($null -ne $stopped -and $stopped)
+  return $false
 }
 
 function Wait-ForFloExit($processes, $timeoutSeconds) {
@@ -537,84 +541,86 @@ function Invoke-FloCafeUninstall {
       $appEntries += $candidateEntry
     }
   }
-  $entry = $appEntries | Select-Object -First 1
-
-  $installLocation = $null
-  if ($entry) {
-    $installLocation = [string]$entry.InstallLocation
-    Write-Log "found registry entry: $($entry.PSChildName)"
-
-    $uninstallerExe = $null
-    $uninstallerArgs = $null
-    if ($entry.UninstallString) {
-      $uninstallerCommand = ([string]$entry.UninstallString).Trim()
-      if ($uninstallerCommand -match '^\s*"([^"]+)"(.*)$') {
-        $uninstallerExe = $Matches[1]
-        $uninstallerArgs = $Matches[2].Trim()
-      } elseif ($uninstallerCommand -match '^\s*(\S+)(.*)$') {
-        $uninstallerExe = $Matches[1]
-        $uninstallerArgs = $Matches[2].Trim()
+  $installLocations = New-Object 'System.Collections.Generic.List[string]'
+  if ($appEntries.Count -gt 0) {
+    foreach ($entry in $appEntries) {
+      $entryInstallLocation = [string]$entry.InstallLocation
+      if (-not [string]::IsNullOrWhiteSpace($entryInstallLocation) -and -not $installLocations.Contains($entryInstallLocation)) {
+        [void]$installLocations.Add($entryInstallLocation)
       }
-    }
+      Write-Log "found registry entry: $($entry.PSChildName)"
 
-    $uninstallerExists = $false
-    if ($uninstallerExe) {
-      try {
-        $uninstallerExists = [bool](Test-Path -LiteralPath $uninstallerExe -PathType Leaf -ErrorAction Stop)
-      } catch {
-        Mark-Partial ("could not inspect the app's own uninstaller at {0}: {1}" -f $uninstallerExe, $_.Exception.Message)
-      }
-    }
-
-    if ($uninstallerExe -and $uninstallerExists) {
-      Write-Step "Running the app's own uninstaller silently..."
-      # /S first, then whatever came from the registry (e.g. /D=C:\Program Files\Flo Cafe):
-      # NSIS requires /D=<path> to be the LAST parameter and takes everything after
-      # it, unquoted, as the literal install path -- putting /S after it would get
-      # swallowed into that path instead of being read as a flag.
-      #
-      # One joined string, not an array, for -ArgumentList: Start-Process re-tokenizes
-      # an array's elements when building the child process's command line, so a path
-      # already containing spaces (like the one above) would get split into multiple
-      # arguments. A single string is passed through close to verbatim instead.
-      $fullArgs = if ($uninstallerArgs) { "/S $uninstallerArgs" } else { '/S' }
-      if ($script:DryRun) {
-        Write-Log "[dry-run] would run: `"$uninstallerExe`" $fullArgs"
-      } elseif (Confirm-FloCafeStopped) {
-        try {
-          $child = Start-Process -FilePath $uninstallerExe -ArgumentList $fullArgs -PassThru -ErrorAction Stop
-          $script:ChildUninstallerRunning = $true
-          $script:ChildUninstallerProcessId = $child.Id
-          $script:ChildUninstallerProcessIds = @($child.Id)
-          $childFinished = $false
-          $childFinished = [bool](Wait-ForChildUninstallerExit $child $script:ChildUninstallerTimeoutSeconds)
-
-          if ($childFinished) {
-            $childExitCode = $null
-            $childExitCodeRead = $true
-            try { $childExitCode = $child.ExitCode } catch {
-              $childExitCodeRead = $false
-              Mark-Partial ("could not verify the app's own uninstaller exit code: {0}" -f $_.Exception.Message)
-            }
-            if (-not $childExitCodeRead) {
-              Write-Warn "continuing with manual cleanup after an unverified app uninstaller result"
-            } elseif ($childExitCode -ne 0) {
-              Mark-Partial ("the app's own uninstaller exited with code {0}; continuing with manual cleanup" -f $childExitCode)
-            } else {
-              Write-Log "ran $uninstallerExe $fullArgs"
-            }
-          } else {
-            Mark-Partial ("the app's own uninstaller did not exit within {0} seconds; stopping it and continuing with manual cleanup" -f $script:ChildUninstallerTimeoutSeconds)
-          }
-        } catch {
-          Mark-Partial ("the app's own uninstaller failed to run: {0}" -f $_.Exception.Message)
-          Write-Warn 'falling back to manual cleanup below'
+      $uninstallerExe = $null
+      $uninstallerArgs = $null
+      if ($entry.UninstallString) {
+        $uninstallerCommand = ([string]$entry.UninstallString).Trim()
+        if ($uninstallerCommand -match '^\s*"([^"]+)"(.*)$') {
+          $uninstallerExe = $Matches[1]
+          $uninstallerArgs = $Matches[2].Trim()
+        } elseif ($uninstallerCommand -match '^\s*(\S+)(.*)$') {
+          $uninstallerExe = $Matches[1]
+          $uninstallerArgs = $Matches[2].Trim()
         }
-      } else {
-        Write-Warn "skipping the app's own uninstaller because Flo Cafe is still running"
       }
-    } elseif ($uninstallerExe) {
-      Write-Warn "could not find the app's own uninstaller at $uninstallerExe -- falling back to manual cleanup"
+
+      $uninstallerExists = $false
+      if ($uninstallerExe) {
+        try {
+          $uninstallerExists = [bool](Test-Path -LiteralPath $uninstallerExe -PathType Leaf -ErrorAction Stop)
+        } catch {
+          Mark-Partial ("could not inspect the app's own uninstaller at {0}: {1}" -f $uninstallerExe, $_.Exception.Message)
+        }
+      }
+
+      if ($uninstallerExe -and $uninstallerExists) {
+        Write-Step "Running the app's own uninstaller silently..."
+        # /S first, then whatever came from the registry (e.g. /D=C:\Program Files\Flo Cafe):
+        # NSIS requires /D=<path> to be the LAST parameter and takes everything after
+        # it, unquoted, as the literal install path -- putting /S after it would get
+        # swallowed into that path instead of being read as a flag.
+        #
+        # One joined string, not an array, for -ArgumentList: Start-Process re-tokenizes
+        # an array's elements when building the child process's command line, so a path
+        # already containing spaces (like the one above) would get split into multiple
+        # arguments. A single string is passed through close to verbatim instead.
+        $fullArgs = if ($uninstallerArgs) { "/S $uninstallerArgs" } else { '/S' }
+        if ($script:DryRun) {
+          Write-Log "[dry-run] would run: `"$uninstallerExe`" $fullArgs"
+        } elseif (Confirm-NoActiveUninstallWork) {
+          try {
+            $child = Start-Process -FilePath $uninstallerExe -ArgumentList $fullArgs -PassThru -ErrorAction Stop
+            $script:ChildUninstallerRunning = $true
+            $script:ChildUninstallerProcessId = $child.Id
+            $script:ChildUninstallerProcessIds = @($child.Id)
+            $childFinished = [bool](Wait-ForChildUninstallerExit $child $script:ChildUninstallerTimeoutSeconds)
+
+            if ($childFinished) {
+              $childExitCode = $null
+              $childExitCodeRead = $true
+              try { $childExitCode = $child.ExitCode } catch {
+                $childExitCodeRead = $false
+                Mark-Partial ("could not verify the app's own uninstaller exit code: {0}" -f $_.Exception.Message)
+              }
+              if (-not $childExitCodeRead) {
+                Write-Warn "continuing with manual cleanup after an unverified app uninstaller result"
+              } elseif ($childExitCode -ne 0) {
+                Mark-Partial ("the app's own uninstaller exited with code {0}; continuing with manual cleanup" -f $childExitCode)
+              } else {
+                Write-Log "ran $uninstallerExe $fullArgs"
+              }
+            } else {
+              Mark-Partial ("the app's own uninstaller did not exit within {0} seconds; stopping it and continuing with manual cleanup" -f $script:ChildUninstallerTimeoutSeconds)
+            }
+          } catch {
+            Mark-Partial ("the app's own uninstaller failed to run: {0}" -f $_.Exception.Message)
+            Write-Warn 'falling back to manual cleanup below'
+          }
+        } else {
+          Write-Warn "skipping the app's own uninstaller because Flo Cafe or its child uninstaller is still running"
+        }
+      } elseif ($uninstallerExe) {
+        Write-Warn "could not find the app's own uninstaller at $uninstallerExe -- falling back to manual cleanup"
+      }
     }
   } else {
     Write-Log 'no registry uninstall entry found -- checking default install locations'
@@ -672,13 +678,15 @@ function Invoke-FloCafeUninstall {
     # A custom install location is intentionally never passed to Remove-Item.
     # Verify it read-only so a failed child uninstaller is reported rather than
     # silently turning into a false success.
-    if (-not $script:DryRun -and $installLocation) {
-      try {
-        if (Test-Path -LiteralPath $installLocation -ErrorAction Stop) {
-          Mark-Partial "the registry install location still exists at $installLocation; it was not removed because it is outside the safe fallback roots"
+    if (-not $script:DryRun) {
+      foreach ($installLocation in $installLocations) {
+        try {
+          if (Test-Path -LiteralPath $installLocation -ErrorAction Stop) {
+            Mark-Partial "the registry install location still exists at $installLocation; it was not removed because it is outside the safe fallback roots"
+          }
+        } catch {
+          Mark-Partial ("could not verify the registry install location at {0}: {1}" -f $installLocation, $_.Exception.Message)
         }
-      } catch {
-        Mark-Partial ("could not verify the registry install location at {0}: {1}" -f $installLocation, $_.Exception.Message)
       }
     }
 

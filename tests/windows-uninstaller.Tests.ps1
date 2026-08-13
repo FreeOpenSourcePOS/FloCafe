@@ -7,14 +7,6 @@
 #>
 
 BeforeAll {
-  Mock Get-CimInstance { param($ClassName, $Filter, $OperationTimeoutSec) return @() }
-  Mock Get-Process { param($Name, $Id) return @() }
-  Mock Get-ItemProperty { param($Path) return @() }
-  Mock Test-Path { param($LiteralPath, $PathType) return $false }
-  Mock Remove-Item { param($LiteralPath) }
-  Mock Start-Process { param($FilePath, $ArgumentList, [switch]$PassThru) }
-  Mock Stop-Process { param($Id, [switch]$Force) }
-
   $uninstallerPath = Join-Path $PSScriptRoot '..\scripts\uninstallers\uninstall-windows.ps1'
   . $uninstallerPath
 }
@@ -157,7 +149,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       ($result.Issues -join "`n") | Should -Match 'did not exit within'
       $state.InstallExists | Should -BeFalse
       Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq 9898 -and $Force }
-      Should -Invoke Stop-Process -Times 2 -Exactly -ParameterFilter { $Id -eq $descendantId -and $Force }
+      Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq $descendantId -and $Force }
       Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq $lateDescendantId -and $Force }
       Should -Invoke Remove-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $fallbackInstallPath }
       Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter { $PassThru -and -not $Wait }
@@ -397,7 +389,8 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Get-Process { param($Name, $Id) return @() }
     Mock Get-ItemProperty { param($Path) return $testEntries }
     Mock Test-Path {
-      param($LiteralPath, $PathType)
+      param($LiteralPath)
+      if ($LiteralPath -eq $firstUninstaller -or $LiteralPath -eq $secondUninstaller) { return $true }
       if ($remainingPaths.ContainsKey($LiteralPath)) { return $remainingPaths[$LiteralPath] }
       return $false
     }

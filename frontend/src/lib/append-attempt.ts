@@ -3,6 +3,7 @@ export const LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
 export const APPEND_ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const APPEND_ATTEMPT_COMPLETION_SUFFIX = '.completed';
 const confirmedAppendTombstones = new Map<string, number>();
+const APPEND_ATTEMPT_COOKIE_PREFIX = 'flo_append_attempt.';
 
 export function getAppendAttemptStorageKey(userId: string): string {
   return `${APPEND_ATTEMPT_STORAGE_KEY}.${encodeURIComponent(userId)}`;
@@ -50,13 +51,34 @@ export interface AppendAttemptStorage {
   removeItem: (key: string) => void | boolean;
 }
 
+export function createCookieAppendAttemptStorage(): AppendAttemptStorage | null {
+  if (typeof document === 'undefined') return null;
+  const cookieName = (key: string) => `${APPEND_ATTEMPT_COOKIE_PREFIX}${encodeURIComponent(key)}`;
+  const readCookie = (key: string): string | null => {
+    const name = `${cookieName(key)}=`;
+    const entry = document.cookie.split('; ').find((value) => value.startsWith(name));
+    return entry ? decodeURIComponent(entry.slice(name.length)) : null;
+  };
+  return {
+    getItem: readCookie,
+    setItem: (key, value) => {
+      document.cookie = `${cookieName(key)}=${encodeURIComponent(value)}; Max-Age=172800; Path=/; SameSite=Strict`;
+      if (readCookie(key) !== value) throw new Error('Append retry state was not persisted');
+    },
+    removeItem: (key) => {
+      document.cookie = `${cookieName(key)}=; Max-Age=0; Path=/; SameSite=Strict`;
+      return readCookie(key) === null;
+    },
+  };
+}
+
 /** Wrap browser storage for append-attempt state. */
 export function createSafeAppendAttemptStorage(
   storage: AppendAttemptStorage | null,
-  fallbackStorage: AppendAttemptStorage | null = null,
+  ...fallbackStorages: Array<AppendAttemptStorage | null>
 ): AppendAttemptStorage {
   const memory = new Map<string, string | null>();
-  const stores = [storage, fallbackStorage].filter((candidate, index, all) => candidate && all.indexOf(candidate) === index) as AppendAttemptStorage[];
+  const stores = [storage, ...fallbackStorages].filter((candidate, index, all) => candidate && all.indexOf(candidate) === index) as AppendAttemptStorage[];
   return {
     getItem: (key) => {
       if (memory.has(key)) return memory.get(key) ?? null;
@@ -179,6 +201,13 @@ interface AppendAttemptCompletion {
   completedAt: number;
 }
 
+export class LegacyAppendAttemptConflictError extends Error {
+  constructor() {
+    super('A legacy append retry conflicts with the owner-scoped retry');
+    this.name = 'LegacyAppendAttemptConflictError';
+  }
+}
+
 function isCompletionRecord(value: Partial<AppendAttemptCompletion> & { completed?: unknown }): boolean {
   return value.completed === true
     && typeof value.userId === 'string'
@@ -241,7 +270,7 @@ function hasCompletedAttempt(
 
 export function migrateLegacyAppendAttempt(
   storage: AppendAttemptStorage,
-  options: { now?: number; maxAgeMs?: number } = {},
+  options: { now?: number; maxAgeMs?: number; userId?: string } = {},
 ): AppendAttempt | null {
   const now = options.now ?? Date.now();
   const maxAgeMs = options.maxAgeMs ?? APPEND_ATTEMPT_MAX_AGE_MS;
@@ -257,6 +286,11 @@ export function migrateLegacyAppendAttempt(
   try {
     parsed = JSON.parse(raw);
   } catch {
+    storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
+    return null;
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
     return null;
   }
   if (typeof parsed.userId !== 'string' || typeof parsed.fingerprint !== 'string') return null;
@@ -300,7 +334,10 @@ export function migrateLegacyAppendAttempt(
       && JSON.stringify(existing.items) === JSON.stringify(attempt.items)
       && (existing.specialInstructions || undefined) === (attempt.specialInstructions || undefined)
       && typeof existing.createdAt === 'number';
-    if (!equivalent) return attempt;
+    if (!equivalent) {
+      if (options.userId === parsed.userId) throw new LegacyAppendAttemptConflictError();
+      return attempt;
+    }
   }
   if (existingRaw === null) storage.setItem(scopedKey, JSON.stringify(attempt));
   if (!removeAndVerify(storage, LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY)) {
@@ -378,7 +415,12 @@ function readUserAttempt(
   maxAgeMs: number,
 ): StoredAttempt | null {
   const scopedKey = getAppendAttemptStorageKey(userId);
-  const migrated = migrateLegacyAppendAttempt(storage, { now, maxAgeMs });
+  let migrated: AppendAttempt | null = null;
+  try {
+    migrated = migrateLegacyAppendAttempt(storage, { now, maxAgeMs, userId });
+  } catch (error) {
+    if (!(error instanceof LegacyAppendAttemptConflictError)) throw error;
+  }
   if (hasCompletedAttempt(storage, userId, now, maxAgeMs)) return null;
   const scoped = parseStoredAttempt(storage, scopedKey, now, maxAgeMs);
   if (scoped && hasConfirmedAppendTombstone(userId, scoped.idempotencyKey, scoped.fingerprint, now, maxAgeMs)) return null;

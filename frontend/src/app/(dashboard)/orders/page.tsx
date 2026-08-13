@@ -28,6 +28,7 @@ import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
   createSafeAppendAttemptStorage,
+  createCookieAppendAttemptStorage,
   getOrCreateAppendAttempt,
   readAppendAttempt,
   type AppendAttempt,
@@ -174,7 +175,11 @@ export default function OrdersPage() {
     } catch {
       sessionStorage = null;
     }
-    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(browserStorage, sessionStorage);
+    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(
+      browserStorage,
+      sessionStorage,
+      createCookieAppendAttemptStorage(),
+    );
     return appendAttemptStorageRef.current;
   };
 

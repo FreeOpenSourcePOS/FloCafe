@@ -36,6 +36,7 @@ import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
   createSafeAppendAttemptStorage,
+  createCookieAppendAttemptStorage,
   getOrCreateAppendAttempt,
   migrateLegacyAppendAttempt,
   readAppendAttempt,
@@ -123,14 +124,18 @@ export default function POSPage() {
     } catch {
       // Session storage may also be restricted.
     }
-    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(browserStorage, sessionStorage);
+    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(
+      browserStorage,
+      sessionStorage,
+      createCookieAppendAttemptStorage(),
+    );
     return appendAttemptStorageRef.current;
   };
 
   const readPostpaidAttempt = () => {
     if (typeof window === 'undefined') return null;
     try {
-      const migratedAppend = migrateLegacyAppendAttempt(getAppendAttemptStorage());
+      const migratedAppend = migrateLegacyAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId || undefined });
       if (migratedAppend) return null;
     } catch {
       throw new Error('Unable to recover append retry state');

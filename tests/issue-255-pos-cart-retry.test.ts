@@ -218,6 +218,11 @@ function main() {
   );
   assert.equal(readAppendAttempt(conflictingMigrationStorage, { userId: 'different-cashier', now: 4_000 }), null, 'foreign callers proceed without consuming a conflicting legacy retry');
   assert.ok(conflictingMigrationStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'foreign callers preserve the conflicting legacy retry');
+  assert.equal(
+    readAppendAttempt(conflictingMigrationStorage, { userId: 'conflict-owner', now: 4_000 })?.idempotencyKey,
+    'scoped-conflict-key',
+    'the owner continues using the scoped retry while the conflicting legacy record remains preserved',
+  );
 
   const blockedMigrationBacking = new MemoryStorage();
   blockedMigrationBacking.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
@@ -296,6 +301,11 @@ function main() {
   }));
   assert.equal(readAppendAttempt(legacyOrderStorage, { userId: 'legacy-cashier', now: 4_000 }), null, 'legacy new-order records are not mistaken for append records');
   assert.ok(legacyOrderStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'legacy new-order records remain available to the order flow');
+
+  const nullLegacyStorage = new MemoryStorage();
+  nullLegacyStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, 'null');
+  assert.equal(readAppendAttempt(nullLegacyStorage, { userId: 'legacy-cashier', now: 4_000 }), null, 'null legacy records follow the cleanup path');
+  assert.equal(nullLegacyStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), null, 'null legacy records are discarded');
 
   // Cleanup is explicit after the caller receives a confirmed response; a
   // failed/lost response leaves the attempt available for retry.
@@ -396,6 +406,7 @@ function main() {
   assert.equal(afterCleanupFailure.idempotencyKey, 'append-key-after-cleanup-failure', 'cleanup failure does not block a later append');
 
   const combinedFailureBacking = new MemoryStorage();
+  const combinedFailureDurable = new MemoryStorage();
   let combinedFailure = false;
   const combinedFailureStorage = createSafeAppendAttemptStorage({
     getItem: combinedFailureBacking.getItem.bind(combinedFailureBacking),
@@ -407,7 +418,7 @@ function main() {
       if (combinedFailure && key === attemptStorageKey) throw new Error('completion removal blocked');
       combinedFailureBacking.removeItem(key);
     },
-  });
+  }, combinedFailureDurable);
   const combinedFailureAttempt = getOrCreateAppendAttempt(combinedFailureStorage, {
     userId: 'cashier-1',
     orderId: '42',
@@ -419,7 +430,8 @@ function main() {
   });
   combinedFailure = true;
   clearAppendAttempt(combinedFailureStorage, combinedFailureAttempt);
-  assert.equal(readAppendAttempt(combinedFailureStorage, { userId: 'cashier-1', now: 21_501 }), null, 'confirmed completion tombstone prevents a combined storage failure from blocking the current renderer');
+  const reloadedCombinedFailureStorage = createSafeAppendAttemptStorage(combinedFailureBacking, combinedFailureDurable);
+  assert.equal(readAppendAttempt(reloadedCombinedFailureStorage, { userId: 'cashier-1', now: 21_501 }), null, 'durable fallback completion state prevents a combined storage failure from blocking after reload');
 
   const fallbackBacking = new MemoryStorage();
   const fallbackDurable = new MemoryStorage();

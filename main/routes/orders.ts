@@ -21,7 +21,8 @@ function orderIdempotencyKey(req: Request): string | null {
   const raw = req.get('Idempotency-Key');
   if (raw === undefined) return null;
   const supplied = raw.trim();
-  if (!supplied || supplied.length > MAX_ORDER_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
+  if (!supplied) return null;
+  if (supplied.length > MAX_ORDER_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
     throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400 });
   }
   return supplied;
@@ -582,14 +583,6 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       ? createHash('sha256').update(JSON.stringify({ order_id: req.params.id, items, special_instructions })).digest('hex')
       : null;
 
-    // Replay before any mutable-order guard. A response-loss retry must return
-    // the committed result even if the order was split or its validation state
-    // changed after the original append.
-    if (idempotencyKey && requestHash) {
-      const replayResponse = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash);
-      if (replayResponse) return res.json(replayResponse);
-    }
-
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -598,6 +591,14 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     const authUser = (req as any).user;
     if (authUser?.role === 'waiter' && order.user_id !== authUser.userId) {
       return res.status(403).json({ error: 'Waiters can only modify their own orders' });
+    }
+
+    // Replay before any mutable-order guard. A response-loss retry must return
+    // the committed result even if the order was split or its validation state
+    // changed after the original append.
+    if (idempotencyKey && requestHash) {
+      const replayResponse = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash);
+      if (replayResponse) return res.json(replayResponse);
     }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -618,6 +619,17 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     };
 
     const result = withTxn(() => {
+      // Re-fetch and re-validate under the transaction lock: another request (e.g. a
+      // cashier completing/cancelling the order) can race the checks above, which run
+      // before this lock is acquired (#175).
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+      if (authUser?.role === 'waiter' && currentOrder.user_id !== authUser.userId) {
+        throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
+      }
+
       // Re-check idempotency under the transaction lock in case the early
       // lookup raced the first request. This must remain before mutable-order
       // guards so a committed append always has a replay path.
@@ -626,13 +638,6 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
         if (replayResponse) return { replayResponse };
       }
 
-      // Re-fetch and re-validate under the transaction lock: another request (e.g. a
-      // cashier completing/cancelling the order) can race the checks above, which run
-      // before this lock is acquired (#175).
-      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
-      if (!currentOrder) {
-        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
-      }
       if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
         throw Object.assign(new Error('Items cannot be changed after a check has been split'), { statusCode: 409 });
       }

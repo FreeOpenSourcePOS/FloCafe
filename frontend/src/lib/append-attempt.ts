@@ -162,9 +162,8 @@ export function readAppendAttempt(
 }
 
 /**
- * Recover the durable attempt for the same logical append, or replace it with
- * a new attempt when the order/cart fingerprint no longer matches. The caller
- * must persist this result before sending the mutating request.
+ * Recover the durable attempt for the same logical append. A conflicting
+ * pending attempt is retained until it is completed or expires.
  */
 export function getOrCreateAppendAttempt(
   storage: AppendAttemptStorage,
@@ -183,7 +182,9 @@ export function getOrCreateAppendAttempt(
     return prior.attempt;
   }
 
-  if (prior) storage.removeItem(prior.key);
+  if (prior) {
+    throw new Error('A previous append attempt is still pending');
+  }
 
   const idempotencyKey = options.createKey();
   if (!isValidIdempotencyKey(idempotencyKey)) {

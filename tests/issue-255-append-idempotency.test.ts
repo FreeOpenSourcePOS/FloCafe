@@ -4,6 +4,8 @@ const originalLoad = Module._load;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-issue-255-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
@@ -23,13 +25,26 @@ const {
   getResults,
   closeDatabase,
   getDatabase,
+  now,
 } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
+const { getJWTSecret } = require('../main/routes/auth');
+
+function seedWaiterUser(db: any) {
+  const userId = 'waiter-255';
+  db.prepare(`
+    INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 'waiter', 1, ?, ?)
+  `).run(userId, 'Issue 255 Waiter', 'waiter-255@test.local', bcrypt.hashSync('testpass123', 10), now(), now());
+  const token = jwt.sign({ userId, email: 'waiter-255@test.local', role: 'waiter' }, getJWTSecret(), { expiresIn: '1h' });
+  return { Authorization: `Bearer ${token}` };
+}
 
 async function main() {
   console.log('Issue #255 append idempotency contract');
   const db = initTestDb();
   const { authHeader } = seedOwnerUser(db);
+  const waiterAuth = seedWaiterUser(db);
   seedCategory(db, 'cat-255', 'Issue 255 menu');
   seedProduct(db, 'prod-255-base', 'cat-255', 'Issue 255 base', 100);
   seedProduct(db, '001', 'cat-255', 'Issue 255 append', 25);
@@ -63,14 +78,46 @@ async function main() {
     // Deliberately do not use committedResponse.data below: this models a
     // renderer losing the response after the transaction committed.
     const countAfterCommit = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId) as { count: number };
-    const blankKey = await api(baseUrl, `/api/orders/${orderId}/items`, {
+
+    db.prepare('UPDATE order_idempotency SET user_id = \'legacy\' WHERE idempotency_key = ?').run('issue-255-append-retry');
+    const unauthorizedReplay = await api(baseUrl, `/api/orders/${orderId}/items`, {
+      method: 'POST',
+      body: appendBody,
+      headers: { ...waiterAuth, 'Idempotency-Key': 'issue-255-append-retry' },
+    });
+    const countAfterUnauthorized = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId) as { count: number };
+    assertEqual(unauthorizedReplay.status, 403, 'a waiter cannot replay a legacy append record for another owner\'s order');
+    assertEqual(countAfterUnauthorized.count, countAfterCommit.count, 'unauthorized replay does not expose or mutate the order');
+
+    const whitespaceOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: { type: 'takeaway', items: [{ product_id: 'prod-255-base', quantity: 1 }] },
+      headers: authHeader,
+    });
+    const whitespaceBefore = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(whitespaceOrder.data.order.id) as { count: number };
+    const blankKey = await api(baseUrl, `/api/orders/${whitespaceOrder.data.order.id}/items`, {
       method: 'POST',
       body: appendBody,
       headers: { ...authHeader, 'Idempotency-Key': '   ' },
     });
-    const countAfterBlankKey = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId) as { count: number };
-    assertEqual(blankKey.status, 400, 'a supplied blank idempotency key is rejected');
-    assertEqual(countAfterBlankKey.count, countAfterCommit.count, 'blank idempotency key rejection does not mutate the order');
+    const countAfterBlankKey = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(whitespaceOrder.data.order.id) as { count: number };
+    assertEqual(blankKey.status, 200, 'a supplied whitespace-only idempotency key is treated as absent');
+    assertEqual(countAfterBlankKey.count, whitespaceBefore.count + 1, 'a whitespace-only key follows the non-idempotent append path');
+
+    const malformedKey = await api(baseUrl, `/api/orders/${whitespaceOrder.data.order.id}/items`, {
+      method: 'POST',
+      body: appendBody,
+      headers: { ...authHeader, 'Idempotency-Key': 'invalid key' },
+    });
+    const tooLongKey = await api(baseUrl, `/api/orders/${whitespaceOrder.data.order.id}/items`, {
+      method: 'POST',
+      body: appendBody,
+      headers: { ...authHeader, 'Idempotency-Key': 'x'.repeat(129) },
+    });
+    const countAfterInvalidKeys = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(whitespaceOrder.data.order.id) as { count: number };
+    assertEqual(malformedKey.status, 400, 'a non-whitespace invalid idempotency key is rejected');
+    assertEqual(tooLongKey.status, 400, 'an overlong idempotency key is rejected');
+    assertEqual(countAfterInvalidKeys.count, whitespaceBefore.count + 1, 'invalid idempotency keys do not mutate the order');
 
     db.prepare('INSERT INTO bills (bill_number, order_id, split_group_id) VALUES (?, ?, ?)').run('BILL-255-SPLIT', orderId, 'split-255');
     const replayedResponse = await api(baseUrl, `/api/orders/${orderId}/items`, {

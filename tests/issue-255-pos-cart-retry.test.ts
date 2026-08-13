@@ -126,7 +126,7 @@ function main() {
   assert.deepEqual(reloaded?.items, items, 'reload recovery retains the exact append payload');
   assert.equal(reloaded?.orderNumber, 'K-42', 'reload recovery retains the order display identity');
 
-  const mismatched = getOrCreateAppendAttempt(storage, {
+  assert.throws(() => getOrCreateAppendAttempt(storage, {
     userId: 'cashier-1',
     orderId: '42',
     fingerprint: buildAppendItemsFingerprint('42', [{ product_id: '001', quantity: 2 }], 'table-note'),
@@ -135,13 +135,12 @@ function main() {
     specialInstructions: 'table-note',
     orderNumber: 'K-42',
     now: 3_000,
-  });
-  assert.equal(mismatched.idempotencyKey, 'append-key-3', 'a mismatched payload never reuses the old append key');
-  assert.notEqual(mismatched.fingerprint, first.fingerprint, 'mismatched append payload is represented separately');
+  }), /previous append attempt is still pending/, 'a mismatched payload is rejected without replacing the pending attempt');
+  assert.equal(readAppendAttempt(storage, { userId: 'cashier-1', now: 3_000 })?.idempotencyKey, first.idempotencyKey, 'a mismatched append preserves the original retry key');
 
   // Cleanup is explicit after the caller receives a confirmed response; a
   // failed/lost response leaves the attempt available for retry.
-  clearAppendAttempt(storage, mismatched);
+  clearAppendAttempt(storage, first);
   assert.equal(storage.getItem(attemptStorageKey), null, 'confirmed completion cleanup removes the durable attempt');
 
   const stale = getOrCreateAppendAttempt(storage, {

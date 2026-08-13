@@ -268,6 +268,38 @@ function normalizeBarcode(raw: unknown): string | null {
   return trimmed || null;
 }
 
+function validateAddonGroupIds(db: any, rawIds: unknown): { ids?: string[]; error?: string } {
+  if (rawIds === undefined) return {};
+  if (!Array.isArray(rawIds)) {
+    return { error: 'addon_group_ids must be an array' };
+  }
+
+  const ids = rawIds.map((id) => (typeof id === 'string' ? id.trim() : id));
+  if (ids.some((id) => typeof id !== 'string' || id.length === 0)) {
+    return { error: 'addon_group_ids must contain non-empty string IDs' };
+  }
+
+  const uniqueIds = [...new Set(ids as string[])];
+  if (uniqueIds.length !== ids.length) {
+    return { error: 'addon_group_ids must not contain duplicates' };
+  }
+  if (uniqueIds.length === 0) {
+    return { ids: [] };
+  }
+
+  const placeholders = uniqueIds.map(() => '?').join(',');
+  const activeRows = db.prepare(
+    `SELECT id FROM addon_groups WHERE is_active = 1 AND id IN (${placeholders})`
+  ).all(...uniqueIds) as Array<{ id: string }>;
+  const activeIds = new Set(activeRows.map((row) => row.id));
+  const missingIds = uniqueIds.filter((id) => !activeIds.has(id));
+  if (missingIds.length > 0) {
+    return { error: `Unknown or inactive addon_group_ids: ${missingIds.join(', ')}` };
+  }
+
+  return { ids: uniqueIds };
+}
+
 // ── GET / — bulk product list ───────────────────────────────────────────
 // Uses explicit column list to avoid loading Base64 blobs into Node.js memory.
 // Computes has_image flag in SQL so the frontend knows which products have images.
@@ -586,6 +618,11 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     }
 
     const id = generateShortId('products');
+    const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
+    if (addonGroupValidation.error) {
+      return res.status(400).json({ error: addonGroupValidation.error });
+    }
+    const normalizedAddonGroupIds = addonGroupValidation.ids;
 
     // Wrap product INSERT + addon_group INSERTs in a transaction
     // so a partial failure doesn't leave orphaned records
@@ -604,9 +641,9 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
         now(), now()
       );
 
-      if (addon_group_ids && addon_group_ids.length > 0) {
+      if (normalizedAddonGroupIds && normalizedAddonGroupIds.length > 0) {
         const insertAgp = db.prepare('INSERT INTO addon_group_product (addon_group_id, product_id) VALUES (?, ?)');
-        for (const agId of addon_group_ids) {
+        for (const agId of normalizedAddonGroupIds) {
           insertAgp.run(agId, id);
         }
       }
@@ -676,59 +713,65 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const hasTaxCategoryId = 'tax_category_id' in req.body;
     const hasCbPercent = 'cb_percent' in req.body;
 
-    db.prepare(`
-      UPDATE products SET
-        category_id = COALESCE(@category_id, category_id),
-        name = COALESCE(@name, name),
-        sku = COALESCE(@sku, sku),
-        barcode = COALESCE(@barcode, barcode),
-        description = COALESCE(@description, description),
-        price = COALESCE(@price, price),
-        cost = COALESCE(@cost, cost),
-        tax_type = 'none',
-        tax_rate = 0,
-        tax_category_id = CASE WHEN @has_tax_category_id = 1 THEN @tax_category_id ELSE tax_category_id END,
-        tax_behavior = COALESCE(@tax_behavior, tax_behavior),
-        track_inventory = COALESCE(@track_inventory, track_inventory),
-        stock_quantity = COALESCE(@stock_quantity, stock_quantity),
-        low_stock_threshold = COALESCE(@low_stock_threshold, low_stock_threshold),
-        is_active = COALESCE(@is_active, is_active),
-        image_url = CASE WHEN @has_image_url = 1 THEN @image_url ELSE image_url END,
-        sort_order = COALESCE(@sort_order, sort_order),
-        cb_percent = CASE WHEN @has_cb_percent = 1 THEN @cb_percent ELSE cb_percent END,
-        tags = COALESCE(@tags, tags),
-        updated_at = @updated_at
-      WHERE id = @id
-    `).run({
-      category_id, name, sku, barcode: normalizedBarcode, description, price, cost: cost_price,
-      tax_category_id, tax_behavior,
-      has_tax_category_id: hasTaxCategoryId ? 1 : 0,
-      track_inventory: track_inventory ? 1 : track_inventory === 0 ? 0 : null,
-      stock_quantity, low_stock_threshold,
-      is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,
-      has_image_url: hasImageUrl ? 1 : 0,
-      image_url: hasImageUrl ? image_url : null,
-      sort_order,
-      has_cb_percent: hasCbPercent ? 1 : 0,
-      cb_percent: hasCbPercent ? cb_percent : null,
-      tags: tags ? JSON.stringify(tags) : null,
-      updated_at: now(),
-      id: req.params.id
-    });
+    const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
+    if (addonGroupValidation.error) {
+      return res.status(400).json({ error: addonGroupValidation.error });
+    }
+    const normalizedAddonGroupIds = addonGroupValidation.ids;
 
-    // Update addon group links — wrapped in transaction for atomicity
-    if (addon_group_ids !== undefined) {
-      const updateAddons = db.transaction(() => {
+    // Update product fields and add-on links atomically.
+    const updateProduct = db.transaction(() => {
+      db.prepare(`
+        UPDATE products SET
+          category_id = COALESCE(@category_id, category_id),
+          name = COALESCE(@name, name),
+          sku = COALESCE(@sku, sku),
+          barcode = COALESCE(@barcode, barcode),
+          description = COALESCE(@description, description),
+          price = COALESCE(@price, price),
+          cost = COALESCE(@cost, cost),
+          tax_type = 'none',
+          tax_rate = 0,
+          tax_category_id = CASE WHEN @has_tax_category_id = 1 THEN @tax_category_id ELSE tax_category_id END,
+          tax_behavior = COALESCE(@tax_behavior, tax_behavior),
+          track_inventory = COALESCE(@track_inventory, track_inventory),
+          stock_quantity = COALESCE(@stock_quantity, stock_quantity),
+          low_stock_threshold = COALESCE(@low_stock_threshold, low_stock_threshold),
+          is_active = COALESCE(@is_active, is_active),
+          image_url = CASE WHEN @has_image_url = 1 THEN @image_url ELSE image_url END,
+          sort_order = COALESCE(@sort_order, sort_order),
+          cb_percent = CASE WHEN @has_cb_percent = 1 THEN @cb_percent ELSE cb_percent END,
+          tags = COALESCE(@tags, tags),
+          updated_at = @updated_at
+        WHERE id = @id
+      `).run({
+        category_id, name, sku, barcode: normalizedBarcode, description, price, cost: cost_price,
+        tax_category_id, tax_behavior,
+        has_tax_category_id: hasTaxCategoryId ? 1 : 0,
+        track_inventory: track_inventory ? 1 : track_inventory === 0 ? 0 : null,
+        stock_quantity, low_stock_threshold,
+        is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,
+        has_image_url: hasImageUrl ? 1 : 0,
+        image_url: hasImageUrl ? image_url : null,
+        sort_order,
+        has_cb_percent: hasCbPercent ? 1 : 0,
+        cb_percent: hasCbPercent ? cb_percent : null,
+        tags: tags ? JSON.stringify(tags) : null,
+        updated_at: now(),
+        id: req.params.id
+      });
+
+      if (normalizedAddonGroupIds !== undefined) {
         db.prepare('DELETE FROM addon_group_product WHERE product_id = ?').run(req.params.id);
-        if (addon_group_ids && addon_group_ids.length > 0) {
+        if (normalizedAddonGroupIds.length > 0) {
           const insertAgp = db.prepare('INSERT INTO addon_group_product (addon_group_id, product_id) VALUES (?, ?)');
-          for (const agId of addon_group_ids) {
+          for (const agId of normalizedAddonGroupIds) {
             insertAgp.run(agId, req.params.id);
           }
         }
-      });
-      updateAddons();
-    }
+      }
+    });
+    updateProduct();
 
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
     res.json({ product: updated });

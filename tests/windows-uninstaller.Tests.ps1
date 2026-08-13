@@ -191,6 +191,34 @@ Describe 'Flo Cafe Windows uninstaller' {
     Should -Invoke Remove-Item -Times 0 -Exactly
   }
 
+  It 'rejects a process tree snapshot that completes after its deadline' {
+    $oldInspectionFailed = $script:ChildProcessInspectionFailed
+    $oldCleanupComplete = $script:CleanupComplete
+    $oldCleanupIssues = $script:CleanupIssues
+    try {
+      $script:ChildProcessInspectionFailed = $false
+      $script:CleanupComplete = $true
+      $script:CleanupIssues = New-Object 'System.Collections.Generic.List[string]'
+
+      Mock Get-CimInstance {
+        param($ClassName, $Filter, $OperationTimeoutSec)
+        Start-Sleep -Milliseconds 25
+        return @([pscustomobject]@{ ProcessId = 9902; ParentProcessId = 9901 })
+      }
+
+      $result = Get-ProcessTreeIds @(9901) ([DateTime]::UtcNow.AddMilliseconds(1))
+
+      $result | Should -Be $null
+      $script:ChildProcessInspectionFailed | Should -BeTrue
+      $script:CleanupComplete | Should -BeFalse
+      ($script:CleanupIssues -join "`n") | Should -Match 'within the bounded wait'
+    } finally {
+      $script:ChildProcessInspectionFailed = $oldInspectionFailed
+      $script:CleanupComplete = $oldCleanupComplete
+      $script:CleanupIssues = $oldCleanupIssues
+    }
+  }
+
   It 'reports partial cleanup when a completed child exit code cannot be read' {
     $uninstallerExe = 'C:\Flo Cafe\uninstall.exe'
     $entry = [pscustomobject]@{
@@ -216,6 +244,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       return ($LiteralPath -eq $uninstallerExe)
     }
     Mock Start-Process { $child }
+    Mock Get-CimInstance { param($ClassName, $Filter, $OperationTimeoutSec) return @() }
 
     $result = Invoke-FloCafeUninstall
 

@@ -46,7 +46,6 @@ Describe 'Flo Cafe Windows uninstaller' {
     }
 
     Mock Get-Process {
-      param($Name, $Id)
       if ($Name -and $process.IsRunning) { return @($process) }
       if ($Id -and $process.IsRunning) { return @($process) }
       return @()
@@ -93,7 +92,6 @@ Describe 'Flo Cafe Windows uninstaller' {
     $oldChildTimeout = $script:ChildUninstallerTimeoutSeconds
 
     Mock Get-Process {
-      param($Name, $Id)
       if ($Name) { return @() }
       if ($Id -eq $child.Id -and $state.RootRunning) { return @([pscustomobject]@{ Id = $child.Id }) }
       if ($Id -eq $intermediateId -and $state.IntermediateRunning) { return @([pscustomobject]@{ Id = $intermediateId }) }
@@ -101,26 +99,22 @@ Describe 'Flo Cafe Windows uninstaller' {
       if ($Id -eq $lateDescendantId -and $state.LateDescendantRunning) { return @([pscustomobject]@{ Id = $lateDescendantId }) }
       return @()
     }
-    Mock Get-ItemProperty { param($Path) return @($entry) }
+    Mock Get-ItemProperty { return @($entry) }
     Mock Test-Path {
-      param($LiteralPath)
       if ($LiteralPath -eq $uninstallerExe) { return $true }
       if ($LiteralPath -eq $fallbackInstallPath) { return $state.InstallExists }
       return $false
     }
     Mock Start-Process { $child }
     Mock Stop-Process {
-      param($Id, [switch]$Force)
       if ($Id -eq $child.Id) { $state.RootRunning = $false }
       if ($Id -eq $descendantId) { $state.DescendantRunning = $false }
       if ($Id -eq $lateDescendantId) { $state.LateDescendantRunning = $false }
     }
     Mock Remove-Item {
-      param($LiteralPath)
       if ($LiteralPath -eq $fallbackInstallPath) { $state.InstallExists = $false }
     }
     Mock Get-CimInstance {
-      param($ClassName, $Filter, $OperationTimeoutSec)
       if ($Filter) {
         $state.RootQueries++
         if ($Filter -eq "ParentProcessId = $($child.Id)" -and $state.RootQueries -eq 1) {
@@ -177,7 +171,6 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Get-Process { @() }
     Mock Get-ItemProperty { @($entry) }
     Mock Test-Path {
-      param($LiteralPath)
       return ($LiteralPath -eq $uninstallerExe)
     }
     Mock Start-Process { $child }
@@ -202,7 +195,6 @@ Describe 'Flo Cafe Windows uninstaller' {
       $script:CleanupIssues = New-Object 'System.Collections.Generic.List[string]'
 
       Mock Get-CimInstance {
-        param($ClassName, $Filter, $OperationTimeoutSec)
         $state.CimCalls++
         Start-Sleep -Milliseconds 1100
         return @([pscustomobject]@{ ProcessId = 9902; ParentProcessId = 9901 })
@@ -243,11 +235,10 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Get-Process { @() }
     Mock Get-ItemProperty { @($entry) }
     Mock Test-Path {
-      param($LiteralPath)
       return ($LiteralPath -eq $uninstallerExe)
     }
     Mock Start-Process { $child }
-    Mock Get-CimInstance { param($ClassName, $Filter, $OperationTimeoutSec) return @() }
+    Mock Get-CimInstance { return @() }
 
     $result = Invoke-FloCafeUninstall
 
@@ -330,7 +321,6 @@ Describe 'Flo Cafe Windows uninstaller' {
     }
 
     Mock Get-Process {
-      param($Name)
       if ($Name) { return @([pscustomobject]@{ Id = 7777; MainWindowHandle = [IntPtr]0 }) }
       return @()
     }
@@ -357,17 +347,14 @@ Describe 'Flo Cafe Windows uninstaller' {
 
     Mock Get-Process { @() }
     Mock Get-ItemProperty {
-      param($Path)
       if ($Path -like 'HKCU:*') { throw 'access denied to HKCU' }
       return @($readableEntry)
     }
     Mock Test-Path {
-      param($LiteralPath)
       if ($LiteralPath -eq $readableEntry.PSPath) { return $state.RegistryExists }
       return $false
     }
     Mock Remove-Item {
-      param($LiteralPath)
       if ($LiteralPath -eq $readableEntry.PSPath) { $state.RegistryExists = $false }
     }
 
@@ -415,22 +402,19 @@ Describe 'Flo Cafe Windows uninstaller' {
       ProcessedRegistryPaths = New-Object 'System.Collections.Generic.List[string]'
     }
 
-    Mock Get-Process { param($Name, $Id) return @() }
-    Mock Get-ItemProperty { param($Path) return $testEntries }
+    Mock Get-Process { return @() }
+    Mock Get-ItemProperty { return $testEntries }
     Mock Test-Path {
-      param($LiteralPath)
       if ($LiteralPath -eq $firstUninstaller -or $LiteralPath -eq $secondUninstaller) { return $true }
       return $false
     }
     Mock Start-Process {
-      param($FilePath)
       if ($FilePath -eq $firstUninstaller) { return $testChildren[0] }
       if ($FilePath -eq $secondUninstaller) { return $testChildren[1] }
       throw "unexpected uninstaller $FilePath"
     }
-    Mock Get-CimInstance { param($ClassName, $Filter, $OperationTimeoutSec) return @() }
+    Mock Get-CimInstance { return @() }
     Mock Invoke-RegistryRemoval {
-      param($entry)
       [void]$state.ProcessedRegistryPaths.Add([string]$entry.PSPath)
       return $true
     }

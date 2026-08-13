@@ -16,6 +16,7 @@ function findPowerShellWithPester() {
     command: null,
     powershellAvailable: false,
     pesterTooOld: false,
+    pesterProbeErrors: [],
   };
 
   for (const command of process.platform === 'win32' ? ['pwsh', 'powershell'] : ['pwsh']) {
@@ -37,7 +38,15 @@ function findPowerShellWithPester() {
     }
     if (pesterProbe.status === 78) {
       result.pesterTooOld = true;
+      continue;
     }
+    if (pesterProbe.status === 77) continue;
+
+    const detail = pesterProbe.error
+      ? pesterProbe.error.message
+      : `exit status ${pesterProbe.status ?? 'unknown'}${pesterProbe.signal ? ` (${pesterProbe.signal})` : ''}`;
+    const stderr = (pesterProbe.stderr || '').trim();
+    result.pesterProbeErrors.push(`${command}: ${detail}${stderr ? `\n${stderr}` : ''}`);
   }
 
   return result;
@@ -52,6 +61,10 @@ const runtime = findPowerShellWithPester();
 if (!runtime.powershellAvailable) {
   console.log('SKIP windows uninstaller Pester tests: PowerShell is unavailable on this Windows runner.');
   process.exit(0);
+}
+if (runtime.pesterProbeErrors.length > 0) {
+  process.stderr.write(`Unable to inspect the installed Pester module:\n${runtime.pesterProbeErrors.join('\n')}\n`);
+  process.exit(1);
 }
 if (!runtime.command && !runtime.pesterTooOld) {
   console.log('SKIP windows uninstaller Pester tests: Pester is not installed (Windows-runtime limitation).');

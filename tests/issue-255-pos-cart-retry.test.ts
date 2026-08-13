@@ -9,6 +9,7 @@ const {
   APPEND_ATTEMPT_STORAGE_KEY,
   LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY,
   getAppendAttemptStorageKey,
+  getPostpaidOrderAttemptStorageKey,
   buildAppendItemsFingerprint,
   createSafeAppendAttemptStorage,
   getOrCreateAppendAttempt,
@@ -248,6 +249,14 @@ function main() {
     'scoped-conflict-key',
     'the owner continues using the scoped retry while the conflicting legacy record remains preserved',
   );
+  const foreignOrder = { userId: 'different-cashier', fingerprint: 'order-fingerprint', idempotencyKey: 'foreign-order-key' };
+  conflictingMigrationStorage.setItem(getPostpaidOrderAttemptStorageKey(foreignOrder.userId), JSON.stringify(foreignOrder));
+  assert.equal(
+    JSON.parse(conflictingMigrationStorage.getItem(getPostpaidOrderAttemptStorageKey(foreignOrder.userId))).idempotencyKey,
+    foreignOrder.idempotencyKey,
+    'a foreign order uses a user-scoped key without overwriting the conflicting shared append retry',
+  );
+  assert.ok(conflictingMigrationStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'user-scoped order storage preserves the shared append retry');
 
   const blockedMigrationBacking = new MemoryStorage();
   blockedMigrationBacking.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({

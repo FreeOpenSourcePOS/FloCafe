@@ -237,7 +237,7 @@ export default function OrdersPage() {
       items: pendingAttempt.items,
       special_instructions: pendingAttempt.specialInstructions,
     }, { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey } }).then(() => {
-      clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
+      if (!clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!)) throw new Error('Unable to clear append retry state');
       if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
       addItemsAttemptRef.current = null;
       toast.success(t('orders.itemsAdded', { count: pendingAttempt!.items.length }));
@@ -784,7 +784,7 @@ export default function OrdersPage() {
       await api.post(`/orders/${addItemsOrder.id}/items`, {
         items,
       }, { headers: { 'Idempotency-Key': attempt.idempotencyKey } });
-      clearAppendAttempt(storage, attempt);
+      if (!clearAppendAttempt(storage, attempt)) throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
       toast.success(t('orders.itemsAdded', { count: selectedItems.length }));
       openAddItemsModal(null);

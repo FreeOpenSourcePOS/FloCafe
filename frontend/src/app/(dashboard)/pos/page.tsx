@@ -38,6 +38,7 @@ import {
   createSafeAppendAttemptStorage,
   createCookieAppendAttemptStorage,
   getOrCreateAppendAttempt,
+  getPostpaidOrderAttemptStorageKey,
   migrateLegacyAppendAttempt,
   readAppendAttempt,
   type AppendAttempt,
@@ -106,6 +107,8 @@ export default function POSPage() {
   const activeUserId = user?.id == null ? null : String(user.id);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
+  const postpaidAttemptKeyRef = useRef<string | null>(null);
+  const postpaidAttemptWasLegacyRef = useRef(false);
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
   const appendRecoveryStartedUsersRef = useRef<Set<string>>(new Set());
   const appendAttemptStorageRef = useRef<AppendAttemptStorage | null>(null);
@@ -138,7 +141,9 @@ export default function POSPage() {
       const migratedAppend = migrateLegacyAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId || undefined });
       if (migratedAppend) {
         if (getAppendAttemptStorage().getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) !== null) {
-          throw new Error('Unable to recover append retry state');
+          postpaidAttemptKeyRef.current = null;
+          postpaidAttemptWasLegacyRef.current = false;
+          return postpaidAttemptRef.current?.userId === activeUserId ? postpaidAttemptRef.current : null;
         }
         return null;
       }
@@ -147,12 +152,29 @@ export default function POSPage() {
     }
     if (postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
     postpaidAttemptRef.current = null;
+    postpaidAttemptKeyRef.current = null;
+    postpaidAttemptWasLegacyRef.current = false;
     try {
-      const stored = window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      const userStorageKey = activeUserId ? getPostpaidOrderAttemptStorageKey(activeUserId) : null;
+      const stored = userStorageKey ? window.localStorage.getItem(userStorageKey) : null;
       const parsed = stored ? JSON.parse(stored) as PostpaidAttempt : null;
-      if (parsed && parsed.userId === activeUserId) postpaidAttemptRef.current = parsed;
-      else window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      if (parsed && parsed.userId === activeUserId) {
+        postpaidAttemptRef.current = parsed;
+        postpaidAttemptKeyRef.current = userStorageKey;
+        return parsed;
+      }
+      if (userStorageKey && stored !== null) window.localStorage.removeItem(userStorageKey);
+      const legacyStored = window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      const legacyParsed = legacyStored ? JSON.parse(legacyStored) as PostpaidAttempt : null;
+      if (legacyParsed && legacyParsed.userId === activeUserId) {
+        postpaidAttemptRef.current = legacyParsed;
+        postpaidAttemptKeyRef.current = POSTPAID_ATTEMPT_STORAGE_KEY;
+        postpaidAttemptWasLegacyRef.current = true;
+      } else if (legacyStored !== null) {
+        window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      }
     } catch {
+      if (activeUserId) window.localStorage.removeItem(getPostpaidOrderAttemptStorageKey(activeUserId));
       window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
       return null;
     }
@@ -161,7 +183,10 @@ export default function POSPage() {
   const savePostpaidAttempt = (attempt: PostpaidAttempt): boolean => {
     postpaidAttemptRef.current = attempt;
     try {
-      window.localStorage.setItem(POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+      if (!activeUserId) return false;
+      const storageKey = getPostpaidOrderAttemptStorageKey(activeUserId);
+      window.localStorage.setItem(storageKey, JSON.stringify(attempt));
+      postpaidAttemptKeyRef.current = storageKey;
       return true;
     } catch {
       return false;
@@ -170,10 +195,13 @@ export default function POSPage() {
   const clearPostpaidAttempt = () => {
     postpaidAttemptRef.current = null;
     try {
-      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      if (postpaidAttemptKeyRef.current) window.localStorage.removeItem(postpaidAttemptKeyRef.current);
+      if (postpaidAttemptWasLegacyRef.current) window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
     } catch {
       // Ignore storage cleanup failures.
     }
+    postpaidAttemptKeyRef.current = null;
+    postpaidAttemptWasLegacyRef.current = false;
   };
 
   const readPrepaidAttempt = () => {
@@ -314,7 +342,7 @@ export default function POSPage() {
       { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey } },
     ).then(() => {
       const storage = getAppendAttemptStorage();
-      clearAppendAttempt(storage, pendingAttempt!);
+      if (!clearAppendAttempt(storage, pendingAttempt!)) throw new Error('Unable to clear append retry state');
       if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
       addItemsAttemptRef.current = null;
       // Do not clear cart or checkout state that may have been started while
@@ -460,7 +488,7 @@ export default function POSPage() {
         );
         toast.success(t('pos.itemsAddedToOrder', { number: pendingOrder.order_number }));
         orderForKot = data.order as Order;
-        clearAppendAttempt(storage, itemAttempt);
+        if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
         addItemsAttemptRef.current = null;
         setPendingOrder(null);
       } else {
@@ -836,7 +864,7 @@ export default function POSPage() {
       }, { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } });
       // A resolved response is the confirmation boundary. Keep the durable
       // attempt through all network errors so a lost response can replay it.
-      clearAppendAttempt(storage, itemAttempt);
+      if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
       toast.success(t('pos.itemsAddedToOrder', { number: order.order_number }));
       cart.clearCart();

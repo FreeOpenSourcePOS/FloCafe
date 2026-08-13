@@ -3,19 +3,44 @@ export const LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
 export const APPEND_ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const APPEND_ATTEMPT_USER_SUFFIX = '.user.';
 const APPEND_ATTEMPT_COMPLETION_SUFFIX = '.completion.';
-const confirmedAppendTombstones = new Map<string, number>();
+const CONFIRMED_APPEND_TOMBSTONE_LIMIT = 256;
+const confirmedAppendTombstones = new Map<string, { completedAt: number; fingerprintHash: string }>();
 const APPEND_ATTEMPT_COOKIE_PREFIX = 'flo_append_attempt.';
 
 export function getAppendAttemptStorageKey(userId: string): string {
   return `${APPEND_ATTEMPT_STORAGE_KEY}${APPEND_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
 }
 
+export function getPostpaidOrderAttemptStorageKey(userId: string): string {
+  return `${LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY}${APPEND_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
+}
+
 function getAppendAttemptCompletionStorageKey(userId: string): string {
   return `${APPEND_ATTEMPT_STORAGE_KEY}${APPEND_ATTEMPT_COMPLETION_SUFFIX}${encodeURIComponent(userId)}`;
 }
 
-function getConfirmedAppendTombstoneKey(userId: string, idempotencyKey: string, fingerprint: string): string {
-  return `${userId}\u0000${idempotencyKey}\u0000${fingerprint}`;
+function getConfirmedAppendTombstoneKey(userId: string, idempotencyKey: string): string {
+  return `${userId}\u0000${idempotencyKey}`;
+}
+
+function getFingerprintHash(fingerprint: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < fingerprint.length; index += 1) {
+    hash ^= fingerprint.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function pruneConfirmedAppendTombstones(now: number, maxAgeMs: number): void {
+  for (const [key, tombstone] of confirmedAppendTombstones) {
+    if (isExpired(tombstone.completedAt, now, maxAgeMs)) confirmedAppendTombstones.delete(key);
+  }
+  while (confirmedAppendTombstones.size > CONFIRMED_APPEND_TOMBSTONE_LIMIT) {
+    const oldest = confirmedAppendTombstones.keys().next().value;
+    if (oldest === undefined) break;
+    confirmedAppendTombstones.delete(oldest);
+  }
 }
 
 function hasConfirmedAppendTombstone(
@@ -25,14 +50,9 @@ function hasConfirmedAppendTombstone(
   now: number,
   maxAgeMs: number,
 ): boolean {
-  const key = getConfirmedAppendTombstoneKey(userId, idempotencyKey, fingerprint);
-  const completedAt = confirmedAppendTombstones.get(key);
-  if (completedAt === undefined) return false;
-  if (isExpired(completedAt, now, maxAgeMs)) {
-    confirmedAppendTombstones.delete(key);
-    return false;
-  }
-  return true;
+  pruneConfirmedAppendTombstones(now, maxAgeMs);
+  const tombstone = confirmedAppendTombstones.get(getConfirmedAppendTombstoneKey(userId, idempotencyKey));
+  return tombstone?.fingerprintHash === getFingerprintHash(fingerprint);
 }
 
 export interface AppendAttempt {
@@ -178,7 +198,8 @@ function persistCompletionRecord(storage: AppendAttemptStorage, key: string, val
   try {
     storage.setItem(key, value);
     if (storage.getItem(key) === value) return true;
-  } catch {
+  } catch (error) {
+    void error;
   }
   const cookieStorage = createCookieAppendAttemptStorage();
   if (!cookieStorage) return false;
@@ -515,16 +536,16 @@ export function getOrCreateAppendAttempt(
 export function clearAppendAttempt(
   storage: AppendAttemptStorage,
   completedAttempt: Pick<AppendAttempt, 'userId' | 'idempotencyKey' | 'fingerprint'>,
-): void {
+): boolean {
   const key = getAppendAttemptStorageKey(completedAttempt.userId);
   try {
     const raw = storage.getItem(key);
-    if (!raw) return;
+    if (!raw) return true;
     const current = JSON.parse(raw) as Partial<AppendAttempt>;
     if (
       current.idempotencyKey !== completedAttempt.idempotencyKey
       || current.fingerprint !== completedAttempt.fingerprint
-    ) return;
+    ) return true;
     const markerKey = getAppendAttemptCompletionStorageKey(completedAttempt.userId);
     const completionRecord = {
       completed: true,
@@ -541,13 +562,15 @@ export function clearAppendAttempt(
     }
     if (markerPersisted) {
       confirmedAppendTombstones.set(
-        getConfirmedAppendTombstoneKey(completedAttempt.userId, completedAttempt.idempotencyKey, completedAttempt.fingerprint),
-        Date.now(),
+        getConfirmedAppendTombstoneKey(completedAttempt.userId, completedAttempt.idempotencyKey),
+        { completedAt: Date.now(), fingerprintHash: getFingerprintHash(completedAttempt.fingerprint) },
       );
+      pruneConfirmedAppendTombstones(Date.now(), APPEND_ATTEMPT_MAX_AGE_MS);
     }
     const removed = storage.removeItem(key);
     if (removed !== false && storage.getItem(key) === null && markerPersisted) storage.removeItem(markerKey);
+    return markerPersisted || (removed !== false && storage.getItem(key) === null);
   } catch {
-    return;
+    return false;
   }
 }

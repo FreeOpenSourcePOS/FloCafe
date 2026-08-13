@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { once } from 'node:events';
@@ -22,6 +23,19 @@ const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-')
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function getFreeTcpPort(): Promise<number> {
+  const probe = net.createServer();
+  await new Promise<void>((resolve, reject) => {
+    probe.once('error', reject);
+    probe.listen(0, '127.0.0.1', resolve);
+  });
+  const address = probe.address();
+  assert(address && typeof address !== 'string');
+  const port = address.port;
+  await new Promise<void>((resolve, reject) => probe.close((error) => error ? reject(error) : resolve()));
+  return port;
 }
 
 class AppDouble {
@@ -484,7 +498,9 @@ async function testStartupEntrypoint(startupRace = false): Promise<void> {
 async function testOwnedServerStopEntrypoints(): Promise<void> {
   process.env.PORT = '0';
   process.env.KDS_PORT = '0';
-  process.env.SERVER_APP_PORT = '0';
+  // Server App records the configured port, so use a real nonzero free port
+  // here instead of probing Node's port-0 default (port 80).
+  process.env.SERVER_APP_PORT = String(await getFreeTcpPort());
 
   // Keep this test independent of a real Electron app while still exercising
   // the owned server entrypoints and their better-sqlite3-backed lifecycle.

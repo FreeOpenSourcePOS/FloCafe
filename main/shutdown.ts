@@ -334,7 +334,7 @@ export type ShutdownEvent = {
 };
 
 export type ShutdownEntrypointApp = {
-  on: (event: string, listener: (...args: any[]) => void) => unknown;
+  on: (...args: any[]) => unknown;
   quit: () => void;
   exit: (code?: number) => void;
 };

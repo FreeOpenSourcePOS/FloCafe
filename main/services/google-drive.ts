@@ -376,7 +376,7 @@ class GoogleDriveService {
         requestBody: { name: fileName, parents: [folderId] },
         media: { mimeType: 'application/x-sqlite3', body: fs.createReadStream(backupPath) },
         fields: 'id',
-      }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
+      }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
 
       await this.applyRetention(drive, folderId, signal);
 
@@ -439,7 +439,7 @@ class GoogleDriveService {
     if (existingId) {
       // Confirm it still exists / is still visible to this scope before reusing it.
       try {
-        const res = await drive.files.get({ fileId: existingId, fields: 'id, trashed' }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
+        const res = await drive.files.get({ fileId: existingId, fields: 'id, trashed' }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
         if (res.data.id && !res.data.trashed) return res.data.id;
       } catch {
         // fall through and re-resolve / recreate below
@@ -451,14 +451,14 @@ class GoogleDriveService {
       fields: 'files(id, name)',
       spaces: 'drive',
       pageSize: 1,
-    }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
+    }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
     const existing = found.data.files?.[0]?.id;
     if (existing) return existing;
 
     const created = await drive.files.create({
       requestBody: { name: DRIVE_BACKUP_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
       fields: 'id',
-    }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
+    }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
     if (!created.data.id) throw new Error('Google Drive did not return a folder id');
     return created.data.id;
   }
@@ -476,7 +476,7 @@ class GoogleDriveService {
         pageSize: 1000,
         pageToken,
         spaces: 'drive',
-      }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
+      }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
       files.push(...(res.data.files || [])
         .filter((f): f is { id: string; name?: string | null; createdTime: string } => Boolean(f.id && f.createdTime))
         .map((f) => ({ id: f.id, createdTime: f.createdTime })));
@@ -488,7 +488,7 @@ class GoogleDriveService {
     for (let i = 0; i < toDelete.length; i += 5) {
       await Promise.all(toDelete.slice(i, i + 5).map(async (id) => {
         try {
-          await drive.files.delete({ fileId: id }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
+          await drive.files.delete({ fileId: id }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
         } catch (err) {
           log.warn('[GoogleDrive] retention delete failed', id, (err as Error).message);
         }

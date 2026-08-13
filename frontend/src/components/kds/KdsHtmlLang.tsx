@@ -7,7 +7,14 @@ export function KdsHtmlLang() {
   const language = usePosSettingsStore((s) => s.language);
   useEffect(() => {
     if (typeof document !== 'undefined') {
-      document.documentElement.lang = language === 'es' ? 'es' : language === 'pt' ? 'pt-BR' : 'en';
+      const el = document.documentElement;
+      if (language === 'fa') {
+        el.lang = 'fa-IR';
+        el.dir = 'rtl';
+      } else {
+        el.lang = language === 'es' ? 'es' : language === 'pt' ? 'pt-BR' : 'en';
+        el.dir = 'ltr';
+      }
     }
   }, [language]);
   return null;

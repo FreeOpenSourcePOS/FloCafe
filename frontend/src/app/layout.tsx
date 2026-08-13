@@ -4,6 +4,7 @@ import { Toaster } from "react-hot-toast";
 import "./globals.css";
 import MenuActionHandler from "@/components/layout/MenuActionHandler";
 import AuthGuard from "@/components/layout/AuthGuard";
+import { HtmlLangSync } from "@/components/layout/HtmlLangSync";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -52,6 +53,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <MenuActionHandler />
+        <HtmlLangSync />
         <AuthGuard>{children}</AuthGuard>
         <Toaster position="top-right" />
         <script

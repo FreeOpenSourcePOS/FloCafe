@@ -140,7 +140,7 @@ router.get('/business', requireRole('owner', 'manager', 'cashier', 'waiter', 'ch
 router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const { business_name, timezone, currency, country, language,
-      tax_registration_number, state_code, business_address, business_phone, instagram_handle,
+      tax_registration_number, business_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number } = req.body;
@@ -162,7 +162,7 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
     }
     upsertSettings(db, {
       business_name, timezone, currency, country, language,
-      tax_registration_number, state_code, business_address, business_phone, instagram_handle,
+      tax_registration_number, business_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,

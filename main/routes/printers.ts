@@ -396,6 +396,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
       name: settings.business_name || '',
       address: settings.business_address || '',
       phone: settings.business_phone || '',
+      business_registration_number: settings.business_registration_number || '',
       taxRegistrationNumber: settings.tax_registration_number || '',
       currency_symbol: settings.currency_symbol || '₹',
       country: settings.country || 'IN',

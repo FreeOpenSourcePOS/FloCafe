@@ -118,6 +118,7 @@ export default function OrdersPage() {
   // Consolidated cancel modal state
   const [cancelModal, setCancelModal] = useState<CancelModal | null>(null);
   const [cancellingOrderId, setCancellingOrderId] = useState<number | null>(null);
+  const [deletingOrderId, setDeletingOrderId] = useState<number | null>(null);
   const [convertingOrderId, setConvertingOrderId] = useState<number | null>(null);
 
   // Void (in-progress item) modal state
@@ -730,6 +731,26 @@ export default function OrdersPage() {
       setAddingItems(false);
     }
   };
+  const handleDeleteOrder = async (order: Order) => {
+    if (!await confirm(
+      `Opravdu chcete smazat objednávku ${order.order_number}? Tato akce je nevratná.`
+    )) {
+      return;
+    }
+    setDeletingOrderId(order.id);
+    try {
+      await api.delete(`/orders/${order.id}`);
+      toast.success(`Objednávka ${order.order_number} byla smazána.`);
+      fetchOrders();
+    } catch (err: unknown) {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      toast.error(
+        axiosErr.response?.data?.error || 'Objednávku se nepodařilo smazat.'
+      );
+    } finally {
+      setDeletingOrderId(null);
+    }
+  };
 
   const handleCancelOrder = async () => {
     if (!cancelModal) return;
@@ -1259,6 +1280,18 @@ export default function OrdersPage() {
                           <Lock size={14} className="mr-1.5" />
                         )}
                         {cancellingOrderId === order.id ? t('orders.cancelling') : t('common.cancel')}
+                      </Button>
+                    )}
+                    {(isOwnerOrManager) && (
+                      <Button
+                        variant="outline"
+                        onClick={() => handleDeleteOrder(order)}
+                        disabled={deletingOrderId === order.id}
+                        size="sm"
+                        className="flex-1 justify-center border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700"
+                      >
+                        <Trash2 size={14} className="mr-1.5" />
+                        {deletingOrderId === order.id ? 'Mazání...' : 'Smazat'}
                       </Button>
                     )}
                   </div>

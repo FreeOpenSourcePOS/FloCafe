@@ -989,13 +989,28 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   // Footer: store contact details, only the ones actually configured.
   const footerLines: string[] = [];
-  if (biz.show_address !== false && biz.address) footerLines.push(biz.address);
-  if (biz.show_phone !== false && biz.phone) footerLines.push('Ph: ' + biz.phone);
-  if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) footerLines.push((getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID') + ': ' + biz.taxRegistrationNumber);
-  if (biz.instagram_handle) footerLines.push(biz.instagram_handle);
+
+  if (biz.show_address !== false && biz.address) {
+    footerLines.push(biz.address);
+  }
+
+  if (biz.show_phone !== false && biz.phone) {
+    footerLines.push('Ph: ' + biz.phone);
+  }
+
+  if (biz.taxRegistrationNumber) {
+    footerLines.push('IČO: ' + biz.taxRegistrationNumber);
+  }
+
+  if (biz.instagram_handle) {
+    footerLines.push(biz.instagram_handle);
+  }
+
   if (footerLines.length > 0) {
     lines.push(dash);
-    for (const footerLine of footerLines) pushCenteredWrapped(lines, footerLine, cols);
+    for (const footerLine of footerLines) {
+      pushCenteredWrapped(lines, footerLine, cols);
+    }
   }
 
   if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);

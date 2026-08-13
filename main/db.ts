@@ -182,7 +182,7 @@ export function getDbHealth(): { ok: boolean; error?: string } {
 }
 
 export function getDbPath(): string {
-  const userDataPath = app.isPackaged ? app.getPath('userData') : path.join(__dirname, '../');
+  const userDataPath = app.getPath('userData');
   return path.join(userDataPath, 'flo.db');
 }
 
@@ -4298,6 +4298,7 @@ function seedInstallDefaults(): void {
   insert('email', '');
   insert('business_address', '');
   insert('business_phone', '');
+  insert('business_registration_number', '');
   insert('instagram_handle', '');
   insert('tax_registered', 'false');
   insert('tax_registration_number', '');

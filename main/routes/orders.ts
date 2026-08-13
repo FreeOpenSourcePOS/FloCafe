@@ -1471,4 +1471,95 @@ router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (re
   }
 });
 
+router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const orderId = Number(req.params.id);
+
+    if (!Number.isInteger(orderId) || orderId <= 0) {
+      return res.status(400).json({ error: 'Invalid order id' });
+    }
+
+    const db = getDatabase();
+
+    const order = db.prepare(
+      'SELECT id, order_number FROM orders WHERE id = ?'
+    ).get(orderId) as { id: number; order_number: string } | undefined;
+
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' });
+    }
+
+    withTxn(() => {
+      // Najdi účet navázaný na objednávku.
+      const bills = db.prepare(
+        'SELECT id FROM bills WHERE order_id = ?'
+      ).all(orderId) as { id: number }[];
+
+      const billIds = bills.map(bill => bill.id);
+
+      // Smaž záznamy navázané na bill, které nemají ON DELETE CASCADE.
+      if (billIds.length > 0) {
+        const placeholders = billIds.map(() => '?').join(',');
+
+        db.prepare(
+          `DELETE FROM print_logs
+           WHERE bill_id IN (${placeholders})`
+        ).run(...billIds);
+
+        db.prepare(
+          `DELETE FROM whatsapp_messages
+           WHERE bill_id IN (${placeholders})`
+        ).run(...billIds);
+
+        // bill_items mají ON DELETE CASCADE.
+        db.prepare(
+          `DELETE FROM bills
+           WHERE id IN (${placeholders})`
+        ).run(...billIds);
+      }
+
+      // Smaž addon záznamy objednávkových položek.
+      const items = db.prepare(
+        'SELECT id FROM order_items WHERE order_id = ?'
+      ).all(orderId) as { id: number }[];
+
+      const itemIds = items.map(item => item.id);
+
+      if (itemIds.length > 0) {
+        const placeholders = itemIds.map(() => '?').join(',');
+
+        db.prepare(
+          `DELETE FROM order_item_addons
+           WHERE order_item_id IN (${placeholders})`
+        ).run(...itemIds);
+
+        db.prepare(
+          `DELETE FROM order_items
+           WHERE id IN (${placeholders})`
+        ).run(...itemIds);
+      }
+
+      // Nakonec samotná objednávka.
+      db.prepare(
+        'DELETE FROM orders WHERE id = ?'
+      ).run(orderId);
+    });
+
+    notifyOrderUpdated();
+
+    return res.json({
+      ok: true,
+      deleted: true,
+      order_number: order.order_number,
+    });
+  } catch (error: any) {
+    console.error('[API] Delete order error:', error);
+
+    return res.status(error.statusCode || 500).json({
+      error: error.statusCode
+        ? error.message
+        : 'Failed to delete order',
+    });
+  }
+});
 export const orderRoutes = router;

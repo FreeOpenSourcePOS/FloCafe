@@ -74,6 +74,7 @@ const SUPPORTED: Record<string, Row> = {
   IL: { locale: 'he-IL', currency: 'ILS', tz: 'Asia/Jerusalem',                                                      taxName: 'VAT' },
   TR: { locale: 'tr-TR', currency: 'TRY', tz: 'Europe/Istanbul',                 taxIdLabel: 'VKN',   taxName: 'KDV' },
   IR: { locale: 'fa-IR', currency: 'IRR', tz: 'Asia/Tehran',                     taxIdLabel: 'Economic Code', taxName: 'VAT' },
+  CZ: { locale: 'cs-CZ', currency: 'CZK', tz: 'Europe/Prague',                   taxIdLabel: 'DIC',   taxName: 'DPH' },
 };
 
 function build(code: string): Country {

@@ -74,6 +74,8 @@
     "test:issue-214": "node tests/run-electron-node-test.cjs tests/issue-214-payment-integrity.test.ts",
     "test:issue-214-auth": "node tests/run-electron-node-test.cjs tests/issue-214-auth-migration.test.ts",
     "test:issue-214-migration": "node tests/run-electron-node-test.cjs tests/issue-214-migration-integrity.test.ts",
+    "test:issue-255-cart": "ts-node --transpile-only -P tests/tsconfig.json tests/issue-255-pos-cart-retry.test.ts",
+    "test:issue-255-append": "node tests/run-electron-node-test.cjs tests/issue-255-append-idempotency.test.ts",
     "test:integration-lifecycle": "node tests/run-electron-node-test.cjs tests/integration-order-lifecycle.test.ts",
     "test:integration-reconciliation": "node tests/run-electron-node-test.cjs tests/integration-bill-reconciliation.test.ts",
     "test:integration-loyalty": "node tests/run-electron-node-test.cjs tests/integration-loyalty.test.ts",

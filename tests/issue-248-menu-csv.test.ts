@@ -62,12 +62,13 @@ async function main() {
         csv: productCsv(
           ',,"Quoted, Coffee","CSV Category",12.50,"He said ""hot"",\nthen served",3.25,,,2.5,"coffee,featured",yes',
           ',,"CR Product","CSV Category",12,"line1\rline2",1,,,,,yes',
+          ',,"CRLF Product","CSV Category",12,"line1\r\nline2",1,,,,,yes',
         ),
       },
       headers: authHeader,
     });
     assertEqual(quoted.status, 200, 'valid quoted product CSV is accepted');
-    assertEqual(quoted.data.created, 2, 'quoted products are created');
+    assertEqual(quoted.data.created, 3, 'quoted products are created');
     assertEqual(quoted.data.failed, 0, 'valid quoted row is not failed');
     const quotedProduct = db.prepare('SELECT price, cost, description, tags FROM products WHERE name = ?').get('Quoted, Coffee') as any;
     assertEqual(quotedProduct.price, 12.5, 'quoted product price is parsed completely');
@@ -76,6 +77,8 @@ async function main() {
     assertEqual(quotedProduct.tags, JSON.stringify(['coffee', 'featured']), 'quoted comma-separated tags are preserved');
     const carriageReturnProduct = db.prepare('SELECT description FROM products WHERE name = ?').get('CR Product') as any;
     assertEqual(carriageReturnProduct.description, 'line1\rline2', 'quoted carriage returns are preserved');
+    const carriageReturnLineFeedProduct = db.prepare('SELECT description FROM products WHERE name = ?').get('CRLF Product') as any;
+    assertEqual(carriageReturnLineFeedProduct.description, 'line1\r\nline2', 'quoted CRLF sequences are preserved exactly');
 
     const malformedPostQuote = await api(baseUrl, '/api/menu/csv/import/products', {
       method: 'POST',

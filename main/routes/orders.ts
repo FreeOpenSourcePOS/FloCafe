@@ -28,7 +28,12 @@ function orderIdempotencyKey(req: Request): string | null {
   return supplied;
 }
 
-function getStoredOrderReplay(db: any, userId: string, idempotencyKey: string, requestHash: string): any | null {
+function getStoredOrderReplay(
+  db: ReturnType<typeof getDatabase>,
+  userId: string,
+  idempotencyKey: string,
+  requestHash: string,
+): unknown | null {
   const prior = db.prepare(`
     SELECT request_hash, response_json
     FROM order_idempotency
@@ -653,8 +658,8 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
         if (special_instructions !== undefined) {
           validateOrderNotes(db, special_instructions);
         }
-      } catch (err: any) {
-        throw Object.assign(new Error(err?.message || 'Invalid order item'), { statusCode: 400 });
+      } catch (err: unknown) {
+        throw Object.assign(new Error(err instanceof Error ? err.message : 'Invalid order item'), { statusCode: 400 });
       }
 
       const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;

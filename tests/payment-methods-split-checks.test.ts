@@ -524,6 +524,12 @@ async function main() {
       const expectedMixedComponents = childItemIds.has(Number(mixedCategorizedItem.id))
         ? [{ title: 'Item Tax', rate: 5, amount: 0.8 }, { title: 'Legacy Item Tax', rate: 2, amount: 0.2 }]
         : [{ title: 'Legacy Item Tax', rate: 2, amount: 0.2 }];
+      const persistedBreakdown = (child.tax_breakdown || []).map((component: any) => ({
+        title: component.title,
+        rate: component.rate,
+        amount: Number(Number(component.amount || 0).toFixed(2)),
+      }));
+      assertEqual(JSON.stringify(persistedBreakdown), JSON.stringify(expectedMixedComponents), 'persisted child breakdown preserves mixed item and legacy ownership');
       const backendComponents = resolveBackendTaxComponents({ ...child, items: child.order.items });
       const frontendComponents = resolveFrontendTaxComponents(child);
       assertEqual(JSON.stringify(backendComponents), JSON.stringify(expectedMixedComponents), 'mixed split backend resolver preserves item and legacy ownership');
@@ -537,6 +543,111 @@ async function main() {
     const mixedReportAfter = await api(baseUrl, `/api/reports/tax-components?start_date=${reportDate}&end_date=${reportDate}`, { headers: authHeader });
     const reportAmount = (response: any, title: string) => Number((response.data.taxComponents.components.find((component: any) => component.title === title)?.amount || 0).toFixed(2));
     assertEqual(reportAmount(mixedReportAfter, 'Legacy Item Tax'), reportAmount(mixedReportBefore, 'Legacy Item Tax'), 'tax component report keeps mixed legacy tax additive after splitting');
+
+    seedProduct(db, 'split-rounding-legacy-item', 'split-tax-cat', 'Rounding Legacy Item', 40);
+    const roundingOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 2,
+        items: [
+          { product_id: 'split-mixed-legacy-item', quantity: 1 },
+          { product_id: 'split-rounding-legacy-item', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    const roundingItems = roundingOrderRes.data.order.items;
+    const roundingBreakdown = [{ title: 'Rounded Legacy Tax', rate: 2, amount: 0.01 }];
+    for (const item of roundingItems) {
+      db.prepare('UPDATE order_items SET tax_amount = 0.01, tax_breakdown = ?, tax_snapshot = NULL, total = subtotal + 0.01 WHERE id = ?')
+        .run(JSON.stringify(roundingBreakdown), item.id);
+    }
+    const roundingTotal = Number((roundingOrderRes.data.order.subtotal + 0.02).toFixed(2));
+    db.prepare('UPDATE orders SET tax_amount = 0.02, tax_breakdown = ?, tax_snapshot = NULL, total = ? WHERE id = ?')
+      .run(JSON.stringify([roundingBreakdown, roundingBreakdown]), roundingTotal, roundingOrderRes.data.order.id);
+    const roundingBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: roundingOrderRes.data.order.id }, headers: authHeader });
+    const maxDiscount = db.prepare("SELECT value FROM settings WHERE key = 'discount_max_percentage'").get() as any;
+    db.prepare("UPDATE settings SET value = '100' WHERE key = 'discount_max_percentage'").run();
+    const roundingDiscountRes = await api(baseUrl, `/api/bills/${roundingBillRes.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      body: { type: 'percentage', value: 66.67 },
+      headers: authHeader,
+    });
+    if (maxDiscount) db.prepare("UPDATE settings SET value = ? WHERE key = 'discount_max_percentage'").run(maxDiscount.value);
+    assertEqual(roundingDiscountRes.status, 200, 'discounted sub-cent legacy tax remains split-compatible');
+    assertEqual(roundingDiscountRes.data.bill.tax_amount, 0.01, 'discounted sub-cent legacy tax keeps the aggregate source cent');
+    const roundingSplit = await api(baseUrl, `/api/bills/${roundingBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Rounding owner one', items: [{ order_item_id: roundingItems[0].id, quantity: 1 }] },
+        { label: 'Rounding owner two', items: [{ order_item_id: roundingItems[1].id, quantity: 1 }] },
+      ] },
+      headers: authHeader,
+    });
+    assertEqual(roundingSplit.status, 201, 'discounted sub-cent legacy split returns 201');
+    for (const childBill of roundingSplit.data.bills) {
+      const childRes = await api(baseUrl, `/api/bills/${childBill.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const ownsFirstItem = child.order.items.some((item: any) => Number(item.id) === Number(roundingItems[0].id));
+      const expectedRounding = ownsFirstItem ? [{ title: 'Rounded Legacy Tax', rate: 2, amount: 0.01 }] : [];
+      const components = resolveBackendTaxComponents({ ...child, items: child.order.items });
+      assertEqual(JSON.stringify(components), JSON.stringify(expectedRounding), 'discounted sub-cent legacy tax stays with its owning child');
+      assertEqual(Number(components.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'discounted sub-cent legacy components reconcile exactly');
+    }
+
+    const voidLegacyOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 2,
+        items: [
+          { product_id: 'split-mixed-legacy-item', quantity: 1 },
+          { product_id: 'split-rounding-legacy-item', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    const voidLegacyItems = voidLegacyOrderRes.data.order.items;
+    const voidLegacyBreakdown = [{ title: 'Void Legacy Tax', rate: 2, amount: 0.01 }];
+    for (const item of voidLegacyItems) {
+      db.prepare('UPDATE order_items SET tax_amount = 0.01, tax_breakdown = ?, tax_snapshot = NULL, total = subtotal + 0.01 WHERE id = ?')
+        .run(JSON.stringify(voidLegacyBreakdown), item.id);
+    }
+    const voidLegacyTotal = Number((voidLegacyOrderRes.data.order.subtotal + 0.02).toFixed(2));
+    db.prepare('UPDATE orders SET tax_amount = 0.02, tax_breakdown = ?, tax_snapshot = NULL, total = ? WHERE id = ?')
+      .run(JSON.stringify([voidLegacyBreakdown, voidLegacyBreakdown]), voidLegacyTotal, voidLegacyOrderRes.data.order.id);
+    const voidLegacyBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: voidLegacyOrderRes.data.order.id }, headers: authHeader });
+    const voidLegacySplit = await api(baseUrl, `/api/bills/${voidLegacyBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Void legacy owner one', items: [{ order_item_id: voidLegacyItems[0].id, quantity: 1 }] },
+        { label: 'Void legacy owner two', items: [{ order_item_id: voidLegacyItems[1].id, quantity: 1 }] },
+      ] },
+      headers: authHeader,
+    });
+    assertEqual(voidLegacySplit.status, 201, 'legacy tax split for void ownership returns 201');
+    const voidLegacyPrepare = await api(baseUrl, `/api/order-items/${voidLegacyItems[0].id}/status`, {
+      method: 'PATCH',
+      body: { status: 'preparing' },
+      headers: authHeader,
+    });
+    assertEqual(voidLegacyPrepare.status, 200, 'legacy tax item can enter preparing before void');
+    const voidLegacyCancel = await api(baseUrl, `/api/orders/${voidLegacyOrderRes.data.order.id}/items/${voidLegacyItems[0].id}/cancel`, {
+      method: 'PATCH',
+      body: { override_pin: '1234' },
+      headers: mgrUser.authHeader,
+    });
+    assertEqual(voidLegacyCancel.status, 200, 'voiding legacy tax item remains supported after splitting');
+    for (const childBill of db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(voidLegacyOrderRes.data.order.id) as any[]) {
+      const childRes = await api(baseUrl, `/api/bills/${childBill.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const ownsSurviving = child.order.items.some((item: any) => Number(item.id) === Number(voidLegacyItems[1].id));
+      const expectedVoidLegacy = ownsSurviving ? [{ title: 'Void Legacy Tax', rate: 2, amount: 0.01 }] : [];
+      const components = resolveBackendTaxComponents({ ...child, items: child.order.items });
+      assertEqual(JSON.stringify(components), JSON.stringify(expectedVoidLegacy), 'void adjustment legacy tax stays with its original owner');
+      assertEqual(Number(components.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'void adjustment legacy components reconcile exactly');
+    }
 
     const voidSnapshotOrderRes = await api(baseUrl, '/api/orders', {
       method: 'POST',

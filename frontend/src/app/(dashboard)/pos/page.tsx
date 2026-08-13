@@ -122,17 +122,22 @@ export default function POSPage() {
   };
 
   const readPostpaidAttempt = () => {
-    if (postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
-    postpaidAttemptRef.current = null;
     if (typeof window === 'undefined') return null;
     try {
-      migrateLegacyAppendAttempt(getAppendAttemptStorage());
+      const migratedAppend = migrateLegacyAppendAttempt(getAppendAttemptStorage());
+      if (migratedAppend) return null;
+    } catch {
+      throw new Error('Unable to recover append retry state');
+    }
+    if (postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
+    postpaidAttemptRef.current = null;
+    try {
       const stored = window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
       const parsed = stored ? JSON.parse(stored) as PostpaidAttempt : null;
       if (parsed && parsed.userId === activeUserId) postpaidAttemptRef.current = parsed;
       else window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
     } catch {
-      return null;
+      throw new Error('Unable to read order retry state');
     }
     return postpaidAttemptRef.current;
   };

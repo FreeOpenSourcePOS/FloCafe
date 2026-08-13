@@ -104,11 +104,40 @@ function isExpired(createdAt: number, now: number, maxAgeMs: number): boolean {
   return !Number.isFinite(createdAt) || now - createdAt >= maxAgeMs;
 }
 
+function normalizeAppendFingerprint(fingerprint: string): string | null {
+  try {
+    const payload = JSON.parse(fingerprint) as {
+      order_id?: unknown;
+      items?: unknown;
+      special_instructions?: unknown;
+    };
+    if (
+      (typeof payload.order_id !== 'string' && typeof payload.order_id !== 'number')
+      || !Array.isArray(payload.items)
+    ) return null;
+    return buildAppendItemsFingerprint(
+      String(payload.order_id),
+      payload.items,
+      typeof payload.special_instructions === 'string' ? payload.special_instructions || undefined : undefined,
+    );
+  } catch {
+    return null;
+  }
+}
+
 interface AppendAttemptCompletion {
   userId: string;
   idempotencyKey: string;
   fingerprint: string;
   completedAt: number;
+}
+
+function isCompletionRecord(value: Partial<AppendAttemptCompletion> & { completed?: unknown }): boolean {
+  return value.completed === true
+    && typeof value.userId === 'string'
+    && typeof value.idempotencyKey === 'string'
+    && typeof value.fingerprint === 'string'
+    && typeof value.completedAt === 'number';
 }
 
 function completedAttemptMatches(
@@ -172,53 +201,65 @@ export function migrateLegacyAppendAttempt(
   const raw = storage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
   if (!raw) return null;
 
+  let parsed: {
+    userId?: unknown;
+    fingerprint?: unknown;
+    idempotencyKey?: unknown;
+    createdAt?: unknown;
+  };
   try {
-    const parsed = JSON.parse(raw) as {
-      userId?: unknown;
-      fingerprint?: unknown;
-      idempotencyKey?: unknown;
-      createdAt?: unknown;
-    };
-    if (typeof parsed.userId !== 'string' || typeof parsed.fingerprint !== 'string') return null;
-    const payload = JSON.parse(parsed.fingerprint) as {
-      order_id?: unknown;
-      items?: unknown;
-      special_instructions?: unknown;
-    };
-    if (
-      (typeof payload.order_id !== 'string' && typeof payload.order_id !== 'number')
-      || !Array.isArray(payload.items)
-    ) return null;
-    if (typeof parsed.idempotencyKey !== 'string' || !isValidIdempotencyKey(parsed.idempotencyKey)) {
-      storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
-      return null;
-    }
-    const createdAt = typeof parsed.createdAt === 'number' ? parsed.createdAt : now;
-    if (isExpired(createdAt, now, maxAgeMs)) {
-      storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
-      return null;
-    }
-    const scopedKey = getAppendAttemptStorageKey(parsed.userId);
-    const existingScoped = storage.getItem(scopedKey);
-    const attempt: AppendAttempt = {
-      userId: parsed.userId,
-      orderId: String(payload.order_id),
-      fingerprint: buildAppendItemsFingerprint(
-        String(payload.order_id),
-        payload.items,
-        typeof payload.special_instructions === 'string' ? payload.special_instructions || undefined : undefined,
-      ),
-      idempotencyKey: parsed.idempotencyKey,
-      items: payload.items,
-      specialInstructions: typeof payload.special_instructions === 'string' ? payload.special_instructions || undefined : undefined,
-      createdAt,
-    };
-    if (!existingScoped) storage.setItem(scopedKey, JSON.stringify(attempt));
-    storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
-    return existingScoped ? null : attempt;
+    parsed = JSON.parse(raw);
   } catch {
     return null;
   }
+  if (typeof parsed.userId !== 'string' || typeof parsed.fingerprint !== 'string') return null;
+  const normalizedFingerprint = normalizeAppendFingerprint(parsed.fingerprint);
+  if (!normalizedFingerprint) return null;
+  if (typeof parsed.idempotencyKey !== 'string' || !isValidIdempotencyKey(parsed.idempotencyKey)) {
+    storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
+    return null;
+  }
+  const payload = JSON.parse(parsed.fingerprint) as {
+    order_id: string | number;
+    items: unknown[];
+    special_instructions?: unknown;
+  };
+  const createdAt = typeof parsed.createdAt === 'number' ? parsed.createdAt : now;
+  if (isExpired(createdAt, now, maxAgeMs)) {
+    storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
+    return null;
+  }
+  const scopedKey = getAppendAttemptStorageKey(parsed.userId);
+  const existingRaw = storage.getItem(scopedKey);
+  const attempt: AppendAttempt = {
+    userId: parsed.userId,
+    orderId: String(payload.order_id),
+    fingerprint: normalizedFingerprint,
+    idempotencyKey: parsed.idempotencyKey,
+    items: payload.items,
+    specialInstructions: typeof payload.special_instructions === 'string' ? payload.special_instructions || undefined : undefined,
+    createdAt,
+  };
+  if (existingRaw !== null) {
+    let existing: Partial<AppendAttempt> | null = null;
+    try { existing = JSON.parse(existingRaw) as Partial<AppendAttempt>; } catch { existing = null; }
+    const equivalent = !!existing
+      && existing.userId === attempt.userId
+      && String(existing.orderId) === attempt.orderId
+      && existing.idempotencyKey === attempt.idempotencyKey
+      && typeof existing.fingerprint === 'string'
+      && normalizeAppendFingerprint(existing.fingerprint) === attempt.fingerprint
+      && Array.isArray(existing.items)
+      && JSON.stringify(existing.items) === JSON.stringify(attempt.items)
+      && (existing.specialInstructions || undefined) === (attempt.specialInstructions || undefined)
+      && typeof existing.createdAt === 'number';
+    if (!equivalent) throw new Error('Unable to migrate legacy append retry state safely');
+  }
+  if (existingRaw === null) storage.setItem(scopedKey, JSON.stringify(attempt));
+  if (storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) === false) {
+    throw new Error('Unable to complete legacy append retry migration');
+  }
+  return attempt;
 }
 
 function parseStoredAttempt(storage: AppendAttemptStorage, key: string, now: number, maxAgeMs: number): AppendAttempt | null {
@@ -227,6 +268,7 @@ function parseStoredAttempt(storage: AppendAttemptStorage, key: string, now: num
 
   try {
     const parsed = JSON.parse(raw) as Partial<AppendAttempt>;
+    if (isCompletionRecord(parsed as Partial<AppendAttemptCompletion> & { completed?: unknown })) return null;
     if (
       !parsed
       || typeof parsed.userId !== 'string'
@@ -349,17 +391,27 @@ export function clearAppendAttempt(
       || current.fingerprint !== completedAttempt.fingerprint
     ) return;
     const markerKey = getAppendAttemptCompletionStorageKey(completedAttempt.userId);
+    const completionRecord = {
+      completed: true,
+      userId: completedAttempt.userId,
+      idempotencyKey: completedAttempt.idempotencyKey,
+      fingerprint: completedAttempt.fingerprint,
+      completedAt: Date.now(),
+    };
     let markerPersisted = false;
     try {
-      storage.setItem(markerKey, JSON.stringify({
-        userId: completedAttempt.userId,
-        idempotencyKey: completedAttempt.idempotencyKey,
-        fingerprint: completedAttempt.fingerprint,
-        completedAt: Date.now(),
-      }));
+      storage.setItem(markerKey, JSON.stringify(completionRecord));
       markerPersisted = true;
     } catch {
       markerPersisted = false;
+    }
+    if (!markerPersisted) {
+      try {
+        storage.setItem(key, JSON.stringify(completionRecord));
+        markerPersisted = true;
+      } catch {
+        markerPersisted = false;
+      }
     }
     const removed = storage.removeItem(key);
     if (removed !== false && storage.getItem(key) === null && markerPersisted) storage.removeItem(markerKey);

@@ -190,6 +190,53 @@ function main() {
   }));
   assert.equal(migrateLegacyAppendAttempt(directMigrationStorage, { now: 4_000 })?.userId, 'direct-owner', 'legacy append migration identifies the recorded owner');
 
+  const conflictingMigrationStorage = new MemoryStorage();
+  conflictingMigrationStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'conflict-owner',
+    fingerprint: JSON.stringify({ order_id: 42, items }),
+    idempotencyKey: 'legacy-conflict-key',
+  }));
+  conflictingMigrationStorage.setItem(getAppendAttemptStorageKey('conflict-owner'), JSON.stringify({
+    userId: 'conflict-owner',
+    orderId: '42',
+    fingerprint: buildAppendItemsFingerprint('42', [{ product_id: '002', quantity: 1 }]),
+    idempotencyKey: 'scoped-conflict-key',
+    items: [{ product_id: '002', quantity: 1 }],
+    createdAt: 4_000,
+  }));
+  assert.throws(
+    () => migrateLegacyAppendAttempt(conflictingMigrationStorage, { now: 4_000 }),
+    /Unable to migrate legacy append retry state safely/,
+    'a conflicting scoped attempt does not consume the legacy retry record',
+  );
+  assert.ok(conflictingMigrationStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'conflicting legacy retry remains available');
+  assert.equal(
+    JSON.parse(conflictingMigrationStorage.getItem(getAppendAttemptStorageKey('conflict-owner'))).idempotencyKey,
+    'scoped-conflict-key',
+    'conflicting scoped retry is not overwritten during migration',
+  );
+
+  const blockedMigrationBacking = new MemoryStorage();
+  blockedMigrationBacking.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'blocked-owner',
+    fingerprint: JSON.stringify({ order_id: 42, items }),
+    idempotencyKey: 'blocked-legacy-key',
+  }));
+  const blockedMigrationStorage = createSafeAppendAttemptStorage({
+    getItem: blockedMigrationBacking.getItem.bind(blockedMigrationBacking),
+    setItem: (key, value) => {
+      if (key === getAppendAttemptStorageKey('blocked-owner')) throw new Error('scoped storage blocked');
+      blockedMigrationBacking.setItem(key, value);
+    },
+    removeItem: blockedMigrationBacking.removeItem.bind(blockedMigrationBacking),
+  });
+  assert.throws(
+    () => readAppendAttempt(blockedMigrationStorage, { userId: 'blocked-owner', now: 4_000 }),
+    /Unable to persist append retry state/,
+    'a failed scoped migration blocks recovery instead of using the shared record',
+  );
+  assert.ok(blockedMigrationBacking.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'failed migration preserves the shared retry record');
+
   const legacyOrderStorage = new MemoryStorage();
   legacyOrderStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
     userId: 'legacy-cashier',
@@ -291,6 +338,44 @@ function main() {
     now: 21_002,
   });
   assert.equal(afterCleanupFailure.idempotencyKey, 'append-key-after-cleanup-failure', 'cleanup failure does not block a later append');
+
+  const fallbackBacking = new MemoryStorage();
+  const fallbackStorage = createSafeAppendAttemptStorage({
+    getItem: fallbackBacking.getItem.bind(fallbackBacking),
+    setItem: (key, value) => {
+      if (key.endsWith('.completed')) throw new Error('marker storage blocked');
+      fallbackBacking.setItem(key, value);
+    },
+    removeItem: (key) => {
+      if (key === getAppendAttemptStorageKey('cashier-1')) throw new Error('cleanup blocked');
+      fallbackBacking.removeItem(key);
+    },
+  });
+  const fallbackCompleted = getOrCreateAppendAttempt(fallbackStorage, {
+    userId: 'cashier-1',
+    orderId: '42',
+    fingerprint,
+    createKey: () => 'append-key-fallback-completion',
+    items,
+    specialInstructions: 'table-note',
+    now: 22_000,
+  });
+  clearAppendAttempt(fallbackStorage, fallbackCompleted);
+  const fallbackReload = createSafeAppendAttemptStorage(fallbackBacking);
+  assert.equal(readAppendAttempt(fallbackReload, { userId: 'cashier-1', now: 22_001 }), null, 'fallback completion state suppresses a stale attempt after marker failure');
+  assert.equal(
+    getOrCreateAppendAttempt(fallbackReload, {
+      userId: 'cashier-1',
+      orderId: '43',
+      fingerprint: buildAppendItemsFingerprint('43', items, 'table-note'),
+      createKey: () => 'append-key-after-fallback-completion',
+      items,
+      specialInstructions: 'table-note',
+      now: 22_002,
+    }).idempotencyKey,
+    'append-key-after-fallback-completion',
+    'fallback completion state does not block a later append',
+  );
 
   const invalidStorage = new MemoryStorage();
   invalidStorage.setItem(attemptStorageKey, JSON.stringify({ ...first, idempotencyKey: ' ' }));

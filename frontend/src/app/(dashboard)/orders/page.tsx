@@ -24,6 +24,15 @@ import { useI18n } from '@/hooks/useI18n';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
+import {
+  buildAppendItemsFingerprint,
+  clearAppendAttempt,
+  createSafeAppendAttemptStorage,
+  getOrCreateAppendAttempt,
+  readAppendAttempt,
+  type AppendAttempt,
+  type AppendAttemptStorage,
+} from '@/lib/append-attempt';
 
 const itemStatusConfig: Record<string, { dot: string; color: string; labelKey: string }> = {
   pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', labelKey: 'orders.itemStatusWaiting' },
@@ -146,7 +155,22 @@ export default function OrdersPage() {
   const [productSearch, setProductSearch] = useState('');
   const [selectedItems, setSelectedItems] = useState<{ product_id: number; product_name: string; quantity: number; special_instructions: string }[]>([]);
   const [addingItems, setAddingItems] = useState(false);
-  const addItemsAttemptRef = useRef<{ fingerprint: string; key: string } | null>(null);
+  const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
+  const appendAttemptStorageRef = useRef<AppendAttemptStorage | null>(null);
+  const appendRecoveryStartedUsersRef = useRef<Set<string>>(new Set());
+  const activeUserId = user?.id == null ? null : String(user.id);
+
+  const getAppendAttemptStorage = (): AppendAttemptStorage => {
+    if (appendAttemptStorageRef.current) return appendAttemptStorageRef.current;
+    let browserStorage: AppendAttemptStorage | null = null;
+    try {
+      if (typeof window !== 'undefined') browserStorage = window.localStorage;
+    } catch {
+      browserStorage = null;
+    }
+    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(browserStorage);
+    return appendAttemptStorageRef.current;
+  };
 
   // Link Customer states
   const [linkCustomerOrderId, setLinkCustomerOrderId] = useState<number | null>(null);
@@ -186,6 +210,33 @@ export default function OrdersPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
+    let pendingAttempt: AppendAttempt | null = null;
+    try {
+      pendingAttempt = readAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId });
+    } catch {
+      return;
+    }
+    if (!pendingAttempt) return;
+    appendRecoveryStartedUsersRef.current.add(activeUserId);
+    addItemsAttemptRef.current = pendingAttempt;
+    api.post(`/orders/${pendingAttempt.orderId}/items`, {
+      items: pendingAttempt.items,
+      special_instructions: pendingAttempt.specialInstructions,
+    }, { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey } }).then(() => {
+      clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!);
+      if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
+      addItemsAttemptRef.current = null;
+      toast.success(t('orders.itemsAdded', { count: pendingAttempt!.items.length }));
+      fetchOrders();
+    }).catch((err: unknown) => {
+      const axiosErr = err as { response?: { data?: { error?: string } } };
+      toast.error(axiosErr.response?.data?.error || t('orders.addItemsFailed'));
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUserId]);
 
   useEffect(() => {
     api.get('/settings/kds_enabled')
@@ -706,19 +757,23 @@ export default function OrdersPage() {
         quantity: i.quantity,
         special_instructions: i.special_instructions || undefined,
       }));
-      const fingerprint = JSON.stringify({ user_id: user?.id ?? null, order_id: addItemsOrder.id, items });
-      const attempt = addItemsAttemptRef.current?.fingerprint === fingerprint
-        ? addItemsAttemptRef.current
-        : {
-          fingerprint,
-          key: typeof globalThis.crypto?.randomUUID === 'function'
-            ? globalThis.crypto.randomUUID()
-            : `items-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        };
+      const fingerprint = buildAppendItemsFingerprint(addItemsOrder.id, items);
+      const storage = getAppendAttemptStorage();
+      const attempt = getOrCreateAppendAttempt(storage, {
+        userId: activeUserId || '',
+        orderId: addItemsOrder.id,
+        fingerprint,
+        createKey: () => typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : `items-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        items,
+        orderNumber: addItemsOrder.order_number,
+      });
       addItemsAttemptRef.current = attempt;
       await api.post(`/orders/${addItemsOrder.id}/items`, {
         items,
-      }, { headers: { 'Idempotency-Key': attempt.key } });
+      }, { headers: { 'Idempotency-Key': attempt.idempotencyKey } });
+      clearAppendAttempt(storage, attempt);
       addItemsAttemptRef.current = null;
       toast.success(t('orders.itemsAdded', { count: selectedItems.length }));
       openAddItemsModal(null);

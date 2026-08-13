@@ -26,6 +26,7 @@ type HttpServerState = {
 
 const httpServerStates = new WeakMap<http.Server, HttpServerState>();
 const httpRequestStates = new WeakMap<object, HttpRequestState>();
+const shuttingDownHttpServers = new Set<HttpServerState>();
 
 export function installHttpShutdownTracking(server: http.Server): HttpServerState {
   const existing = httpServerStates.get(server);
@@ -59,6 +60,7 @@ export function trackHttpRequestWork<T>(request: object, operation: Promise<T>):
     requestState.work.delete(operation);
     if (requestState.released && requestState.work.size === 0) {
       requestState.owner.requests.delete(requestState);
+      shuttingDownHttpServers.delete(requestState.owner);
     }
   }).catch(() => {});
   return operation;
@@ -86,8 +88,8 @@ function isAlreadyClosedError(error: unknown): boolean {
   return code === 'ERR_SERVER_NOT_RUNNING' || code === 'ERR_SOCKET_CLOSED';
 }
 
-function createTimeoutError(label: string): Error & { code: string } {
-  const error = new Error(`${label} shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+function createTimeoutError(label: string, timeoutMs: number): Error & { code: string } {
+  const error = new Error(`${label} shutdown timed out after ${timeoutMs}ms`) as Error & { code: string };
   error.code = 'ERR_SHUTDOWN_TIMEOUT';
   return error;
 }
@@ -96,11 +98,12 @@ async function withShutdownTimeout<T>(
   operation: Promise<T>,
   label: string,
   forceClose: () => void,
+  timeoutMs = SHUTDOWN_TIMEOUT_MS,
 ): Promise<T> {
   let timeout: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<T>((_resolve, reject) => {
     timeout = setTimeout(() => {
-      const timeoutError = createTimeoutError(label);
+      const timeoutError = createTimeoutError(label, timeoutMs);
       try {
         forceClose();
       } catch (error) {
@@ -108,7 +111,7 @@ async function withShutdownTimeout<T>(
         return;
       }
       reject(timeoutError);
-    }, SHUTDOWN_TIMEOUT_MS);
+    }, timeoutMs);
   });
 
   try {
@@ -119,9 +122,10 @@ async function withShutdownTimeout<T>(
 }
 
 /** Stop accepting HTTP connections and wait for active requests to finish. */
-export function closeHttpServer(server: http.Server, label: string): Promise<void> {
+export async function closeHttpServer(server: http.Server, label: string, timeoutMs = SHUTDOWN_TIMEOUT_MS): Promise<void> {
   const closableServer = server as ClosableHttpServer;
   const requestState = installHttpShutdownTracking(server);
+  shuttingDownHttpServers.add(requestState);
   const closeListenerPromise = new Promise<void>((resolve, reject) => {
     try {
       closableServer.close((error?: Error) => {
@@ -142,10 +146,41 @@ export function closeHttpServer(server: http.Server, label: string): Promise<voi
   });
   const closePromise = Promise.all([closeListenerPromise, waitForHttpRequestWork(requestState)]).then(() => undefined);
 
-  return withShutdownTimeout(closePromise, label, () => {
-    abortHttpRequests(requestState);
-    closableServer.closeAllConnections?.();
-  });
+  try {
+    await withShutdownTimeout(closePromise, label, () => {
+      abortHttpRequests(requestState);
+      closableServer.closeAllConnections?.();
+    }, timeoutMs);
+  } catch (error) {
+    if ((error as { code?: string }).code !== 'ERR_SHUTDOWN_TIMEOUT') throw error;
+    try {
+      await withShutdownTimeout(waitForHttpRequestWork(requestState), `${label} handler`, () => {
+        abortHttpRequests(requestState);
+        closableServer.closeAllConnections?.();
+      }, timeoutMs);
+    } catch (drainError) {
+      throw new AggregateError([error, drainError], `${label} shutdown failed`);
+    }
+    throw error;
+  } finally {
+    if (requestState.requests.size === 0) shuttingDownHttpServers.delete(requestState);
+  }
+}
+
+export async function waitForHttpShutdownWork(timeoutMs = SHUTDOWN_TIMEOUT_MS): Promise<void> {
+  const states = [...shuttingDownHttpServers];
+  try {
+    await withShutdownTimeout(
+      Promise.all(states.map((state) => waitForHttpRequestWork(state))).then(() => undefined),
+      'HTTP handler cleanup',
+      () => states.forEach(abortHttpRequests),
+      timeoutMs,
+    );
+  } finally {
+    for (const state of states) {
+      if (state.requests.size === 0) shuttingDownHttpServers.delete(state);
+    }
+  }
 }
 
 function terminateWebSocketClients(wss: WebSocketServer): void {
@@ -191,7 +226,7 @@ function drainWebSocketClients(wss: WebSocketServer, onError: (error: unknown) =
 }
 
 /** Close WebSocket clients/server and wait for the ws close callback. */
-export function closeWebSocketServer(wss: WebSocketServer, label: string): Promise<void> {
+export function closeWebSocketServer(wss: WebSocketServer, label: string, timeoutMs = SHUTDOWN_TIMEOUT_MS): Promise<void> {
   let clientCloseError: unknown;
   const clientsPromise = drainWebSocketClients(wss, (error) => {
     clientCloseError ??= error;
@@ -218,7 +253,7 @@ export function closeWebSocketServer(wss: WebSocketServer, label: string): Promi
     if (clientCloseError) throw clientCloseError;
   });
 
-  return withShutdownTimeout(closePromise, label, () => terminateWebSocketClients(wss));
+  return withShutdownTimeout(closePromise, label, () => terminateWebSocketClients(wss), timeoutMs);
 }
 
 /** Close WebSocket resources and listener, waiting for each to settle. */
@@ -226,13 +261,14 @@ export async function closeServerResources(
   server: http.Server | null,
   wss: WebSocketServer | null,
   label: string,
+  timeoutMs = SHUTDOWN_TIMEOUT_MS,
 ): Promise<void> {
   const errors: unknown[] = [];
   const closePromises: Promise<void>[] = [];
 
   if (server) {
     try {
-      closePromises.push(closeHttpServer(server, `${label} HTTP`));
+      closePromises.push(closeHttpServer(server, `${label} HTTP`, timeoutMs));
     } catch (error) {
       errors.push(error);
     }
@@ -240,7 +276,7 @@ export async function closeServerResources(
 
   if (wss) {
     try {
-      closePromises.push(closeWebSocketServer(wss, `${label} WebSocket`));
+      closePromises.push(closeWebSocketServer(wss, `${label} WebSocket`, timeoutMs));
     } catch (error) {
       errors.push(error);
     }

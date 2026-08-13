@@ -13,7 +13,9 @@ import {
   createShutdownEntrypoints,
   installHttpShutdownTracking,
   trackHttpRequestWork,
+  waitForHttpShutdownWork,
 } from '../main/shutdown';
+import { startStandaloneServers } from '../main/standalone-startup';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-'));
 
@@ -210,6 +212,60 @@ async function testTrackedHttpHandlerDrain(): Promise<void> {
   releaseHandler?.();
   await shutdown;
   heldRequest.destroy();
+}
+
+async function testTimedOutHttpHandlerBarrier(): Promise<void> {
+  let releaseHandler: (() => void) | null = null;
+  let requestStarted: (() => void) | null = null;
+  const handlerStarted = new Promise<void>((resolve) => { requestStarted = resolve; });
+  const handlerWork = new Promise<void>((resolve) => { releaseHandler = resolve; });
+  const server = http.createServer((request, response) => {
+    requestStarted?.();
+    void trackHttpRequestWork(request, handlerWork).then(() => {
+      if (!response.destroyed) response.end('done');
+    });
+  });
+  installHttpShutdownTracking(server);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const heldRequest = http.get({ host: '127.0.0.1', port: address.port, path: '/' });
+  heldRequest.on('error', () => {});
+  await handlerStarted;
+
+  await assert.rejects(
+    closeServerResources(server, null, 'timed HTTP handler test', 20),
+    (error: unknown) => error instanceof AggregateError,
+    'forced listener shutdown reports an uncooperative handler',
+  );
+  await assert.rejects(
+    waitForHttpShutdownWork(20),
+    (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
+    'the shared HTTP barrier remains active until the handler settles',
+  );
+  releaseHandler?.();
+  await waitForHttpShutdownWork(20);
+  heldRequest.destroy();
+}
+
+async function testStandaloneStartupCancellation(): Promise<void> {
+  const events: string[] = [];
+  let shutdownRequested = false;
+  await assert.rejects(
+    startStandaloneServers({
+      initializeDatabase: () => { events.push('database'); },
+      prepare: () => { events.push('prepare'); },
+      startServer: async () => {
+        events.push('main');
+        shutdownRequested = true;
+      },
+      startKdsServer: async () => { events.push('kds'); },
+      startServerApp: async () => { events.push('server-app'); },
+      isShutdownRequested: () => shutdownRequested,
+    }),
+    /startup cancelled during shutdown/,
+  );
+  assert.deepEqual(events, ['database', 'prepare', 'main'], 'shutdown between startup awaits prevents later listeners');
 }
 
 async function testPendingHttpListenIsCancelled(): Promise<void> {
@@ -541,7 +597,27 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     await mainServer.stopServer();
     await kdsServer.stopKdsServer();
     await serverApp.stopServerApp();
+    let maintenanceStarted: (() => void) | null = null;
+    const startedMaintenance = new Promise<void>((resolve) => { maintenanceStarted = resolve; });
+    let releaseMaintenance: (() => void) | null = null;
+    let maintenanceAbortObserved = false;
+    const uncooperativeMaintenance = withDatabaseMaintenanceLock((signal) => new Promise<void>((resolve) => {
+      signal.addEventListener('abort', () => { maintenanceAbortObserved = true; }, { once: true });
+      releaseMaintenance = resolve;
+      maintenanceStarted?.();
+    }));
+    await startedMaintenance;
     beginDatabaseShutdown();
+    await delay(0);
+    assert.equal(maintenanceAbortObserved, true, 'database shutdown aborts active maintenance work');
+    await assert.rejects(
+      waitForDatabaseRequests(10),
+      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
+      'database shutdown bounds a non-cooperative maintenance drain',
+    );
+    releaseMaintenance?.();
+    await uncooperativeMaintenance;
+    await waitForDatabaseRequests();
     let lateDatabaseOperationRan = false;
     await assert.rejects(
       withDatabaseRequest(() => { lateDatabaseOperationRan = true; }),
@@ -570,6 +646,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   await testActiveHttpAndWebSocketDrain();
   await testHttpStopsAcceptingBeforeSlowWebSocketDrain();
   await testTrackedHttpHandlerDrain();
+  await testTimedOutHttpHandlerBarrier();
   await testPendingHttpListenIsCancelled();
   console.log('phase entrypoints');
   await testEntrypointCoverage();
@@ -577,6 +654,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   await testStartupEntrypoint();
   await testStartupEntrypoint(true);
   await testStandaloneDevServerShutdown();
+  await testStandaloneStartupCancellation();
   console.log('phase owned servers');
   await testOwnedServerStopEntrypoints();
   console.log('Shutdown lifecycle tests passed.');

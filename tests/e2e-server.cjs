@@ -18,9 +18,10 @@ Module._load = function (request, parent, isMain) {
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests, now } = require('../dist/db');
-const { createExitCodeAwareShutdown } = require('../dist/shutdown');
+const { createExitCodeAwareShutdown, waitForHttpShutdownWork } = require('../dist/shutdown');
 const { startServer, stopServer } = require('../dist/server');
 const { shutdown: shutdownWhatsApp } = require('../dist/services/whatsapp');
+const { startStandaloneServers } = require('../dist/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 // Country/currency stay TH/THB (this fixture's configured business country)
 // so getActiveCountryPack('TH') actually resolves this pack.
@@ -137,6 +138,7 @@ function seedPosFixture() {
 }
 
 let exitRequested = false;
+let shutdownRequested = false;
 const requestStop = createExitCodeAwareShutdown(async () => {
   let cleanupFailed = false;
   try { await stopServer(); } catch (error) {
@@ -150,6 +152,10 @@ const requestStop = createExitCodeAwareShutdown(async () => {
   try { await shutdownWhatsApp(); } catch (error) {
     cleanupFailed = true;
     console.error('[E2E] WhatsApp cleanup failed:', error);
+  }
+  try { await waitForHttpShutdownWork(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] HTTP handler cleanup failed:', error);
   }
   try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (error) {
     cleanupFailed = true;
@@ -168,6 +174,7 @@ const requestStop = createExitCodeAwareShutdown(async () => {
 });
 
 async function stop(exitCode = 0) {
+  shutdownRequested = true;
   const finalExitCode = await requestStop(exitCode);
   if (!exitRequested) {
     exitRequested = true;
@@ -176,11 +183,16 @@ async function stop(exitCode = 0) {
 }
 
 (async () => {
-  initDatabase();
-  seedUser('e2e-manager', 'manager@flo.local', 'manager');
-  seedPosFixture();
-  await startServer();
-  await startKdsServer();
+  await startStandaloneServers({
+    initializeDatabase: initDatabase,
+    prepare: () => {
+      seedUser('e2e-manager', 'manager@flo.local', 'manager');
+      seedPosFixture();
+    },
+    startServer,
+    startKdsServer,
+    isShutdownRequested: () => shutdownRequested,
+  });
   console.log('[E2E] Main and KDS servers ready');
 })().catch((error) => {
   console.error(error);

@@ -71,19 +71,22 @@ Module._load = function (request, parent, isMain) {
 
 // ── Now load and start the compiled backend ───────────────────────────────────
 const { initDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests } = require('./dist/db');
-const { createExitCodeAwareShutdown } = require('./dist/shutdown');
+const { createExitCodeAwareShutdown, waitForHttpShutdownWork } = require('./dist/shutdown');
 const { startServer, stopServer, getServerPort } = require('./dist/server');
 const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/kds-server');
 const { startServerApp, stopServerApp, getServerAppPort } = require('./dist/server-app');
 const { shutdown: shutdownWhatsApp } = require('./dist/services/whatsapp');
+const { startStandaloneServers } = require('./dist/standalone-startup');
 
 let exitRequested = false;
+let shutdownRequested = false;
 const requestShutdown = createExitCodeAwareShutdown(async () => {
   let cleanupFailed = false;
   try { await stopServerApp(); } catch (err) { console.error('[DevServer] Server App shutdown failed:', err); cleanupFailed = true; }
   try { await stopServer(); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); cleanupFailed = true; }
   try { await stopKdsServer(); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); cleanupFailed = true; }
   try { await shutdownWhatsApp(); } catch (err) { console.error('[DevServer] WhatsApp shutdown failed:', err); cleanupFailed = true; }
+  try { await waitForHttpShutdownWork(); } catch (err) { console.error('[DevServer] HTTP handler cleanup failed:', err); cleanupFailed = true; }
   try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (err) { console.error('[DevServer] Database request drain failed:', err); cleanupFailed = true; }
   try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); cleanupFailed = true; }
   Module._load = originalLoad;
@@ -91,6 +94,7 @@ const requestShutdown = createExitCodeAwareShutdown(async () => {
 });
 
 async function shutdown(exitCode = 0) {
+  shutdownRequested = true;
   const finalExitCode = await requestShutdown(exitCode);
   if (!exitRequested) {
     exitRequested = true;
@@ -112,12 +116,14 @@ process.on('unhandledRejection', (err) => {
 (async () => {
   try {
     console.log('[DevServer] Initializing database...');
-    initDatabase();
-
     console.log('[DevServer] Starting Express, KDS, and Server App servers...');
-    await startServer();
-    await startKdsServer();
-    await startServerApp();
+    await startStandaloneServers({
+      initializeDatabase: initDatabase,
+      startServer,
+      startKdsServer,
+      startServerApp,
+      isShutdownRequested: () => shutdownRequested,
+    });
 
     console.log(`[DevServer] ✅ Main API running on http://localhost:${getServerPort()}`);
     console.log(`[DevServer] ✅ KDS Server running on http://localhost:${getKdsPort()}`);

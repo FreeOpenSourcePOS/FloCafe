@@ -16,7 +16,7 @@ import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from '
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
-import { createShutdownCoordinator, createShutdownEntrypoints, SHUTDOWN_TIMEOUT_MS } from './shutdown';
+import { createShutdownCoordinator, createShutdownEntrypoints, SHUTDOWN_TIMEOUT_MS, waitForHttpShutdownWork } from './shutdown';
 
 // ── GPU compatibility ────────────────────────────────────────────────────────
 // On Windows, some systems hit "GPU process exited unexpectedly" (exit code
@@ -760,6 +760,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   { name: 'Google Drive', run: () => googleDrive.stop() },
   { name: 'WhatsApp', run: () => shutdownWhatsApp() },
   { name: 'Bonjour', run: () => stopMdns() },
+  { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork() },
   { name: 'database admission', run: () => beginDatabaseShutdown() },
   { name: 'database requests', run: () => waitForDatabaseRequests() },
   // Database closure is deliberately last: all HTTP and WebSocket work must

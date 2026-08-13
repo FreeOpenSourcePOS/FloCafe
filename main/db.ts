@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
+import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -18,6 +19,7 @@ let databaseMaintenanceActive = false;
 let databaseMaintenancePending = 0;
 let activeDatabaseRequests = 0;
 let databaseShutdownRequested = false;
+const databaseShutdownController = new AbortController();
 let maintenanceRequestWaiters: (() => void)[] = [];
 let maintenanceDrainWaiters: (() => void)[] = [];
 let databaseIdleWaiters: (() => void)[] = [];
@@ -57,8 +59,40 @@ function createDatabaseShutdownError(): Error & { code: string } {
   return error;
 }
 
+function createDatabaseShutdownTimeoutError(): Error & { code: string } {
+  const error = new Error(`Database shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+  error.code = 'ERR_SHUTDOWN_TIMEOUT';
+  return error;
+}
+
 export function beginDatabaseShutdown(): void {
   databaseShutdownRequested = true;
+  databaseShutdownController.abort();
+}
+
+function getMaintenanceSignal(signal?: AbortSignal): AbortSignal {
+  return signal ? AbortSignal.any([signal, databaseShutdownController.signal]) : databaseShutdownController.signal;
+}
+
+function waitForActiveDatabaseRequests(signal: AbortSignal): Promise<void> {
+  if (activeDatabaseRequests === 0) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const finish = () => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      const index = maintenanceDrainWaiters.indexOf(finish);
+      if (index >= 0) maintenanceDrainWaiters.splice(index, 1);
+      reject(createMaintenanceAbortError());
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    maintenanceDrainWaiters.push(finish);
+  });
 }
 
 export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
@@ -147,28 +181,30 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
   next();
 }
 
-export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+export function withDatabaseMaintenanceLock<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
   if (databaseShutdownRequested) return Promise.reject(createMaintenanceAbortError());
+  const maintenanceSignal = getMaintenanceSignal(signal);
   const previous = databaseMaintenanceTail;
   databaseMaintenancePending += 1;
   let started = false;
   let release!: () => void;
   databaseMaintenanceTail = new Promise<void>((resolve) => { release = resolve; });
   const queued = previous.then(async () => {
-    if (signal?.aborted || databaseShutdownRequested) throw createMaintenanceAbortError();
+    if (maintenanceSignal.aborted || databaseShutdownRequested) throw createMaintenanceAbortError();
     started = true;
     databaseMaintenanceActive = true;
     for (const listener of databaseMaintenanceStartListeners) {
       try { listener(); } catch (error) { console.error('[DB] Maintenance listener failed:', error); }
     }
-    // Maintenance routes are excluded from activeDatabaseRequests by the
-    // middleware above. Any remaining active requests were already in flight
-    // before maintenance began and must drain first.
-    if (activeDatabaseRequests > 0) {
-      await new Promise<void>((resolve) => maintenanceDrainWaiters.push(resolve));
-    }
     try {
-      return await operation();
+      // Maintenance routes are excluded from activeDatabaseRequests by the
+      // middleware above. Any remaining active requests were already in flight
+      // before maintenance began and must drain first.
+      if (activeDatabaseRequests > 0) {
+        await waitForActiveDatabaseRequests(maintenanceSignal);
+      }
+      if (maintenanceSignal.aborted || databaseShutdownRequested) throw createMaintenanceAbortError();
+      return await operation(maintenanceSignal);
     } finally {
       databaseMaintenanceActive = false;
       for (const listener of databaseMaintenanceEndListeners) {
@@ -183,29 +219,27 @@ export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>, 
     releaseMaintenanceRequestWaiters();
     releaseDatabaseIdleWaiters();
   });
-  if (!signal) return queued;
-
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     const onAbort = (): void => {
       if (started || settled) return;
       settled = true;
-      signal.removeEventListener('abort', onAbort);
+      maintenanceSignal.removeEventListener('abort', onAbort);
       reject(createMaintenanceAbortError());
     };
-    if (signal.aborted) onAbort();
-    else signal.addEventListener('abort', onAbort, { once: true });
+    if (maintenanceSignal.aborted) onAbort();
+    else maintenanceSignal.addEventListener('abort', onAbort, { once: true });
     queued.then(
       (value) => {
         if (settled) return;
         settled = true;
-        signal.removeEventListener('abort', onAbort);
+        maintenanceSignal.removeEventListener('abort', onAbort);
         resolve(value);
       },
       (error) => {
         if (settled) return;
         settled = true;
-        signal.removeEventListener('abort', onAbort);
+        maintenanceSignal.removeEventListener('abort', onAbort);
         reject(error);
       },
     );
@@ -811,9 +845,18 @@ export function getDatabase(): Database.Database {
   return db;
 }
 
-export function waitForDatabaseRequests(): Promise<void> {
+export function waitForDatabaseRequests(timeoutMs?: number): Promise<void> {
   if (activeDatabaseRequests === 0 && !databaseMaintenanceActive && databaseMaintenancePending === 0) return Promise.resolve();
-  return new Promise<void>((resolve) => databaseIdleWaiters.push(resolve));
+  const drain = new Promise<void>((resolve) => databaseIdleWaiters.push(resolve));
+  const effectiveTimeoutMs = timeoutMs ?? (databaseShutdownRequested ? SHUTDOWN_TIMEOUT_MS : undefined);
+  if (effectiveTimeoutMs === undefined) return drain;
+  return new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(createDatabaseShutdownTimeoutError()), effectiveTimeoutMs);
+    drain.then(
+      () => { clearTimeout(timeout); resolve(); },
+      (error) => { clearTimeout(timeout); reject(error); },
+    );
+  });
 }
 
 export function closeDatabase(): void {
@@ -933,7 +976,7 @@ export async function createBackupUnlocked(targetPath?: string, signal?: AbortSi
 }
 
 export function createBackup(targetPath?: string, signal?: AbortSignal): Promise<{ path: string; schemaVersion: number }> {
-  return withDatabaseMaintenanceLock(() => createBackupUnlocked(targetPath, signal), signal);
+  return withDatabaseMaintenanceLock((maintenanceSignal) => createBackupUnlocked(targetPath, maintenanceSignal), signal);
 }
 
 function removeDatabaseFiles(dbPath: string): string[] {
@@ -956,8 +999,9 @@ function removeDatabaseFiles(dbPath: string): string[] {
  * false success or an intentionally closed database.
  */
 export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }> {
-  return withDatabaseMaintenanceLock(async () => {
-    const { path: backupPath } = await createBackupUnlocked();
+  return withDatabaseMaintenanceLock(async (signal) => {
+    const { path: backupPath } = await createBackupUnlocked(undefined, signal);
+    if (signal.aborted) throw createMaintenanceAbortError();
     const dbPath = getDbPath();
     const baselineForeignKeyViolations = getForeignKeyViolationKeys(getDatabase());
     const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);

@@ -395,7 +395,8 @@ export default function POSPage() {
 
       if (cart.tableId) {
         try {
-          await heldOrders.removeHeldOrder(cart.tableId, cart.heldOrderId || undefined);
+          const deleted = await heldOrders.removeHeldOrder(cart.tableId, cart.heldOrderId || undefined);
+          if (!deleted) await heldOrders.fetchHeldOrders();
         } catch (heldOrderError) {
           // The order has already been placed. Do not turn a cleanup failure
           // into a failed sale or leave an unhandled promise in the console.
@@ -596,7 +597,8 @@ export default function POSPage() {
       toast.success(successMsg);
       if (cart.tableId) {
         try {
-          await heldOrders.removeHeldOrder(cart.tableId, cart.heldOrderId || undefined);
+          const deleted = await heldOrders.removeHeldOrder(cart.tableId, cart.heldOrderId || undefined);
+          if (!deleted) await heldOrders.fetchHeldOrders();
         } catch (heldOrderError) {
           // The payment is complete; clearing the held-order record is cleanup.
           console.error('Failed to clear held order after payment', heldOrderError);

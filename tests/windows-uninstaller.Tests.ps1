@@ -7,6 +7,14 @@
 #>
 
 BeforeAll {
+  Mock Get-CimInstance { param($ClassName, $Filter, $OperationTimeoutSec) return @() }
+  Mock Get-Process { param($Name, $Id) return @() }
+  Mock Get-ItemProperty { param($Path) return @() }
+  Mock Test-Path { param($LiteralPath, $PathType) return $false }
+  Mock Remove-Item { param($LiteralPath) }
+  Mock Start-Process { param($FilePath, $ArgumentList, [switch]$PassThru) }
+  Mock Stop-Process { param($Id, [switch]$Force) }
+
   $uninstallerPath = Join-Path $PSScriptRoot '..\scripts\uninstallers\uninstall-windows.ps1'
   . $uninstallerPath
 }
@@ -353,7 +361,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     $secondInstallPath = 'C:\Flo Cafe Second'
     $firstUninstaller = 'C:\Flo Cafe First\uninstall.exe'
     $secondUninstaller = 'C:\Flo Cafe Second\uninstall.exe'
-    $entries = @(
+    $testEntries = @(
       [pscustomobject]@{
         DisplayName     = 'Flo Cafe'
         PSChildName     = 'FloCafeFirst'
@@ -369,11 +377,11 @@ Describe 'Flo Cafe Windows uninstaller' {
         UninstallString = "`"$secondUninstaller`""
       }
     )
-    $children = @(
+    $testChildren = @(
       [pscustomobject]@{ Id = 9910; ExitCode = 0 }
       [pscustomobject]@{ Id = 9911; ExitCode = 0 }
     )
-    foreach ($child in $children) {
+    foreach ($child in $testChildren) {
       $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
         param([int]$Milliseconds)
         return $true
@@ -384,12 +392,12 @@ Describe 'Flo Cafe Windows uninstaller' {
     $remainingPaths[$secondUninstaller] = $true
     $remainingPaths[$firstInstallPath] = $true
     $remainingPaths[$secondInstallPath] = $true
-    $remainingPaths[$entries[0].PSPath] = $true
-    $remainingPaths[$entries[1].PSPath] = $true
+    $remainingPaths[$testEntries[0].PSPath] = $true
+    $remainingPaths[$testEntries[1].PSPath] = $true
     $removedPaths = New-Object 'System.Collections.Generic.List[string]'
 
     Mock Get-Process { param($Name, $Id) return @() }
-    Mock Get-ItemProperty { param($Path) return $entries }
+    Mock Get-ItemProperty { param($Path) return $testEntries }
     Mock Test-Path {
       param($LiteralPath)
       if ($remainingPaths.ContainsKey($LiteralPath)) { return $remainingPaths[$LiteralPath] }
@@ -397,8 +405,8 @@ Describe 'Flo Cafe Windows uninstaller' {
     }
     Mock Start-Process {
       param($FilePath)
-      if ($FilePath -eq $firstUninstaller) { return $children[0] }
-      if ($FilePath -eq $secondUninstaller) { return $children[1] }
+      if ($FilePath -eq $firstUninstaller) { return $testChildren[0] }
+      if ($FilePath -eq $secondUninstaller) { return $testChildren[1] }
       throw "unexpected uninstaller $FilePath"
     }
     Mock Get-CimInstance { param($ClassName, $Filter, $OperationTimeoutSec) return @() }
@@ -412,8 +420,8 @@ Describe 'Flo Cafe Windows uninstaller' {
 
     $result.Complete | Should -BeFalse
     Should -Invoke Start-Process -Times 2 -Exactly
-    ($removedPaths -contains $entries[0].PSPath) | Should -BeTrue
-    ($removedPaths -contains $entries[1].PSPath) | Should -BeTrue
+    ($removedPaths -contains $testEntries[0].PSPath) | Should -BeTrue
+    ($removedPaths -contains $testEntries[1].PSPath) | Should -BeTrue
     ($result.Issues -join "`n") | Should -Match 'C:\Flo Cafe First'
     ($result.Issues -join "`n") | Should -Match 'C:\Flo Cafe Second'
   }

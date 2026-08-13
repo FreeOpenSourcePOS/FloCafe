@@ -46,7 +46,10 @@ function canonicalize(value: unknown): string {
  * field and the exact note text remain part of the identity.
  */
 export function generateCartItemId(productId: number | string, addons: Addon[], specialInstructions: string): string {
-  const sortedAddons = [...addons].sort((left, right) => {
+  const normalizedAddons = addons.map((addon) => (
+    addon.quantity === undefined ? { ...addon, quantity: 1 } : addon
+  ));
+  const sortedAddons = normalizedAddons.sort((left, right) => {
     const leftKey = canonicalize(left);
     const rightKey = canonicalize(right);
     if (leftKey < rightKey) return -1;

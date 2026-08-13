@@ -1,8 +1,14 @@
 export const APPEND_ATTEMPT_STORAGE_KEY = 'flo.pos.append-items.attempt';
+export const LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
 export const APPEND_ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const APPEND_ATTEMPT_COMPLETION_SUFFIX = '.completed';
 
 export function getAppendAttemptStorageKey(userId: string): string {
   return `${APPEND_ATTEMPT_STORAGE_KEY}.${encodeURIComponent(userId)}`;
+}
+
+function getAppendAttemptCompletionStorageKey(userId: string): string {
+  return `${getAppendAttemptStorageKey(userId)}${APPEND_ATTEMPT_COMPLETION_SUFFIX}`;
 }
 
 export interface AppendAttempt {
@@ -19,7 +25,7 @@ export interface AppendAttempt {
 export interface AppendAttemptStorage {
   getItem: (key: string) => string | null;
   setItem: (key: string, value: string) => void;
-  removeItem: (key: string) => void;
+  removeItem: (key: string) => void | boolean;
 }
 
 /** Wrap browser storage for append-attempt state. */
@@ -50,10 +56,12 @@ export function createSafeAppendAttemptStorage(storage: AppendAttemptStorage | n
       // A tombstone prevents a stale durable value from returning if cleanup
       // itself is blocked by the browser.
       memory.set(key, null);
+      if (!storage) return false;
       try {
-        storage?.removeItem(key);
+        storage.removeItem(key);
+        return storage.getItem(key) === null;
       } catch {
-        // Best-effort cleanup; the tombstone keeps same-renderer reads safe.
+        return false;
       }
     },
   };
@@ -94,6 +102,118 @@ function isValidIdempotencyKey(key: string): boolean {
 
 function isExpired(createdAt: number, now: number, maxAgeMs: number): boolean {
   return !Number.isFinite(createdAt) || now - createdAt >= maxAgeMs;
+}
+
+interface AppendAttemptCompletion {
+  userId: string;
+  idempotencyKey: string;
+  fingerprint: string;
+  completedAt: number;
+}
+
+function completedAttemptMatches(
+  storage: AppendAttemptStorage,
+  attemptKey: string,
+  completion: AppendAttemptCompletion,
+): boolean {
+  const raw = storage.getItem(attemptKey);
+  if (!raw) {
+    storage.removeItem(getAppendAttemptCompletionStorageKey(completion.userId));
+    return true;
+  }
+  try {
+    const current = JSON.parse(raw) as Partial<AppendAttempt>;
+    if (current.idempotencyKey !== completion.idempotencyKey || current.fingerprint !== completion.fingerprint) return false;
+    const removed = storage.removeItem(attemptKey);
+    if (removed !== false && storage.getItem(attemptKey) === null) {
+      storage.removeItem(getAppendAttemptCompletionStorageKey(completion.userId));
+    }
+    return true;
+  } catch {
+    return true;
+  }
+}
+
+function hasCompletedAttempt(
+  storage: AppendAttemptStorage,
+  userId: string,
+  now: number,
+  maxAgeMs: number,
+): boolean {
+  const markerKey = getAppendAttemptCompletionStorageKey(userId);
+  const raw = storage.getItem(markerKey);
+  if (!raw) return false;
+  try {
+    const completion = JSON.parse(raw) as Partial<AppendAttemptCompletion>;
+    if (
+      completion.userId !== userId
+      || typeof completion.idempotencyKey !== 'string'
+      || !isValidIdempotencyKey(completion.idempotencyKey)
+      || typeof completion.fingerprint !== 'string'
+      || typeof completion.completedAt !== 'number'
+      || isExpired(completion.completedAt, now, maxAgeMs)
+    ) {
+      storage.removeItem(markerKey);
+      return false;
+    }
+    return completedAttemptMatches(storage, getAppendAttemptStorageKey(userId), completion as AppendAttemptCompletion);
+  } catch {
+    storage.removeItem(markerKey);
+    return false;
+  }
+}
+
+function migrateLegacyPostpaidAppendAttempt(
+  storage: AppendAttemptStorage,
+  userId: string,
+  now: number,
+  maxAgeMs: number,
+): StoredAttempt | null {
+  const raw = storage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      userId?: unknown;
+      fingerprint?: unknown;
+      idempotencyKey?: unknown;
+      createdAt?: unknown;
+    };
+    if (parsed.userId !== userId || typeof parsed.fingerprint !== 'string') return null;
+    const payload = JSON.parse(parsed.fingerprint) as {
+      order_id?: unknown;
+      items?: unknown;
+      special_instructions?: unknown;
+    };
+    if (
+      (typeof payload.order_id !== 'string' && typeof payload.order_id !== 'number')
+      || !Array.isArray(payload.items)
+    ) return null;
+    if (typeof parsed.idempotencyKey !== 'string' || !isValidIdempotencyKey(parsed.idempotencyKey)) {
+      storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
+      return null;
+    }
+    const createdAt = typeof parsed.createdAt === 'number' ? parsed.createdAt : now;
+    if (isExpired(createdAt, now, maxAgeMs)) {
+      storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
+      return null;
+    }
+    const attempt: AppendAttempt = {
+      userId,
+      orderId: String(payload.order_id),
+      fingerprint: parsed.fingerprint,
+      idempotencyKey: parsed.idempotencyKey,
+      items: payload.items,
+      specialInstructions: typeof payload.special_instructions === 'string' ? payload.special_instructions : undefined,
+      createdAt,
+    };
+    const scopedKey = getAppendAttemptStorageKey(userId);
+    storage.setItem(scopedKey, JSON.stringify(attempt));
+    storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
+    return { attempt, key: scopedKey };
+  } catch {
+    return null;
+  }
 }
 
 function parseStoredAttempt(storage: AppendAttemptStorage, key: string, now: number, maxAgeMs: number): AppendAttempt | null {
@@ -137,16 +257,20 @@ function readUserAttempt(
   maxAgeMs: number,
 ): StoredAttempt | null {
   const scopedKey = getAppendAttemptStorageKey(userId);
+  if (hasCompletedAttempt(storage, userId, now, maxAgeMs)) return null;
   const scoped = parseStoredAttempt(storage, scopedKey, now, maxAgeMs);
   if (scoped?.userId === userId) return { attempt: scoped, key: scopedKey };
 
   // Migrate the pre-user-scoped key only when it belongs to this user. A
   // different cashier's pending retry is deliberately left intact.
   const legacy = parseStoredAttempt(storage, APPEND_ATTEMPT_STORAGE_KEY, now, maxAgeMs);
-  if (legacy?.userId !== userId) return null;
-  storage.setItem(scopedKey, JSON.stringify(legacy));
-  storage.removeItem(APPEND_ATTEMPT_STORAGE_KEY);
-  return { attempt: legacy, key: scopedKey };
+  if (legacy?.userId === userId) {
+    storage.setItem(scopedKey, JSON.stringify(legacy));
+    storage.removeItem(APPEND_ATTEMPT_STORAGE_KEY);
+    return { attempt: legacy, key: scopedKey };
+  }
+
+  return migrateLegacyPostpaidAppendAttempt(storage, userId, now, maxAgeMs);
 }
 
 /** Read a pending attempt for automatic recovery after a renderer reload. */
@@ -217,9 +341,22 @@ export function clearAppendAttempt(
       current.idempotencyKey !== completedAttempt.idempotencyKey
       || current.fingerprint !== completedAttempt.fingerprint
     ) return;
-    storage.removeItem(key);
+    const markerKey = getAppendAttemptCompletionStorageKey(completedAttempt.userId);
+    let markerPersisted = false;
+    try {
+      storage.setItem(markerKey, JSON.stringify({
+        userId: completedAttempt.userId,
+        idempotencyKey: completedAttempt.idempotencyKey,
+        fingerprint: completedAttempt.fingerprint,
+        completedAt: Date.now(),
+      }));
+      markerPersisted = true;
+    } catch {
+      markerPersisted = false;
+    }
+    const removed = storage.removeItem(key);
+    if (removed !== false && storage.getItem(key) === null && markerPersisted) storage.removeItem(markerKey);
   } catch {
-    // Storage cleanup is best effort; leaving the key is safe because a future
-    // matching request replays it and a changed/expired request replaces it.
+    return;
   }
 }

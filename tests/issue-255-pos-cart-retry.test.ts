@@ -6,6 +6,7 @@ const {
 } = require('../frontend/src/lib/cart-identity');
 const {
   APPEND_ATTEMPT_MAX_AGE_MS,
+  LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY,
   getAppendAttemptStorageKey,
   buildAppendItemsFingerprint,
   createSafeAppendAttemptStorage,
@@ -68,6 +69,11 @@ function main() {
     generateCartItemId('burger', [addon('extra', { name: 'No onions' })], ''),
     generateCartItemId('burger', [addon('extra', { name: 'Extra onions' })], ''),
     'add-on option fields participate in cart identity',
+  );
+  assert.equal(
+    generateCartItemId('burger', [addon('extra', { quantity: undefined })], ''),
+    generateCartItemId('burger', [addon('extra', { quantity: 1 })], ''),
+    'missing add-on quantity matches the default quantity of one',
   );
 
   const normal = generateCartItemId('burger', [addon('cheese'), addon('sauce')], 'no onions');
@@ -138,6 +144,27 @@ function main() {
   }), /previous append attempt is still pending/, 'a mismatched payload is rejected without replacing the pending attempt');
   assert.equal(readAppendAttempt(storage, { userId: 'cashier-1', now: 3_000 })?.idempotencyKey, first.idempotencyKey, 'a mismatched append preserves the original retry key');
 
+  const legacyStorage = new MemoryStorage();
+  legacyStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'legacy-cashier',
+    fingerprint: buildAppendItemsFingerprint('42', items, 'table-note'),
+    idempotencyKey: 'legacy-append-key',
+  }));
+  const migrated = readAppendAttempt(legacyStorage, { userId: 'legacy-cashier', now: 4_000 });
+  assert.equal(migrated?.idempotencyKey, 'legacy-append-key', 'legacy append records migrate before new attempts are created');
+  assert.equal(migrated?.orderId, '42', 'legacy migration preserves the appended order');
+  assert.deepEqual(migrated?.items, items, 'legacy migration preserves the append payload');
+  assert.equal(legacyStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), null, 'legacy append storage is removed after migration');
+
+  const legacyOrderStorage = new MemoryStorage();
+  legacyOrderStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'legacy-cashier',
+    fingerprint: JSON.stringify({ table_id: 'table-1', items }),
+    idempotencyKey: 'legacy-order-key',
+  }));
+  assert.equal(readAppendAttempt(legacyOrderStorage, { userId: 'legacy-cashier', now: 4_000 }), null, 'legacy new-order records are not mistaken for append records');
+  assert.ok(legacyOrderStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'legacy new-order records remain available to the order flow');
+
   // Cleanup is explicit after the caller receives a confirmed response; a
   // failed/lost response leaves the attempt available for retry.
   clearAppendAttempt(storage, first);
@@ -199,6 +226,37 @@ function main() {
     orderNumber: 'K-42',
     now: 20_000,
   }), /Unable to persist append retry state/, 'unavailable storage prevents the append from starting');
+
+  const cleanupBacking = new MemoryStorage();
+  const cleanupFailureStorage = createSafeAppendAttemptStorage({
+    getItem: cleanupBacking.getItem.bind(cleanupBacking),
+    setItem: cleanupBacking.setItem.bind(cleanupBacking),
+    removeItem: () => { throw new Error('cleanup blocked'); },
+  });
+  const completed = getOrCreateAppendAttempt(cleanupFailureStorage, {
+    userId: 'cashier-1',
+    orderId: '42',
+    fingerprint,
+    createKey: () => 'append-key-cleanup-failure',
+    items,
+    specialInstructions: 'table-note',
+    orderNumber: 'K-42',
+    now: 21_000,
+  });
+  clearAppendAttempt(cleanupFailureStorage, completed);
+  const reloadedCleanupStorage = createSafeAppendAttemptStorage(cleanupBacking);
+  assert.equal(readAppendAttempt(reloadedCleanupStorage, { userId: 'cashier-1', now: 21_001 }), null, 'a durable completion marker suppresses a stale attempt after cleanup failure');
+  const afterCleanupFailure = getOrCreateAppendAttempt(reloadedCleanupStorage, {
+    userId: 'cashier-1',
+    orderId: '43',
+    fingerprint: buildAppendItemsFingerprint('43', items, 'table-note'),
+    createKey: () => 'append-key-after-cleanup-failure',
+    items,
+    specialInstructions: 'table-note',
+    orderNumber: 'K-43',
+    now: 21_002,
+  });
+  assert.equal(afterCleanupFailure.idempotencyKey, 'append-key-after-cleanup-failure', 'cleanup failure does not block a later append');
 
   const invalidStorage = new MemoryStorage();
   invalidStorage.setItem(attemptStorageKey, JSON.stringify({ ...first, idempotencyKey: ' ' }));

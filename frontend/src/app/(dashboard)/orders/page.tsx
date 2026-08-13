@@ -878,12 +878,17 @@ export default function OrdersPage() {
                  </div>
                  <div className="p-4 bg-gray-50 border-t border-gray-100 flex gap-2">
                     <Button onClick={async () => {
-                      const held = await heldOrdersStore.restoreOrder(heldOrder.tableId);
-                      if (held) {
-                        cartStore.loadItems(held.items, heldOrder.tableId, held.customerId, held.guestCount, held.orderNotes);
-                        cartStore.setOrderType('dine_in');
-                        router.push('/pos');
-                      } else {
+                      try {
+                        const held = await heldOrdersStore.restoreOrder(heldOrder.tableId);
+                        if (held) {
+                          cartStore.loadItems(held.items, heldOrder.tableId, held.customerId, held.guestCount, held.orderNotes);
+                          cartStore.setOrderType('dine_in');
+                          router.push('/pos');
+                        } else {
+                          await heldOrdersStore.fetchHeldOrders();
+                          toast.error(t('orders.resumeFailed'));
+                        }
+                      } catch {
                         toast.error(t('orders.resumeFailed'));
                       }
                     }} variant="default" className="flex-1 bg-brand hover:bg-brand/90 text-white">{t('orders.resumeInPos')}</Button>

@@ -23,7 +23,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser,
+  seedOwnerUser, seedTable,
   api, assert, assertEqual,
   closeDatabase, getDatabase, now,
 } = require('./helpers/test-setup');
@@ -44,6 +44,7 @@ async function main() {
 
   try {
     const tableId = 'tbl-test-123';
+    seedTable(db, tableId, 1);
     const mockItems = [{
       id: 'latte-line',
       product: { id: 'product-latte', name: 'Latte', price: 100 },
@@ -69,6 +70,7 @@ async function main() {
     
     assertEqual(postRes.status, 200, 'POST /held-orders returns 200');
     assertEqual(postRes.data.success, true, 'Returns success: true');
+    assert(typeof postRes.data.id === 'string' && postRes.data.id.length > 0, 'POST returns the current held-order identity');
     console.log('  ✓ POST /held-orders creates successfully');
 
     // ═══════════════════════════════════════════════════════════════════
@@ -109,21 +111,70 @@ async function main() {
     
     const delRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
     assertEqual(delRes.status, 200, 'DELETE /held-orders returns 200');
+    assertEqual(delRes.data.success, true, 'First DELETE returns success');
+    assertEqual(delRes.data.deleted, true, 'First DELETE reports that the row was consumed');
+    assertEqual((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'available', 'First DELETE releases the table');
     
     const verifyRes = await api(baseUrl, '/api/held-orders', { headers: authHeader });
     assertEqual(verifyRes.data.orders.length, 0, 'Held orders list is empty after deletion');
-    console.log('  ✓ DELETE /held-orders removes order correctly');
+    console.log('  ✓ DELETE /held-orders consumes the held order and releases the table');
 
-    // A stale screen or another terminal may send the same delete after the
-    // record is already gone. That must be safe to retry.
-    const repeatDeleteRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
-    assertEqual(repeatDeleteRes.status, 200, 'Repeated DELETE is a successful no-op');
-    assertEqual(repeatDeleteRes.data.success, true, 'Repeated DELETE returns success');
-    assertEqual(repeatDeleteRes.data.deleted, false, 'Repeated DELETE reports that nothing remained to delete');
-    console.log('  ✓ DELETE /held-orders is idempotent');
+    // A second terminal can retain the same held-order snapshot and race the
+    // first terminal. It must get an explicit no-op result, not a second
+    // consumption signal.
+    const staleDeleteRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
+    assertEqual(staleDeleteRes.status, 200, 'Stale DELETE is a successful no-op');
+    assertEqual(staleDeleteRes.data.success, true, 'Stale DELETE returns success');
+    assertEqual(staleDeleteRes.data.deleted, false, 'Stale DELETE reports that no row was consumed');
+    assertEqual((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'available', 'Stale DELETE preserves the released table');
+    console.log('  ✓ Stale DELETE cannot consume the same held order twice');
 
-    // ─── Scenario E: malformed legacy rows do not hide valid rows ───
-    console.log('\n─── Scenario E: malformed legacy rows are isolated ───');
+    // Missing credentials must still be rejected before the idempotent
+    // deletion path is reached.
+    const unauthorizedDeleteRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE' });
+    assertEqual(unauthorizedDeleteRes.status, 401, 'DELETE /held-orders requires authentication');
+    console.log('  ✓ DELETE /held-orders keeps its authorization boundary');
+
+    // Replacing a held order for the same table creates a new identity. A
+    // terminal retaining the old identity must not delete the replacement.
+    console.log('\n─── Scenario E: replacement rows remain single-consumer ───');
+    const replacementTableId = 'tbl-replacement-256';
+    seedTable(db, replacementTableId, 2);
+    const firstReplacement = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: { tableId: replacementTableId, items: mockItems },
+      headers: authHeader,
+    });
+    const firstReplacementId = firstReplacement.data.id;
+    const replacementItems = [{ ...mockItems[0], product: { ...mockItems[0].product, name: 'Cappuccino' } }];
+    const secondReplacement = await api(baseUrl, '/api/held-orders', {
+      method: 'POST',
+      body: { tableId: replacementTableId, items: replacementItems },
+      headers: authHeader,
+    });
+    const secondReplacementId = secondReplacement.data.id;
+    assert(firstReplacementId !== secondReplacementId, 'Replacing a held order changes its identity');
+
+    const staleReplacementDelete = await api(
+      baseUrl,
+      `/api/held-orders/${replacementTableId}?heldOrderId=${encodeURIComponent(firstReplacementId)}`,
+      { method: 'DELETE', headers: authHeader },
+    );
+    assertEqual(staleReplacementDelete.data.deleted, false, 'Stale identity cannot delete a replacement row');
+    const replacementList = await api(baseUrl, '/api/held-orders', { headers: authHeader });
+    const replacement = replacementList.data.orders.find((order: any) => order.tableId === replacementTableId);
+    assertEqual(replacement?.id, secondReplacementId, 'Replacement row remains listed after stale deletion');
+    assertEqual(replacement?.items[0].product.name, 'Cappuccino', 'Replacement contents remain intact');
+
+    const currentReplacementDelete = await api(
+      baseUrl,
+      `/api/held-orders/${replacementTableId}?heldOrderId=${encodeURIComponent(secondReplacementId)}`,
+      { method: 'DELETE', headers: authHeader },
+    );
+    assertEqual(currentReplacementDelete.data.deleted, true, 'Current identity can consume the replacement row');
+
+    // ─── Scenario F: malformed legacy rows do not hide valid rows ───
+    console.log('\n─── Scenario F: malformed legacy rows are isolated ───');
     db.prepare(`
       INSERT INTO held_orders (id, table_id, items, customer_id, guest_count, order_notes, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)

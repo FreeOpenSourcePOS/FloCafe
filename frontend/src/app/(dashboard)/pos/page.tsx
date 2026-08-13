@@ -653,13 +653,21 @@ export default function POSPage() {
   };
 
   const handleSelectHeldTable = async (tableId: string) => {
-    const held = await heldOrders.restoreOrder(tableId);
-    if (held) {
-      cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes);
-      cart.setOrderType('dine_in');
+    try {
+      const held = await heldOrders.restoreOrder(tableId);
+      if (held) {
+        cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes);
+        cart.setOrderType('dine_in');
+      } else {
+        await heldOrders.fetchHeldOrders();
+        toast.error(t('pos.loadOrderFailed'));
+      }
+    } catch {
+      toast.error(t('pos.loadOrderFailed'));
+    } finally {
+      setShowTablePicker(false);
+      await refreshTables();
     }
-    setShowTablePicker(false);
-    await refreshTables();
   };
 
   const handleHoldTable = async (tableId: string) => {

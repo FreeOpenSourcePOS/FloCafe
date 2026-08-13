@@ -2,10 +2,13 @@ import { create } from 'zustand';
 import api from '@/lib/api';
 import type { User, Tenant } from '@/lib/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import type { Language } from '@/lib/i18n';
+
+const SUPPORTED_LANGUAGES = new Set<Language>(['en', 'es', 'pt', 'fa']);
 
 function syncTenantLanguage(t: Tenant | null | undefined) {
   const lang = t?.language;
-  if (lang === 'en' || lang === 'es' || lang === 'pt') {
+  if (lang && SUPPORTED_LANGUAGES.has(lang)) {
     usePosSettingsStore.getState().setLanguage(lang);
   }
 }

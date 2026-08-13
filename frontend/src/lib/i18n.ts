@@ -1,9 +1,10 @@
-export type Language = 'en' | 'es' | 'pt';
+export type Language = 'en' | 'es' | 'pt' | 'fa';
 import en from './i18n/en.json';
 import es from './i18n/es.json';
 import pt from './i18n/pt.json';
+import fa from './i18n/fa.json';
 
-const translations: Record<Language, Record<string, string>> = { en, es, pt };
+const translations: Record<Language, Record<string, string>> = { en, es, pt, fa };
 
 const PLURAL_RE = /\{(\w+),\s*plural,\s*((?:\s*(?:zero|one|two|few|many|other)\s*\{[^}]*\})+)\s*\}/g;
 const pluralRulesCache = new Map<string, Intl.PluralRules>();
@@ -20,7 +21,7 @@ function getPluralRules(locale: string): Intl.PluralRules {
 function formatIcuPlural(template: string, params: Record<string, string | number>, lang: Language): string {
   return template.replace(PLURAL_RE, (_match, name: string, cases: string) => {
     const raw = Number(params[name] ?? 0);
-    const locale = lang === 'es' ? 'es-AR' : lang === 'pt' ? 'pt-BR' : 'en';
+    const locale = lang === 'es' ? 'es-AR' : lang === 'pt' ? 'pt-BR' : lang === 'fa' ? 'fa-IR' : 'en';
     const pr = getPluralRules(locale).select(raw);
     const ordered = ['zero', 'one', 'two', 'few', 'many', 'other'];
     const seen: Record<string, string> = {};
@@ -112,7 +113,7 @@ export async function fetchServerInfo(baseUrl = '', timeoutMs = 1500): Promise<S
       kds_default_view?: string | null;
     };
     return {
-      language: data.language === 'es' ? 'es' : data.language === 'pt' ? 'pt' : data.language === 'en' ? 'en' : null,
+      language: data.language === 'fa' ? 'fa' : data.language === 'es' ? 'es' : data.language === 'pt' ? 'pt' : data.language === 'en' ? 'en' : null,
       country: data.country || null,
       kdsDefaultView:
         data.kds_default_view === 'kanban' ? 'kanban' : data.kds_default_view === 'tabs' ? 'tabs' : null,

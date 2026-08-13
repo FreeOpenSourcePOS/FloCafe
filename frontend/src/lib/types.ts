@@ -1,3 +1,5 @@
+import type { Language } from '@/lib/i18n';
+
 export interface User {
   id: number;
   name: string;
@@ -20,7 +22,7 @@ export interface Tenant {
   plan: string;
   status: string;
   role?: string;
-  language?: 'en' | 'es' | 'pt';
+  language?: Language;
 }
 
 export interface Category {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import type { Language } from '@/lib/i18n';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
@@ -17,7 +18,7 @@ export interface PosSettingsState {
   // UI language for i18n routing. Synced from tenant on auth load.
   // Initial value reads the browser locale; persist middleware overrides
   // on reload, so user choices persist across sessions.
-  language: 'en' | 'es' | 'pt';
+  language: Language;
   // Printer settings
   printerPaperSize: PaperSize;
   printerEnabled: boolean;
@@ -57,7 +58,7 @@ export interface PosSettingsState {
   setShowProductImages: (show: boolean) => void;
   setCustomerMandatory: (mandatory: boolean) => void;
   setEnforcePhoneLength: (enabled: boolean) => void;
-  setLanguage: (lang: 'en' | 'es' | 'pt') => void;
+  setLanguage: (lang: Language) => void;
   setPrinterPaperSize: (size: PaperSize) => void;
   setPrinterEnabled: (enabled: boolean) => void;
   setPrinterPrintMode: (mode: PrinterPrintMode) => void;

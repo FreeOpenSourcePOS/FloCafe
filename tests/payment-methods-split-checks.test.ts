@@ -387,6 +387,54 @@ async function main() {
       'aggregate resolved snapshot tax equals source order tax exactly',
     );
 
+    const unevenComponentSnapshot = JSON.stringify({
+      lines: [{
+        taxAmount: '0.02',
+        components: [
+          { label: 'Component A', rate: '5', amount: '0.01' },
+          { label: 'Component B', rate: '5', amount: '0.01' },
+        ],
+      }],
+    });
+    const unevenComponentChildren = allocateTaxSnapshots(unevenComponentSnapshot, [1, 2], [1, 1]);
+    const unevenComponentAmounts = unevenComponentChildren.map((raw: string | null) => {
+      const snapshot = JSON.parse(raw as string);
+      return snapshot.lines[0].components.map((component: any) => Number(component.amount));
+    });
+    assertEqual(JSON.stringify(unevenComponentAmounts.map((components: number[]) => Number(components.reduce((sum, amount) => sum + amount, 0).toFixed(2)))), JSON.stringify([0.01, 0.01]), 'uneven split snapshot components reconcile to each child tax target');
+    assertEqual(JSON.stringify(unevenComponentAmounts.reduce((totals: number[], components: number[]) => components.map((amount, index) => Number((totals[index] + amount).toFixed(2))), [0, 0])), JSON.stringify([0.01, 0.01]), 'uneven split snapshot components remain additive across children');
+
+    const cancelledSnapshotItem = snapshotItems[0];
+    const cancelSnapshotRes = await api(baseUrl, `/api/orders/${snapshotOrderRes.data.order.id}/items/${cancelledSnapshotItem.id}/cancel`, {
+      method: 'PATCH',
+      headers: authHeader,
+    });
+    assertEqual(cancelSnapshotRes.status, 200, 'cancelling an item after splitting keeps the order mutation supported');
+    const cancelledSnapshotBills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(snapshotOrderRes.data.order.id) as any[];
+    for (const childBill of cancelledSnapshotBills) {
+      const childRes = await api(baseUrl, `/api/bills/${childBill.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const backendComponents = resolveBackendTaxComponents({ ...child, items: child.order.items });
+      const frontendComponents = resolveFrontendTaxComponents(child);
+      assert(child.tax_snapshot && JSON.parse(child.tax_snapshot).some((snapshot: any) => snapshot.splitAllocation === 'minor-unit-v1'), 'cancel sync preserves marked child tax snapshots');
+      assertEqual(JSON.stringify(backendComponents), JSON.stringify(frontendComponents), 'cancel sync keeps backend and frontend tax attribution aligned');
+      assertEqual(Number(backendComponents.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'cancel sync resolved tax reconciles to each child tax amount');
+    }
+
+    const restoreSnapshotRes = await api(baseUrl, `/api/orders/${snapshotOrderRes.data.order.id}/items/${cancelledSnapshotItem.id}/restore`, {
+      method: 'PATCH',
+      headers: authHeader,
+    });
+    assertEqual(restoreSnapshotRes.status, 200, 'restoring an item after splitting keeps the order mutation supported');
+    const restoredSnapshotBills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(snapshotOrderRes.data.order.id) as any[];
+    for (const childBill of restoredSnapshotBills) {
+      const childRes = await api(baseUrl, `/api/bills/${childBill.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const backendComponents = resolveBackendTaxComponents({ ...child, items: child.order.items });
+      assertEqual(JSON.stringify(backendComponents), JSON.stringify(expectedSnapshotComponents), 'restore sync recomputes child item and charge tax attribution');
+      assertEqual(Number(backendComponents.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'restore sync resolved tax reconciles to each child tax amount');
+    }
+
     const signedSnapshot = JSON.stringify({
       lines: [{
         grossAmount: '-0.03',

@@ -6,7 +6,7 @@ import { productRoutes } from './products';
 import { addonGroupRoutes } from './addon-groups';
 import { orderRoutes } from './orders';
 import { orderItemRoutes } from './order-items';
-import { billRoutes } from './bills';
+import { billRoutes, syncUnpaidBillsForOrder } from './bills';
 import { tableRoutes } from './tables';
 import { kitchenStationRoutes } from './kitchen-stations';
 import { kitchenRoutes } from './kitchen';
@@ -38,7 +38,6 @@ import {
   invertTaxBreakdown,
   invertTaxSnapshot,
 } from '../services/tax';
-import { applyPayableRounding } from '../services/tax-engine';
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import QRCode from 'qrcode';
@@ -498,15 +497,16 @@ export function registerRoutes(app: Express): void {
           `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), orderId);
         }
 
-        // Sync bill if it exists
-        const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
-        if (existingBill) {
-          const pack = getActiveCountryPack(tenantInfo.country);
-          const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack);
-          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
-          db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-            .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, billRoundOff, now(), existingBill.id);
-        }
+        syncUnpaidBillsForOrder(db, orderId, {
+          subtotal,
+          taxAmount: taxRollup.taxAmount,
+          taxBreakdown: JSON.stringify(taxRollup.breakdowns),
+          taxSnapshot: taxRollup.snapshotJson,
+          discountAmount: newDiscountAmount,
+          deliveryCharge: order.delivery_charge || 0,
+          packagingCharge: order.packaging_charge || 0,
+          total,
+        }, tenantInfo.country);
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
@@ -666,15 +666,16 @@ export function registerRoutes(app: Express): void {
           UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?, updated_at = ? WHERE id = ?
         `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), orderId);
 
-        // Sync bill if it exists
-        const existingBill = db.prepare("SELECT * FROM bills WHERE order_id = ? AND payment_status != 'paid'").get(orderId) as any;
-        if (existingBill) {
-          const pack = getActiveCountryPack(tenantInfo.country);
-          const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(total, pack);
-          const newBillBalance = Math.max(0, billTotal - (existingBill.paid_amount || 0));
-          db.prepare(`UPDATE bills SET total = ?, balance = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, round_off = ?, updated_at = ? WHERE id = ?`)
-            .run(billTotal, newBillBalance, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, billRoundOff, now(), existingBill.id);
-        }
+        syncUnpaidBillsForOrder(db, orderId, {
+          subtotal,
+          taxAmount: taxRollup.taxAmount,
+          taxBreakdown: JSON.stringify(taxRollup.breakdowns),
+          taxSnapshot: taxRollup.snapshotJson,
+          discountAmount: newDiscountAmount,
+          deliveryCharge: order.delivery_charge || 0,
+          packagingCharge: order.packaging_charge || 0,
+          total,
+        }, tenantInfo.country);
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);

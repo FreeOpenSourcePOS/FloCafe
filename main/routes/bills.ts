@@ -70,45 +70,73 @@ function checkPinRateLimit(key: string): boolean {
   return true;
 }
 
+function parsePaginationInteger(value: unknown, defaultValue: number): number | null {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (Array.isArray(value)) return null;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed)) return null;
+  return parsed;
+}
+
 router.get('/', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = 'SELECT * FROM bills WHERE 1=1';
+    let countQuery = 'SELECT COUNT(*) as count FROM bills WHERE 1=1';
     const params: any[] = [];
 
     if (req.query.status) {
       query += ' AND payment_status = ?';
+      countQuery += ' AND payment_status = ?';
       params.push(req.query.status);
     }
     if (req.query.order_id) {
       query += ' AND order_id = ?';
+      countQuery += ' AND order_id = ?';
       params.push(req.query.order_id);
     }
     if (req.query.customer_id) {
       query += ' AND customer_id = ?';
+      countQuery += ' AND customer_id = ?';
       params.push(req.query.customer_id);
     }
     if (req.query.today === 'true') {
       // #208: UTC-day range hits `idx_bills_created_at` instead of date() on every row.
       const [s, e] = utcDayBounds(utcTodayDate());
       query += ' AND created_at >= ? AND created_at < ?';
+      countQuery += ' AND created_at >= ? AND created_at < ?';
       params.push(s, e);
     }
-
-    query += ' ORDER BY created_at DESC';
 
     // #208: default page size of 50 and a hard cap even when clients omit
     // per_page — the previous "unbounded" default could return every bill
     // ever when a caller left the param off.
-    const requestedPerPage = req.query.per_page ? parseInt(req.query.per_page as string, 10) : NaN;
-    const perPage = Number.isInteger(requestedPerPage) && requestedPerPage > 0
-      ? Math.min(Math.max(requestedPerPage, 1), 500)
-      : 50;
-    query += ' LIMIT ?';
-    params.push(perPage);
+    const requestedLimit = parsePaginationInteger(req.query.per_page ?? req.query.limit, 50);
+    if (requestedLimit === null || requestedLimit < 1) {
+      return res.status(400).json({ error: 'per_page must be a positive integer' });
+    }
+    const limit = Math.min(requestedLimit, 500);
+    const offset = parsePaginationInteger(req.query.offset, 0);
+    if (offset === null || offset < 0) {
+      return res.status(400).json({ error: 'offset must be a non-negative integer' });
+    }
 
-    const bills = db.prepare(query).all(...params).map(parseRowJson);
-    res.json({ bills });
+    query += ' ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?';
+    const pageParams = [...params, limit, offset];
+
+    const bills = db.prepare(query).all(...pageParams).map(parseRowJson);
+    const total = Number((db.prepare(countQuery).get(...params) as any)?.count || 0);
+    res.json({
+      bills,
+      pagination: {
+        limit,
+        per_page: limit,
+        offset,
+        total,
+        next_offset: offset + bills.length < total ? offset + bills.length : null,
+        has_more: offset + bills.length < total,
+      },
+    });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

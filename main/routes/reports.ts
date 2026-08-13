@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue, parseDbTimestamp, utcDayBounds, utcTodayDate } from '../db';
 import { requireRole } from '../middleware/security';
-import { getOrderWithItems } from './bills';
+import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 
 const router = Router();
@@ -206,11 +206,12 @@ router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, re
       ORDER BY b.created_at, b.id
     `).all(windowStart, windowEnd) as any[];
 
+    const orders = getOrdersWithItemsForBills(db, bills);
     const documents = bills.map((bill) => ({
       tax_amount: bill.tax_amount,
       tax_snapshot: bill.tax_snapshot,
       tax_breakdown: bill.tax_breakdown,
-      items: getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [],
+      items: orders.get(Number(bill.id))?.items || [],
     }));
     const taxAmount = bills.reduce(
       (sum, bill) => sum.plus(bill.tax_amount || 0),

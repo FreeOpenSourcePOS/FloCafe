@@ -498,6 +498,13 @@ async function main() {
     db.prepare('UPDATE orders SET tax_amount = ?, tax_breakdown = ?, total = ? WHERE id = ?')
       .run(1.50, mixedBreakdown, mixedTotal, mixedOrderRes.data.order.id);
     const mixedBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: mixedOrderRes.data.order.id }, headers: authHeader });
+    const mixedDiscountRes = await api(baseUrl, `/api/bills/${mixedBillRes.data.bill.id}/applyDiscount`, {
+      method: 'POST',
+      body: { type: 'percentage', value: 20 },
+      headers: authHeader,
+    });
+    assertEqual(mixedDiscountRes.status, 200, 'discounting an unsplit mixed-tax bill succeeds');
+    assertEqual(mixedDiscountRes.data.bill.tax_amount, 1.2, 'discount scales mixed snapshot and legacy tax together');
     const reportDate = new Date().toISOString().slice(0, 10);
     const mixedReportBefore = await api(baseUrl, `/api/reports/tax-components?start_date=${reportDate}&end_date=${reportDate}`, { headers: authHeader });
     const mixedSplit = await api(baseUrl, `/api/bills/${mixedBillRes.data.bill.id}/split-check`, {
@@ -515,8 +522,8 @@ async function main() {
       const child = childRes.data.bill;
       const childItemIds = new Set(child.order.items.map((item: any) => Number(item.id)));
       const expectedMixedComponents = childItemIds.has(Number(mixedCategorizedItem.id))
-        ? [{ title: 'Item Tax', rate: 5, amount: 1 }, { title: 'Legacy Item Tax', rate: 2, amount: 0.25 }]
-        : [{ title: 'Legacy Item Tax', rate: 2, amount: 0.25 }];
+        ? [{ title: 'Item Tax', rate: 5, amount: 0.8 }, { title: 'Legacy Item Tax', rate: 2, amount: 0.2 }]
+        : [{ title: 'Legacy Item Tax', rate: 2, amount: 0.2 }];
       const backendComponents = resolveBackendTaxComponents({ ...child, items: child.order.items });
       const frontendComponents = resolveFrontendTaxComponents(child);
       assertEqual(JSON.stringify(backendComponents), JSON.stringify(expectedMixedComponents), 'mixed split backend resolver preserves item and legacy ownership');
@@ -524,9 +531,9 @@ async function main() {
       assertEqual(Number(backendComponents.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'mixed split tax components reconcile to each child tax amount');
       for (const component of backendComponents) mixedAggregate.set(component.title, Number(((mixedAggregate.get(component.title) || 0) + component.amount).toFixed(2)));
     }
-    assertEqual(mixedAggregate.get('Item Tax'), 1, 'mixed split item tax remains with its categorized owner');
-    assertEqual(mixedAggregate.get('Legacy Item Tax'), 0.50, 'mixed split legacy tax reconciles across item quantities');
-    assertEqual(Number(Array.from(mixedAggregate.values()).reduce((sum, amount) => sum + amount, 0).toFixed(2)), 1.50, 'mixed split tax categories reconcile to the source tax');
+    assertEqual(mixedAggregate.get('Item Tax'), 0.8, 'mixed split item tax remains with its categorized owner after discount');
+    assertEqual(mixedAggregate.get('Legacy Item Tax'), 0.4, 'mixed split legacy tax remains scaled across item quantities');
+    assertEqual(Number(Array.from(mixedAggregate.values()).reduce((sum, amount) => sum + amount, 0).toFixed(2)), 1.2, 'mixed split tax categories reconcile to the discounted source tax');
     const mixedReportAfter = await api(baseUrl, `/api/reports/tax-components?start_date=${reportDate}&end_date=${reportDate}`, { headers: authHeader });
     const reportAmount = (response: any, title: string) => Number((response.data.taxComponents.components.find((component: any) => component.title === title)?.amount || 0).toFixed(2));
     assertEqual(reportAmount(mixedReportAfter, 'Legacy Item Tax'), reportAmount(mixedReportBefore, 'Legacy Item Tax'), 'tax component report keeps mixed legacy tax additive after splitting');

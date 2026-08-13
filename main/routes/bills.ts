@@ -20,6 +20,7 @@ import {
   calculateConfiguredChargeTaxes,
   combineItemAndChargeTaxes,
   getActiveCountryPack,
+  scaleTaxSnapshots,
 } from '../services/tax';
 import { applyPayableRounding } from '../services/tax-engine';
 import { sendEvent } from '../services/telemetry';
@@ -33,10 +34,10 @@ function scaleTaxBreakdown(
   childIndex = 0,
   sourceTaxMinor?: number,
 ): unknown {
-  if (raw === null || raw === undefined || ratio === 1) return raw;
   if (ownerWeights && ownerWeights.length > 0) {
     return allocateTaxBreakdownForChild(raw, ownerWeights, childIndex, sourceTaxMinor);
   }
+  if (raw === null || raw === undefined || ratio === 1) return raw;
   const wasString = typeof raw === 'string';
   let parsed = raw;
   if (wasString) {
@@ -65,12 +66,102 @@ function scaleTaxBreakdown(
   return wasString ? JSON.stringify(scaled) : scaled;
 }
 
+type ChildItemAllocation = { weights: number[]; index: number };
+
+function getTaxDiscountRatio(subtotal: unknown, discountAmount: unknown): number {
+  const base = Number(subtotal || 0);
+  if (!Number.isFinite(base) || base <= 0) return 1;
+  const discount = Math.max(0, Number(discountAmount || 0));
+  return Math.max(0, Math.min(1, (base - discount) / base));
+}
+
+export function projectOrderItems(
+  order: any,
+  rawItemRows: any[],
+  allocations: any[] = [],
+  childItemAllocations = new Map<number, ChildItemAllocation>(),
+): any[] {
+  const allocated = new Map(allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]));
+  const taxDiscountRatio = getTaxDiscountRatio(order.subtotal, order.discount_amount);
+  return rawItemRows
+    .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
+    .map((item) => {
+      const quantity = allocated.get(Number(item.id));
+      const originalQuantity = Number(item.quantity);
+      const quantityRatio = quantity === undefined || originalQuantity <= 0
+        ? 1
+        : quantity / originalQuantity;
+      const ownerAllocation = childItemAllocations.get(Number(item.id));
+      const sourceTaxMinor = Math.round(Number(item.tax_amount || 0) * taxDiscountRatio * 100);
+      const taxMinor = ownerAllocation
+        ? allocateSignedMinorUnits(sourceTaxMinor, ownerAllocation.weights)[ownerAllocation.index]
+        : Math.round(sourceTaxMinor * quantityRatio);
+      const hasSnapshot = hasSnapshotLines(item.tax_snapshot);
+      const scaledBreakdown = hasSnapshot
+        ? item.tax_breakdown
+        : scaleTaxBreakdown(item.tax_breakdown, taxDiscountRatio);
+      const taxBreakdown = ownerAllocation
+        ? scaleTaxBreakdown(
+          scaledBreakdown,
+          1,
+          ownerAllocation.weights,
+          ownerAllocation.index,
+          sourceTaxMinor,
+        )
+        : scaleTaxBreakdown(scaledBreakdown, quantityRatio);
+      const taxSnapshot = ownerAllocation || !hasSnapshot || (taxDiscountRatio === 1 && quantityRatio === 1)
+        ? item.tax_snapshot
+        : scaleTaxSnapshots([item.tax_snapshot], taxDiscountRatio * quantityRatio)[0] || null;
+      if (quantity === undefined && taxDiscountRatio === 1 && !ownerAllocation) return item;
+      return {
+        ...item,
+        ...(quantity === undefined ? {} : { quantity }),
+        subtotal: Number((Number(item.subtotal) * quantityRatio).toFixed(2)),
+        tax_amount: taxMinor / 100,
+        tax_breakdown: taxBreakdown,
+        tax_snapshot: taxSnapshot,
+        total: Number((Number(item.total) * quantityRatio).toFixed(2)),
+      };
+    });
+}
+
+function childAllocationsForBills(
+  bills: any[],
+  billItems: any[],
+  billId: number,
+): Map<number, ChildItemAllocation> {
+  const childIds = bills.map((bill) => Number(bill.id));
+  const childIdSet = new Set(childIds);
+  const index = childIds.indexOf(billId);
+  if (index === -1) return new Map();
+  const quantities = new Map<number, number[]>();
+  for (const row of billItems.filter((row) => childIdSet.has(Number(row.bill_id)))) {
+    const itemId = Number(row.order_item_id);
+    const weights = quantities.get(itemId) || new Array(childIds.length).fill(0);
+    weights[childIds.indexOf(Number(row.bill_id))] = Number(row.quantity);
+    quantities.set(itemId, weights);
+  }
+  return new Map(Array.from(quantities.entries()).map(([itemId, weights]) => [itemId, { weights, index }]));
+}
+
+function selectRowsByIds<T>(
+  db: ReturnType<typeof getDatabase>,
+  ids: any[],
+  queryForCount: (count: number) => string,
+): T[] {
+  const rows: T[] = [];
+  for (let offset = 0; offset < ids.length; offset += 400) {
+    const chunk = ids.slice(offset, offset + 400);
+    rows.push(...db.prepare(queryForCount(chunk.length)).all(...chunk) as T[]);
+  }
+  return rows;
+}
+
 export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, billId?: number): any {
   const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
   if (!order) return order;
   const allocations = billId === undefined ? [] : db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ?').all(billId) as any[];
-  const allocated = new Map(allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]));
-  const childItemAllocations = new Map<number, { weights: number[]; index: number }>();
+  let childItemAllocations = new Map<number, ChildItemAllocation>();
   if (billId !== undefined) {
     const bill = db.prepare('SELECT split_group_id FROM bills WHERE id = ?').get(billId) as any;
     if (bill?.split_group_id) {
@@ -79,46 +170,76 @@ export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: n
       const childRows = childIds.length === 0
         ? []
         : db.prepare(`SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${childIds.map(() => '?').join(',')})`).all(...childIds) as any[];
-      const quantities = new Map<number, number[]>();
-      for (const row of childRows) {
-        const itemId = Number(row.order_item_id);
-        const weights = quantities.get(itemId) || new Array(childIds.length).fill(0);
-        weights[childIds.indexOf(Number(row.bill_id))] = Number(row.quantity);
-        quantities.set(itemId, weights);
-      }
-      for (const [itemId, weights] of quantities) {
-        const index = childIds.indexOf(Number(billId));
-        if (index !== -1) childItemAllocations.set(itemId, { weights, index });
-      }
+      childItemAllocations = childAllocationsForBills(childBills, childRows, Number(billId));
     }
   }
-  const itemRows = (db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[])
-    .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
-    .map((item) => {
-      const quantity = allocated.get(Number(item.id));
-      if (quantity === undefined || quantity === Number(item.quantity)) return item;
-      const originalQuantity = Number(item.quantity);
-      if (originalQuantity <= 0) return item;
-      const ratio = quantity / originalQuantity;
-      return {
-        ...item,
-        quantity,
-        subtotal: Number((Number(item.subtotal) * ratio).toFixed(2)),
-        tax_amount: Number((Number(item.tax_amount || 0) * ratio).toFixed(2)),
-        tax_breakdown: scaleTaxBreakdown(
-          item.tax_breakdown,
-          ratio,
-          childItemAllocations.get(Number(item.id))?.weights,
-          childItemAllocations.get(Number(item.id))?.index,
-          Math.round(Number(item.tax_amount || 0) * 100),
-        ),
-        total: Number((Number(item.total) * ratio).toFixed(2)),
-      };
-    });
+  const itemRows = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[];
   return {
     ...order,
-    items: attachEffectiveAddons(db, itemRows.map(parseItemJson)),
+    items: attachEffectiveAddons(db, projectOrderItems(order, itemRows, allocations, childItemAllocations).map(parseItemJson)),
   };
+}
+
+export function getOrdersWithItemsForBills(
+  db: ReturnType<typeof getDatabase>,
+  bills: any[],
+): Map<number, any> {
+  const result = new Map<number, any>();
+  if (bills.length === 0) return result;
+  const orderIds = Array.from(new Set(bills.map((bill) => Number(bill.order_id))));
+  const orderRows = selectRowsByIds<any>(db, orderIds, (count) => `SELECT * FROM orders WHERE id IN (${new Array(count).fill('?').join(',')})`);
+  const orders = new Map(orderRows.map((row) => [Number(row.id), parseRowJson(row)]));
+  const itemRows = selectRowsByIds<any>(db, orderIds, (count) => `SELECT * FROM order_items WHERE order_id IN (${new Array(count).fill('?').join(',')}) ORDER BY id`);
+  const itemsByOrder = new Map<number, any[]>();
+  for (const item of itemRows) {
+    const items = itemsByOrder.get(Number(item.order_id)) || [];
+    items.push(item);
+    itemsByOrder.set(Number(item.order_id), items);
+  }
+
+  const billIds = bills.map((bill) => Number(bill.id));
+  const reportBillItems = selectRowsByIds<any>(db, billIds, (count) => `SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${new Array(count).fill('?').join(',')})`);
+  const splitGroupIds = Array.from(new Set(bills.map((bill) => bill.split_group_id).filter(Boolean)));
+  const siblingBills = splitGroupIds.length === 0
+    ? []
+    : selectRowsByIds<any>(db, splitGroupIds, (count) => `SELECT id, order_id, split_group_id FROM bills WHERE split_group_id IN (${new Array(count).fill('?').join(',')}) ORDER BY split_group_id, id`);
+  const allBillIds = Array.from(new Set([...billIds, ...siblingBills.map((bill) => Number(bill.id))]));
+  const allBillItems = selectRowsByIds<any>(db, allBillIds, (count) => `SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${new Array(count).fill('?').join(',')})`);
+  const billItemsByBill = new Map<number, any[]>();
+  for (const row of reportBillItems) {
+    const rows = billItemsByBill.get(Number(row.bill_id)) || [];
+    rows.push(row);
+    billItemsByBill.set(Number(row.bill_id), rows);
+  }
+  const siblingsByGroup = new Map<string, any[]>();
+  for (const bill of siblingBills) {
+    const groupBills = siblingsByGroup.get(String(bill.split_group_id)) || [];
+    groupBills.push(bill);
+    siblingsByGroup.set(String(bill.split_group_id), groupBills);
+  }
+
+  const projected = new Map<number, any>();
+  const addonItems = new Map<number, any>();
+  for (const bill of bills) {
+    const order = orders.get(Number(bill.order_id));
+    if (!order) continue;
+    const groupBills = bill.split_group_id ? siblingsByGroup.get(String(bill.split_group_id)) || [] : [];
+    const allocations = billItemsByBill.get(Number(bill.id)) || [];
+    const itemAllocations = groupBills.length > 0
+      ? childAllocationsForBills(groupBills, allBillItems, Number(bill.id))
+      : new Map<number, ChildItemAllocation>();
+    const items = projectOrderItems(order, itemsByOrder.get(Number(bill.order_id)) || [], allocations, itemAllocations)
+      .map(parseItemJson);
+    items.forEach((item) => addonItems.set(Number(item.id), item));
+    projected.set(Number(bill.id), { ...order, items });
+  }
+  const hydratedAddons = attachEffectiveAddons(db, Array.from(addonItems.values()));
+  const addonsByItem = new Map(hydratedAddons.map((item) => [Number(item.id), item.addons]));
+  for (const [billId, order] of projected) {
+    order.items = order.items.map((item: any) => ({ ...item, addons: addonsByItem.get(Number(item.id)) || [] }));
+    result.set(billId, order);
+  }
+  return result;
 }
 
 // Fixed conversion rate for redeeming loyalty wallet points as payment (points per 1 currency unit).
@@ -816,6 +937,7 @@ function getSplitBillAllocationWeights(
   db: ReturnType<typeof getDatabase>,
   orderId: number | string,
   bills: any[],
+  legacyTaxRatio = 1,
 ): {
   weights: number[];
   snapshotWeights: Array<number[] | null>;
@@ -862,7 +984,7 @@ function getSplitBillAllocationWeights(
   let legacySourceTaxMinor = 0;
   for (const item of items) {
     if (['cancelled', 'voided', 'void_adjustment'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
-    const itemTaxMinor = Math.round(Number(item.tax_amount || 0) * 100);
+    const itemTaxMinor = Math.round(Number(item.tax_amount || 0) * legacyTaxRatio * 100);
     if (itemTaxMinor === 0) continue;
     const itemWeights = bills.map((bill) => quantities.get(Number(bill.id))?.get(Number(item.id)) || 0);
     const allocations = allocateSignedMinorUnits(itemTaxMinor, itemWeights.some((weight) => weight > 0) ? itemWeights : weights);
@@ -988,7 +1110,12 @@ export function syncUnpaidBillsForOrder(
     legacyTaxMinors,
     legacyExclusiveTaxMinors,
     legacySourceTaxMinor,
-  } = getSplitBillAllocationWeights(db, orderId, bills);
+  } = getSplitBillAllocationWeights(
+    db,
+    orderId,
+    bills,
+    getTaxDiscountRatio(source.subtotal, source.discountAmount),
+  );
   const fields = {
     subtotal: Math.round(source.subtotal * 100),
     taxAmount: Math.round(source.taxAmount * 100),
@@ -1120,12 +1247,13 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
       const snapshotExclusions = snapshotItems.map((item) => ['voided', 'void_adjustment'].includes(item.status));
       const snapshotAllocation = allocateTaxSnapshotsWithTax(txnSource.tax_snapshot, weights, snapshotWeights, snapshotExclusions);
       const sourceTaxMinor = Math.round(Number(txnSource.tax_amount || 0) * 100);
+      const legacyTaxRatio = getTaxDiscountRatio(txnSource.subtotal, txnSource.discount_amount);
       const legacyTaxMinors = new Array(txnNormalized.length).fill(0);
       const legacyExclusiveTaxMinors = new Array(txnNormalized.length).fill(0);
       let legacySourceTaxMinor = 0;
       for (const item of txnSnapshotItems) {
         if (['cancelled', 'voided', 'void_adjustment'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
-        const itemTaxMinor = Math.round(Number(item.tax_amount || 0) * 100);
+        const itemTaxMinor = Math.round(Number(item.tax_amount || 0) * legacyTaxRatio * 100);
         if (itemTaxMinor === 0) continue;
         const itemWeights = txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
           check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0

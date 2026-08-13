@@ -845,7 +845,7 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
         const tableRow = currentOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(currentOrder.table_id) as any : null;
         const tableObj = tableRow ? { ...tableRow, name: tableRow.number } : null;
-        return { updatedOrder: currentOrder, orderItems: items, table: tableObj };
+        return { updatedOrder: parseRowJson(currentOrder), orderItems: items, table: tableObj, changed: false };
       }
 
       const VALID_TRANSITIONS: Record<string, string[]> = {
@@ -957,11 +957,13 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
       const tableRow2 = updatedOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any : null;
       const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
-      return { updatedOrder, orderItems, table };
+      return { updatedOrder, orderItems, table, changed: true };
     });
 
-    cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
-    notifyKdsUpdate();
+    if (changed) {
+      cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
+      notifyKdsUpdate();
+    }
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });
   } catch (error: any) {

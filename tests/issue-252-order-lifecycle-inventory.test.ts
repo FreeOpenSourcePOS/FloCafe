@@ -62,6 +62,15 @@ function installOrderBoundaryMutation(db: any, orderId: number | string, mutate:
   };
 }
 
+async function waitForOutboxCount(db: any, expected: number): Promise<number> {
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const row = db.prepare('SELECT COUNT(*) AS count FROM cloud_sync_outbox').get();
+    if (row.count >= expected) return row.count;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return db.prepare('SELECT COUNT(*) AS count FROM cloud_sync_outbox').get().count;
+}
+
 async function main() {
   console.log('Regression Test: Issue #252 Order Lifecycle & Inventory Safety');
   console.log('='.repeat(65));
@@ -167,6 +176,8 @@ async function main() {
     // Same-state idempotent request
     const sameServed = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'served' } });
     assertEqual(sameServed.status, 200, 'same-state served -> served is idempotent 200');
+    assert(typeof sameServed.data.order.tax_breakdown !== 'string', 'same-state status response parses tax breakdown');
+    assert(typeof sameServed.data.order.tax_snapshot !== 'string', 'same-state status response parses tax snapshot');
 
     const toComp = await api(baseUrl, `/api/orders/${fwdId}/status`, { method: 'PATCH', headers: authHeader, body: { status: 'completed' } });
     assertEqual(toComp.status, 200, 'served -> completed is valid');
@@ -334,12 +345,21 @@ async function main() {
     assertEqual(itemAStatusRes.status, 200, 'Item A moved to preparing via order-items API');
 
     // Void Item A (in progress void requires PIN)
+    db.prepare("UPDATE settings SET value = '1', updated_at = ? WHERE key = 'cloud_orders_enabled'").run(new Date().toISOString());
+    db.prepare('DELETE FROM cloud_sync_outbox').run();
     const voidRes = await api(baseUrl, `/api/orders/${order3Id}/items/${itemA.id}/cancel`, {
       method: 'PATCH',
       headers: authHeader,
       body: { override_pin: '1234' },
     });
     assertEqual(voidRes.status, 200, 'Void item A status code');
+    const voidOutboxCount = await waitForOutboxCount(db, 1);
+    assertEqual(voidOutboxCount, 1, 'First void cancellation creates one cloud event');
+    assertEqual(
+      db.prepare('SELECT event_type FROM cloud_sync_outbox ORDER BY created_at LIMIT 1').get().event_type,
+      'order.item_voided',
+      'First void cancellation is classified as a void event',
+    );
 
     const itemARow = db.prepare('SELECT status FROM order_items WHERE id = ?').get(itemA.id);
     assertEqual(itemARow.status, 'voided', 'Item A is marked voided');
@@ -368,6 +388,12 @@ async function main() {
       db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity,
       stockA_afterFirstVoid,
       'Repeated void cancellation does not restore stock',
+    );
+    assertEqual(await waitForOutboxCount(db, 1), 1, 'Repeated void cancellation creates no cloud event');
+    assertEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM cloud_sync_outbox WHERE event_type = 'order.item_cancelled'").get().count,
+      0,
+      'Repeated void cancellation is not misclassified as item cancellation',
     );
 
     const itemBRow = db.prepare('SELECT status FROM order_items WHERE id = ?').get(itemB.id);

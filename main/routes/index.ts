@@ -296,7 +296,7 @@ export function registerRoutes(app: Express): void {
             updatedOrder: currentOrder,
             items,
             orderCancelled: currentOrder.status === 'cancelled',
-            eventType: 'order.item_cancelled',
+            eventType: null,
           };
         }
 
@@ -499,8 +499,10 @@ export function registerRoutes(app: Express): void {
         };
       });
 
-      cloudSync.recordOrderChanged(orderId, result.eventType);
-      notifyKdsUpdate();
+      if (result.eventType) {
+        cloudSync.recordOrderChanged(orderId, result.eventType);
+        notifyKdsUpdate();
+      }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);

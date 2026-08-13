@@ -6,8 +6,18 @@ const APPEND_ATTEMPT_COMPLETION_SUFFIX = '.completion.';
 const APPEND_ATTEMPT_COMPLETION_RETRY_SUFFIX = '.completion-retry.';
 const APPEND_ATTEMPT_COMPLETION_COOKIE_SUFFIX = '.completion-cookie.';
 const CONFIRMED_APPEND_TOMBSTONE_LIMIT = 256;
-const confirmedAppendTombstones = new Map<string, { completedAt: number; fingerprintHash: string }>();
+const confirmedAppendTombstones = new Map<string, { completedAt: number; fingerprint: string }>();
 const APPEND_ATTEMPT_COOKIE_PREFIX = 'flo_append_attempt.';
+const SHA256_CONSTANTS = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
 
 export function getAppendAttemptStorageKey(userId: string): string {
   return `${APPEND_ATTEMPT_STORAGE_KEY}${APPEND_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
@@ -33,13 +43,52 @@ function getConfirmedAppendTombstoneKey(userId: string, idempotencyKey: string):
   return `${userId}\u0000${idempotencyKey}`;
 }
 
-function getFingerprintHash(fingerprint: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < fingerprint.length; index += 1) {
-    hash ^= fingerprint.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
+function rotateRight(value: number, bits: number): number {
+  return (value >>> bits) | (value << (32 - bits));
+}
+
+function getFingerprintDigest(fingerprint: string): string {
+  const bytes = new TextEncoder().encode(fingerprint);
+  const padded = new Uint8Array(Math.ceil((bytes.length + 9) / 64) * 64);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const bitLength = bytes.length * 8;
+  const view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 8, Math.floor(bitLength / 0x1_0000_0000));
+  view.setUint32(padded.length - 4, bitLength >>> 0);
+  let hash = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+  const words = new Uint32Array(64);
+  for (let offset = 0; offset < padded.length; offset += 64) {
+    for (let index = 0; index < 16; index += 1) words[index] = view.getUint32(offset + index * 4);
+    for (let index = 16; index < 64; index += 1) {
+      const first = words[index - 15];
+      const second = words[index - 2];
+      words[index] = (words[index - 16]
+        + (rotateRight(first, 7) ^ rotateRight(first, 18) ^ (first >>> 3))
+        + words[index - 7]
+        + (rotateRight(second, 17) ^ rotateRight(second, 19) ^ (second >>> 10))) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, h] = hash;
+    for (let index = 0; index < 64; index += 1) {
+      const first = (h
+        + (rotateRight(e, 6) ^ rotateRight(e, 11) ^ rotateRight(e, 25))
+        + ((e & f) ^ (~e & g))
+        + SHA256_CONSTANTS[index]
+        + words[index]) >>> 0;
+      const second = ((rotateRight(a, 2) ^ rotateRight(a, 13) ^ rotateRight(a, 22))
+        + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      h = g;
+      g = f;
+      f = e;
+      e = (d + first) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (first + second) >>> 0;
+    }
+    hash = hash.map((value, index) => (value + [a, b, c, d, e, f, g, h][index]) >>> 0);
   }
-  return (hash >>> 0).toString(16);
+  return hash.map((value) => value.toString(16).padStart(8, '0')).join('');
 }
 
 function pruneConfirmedAppendTombstones(now: number, maxAgeMs: number): void {
@@ -62,7 +111,7 @@ function hasConfirmedAppendTombstone(
 ): boolean {
   pruneConfirmedAppendTombstones(now, maxAgeMs);
   const tombstone = confirmedAppendTombstones.get(getConfirmedAppendTombstoneKey(userId, idempotencyKey));
-  return tombstone?.fingerprintHash === getFingerprintHash(fingerprint);
+  return tombstone?.fingerprint === fingerprint;
 }
 
 export interface AppendAttempt {
@@ -228,7 +277,10 @@ function isExpired(createdAt: number, now: number, maxAgeMs: number): boolean {
 
 function removeAndVerify(storage: AppendAttemptStorage, key: string): boolean {
   const removed = storage.removeItem(key);
-  return removed !== false && storage.getItem(key) === null;
+  return removed !== false
+    && storage.getItem(key) === null
+    && !storage.hasUnverifiedRead?.(key)
+    && !storage.hasUnverifiedRemoval?.(key);
 }
 
 function persistCompletionRecord(
@@ -251,7 +303,7 @@ function persistCompletionRecord(
       completed: completion.completed,
       userId: completion.userId,
       idempotencyKey: completion.idempotencyKey,
-      fingerprintHash: getFingerprintHash(completion.fingerprint || ''),
+      fingerprintDigest: getFingerprintDigest(completion.fingerprint || ''),
       completedAt: completion.completedAt,
     });
     cookieStorage.setItem(cookieKey, cookieValue);
@@ -286,7 +338,7 @@ interface AppendAttemptCompletion {
   userId: string;
   idempotencyKey: string;
   fingerprint?: string;
-  fingerprintHash?: string;
+  fingerprintDigest?: string;
   completedAt: number;
 }
 
@@ -301,7 +353,7 @@ function isCompletionRecord(value: Partial<AppendAttemptCompletion> & { complete
   return value.completed === true
     && typeof value.userId === 'string'
     && typeof value.idempotencyKey === 'string'
-    && (typeof value.fingerprint === 'string' || typeof value.fingerprintHash === 'string')
+    && (typeof value.fingerprint === 'string' || typeof value.fingerprintDigest === 'string')
     && typeof value.completedAt === 'number';
 }
 
@@ -336,7 +388,7 @@ function completedAttemptMatches(
       current.idempotencyKey !== completion.idempotencyKey
       || (typeof completion.fingerprint === 'string'
         ? current.fingerprint !== completion.fingerprint
-        : getFingerprintHash(current.fingerprint || '') !== completion.fingerprintHash)
+        : getFingerprintDigest(current.fingerprint || '') !== completion.fingerprintDigest)
     ) return false;
     const removed = storage.removeItem(attemptKey);
     if (
@@ -373,7 +425,7 @@ function hasCompletedAttempt(
         completion.userId !== userId
         || typeof completion.idempotencyKey !== 'string'
         || !isValidIdempotencyKey(completion.idempotencyKey)
-        || (typeof completion.fingerprint !== 'string' && typeof completion.fingerprintHash !== 'string')
+        || (typeof completion.fingerprint !== 'string' && typeof completion.fingerprintDigest !== 'string')
         || typeof completion.completedAt !== 'number'
         || isExpired(completion.completedAt, now, maxAgeMs)
       ) {
@@ -395,6 +447,9 @@ export function migrateLegacyAppendAttempt(
   const now = options.now ?? Date.now();
   const maxAgeMs = options.maxAgeMs ?? APPEND_ATTEMPT_MAX_AGE_MS;
   const raw = storage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
+  if (storage.hasUnverifiedRead?.(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY)) {
+    throw new Error('Unable to verify append retry state');
+  }
   if (!raw) return null;
 
   let parsed: {
@@ -432,6 +487,9 @@ export function migrateLegacyAppendAttempt(
   }
   const scopedKey = getAppendAttemptStorageKey(parsed.userId);
   const existingRaw = storage.getItem(scopedKey);
+  if (storage.hasUnverifiedRead?.(scopedKey)) {
+    throw new Error('Unable to verify append retry state');
+  }
   const attempt: AppendAttempt = {
     userId: parsed.userId,
     orderId: String(payload.order_id),
@@ -485,6 +543,7 @@ export function migrateLegacyAppendAttempt(
 
 function parseStoredAttempt(storage: AppendAttemptStorage, key: string, now: number, maxAgeMs: number): AppendAttempt | null {
   const raw = storage.getItem(key);
+  if (storage.hasUnverifiedRead?.(key)) throw new Error('Unable to verify append retry state');
   if (!raw) return null;
 
   try {
@@ -530,8 +589,26 @@ function appendAttemptsMatch(first: AppendAttempt, second: AppendAttempt): boole
 function ensureCompletionStorage(storage: AppendAttemptStorage, userId: string): void {
   const markerKey = getAppendAttemptCompletionStorageKey(userId);
   const retryKey = getAppendAttemptCompletionRetryStorageKey(userId);
+  const cookieKey = getAppendAttemptCompletionCookieStorageKey(userId);
   const attemptKey = getAppendAttemptStorageKey(userId);
   const probe = JSON.stringify({ completed: true, userId, idempotencyKey: 'append-storage-probe', fingerprint: '{}', completedAt: Date.now() });
+  const cookieStorage = createCookieCompletionStorage();
+  if (cookieStorage) {
+    try {
+      const cookieProbe = JSON.stringify({
+        completed: true,
+        userId,
+        idempotencyKey: 'append-storage-probe',
+        fingerprintDigest: getFingerprintDigest('{}'),
+        completedAt: Date.now(),
+      });
+      cookieStorage.setItem(cookieKey, cookieProbe);
+      if (cookieStorage.removeItem(cookieKey) === false || cookieStorage.getItem(cookieKey) !== null) {
+        throw new Error('Completion cookie cleanup was not persisted');
+      }
+    } catch {
+    }
+  }
   try {
     storage.setItem(markerKey, probe);
     if (!removeAndVerify(storage, markerKey)) throw new Error('Completion marker cleanup was not persisted');
@@ -552,6 +629,16 @@ function ensureCompletionStorage(storage: AppendAttemptStorage, userId: string):
   }
 }
 
+function assertVerifiedCompletionReads(storage: AppendAttemptStorage, userId: string): void {
+  const keys = [
+    getAppendAttemptCompletionStorageKey(userId),
+    getAppendAttemptCompletionRetryStorageKey(userId),
+  ];
+  if (keys.some((key) => storage.hasUnverifiedRead?.(key))) {
+    throw new Error('Unable to verify append retry state');
+  }
+}
+
 function readUserAttempt(
   storage: AppendAttemptStorage,
   userId: string,
@@ -565,7 +652,9 @@ function readUserAttempt(
   } catch (error) {
     if (!(error instanceof LegacyAppendAttemptConflictError)) throw error;
   }
-  if (hasCompletedAttempt(storage, userId, now, maxAgeMs)) return null;
+  const completed = hasCompletedAttempt(storage, userId, now, maxAgeMs);
+  assertVerifiedCompletionReads(storage, userId);
+  if (completed) return null;
   const scoped = parseStoredAttempt(storage, scopedKey, now, maxAgeMs);
   if (scoped && hasConfirmedAppendTombstone(userId, scoped.idempotencyKey, scoped.fingerprint, now, maxAgeMs)) return null;
   const legacy = parseStoredAttempt(storage, APPEND_ATTEMPT_STORAGE_KEY, now, maxAgeMs);
@@ -672,7 +761,7 @@ export function clearAppendAttempt(
     if (markerPersisted) {
       confirmedAppendTombstones.set(
         getConfirmedAppendTombstoneKey(completedAttempt.userId, completedAttempt.idempotencyKey),
-        { completedAt: Date.now(), fingerprintHash: getFingerprintHash(completedAttempt.fingerprint) },
+        { completedAt: Date.now(), fingerprint: completedAttempt.fingerprint },
       );
       pruneConfirmedAppendTombstones(Date.now(), APPEND_ATTEMPT_MAX_AGE_MS);
     }

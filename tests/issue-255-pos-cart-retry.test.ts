@@ -429,15 +429,19 @@ function main() {
     specialInstructions: 'table-note',
     orderNumber: 'K-42',
     now: 20_000,
-  }), /Unable to persist append retry state/, 'blocked storage prevents the append from starting');
-  assert.equal(readAppendAttempt(blockedStorage, { userId: 'cashier-1', now: 20_001 }), null, 'blocked storage does not leave an in-memory-only retry attempt');
+  }), /Unable to verify append retry state/, 'blocked storage prevents the append from starting');
+  assert.throws(
+    () => readAppendAttempt(blockedStorage, { userId: 'cashier-1', now: 20_001 }),
+    /Unable to verify append retry state/,
+    'blocked storage fails closed instead of treating an unreadable retry state as empty',
+  );
 
-  const fallbackStorage = createSafeAppendAttemptStorage({
+  const unverifiedFallbackStorage = createSafeAppendAttemptStorage({
     getItem: () => { throw new Error('primary storage unavailable'); },
     setItem: () => { throw new Error('primary storage unavailable'); },
     removeItem: () => { throw new Error('primary storage unavailable'); },
   }, new MemoryStorage());
-  const fallbackAttempt = getOrCreateAppendAttempt(fallbackStorage, {
+  assert.throws(() => getOrCreateAppendAttempt(unverifiedFallbackStorage, {
     userId: 'cashier-fallback',
     orderId: '42',
     fingerprint,
@@ -445,8 +449,7 @@ function main() {
     items,
     specialInstructions: 'table-note',
     now: 20_500,
-  });
-  assert.equal(fallbackAttempt.idempotencyKey, 'append-key-fallback-only', 'verified fallback storage remains authoritative when primary storage is unavailable');
+  }), /Unable to verify append retry state/, 'an unreadable primary store blocks a new append before a fallback-only key can be sent');
 
   const unavailableStorage = createSafeAppendAttemptStorage(null);
   assert.throws(() => getOrCreateAppendAttempt(unavailableStorage, {
@@ -523,6 +526,69 @@ function main() {
   clearAppendAttempt(combinedFailureStorage, combinedFailureAttempt);
   const reloadedCombinedFailureStorage = createSafeAppendAttemptStorage(combinedFailureBacking, combinedFailureDurable);
   assert.equal(readAppendAttempt(reloadedCombinedFailureStorage, { userId: 'cashier-1', now: 21_501 }), null, 'durable fallback completion state prevents a combined storage failure from blocking after reload');
+
+  const globalWithDocument = globalThis as unknown as { document?: unknown };
+  const originalDocument = globalWithDocument.document;
+  const cookieValues = new Map<string, string>();
+  const cookieDocument = {} as { cookie: string };
+  Object.defineProperty(cookieDocument, 'cookie', {
+    configurable: true,
+    get: () => [...cookieValues.entries()].map(([name, value]) => `${name}=${value}`).join('; '),
+    set: (entry: string) => {
+      const [pair, ...attributes] = entry.split('; ');
+      const separator = pair.indexOf('=');
+      const name = pair.slice(0, separator);
+      const value = pair.slice(separator + 1);
+      if (attributes.includes('Max-Age=0')) cookieValues.delete(name);
+      else cookieValues.set(name, value);
+    },
+  });
+  Object.defineProperty(globalWithDocument, 'document', { configurable: true, value: cookieDocument });
+  try {
+    const cookieCollisionBacking = new MemoryStorage();
+    const cookieCollisionKey = getAppendAttemptStorageKey('cookie-collision');
+    let cookieCompletionBlocked = false;
+    const cookieCollisionStorage = createSafeAppendAttemptStorage({
+      getItem: cookieCollisionBacking.getItem.bind(cookieCollisionBacking),
+      setItem: (key, value) => {
+        if (cookieCompletionBlocked && (key.includes('.completion') || key === cookieCollisionKey)) {
+          throw new Error('completion storage blocked');
+        }
+        cookieCollisionBacking.setItem(key, value);
+      },
+      removeItem: (key) => {
+        if (cookieCompletionBlocked && key === cookieCollisionKey) throw new Error('completion cleanup blocked');
+        cookieCollisionBacking.removeItem(key);
+      },
+    });
+    const collisionFirstFingerprint = buildAppendItemsFingerprint('42', items, 'note-512789');
+    const collisionSecondFingerprint = buildAppendItemsFingerprint('42', items, 'note-749192');
+    const cookieCollisionAttempt = getOrCreateAppendAttempt(cookieCollisionStorage, {
+      userId: 'cookie-collision',
+      orderId: '42',
+      fingerprint: collisionFirstFingerprint,
+      createKey: () => 'append-key-cookie-collision',
+      items,
+      specialInstructions: 'note-512789',
+      now: 21_750,
+    });
+    cookieCompletionBlocked = true;
+    assert.equal(clearAppendAttempt(cookieCollisionStorage, cookieCollisionAttempt), true, 'a preflighted completion cookie recovers when storage cleanup fails');
+    cookieCollisionBacking.setItem(cookieCollisionKey, JSON.stringify({
+      ...cookieCollisionAttempt,
+      fingerprint: collisionSecondFingerprint,
+      specialInstructions: 'note-749192',
+    }));
+    const cookieCollisionReload = createSafeAppendAttemptStorage(cookieCollisionBacking);
+    assert.equal(
+      readAppendAttempt(cookieCollisionReload, { userId: 'cookie-collision', now: 21_751 })?.fingerprint,
+      collisionSecondFingerprint,
+      'collision-resistant completion identity does not suppress a mismatched retry with the same key',
+    );
+  } finally {
+    if (originalDocument === undefined) delete globalWithDocument.document;
+    else Object.defineProperty(globalWithDocument, 'document', { configurable: true, value: originalDocument });
+  }
 
   const fallbackBacking = new MemoryStorage();
   const fallbackDurable = new MemoryStorage();

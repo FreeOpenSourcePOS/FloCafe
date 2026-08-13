@@ -140,7 +140,6 @@ export default function POSPage() {
       const migratedAppend = migrateLegacyAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId || undefined });
       sharedLegacyAppendRetained = migratedAppend !== null
         && getAppendAttemptStorage().getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) !== null;
-      if (migratedAppend && !sharedLegacyAppendRetained) return null;
     } catch {
       throw new Error('Unable to recover append retry state');
     }

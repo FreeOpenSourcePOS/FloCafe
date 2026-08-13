@@ -92,55 +92,56 @@ Describe 'Flo Cafe Windows uninstaller' {
     $oldLocalAppData = $env:LOCALAPPDATA
     $oldChildTimeout = $script:ChildUninstallerTimeoutSeconds
 
+    Mock Get-Process {
+      param($Name, $Id)
+      if ($Name) { return @() }
+      if ($Id -eq $child.Id -and $state.RootRunning) { return @([pscustomobject]@{ Id = $child.Id }) }
+      if ($Id -eq $intermediateId -and $state.IntermediateRunning) { return @([pscustomobject]@{ Id = $intermediateId }) }
+      if ($Id -eq $descendantId -and $state.DescendantRunning) { return @([pscustomobject]@{ Id = $descendantId }) }
+      if ($Id -eq $lateDescendantId -and $state.LateDescendantRunning) { return @([pscustomobject]@{ Id = $lateDescendantId }) }
+      return @()
+    }
+    Mock Get-ItemProperty { param($Path) return @($entry) }
+    Mock Test-Path {
+      param($LiteralPath)
+      if ($LiteralPath -eq $uninstallerExe) { return $true }
+      if ($LiteralPath -eq $fallbackInstallPath) { return $state.InstallExists }
+      return $false
+    }
+    Mock Start-Process { $child }
+    Mock Stop-Process {
+      param($Id, [switch]$Force)
+      if ($Id -eq $child.Id) { $state.RootRunning = $false }
+      if ($Id -eq $descendantId) { $state.DescendantRunning = $false }
+      if ($Id -eq $lateDescendantId) { $state.LateDescendantRunning = $false }
+    }
+    Mock Remove-Item {
+      param($LiteralPath)
+      if ($LiteralPath -eq $fallbackInstallPath) { $state.InstallExists = $false }
+    }
+    Mock Get-CimInstance {
+      param($ClassName, $Filter, $OperationTimeoutSec)
+      if ($Filter) {
+        $state.RootQueries++
+        if ($Filter -eq "ParentProcessId = $($child.Id)" -and $state.RootQueries -eq 1) {
+          return @([pscustomobject]@{ ProcessId = $intermediateId })
+        }
+        return @()
+      }
+      $state.TreeCalls++
+      if ($state.TreeCalls -eq 1) {
+        return @([pscustomobject]@{ ProcessId = $intermediateId; ParentProcessId = $child.Id })
+      }
+      $processes = @([pscustomobject]@{ ProcessId = $descendantId; ParentProcessId = $intermediateId })
+      if ($state.TreeCalls -ge 4) {
+        $processes += [pscustomobject]@{ ProcessId = $lateDescendantId; ParentProcessId = $child.Id }
+      }
+      return $processes
+    }
+
     try {
       $env:LOCALAPPDATA = 'C:\Flo Cafe Fixture'
       $script:ChildUninstallerTimeoutSeconds = 1
-      Mock Get-Process {
-        param($Name, $Id)
-        if ($Name) { return @() }
-        if ($Id -eq $child.Id -and $state.RootRunning) { return @([pscustomobject]@{ Id = $child.Id }) }
-        if ($Id -eq $intermediateId -and $state.IntermediateRunning) { return @([pscustomobject]@{ Id = $intermediateId }) }
-        if ($Id -eq $descendantId -and $state.DescendantRunning) { return @([pscustomobject]@{ Id = $descendantId }) }
-        if ($Id -eq $lateDescendantId -and $state.LateDescendantRunning) { return @([pscustomobject]@{ Id = $lateDescendantId }) }
-        return @()
-      }
-      Mock Get-ItemProperty { @($entry) }
-      Mock Test-Path {
-        param($LiteralPath)
-        if ($LiteralPath -eq $uninstallerExe) { return $true }
-        if ($LiteralPath -eq $fallbackInstallPath) { return $state.InstallExists }
-        return $false
-      }
-      Mock Start-Process { $child }
-      Mock Stop-Process {
-        param($Id, [switch]$Force)
-        if ($Id -eq $child.Id) { $state.RootRunning = $false }
-        if ($Id -eq $descendantId) { $state.DescendantRunning = $false }
-        if ($Id -eq $lateDescendantId) { $state.LateDescendantRunning = $false }
-      }
-      Mock Remove-Item {
-        param($LiteralPath)
-        if ($LiteralPath -eq $fallbackInstallPath) { $state.InstallExists = $false }
-      }
-      Mock Get-CimInstance {
-        param($ClassName, $Filter, $OperationTimeoutSec)
-        if ($Filter) {
-          $state.RootQueries++
-          if ($Filter -eq "ParentProcessId = $($child.Id)" -and $state.RootQueries -eq 1) {
-            return @([pscustomobject]@{ ProcessId = $intermediateId })
-          }
-          return @()
-        }
-        $state.TreeCalls++
-        if ($state.TreeCalls -eq 1) {
-          return @([pscustomobject]@{ ProcessId = $intermediateId; ParentProcessId = $child.Id })
-        }
-        $processes = @([pscustomobject]@{ ProcessId = $descendantId; ParentProcessId = $intermediateId })
-        if ($state.TreeCalls -ge 4) {
-          $processes += [pscustomobject]@{ ProcessId = $lateDescendantId; ParentProcessId = $child.Id }
-        }
-        return $processes
-      }
 
       $result = Invoke-FloCafeUninstall
 
@@ -387,8 +388,8 @@ Describe 'Flo Cafe Windows uninstaller' {
     $remainingPaths[$entries[1].PSPath] = $true
     $removedPaths = New-Object 'System.Collections.Generic.List[string]'
 
-    Mock Get-Process { @() }
-    Mock Get-ItemProperty { $entries }
+    Mock Get-Process { param($Name, $Id) return @() }
+    Mock Get-ItemProperty { param($Path) return $entries }
     Mock Test-Path {
       param($LiteralPath)
       if ($remainingPaths.ContainsKey($LiteralPath)) { return $remainingPaths[$LiteralPath] }
@@ -400,7 +401,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       if ($FilePath -eq $secondUninstaller) { return $children[1] }
       throw "unexpected uninstaller $FilePath"
     }
-    Mock Get-CimInstance { @() }
+    Mock Get-CimInstance { param($ClassName, $Filter, $OperationTimeoutSec) return @() }
     Mock Remove-Item {
       param($LiteralPath)
       [void]$removedPaths.Add($LiteralPath)

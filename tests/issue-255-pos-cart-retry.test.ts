@@ -176,7 +176,7 @@ function main() {
     setItem: () => { throw new Error('storage blocked'); },
     removeItem: () => { throw new Error('storage blocked'); },
   });
-  const fallbackAttempt = getOrCreateAppendAttempt(blockedStorage, {
+  assert.throws(() => getOrCreateAppendAttempt(blockedStorage, {
     userId: 'cashier-1',
     orderId: '42',
     fingerprint,
@@ -185,18 +185,20 @@ function main() {
     specialInstructions: 'table-note',
     orderNumber: 'K-42',
     now: 20_000,
-  });
-  const fallbackRetry = getOrCreateAppendAttempt(blockedStorage, {
+  }), /Unable to persist append retry state/, 'blocked storage prevents the append from starting');
+  assert.equal(readAppendAttempt(blockedStorage, { userId: 'cashier-1', now: 20_001 }), null, 'blocked storage does not leave an in-memory-only retry attempt');
+
+  const unavailableStorage = createSafeAppendAttemptStorage(null);
+  assert.throws(() => getOrCreateAppendAttempt(unavailableStorage, {
     userId: 'cashier-1',
     orderId: '42',
     fingerprint,
-    createKey: () => 'append-key-memory-2',
+    createKey: () => 'append-key-unavailable',
     items,
     specialInstructions: 'table-note',
     orderNumber: 'K-42',
-    now: 20_001,
-  });
-  assert.equal(fallbackRetry.idempotencyKey, fallbackAttempt.idempotencyKey, 'blocked storage keeps same-renderer retries safe');
+    now: 20_000,
+  }), /Unable to persist append retry state/, 'unavailable storage prevents the append from starting');
 
   const invalidStorage = new MemoryStorage();
   invalidStorage.setItem(attemptStorageKey, JSON.stringify({ ...first, idempotencyKey: ' ' }));

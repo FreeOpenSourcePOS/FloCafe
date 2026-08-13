@@ -22,11 +22,7 @@ export interface AppendAttemptStorage {
   removeItem: (key: string) => void;
 }
 
-/**
- * Keep the append path compatible with renderers where localStorage is blocked
- * or full. The memory layer preserves same-renderer retries; durable storage
- * is best effort and is used whenever the browser permits it.
- */
+/** Wrap browser storage for append-attempt state. */
 export function createSafeAppendAttemptStorage(storage: AppendAttemptStorage | null): AppendAttemptStorage {
   const memory = new Map<string, string | null>();
   return {
@@ -41,11 +37,13 @@ export function createSafeAppendAttemptStorage(storage: AppendAttemptStorage | n
       return null;
     },
     setItem: (key, value) => {
-      memory.set(key, value);
+      if (!storage) throw new Error('Unable to persist append retry state');
       try {
-        storage?.setItem(key, value);
+        storage.setItem(key, value);
+        if (storage.getItem(key) !== value) throw new Error('Append retry state was not persisted');
+        memory.set(key, value);
       } catch {
-        // The request can still proceed with the in-memory retry key.
+        throw new Error('Unable to persist append retry state');
       }
     },
     removeItem: (key) => {

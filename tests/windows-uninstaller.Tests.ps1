@@ -379,19 +379,15 @@ Describe 'Flo Cafe Windows uninstaller' {
         return $true
       }
     }
-    $remainingPaths = @{}
-    $remainingPaths[$firstUninstaller] = $true
-    $remainingPaths[$secondUninstaller] = $true
-    $remainingPaths[$testEntries[0].PSPath] = $true
-    $remainingPaths[$testEntries[1].PSPath] = $true
-    $removedPaths = New-Object 'System.Collections.Generic.List[string]'
+    $state = [pscustomobject]@{
+      ProcessedRegistryPaths = New-Object 'System.Collections.Generic.List[string]'
+    }
 
     Mock Get-Process { param($Name, $Id) return @() }
     Mock Get-ItemProperty { param($Path) return $testEntries }
     Mock Test-Path {
       param($LiteralPath)
       if ($LiteralPath -eq $firstUninstaller -or $LiteralPath -eq $secondUninstaller) { return $true }
-      if ($remainingPaths.ContainsKey($LiteralPath)) { return $remainingPaths[$LiteralPath] }
       return $false
     }
     Mock Start-Process {
@@ -401,18 +397,19 @@ Describe 'Flo Cafe Windows uninstaller' {
       throw "unexpected uninstaller $FilePath"
     }
     Mock Get-CimInstance { param($ClassName, $Filter, $OperationTimeoutSec) return @() }
-    Mock Remove-Item {
-      param($LiteralPath)
-      [void]$removedPaths.Add($LiteralPath)
-      if ($remainingPaths.ContainsKey($LiteralPath)) { $remainingPaths[$LiteralPath] = $false }
+    Mock Invoke-RegistryRemoval {
+      param($entry)
+      [void]$state.ProcessedRegistryPaths.Add([string]$entry.PSPath)
+      return $true
     }
 
     $result = Invoke-FloCafeUninstall
 
     $result.Complete | Should -BeTrue
     Should -Invoke Start-Process -Times 2 -Exactly
-    ($removedPaths -contains $testEntries[0].PSPath) | Should -BeTrue
-    ($removedPaths -contains $testEntries[1].PSPath) | Should -BeTrue
+    $state.ProcessedRegistryPaths.Count | Should -Be 2
+    ($state.ProcessedRegistryPaths -contains $testEntries[0].PSPath) | Should -BeTrue
+    ($state.ProcessedRegistryPaths -contains $testEntries[1].PSPath) | Should -BeTrue
     $result.Issues.Count | Should -Be 0
   }
 }

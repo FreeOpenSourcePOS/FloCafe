@@ -155,7 +155,7 @@ function getPersistedChildTaxBreakdowns(
   for (const breakdown of parsed) {
     while (itemIndex < sourceItems.length) {
       const item = sourceItems[itemIndex++];
-      if (item.status === 'cancelled') continue;
+      if (['cancelled', 'voided', 'void_adjustment'].includes(item.status)) continue;
       const itemBreakdown = parseTaxSnapshot(item.tax_breakdown);
       if (!Array.isArray(itemBreakdown) || itemBreakdown.length === 0) continue;
       result.set(Number(item.id), breakdown);
@@ -1182,7 +1182,7 @@ function getSplitBillAllocationWeights(
   });
 
   const snapshotItems = items
-    .filter((item) => item.status !== 'cancelled' && hasSnapshotLines(item.tax_snapshot))
+    .filter((item) => !['cancelled', 'voided', 'void_adjustment'].includes(item.status) && hasSnapshotLines(item.tax_snapshot))
   const snapshotWeights = snapshotItems.map((item) => {
     if (['voided', 'void_adjustment'].includes(item.status)) return null;
     const itemWeights = bills.map((bill) => (
@@ -1282,26 +1282,13 @@ function getTaxBreakdownWeights(
       component && typeof component === 'object' ? ownerWeightsByKey.get(componentKey(component)) || null : null
     ));
   }
-  const voidedByKey = new Map<string, any[]>();
-  for (const item of items) {
-    if (item.status !== 'voided') continue;
-    const key = `${item.product_id}:${item.quantity}`;
-    const matches = voidedByKey.get(key) || [];
-    matches.push(item);
-    voidedByKey.set(key, matches);
-  }
   let itemIndex = 0;
   return parsed.map(() => {
     while (itemIndex < items.length) {
       const item = items[itemIndex++];
-      if (item.status === 'cancelled') continue;
+      if (['cancelled', 'voided', 'void_adjustment'].includes(item.status)) continue;
       const breakdown = parseTaxSnapshot(item.tax_breakdown);
       if (Array.isArray(breakdown) && breakdown.length > 0) {
-        if (item.status === 'void_adjustment') {
-          const key = `${item.product_id}:${item.quantity}`;
-          const original = voidedByKey.get(key)?.shift();
-          return original ? itemWeights(original) : null;
-        }
         return itemWeights(item);
       }
     }

@@ -315,7 +315,7 @@ export function registerRoutes(app: Express): void {
             )
           LIMIT 1
         `).get(orderId)) {
-          throw Object.assign(new Error('Cannot cancel items on a paid or partially paid order'), { statusCode: 400 });
+          throw Object.assign(new Error('Cannot cancel items on a paid or partially paid order'), { statusCode: 409 });
         }
 
         // Completed and cancelled orders are terminal. This guard must run

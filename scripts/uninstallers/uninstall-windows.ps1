@@ -37,13 +37,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$AppName = 'Flo Cafe'
+$script:AppName = 'Flo Cafe'
 $script:AppProcessName = 'Flo Cafe'
-$RemovalAttempts = 6
-$RemovalRetryDelayMilliseconds = 500
-$AppGracefulCloseTimeoutSeconds = 10
-$AppForceCloseTimeoutSeconds = 5
-$ChildUninstallerTimeoutSeconds = 30
+$script:RemovalAttempts = 6
+$script:RemovalRetryDelayMilliseconds = 500
+$script:AppGracefulCloseTimeoutSeconds = 10
+$script:AppForceCloseTimeoutSeconds = 5
+$script:ChildUninstallerTimeoutSeconds = 30
 
 function Write-Step($msg) { Write-Host "`n$msg" -ForegroundColor Cyan }
 function Write-Log($msg)  { Write-Host "  $msg" }

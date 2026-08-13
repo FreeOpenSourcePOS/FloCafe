@@ -26,6 +26,36 @@ import { sendEvent } from '../services/telemetry';
 
 const router = Router();
 
+function scaleTaxBreakdown(raw: unknown, ratio: number): unknown {
+  if (raw === null || raw === undefined || ratio === 1) return raw;
+  const wasString = typeof raw === 'string';
+  let parsed = raw;
+  if (wasString) {
+    try {
+      parsed = JSON.parse(raw as string);
+    } catch {
+      return raw;
+    }
+  }
+
+  const scale = (value: any): any => {
+    if (Array.isArray(value)) return value.map(scale);
+    if (!value || typeof value !== 'object') return value;
+    const result = { ...value };
+    if (Object.prototype.hasOwnProperty.call(result, 'amount')) {
+      const amount = Number(result.amount);
+      if (Number.isFinite(amount)) {
+        const scaled = Number((amount * ratio).toFixed(2));
+        result.amount = typeof value.amount === 'string' ? scaled.toFixed(2) : scaled;
+      }
+    }
+    return result;
+  };
+
+  const scaled = scale(parsed);
+  return wasString ? JSON.stringify(scaled) : scaled;
+}
+
 function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, billId?: number): any {
   const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
   if (!order) return order;
@@ -36,8 +66,17 @@ function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, 
     .map((item) => {
       const quantity = allocated.get(Number(item.id));
       if (quantity === undefined || quantity === Number(item.quantity)) return item;
-      const ratio = quantity / Number(item.quantity);
-      return { ...item, quantity, subtotal: Number((Number(item.subtotal) * ratio).toFixed(2)), tax_amount: Number((Number(item.tax_amount || 0) * ratio).toFixed(2)), total: Number((Number(item.total) * ratio).toFixed(2)) };
+      const originalQuantity = Number(item.quantity);
+      if (originalQuantity <= 0) return item;
+      const ratio = quantity / originalQuantity;
+      return {
+        ...item,
+        quantity,
+        subtotal: Number((Number(item.subtotal) * ratio).toFixed(2)),
+        tax_amount: Number((Number(item.tax_amount || 0) * ratio).toFixed(2)),
+        tax_breakdown: scaleTaxBreakdown(item.tax_breakdown, ratio),
+        total: Number((Number(item.total) * ratio).toFixed(2)),
+      };
     });
   return {
     ...order,
@@ -706,14 +745,6 @@ function hasSnapshotLines(raw: unknown): boolean {
   ));
 }
 
-function hasSplitAllocatedSnapshot(raw: unknown): boolean {
-  const parsed = parseTaxSnapshot(raw);
-  if (Array.isArray(parsed)) return parsed.some(hasSplitAllocatedSnapshot);
-  if (!parsed || typeof parsed !== 'object') return false;
-  return (parsed as any).splitAllocation === SPLIT_TAX_SNAPSHOT_VERSION
-    && Array.isArray((parsed as any).lines);
-}
-
 function getSplitBillAllocationWeights(
   db: ReturnType<typeof getDatabase>,
   orderId: number | string,
@@ -763,12 +794,15 @@ export function syncUnpaidBillsForOrder(
   country: string,
 ): void {
   const bills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(orderId) as any[];
+  const splitBills = bills.some((bill) => bill.split_group_id);
+  if (splitBills && bills.some((bill) => bill.payment_status === 'paid')) {
+    throw Object.assign(new Error('Cannot modify an order after a split check is paid'), { statusCode: 409 });
+  }
   const unpaidBills = bills.filter((bill) => bill.payment_status !== 'paid');
   if (unpaidBills.length === 0) return;
 
   const pack = getActiveCountryPack(country);
   const { total: billTotal, adjustment: billRoundOff } = applyPayableRounding(source.total, pack);
-  const splitBills = bills.some((bill) => bill.split_group_id);
 
   if (!splitBills) {
     const update = db.prepare(`

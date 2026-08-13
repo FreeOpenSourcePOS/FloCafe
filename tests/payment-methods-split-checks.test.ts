@@ -99,6 +99,21 @@ async function main() {
     assertEqual(secondPay.status, 200, 'second guest check paid with custom method');
     assertEqual((db.prepare('SELECT status FROM orders WHERE id = ?').get(order.id) as any).status, 'completed', 'order completes only after every check is paid');
 
+    const paidSiblingOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }] }, headers: authHeader });
+    const paidSiblingItem = paidSiblingOrderRes.data.order.items[0];
+    const paidSiblingBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: paidSiblingOrderRes.data.order.id }, headers: authHeader });
+    const paidSiblingSplit = await api(baseUrl, `/api/bills/${paidSiblingBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Paid sibling', items: [{ order_item_id: paidSiblingItem.id, quantity: 1 }] },
+      { label: 'Unpaid sibling', items: [{ order_item_id: paidSiblingItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(paidSiblingSplit.status, 201, 'paid-sibling mutation fixture splits successfully');
+    const paidSiblingPayment = await api(baseUrl, `/api/bills/${paidSiblingSplit.data.bills[0].id}/payments`, { method: 'POST', body: { payments: [{ method: 'cash', amount: paidSiblingSplit.data.bills[0].total }] }, headers: authHeader });
+    assertEqual(paidSiblingPayment.status, 200, 'paid-sibling mutation fixture pays one child');
+    const paidSiblingCancel = await api(baseUrl, `/api/orders/${paidSiblingOrderRes.data.order.id}/items/${paidSiblingItem.id}/cancel`, { method: 'PATCH', headers: authHeader });
+    assertEqual(paidSiblingCancel.status, 409, 'cancelling an item with a paid split sibling is rejected');
+    assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(paidSiblingItem.id) as any).status, 'pending', 'rejected paid-sibling cancellation leaves the item active');
+    assertEqual((db.prepare('SELECT COUNT(*) AS n FROM bills WHERE order_id = ? AND payment_status = \'unpaid\'').get(paidSiblingOrderRes.data.order.id) as any).n, 1, 'rejected paid-sibling cancellation leaves the unpaid child intact');
+
     const addTarget = await api(baseUrl, '/api/payment-methods', { method: 'POST', body: { name: 'GPay' }, headers: authHeader });
     const merged = await api(baseUrl, `/api/payment-methods/${googlePayId}/merge`, { method: 'POST', body: { target_type: 'custom', target_id: addTarget.data.payment_method.id }, headers: authHeader });
     assertEqual(merged.status, 200, 'used custom method merged');
@@ -289,6 +304,39 @@ async function main() {
       const compSum = Number(b.tax_breakdown.reduce((s: number, c: any) => s + Number(c.amount || 0), 0).toFixed(2));
       assertEqual(compSum, b.tax_amount, 'sum of flat component amounts equals bill tax_amount exactly');
     }
+
+    const partialLegacyOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }] }, headers: authHeader });
+    const partialLegacyItem = partialLegacyOrderRes.data.order.items[0];
+    const partialLegacyBreakdown = JSON.stringify([[{ title: 'Legacy Tax', rate: 2, amount: 0.70 }]]);
+    const partialLegacyTotal = Number((partialLegacyOrderRes.data.order.subtotal + 0.70).toFixed(2));
+    db.prepare('UPDATE order_items SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = NULL, total = ? WHERE id = ?')
+      .run(0.70, partialLegacyBreakdown, partialLegacyTotal, partialLegacyItem.id);
+    db.prepare('UPDATE orders SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = NULL, total = ? WHERE id = ?')
+      .run(0.70, partialLegacyBreakdown, partialLegacyTotal, partialLegacyOrderRes.data.order.id);
+    const partialLegacyBillRes = await api(baseUrl, '/api/bills/generate', { method: 'POST', body: { order_id: partialLegacyOrderRes.data.order.id }, headers: authHeader });
+    const partialLegacySnapshot = JSON.stringify({ lines: [{ components: [{ label: 'Categorized Tax', rate: '5', amount: '0.00' }] }] });
+    db.prepare('UPDATE bills SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, total = ?, balance = ? WHERE id = ?')
+      .run(0.70, partialLegacyBreakdown, partialLegacySnapshot, partialLegacyTotal, partialLegacyTotal, partialLegacyBillRes.data.bill.id);
+    const partialLegacySplit = await api(baseUrl, `/api/bills/${partialLegacyBillRes.data.bill.id}/split-check`, { method: 'POST', body: { checks: [
+      { label: 'Partial legacy one', items: [{ order_item_id: partialLegacyItem.id, quantity: 1 }] },
+      { label: 'Partial legacy two', items: [{ order_item_id: partialLegacyItem.id, quantity: 1 }] },
+    ] }, headers: authHeader });
+    assertEqual(partialLegacySplit.status, 201, 'partial-quantity legacy tax split returns 201');
+    let partialLegacyTax = 0;
+    for (const childBill of partialLegacySplit.data.bills) {
+      const childRes = await api(baseUrl, `/api/bills/${childBill.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const childItem = child.order.items[0];
+      assertEqual(childItem.quantity, 1, 'partial-quantity child exposes only its billed quantity');
+      assertEqual(childItem.tax_breakdown[0][0].amount, 0.35, 'partial-quantity child scales nested legacy tax evidence');
+      const backendComponents = resolveBackendTaxComponents({ ...child, items: child.order.items });
+      const frontendComponents = resolveFrontendTaxComponents(child);
+      const expectedLegacyComponents = [{ title: 'Legacy Tax', rate: 2, amount: 0.35 }];
+      assertEqual(JSON.stringify(backendComponents), JSON.stringify(expectedLegacyComponents), 'backend split resolver scopes legacy tax to the child quantity');
+      assertEqual(JSON.stringify(frontendComponents), JSON.stringify(expectedLegacyComponents), 'frontend split resolver scopes legacy tax to the child quantity');
+      partialLegacyTax = Number((partialLegacyTax + child.tax_amount).toFixed(2));
+    }
+    assertEqual(partialLegacyTax, 0.70, 'partial-quantity legacy tax reconciles across children');
 
     // I. Split Tax Snapshot Attribution (categorized item + configured charge)
     const splitTaxPack = {

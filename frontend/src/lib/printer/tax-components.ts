@@ -130,6 +130,15 @@ function reconcileSplitSnapshotComponents(
   return result;
 }
 
+function legacyItemComponents(items: Array<TaxSource & { status?: string | null }> | undefined): DisplayTaxComponent[] {
+  return (items || []).filter(
+    (item) => item.status !== 'cancelled' && item.status !== 'voided',
+  ).flatMap((item) => {
+    const snapshot = snapshotComponents(item.tax_snapshot);
+    return snapshot.present ? [] : legacyComponents(item.tax_breakdown);
+  });
+}
+
 export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent[] {
   // A split bill carries child-specific snapshot amounts. The order-item rows
   // are shared by every child and retain source-order amounts, so using them
@@ -138,7 +147,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
     const splitSnapshot = snapshotComponents(document.tax_snapshot);
     if (splitSnapshot.present) {
       const merged = new Map<string, DisplayTaxComponent>();
-      for (const component of splitSnapshot.components) {
+      for (const component of [...splitSnapshot.components, ...legacyItemComponents(document.order?.items ?? document.items)]) {
         const key = `${component.title}\u0000${component.rate ?? ''}`;
         const current = merged.get(key);
         if (current) current.amount += component.amount;

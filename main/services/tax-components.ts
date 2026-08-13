@@ -168,6 +168,15 @@ function reconcileTotal(
   return reconciled;
 }
 
+function legacyItemComponents(document: TaxDocument): DecimalTaxComponent[] {
+  return (document.items || []).filter(
+    (item) => item.status !== 'cancelled' && item.status !== 'voided',
+  ).flatMap((item) => {
+    const snapshot = flattenSnapshots(item.tax_snapshot);
+    return snapshot.present ? [] : flattenLegacyBreakdown(item.tax_breakdown);
+  });
+}
+
 /**
  * Resolves receipt/report tax components without double-counting mixed orders.
  * A valid item snapshot (including an exempt snapshot with zero components)
@@ -181,7 +190,10 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
     const splitSnapshot = flattenSnapshots(document.tax_snapshot);
     if (splitSnapshot.present) {
-      return reconcileTotal(mergeComponents(splitSnapshot.components), document.tax_amount);
+      return reconcileTotal(
+        mergeComponents([...splitSnapshot.components, ...legacyItemComponents(document)]),
+        document.tax_amount,
+      );
     }
   }
 

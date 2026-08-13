@@ -26,8 +26,17 @@ import { sendEvent } from '../services/telemetry';
 
 const router = Router();
 
-function scaleTaxBreakdown(raw: unknown, ratio: number): unknown {
+function scaleTaxBreakdown(
+  raw: unknown,
+  ratio: number,
+  ownerWeights?: number[],
+  childIndex = 0,
+  sourceTaxMinor?: number,
+): unknown {
   if (raw === null || raw === undefined || ratio === 1) return raw;
+  if (ownerWeights && ownerWeights.length > 0) {
+    return allocateTaxBreakdownForChild(raw, ownerWeights, childIndex, sourceTaxMinor);
+  }
   const wasString = typeof raw === 'string';
   let parsed = raw;
   if (wasString) {
@@ -56,11 +65,33 @@ function scaleTaxBreakdown(raw: unknown, ratio: number): unknown {
   return wasString ? JSON.stringify(scaled) : scaled;
 }
 
-function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, billId?: number): any {
+export function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, billId?: number): any {
   const order = parseRowJson(db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId));
   if (!order) return order;
   const allocations = billId === undefined ? [] : db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ?').all(billId) as any[];
   const allocated = new Map(allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]));
+  const childItemAllocations = new Map<number, { weights: number[]; index: number }>();
+  if (billId !== undefined) {
+    const bill = db.prepare('SELECT split_group_id FROM bills WHERE id = ?').get(billId) as any;
+    if (bill?.split_group_id) {
+      const childBills = db.prepare('SELECT id FROM bills WHERE split_group_id = ? ORDER BY id').all(bill.split_group_id) as any[];
+      const childIds = childBills.map((child) => Number(child.id));
+      const childRows = childIds.length === 0
+        ? []
+        : db.prepare(`SELECT bill_id, order_item_id, quantity FROM bill_items WHERE bill_id IN (${childIds.map(() => '?').join(',')})`).all(...childIds) as any[];
+      const quantities = new Map<number, number[]>();
+      for (const row of childRows) {
+        const itemId = Number(row.order_item_id);
+        const weights = quantities.get(itemId) || new Array(childIds.length).fill(0);
+        weights[childIds.indexOf(Number(row.bill_id))] = Number(row.quantity);
+        quantities.set(itemId, weights);
+      }
+      for (const [itemId, weights] of quantities) {
+        const index = childIds.indexOf(Number(billId));
+        if (index !== -1) childItemAllocations.set(itemId, { weights, index });
+      }
+    }
+  }
   const itemRows = (db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[])
     .filter((item) => allocations.length === 0 || allocated.has(Number(item.id)))
     .map((item) => {
@@ -74,7 +105,13 @@ function getOrderWithItems(db: ReturnType<typeof getDatabase>, orderId: number, 
         quantity,
         subtotal: Number((Number(item.subtotal) * ratio).toFixed(2)),
         tax_amount: Number((Number(item.tax_amount || 0) * ratio).toFixed(2)),
-        tax_breakdown: scaleTaxBreakdown(item.tax_breakdown, ratio),
+        tax_breakdown: scaleTaxBreakdown(
+          item.tax_breakdown,
+          ratio,
+          childItemAllocations.get(Number(item.id))?.weights,
+          childItemAllocations.get(Number(item.id))?.index,
+          Math.round(Number(item.tax_amount || 0) * 100),
+        ),
         total: Number((Number(item.total) * ratio).toFixed(2)),
       };
     });
@@ -403,7 +440,7 @@ interface TaxSnapshotAllocationResult {
 }
 
 function reconcileSnapshotAllocations(
-  entries: SnapshotTaxAllocation[],
+  entries: Array<{ allocations: number[] }>,
   targets: number[],
 ): void {
   if (entries.length === 0 || targets.length === 0) return;
@@ -432,6 +469,56 @@ function reconcileSnapshotAllocations(
     deltas[excessIndex] += 1;
     deltas[deficitIndex] -= 1;
   }
+}
+
+function allocateTaxBreakdownForChild(
+  raw: unknown,
+  weights: number[],
+  childIndex: number,
+  sourceTaxMinor?: number,
+): string | unknown {
+  const parsed = typeof raw === 'string'
+    ? (() => { try { return JSON.parse(raw); } catch { return null; } })()
+    : raw;
+  if (!Array.isArray(parsed) || parsed.length === 0) return raw;
+  const isNested = Array.isArray(parsed[0]);
+  const entries: Array<{ outerIndex?: number; innerIndex: number; original: unknown; allocations: number[] }> = [];
+  if (isNested) {
+    parsed.forEach((outer: any, outerIndex: number) => {
+      if (!Array.isArray(outer)) return;
+      outer.forEach((component: any, innerIndex: number) => {
+        const amount = snapshotMinorAmount(component?.amount);
+        if (amount !== null) entries.push({ outerIndex, innerIndex, original: component.amount, allocations: allocateSignedMinorUnits(amount, weights) });
+      });
+    });
+  } else {
+    parsed.forEach((component: any, innerIndex: number) => {
+      const amount = snapshotMinorAmount(component?.amount);
+      if (amount !== null) entries.push({ innerIndex, original: component.amount, allocations: allocateSignedMinorUnits(amount, weights) });
+    });
+  }
+  if (entries.length === 0) return raw;
+
+  const target = sourceTaxMinor === undefined
+    ? entries.reduce((sum, entry) => sum + snapshotMinorAmount(entry.original)!, 0)
+    : sourceTaxMinor;
+  reconcileSnapshotAllocations(entries, allocateSignedMinorUnits(target, weights));
+  const cloned = JSON.parse(JSON.stringify(parsed));
+  if (isNested) {
+    cloned.forEach((outer: any[], outerIndex: number) => {
+      if (!Array.isArray(outer)) return;
+      outer.forEach((component: any, innerIndex: number) => {
+        const entry = entries.find((candidate) => candidate.outerIndex === outerIndex && candidate.innerIndex === innerIndex);
+        if (entry) component.amount = formatSnapshotMinorAmount(entry.original, entry.allocations[childIndex]);
+      });
+    });
+  } else {
+    cloned.forEach((component: any, innerIndex: number) => {
+      const entry = entries.find((candidate) => candidate.outerIndex === undefined && candidate.innerIndex === innerIndex);
+      if (entry) component.amount = formatSnapshotMinorAmount(entry.original, entry.allocations[childIndex]);
+    });
+  }
+  return typeof raw === 'string' ? JSON.stringify(cloned) : cloned;
 }
 
 function allocateTaxSnapshotsWithTax(
@@ -609,6 +696,7 @@ function allocateTaxBreakdown(
   sourceBreakdownRaw: any,
   checkTaxMinors: number[],
   weights: number[],
+  componentWeights?: Array<number[] | null>,
 ): (string | null)[] {
   const numChecks = weights.length;
   const parsed = typeof sourceBreakdownRaw === 'string'
@@ -661,39 +749,18 @@ function allocateTaxBreakdown(
     return new Array(numChecks).fill(typeof sourceBreakdownRaw === 'string' ? sourceBreakdownRaw : JSON.stringify(sourceBreakdownRaw || null));
   }
 
-  const compAllocations: number[][] = components.map((comp) => allocateMinorUnits(comp.minorAmount, weights));
+  const compAllocations: number[][] = components.map((comp) => {
+    const ownerWeights = comp.outerIndex === undefined ? null : componentWeights?.[comp.outerIndex];
+    const allocationWeights = ownerWeights && ownerWeights.length === weights.length && ownerWeights.some((weight) => weight > 0)
+      ? ownerWeights
+      : weights;
+    return allocateSignedMinorUnits(comp.minorAmount, allocationWeights);
+  });
 
-  const checkCompSums = new Array(numChecks).fill(0);
-  for (let m = 0; m < components.length; m++) {
-    for (let k = 0; k < numChecks; k++) {
-      checkCompSums[k] += compAllocations[m][k];
-    }
-  }
-
-  const deltas = checkTaxMinors.map((target, k) => target - checkCompSums[k]);
-
-  while (true) {
-    const deficitIdx = deltas.findIndex((d) => d > 0);
-    const excessIdx = deltas.findIndex((d) => d < 0);
-
-    if (deficitIdx === -1 || excessIdx === -1) break;
-
-    let transferredCompIdx = -1;
-    for (let m = 0; m < components.length; m++) {
-      if (compAllocations[m][excessIdx] > 0) {
-        transferredCompIdx = m;
-        break;
-      }
-    }
-
-    if (transferredCompIdx === -1) break;
-
-    compAllocations[transferredCompIdx][excessIdx] -= 1;
-    compAllocations[transferredCompIdx][deficitIdx] += 1;
-
-    deltas[excessIdx] += 1;
-    deltas[deficitIdx] -= 1;
-  }
+  reconcileSnapshotAllocations(
+    compAllocations.map((allocations) => ({ allocations })),
+    checkTaxMinors,
+  );
 
   const result: (string | null)[] = [];
 
@@ -749,7 +816,14 @@ function getSplitBillAllocationWeights(
   db: ReturnType<typeof getDatabase>,
   orderId: number | string,
   bills: any[],
-): { weights: number[]; snapshotWeights: Array<number[] | null>; snapshotExclusions: boolean[] } {
+): {
+  weights: number[];
+  snapshotWeights: Array<number[] | null>;
+  snapshotExclusions: boolean[];
+  legacyTaxMinors: number[];
+  legacyExclusiveTaxMinors: number[];
+  legacySourceTaxMinor: number;
+} {
   const items = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(orderId) as any[];
   const billIds = bills.map((bill) => Number(bill.id));
   const billItems = billIds.length === 0
@@ -783,8 +857,95 @@ function getSplitBillAllocationWeights(
     return itemWeights.some((weight) => weight > 0) ? itemWeights : weights;
   });
   const snapshotExclusions = snapshotItems.map((item) => ['voided', 'void_adjustment'].includes(item.status));
+  const legacyTaxMinors = new Array(bills.length).fill(0);
+  const legacyExclusiveTaxMinors = new Array(bills.length).fill(0);
+  let legacySourceTaxMinor = 0;
+  for (const item of items) {
+    if (['cancelled', 'voided', 'void_adjustment'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
+    const itemTaxMinor = Math.round(Number(item.tax_amount || 0) * 100);
+    if (itemTaxMinor === 0) continue;
+    const itemWeights = bills.map((bill) => quantities.get(Number(bill.id))?.get(Number(item.id)) || 0);
+    const allocations = allocateSignedMinorUnits(itemTaxMinor, itemWeights.some((weight) => weight > 0) ? itemWeights : weights);
+    legacySourceTaxMinor += itemTaxMinor;
+    allocations.forEach((minor, index) => {
+      legacyTaxMinors[index] += minor;
+      if (item.tax_type !== 'inclusive') legacyExclusiveTaxMinors[index] += minor;
+    });
+  }
 
-  return { weights, snapshotWeights, snapshotExclusions };
+  return {
+    weights,
+    snapshotWeights,
+    snapshotExclusions,
+    legacyTaxMinors,
+    legacyExclusiveTaxMinors,
+    legacySourceTaxMinor,
+  };
+}
+
+function getBillItemWeights(
+  db: ReturnType<typeof getDatabase>,
+  bills: any[],
+  itemId: number,
+): number[] {
+  const billIds = bills.map((bill) => Number(bill.id));
+  if (billIds.length === 0) return [];
+  const rows = db.prepare(`SELECT bill_id, quantity FROM bill_items WHERE order_item_id = ? AND bill_id IN (${billIds.map(() => '?').join(',')})`).all(itemId, ...billIds) as any[];
+  const quantities = new Map(rows.map((row) => [Number(row.bill_id), Number(row.quantity)]));
+  return bills.map((bill) => quantities.get(Number(bill.id)) || 0);
+}
+
+function resolveSplitTaxAllocations(
+  sourceTaxMinor: number,
+  fallbackTaxMinors: number[],
+  snapshotAllocation: TaxSnapshotAllocationResult,
+  legacySourceTaxMinor: number,
+  legacyTaxMinors: number[],
+  legacyExclusiveTaxMinors: number[],
+): { taxMinors: number[]; exclusiveTaxMinors: number[] | null } {
+  const snapshotTaxMinors = snapshotAllocation.taxMinors;
+  if (snapshotTaxMinors !== null) {
+    const snapshotSourceTaxMinor = snapshotTaxMinors.reduce((sum, minor) => sum + minor, 0);
+    const residualTaxMinor = sourceTaxMinor - snapshotSourceTaxMinor;
+    if (residualTaxMinor === 0) {
+      return {
+        taxMinors: snapshotTaxMinors,
+        exclusiveTaxMinors: snapshotAllocation.exclusiveTaxMinors,
+      };
+    }
+    if (residualTaxMinor === legacySourceTaxMinor) {
+      return {
+        taxMinors: snapshotTaxMinors.map((minor, index) => minor + legacyTaxMinors[index]),
+        exclusiveTaxMinors: snapshotAllocation.exclusiveTaxMinors
+          ? snapshotAllocation.exclusiveTaxMinors.map((minor, index) => minor + legacyExclusiveTaxMinors[index])
+          : null,
+      };
+    }
+    return { taxMinors: fallbackTaxMinors, exclusiveTaxMinors: null };
+  }
+  if (legacySourceTaxMinor === sourceTaxMinor) {
+    return { taxMinors: legacyTaxMinors, exclusiveTaxMinors: legacyExclusiveTaxMinors };
+  }
+  return { taxMinors: fallbackTaxMinors, exclusiveTaxMinors: null };
+}
+
+function getTaxBreakdownWeights(
+  sourceRaw: unknown,
+  items: any[],
+  itemWeights: (item: any) => number[],
+): Array<number[] | null> | undefined {
+  const parsed = parseTaxSnapshot(sourceRaw);
+  if (!Array.isArray(parsed) || !Array.isArray(parsed[0])) return undefined;
+  let itemIndex = 0;
+  return parsed.map(() => {
+    while (itemIndex < items.length) {
+      const item = items[itemIndex++];
+      if (item.status === 'cancelled') continue;
+      const breakdown = parseTaxSnapshot(item.tax_breakdown);
+      if (Array.isArray(breakdown) && breakdown.length > 0) return itemWeights(item);
+    }
+    return null;
+  });
 }
 
 export function syncUnpaidBillsForOrder(
@@ -795,7 +956,7 @@ export function syncUnpaidBillsForOrder(
 ): void {
   const bills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(orderId) as any[];
   const splitBills = bills.some((bill) => bill.split_group_id);
-  if (splitBills && bills.some((bill) => bill.payment_status === 'paid')) {
+  if (splitBills && bills.some((bill) => bill.payment_status !== 'unpaid' || Number(bill.paid_amount || 0) > 0)) {
     throw Object.assign(new Error('Cannot modify an order after a split check is paid'), { statusCode: 409 });
   }
   const unpaidBills = bills.filter((bill) => bill.payment_status !== 'paid');
@@ -820,7 +981,14 @@ export function syncUnpaidBillsForOrder(
     return;
   }
 
-  const { weights, snapshotWeights, snapshotExclusions } = getSplitBillAllocationWeights(db, orderId, bills);
+  const {
+    weights,
+    snapshotWeights,
+    snapshotExclusions,
+    legacyTaxMinors,
+    legacyExclusiveTaxMinors,
+    legacySourceTaxMinor,
+  } = getSplitBillAllocationWeights(db, orderId, bills);
   const fields = {
     subtotal: Math.round(source.subtotal * 100),
     taxAmount: Math.round(source.taxAmount * 100),
@@ -837,17 +1005,30 @@ export function syncUnpaidBillsForOrder(
   const allocatedTaxMinors = allocations.taxAmount.map((amount) => Math.round(amount * 100));
   const snapshotAllocation = allocateTaxSnapshotsWithTax(source.taxSnapshot, weights, snapshotWeights, snapshotExclusions);
   const sourceTaxMinor = Math.round(Number(source.taxAmount || 0) * 100);
-  const snapshotTaxMinors = snapshotAllocation.taxMinors;
-  const snapshotTaxMatches = snapshotTaxMinors !== null
-    && snapshotTaxMinors.reduce((sum, minor) => sum + minor, 0) === sourceTaxMinor;
-  const taxMinors = snapshotTaxMatches ? snapshotTaxMinors : allocatedTaxMinors;
-  if (snapshotTaxMatches) {
+  const resolvedTax = resolveSplitTaxAllocations(
+    sourceTaxMinor,
+    allocatedTaxMinors,
+    snapshotAllocation,
+    legacySourceTaxMinor,
+    legacyTaxMinors,
+    legacyExclusiveTaxMinors,
+  );
+  const taxMinors = resolvedTax.taxMinors;
+  if (resolvedTax.exclusiveTaxMinors) {
     allocations.taxAmount = taxMinors.map((minor) => minor / 100);
-    if (snapshotAllocation.exclusiveTaxMinors) {
-      allocations.total = composeSplitTotals(allocations, snapshotAllocation.exclusiveTaxMinors);
-    }
+    allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors);
   }
-  const breakdowns = allocateTaxBreakdown(source.taxBreakdown, taxMinors, weights);
+  const sourceItems = db.prepare('SELECT * FROM order_items WHERE order_id = ? ORDER BY id').all(orderId) as any[];
+  const breakdowns = allocateTaxBreakdown(
+    source.taxBreakdown,
+    taxMinors,
+    weights,
+    getTaxBreakdownWeights(
+      source.taxBreakdown,
+      sourceItems,
+      (item) => getBillItemWeights(db, bills, Number(item.id)),
+    ),
+  );
   const snapshots = snapshotAllocation.snapshots;
   const update = db.prepare(`
     UPDATE bills SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?,
@@ -939,17 +1120,51 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
       const snapshotExclusions = snapshotItems.map((item) => ['voided', 'void_adjustment'].includes(item.status));
       const snapshotAllocation = allocateTaxSnapshotsWithTax(txnSource.tax_snapshot, weights, snapshotWeights, snapshotExclusions);
       const sourceTaxMinor = Math.round(Number(txnSource.tax_amount || 0) * 100);
-      const snapshotTaxMinors = snapshotAllocation.taxMinors;
-      const snapshotTaxMatches = snapshotTaxMinors !== null
-        && snapshotTaxMinors.reduce((sum, minor) => sum + minor, 0) === sourceTaxMinor;
-      const resolvedTaxMinors = snapshotTaxMatches ? snapshotTaxMinors : checkTaxMinors;
-      if (snapshotTaxMatches) {
-        allocations.tax_amount = resolvedTaxMinors.map((minor) => minor / 100);
-        if (snapshotAllocation.exclusiveTaxMinors) {
-          allocations.total = composeSplitTotals(allocations, snapshotAllocation.exclusiveTaxMinors);
-        }
+      const legacyTaxMinors = new Array(txnNormalized.length).fill(0);
+      const legacyExclusiveTaxMinors = new Array(txnNormalized.length).fill(0);
+      let legacySourceTaxMinor = 0;
+      for (const item of txnSnapshotItems) {
+        if (['cancelled', 'voided', 'void_adjustment'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
+        const itemTaxMinor = Math.round(Number(item.tax_amount || 0) * 100);
+        if (itemTaxMinor === 0) continue;
+        const itemWeights = txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
+          check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
+        ));
+        const allocationsForItem = allocateSignedMinorUnits(
+          itemTaxMinor,
+          itemWeights.some((weight) => weight > 0) ? itemWeights : weights,
+        );
+        legacySourceTaxMinor += itemTaxMinor;
+        allocationsForItem.forEach((minor, index) => {
+          legacyTaxMinors[index] += minor;
+          if (item.tax_type !== 'inclusive') legacyExclusiveTaxMinors[index] += minor;
+        });
       }
-      const resolvedTaxBreakdowns = allocateTaxBreakdown(txnSource.tax_breakdown, resolvedTaxMinors, weights);
+      const resolvedTax = resolveSplitTaxAllocations(
+        sourceTaxMinor,
+        checkTaxMinors,
+        snapshotAllocation,
+        legacySourceTaxMinor,
+        legacyTaxMinors,
+        legacyExclusiveTaxMinors,
+      );
+      const resolvedTaxMinors = resolvedTax.taxMinors;
+      if (resolvedTax.exclusiveTaxMinors) {
+        allocations.tax_amount = resolvedTaxMinors.map((minor) => minor / 100);
+        allocations.total = composeSplitTotals(allocations, resolvedTax.exclusiveTaxMinors);
+      }
+      const resolvedTaxBreakdowns = allocateTaxBreakdown(
+        txnSource.tax_breakdown,
+        resolvedTaxMinors,
+        weights,
+        getTaxBreakdownWeights(
+          txnSource.tax_breakdown,
+          txnSnapshotItems,
+          (item) => txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
+            check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
+          )),
+        ),
+      );
       const checkTaxSnapshots = snapshotAllocation.snapshots;
 
       const billIds: number[] = [];

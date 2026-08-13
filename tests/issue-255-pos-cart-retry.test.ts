@@ -6,6 +6,7 @@ const {
 } = require('../frontend/src/lib/cart-identity');
 const {
   APPEND_ATTEMPT_MAX_AGE_MS,
+  APPEND_ATTEMPT_STORAGE_KEY,
   LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY,
   getAppendAttemptStorageKey,
   buildAppendItemsFingerprint,
@@ -236,6 +237,54 @@ function main() {
     'a failed scoped migration blocks recovery instead of using the shared record',
   );
   assert.ok(blockedMigrationBacking.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'failed migration preserves the shared retry record');
+
+  const unscopedMigrationBacking = new MemoryStorage();
+  unscopedMigrationBacking.setItem(APPEND_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'unscoped-owner',
+    orderId: '42',
+    fingerprint,
+    idempotencyKey: 'unscoped-append-key',
+    items,
+    createdAt: 4_000,
+  }));
+  const unscopedMigrationStorage = createSafeAppendAttemptStorage({
+    getItem: unscopedMigrationBacking.getItem.bind(unscopedMigrationBacking),
+    setItem: unscopedMigrationBacking.setItem.bind(unscopedMigrationBacking),
+    removeItem: (key) => {
+      if (key === APPEND_ATTEMPT_STORAGE_KEY) return;
+      unscopedMigrationBacking.removeItem(key);
+    },
+  });
+  assert.throws(
+    () => readAppendAttempt(unscopedMigrationStorage, { userId: 'unscoped-owner', now: 4_000 }),
+    /Unable to complete append retry migration/,
+    'a failed unscoped-key removal blocks migration instead of leaving a duplicate recovery source',
+  );
+  assert.ok(unscopedMigrationBacking.getItem(APPEND_ATTEMPT_STORAGE_KEY), 'failed unscoped migration preserves the original retry record');
+
+  const conflictingUnscopedStorage = new MemoryStorage();
+  conflictingUnscopedStorage.setItem(getAppendAttemptStorageKey('unscoped-owner'), JSON.stringify({
+    userId: 'unscoped-owner',
+    orderId: '42',
+    fingerprint,
+    idempotencyKey: 'scoped-append-key',
+    items,
+    createdAt: 4_000,
+  }));
+  conflictingUnscopedStorage.setItem(APPEND_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'unscoped-owner',
+    orderId: '43',
+    fingerprint: buildAppendItemsFingerprint('43', items),
+    idempotencyKey: 'unscoped-append-key',
+    items,
+    createdAt: 4_000,
+  }));
+  assert.throws(
+    () => readAppendAttempt(conflictingUnscopedStorage, { userId: 'unscoped-owner', now: 4_000 }),
+    /Unable to migrate conflicting append retry state/,
+    'a conflicting unscoped retry is not discarded beside a scoped attempt',
+  );
+  assert.ok(conflictingUnscopedStorage.getItem(APPEND_ATTEMPT_STORAGE_KEY), 'conflicting unscoped retry remains available');
 
   const legacyOrderStorage = new MemoryStorage();
   legacyOrderStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({

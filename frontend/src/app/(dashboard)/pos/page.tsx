@@ -137,7 +137,8 @@ export default function POSPage() {
       if (parsed && parsed.userId === activeUserId) postpaidAttemptRef.current = parsed;
       else window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
     } catch {
-      throw new Error('Unable to read order retry state');
+      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      return null;
     }
     return postpaidAttemptRef.current;
   };

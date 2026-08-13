@@ -104,6 +104,11 @@ function isExpired(createdAt: number, now: number, maxAgeMs: number): boolean {
   return !Number.isFinite(createdAt) || now - createdAt >= maxAgeMs;
 }
 
+function removeAndVerify(storage: AppendAttemptStorage, key: string): boolean {
+  const removed = storage.removeItem(key);
+  return removed !== false && storage.getItem(key) === null;
+}
+
 function normalizeAppendFingerprint(fingerprint: string): string | null {
   try {
     const payload = JSON.parse(fingerprint) as {
@@ -256,7 +261,7 @@ export function migrateLegacyAppendAttempt(
     if (!equivalent) throw new Error('Unable to migrate legacy append retry state safely');
   }
   if (existingRaw === null) storage.setItem(scopedKey, JSON.stringify(attempt));
-  if (storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) === false) {
+  if (!removeAndVerify(storage, LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY)) {
     throw new Error('Unable to complete legacy append retry migration');
   }
   return attempt;
@@ -297,6 +302,15 @@ interface StoredAttempt {
   key: string;
 }
 
+function appendAttemptsMatch(first: AppendAttempt, second: AppendAttempt): boolean {
+  return first.userId === second.userId
+    && first.orderId === second.orderId
+    && first.fingerprint === second.fingerprint
+    && first.idempotencyKey === second.idempotencyKey
+    && JSON.stringify(first.items) === JSON.stringify(second.items)
+    && (first.specialInstructions || undefined) === (second.specialInstructions || undefined);
+}
+
 function readUserAttempt(
   storage: AppendAttemptStorage,
   userId: string,
@@ -307,17 +321,19 @@ function readUserAttempt(
   const migrated = migrateLegacyAppendAttempt(storage, { now, maxAgeMs });
   if (hasCompletedAttempt(storage, userId, now, maxAgeMs)) return null;
   const scoped = parseStoredAttempt(storage, scopedKey, now, maxAgeMs);
-  if (scoped?.userId === userId) return { attempt: scoped, key: scopedKey };
-
-  // Migrate the pre-user-scoped key only when it belongs to this user. A
-  // different cashier's pending retry is deliberately left intact.
   const legacy = parseStoredAttempt(storage, APPEND_ATTEMPT_STORAGE_KEY, now, maxAgeMs);
   if (legacy?.userId === userId) {
-    storage.setItem(scopedKey, JSON.stringify(legacy));
-    storage.removeItem(APPEND_ATTEMPT_STORAGE_KEY);
-    return { attempt: legacy, key: scopedKey };
+    if (scoped && scoped.userId === userId && !appendAttemptsMatch(scoped, legacy)) {
+      throw new Error('Unable to migrate conflicting append retry state');
+    }
+    if (!scoped) storage.setItem(scopedKey, JSON.stringify(legacy));
+    if (!removeAndVerify(storage, APPEND_ATTEMPT_STORAGE_KEY)) {
+      throw new Error('Unable to complete append retry migration');
+    }
+    return { attempt: scoped || legacy, key: scopedKey };
   }
 
+  if (scoped?.userId === userId) return { attempt: scoped, key: scopedKey };
   if (migrated?.userId === userId) return { attempt: migrated, key: scopedKey };
   return null;
 }

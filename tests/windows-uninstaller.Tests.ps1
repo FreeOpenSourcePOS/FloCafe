@@ -77,6 +77,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     $child = [pscustomobject]@{ Id = 9898; ExitCode = 0 }
     $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
       param([int]$Milliseconds)
+      Start-Sleep -Milliseconds $Milliseconds
       return $false
     }
     $state = [pscustomobject]@{

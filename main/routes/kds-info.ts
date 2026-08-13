@@ -8,12 +8,13 @@ import QRCode from 'qrcode';
 import { getLocalIP, getAllLocalIPs } from '../server';
 import { getKdsPort } from '../kds-server';
 import { requireKdsEnabled } from '../middleware/security';
+import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();
 
 router.use(requireKdsEnabled);
 
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', asyncHandler(async (_req: Request, res: Response) => {
   try {
     const kdsPort = getKdsPort();
     const ip = getLocalIP();
@@ -47,7 +48,6 @@ router.get('/', async (_req: Request, res: Response) => {
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}));
 
 export const kdsInfoRoutes = router;
-

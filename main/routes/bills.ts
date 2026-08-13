@@ -13,6 +13,7 @@ import {
   verifyPin,
   withTxn,
 } from '../db';
+import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { requireRole } from '../middleware/security';
@@ -2182,7 +2183,7 @@ router.post('/:id/markPrinted', requireRole('owner', 'manager'), (req: Request, 
 });
 
 // POST /api/bills/:id/print - Print or reprint bill
-router.post('/:id/print', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
+router.post('/:id/print', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { print_type } = req.body;
 
@@ -2201,7 +2202,7 @@ router.post('/:id/print', requireRole('owner', 'manager', 'cashier'), async (req
     console.error('[API] Receipt printing failed:', error);
     res.status(statusCode).json({ error: statusCode >= 500 ? 'Receipt printing failed' : 'Bill not found' });
   }
-});
+}));
 
 // GET /api/bills/:id/print-history - Get print history for bill
 router.get('/:id/print-history', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {

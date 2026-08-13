@@ -27,9 +27,9 @@ type HttpServerState = {
 const httpServerStates = new WeakMap<http.Server, HttpServerState>();
 const httpRequestStates = new WeakMap<object, HttpRequestState>();
 
-export function installHttpShutdownTracking(server: http.Server): void {
+export function installHttpShutdownTracking(server: http.Server): HttpServerState {
   const existing = httpServerStates.get(server);
-  if (existing) return;
+  if (existing) return existing;
 
   const state: HttpServerState = { requests: new Set() };
   httpServerStates.set(server, state);
@@ -44,6 +44,7 @@ export function installHttpShutdownTracking(server: http.Server): void {
     response.once('finish', release);
     response.once('close', release);
   });
+  return state;
 }
 
 export function getHttpRequestSignal(request: object): AbortSignal | undefined {
@@ -160,42 +161,63 @@ function terminateWebSocketClients(wss: WebSocketServer): void {
   }
 }
 
+function drainWebSocketClients(wss: WebSocketServer, onError: (error: unknown) => void): Promise<void> {
+  const clients = [...wss.clients];
+  return Promise.all(clients.map((client) => new Promise<void>((resolve) => {
+    if (client.readyState === WebSocket.CLOSED) {
+      resolve();
+      return;
+    }
+
+    let settled = false;
+    const onClientError = (error: unknown): void => {
+      onError(error);
+    };
+    const finish = (): void => {
+      if (settled) return;
+      settled = true;
+      client.off('close', finish);
+      client.off('error', onClientError);
+      resolve();
+    };
+    client.once('close', finish);
+    client.once('error', onClientError);
+    try {
+      if (client.readyState === WebSocket.OPEN) client.close(1001, 'Server shutting down');
+      else client.terminate();
+    } catch (error) {
+      onError(error);
+      finish();
+    }
+  }))).then(() => undefined);
+}
+
 /** Close WebSocket clients/server and wait for the ws close callback. */
 export function closeWebSocketServer(wss: WebSocketServer, label: string): Promise<void> {
   let clientCloseError: unknown;
-  for (const client of wss.clients) {
-    try {
-      if (client.readyState === WebSocket.OPEN) {
-        client.close(1001, 'Server shutting down');
-      } else if (client.readyState === WebSocket.CONNECTING) {
-        client.terminate();
-      }
-    } catch (error) {
-      // Continue closing every client, then preserve this error for the
-      // caller instead of turning cleanup into fire-and-forget work.
-      clientCloseError ??= error;
-    }
-  }
+  const clientsPromise = drainWebSocketClients(wss, (error) => {
+    clientCloseError ??= error;
+  });
 
-  const closePromise = new Promise<void>((resolve, reject) => {
+  const serverPromise = new Promise<void>((resolve, reject) => {
     try {
       wss.close((error?: Error) => {
         if (error && !isAlreadyClosedError(error)) {
           reject(error);
-        } else if (clientCloseError) {
-          reject(clientCloseError);
         } else {
           resolve();
         }
       });
     } catch (error) {
       if (isAlreadyClosedError(error)) {
-        if (clientCloseError) reject(clientCloseError);
-        else resolve();
+        resolve();
       } else {
         reject(error);
       }
     }
+  });
+  const closePromise = Promise.all([serverPromise, clientsPromise]).then(() => {
+    if (clientCloseError) throw clientCloseError;
   });
 
   return withShutdownTimeout(closePromise, label, () => terminateWebSocketClients(wss));

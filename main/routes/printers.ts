@@ -6,6 +6,7 @@ import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, prin
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
+import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();
 
@@ -88,7 +89,7 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // GET /api/printers/detect — detect connected USB/network printers
-router.get('/detect', async (_req: Request, res: Response) => {
+router.get('/detect', asyncHandler(async (_req: Request, res: Response) => {
   try {
     const printers = await detectConnectedPrinters();
     console.log('[Printer] Detected printers:', printers);
@@ -98,7 +99,7 @@ router.get('/detect', async (_req: Request, res: Response) => {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 // GET /api/printers/supported — list known printer profiles
 router.get('/supported', (_req: Request, res: Response) => {
@@ -264,7 +265,7 @@ router.post('/:id/set-default', requireRole('owner', 'manager'), (req: Request, 
 });
 
 // POST /api/printers/:id/test — send a test print job
-router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -299,10 +300,10 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 // POST /api/printers/print-bill — print bill via backend (desktop app)
-router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
+router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
     console.log('[Print Bill] Request received', { useUnicode, isReprint, preview });
@@ -443,7 +444,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 // Groups order items across active, fully-configured kitchen stations (has both
 // a category allowlist and a linked printer). Items whose category isn't claimed
@@ -497,7 +498,7 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
 }
 
 // POST /api/printers/print-kot — print KOT via backend (desktop app)
-router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
+router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
   // Coarser than auto_print_kot — when this is off, no KOT print command
   // should ever be sent, automatic or manual (issue #133).
   if (!isKotPrintingEnabled()) {
@@ -566,6 +567,6 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 export const printerRoutes = router;

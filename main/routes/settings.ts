@@ -8,6 +8,7 @@ import { validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
+import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();
 
@@ -508,7 +509,7 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
   }
 });
 
-router.post('/cloud/register', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+router.post('/cloud/register', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const deletionRequest = await cloudSync.getDeletionRequestStatus({
       allowRemote: cloudSync.isCloudAccountAvailable(),
@@ -540,9 +541,9 @@ router.post('/cloud/register', requireRole('owner', 'manager'), async (req: Requ
     console.error('[API] Cloud registration failed:', error);
     res.status(502).json({ error: 'Cloud registration failed' });
   }
-});
+}));
 
-router.post('/cloud/test', requireRole('owner', 'manager'), async (_req: Request, res: Response) => {
+router.post('/cloud/test', requireRole('owner', 'manager'), asyncHandler(async (_req: Request, res: Response) => {
   try {
     const result = await cloudSync.testConnection();
     res.json(result);
@@ -550,9 +551,9 @@ router.post('/cloud/test', requireRole('owner', 'manager'), async (_req: Request
     console.error('[API] Cloud test failed:', error);
     res.status(502).json({ error: 'Cloud test failed' });
   }
-});
+}));
 
-router.get('/cloud/account', requireRole('owner'), async (_req: Request, res: Response) => {
+router.get('/cloud/account', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
   try {
     const cloudAccountAvailable = cloudSync.isCloudAccountAvailable();
     const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: cloudAccountAvailable });
@@ -577,9 +578,9 @@ router.get('/cloud/account', requireRole('owner'), async (_req: Request, res: Re
   } catch {
     res.status(502).json({ error: 'Could not load cloud account status' });
   }
-});
+}));
 
-router.put('/cloud/account/preferences', requireRole('owner'), async (req: Request, res: Response) => {
+router.put('/cloud/account/preferences', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
   if (!cloudSync.isCloudAccountAvailable()) {
     return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
   }
@@ -591,9 +592,9 @@ router.put('/cloud/account/preferences', requireRole('owner'), async (req: Reque
   } catch {
     res.status(502).json({ error: 'Could not update email preferences' });
   }
-});
+}));
 
-router.post('/cloud/account/verification', requireRole('owner'), async (_req: Request, res: Response) => {
+router.post('/cloud/account/verification', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
   if (!cloudSync.isCloudAccountAvailable()) {
     return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
   }
@@ -602,9 +603,9 @@ router.post('/cloud/account/verification', requireRole('owner'), async (_req: Re
   } catch {
     res.status(502).json({ error: 'Could not send verification email' });
   }
-});
+}));
 
-router.get('/cloud/delete-data/status', requireRole('owner'), async (_req: Request, res: Response) => {
+router.get('/cloud/delete-data/status', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
   try {
     const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: true });
     res.json({
@@ -614,13 +615,13 @@ router.get('/cloud/delete-data/status', requireRole('owner'), async (_req: Reque
   } catch {
     res.status(502).json({ error: 'Could not refresh cloud deletion status' });
   }
-});
+}));
 
-router.post('/cloud/stop-all', requireRole('owner'), async (_req: Request, res: Response) => {
+router.post('/cloud/stop-all', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
   res.json(await cloudSync.stopAllCloudServices());
-});
+}));
 
-router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, async (req: Request, res: Response) => {
+router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   if (req.body?.confirmation !== 'DELETE CLOUD DATA') {
     return res.status(400).json({ error: 'Type DELETE CLOUD DATA to confirm' });
   }
@@ -629,15 +630,15 @@ router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, async 
   } catch {
     res.status(502).json({ error: 'Cloud data deletion failed' });
   }
-});
+}));
 
-router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin, async (_req: Request, res: Response) => {
+router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin, asyncHandler(async (_req: Request, res: Response) => {
   try {
     res.json(await cloudSync.cancelDeletionRequest());
   } catch {
     res.status(502).json({ error: 'Could not cancel deletion request' });
   }
-});
+}));
 
 // ─── Google Drive backups (must come BEFORE /:key wildcard) ─────────────────
 // See #129. Off by default — connect/disconnect/backup-now are the only
@@ -663,7 +664,7 @@ router.put('/google-drive', requireRole('owner', 'manager'), (req: Request, res:
   }
 });
 
-router.post('/google-drive/connect', requireRole('owner'), async (req: Request, res: Response) => {
+router.post('/google-drive/connect', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const status = await trackHttpRequestWork(req, googleDrive.connect(getHttpRequestSignal(req)));
     res.json(status);
@@ -672,9 +673,9 @@ router.post('/google-drive/connect', requireRole('owner'), async (req: Request, 
     if (getHttpRequestSignal(req)?.aborted) return;
     res.status(502).json({ error: 'Google Drive connection failed' });
   }
-});
+}));
 
-router.post('/google-drive/disconnect', requireRole('owner'), async (_req: Request, res: Response) => {
+router.post('/google-drive/disconnect', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
   try {
     const status = await googleDrive.disconnect();
     res.json(status);
@@ -682,9 +683,9 @@ router.post('/google-drive/disconnect', requireRole('owner'), async (_req: Reque
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
-router.post('/google-drive/backup-now', requireRole('owner'), async (_req: Request, res: Response) => {
+router.post('/google-drive/backup-now', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
   try {
     const status = await googleDrive.backupNow();
     res.json(status);
@@ -692,7 +693,7 @@ router.post('/google-drive/backup-now', requireRole('owner'), async (_req: Reque
     console.error('[API] Google Drive backup failed:', error);
     res.status(502).json({ error: 'Google Drive backup failed' });
   }
-});
+}));
 
 // ── Generic key-value routes (wildcard — must be last) ─────────────────────
 

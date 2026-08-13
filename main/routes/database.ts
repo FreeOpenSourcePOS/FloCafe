@@ -6,6 +6,7 @@ import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
 import * as fs from 'fs';
 import * as path from 'path';
+import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();
 
@@ -106,7 +107,7 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
 
 router.post('/import', requireRole('owner'),
   (req: Request, res: Response, next: () => void) => (req.body?.overwrite ? requireMasterPin(req, res, next) : next()),
-  async (req: Request, res: Response) => {
+  asyncHandler(async (req: Request, res: Response) => {
   return withDatabaseMaintenanceLock(async () => {
     try {
     const { data, overwrite } = req.body;
@@ -305,7 +306,7 @@ router.post('/import', requireRole('owner'),
       res.status(500).json({ error: 'Import failed' });
     }
   });
-});
+}));
 
 function getTableColumns(db: Database.Database, tableName: string): string[] {
   if (!isSafeIdentifier(tableName)) {
@@ -320,7 +321,7 @@ function getTableColumns(db: Database.Database, tableName: string): string[] {
   }
 }
 
-router.post('/backup', requireRole('owner'), requireMasterPin, async (req: Request, res: Response) => {
+router.post('/backup', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { path: backupPath, schemaVersion } = await createBackup();
     res.json({ 
@@ -333,9 +334,9 @@ router.post('/backup', requireRole('owner'), requireMasterPin, async (req: Reque
     console.error('[DB Backup] Error:', error);
     res.status(500).json({ error: 'Backup failed' });
   }
-});
+}));
 
-router.get('/download', requireRole('owner'), requireMasterPin, async (_req: Request, res: Response) => {
+router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(async (_req: Request, res: Response) => {
   let tempDir: string | null = null;
   try {
     const dbPath = getDbPath();
@@ -358,7 +359,7 @@ router.get('/download', requireRole('owner'), requireMasterPin, async (_req: Req
     console.error('[DB Download] Error:', error);
     res.status(500).json({ error: 'Download failed' });
   }
-});
+}));
 
 router.get('/tables', requireRole('owner'), (req: Request, res: Response) => {
   try {

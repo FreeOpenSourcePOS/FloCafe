@@ -154,7 +154,13 @@ async function testHttpStopsAcceptingBeforeSlowWebSocketDrain(): Promise<void> {
 
   let websocketDrainFinished = false;
   const slowWss = {
-    clients: new Set([{ readyState: WebSocket.OPEN, close: () => {} }]),
+    clients: new Set([{
+      readyState: WebSocket.OPEN,
+      close: () => {},
+      once: (event: string, listener: () => void) => { if (event === 'close') setTimeout(listener, 100); },
+      off: () => {},
+      terminate: () => {},
+    }]),
     close: (callback: () => void) => {
       setTimeout(() => {
         websocketDrainFinished = true;
@@ -426,6 +432,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     const {
       initDatabase,
       closeDatabase,
+      beginDatabaseShutdown,
       waitForDatabaseRequests,
       withDatabaseRequest,
       withDatabaseMaintenanceLock,
@@ -527,6 +534,21 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     await mainServer.stopServer();
     await kdsServer.stopKdsServer();
     await serverApp.stopServerApp();
+    beginDatabaseShutdown();
+    let lateDatabaseOperationRan = false;
+    await assert.rejects(
+      withDatabaseRequest(() => { lateDatabaseOperationRan = true; }),
+      (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED',
+      'late database requests are rejected after shutdown admission closes',
+    );
+    assert.equal(lateDatabaseOperationRan, false, 'late database operations never enter SQLite');
+    let lateMaintenanceRan = false;
+    await assert.rejects(
+      withDatabaseMaintenanceLock(() => { lateMaintenanceRan = true; }),
+      (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED',
+      'late maintenance requests are rejected after shutdown admission closes',
+    );
+    assert.equal(lateMaintenanceRan, false, 'late maintenance never enters SQLite');
     closeDatabase();
   } finally {
     Module._load = originalLoad;

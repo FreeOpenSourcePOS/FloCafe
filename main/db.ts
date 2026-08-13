@@ -17,6 +17,7 @@ let databaseMaintenanceTail: Promise<void> = Promise.resolve();
 let databaseMaintenanceActive = false;
 let databaseMaintenancePending = 0;
 let activeDatabaseRequests = 0;
+let databaseShutdownRequested = false;
 let maintenanceRequestWaiters: (() => void)[] = [];
 let maintenanceDrainWaiters: (() => void)[] = [];
 let databaseIdleWaiters: (() => void)[] = [];
@@ -50,7 +51,18 @@ function createMaintenanceAbortError(): Error & { code: string } {
   return error;
 }
 
+function createDatabaseShutdownError(): Error & { code: string } {
+  const error = new Error('Database access is closed during shutdown') as Error & { code: string };
+  error.code = 'ERR_SHUTDOWN_ABORTED';
+  return error;
+}
+
+export function beginDatabaseShutdown(): void {
+  databaseShutdownRequested = true;
+}
+
 export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
+  if (databaseShutdownRequested) return Promise.reject(createDatabaseShutdownError());
   const run = (): Promise<T> => {
     // Reserve the request synchronously. A maintenance lock scheduled in the
     // same turn must observe this request before it starts replacing the DB.
@@ -64,7 +76,13 @@ export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise
   };
   if (!databaseMaintenanceActive) return run();
   return new Promise<T>((resolve, reject) => {
-    maintenanceRequestWaiters.push(() => { run().then(resolve, reject); });
+    maintenanceRequestWaiters.push(() => {
+      if (databaseShutdownRequested) {
+        reject(createDatabaseShutdownError());
+        return;
+      }
+      run().then(resolve, reject);
+    });
   });
 }
 
@@ -94,6 +112,10 @@ function isDatabaseMaintenanceRoute(req: Request): boolean {
 }
 
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
+  if (databaseShutdownRequested) {
+    res.status(503).json({ error: 'Database is shutting down' });
+    return;
+  }
   // A later request must still be rejected here, before authentication or
   // route middleware can query a database handle that the active operation may
   // close and replace.
@@ -126,13 +148,14 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
 }
 
 export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (databaseShutdownRequested) return Promise.reject(createMaintenanceAbortError());
   const previous = databaseMaintenanceTail;
   databaseMaintenancePending += 1;
   let started = false;
   let release!: () => void;
   databaseMaintenanceTail = new Promise<void>((resolve) => { release = resolve; });
   const queued = previous.then(async () => {
-    if (signal?.aborted) throw createMaintenanceAbortError();
+    if (signal?.aborted || databaseShutdownRequested) throw createMaintenanceAbortError();
     started = true;
     databaseMaintenanceActive = true;
     for (const listener of databaseMaintenanceStartListeners) {
@@ -491,6 +514,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
 }
 
 export function initDatabase(recoverInterruptedReplacement = true): void {
+  databaseShutdownRequested = false;
   const dbPath = getDbPath();
   const backupDir = getBackupDir();
 
@@ -782,6 +806,7 @@ function autoRepairDefaultPrinter(): void {
 }
 
 export function getDatabase(): Database.Database {
+  if (databaseShutdownRequested) throw createDatabaseShutdownError();
   if (!db) throw new Error('Database not initialized');
   return db;
 }
@@ -792,6 +817,7 @@ export function waitForDatabaseRequests(): Promise<void> {
 }
 
 export function closeDatabase(): void {
+  databaseShutdownRequested = true;
   if (db) {
     db.close();
     db = null as unknown as Database.Database;
@@ -2010,7 +2036,7 @@ export function getSchemaVersionFromBackup(backupPath: string): number | null {
 }
 
 export function getCurrentSchemaVersion(): number {
-  return db.pragma('user_version', { simple: true }) as number;
+  return getDatabase().pragma('user_version', { simple: true }) as number;
 }
 
 /**

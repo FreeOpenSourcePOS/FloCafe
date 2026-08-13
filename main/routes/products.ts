@@ -6,6 +6,7 @@ import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as https from 'https';
 import * as net from 'net';
+import { asyncHandler } from '../middleware/async-handler';
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024;
 
@@ -406,7 +407,7 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 // ── GET /:id — single product with relations ───────────────────────────
-router.get('/:id/image', async (req: Request, res: Response) => {
+router.get('/:id/image', asyncHandler(async (req: Request, res: Response) => {
   // Image endpoint — must be defined BEFORE /:id to avoid route conflict
   try {
     const db = getDatabase();
@@ -465,7 +466,7 @@ router.get('/:id/image', async (req: Request, res: Response) => {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 router.get('/:id', (req: Request, res: Response) => {
   try {
@@ -490,7 +491,7 @@ router.get('/:id', (req: Request, res: Response) => {
 // When a user pastes an https:// URL, the backend fetches the image and
 // returns it as a Base64 data URI. The frontend then runs it through the
 // same crop → compress pipeline as a local upload.
-router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { url } = req.body;
 
@@ -608,7 +609,7 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {

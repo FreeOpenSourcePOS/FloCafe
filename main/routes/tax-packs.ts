@@ -13,6 +13,7 @@ import {
   type TaxPackCatalogEntry,
 } from '../tax-packs/catalog';
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from '../tax-packs/trusted-signing-key';
+import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();
 const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
@@ -690,7 +691,7 @@ router.get('/audit', requireRole('owner', 'manager'), (req: Request, res: Respon
   }
 });
 
-router.get('/catalog', requireRole('owner', 'manager'), async (_req: Request, res: Response) => {
+router.get('/catalog', requireRole('owner', 'manager'), asyncHandler(async (_req: Request, res: Response) => {
   try {
     const remote = await fetchRemoteTaxPackCatalog();
     const installedRows = getDatabase().prepare(
@@ -707,11 +708,11 @@ router.get('/catalog', requireRole('owner', 'manager'), async (_req: Request, re
     console.error('[Tax Packs] Catalog fetch failed:', error);
     res.status(502).json({ error: error.message || 'Could not check the tax pack catalog' });
   }
-});
+}));
 
 // Merchant-facing path: resolve the selected country without exposing the
 // catalog or allowing manual selection of a different country's plugin.
-router.post('/ensure-country', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+router.post('/ensure-country', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const country = String(req.body?.country || getSettingValue('country') || '').toUpperCase();
     if (!/^[A-Z]{2}$/.test(country)) return res.status(400).json({ error: 'Invalid country' });
@@ -758,7 +759,7 @@ router.post('/ensure-country', requireRole('owner', 'manager'), async (req: Requ
     const statusCode = error.statusCode || 502;
     return res.status(statusCode).json({ error: error.message || 'Could not install the country tax plugin' });
   }
-});
+}));
 
 // Manual tax builder: an owner-authored local pack for countries with no
 // official plugin (or to override one). Flat only, by design — no interstate
@@ -1032,7 +1033,7 @@ router.post('/manual-config', requireRole('owner'), (req: Request, res: Response
   }
 });
 
-router.post('/catalog/install', requireRole('owner'), async (req: Request, res: Response) => {
+router.post('/catalog/install', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const packId = typeof req.body.pack_id === 'string' ? req.body.pack_id : '';
     const version = typeof req.body.version === 'string' ? req.body.version : '';
@@ -1053,7 +1054,7 @@ router.post('/catalog/install', requireRole('owner'), async (req: Request, res: 
       ...(error.validation ? { validation: error.validation } : {}),
     });
   }
-});
+}));
 
 router.post('/test-calculation', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {

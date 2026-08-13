@@ -63,6 +63,7 @@ Describe 'Flo Cafe Windows uninstaller' {
 
   It 'bounds a hung child uninstaller and continues with manual cleanup' {
     $uninstallerExe = 'C:\Flo Cafe\uninstall.exe'
+    $fallbackInstallPath = 'C:\Flo Cafe Fixture\Programs\Flo Cafe'
     $entry = [pscustomobject]@{
       DisplayName     = 'Flo Cafe'
       PSChildName     = 'FloCafe'
@@ -75,6 +76,57 @@ Describe 'Flo Cafe Windows uninstaller' {
       param([int]$Milliseconds)
       return $false
     }
+    $state = [pscustomobject]@{ InstallExists = $true }
+    $oldLocalAppData = $env:LOCALAPPDATA
+
+    try {
+      $env:LOCALAPPDATA = 'C:\Flo Cafe Fixture'
+      Mock Get-Process { @() }
+      Mock Get-ItemProperty { @($entry) }
+      Mock Test-Path {
+        param($LiteralPath)
+        if ($LiteralPath -eq $uninstallerExe) { return $true }
+        if ($LiteralPath -eq $fallbackInstallPath) { return $state.InstallExists }
+        return $false
+      }
+      Mock Start-Process { $child }
+      Mock Stop-Process {}
+      Mock Remove-Item {
+        param($LiteralPath)
+        if ($LiteralPath -eq $fallbackInstallPath) { $state.InstallExists = $false }
+      }
+      Mock Get-CimInstance { @() }
+
+      $result = Invoke-FloCafeUninstall
+
+      $result.Complete | Should -BeFalse
+      ($result.Issues -join "`n") | Should -Match 'did not exit within'
+      $state.InstallExists | Should -BeFalse
+      Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq 9898 -and $Force }
+      Should -Invoke Remove-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $fallbackInstallPath }
+      Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter { $PassThru -and -not $Wait }
+    } finally {
+      $env:LOCALAPPDATA = $oldLocalAppData
+    }
+  }
+
+  It 'reports partial cleanup when a completed child exit code cannot be read' {
+    $uninstallerExe = 'C:\Flo Cafe\uninstall.exe'
+    $entry = [pscustomobject]@{
+      DisplayName     = 'Flo Cafe'
+      PSChildName     = 'FloCafe'
+      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
+      InstallLocation = ''
+      UninstallString = '"C:\Flo Cafe\uninstall.exe"'
+    }
+    $child = [pscustomobject]@{ Id = 9899 }
+    $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+      param([int]$Milliseconds)
+      return $true
+    }
+    $child | Add-Member -MemberType ScriptProperty -Name ExitCode -Value {
+      throw 'exit code unavailable'
+    }
 
     Mock Get-Process { @() }
     Mock Get-ItemProperty { @($entry) }
@@ -83,15 +135,11 @@ Describe 'Flo Cafe Windows uninstaller' {
       return ($LiteralPath -eq $uninstallerExe)
     }
     Mock Start-Process { $child }
-    Mock Stop-Process {}
-    Mock Get-CimInstance { @() }
 
     $result = Invoke-FloCafeUninstall
 
     $result.Complete | Should -BeFalse
-    ($result.Issues -join "`n") | Should -Match 'did not exit within'
-    Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq 9898 -and $Force }
-    Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter { $PassThru -and -not $Wait }
+    ($result.Issues -join "`n") | Should -Match "could not verify the app's own uninstaller exit code"
   }
 
   It 'returns an incomplete result when a locked path remains after bounded retries' {
@@ -172,6 +220,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       InstallLocation = ''
       UninstallString = ''
     }
+    $state = [pscustomobject]@{ RegistryExists = $true }
 
     Mock Get-Process { @() }
     Mock Get-ItemProperty {
@@ -179,12 +228,22 @@ Describe 'Flo Cafe Windows uninstaller' {
       if ($Path -like 'HKCU:*') { throw 'access denied to HKCU' }
       return @($readableEntry)
     }
-    Mock Test-Path { $false }
+    Mock Test-Path {
+      param($LiteralPath)
+      if ($LiteralPath -eq $readableEntry.PSPath) { return $state.RegistryExists }
+      return $false
+    }
+    Mock Remove-Item {
+      param($LiteralPath)
+      if ($LiteralPath -eq $readableEntry.PSPath) { $state.RegistryExists = $false }
+    }
 
     $result = Invoke-FloCafeUninstall
 
     $result.Complete | Should -BeFalse
     ($result.Issues -join "`n") | Should -Match 'HKCU:.*access denied to HKCU'
+    $state.RegistryExists | Should -BeFalse
+    Should -Invoke Remove-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $readableEntry.PSPath -and $Recurse -and $Force }
     Should -Invoke Get-ItemProperty -Times 3 -Exactly
   }
 }

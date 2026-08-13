@@ -493,8 +493,14 @@ function Invoke-FloCafeUninstall {
             $script:ChildUninstallerRunning = $false
             $script:ChildUninstallerProcessId = $null
             $childExitCode = $null
-            try { $childExitCode = $child.ExitCode } catch { $childExitCode = $null }
-            if ($null -ne $childExitCode -and $childExitCode -ne 0) {
+            $childExitCodeRead = $true
+            try { $childExitCode = $child.ExitCode } catch {
+              $childExitCodeRead = $false
+              Mark-Partial ("could not verify the app's own uninstaller exit code: {0}" -f $_.Exception.Message)
+            }
+            if (-not $childExitCodeRead) {
+              Write-Warn "continuing with manual cleanup after an unverified app uninstaller result"
+            } elseif ($childExitCode -ne 0) {
               Mark-Partial ("the app's own uninstaller exited with code {0}; continuing with manual cleanup" -f $childExitCode)
             } else {
               Write-Log "ran $uninstallerExe $fullArgs"

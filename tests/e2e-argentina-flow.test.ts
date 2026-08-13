@@ -30,7 +30,9 @@ Module._load = function (request, parent, isMain) {
 
 const {
   initTestDb, createApp, startServer,
-  seedOwnerUser, api, assert, assertEqual, assertIncludes,
+  seedOwnerUser, seedCategory, seedProduct,
+  api, assert, assertEqual, assertIncludes,
+  installAndActivateTestTaxPack,
   getResults, closeDatabase,
 } = require('./helpers/test-setup');
 
@@ -186,15 +188,37 @@ async function runArgentinaTaxAndCustomers(baseUrl, db) {
   const settingsTax = db.prepare("SELECT value FROM settings WHERE key = 'country'").get();
   assertEqual(settingsTax.value, 'AR', 'settings.country = AR after first-run setup');
 
+  // Install the Argentina IVA pack so the assertion below validates the
+  // production tax behaviour (an uncategorised product with the active
+  // Argentina pack resolves to the pack's default product category and
+  // computes the IVA rate). Installing the pack here makes this test
+  // future-proof: it no longer silently depends on the Argentina pack
+  // being absent.
+  const argentinaPackData = require('../main/tax-packs/argentina.json');
+  installAndActivateTestTaxPack(db, argentinaPackData);
+  // Seed a real DB product (calculateItemTax reads tax_category_id from the
+  // row, not from a literal object). The category is set to the pack's
+  // default product category, mirroring what ensure-country's backfill
+  // would do after activating a pack.
+  seedCategory(db, 'cat-ar-test', 'Argentina Test');
+  seedProduct(db, 'prod-ar-test', 'cat-ar-test', 'Argentina Test Item', 100, {
+    tax_type: 'inclusive',
+    tax_category_id: 'iva_21',
+  });
+  const product = db.prepare(`SELECT * FROM products WHERE id = 'prod-ar-test'`).get();
+
   const { calculateItemTax } = require('../main/services/tax');
   const result = calculateItemTax(
     { country: 'AR', business_type: 'restaurant', state_code: '', taxes_enabled: true },
-    { tax_type: 'inclusive', tax_rate: 21 },
+    product,
     100,
     null,
   );
-  assertEqual(result.tax_amount, 0, 'uncategorized AR product is tax-free');
-  assertEqual(result.tax_breakdown.length, 0, 'uncategorized AR product emits no tax breakdown');
+  assertEqual(result.tax_type, 'inclusive', 'uncategorized AR product inherits the pack-inclusive pricing default');
+  assertEqual(result.tax_amount, 17.36, 'ARS 100 inclusive at 21% extracts ARS 17.36 tax');
+  assertEqual(result.tax_breakdown.length, 1, 'IVA pack emits one tax component for the default category');
+  assertEqual(result.tax_breakdown[0].title, 'IVA 21%', 'tax component is labelled with the Argentina pack rule');
+  assertEqual(result.tax_breakdown[0].rate, 21, 'tax component rate matches the IVA 21% rule');
 
   const cRes = await api(baseUrl + '/api', '/customers', {
     method: 'POST',

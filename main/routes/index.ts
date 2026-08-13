@@ -132,6 +132,11 @@ export function registerRoutes(app: Express): void {
           })
           : [],
         default_category_id: configurationReady ? pack.defaultCategories.product : null,
+        // Whether the active pack treats menu prices as already containing
+        // tax. The products page uses it to explain what a product's
+        // "Country default" tax behavior resolves to, instead of leaving
+        // the label opaque.
+        default_inclusive: configurationReady ? pack.inclusivePricingDefault : null,
         configuration_ready: configurationReady,
         unclassified_category_id: pack.unclassifiedCategoryId,
       });

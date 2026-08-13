@@ -20,6 +20,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { useI18n } from '@/hooks/useI18n';
 
 type PackSummary = {
   id: string;
@@ -221,6 +222,7 @@ function auditDescription(row: AuditRow): string {
 }
 
 export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
+  const { t } = useI18n();
   const [packs, setPacks] = useState<PackSummary[]>([]);
   const [storeCountry, setStoreCountry] = useState('');
   const [selectedPackId, setSelectedPackId] = useState('');
@@ -717,6 +719,33 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     }
   }
 
+  // Worked example for the "Menu prices" radios: show what a product priced
+  // 100 actually costs the customer at the rate of the default product
+  // category (falls back to the first category's first percent component).
+  const exampleRate = useMemo(() => {
+    const defaultCategory = manualCategories.find((category) => category.tempId === manualDefaults.product)
+      || manualCategories[0];
+    if (!defaultCategory) return null;
+    const percent = defaultCategory.components.find((component) => component.type === 'percent');
+    if (!percent) return null;
+    const rate = Number(percent.value);
+    if (!Number.isFinite(rate) || rate <= 0) return null;
+    return rate;
+  }, [manualCategories, manualDefaults.product]);
+  const example = useMemo(() => {
+    if (exampleRate == null) return null;
+    if (manualInclusive) {
+      const tax = 100 - 100 / (1 + exampleRate / 100);
+      return t('settings.taxConfigExampleInclusive', { rate: exampleRate, tax: tax.toFixed(2) });
+    }
+    const tax = 100 * (exampleRate / 100);
+    return t('settings.taxConfigExampleExclusive', {
+      rate: exampleRate,
+      total: (100 + tax).toFixed(2),
+      tax: tax.toFixed(2),
+    });
+  }, [exampleRate, manualInclusive, t]);
+
   if (loading && !detail) {
     return <div className="py-16 text-center text-sm text-gray-500">Loading tax configuration…</div>;
   }
@@ -819,6 +848,15 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           no official tax pack for your country yet, or to replace one with your own rates.
         </p>
 
+        {taxMode === 'official' && !manualOverrideConfirm && (
+          <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0" />
+            <span>
+              {t('settings.taxConfigOfficialPackReplaceWarning', { country: storeCountry })}
+            </span>
+          </div>
+        )}
+
         <div className="mt-4 space-y-3">
           {manualCategories.map((category) => (
             <div key={category.tempId} className="rounded-lg border border-gray-100 bg-gray-50 p-3">
@@ -898,6 +936,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
               Tax-inclusive (already baked into the menu price)
             </label>
           </div>
+          {example && <p className="mt-2 text-xs text-gray-500">{example}</p>}
         </div>
 
         <div className="mt-5 border-t border-gray-100 pt-4">

@@ -100,6 +100,7 @@ export default function ProductsPage() {
 
   const [taxCategories, setTaxCategories] = useState<{ id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]>([]);
   const [defaultTaxCategoryId, setDefaultTaxCategoryId] = useState('');
+  const [defaultTaxInclusive, setDefaultTaxInclusive] = useState<boolean | null>(null);
   const [showBulkTaxModal, setShowBulkTaxModal] = useState(false);
   const [bulkTaxCategoryId, setBulkTaxCategoryId] = useState('');
   const [bulkTaxApplying, setBulkTaxApplying] = useState(false);
@@ -146,9 +147,10 @@ export default function ProductsPage() {
       .finally(() => { setLoading(false); });
     api.get('/tax/categories', { signal: controller.signal })
       .then((res) => {
-        const data = res.data as { categories?: { id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]; default_category_id?: string | null };
+        const data = res.data as { categories?: { id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]; default_category_id?: string | null; default_inclusive?: boolean | null };
         setTaxCategories(data.categories || []);
         setDefaultTaxCategoryId(data.default_category_id || '');
+        setDefaultTaxInclusive(data.default_inclusive ?? null);
       })
       .catch((err: unknown) => {
         if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) setTaxCategories([]);
@@ -582,7 +584,19 @@ export default function ProductsPage() {
                 </td>
                 <td className="p-4 text-sm text-gray-600">
                   <div className="flex flex-col gap-0.5">
-                    <span>{taxLabel}</span>
+                    <span className="flex items-center gap-1.5 flex-wrap">
+                      {taxLabel}
+                      {product.tax_behavior === 'inclusive' && (
+                        <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200" title={t('products.taxInclusiveHint')}>
+                          {t('products.taxInclusiveShort')}
+                        </span>
+                      )}
+                      {product.tax_behavior === 'exclusive' && (
+                        <span className="inline-flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium text-blue-700 bg-blue-50 border border-blue-200" title={t('products.taxExclusiveHint')}>
+                          {t('products.taxExclusiveShort')}
+                        </span>
+                      )}
+                    </span>
                     {!product.tax_category_id && taxCategories.length > 0 && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title={t('products.notTaxedTooltip')}>
                         <AlertTriangle size={11} className="shrink-0" /> {t('products.notTaxedBadge')}
@@ -753,6 +767,15 @@ export default function ProductsPage() {
                     <option value="exempt">Exempt</option>
                   </select>
                   <p className="text-xs text-gray-400 mt-1">The rate is resolved from the active tax profile for this category, not entered manually.</p>
+                  {form.tax_behavior === 'country_default' && defaultTaxInclusive != null ? (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {t('products.taxBehaviorDefaultHint', { behavior: defaultTaxInclusive ? t('products.taxInclusive') : t('products.taxExclusive') })}
+                    </p>
+                  ) : form.tax_behavior === 'inclusive' ? (
+                    <p className="text-xs text-gray-400 mt-1">{t('products.taxInclusiveHint')}</p>
+                  ) : form.tax_behavior === 'exclusive' ? (
+                    <p className="text-xs text-gray-400 mt-1">{t('products.taxExclusiveHint')}</p>
+                  ) : null}
                 </div>
               ) : (
                 <p className="text-xs text-gray-400 -mt-2">

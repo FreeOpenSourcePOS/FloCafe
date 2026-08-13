@@ -1,0 +1,66 @@
+{
+  "schemaVersion": 1,
+  "id": "official-argentina",
+  "publisher": "official-argentina",
+  "version": "0.1.0",
+  "country": "AR",
+  "jurisdiction": "*",
+  "currency": "ARS",
+  "effectiveFrom": "2026-08-07",
+  "publishedAt": "2026-08-07",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": true,
+  "registrationNumberLabel": "CUIT",
+  "categories": [
+    { "id": "iva_21", "label": "IVA 21%", "ruleIds": ["iva-21"] },
+    { "id": "iva_105", "label": "IVA 10.5%", "ruleIds": ["iva-105"] },
+    { "id": "iva_27", "label": "IVA 27%", "ruleIds": ["iva-27"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": [], "defaultBehavior": "exempt" },
+    { "id": "delivery", "label": "Delivery", "ruleIds": [], "defaultBehavior": "exempt" },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": [], "defaultBehavior": "exempt" },
+    { "id": "addon", "label": "Add-on", "ruleIds": [], "defaultBehavior": "exempt" },
+    { "id": "iva_exempt", "label": "Exento", "ruleIds": [], "defaultBehavior": "exempt" }
+  ],
+  "defaultCategories": {
+    "product": "iva_21",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "iva_exempt",
+  "rules": [
+    {
+      "id": "iva-21",
+      "label": "IVA 21%",
+      "type": "percent",
+      "categoryIds": ["iva_21"],
+      "rate": "21"
+    },
+    {
+      "id": "iva-105",
+      "label": "IVA 10.5%",
+      "type": "percent",
+      "categoryIds": ["iva_105"],
+      "rate": "10.5"
+    },
+    {
+      "id": "iva-27",
+      "label": "IVA 27%",
+      "type": "percent",
+      "categoryIds": ["iva_27"],
+      "rate": "27"
+    }
+  ],
+  "taxRounding": {
+    "scope": "line",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

@@ -187,6 +187,26 @@ Describe 'Flo Cafe Windows uninstaller' {
     ($script:CleanupIssues -join "`n") | Should -Match 'access denied'
   }
 
+  It 'returns an incomplete result when registry deletion is a no-op' {
+    $script:CleanupComplete = $true
+    $script:CleanupIssues = New-Object 'System.Collections.Generic.List[string]'
+    $script:DryRun = $false
+    $entry = [pscustomobject]@{
+      PSChildName = 'FloCafe'
+      PSPath      = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
+    }
+
+    Mock Confirm-NoActiveUninstallWork { $true }
+    Mock Test-Path { $true }
+    Mock Remove-Item {}
+    $result = Invoke-RegistryRemoval $entry
+
+    $result | Should -BeFalse
+    $script:CleanupComplete | Should -BeFalse
+    ($script:CleanupIssues -join "`n") | Should -Match 'could NOT fully remove registry uninstall entry'
+    Should -Invoke Remove-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $entry.PSPath -and $Recurse -and $Force }
+  }
+
   It 'skips purge when Flo Cafe cannot be confirmed stopped' {
     $entry = [pscustomobject]@{
       DisplayName     = 'Flo Cafe'

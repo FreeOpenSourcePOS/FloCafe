@@ -554,7 +554,7 @@ export function registerRoutes(app: Express): void {
         // Only cancelled items can be restored; ignore if already active or voided
         if (currentItem.status !== 'cancelled') {
           const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
-          return { updatedOrder: currentOrder, items };
+          return { updatedOrder: currentOrder, items, changed: false };
         }
 
         // Re-deduct stock for tracked product if available
@@ -657,11 +657,13 @@ export function registerRoutes(app: Express): void {
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
-        return { updatedOrder, items };
+        return { updatedOrder, items, changed: true };
       });
 
-      cloudSync.recordOrderChanged(orderId, 'order.item_restored');
-      notifyKdsUpdate();
+      if (result.changed) {
+        cloudSync.recordOrderChanged(orderId, 'order.item_restored');
+        notifyKdsUpdate();
+      }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Restore item error:', error);

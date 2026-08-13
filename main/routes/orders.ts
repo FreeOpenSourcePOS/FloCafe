@@ -829,7 +829,7 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
 
     const nowStr = now();
 
-    const { updatedOrder, orderItems, table } = withTxn(() => {
+    const { updatedOrder, orderItems, table, changed } = withTxn(() => {
       const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });

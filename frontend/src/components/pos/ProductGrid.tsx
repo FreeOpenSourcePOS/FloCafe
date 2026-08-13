@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Search, SlidersHorizontal } from 'lucide-react';
 import type { Category, Product } from '@/lib/types';
 import { useCartStore } from '@/store/cart';
@@ -60,6 +61,13 @@ export default function ProductGrid({
   const { showProductImages } = usePosSettingsStore();
   const { t } = useI18n();
   const fmt = useFormatCurrency();
+  const cartQuantities = useMemo(() => {
+    const quantities = new Map<Product['id'], number>();
+    for (const item of cart.items) {
+      quantities.set(item.product.id, (quantities.get(item.product.id) || 0) + item.quantity);
+    }
+    return quantities;
+  }, [cart.items]);
 
   const filtered = products.filter((p) => {
     const matchCat = !selectedCategory || p.category_id === selectedCategory;
@@ -132,9 +140,7 @@ export default function ProductGrid({
             : 'grid-cols-5'
         }`}>
           {filtered.map((product) => {
-            const inCartQty = cart.items
-              .filter((i) => i.product.id === product.id)
-              .reduce((sum, i) => sum + i.quantity, 0);
+            const inCartQty = cartQuantities.get(product.id) || 0;
             
 
             return (

@@ -23,13 +23,27 @@ router.get('/', (req: Request, res: Response) => {
 
     query += ' ORDER BY sort_order, name';
 
-    const categories = db.prepare(query).all(...params);
+    const categories = db.prepare(query).all(...params) as any[];
 
-    // Load children for each category
-    const categoriesWithChildren = categories.map((cat: any) => {
-      const children = db.prepare('SELECT * FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order, name').all(cat.id);
-      return { ...cat, children };
-    });
+    const childRowsByParent = new Map<string, any[]>();
+    if (categories.length > 0) {
+      const placeholders = categories.map(() => '?').join(',');
+      const children = db.prepare(
+        `SELECT * FROM categories
+         WHERE parent_id IN (${placeholders}) AND deleted_at IS NULL
+         ORDER BY parent_id, sort_order, name`
+      ).all(...categories.map((cat) => cat.id)) as any[];
+      for (const child of children) {
+        const rows = childRowsByParent.get(child.parent_id) || [];
+        rows.push(child);
+        childRowsByParent.set(child.parent_id, rows);
+      }
+    }
+
+    const categoriesWithChildren = categories.map((cat) => ({
+      ...cat,
+      children: childRowsByParent.get(cat.id) || [],
+    }));
 
     res.json({ categories: categoriesWithChildren });
   } catch (error: any) {

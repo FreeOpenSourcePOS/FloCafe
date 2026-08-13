@@ -5,6 +5,7 @@ interface CartState {
   items: CartItem[];
   orderType: 'dine_in' | 'takeaway' | 'delivery';
   tableId: string | null;
+  heldOrderId: string | null;
   customerId: number | string | null;
   customer: Customer | null;
   guestCount: number;
@@ -16,7 +17,7 @@ interface CartState {
   removeItem: (cartItemId: string) => void;
   updateQuantity: (cartItemId: string, quantity: number) => void;
   clearCart: () => void;
-  loadItems: (items: CartItem[], tableId: string | null, customerId: number | string | null, guestCount: number, orderNotes?: string) => void;
+  loadItems: (items: CartItem[], tableId: string | null, customerId: number | string | null, guestCount: number, orderNotes?: string, heldOrderId?: string) => void;
   setOrderType: (type: CartState['orderType']) => void;
   setTableId: (id: string | null) => void;
   setCustomerId: (id: number | string | null) => void;
@@ -48,6 +49,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   items: [],
   orderType: 'dine_in',
   tableId: null,
+  heldOrderId: null,
   customerId: null,
   customer: null,
   guestCount: 1,
@@ -121,15 +123,15 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   clearCart: () => {
-    set({ items: [], tableId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', orderNotes: '' });
+    set({ items: [], tableId: null, heldOrderId: null, customerId: null, customer: null, guestCount: 1, orderType: 'dine_in', deliveryAddress: '', orderNotes: '' });
   },
 
-  loadItems: (items, tableId, customerId, guestCount, orderNotes) => {
-    set({ items, tableId, customerId, guestCount, orderNotes: orderNotes || '' });
+  loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
+    set({ items, tableId, heldOrderId: heldOrderId || null, customerId, guestCount, orderNotes: orderNotes || '' });
   },
 
   setOrderType: (type) => set((state) => ({ orderType: type, deliveryAddress: type !== 'delivery' ? '' : state.deliveryAddress })),
-  setTableId: (id) => set({ tableId: id }),
+  setTableId: (id) => set({ tableId: id, heldOrderId: null }),
   setCustomerId: (id) => set({ customerId: id }),
   setCustomer: (customer) => set({ customer, customerId: customer?.id ?? null }),
   setGuestCount: (count) => set({ guestCount: count }),

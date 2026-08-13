@@ -24,6 +24,8 @@ let nextOrderId = 0;
 let deleteError: Error | null = null;
 let deferNextGet = false;
 let releaseDeferredGet: (() => void) | null = null;
+let deferAllGets = false;
+const deferredGets: Array<{ response: { data: { orders: HeldOrder[] } }; resolve: (response: { data: { orders: HeldOrder[] } }) => void }> = [];
 let deferNextDelete = false;
 let releaseDeferredDelete: (() => void) | null = null;
 
@@ -39,6 +41,11 @@ const serverApi = {
       deferNextGet = false;
       return new Promise((resolve) => {
         releaseDeferredGet = () => resolve(response);
+      });
+    }
+    if (deferAllGets) {
+      return new Promise((resolve) => {
+        deferredGets.push({ response, resolve });
       });
     }
     return response;
@@ -167,6 +174,24 @@ async function main() {
   await secondTerminal.getState().fetchHeldOrders();
   assert.equal(secondTerminal.getState().getHeldOrder('table-b')?.id, replacement.id, 'reload picks up the replacement row');
 
+  const cleanupTableId = 'table-cleanup';
+  const cleanupInitial = makeHeldOrder(cleanupTableId);
+  serverOrders.set(cleanupTableId, cleanupInitial);
+  const replacementStore = createHeldOrdersStore(serverApi);
+  await replacementStore.getState().fetchHeldOrders();
+  const consumedReplacement = await replacementStore.getState().restoreOrder(cleanupTableId);
+  assert.equal(consumedReplacement?.id, cleanupInitial.id, 'cleanup scenario captures the consumed identity');
+  const cleanupReplacement = makeHeldOrder(cleanupTableId);
+  cleanupReplacement.id = 'ho-table-cleanup-replacement';
+  cleanupReplacement.orderNotes = 'cleanup replacement';
+  serverOrders.set(cleanupTableId, cleanupReplacement);
+  await replacementStore.getState().fetchHeldOrders();
+  await replacementStore.getState().removeHeldOrder(cleanupTableId, consumedReplacement?.id);
+  assert.equal(replacementStore.getState().getHeldOrder(cleanupTableId)?.id, cleanupReplacement.id, 'cleanup with the consumed identity preserves the replacement cache');
+  assert.equal(serverOrders.get(cleanupTableId)?.id, cleanupReplacement.id, 'cleanup with the consumed identity preserves the replacement row');
+  await replacementStore.getState().removeHeldOrder(cleanupTableId);
+  assert.equal(replacementStore.getState().getHeldOrder(cleanupTableId)?.id, cleanupReplacement.id, 'cleanup without an identity is a non-consuming no-op');
+
   deferNextGet = true;
   const staleReload = secondTerminal.getState().fetchHeldOrders();
   const currentReplacementRestore = await secondTerminal.getState().restoreOrder('table-b');
@@ -189,6 +214,25 @@ async function main() {
   await pendingInitialLoad;
   assert.equal(mergeStore.getState().hasHeldOrder('table-a'), true, 'unrelated local holds survive an in-flight reload');
   assert.equal(mergeStore.getState().hasHeldOrder('table-b'), true, 'in-flight reload still caches unaffected held orders');
+
+  const outOfOrderStore = createHeldOrdersStore(serverApi);
+  serverOrders.clear();
+  serverOrders.set('table-old', makeHeldOrder('table-old'));
+  deferAllGets = true;
+  const olderFetch = outOfOrderStore.getState().fetchHeldOrders();
+  serverOrders.clear();
+  serverOrders.set('table-new', makeHeldOrder('table-new'));
+  const newerFetch = outOfOrderStore.getState().fetchHeldOrders();
+  deferAllGets = false;
+  assert.equal(deferredGets.length, 2, 'two reloads remain pending for out-of-order resolution');
+  const olderResponse = deferredGets.shift();
+  const newerResponse = deferredGets.shift();
+  newerResponse?.resolve(newerResponse.response);
+  await newerFetch;
+  olderResponse?.resolve(olderResponse.response);
+  await olderFetch;
+  assert.equal(outOfOrderStore.getState().hasHeldOrder('table-new'), true, 'newer reload result remains cached');
+  assert.equal(outOfOrderStore.getState().hasHeldOrder('table-old'), false, 'older reload result cannot overwrite newer data');
 
   await secondTerminal.getState().removeHeldOrder('table-a');
   assert.equal(secondTerminal.getState().hasHeldOrder('table-a'), false, 'repeated deletion remains safe after stale cleanup');

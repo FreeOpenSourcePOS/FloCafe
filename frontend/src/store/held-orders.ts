@@ -19,7 +19,7 @@ interface HeldOrdersState {
   fetchHeldOrders: () => Promise<void>;
   holdOrder: (tableId: string, items: CartItem[], customerId: number | string | null, guestCount: number, orderNotes?: string) => Promise<void>;
   restoreOrder: (tableId: string) => Promise<HeldOrder | null>;
-  removeHeldOrder: (tableId: string) => Promise<void>;
+  removeHeldOrder: (tableId: string, expectedHeldOrderId?: string) => Promise<void>;
   hasHeldOrder: (tableId: string) => boolean;
   getHeldOrder: (tableId: string) => HeldOrder | undefined;
 }
@@ -117,9 +117,9 @@ export const createHeldOrdersStore = (apiClient: HeldOrdersApiClient = api) => c
       }
     },
 
-    removeHeldOrder: async (tableId) => {
+    removeHeldOrder: async (tableId, expectedHeldOrderId) => {
       try {
-        await deleteHeldOrderState(tableId, get().orders[tableId]?.id);
+        await deleteHeldOrderState(tableId, expectedHeldOrderId);
       } catch (err) {
         console.error('Failed to remove held order', err);
         throw err;

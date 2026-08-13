@@ -881,7 +881,7 @@ export default function OrdersPage() {
                       try {
                         const held = await heldOrdersStore.restoreOrder(heldOrder.tableId);
                         if (held) {
-                          cartStore.loadItems(held.items, heldOrder.tableId, held.customerId, held.guestCount, held.orderNotes);
+                          cartStore.loadItems(held.items, heldOrder.tableId, held.customerId, held.guestCount, held.orderNotes, held.id);
                           cartStore.setOrderType('dine_in');
                           router.push('/pos');
                         } else {
@@ -895,7 +895,7 @@ export default function OrdersPage() {
                     <Button onClick={async () => {
                       if (await confirm(t('orders.deleteHeldConfirm'), { destructive: true })) {
                         try {
-                          await heldOrdersStore.removeHeldOrder(heldOrder.tableId);
+                          await heldOrdersStore.removeHeldOrder(heldOrder.tableId, heldOrder.id);
                           toast.success(t('orders.heldOrderRemoved'));
                         } catch {
                           toast.error(t('orders.removeHeldOrderFailed'));

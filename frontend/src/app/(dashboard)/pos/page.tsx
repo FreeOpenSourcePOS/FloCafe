@@ -395,7 +395,7 @@ export default function POSPage() {
 
       if (cart.tableId) {
         try {
-          await heldOrders.removeHeldOrder(cart.tableId);
+          await heldOrders.removeHeldOrder(cart.tableId, cart.heldOrderId || undefined);
         } catch (heldOrderError) {
           // The order has already been placed. Do not turn a cleanup failure
           // into a failed sale or leave an unhandled promise in the console.
@@ -596,7 +596,7 @@ export default function POSPage() {
       toast.success(successMsg);
       if (cart.tableId) {
         try {
-          await heldOrders.removeHeldOrder(cart.tableId);
+          await heldOrders.removeHeldOrder(cart.tableId, cart.heldOrderId || undefined);
         } catch (heldOrderError) {
           // The payment is complete; clearing the held-order record is cleanup.
           console.error('Failed to clear held order after payment', heldOrderError);
@@ -656,7 +656,7 @@ export default function POSPage() {
     try {
       const held = await heldOrders.restoreOrder(tableId);
       if (held) {
-        cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes);
+        cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes, held.id);
         cart.setOrderType('dine_in');
       } else {
         await heldOrders.fetchHeldOrders();

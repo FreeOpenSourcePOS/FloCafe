@@ -174,18 +174,21 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
 router.delete('/:tableId', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
-    // New clients provide heldOrderId for compare-and-delete. The optional
-    // query keeps the old idempotent table-only cleanup contract compatible.
     const tableId = req.params.tableId;
     const expectedHeldOrderId = typeof req.query.heldOrderId === 'string' && req.query.heldOrderId.length > 0
       ? req.query.heldOrderId
       : null;
+
+    if (!expectedHeldOrderId) {
+      return res.json({ success: true, deleted: false });
+    }
+
     const db = getDatabase();
     
     let deleted = false;
     withTxn(() => {
       const existing = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId) as { id: string } | undefined;
-      if (existing && (!expectedHeldOrderId || existing.id === expectedHeldOrderId)) {
+      if (existing && existing.id === expectedHeldOrderId) {
         db.prepare('DELETE FROM held_orders WHERE table_id = ?').run(tableId);
         db.prepare('UPDATE tables SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(TABLE_STATUS_AVAILABLE, now(), tableId, TABLE_STATUS_HELD);
         deleted = true;

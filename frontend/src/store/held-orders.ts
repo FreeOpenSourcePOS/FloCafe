@@ -37,19 +37,27 @@ interface HeldOrderPostResponse {
 type HeldOrdersApiClient = Pick<typeof api, 'get' | 'post' | 'delete'>;
 
 export const createHeldOrdersStore = (apiClient: HeldOrdersApiClient = api) => create<HeldOrdersState>()((set, get) => {
-  let mutationVersion = 0;
+  const tableMutationVersions = new Map<string, number>();
   let fetchSequence = 0;
+
+  const getTableMutationVersion = (tableId: string) => tableMutationVersions.get(tableId) ?? 0;
+  const markTableMutation = (tableId: string) => {
+    tableMutationVersions.set(tableId, getTableMutationVersion(tableId) + 1);
+  };
 
   const deleteHeldOrderState = async (tableId: string, expectedHeldOrderId?: string) => {
     const query = expectedHeldOrderId ? `?heldOrderId=${encodeURIComponent(expectedHeldOrderId)}` : '';
     const { data } = await apiClient.delete<HeldOrderDeleteResponse>(`${HELD_ORDERS_ENDPOINT}/${tableId}${query}`);
-    // A successful no-op is a stale consumer, not permission to restore its cache.
-    mutationVersion += 1;
-    set((state) => {
-      const rest = { ...state.orders };
-      delete rest[tableId];
-      return { orders: rest };
-    });
+    if (expectedHeldOrderId) {
+      markTableMutation(tableId);
+      set((state) => {
+        const current = state.orders[tableId];
+        if (!current || current.id !== expectedHeldOrderId) return state;
+        const rest = { ...state.orders };
+        delete rest[tableId];
+        return { orders: rest };
+      });
+    }
     return data?.success === true && data.deleted === true;
   };
 
@@ -58,15 +66,22 @@ export const createHeldOrdersStore = (apiClient: HeldOrdersApiClient = api) => c
 
     fetchHeldOrders: async () => {
       const requestSequence = ++fetchSequence;
-      const requestMutationVersion = mutationVersion;
+      const requestMutationVersions = new Map(tableMutationVersions);
       try {
         const { data } = await apiClient.get(HELD_ORDERS_ENDPOINT);
-        if (data && data.orders && requestSequence === fetchSequence && requestMutationVersion === mutationVersion) {
-          const newOrders: Record<string, HeldOrder> = {};
-          for (const order of data.orders) {
-            newOrders[order.tableId] = order;
-          }
-          set({ orders: newOrders });
+        if (data && data.orders && requestSequence === fetchSequence) {
+          const fetchedOrders: Record<string, HeldOrder> = {};
+          for (const order of data.orders) fetchedOrders[order.tableId] = order;
+          set((state) => {
+            const newOrders = { ...state.orders };
+            const tableIds = new Set([...Object.keys(state.orders), ...Object.keys(fetchedOrders)]);
+            for (const tableId of tableIds) {
+              if (getTableMutationVersion(tableId) !== (requestMutationVersions.get(tableId) ?? 0)) continue;
+              if (fetchedOrders[tableId]) newOrders[tableId] = fetchedOrders[tableId];
+              else delete newOrders[tableId];
+            }
+            return { orders: newOrders };
+          });
         }
       } catch (err) {
         console.error('Failed to fetch held orders', err);
@@ -77,7 +92,7 @@ export const createHeldOrdersStore = (apiClient: HeldOrdersApiClient = api) => c
     holdOrder: async (tableId, items, customerId, guestCount, orderNotes = '') => {
       try {
         const { data } = await apiClient.post<HeldOrderPostResponse>(HELD_ORDERS_ENDPOINT, { tableId, items, customerId, guestCount, orderNotes });
-        mutationVersion += 1;
+        markTableMutation(tableId);
         set((state) => ({
           orders: {
             ...state.orders,

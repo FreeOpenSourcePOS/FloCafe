@@ -24,6 +24,8 @@ let nextOrderId = 0;
 let deleteError: Error | null = null;
 let deferNextGet = false;
 let releaseDeferredGet: (() => void) | null = null;
+let deferNextDelete = false;
+let releaseDeferredDelete: (() => void) | null = null;
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value));
@@ -66,10 +68,19 @@ const serverApi = {
     const parsed = new URL(url, 'http://localhost');
     const tableId = parsed.pathname.slice('/held-orders/'.length);
     const expectedHeldOrderId = parsed.searchParams.get('heldOrderId');
-    const current = serverOrders.get(tableId);
-    const deleted = !!current && (!expectedHeldOrderId || current.id === expectedHeldOrderId);
-    if (deleted) serverOrders.delete(tableId);
-    return { data: { success: true, deleted } };
+    const deleteCurrent = () => {
+      const current = serverOrders.get(tableId);
+      const deleted = !!current && !!expectedHeldOrderId && current.id === expectedHeldOrderId;
+      if (deleted) serverOrders.delete(tableId);
+      return { data: { success: true, deleted } };
+    };
+    if (deferNextDelete) {
+      deferNextDelete = false;
+      return new Promise((resolve) => {
+        releaseDeferredDelete = () => resolve(deleteCurrent());
+      });
+    }
+    return deleteCurrent();
   },
 };
 
@@ -131,6 +142,19 @@ async function main() {
   assert.equal(secondTerminal.getState().hasHeldOrder('table-a'), false, 'reloading does not resurrect the consumed order');
   assert.equal(secondTerminal.getState().hasHeldOrder('table-b'), true, 'reloading preserves still-held orders');
 
+  const replacementBeforeDelete = makeHeldOrder('table-race');
+  serverOrders.set('table-race', replacementBeforeDelete);
+  await secondTerminal.getState().fetchHeldOrders();
+  deferNextDelete = true;
+  const staleDelete = secondTerminal.getState().restoreOrder('table-race');
+  await secondTerminal.getState().holdOrder('table-race', replacementBeforeDelete.items, null, 1, 'replacement');
+  assert.equal(typeof releaseDeferredDelete, 'function', 'older delete remains pending while a replacement is held');
+  releaseDeferredDelete?.();
+  releaseDeferredDelete = null;
+  assert.equal(await staleDelete, null, 'late deletion of an older snapshot reports a stale restore');
+  assert.equal(secondTerminal.getState().getHeldOrder('table-race')?.orderNotes, 'replacement', 'late deletion cannot clear a newer cached replacement');
+  assert.equal(serverOrders.get('table-race')?.orderNotes, 'replacement', 'late deletion cannot remove the replacement row');
+
   const replacement = makeHeldOrder('table-b');
   replacement.id = 'ho-table-b-replacement';
   replacement.items[0].product = { id: 'product-new', name: 'Cappuccino', price: 120 };
@@ -152,6 +176,19 @@ async function main() {
   releaseDeferredGet = null;
   await staleReload;
   assert.equal(secondTerminal.getState().hasHeldOrder('table-b'), false, 'an older reload cannot resurrect a locally consumed order');
+
+  serverOrders.clear();
+  serverOrders.set('table-b', makeHeldOrder('table-b'));
+  const mergeStore = createHeldOrdersStore(serverApi);
+  deferNextGet = true;
+  const pendingInitialLoad = mergeStore.getState().fetchHeldOrders();
+  await mergeStore.getState().holdOrder('table-a', makeHeldOrder('table-a').items, null, 1);
+  assert.equal(typeof releaseDeferredGet, 'function', 'initial reload remains pending during an unrelated hold');
+  releaseDeferredGet?.();
+  releaseDeferredGet = null;
+  await pendingInitialLoad;
+  assert.equal(mergeStore.getState().hasHeldOrder('table-a'), true, 'unrelated local holds survive an in-flight reload');
+  assert.equal(mergeStore.getState().hasHeldOrder('table-b'), true, 'in-flight reload still caches unaffected held orders');
 
   await secondTerminal.getState().removeHeldOrder('table-a');
   assert.equal(secondTerminal.getState().hasHeldOrder('table-a'), false, 'repeated deletion remains safe after stale cleanup');

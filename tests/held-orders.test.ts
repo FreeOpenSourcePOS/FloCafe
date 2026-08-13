@@ -108,8 +108,15 @@ async function main() {
 
     // ═══════════════════════════════════════════════════════════════════
     console.log('\n─── Scenario D: DELETE /held-orders/:tableId removes order ───');
+
+    const noIdDeleteRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
+    assertEqual(noIdDeleteRes.status, 200, 'ID-less DELETE returns 200');
+    assertEqual(noIdDeleteRes.data.success, true, 'ID-less DELETE returns success');
+    assertEqual(noIdDeleteRes.data.deleted, false, 'ID-less DELETE is a non-consuming no-op');
+    assertEqual((db.prepare('SELECT status FROM tables WHERE id = ?').get(tableId) as any).status, 'held', 'ID-less DELETE preserves the held table');
+    assertEqual((await api(baseUrl, '/api/held-orders', { headers: authHeader })).data.orders.length, 1, 'ID-less DELETE preserves the held order');
     
-    const delRes = await api(baseUrl, `/api/held-orders/${tableId}`, { method: 'DELETE', headers: authHeader });
+    const delRes = await api(baseUrl, `/api/held-orders/${tableId}?heldOrderId=${encodeURIComponent(postRes.data.id)}`, { method: 'DELETE', headers: authHeader });
     assertEqual(delRes.status, 200, 'DELETE /held-orders returns 200');
     assertEqual(delRes.data.success, true, 'First DELETE returns success');
     assertEqual(delRes.data.deleted, true, 'First DELETE reports that the row was consumed');

@@ -38,7 +38,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $AppName = 'Flo Cafe'
-$AppProcessName = 'Flo Cafe'
+$script:AppProcessName = 'Flo Cafe'
 $RemovalAttempts = 6
 $RemovalRetryDelayMilliseconds = 500
 $AppGracefulCloseTimeoutSeconds = 10

@@ -14,6 +14,8 @@ import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, se
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
+let startReject: ((error: Error) => void) | null = null;
+let stopping = false;
 const SERVER_APP_PORT = getDefaultServerAppPort();
 
 type ServerAppUser = {
@@ -121,7 +123,9 @@ async function forwardToMainApi(req: Request, res: Response, targetPath: string)
 
 export function startServerApp(): Promise<void> {
   stopPromise = null;
+  stopping = false;
   return new Promise((resolve, reject) => {
+    startReject = reject;
     const app: Express = express();
 
     app.use(cors(corsOptions));
@@ -267,12 +271,18 @@ export function startServerApp(): Promise<void> {
     const tryListen = () => {
       const attemptedPort = currentPort;
       const onListening = () => {
+        if (stopping) {
+          try { serverApp?.close(); } catch { return; }
+          return;
+        }
+        startReject = null;
         serverApp?.off('error', onError);
         setServerAppPort(attemptedPort);
         console.log(`[Server App] HTTP server running on http://localhost:${getActiveServerAppPort()}`);
         resolve();
       };
       const onError = (err: NodeJS.ErrnoException) => {
+        if (stopping) return;
         serverApp?.off('listening', onListening);
         if (err.code === 'EADDRINUSE') {
           attempts++;
@@ -302,6 +312,10 @@ export function startServerApp(): Promise<void> {
 export function stopServerApp(): Promise<void> {
   if (stopPromise) return stopPromise;
 
+  stopping = true;
+  const rejectStart = startReject;
+  startReject = null;
+  rejectStart?.(new Error('Server App startup cancelled during shutdown'));
   const serverToClose = serverApp;
   // Mark the server unavailable immediately while active requests drain.
   serverApp = null;

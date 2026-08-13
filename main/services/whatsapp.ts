@@ -134,6 +134,21 @@ const state: {
   lidToPhoneMap: new Map(),
 };
 
+const inFlightWhatsAppWork = new Set<Promise<unknown>>();
+let whatsappShutdownPromise: Promise<void> | null = null;
+
+function trackWhatsAppWork<T>(operation: Promise<T>): Promise<T> {
+  inFlightWhatsAppWork.add(operation);
+  void operation.finally(() => inFlightWhatsAppWork.delete(operation)).catch(() => {});
+  return operation;
+}
+
+async function waitForWhatsAppWork(): Promise<void> {
+  while (inFlightWhatsAppWork.size > 0) {
+    await Promise.allSettled([...inFlightWhatsAppWork]);
+  }
+}
+
 function getAuthDir(): string {
   return path.join(app.getPath('userData'), AUTH_DIR_NAME);
 }
@@ -423,6 +438,7 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
   const resolvedJid = rawJid.endsWith('@g.us')
     ? rawJid
     : await translateJid(rawJid, msg.key?.remoteJidAlt, sock);
+  if (state.shuttingDown) return;
   const phone = '+' + userFromJid(resolvedJid);
   const body =
     msg.message?.conversation ??
@@ -443,7 +459,9 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
 }
 
 function attachSocketHandlers(socket: BaileysSocket): void {
-  socket.ev.on('connection.update', async (update: any) => {
+  socket.ev.on('connection.update', (update: any) => {
+    trackWhatsAppWork((async () => {
+    if (state.shuttingDown) return;
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
       state.lastQr = qr;
@@ -498,6 +516,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         state.state = 'disconnected';
       }
     }
+    })());
   });
 
   socket.ev.on('creds.update', () => {});
@@ -512,9 +531,12 @@ function attachSocketHandlers(socket: BaileysSocket): void {
     state.lidToPhoneMap.set(lidUser, phoneJid);
   });
 
-  socket.ev.on('messages.upsert', async ({ messages }: { messages: any[] }) => {
+  socket.ev.on('messages.upsert', ({ messages }: { messages: any[] }) => {
+    trackWhatsAppWork((async () => {
+    if (state.shuttingDown) return;
     const filterGroups = getSettingValue('whatsapp_filter_groups') === 'true';
     for (const msg of messages) {
+      if (state.shuttingDown) return;
       if (msg.key?.fromMe) continue;
       // No one asks Flo to deliver a paid bill into a group chat. When the
       // operator enables the group filter, drop inbound @g.us messages
@@ -523,10 +545,14 @@ function attachSocketHandlers(socket: BaileysSocket): void {
       if (filterGroups && msg.key?.remoteJid?.endsWith('@g.us')) continue;
       await persistIncoming(msg, socket);
     }
+    })());
   });
 
-  socket.ev.on('messages.update', async (updates: any[]) => {
+  socket.ev.on('messages.update', (updates: any[]) => {
+    trackWhatsAppWork((async () => {
+    if (state.shuttingDown) return;
     for (const u of updates) {
+      if (state.shuttingDown) return;
       const id = u.key?.id;
       if (!id) continue;
       const stored = findMessageByExternalId(id);
@@ -542,6 +568,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
       else if (status === 3) advanceStatus(stored.id, 'delivered');
       else if (status === 4) advanceStatus(stored.id, 'read');
     }
+    })());
   });
 }
 
@@ -575,16 +602,19 @@ async function resolveWaWebVersion(): Promise<[number, number, number] | undefin
   return undefined;
 }
 
-async function startSocket(): Promise<void> {
-  if (!state.enabled) return;
+async function startSocketImpl(): Promise<void> {
+  if (!state.enabled || state.shuttingDown) return;
   if (state.socket) return;
   const authDir = getAuthDir();
   if (!fs.existsSync(authDir)) {
     fs.mkdirSync(authDir, { recursive: true, mode: 0o700 });
   }
   const version = await resolveWaWebVersion();
+  if (state.shuttingDown) return;
   const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await loadBaileys();
+  if (state.shuttingDown) return;
   const { state: authState, saveCreds } = await useMultiFileAuthState(authDir);
+  if (state.shuttingDown) return;
   const socket = makeWASocket({
     version,
     auth: authState,
@@ -616,11 +646,16 @@ function wipeAuthDir(): void {
   }
 }
 
+function startSocket(): Promise<void> {
+  return trackWhatsAppWork(startSocketImpl());
+}
+
 export async function enable(userId: string): Promise<{ ok: boolean; error?: string }> {
   state.enabled = true;
   // Reset shutdown flag so the auto-reconnect-on-disconnect logic in the
   // close handler is active again after a previous disable() round.
   state.shuttingDown = false;
+  whatsappShutdownPromise = null;
   writeSetting('whatsapp_enabled', 'true');
   writeSetting('whatsapp_activated_by_user_id', userId);
   writeSetting('whatsapp_activated_at', now());
@@ -728,7 +763,11 @@ const sendLocks = new Map<string, Promise<void>>();
 // Serialize sends per recipient. The rate-limit and duplicate-body checks are
 // synchronous, but sendMessage yields while resolving the JID and sending;
 // without this lock two requests could both pass those checks.
-export async function sendMessage(req: QueuedSend): Promise<SendResult> {
+export function sendMessage(req: QueuedSend): Promise<SendResult> {
+  return trackWhatsAppWork(sendMessageWithLock(req));
+}
+
+async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
   const previous = sendLocks.get(req.phoneE164) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
@@ -743,13 +782,14 @@ export async function sendMessage(req: QueuedSend): Promise<SendResult> {
 }
 
 async function sendMessageInternal(req: QueuedSend): Promise<SendResult> {
-  if (!state.enabled) return { ok: false, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
+  if (!state.enabled || state.shuttingDown) return { ok: false, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
   if (!req.phoneE164) return { ok: false, error: 'Phone number required.', reason: 'no_phone' };
   if (state.state !== 'connected' || !state.socket) {
     return { ok: false, error: 'Flo is not connected to WhatsApp.', reason: 'not_connected' };
   }
   const socket = state.socket;
   const jid = await resolveJid(req.phoneE164, socket);
+  if (state.shuttingDown) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
   if (!jid) {
     return { ok: false, error: 'This phone is not registered on WhatsApp.', reason: 'not_on_whatsapp' };
   }
@@ -820,6 +860,7 @@ async function sendMessageInternal(req: QueuedSend): Promise<SendResult> {
     await new Promise((r) => setTimeout(r, randomDelayMs(req.body)));
     await socket.sendPresenceUpdate('paused', jid).catch(() => {});
     const sent = await socket.sendMessage(jid, { text: req.body });
+    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
     // sendMessage() only resolves when Baileys hands the payload to its
     // local queue — not when WhatsApp's servers ACK it. Don't claim 'sent'
     // yet; the messages.update handler sets status='sent' + sent_at when
@@ -846,6 +887,7 @@ async function sendMessageInternal(req: QueuedSend): Promise<SendResult> {
     }
     return { ok: true, messageId };
   } catch (err: any) {
+    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
     updateMessageRow(messageId, {
       status: 'failed',
       error: err?.message ?? 'Send failed',
@@ -976,7 +1018,8 @@ export function initFromDb(): void {
   }
 }
 
-export function shutdown(): void {
+export function shutdown(): Promise<void> {
+  if (whatsappShutdownPromise) return whatsappShutdownPromise;
   state.shuttingDown = true;
   if (state.cooldownTimer) { clearTimeout(state.cooldownTimer); state.cooldownTimer = null; }
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
@@ -984,4 +1027,6 @@ export function shutdown(): void {
     try { state.socket.end(undefined); } catch { /* ignore */ }
     state.socket = null;
   }
+  whatsappShutdownPromise = waitForWhatsAppWork();
+  return whatsappShutdownPromise;
 }

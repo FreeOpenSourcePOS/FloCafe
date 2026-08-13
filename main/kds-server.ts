@@ -15,6 +15,8 @@ import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, re
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
 let stopPromise: Promise<void> | null = null;
+let startReject: ((error: Error) => void) | null = null;
+let stopping = false;
 const KDS_PORT = parseInt(process.env.KDS_PORT || '3002', 10);
 let activeKdsPort = KDS_PORT;
 
@@ -76,7 +78,9 @@ function rewriteNextExportPath(reqPath: string): string {
 
 export function startKdsServer(): Promise<void> {
   stopPromise = null;
+  stopping = false;
   return new Promise((resolve, reject) => {
+    startReject = reject;
     const app: Express = express();
 
     app.use(cors(corsOptions));
@@ -551,6 +555,11 @@ export function startKdsServer(): Promise<void> {
     let attempts = 0;
 
     const onListening = () => {
+      if (stopping) {
+        try { kdsServer?.close(); } catch { return; }
+        return;
+      }
+      startReject = null;
       const address = kdsServer?.address();
       activeKdsPort = address && typeof address !== 'string' ? address.port : currentKdsPort;
       console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
@@ -602,6 +611,7 @@ export function startKdsServer(): Promise<void> {
     kdsServer = app.listen(currentKdsPort, '0.0.0.0', onListening);
 
     kdsServer?.on('error', (err: NodeJS.ErrnoException) => {
+      if (stopping) return;
       if (err.code === 'EADDRINUSE') {
         attempts++;
         if (attempts >= 10) {
@@ -623,6 +633,10 @@ export function startKdsServer(): Promise<void> {
 export function stopKdsServer(): Promise<void> {
   if (stopPromise) return stopPromise;
 
+  stopping = true;
+  const rejectStart = startReject;
+  startReject = null;
+  rejectStart?.(new Error('KDS server startup cancelled during shutdown'));
   const serverToClose = kdsServer;
   const wssToClose = kdsWss;
   // Mark resources unavailable immediately while the captured listeners and

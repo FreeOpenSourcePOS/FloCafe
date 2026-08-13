@@ -18,6 +18,8 @@ let server: http.Server | null = null;
 let app: Express;
 let wss: WebSocketServer | null = null;
 let stopPromise: Promise<void> | null = null;
+let startReject: ((error: Error) => void) | null = null;
+let stopping = false;
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 let activePort = PORT;
@@ -142,7 +144,9 @@ export function resolveStaticPage(frontendDir: string, reqPath: string): string 
 
 export function startServer(): Promise<void> {
   stopPromise = null;
+  stopping = false;
   return new Promise((resolve, reject) => {
+    startReject = reject;
     app = express();
 
     app.use(cors(corsOptions));
@@ -256,6 +260,11 @@ export function startServer(): Promise<void> {
     let attempts = 0;
 
     server = app.listen(currentPort, '0.0.0.0', () => {
+      if (stopping) {
+        try { server?.close(); } catch { return; }
+        return;
+      }
+      startReject = null;
       const address = server?.address();
       activePort = address && typeof address !== 'string' ? address.port : currentPort;
       console.log(`[Server] HTTP server running on http://localhost:${activePort}`);
@@ -317,6 +326,7 @@ export function startServer(): Promise<void> {
     });
 
     server?.on('error', (err: NodeJS.ErrnoException) => {
+      if (stopping) return;
       if (err.code === 'EADDRINUSE') {
         attempts++;
         if (attempts >= 10) {
@@ -338,6 +348,10 @@ export function startServer(): Promise<void> {
 export function stopServer(): Promise<void> {
   if (stopPromise) return stopPromise;
 
+  stopping = true;
+  const rejectStart = startReject;
+  startReject = null;
+  rejectStart?.(new Error('Main server startup cancelled during shutdown'));
   const serverToClose = server;
   const wssToClose = wss;
   // Mark resources unavailable immediately. Repeated callers share the same

@@ -172,6 +172,14 @@ async function testHttpStopsAcceptingBeforeSlowWebSocketDrain(): Promise<void> {
   }
 }
 
+async function testPendingHttpListenIsCancelled(): Promise<void> {
+  const server = http.createServer((_request, response) => response.end('ok'));
+  server.listen(0, '127.0.0.1');
+  await closeServerResources(server, null, 'pending HTTP listen test');
+  await delay(20);
+  assert.equal(server.listening, false, 'shutdown cancels an HTTP listener that has not finished starting');
+}
+
 async function testEntrypointCoverage(): Promise<void> {
   const runScenario = async (signal: 'SIGTERM' | 'SIGINT'): Promise<void> => {
     const app = new AppDouble();
@@ -504,6 +512,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   console.log('phase resources');
   await testActiveHttpAndWebSocketDrain();
   await testHttpStopsAcceptingBeforeSlowWebSocketDrain();
+  await testPendingHttpListenIsCancelled();
   console.log('phase entrypoints');
   await testEntrypointCoverage();
   await testExitCodeEscalation();

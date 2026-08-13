@@ -47,6 +47,7 @@ const DAY_MS = 24 * 60 * 60_000;
 const WEEK_MS = 7 * DAY_MS;
 const SCHEDULE_CHECK_INTERVAL_MS = 60 * 60_000; // hourly, same cadence as telemetry's daily-ping check
 const LOOPBACK_TIMEOUT_MS = 5 * 60_000;
+const DRIVE_REQUEST_TIMEOUT_MS = 10_000;
 
 export type BackupFrequency = 'daily' | 'weekly';
 
@@ -126,6 +127,7 @@ class GoogleDriveService {
   private scheduleTimer: ReturnType<typeof setInterval> | null = null;
   private backingUp = false;
   private backupPromise: Promise<GoogleDriveStatus> | null = null;
+  private backupAbortController: AbortController | null = null;
   private stopping = false;
   private stopPromise: Promise<void> | null = null;
 
@@ -143,6 +145,7 @@ class GoogleDriveService {
   stop(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     this.stopping = true;
+    this.backupAbortController?.abort();
     if (this.scheduleTimer) {
       clearInterval(this.scheduleTimer);
       this.scheduleTimer = null;
@@ -286,22 +289,26 @@ class GoogleDriveService {
     if (this.stopping) throw new Error('Google Drive is stopping');
     if (this.backingUp) return this.getStatus();
     this.backingUp = true;
-    const operation = this.runBackup();
+    const abortController = new AbortController();
+    this.backupAbortController = abortController;
+    const operation = this.runBackup(abortController.signal);
     this.backupPromise = operation;
     try {
       return await operation;
     } finally {
       this.backingUp = false;
       this.backupPromise = null;
+      if (this.backupAbortController === abortController) this.backupAbortController = null;
     }
   }
 
-  private async runBackup(): Promise<GoogleDriveStatus> {
+  private async runBackup(signal: AbortSignal): Promise<GoogleDriveStatus> {
     try {
       const client = await this.getAuthorizedClient();
       const drive = google.drive({ version: 'v3', auth: client });
-      const folderId = await this.ensureAppFolder(drive);
+      const folderId = await this.ensureAppFolder(drive, signal);
 
+      if (this.stopping) throw new Error('Google Drive backup cancelled during shutdown');
       const { path: backupPath } = await createBackup();
       const fileName = path.basename(backupPath);
 
@@ -309,10 +316,11 @@ class GoogleDriveService {
         requestBody: { name: fileName, parents: [folderId] },
         media: { mimeType: 'application/x-sqlite3', body: fs.createReadStream(backupPath) },
         fields: 'id',
-      });
+      }, { signal, timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
 
-      await this.applyRetention(drive, folderId);
+      await this.applyRetention(drive, folderId, signal);
 
+      if (this.stopping) throw new Error('Google Drive backup cancelled during shutdown');
       this.upsertSettings({
         google_drive_folder_id: folderId,
         google_drive_last_backup_at: new Date().toISOString(),
@@ -322,6 +330,7 @@ class GoogleDriveService {
       });
       return this.getStatus();
     } catch (err) {
+      if (this.stopping) throw err;
       const message = (err as Error).message;
       this.upsertSettings({
         google_drive_last_backup_status: 'error',
@@ -363,12 +372,12 @@ class GoogleDriveService {
     return data.email || null;
   }
 
-  private async ensureAppFolder(drive: ReturnType<typeof google.drive>): Promise<string> {
+  private async ensureAppFolder(drive: ReturnType<typeof google.drive>, signal: AbortSignal): Promise<string> {
     const existingId = this.readSettings().google_drive_folder_id;
     if (existingId) {
       // Confirm it still exists / is still visible to this scope before reusing it.
       try {
-        const res = await drive.files.get({ fileId: existingId, fields: 'id, trashed' });
+        const res = await drive.files.get({ fileId: existingId, fields: 'id, trashed' }, { signal, timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
         if (res.data.id && !res.data.trashed) return res.data.id;
       } catch {
         // fall through and re-resolve / recreate below
@@ -380,19 +389,19 @@ class GoogleDriveService {
       fields: 'files(id, name)',
       spaces: 'drive',
       pageSize: 1,
-    });
+    }, { signal, timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
     const existing = found.data.files?.[0]?.id;
     if (existing) return existing;
 
     const created = await drive.files.create({
       requestBody: { name: DRIVE_BACKUP_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
       fields: 'id',
-    });
+    }, { signal, timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
     if (!created.data.id) throw new Error('Google Drive did not return a folder id');
     return created.data.id;
   }
 
-  private async applyRetention(drive: ReturnType<typeof google.drive>, folderId: string): Promise<void> {
+  private async applyRetention(drive: ReturnType<typeof google.drive>, folderId: string, signal: AbortSignal): Promise<void> {
     const retention = this.retentionFromSettings(this.readSettings());
     const files: { id: string; createdTime: string }[] = [];
     let pageToken: string | undefined;
@@ -404,7 +413,7 @@ class GoogleDriveService {
         pageSize: 1000,
         pageToken,
         spaces: 'drive',
-      });
+      }, { signal, timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
       files.push(...(res.data.files || [])
         .filter((f): f is { id: string; name?: string | null; createdTime: string } => Boolean(f.id && f.createdTime))
         .map((f) => ({ id: f.id, createdTime: f.createdTime })));
@@ -416,7 +425,7 @@ class GoogleDriveService {
     for (let i = 0; i < toDelete.length; i += 5) {
       await Promise.all(toDelete.slice(i, i + 5).map(async (id) => {
         try {
-          await drive.files.delete({ fileId: id });
+          await drive.files.delete({ fileId: id }, { signal, timeout: DRIVE_REQUEST_TIMEOUT_MS } as any);
         } catch (err) {
           log.warn('[GoogleDrive] retention delete failed', id, (err as Error).message);
         }

@@ -59,13 +59,6 @@ async function withShutdownTimeout<T>(
 export function closeHttpServer(server: http.Server, label: string): Promise<void> {
   const closableServer = server as ClosableHttpServer;
   const closePromise = new Promise<void>((resolve, reject) => {
-    // A server that failed before listen has no work to drain. Avoid calling
-    // close() in that state because Node reports ERR_SERVER_NOT_RUNNING.
-    if (!closableServer.listening) {
-      resolve();
-      return;
-    }
-
     try {
       closableServer.close((error?: Error) => {
         if (error && !isAlreadyClosedError(error)) {

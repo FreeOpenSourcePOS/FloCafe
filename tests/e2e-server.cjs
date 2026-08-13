@@ -134,29 +134,38 @@ function seedPosFixture() {
   );
 }
 
-let stopping = false;
-function stop(exitCode = 0) {
-  if (stopping) return;
-  stopping = true;
-  let cleanupFailed = false;
-  try { stopServer(); } catch (error) {
-    cleanupFailed = true;
-    console.error('[E2E] Main server cleanup failed:', error);
+let stopPromise = null;
+let exitRequested = false;
+async function stop(exitCode = 0) {
+  if (!stopPromise) {
+    stopPromise = (async () => {
+      let cleanupFailed = false;
+      try { await stopServer(); } catch (error) {
+        cleanupFailed = true;
+        console.error('[E2E] Main server cleanup failed:', error);
+      }
+      try { await stopKdsServer(); } catch (error) {
+        cleanupFailed = true;
+        console.error('[E2E] KDS server cleanup failed:', error);
+      }
+      try { closeDatabase(); } catch (error) {
+        cleanupFailed = true;
+        console.error('[E2E] Database cleanup failed:', error);
+      }
+      Module._load = originalLoad;
+      try { fs.rmSync(testDir, { recursive: true, force: true }); } catch (error) {
+        cleanupFailed = true;
+        console.error('[E2E] Fixture cleanup failed:', error);
+      }
+      return { cleanupFailed, exitCode };
+    })();
   }
-  try { stopKdsServer(); } catch (error) {
-    cleanupFailed = true;
-    console.error('[E2E] KDS server cleanup failed:', error);
+
+  const result = await stopPromise;
+  if (!exitRequested) {
+    exitRequested = true;
+    process.exit(result.cleanupFailed ? 1 : result.exitCode);
   }
-  try { closeDatabase(); } catch (error) {
-    cleanupFailed = true;
-    console.error('[E2E] Database cleanup failed:', error);
-  }
-  Module._load = originalLoad;
-  try { fs.rmSync(testDir, { recursive: true, force: true }); } catch (error) {
-    cleanupFailed = true;
-    console.error('[E2E] Fixture cleanup failed:', error);
-  }
-  process.exit(cleanupFailed ? 1 : exitCode);
 }
 
 (async () => {

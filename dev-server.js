@@ -75,16 +75,26 @@ const { startServer, stopServer, getServerPort } = require('./dist/server');
 const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/kds-server');
 const { startServerApp, stopServerApp, getServerAppPort } = require('./dist/server-app');
 
-let shuttingDown = false;
+let shutdownPromise = null;
+let exitRequested = false;
 async function shutdown(exitCode = 0) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  try { await Promise.resolve(stopServerApp()); } catch (err) { console.error('[DevServer] Server App shutdown failed:', err); exitCode = 1; }
-  try { await Promise.resolve(stopServer()); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); exitCode = 1; }
-  try { await Promise.resolve(stopKdsServer()); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); exitCode = 1; }
-  try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); exitCode = 1; }
-  Module._load = originalLoad;
-  process.exit(exitCode);
+  if (!shutdownPromise) {
+    shutdownPromise = (async () => {
+      let finalExitCode = exitCode;
+      try { await stopServerApp(); } catch (err) { console.error('[DevServer] Server App shutdown failed:', err); finalExitCode = 1; }
+      try { await stopServer(); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); finalExitCode = 1; }
+      try { await stopKdsServer(); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); finalExitCode = 1; }
+      try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); finalExitCode = 1; }
+      Module._load = originalLoad;
+      return finalExitCode;
+    })();
+  }
+
+  const finalExitCode = await shutdownPromise;
+  if (!exitRequested) {
+    exitRequested = true;
+    process.exit(finalExitCode);
+  }
 }
 
 process.once('SIGINT', () => void shutdown(0));

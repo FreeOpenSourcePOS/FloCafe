@@ -16,6 +16,7 @@ import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from '
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
+import { createShutdownCoordinator, SHUTDOWN_TIMEOUT_MS } from './shutdown';
 
 // ── GPU compatibility ────────────────────────────────────────────────────────
 // On Windows, some systems hit "GPU process exited unexpectedly" (exit code
@@ -166,7 +167,9 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
-let hasCleanedUp = false;
+let cleanupFinished = false;
+let cleanupPromise: Promise<void> | null = null;
+let quitAfterCleanupRequested = false;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -356,13 +359,10 @@ function createTray(): void {
                 tray.destroy();
                 tray = null;
               }
+              // will-quit owns the same awaited cleanup sequence as every
+              // other Electron entrypoint. Do not force-exit while resources
+              // are still draining.
               app.quit();
-              // Fallback: force exit if will-quit does not fire in time
-              setTimeout(() => {
-                console.log('[Tray] app.quit() hung, forcing exit');
-                runCleanup();
-                app.exit(0);
-              }, 1000);
             }, 100);
           },
         },
@@ -428,11 +428,43 @@ function startMdns(): void {
   }
 }
 
-function stopMdns(): void {
-  if (bonjour) {
-    bonjour.unpublishAll(() => bonjour?.destroy());
-    bonjour = null;
-  }
+function stopMdns(): Promise<void> {
+  // Capture the instance before clearing the global reference. Bonjour invokes
+  // this callback later, after unpublishAll has finished.
+  const instance = bonjour;
+  bonjour = null;
+  if (!instance) return Promise.resolve();
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish(new Error(`Bonjour shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`));
+    }, SHUTDOWN_TIMEOUT_MS);
+
+    const finish = (unpublishError?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        instance.destroy();
+      } catch (destroyError) {
+        if (unpublishError) {
+          reject(new AggregateError([unpublishError, destroyError], 'Bonjour shutdown failed'));
+        } else {
+          reject(destroyError);
+        }
+        return;
+      }
+      if (unpublishError) reject(unpublishError);
+      else resolve();
+    };
+
+    try {
+      instance.unpublishAll(() => finish());
+    } catch (error) {
+      finish(error);
+    }
+  });
 }
 
 function createMenu(): void {
@@ -655,8 +687,8 @@ async function initialize(): Promise<void> {
 
     // Best-effort: report the fatal startup failure so support can see which
     // installs are stuck on a stale build without waiting for a user to
-    // describe the error message themselves. Never let this delay/block the
-    // actual quit — db may not even be open yet depending on where init failed.
+    // describe the error message themselves. The cleanup below remains safe
+    // even when initialization failed before the database or listeners opened.
     try {
       const payload: Record<string, unknown> = {
         error_message: String(error instanceof Error ? error.message : error).slice(0, 500),
@@ -670,8 +702,14 @@ async function initialize(): Promise<void> {
       console.error('[Flo] Failed to report startup error via telemetry:', telemetryError);
     }
 
-    app.quit();
-    process.exit(1);
+    isQuitting = true;
+    try {
+      await runCleanup();
+    } catch (cleanupError) {
+      console.error('[Flo] Cleanup after initialization failure failed:', cleanupError);
+    }
+    // Cleanup has settled (or reported its bounded failure) before exiting.
+    app.exit(1);
   }
 }
 
@@ -691,73 +729,100 @@ app.on('activate', () => {
   }
 });
 
-// --- Cleanup function (idempotent — safe to call from multiple places) ---
-function runCleanup(): void {
-  if (hasCleanedUp) return;
-  hasCleanedUp = true;
-  console.log('[Flo] Running cleanup...');
+// --- Cleanup function (idempotent — safe to call from every entrypoint) ---
+const cleanupCoordinator = createShutdownCoordinator(() => [
+  {
+    name: 'tray',
+    run: () => {
+      const currentTray = tray;
+      tray = null;
+      if (currentTray) currentTray.destroy();
+    },
+  },
+  { name: 'cloud sync', run: () => cloudSync.stop() },
+  { name: 'telemetry', run: () => telemetry.stop() },
+  { name: 'Google Drive', run: () => googleDrive.stop() },
+  { name: 'WhatsApp', run: () => shutdownWhatsApp() },
+  { name: 'Bonjour', run: () => stopMdns() },
+  // The Server App can be forwarding an active request to the main API, so
+  // drain it before closing the API listener it depends on.
+  { name: 'Server App', run: () => stopServerApp() },
+  { name: 'Main server', run: () => stopServer() },
+  { name: 'KDS server', run: () => stopKdsServer() },
+  // Database closure is deliberately last: all HTTP and WebSocket work must
+  // have settled before handlers can lose access to SQLite.
+  { name: 'database', run: () => closeDatabase() },
+]);
 
-  // Destroy tray to prevent ghost icons on X11/GNOME/KDE
-  if (tray) {
-    try { tray.destroy(); } catch (e) { console.error('[Flo] tray.destroy error:', e); }
-    tray = null;
+function runCleanup(): Promise<void> {
+  if (!cleanupPromise) {
+    console.log('[Flo] Running cleanup...');
+    cleanupPromise = cleanupCoordinator();
+    cleanupPromise.then(
+      () => {
+        cleanupFinished = true;
+        console.log('[Flo] Goodbye!');
+      },
+      (error) => {
+        cleanupFinished = true;
+        console.error('[Flo] Cleanup failed:', error);
+      },
+    );
   }
+  return cleanupPromise;
+}
 
-  // Tear down services — each wrapped so one failure doesn't block others
-  try { cloudSync.stop(); } catch (e) { console.error('[Flo] cloudSync.stop error:', e); }
-  try { telemetry.stop(); } catch (e) { console.error('[Flo] telemetry.stop error:', e); }
-  try { googleDrive.stop(); } catch (e) { console.error('[Flo] googleDrive.stop error:', e); }
-  try { shutdownWhatsApp(); } catch (e) { console.error('[Flo] shutdownWhatsApp error:', e); }
-  try { stopMdns(); } catch (e) { console.error('[Flo] stopMdns error:', e); }
-  try { stopServerApp(); } catch (e) { console.error('[Flo] stopServerApp error:', e); }
-  try { stopKdsServer(); } catch (e) { console.error('[Flo] stopKdsServer error:', e); }
-  try { stopServer(); } catch (e) { console.error('[Flo] stopServer error:', e); }
-  try { closeDatabase(); } catch (e) { console.error('[Flo] closeDatabase error:', e); }
-
-  console.log('[Flo] Goodbye!');
+function quitAfterCleanup(): void {
+  if (quitAfterCleanupRequested) return;
+  quitAfterCleanupRequested = true;
+  isQuitting = true;
+  void runCleanup().then(
+    () => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+      app.quit();
+    },
+    (error) => {
+      console.error('[Flo] Cleanup failed before quit:', error);
+      app.exit(1);
+    },
+  );
 }
 
 app.on('before-quit', () => {
-  if (isQuitting) return; // guard against re-entry
   isQuitting = true;
 });
 
 app.on('will-quit', (event) => {
-  // Run cleanup if it hasn't run yet
-  if (!hasCleanedUp) {
-    try {
-      runCleanup();
-    } catch (e) {
-      console.error('[Flo] Cleanup failed, retrying:', e);
-      event.preventDefault(); // delay quit to retry
-      setTimeout(() => {
-        runCleanup();
-        app.exit(0); // force exit after retry
-      }, 500);
-      return;
-    }
+  if (cleanupFinished) {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+    return;
   }
-  // Force-destroy window to prevent Linux compositor stall
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.destroy();
-  }
-});
-
-app.on('quit', () => {
-  runCleanup(); // fallback — defense in depth
+  // Electron cannot await an event handler. Prevent the quit transition and
+  // resume it only after the shared cleanup promise has settled.
+  event.preventDefault();
+  quitAfterCleanup();
 });
 
 // --- SIGTERM/SIGINT handlers (Linux/Unix — clean shutdown on external signals) ---
-process.on('SIGTERM', () => {
+function exitAfterCleanup(exitCode: number): void {
+  isQuitting = true;
+  void runCleanup().then(
+    () => process.exit(exitCode),
+    (error) => {
+      console.error('[Flo] Cleanup failed before signal exit:', error);
+      process.exit(1);
+    },
+  );
+}
+
+process.once('SIGTERM', () => {
   console.log('[Flo] SIGTERM received, cleaning up...');
-  runCleanup();
-  process.exit(0);
+  exitAfterCleanup(0);
 });
 
-process.on('SIGINT', () => {
+process.once('SIGINT', () => {
   console.log('[Flo] SIGINT received, cleaning up...');
-  runCleanup();
-  process.exit(0);
+  exitAfterCleanup(0);
 });
 
 process.on('uncaughtException', (error) => {

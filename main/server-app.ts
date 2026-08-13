@@ -5,6 +5,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { closeServerResources } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled } from './db';
 import { getJWTSecret } from './routes/auth';
 import { authRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
@@ -12,6 +13,7 @@ import { getServerPort } from './server';
 import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, setServerAppPort } from './server-app-state';
 
 let serverApp: http.Server | null = null;
+let stopPromise: Promise<void> | null = null;
 const SERVER_APP_PORT = getDefaultServerAppPort();
 
 type ServerAppUser = {
@@ -118,6 +120,7 @@ async function forwardToMainApi(req: Request, res: Response, targetPath: string)
 }
 
 export function startServerApp(): Promise<void> {
+  stopPromise = null;
   return new Promise((resolve, reject) => {
     const app: Express = express();
 
@@ -296,12 +299,18 @@ export function startServerApp(): Promise<void> {
   });
 }
 
-export function stopServerApp(): void {
-  if (serverApp) {
-    serverApp.close();
-    serverApp = null;
-    console.log('[Server App] HTTP server stopped');
-  }
+export function stopServerApp(): Promise<void> {
+  if (stopPromise) return stopPromise;
+
+  const serverToClose = serverApp;
+  // Mark the server unavailable immediately while active requests drain.
+  serverApp = null;
+
+  stopPromise = closeServerResources(serverToClose, null, 'Server App')
+    .then(() => {
+      console.log('[Server App] HTTP server stopped');
+    });
+  return stopPromise;
 }
 
 export function getServerAppPort(): number {

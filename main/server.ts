@@ -2,6 +2,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import * as http from 'http';
+import { closeServerResources } from './shutdown';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -15,7 +16,8 @@ import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 
 let server: http.Server | null = null;
 let app: Express;
-let wss: WebSocketServer;
+let wss: WebSocketServer | null = null;
+let stopPromise: Promise<void> | null = null;
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 let activePort = PORT;
@@ -139,6 +141,7 @@ export function resolveStaticPage(frontendDir: string, reqPath: string): string 
 }
 
 export function startServer(): Promise<void> {
+  stopPromise = null;
   return new Promise((resolve, reject) => {
     app = express();
 
@@ -253,16 +256,18 @@ export function startServer(): Promise<void> {
     let attempts = 0;
 
     server = app.listen(currentPort, '0.0.0.0', () => {
-      activePort = currentPort;
-      console.log(`[Server] HTTP server running on http://localhost:${currentPort}`);
+      const address = server?.address();
+      activePort = address && typeof address !== 'string' ? address.port : currentPort;
+      console.log(`[Server] HTTP server running on http://localhost:${activePort}`);
 
       if (server) {
         // noServer + a manual 'upgrade' handler (rather than passing `server`
         // straight to WebSocketServer) so a disabled KDS can 404 the upgrade
         // instead of completing it — checked fresh on every request since
         // kds_enabled can change at runtime without a restart (issue #133).
-        wss = new WebSocketServer({ noServer: true });
-        setupKdsWebSocket(wss);
+        const websocketServer = new WebSocketServer({ noServer: true });
+        wss = websocketServer;
+        setupKdsWebSocket(websocketServer);
 
         server.on('upgrade', (request, socket, head) => {
           const pathname = (request.url || '').split('?')[0];
@@ -288,8 +293,8 @@ export function startServer(): Promise<void> {
           }
 
           try {
-            wss.handleUpgrade(request, socket, head, (ws) => {
-              wss.emit('connection', ws, request);
+            websocketServer.handleUpgrade(request, socket, head, (ws) => {
+              websocketServer.emit('connection', ws, request);
             });
           } catch (error) {
             console.error('[Server] KDS WebSocket upgrade failed:', error);
@@ -297,7 +302,7 @@ export function startServer(): Promise<void> {
           }
         });
 
-        console.log(`[Server] KDS WebSocket running on ws://localhost:${currentPort}/kds`);
+        console.log(`[Server] KDS WebSocket running on ws://localhost:${activePort}/kds`);
       }
 
       // main/index.ts (Electron) also calls this; dev-server and pm2 boot
@@ -330,17 +335,21 @@ export function startServer(): Promise<void> {
   });
 }
 
-export function stopServer(): void {
-  if (wss) {
-    for (const client of wss.clients) client.terminate();
-    wss.close();
-    wss = null as unknown as WebSocketServer;
-  }
-  if (server) {
-    server.close();
-    server = null;
-  }
-  console.log('[Server] HTTP server stopped');
+export function stopServer(): Promise<void> {
+  if (stopPromise) return stopPromise;
+
+  const serverToClose = server;
+  const wssToClose = wss;
+  // Mark resources unavailable immediately. Repeated callers share the same
+  // promise while the captured resources finish draining.
+  server = null;
+  wss = null;
+
+  stopPromise = closeServerResources(serverToClose, wssToClose, 'Main server')
+    .then(() => {
+      console.log('[Server] HTTP/WebSocket server stopped');
+    });
+  return stopPromise;
 }
 
 /** Helper to check if an IPv4 address is active and valid (excludes loopback & 169.254.x.x link-local APIPA). */

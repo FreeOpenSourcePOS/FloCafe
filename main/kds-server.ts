@@ -6,6 +6,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { closeServerResources } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
@@ -13,6 +14,7 @@ import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, re
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
+let stopPromise: Promise<void> | null = null;
 const KDS_PORT = parseInt(process.env.KDS_PORT || '3002', 10);
 let activeKdsPort = KDS_PORT;
 
@@ -73,6 +75,7 @@ function rewriteNextExportPath(reqPath: string): string {
 }
 
 export function startKdsServer(): Promise<void> {
+  stopPromise = null;
   return new Promise((resolve, reject) => {
     const app: Express = express();
 
@@ -548,7 +551,8 @@ export function startKdsServer(): Promise<void> {
     let attempts = 0;
 
     const onListening = () => {
-      activeKdsPort = currentKdsPort;
+      const address = kdsServer?.address();
+      activeKdsPort = address && typeof address !== 'string' ? address.port : currentKdsPort;
       console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
 
       if (kdsServer) {
@@ -616,17 +620,21 @@ export function startKdsServer(): Promise<void> {
   });
 }
 
-export function stopKdsServer(): void {
-  if (kdsWss) {
-    for (const client of kdsWss.clients) client.terminate();
-    kdsWss.close();
-    kdsWss = null;
-  }
-  if (kdsServer) {
-    kdsServer.close();
-    kdsServer = null;
-    console.log('[KDS Server] HTTP server stopped');
-  }
+export function stopKdsServer(): Promise<void> {
+  if (stopPromise) return stopPromise;
+
+  const serverToClose = kdsServer;
+  const wssToClose = kdsWss;
+  // Mark resources unavailable immediately while the captured listeners and
+  // clients finish closing. Repeated shutdown calls share this promise.
+  kdsServer = null;
+  kdsWss = null;
+
+  stopPromise = closeServerResources(serverToClose, wssToClose, 'KDS server')
+    .then(() => {
+      console.log('[KDS Server] HTTP/WebSocket server stopped');
+    });
+  return stopPromise;
 }
 
 export function getKdsPort(): number {

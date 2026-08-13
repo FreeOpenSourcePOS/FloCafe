@@ -36,6 +36,10 @@ import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
 const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
 const POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
 
+function normalizeBarcode(value: string | null | undefined) {
+  return value?.trim() || '';
+}
+
 interface PostpaidAttempt {
   userId: string;
   fingerprint: string;
@@ -304,7 +308,8 @@ export default function POSPage() {
     || !!paymentBill || showCustomerPrompt || showPrepaidCheckout;
 
   useBarcodeScanner((code) => {
-    const product = products.find((p) => p.barcode === code);
+    const normalizedCode = normalizeBarcode(code);
+    const product = products.find((p) => normalizeBarcode(p.barcode) === normalizedCode);
     if (product) {
       handleProductClick(product);
     } else {

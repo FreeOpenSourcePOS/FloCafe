@@ -3,7 +3,7 @@
  *
  * Covers the backend half of the feature: setting a barcode on create/edit,
  * duplicate-barcode rejection (a scan must resolve to exactly one product),
- * and the exact-match ?barcode= lookup GET /api/products uses for the
+ * and the normalized exact-match ?barcode= lookup GET /api/products uses for the
  * scan-to-add-to-cart flow at POS.
  *
  * Usage: node tests/run-electron-node-test.cjs tests/issue-137-barcode.test.ts
@@ -67,12 +67,31 @@ async function main() {
       assert(!!res.data.error, 'B: error message present');
     }
 
+    console.log('\n─── Scenario B2: duplicate barcode is rejected after trimming ───');
+    {
+      const res = await api(baseUrl, '/api/products', {
+        method: 'POST',
+        body: { category_id: 'cat-137', name: 'Spaced Water Bottle', price: 25, barcode: '  8901234567890  ' },
+        headers: authHeader,
+      });
+      assertEqual(res.status, 400, 'B2: duplicate barcode rejected after trim with 400');
+      assert(!!res.data.error, 'B2: error message present');
+    }
+
     console.log('\n─── Scenario C: exact-match ?barcode= lookup (the POS scan path) ───');
     {
       const res = await api(baseUrl, '/api/products?barcode=8901234567890', { headers: authHeader });
       assertEqual(res.status, 200, 'C: lookup succeeds');
       assertEqual(res.data.products.length, 1, 'C: exactly one product matches');
       assertEqual(res.data.products[0].id, createdId, 'C: correct product returned');
+    }
+
+    console.log('\n─── Scenario C2: lookup trims surrounding barcode whitespace ───');
+    {
+      const res = await api(baseUrl, '/api/products?barcode=%20%208901234567890%20%20', { headers: authHeader });
+      assertEqual(res.status, 200, 'C2: trimmed lookup succeeds');
+      assertEqual(res.data.products.length, 1, 'C2: exactly one product matches after trim');
+      assertEqual(res.data.products[0].id, createdId, 'C2: correct product returned after trim');
     }
 
     console.log('\n─── Scenario D: lookup for an unknown barcode returns no results (not an error) ───');
@@ -119,6 +138,22 @@ async function main() {
         headers: authHeader,
       });
       assertEqual(clash.status, 400, 'F: stealing another product\'s barcode is rejected');
+    }
+
+    console.log('\n─── Scenario G: barcode normalization preserves leading zeroes ───');
+    {
+      const created = await api(baseUrl, '/api/products', {
+        method: 'POST',
+        body: { category_id: 'cat-137', name: 'Zero Cola', price: 35, barcode: '  0012345000  ' },
+        headers: authHeader,
+      });
+      assertEqual(created.status, 201, 'G: product with leading-zero barcode created');
+      assertEqual(created.data.product.barcode, '0012345000', 'G: leading zeroes preserved while whitespace is trimmed');
+
+      const lookup = await api(baseUrl, '/api/products?barcode=%200012345000%20', { headers: authHeader });
+      assertEqual(lookup.status, 200, 'G: leading-zero lookup succeeds');
+      assertEqual(lookup.data.products.length, 1, 'G: exactly one leading-zero product matches');
+      assertEqual(lookup.data.products[0].id, created.data.product.id, 'G: correct leading-zero product returned');
     }
 
   } finally {

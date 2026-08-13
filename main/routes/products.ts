@@ -261,6 +261,13 @@ function parseTags(raw: any): string[] {
   return [];
 }
 
+function normalizeBarcode(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
+
 // ── GET / — bulk product list ───────────────────────────────────────────
 // Uses explicit column list to avoid loading Base64 blobs into Node.js memory.
 // Computes has_image flag in SQL so the frontend knows which products have images.
@@ -290,8 +297,12 @@ router.get('/', (req: Request, res: Response) => {
     }
     if (req.query.barcode) {
       // Exact match — this is the scan-to-lookup path, not a fuzzy search.
+      const barcode = normalizeBarcode(req.query.barcode);
+      if (!barcode) {
+        return res.json({ products: [] });
+      }
       query += ' AND p.barcode = ?';
-      params.push(req.query.barcode);
+      params.push(barcode);
     }
     if (req.query.low_stock === 'true') {
       query += ' AND p.track_inventory = 1 AND p.stock_quantity <= p.low_stock_threshold';
@@ -533,6 +544,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
+    const normalizedBarcode = normalizeBarcode(barcode);
 
     if (!name || price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
@@ -564,10 +576,10 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
 
     // A barcode scan must resolve to exactly one product — unlike sku, which
     // is informational only, a duplicate barcode would make scanning ambiguous.
-    if (barcode) {
+    if (normalizedBarcode) {
       const clash = db.prepare(
         'SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL'
-      ).get(barcode);
+      ).get(normalizedBarcode);
       if (clash) {
         return res.status(400).json({ error: 'Another product already uses this barcode' });
       }
@@ -584,7 +596,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
           is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, category_id || null, name, sku || null, barcode || null, description || null, price, cost_price || 0,
+        id, category_id || null, name, sku || null, normalizedBarcode, description || null, price, cost_price || 0,
         'none', 0, tax_category_id || null, tax_behavior || 'country_default',
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
         is_active !== false ? 1 : 0, image_url || null,
@@ -622,6 +634,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       tax_category_id, tax_behavior, track_inventory, stock_quantity,
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
+    const normalizedBarcode = normalizeBarcode(barcode);
 
     const numericError = validateProductNumericFields(req.body, false);
     if (numericError) return res.status(400).json({ error: numericError });
@@ -648,10 +661,10 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       }
     }
 
-    if (barcode) {
+    if (normalizedBarcode) {
       const clash = db.prepare(
         'SELECT id FROM products WHERE barcode = ? AND deleted_at IS NULL AND id != ?'
-      ).get(barcode, req.params.id);
+      ).get(normalizedBarcode, req.params.id);
       if (clash) {
         return res.status(400).json({ error: 'Another product already uses this barcode' });
       }
@@ -687,7 +700,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
         updated_at = @updated_at
       WHERE id = @id
     `).run({
-      category_id, name, sku, barcode, description, price, cost: cost_price,
+      category_id, name, sku, barcode: normalizedBarcode, description, price, cost: cost_price,
       tax_category_id, tax_behavior,
       has_tax_category_id: hasTaxCategoryId ? 1 : 0,
       track_inventory: track_inventory ? 1 : track_inventory === 0 ? 0 : null,

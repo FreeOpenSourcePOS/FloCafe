@@ -36,6 +36,10 @@ function getCategoryColorClasses(color: string | null | undefined) {
   return CATEGORY_COLORS[color.toLowerCase()] || null;
 }
 
+function normalizeBarcode(value: string | null | undefined) {
+  return value?.trim() || '';
+}
+
 interface Props {
   categories: Category[];
   products: Product[];
@@ -78,7 +82,7 @@ export default function ProductGrid({
               // action into this field works regardless of typing speed.
               const trimmed = search.trim();
               if (!trimmed) return;
-              const match = products.find((p) => p.barcode === trimmed);
+              const match = products.find((p) => normalizeBarcode(p.barcode) === trimmed);
               if (match) {
                 onProductClick(match);
                 setSearch('');

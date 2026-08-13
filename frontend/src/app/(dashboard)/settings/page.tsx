@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
+import type { Language } from '@/lib/i18n';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -2357,7 +2358,7 @@ export default function SettingsPage() {
                   <select
                     value={language}
                     onChange={(e) => {
-                      const lang = e.target.value as 'en' | 'es' | 'pt';
+                      const lang = e.target.value as Language;
                       setLanguage(lang);
                       api.put('/settings/business', { language: lang }).catch(() => toast.error(t('settings.saveFailed')));
                     }}

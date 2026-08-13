@@ -230,6 +230,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
 
   if (activeItems && activeItems.length > 0) {
     const components: DecimalTaxComponent[] = [];
+    const itemSnapshotComponents: DecimalTaxComponent[] = [];
     let hasItemTaxEvidence = false;
     let hasSnapshotEvidence = false;
     for (const item of activeItems) {
@@ -238,6 +239,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
       hasSnapshotEvidence ||= snapshot.present;
       hasItemTaxEvidence ||= snapshot.present || legacy.length > 0;
       components.push(...(snapshot.present ? snapshot.components : legacy));
+      if (snapshot.present) itemSnapshotComponents.push(...snapshot.components);
     }
     if (hasItemTaxEvidence) {
       const chargeSnapshot = flattenSnapshots(document.tax_snapshot, true);
@@ -256,13 +258,23 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
         return mergeComponents([
           ...reconcileTotal(mergeComponents(components), itemTarget),
           ...chargeComponents,
+          ...documentLegacyComponents(document, [
+            ...itemSnapshotComponents,
+            ...chargeSnapshot.components,
+          ]),
         ].map((component) => ({
           title: component.title,
           rate: component.rate === null ? null : new Decimal(component.rate).toString(),
           amount: new Decimal(component.amount),
         })));
       }
-      return reconcileTotal(mergeComponents(components), document.tax_amount);
+      return reconcileTotal(
+        mergeComponents([
+          ...components,
+          ...(hasSnapshotEvidence ? documentLegacyComponents(document, itemSnapshotComponents) : []),
+        ]),
+        document.tax_amount,
+      );
     }
   }
 

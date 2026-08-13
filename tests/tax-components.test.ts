@@ -269,6 +269,27 @@ test('itemless generated bills retain residual document legacy tax beside mirror
   assert.deepEqual(resolveFrontendTaxComponents(document), expected);
 });
 
+test('active item snapshots retain residual document legacy tax without relabeling it', () => {
+  const document = {
+    tax_amount: 1.5,
+    tax_snapshot: null,
+    tax_breakdown: [
+      { title: 'Item Tax', rate: 5, amount: 1 },
+      { title: 'Legacy Charge Tax', rate: 2, amount: 0.5 },
+    ],
+    items: [{
+      tax_snapshot: { lines: [{ components: [{ label: 'Item Tax', rate: '5', amount: '1.00' }] }] },
+      tax_breakdown: [{ title: 'Item Tax', rate: 5, amount: 1 }],
+    }],
+  };
+  const expected = [
+    { title: 'Item Tax', rate: 5, amount: 1 },
+    { title: 'Legacy Charge Tax', rate: 2, amount: 0.5 },
+  ];
+  assert.deepEqual(resolveBackendTaxComponents(document), expected);
+  assert.deepEqual(resolveFrontendTaxComponents(document), expected);
+});
+
 test('frontend split printing keeps the child-scoped order payload', () => {
   const childOrder = {
     items: [{

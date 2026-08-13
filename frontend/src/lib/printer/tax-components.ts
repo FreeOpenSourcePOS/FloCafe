@@ -201,12 +201,14 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
 
   if (activeItems && activeItems.length > 0) {
     let hasItemTaxEvidence = false;
+    const itemSnapshotComponents: DisplayTaxComponent[] = [];
     for (const item of activeItems) {
       const snapshot = snapshotComponents(item.tax_snapshot);
       const legacy = snapshot.present ? [] : legacyComponents(item.tax_breakdown);
       usedSnapshot ||= snapshot.present;
       hasItemTaxEvidence ||= snapshot.present || legacy.length > 0;
       components.push(...(snapshot.present ? snapshot.components : legacy));
+      if (snapshot.present) itemSnapshotComponents.push(...snapshot.components);
     }
     if (!hasItemTaxEvidence) {
       const snapshot = snapshotComponents(document.tax_snapshot);
@@ -234,8 +236,14 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
           ) / 1_000_000;
         }
         components.push(...chargeSnapshot.components);
+        components.push(...documentLegacyComponents(document, [
+          ...itemSnapshotComponents,
+          ...chargeSnapshot.components,
+        ]));
         chargeReconciledSeparately = true;
-      } else if (!usedSnapshot) {
+      } else if (usedSnapshot) {
+        components.push(...documentLegacyComponents(document, itemSnapshotComponents));
+      } else {
         const documentLegacy = legacyComponents(document.tax_breakdown);
         if (documentLegacy.length > 0) components.splice(0, components.length, ...documentLegacy);
       }

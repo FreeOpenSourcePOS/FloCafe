@@ -305,6 +305,20 @@ export function registerRoutes(app: Express): void {
           };
         }
 
+        if (db.prepare(`
+          SELECT 1
+          FROM bills
+          WHERE order_id = ?
+            AND (
+              COALESCE(payment_status, 'unpaid') <> 'unpaid'
+              OR COALESCE(paid_amount, 0) > 0
+              OR (payment_details IS NOT NULL AND TRIM(payment_details) NOT IN ('', '[]', '{}', 'null'))
+            )
+          LIMIT 1
+        `).get(orderId)) {
+          throw Object.assign(new Error('Cannot cancel items on a paid or partially paid order'), { statusCode: 400 });
+        }
+
         // Completed and cancelled orders are terminal. This guard must run
         // before any item, stock, order, table, or bill mutation.
         if (['completed', 'cancelled'].includes(currentOrder.status)) {

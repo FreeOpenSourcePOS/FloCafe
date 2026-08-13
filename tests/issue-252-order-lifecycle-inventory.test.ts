@@ -326,6 +326,27 @@ async function main() {
       'state changed at the transaction boundary is not overwritten by an unauthorized cancel',
     );
 
+    const paidCancelOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-track-1', quantity: 1 }] },
+    });
+    const paidCancelOrderId = paidCancelOrder.data.order.id;
+    const paidCancelItemId = paidCancelOrder.data.order.items[0].id;
+    const paidCancelStock = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity;
+    db.prepare(`
+      INSERT INTO bills (bill_number, order_id, subtotal, total, paid_amount, balance, payment_status, payment_details, created_at, updated_at)
+      VALUES (?, ?, 100, 100, 25, 75, 'partial', ?, ?, ?)
+    `).run(`INV-252-PARTIAL-${paidCancelOrderId}`, paidCancelOrderId, JSON.stringify([{ method: 'cash', amount: 25 }]), new Date().toISOString(), new Date().toISOString());
+    const paidCancel = await api(baseUrl, `/api/orders/${paidCancelOrderId}/items/${paidCancelItemId}/cancel`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {},
+    });
+    assertEqual(paidCancel.status, 400, 'partially paid item cancellation is rejected');
+    assertEqual(db.prepare('SELECT status FROM order_items WHERE id = ?').get(paidCancelItemId).status, 'pending', 'partially paid rejection leaves item unchanged');
+    assertEqual(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity, paidCancelStock, 'partially paid rejection leaves stock unchanged');
+
     const roleRaceOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
       headers: authHeader,

@@ -836,7 +836,13 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
       }
 
       const authUser = (req as any).user;
-      if (authUser?.role === 'waiter' && String(currentOrder.user_id) !== String(authUser.userId)) {
+      const currentUser = authUser?.userId
+        ? db.prepare('SELECT role, is_active FROM users WHERE id = ?').get(authUser.userId) as { role: string; is_active: number } | undefined
+        : undefined;
+      if (!currentUser || currentUser.is_active !== 1 || !['owner', 'manager', 'cashier', 'chef', 'waiter'].includes(currentUser.role)) {
+        throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+      }
+      if (currentUser.role === 'waiter' && String(currentOrder.user_id) !== String(authUser.userId)) {
         throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
       }
 

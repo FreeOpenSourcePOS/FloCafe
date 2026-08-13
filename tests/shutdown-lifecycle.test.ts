@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
@@ -264,6 +265,96 @@ async function testExitCodeEscalation(): Promise<void> {
   assert.equal(await first, 1, 'a later fatal shutdown caller escalates the exit code');
 }
 
+async function testStandaloneDevServerShutdown(): Promise<void> {
+  const devServerDataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-dev-server-shutdown-'));
+  const child = spawn(process.execPath, ['dev-server.js'], {
+    cwd: path.resolve(__dirname, '..'),
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      PORT: '0',
+      KDS_PORT: '0',
+      SERVER_APP_PORT: '0',
+      FLO_DEV_USER_DATA: devServerDataDir,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let output = '';
+  const ready = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`dev-server did not start: ${output}`)), 20_000);
+    const collect = (chunk: Buffer) => {
+      output += chunk.toString();
+      if (output.includes('Server App running')) {
+        clearTimeout(timer);
+        resolve();
+      }
+    };
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once('exit', (code, signal) => {
+      if (code !== null || signal !== null) {
+        clearTimeout(timer);
+        reject(new Error(`dev-server exited before ready (${code ?? signal}): ${output}`));
+      }
+    });
+  });
+
+  try {
+    await ready;
+    child.kill('SIGTERM');
+    const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`dev-server did not exit: ${output}`)), 20_000);
+      child.once('exit', (exitCode, exitSignal) => {
+        clearTimeout(timer);
+        resolve([exitCode, exitSignal]);
+      });
+    });
+    assert.equal(signal, null, 'standalone dev-server exits through its shutdown handler');
+    assert.equal(code, 0, `standalone dev-server exits successfully: ${output}`);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    fs.rmSync(devServerDataDir, { recursive: true, force: true });
+  }
+}
+
+async function testStartupFailureEntrypoint(): Promise<void> {
+  const child = spawn(process.execPath, [
+    require.resolve('ts-node/dist/bin.js'),
+    '--transpile-only',
+    '-P',
+    path.join(__dirname, 'tsconfig.json'),
+    path.join(__dirname, 'startup-failure-child.cjs'),
+  ], {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let output = '';
+  child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+  child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+  const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`startup-failure child timed out: ${output}`)), 20_000);
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once('exit', (exitCode, exitSignal) => {
+      clearTimeout(timer);
+      resolve([exitCode, exitSignal]);
+    });
+  });
+  assert.equal(signal, null, `startup-failure child exited by signal: ${output}`);
+  assert.equal(code, 0, `startup-failure entrypoint coverage failed: ${output}`);
+  const resultLine = output.trim().split('\n').at(-1) || '';
+  assert.equal(JSON.parse(resultLine).passed, true, output);
+}
+
 async function testOwnedServerStopEntrypoints(): Promise<void> {
   process.env.PORT = '0';
   process.env.KDS_PORT = '0';
@@ -293,15 +384,37 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   };
 
   try {
-    const { initDatabase, closeDatabase } = await import('../main/db');
+    const { initDatabase, closeDatabase, waitForDatabaseRequests, withDatabaseRequest } = await import('../main/db');
     const mainServer = await import('../main/server');
     const kdsServer = await import('../main/kds-server');
     const serverApp = await import('../main/server-app');
+    const cloudSync = await import('../main/services/cloud-sync');
 
     await mainServer.stopServer();
     await kdsServer.stopKdsServer();
     await serverApp.stopServerApp();
     initDatabase();
+
+    let releaseDatabaseRequest: (() => void) | null = null;
+    const activeDatabaseRequest = withDatabaseRequest(() => new Promise<void>((resolve) => {
+      releaseDatabaseRequest = resolve;
+    }));
+    const cloudShutdown = cloudSync.cloudSync.shutdown();
+    assert.strictEqual(cloudShutdown, cloudSync.cloudSync.shutdown(), 'cloud shutdown is idempotent');
+    await cloudShutdown;
+    const databaseDrain = waitForDatabaseRequests();
+    let cloudShutdownSettled = false;
+    void cloudShutdown.then(() => { cloudShutdownSettled = true; });
+    await delay(10);
+    assert.equal(cloudShutdownSettled, true, 'cloud shutdown settles without waiting for HTTP database work');
+    let databaseDrainSettled = false;
+    void databaseDrain.then(() => { databaseDrainSettled = true; });
+    await delay(10);
+    assert.equal(databaseDrainSettled, false, 'the final database barrier waits for in-flight work');
+    releaseDatabaseRequest?.();
+    await activeDatabaseRequest;
+    await databaseDrain;
+
     await mainServer.startServer();
     await kdsServer.startKdsServer();
     await serverApp.startServerApp();
@@ -366,6 +479,8 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   console.log('phase entrypoints');
   await testEntrypointCoverage();
   await testExitCodeEscalation();
+  await testStartupFailureEntrypoint();
+  await testStandaloneDevServerShutdown();
   console.log('phase owned servers');
   await testOwnedServerStopEntrypoints();
   console.log('Shutdown lifecycle tests passed.');

@@ -268,6 +268,8 @@ class CloudSyncService {
   private cloudDeletionInProgress = false;
   private cloudNetworkOperations = 0;
   private cloudNetworkIdleWaiters: (() => void)[] = [];
+  private shutdownPromise: Promise<void> | null = null;
+  private shutdownRequested = false;
 
   // Zero-touch registration state.
   private autoRegisterTimer: ReturnType<typeof setTimeout> | null = null;
@@ -277,6 +279,8 @@ class CloudSyncService {
 
   start() {
     if (this.cloudDeletionInProgress) return;
+    this.shutdownRequested = false;
+    this.shutdownPromise = null;
     this.runtimeStarted = true;
     const settings = this.readSettings(getDatabase());
     if (!isCloudDeletionBlocking(settings.cloud_deletion_status)) ensureCloudIdentity();
@@ -287,7 +291,7 @@ class CloudSyncService {
   }
 
   reload() {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     this.stop();
     const persisted = this.loadSettings(false);
     this.settings = persisted;
@@ -317,7 +321,7 @@ class CloudSyncService {
   }
 
   resumeAfterMaintenance() {
-    if (this.runtimeStarted) this.reload();
+    if (this.runtimeStarted && !this.shutdownRequested) this.reload();
   }
 
   stop() {
@@ -329,6 +333,19 @@ class CloudSyncService {
     if (this.autoRegisterTimer) { clearTimeout(this.autoRegisterTimer); this.autoRegisterTimer = null; }
     this.httpFallbackActive = false;
     this.teardownRelay();
+  }
+
+  shutdown(): Promise<void> {
+    if (this.shutdownPromise) return this.shutdownPromise;
+    this.shutdownRequested = true;
+    this.runtimeStarted = false;
+    this.stop();
+    const activeFlushes = [this.outboxFlushPromise, this.supportFlushPromise, this.diagnosticsFlushPromise]
+      .filter((promise): promise is Promise<void> => promise !== null);
+    this.shutdownPromise = Promise.allSettled(activeFlushes)
+      .then(() => this.waitForCloudNetworkIdle())
+      .then(() => undefined);
+    return this.shutdownPromise;
   }
 
   private teardownRelay() {
@@ -633,11 +650,13 @@ class CloudSyncService {
     this.settings = this.loadSettings(false);
     return responseData;
     }).catch((error) => {
-      this.upsertSettings({
-        cloud_deletion_status: 'failed', cloud_deletion_outcome: deletionOutcome,
-        cloud_connected: 'false', cloud_last_error: 'Cloud data deletion failed',
-      }, true);
-      this.settings = this.loadSettings(false);
+      if (!this.shutdownRequested) {
+        this.upsertSettings({
+          cloud_deletion_status: 'failed', cloud_deletion_outcome: deletionOutcome,
+          cloud_connected: 'false', cloud_last_error: 'Cloud data deletion failed',
+        }, true);
+        this.settings = this.loadSettings(false);
+      }
       throw error;
     }).finally(() => { this.cloudDeletionInProgress = false; });
   }
@@ -686,7 +705,7 @@ class CloudSyncService {
     }
     return data;
     }).catch((error) => {
-      if (!this.cloudDeletionInProgress) {
+      if (!this.cloudDeletionInProgress && !this.shutdownRequested) {
         this.upsertSettings({
           cloud_deletion_status: 'failed', cloud_deletion_outcome: 'unknown',
           cloud_connected: 'false', cloud_last_error: 'Cloud deletion status check failed',
@@ -836,7 +855,7 @@ class CloudSyncService {
    * callers should not need to check this themselves before every call site.
    */
   reportDiagnostic(input: DiagnosticEventInput): void {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     void withDatabaseRequest(() => {
       if (this.cloudDeletionInProgress || !isDiagnosticsConsentEnabled()) return;
       const db = getDatabase();
@@ -1032,7 +1051,7 @@ class CloudSyncService {
   }
 
   private enqueueEvent(eventType: string, entityType: string, entityId: string, payload: unknown) {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     void withDatabaseRequest(async () => {
       if (this.cloudDeletionInProgress) return;
       const cfg = this.loadSettings();
@@ -1224,7 +1243,7 @@ class CloudSyncService {
 
   private attemptAutoRegister() {
     const settings = this.readSettings(getDatabase());
-    if (this.cloudDeletionInProgress || isCloudDeletionBlocking(settings.cloud_deletion_status)
+    if (this.shutdownRequested || this.cloudDeletionInProgress || isCloudDeletionBlocking(settings.cloud_deletion_status)
       || settings.cloud_sync_enabled !== '1' || settings.cloud_services_disabled_by_user === 'true') return;
     if (this.autoRegisterTimer || this.autoRegisterInFlight) return;
     this.autoRegisterInFlight = true;
@@ -1235,6 +1254,7 @@ class CloudSyncService {
       })
       .catch(() => {
         this.autoRegisterInFlight = false;
+        if (this.shutdownRequested) return;
         const currentSettings = this.readSettings(getDatabase());
         if (this.cloudDeletionInProgress || isCloudDeletionBlocking(currentSettings.cloud_deletion_status)
           || currentSettings.cloud_sync_enabled !== '1' || currentSettings.cloud_services_disabled_by_user === 'true') return;
@@ -1250,7 +1270,7 @@ class CloudSyncService {
   // --- Live-relay connection (WSS primary, HTTP fallback) ---------------------------------
 
   private maybeStartRelay() {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     const cfg = this.settings;
     if (!cfg?.api_key || !(cfg.sync_enabled || cfg.command_polling_enabled)) {
       this.teardownRelay();
@@ -1261,7 +1281,7 @@ class CloudSyncService {
   }
 
   private connectRelay() {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     const cfg = this.settings;
     if (!cfg?.api_key || !(cfg.sync_enabled || cfg.command_polling_enabled)) return;
     if (this.relaySocket && (this.relaySocket.readyState === WebSocket.OPEN || this.relaySocket.readyState === WebSocket.CONNECTING)) {
@@ -1288,7 +1308,7 @@ class CloudSyncService {
   }
 
   private onRelayOpen() {
-    if (this.cloudDeletionInProgress) {
+    if (this.cloudDeletionInProgress || this.shutdownRequested) {
       this.teardownRelay();
       return;
     }
@@ -1356,6 +1376,7 @@ class CloudSyncService {
   }
 
   private scheduleRelayReconnect() {
+    if (this.shutdownRequested) return;
     const cfg = this.settings;
     if (!cfg?.api_key || !(cfg.sync_enabled || cfg.command_polling_enabled)) return;
 
@@ -1372,7 +1393,7 @@ class CloudSyncService {
 
   /** Degraded mode — same HTTP command-poll/heartbeat behavior the POS shipped with before the relay existed. */
   private startHttpFallback() {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     const cfg = this.settings;
     if (!cfg?.api_key || this.httpFallbackActive) return;
     this.httpFallbackActive = true;
@@ -1773,7 +1794,7 @@ class CloudSyncService {
   }
 
   private upsertSettings(entries: Record<string, string | undefined | null>, allowDuringDeletion = false) {
-    if (this.cloudDeletionInProgress && !allowDuringDeletion) return;
+    if (this.shutdownRequested || (this.cloudDeletionInProgress && !allowDuringDeletion)) return;
     if (isDatabaseMaintenanceActive()) {
       void withDatabaseRequest(() => this.upsertSettings(entries, allowDuringDeletion));
       return;
@@ -1799,7 +1820,7 @@ class CloudSyncService {
   }
 
   private markError(message: string) {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     const settings = this.readSettings(getDatabase());
     if (settings.cloud_services_disabled_by_user === 'true') return;
     this.upsertSettings({

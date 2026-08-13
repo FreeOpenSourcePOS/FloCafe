@@ -18,6 +18,7 @@ let databaseMaintenanceActive = false;
 let activeDatabaseRequests = 0;
 let maintenanceRequestWaiters: (() => void)[] = [];
 let maintenanceDrainWaiters: (() => void)[] = [];
+let databaseIdleWaiters: (() => void)[] = [];
 const databaseMaintenanceStartListeners = new Set<() => void>();
 const databaseMaintenanceEndListeners = new Set<() => void>();
 
@@ -35,6 +36,13 @@ function releaseMaintenanceRequestWaiters(): void {
   waiters.forEach((resolve) => resolve());
 }
 
+function releaseDatabaseIdleWaiters(): void {
+  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive) return;
+  const waiters = databaseIdleWaiters;
+  databaseIdleWaiters = [];
+  waiters.forEach((resolve) => resolve());
+}
+
 export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
   const run = (): Promise<T> => {
     // Reserve the request synchronously. A maintenance lock scheduled in the
@@ -44,6 +52,7 @@ export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise
       activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
       releaseMaintenanceDrainWaiters();
       releaseMaintenanceRequestWaiters();
+      releaseDatabaseIdleWaiters();
     });
   };
   if (!databaseMaintenanceActive) return run();
@@ -102,6 +111,7 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
     activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
     releaseMaintenanceDrainWaiters();
     releaseMaintenanceRequestWaiters();
+    releaseDatabaseIdleWaiters();
   };
   res.once('finish', release);
   res.once('close', release);
@@ -131,6 +141,7 @@ export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>):
         try { listener(); } catch (error) { console.error('[DB] Maintenance end listener failed:', error); }
       }
       releaseMaintenanceRequestWaiters();
+      releaseDatabaseIdleWaiters();
     }
   }).finally(release);
 }
@@ -730,6 +741,11 @@ function autoRepairDefaultPrinter(): void {
 export function getDatabase(): Database.Database {
   if (!db) throw new Error('Database not initialized');
   return db;
+}
+
+export function waitForDatabaseRequests(): Promise<void> {
+  if (activeDatabaseRequests === 0 && !databaseMaintenanceActive) return Promise.resolve();
+  return new Promise<void>((resolve) => databaseIdleWaiters.push(resolve));
 }
 
 export function closeDatabase(): void {

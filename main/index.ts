@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
-import { initDatabase, closeDatabase, SchemaVersionMismatchError } from './db';
+import { initDatabase, closeDatabase, waitForDatabaseRequests, SchemaVersionMismatchError } from './db';
 import { startServer, stopServer, getLocalIP, isServerRunning } from './server';
 import { cloudSync } from './services/cloud-sync';
 import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry';
@@ -736,7 +736,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
       if (currentTray) currentTray.destroy();
     },
   },
-  { name: 'cloud sync', run: () => cloudSync.stop() },
+  { name: 'cloud sync', run: () => cloudSync.shutdown() },
   { name: 'telemetry', run: () => telemetry.stop() },
   { name: 'Google Drive', run: () => googleDrive.stop() },
   { name: 'WhatsApp', run: () => shutdownWhatsApp() },
@@ -746,6 +746,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   { name: 'Server App', run: () => stopServerApp() },
   { name: 'Main server', run: () => stopServer() },
   { name: 'KDS server', run: () => stopKdsServer() },
+  { name: 'database requests', run: () => waitForDatabaseRequests() },
   // Database closure is deliberately last: all HTTP and WebSocket work must
   // have settled before handlers can lose access to SQLite.
   { name: 'database', run: () => closeDatabase() },

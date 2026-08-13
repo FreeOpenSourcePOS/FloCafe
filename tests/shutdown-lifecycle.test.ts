@@ -60,6 +60,12 @@ class ProcessDouble {
     this.listeners.set(event, listeners);
   }
 
+  on(event: string, listener: (...args: any[]) => void): void {
+    const listeners = this.listeners.get(event) || [];
+    listeners.push(listener);
+    this.listeners.set(event, listeners);
+  }
+
   emit(event: string): void {
     for (const listener of [...(this.listeners.get(event) || [])]) listener();
   }
@@ -235,10 +241,11 @@ async function testEntrypointCoverage(): Promise<void> {
     const cleanupPromise = entrypoints.runCleanup();
     assert.strictEqual(cleanupPromise, entrypoints.runCleanup(), 'repeated shutdown calls share one cleanup promise');
     process.emit(signal);
+    process.emit(signal);
     await cleanupPromise;
     await delay(0);
     assert.equal(cleanupCalls, 1, `${signal} runs cleanup once`);
-    assert.deepEqual(process.exitCodes, [0], `${signal} exits after cleanup`);
+    assert.deepEqual(process.exitCodes, [0], `${signal} exits once after repeated signals`);
     assert.equal(quittingCalls, 1, `${signal} marks the app as quitting`);
     assert.equal(windowDestroyCalls, 0, `${signal} does not destroy the window through the quit path`);
   };

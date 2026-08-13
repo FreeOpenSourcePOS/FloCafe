@@ -67,7 +67,11 @@ Module._load = function (request, parent, isMain) {
   if (request === './db') {
     class SchemaVersionMismatchError extends Error {}
     return {
-      initDatabase: () => { events.push('database.init'); throw new Error('simulated startup failure'); },
+      initDatabase: () => {
+        events.push('database.init');
+        if (!startupRace) throw new Error('simulated startup failure');
+      },
+      beginDatabaseShutdown: () => { events.push('database.admission'); },
       closeDatabase: () => { events.push('database.close'); },
       waitForDatabaseRequests: () => Promise.resolve(),
       SchemaVersionMismatchError,
@@ -135,6 +139,7 @@ setTimeout(() => {
       'server-app.stop',
       'server.stop',
       'kds.stop',
+      'database.admission',
       'database.close',
     ]
     : [
@@ -148,6 +153,7 @@ setTimeout(() => {
       'server-app.stop',
       'server.stop',
       'kds.stop',
+      'database.admission',
       'database.close',
     ];
   const orderMatches = expectedOrder.every((event, index) => events[index] === event);

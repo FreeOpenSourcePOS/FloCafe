@@ -70,8 +70,7 @@ Module._load = function (request, parent, isMain) {
 };
 
 // ── Now load and start the compiled backend ───────────────────────────────────
-const { initDatabase } = require('./dist/db');
-const { closeDatabase } = require('./dist/db');
+const { initDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests } = require('./dist/db');
 const { createExitCodeAwareShutdown } = require('./dist/shutdown');
 const { startServer, stopServer, getServerPort } = require('./dist/server');
 const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/kds-server');
@@ -83,6 +82,7 @@ const requestShutdown = createExitCodeAwareShutdown(async () => {
   try { await stopServerApp(); } catch (err) { console.error('[DevServer] Server App shutdown failed:', err); cleanupFailed = true; }
   try { await stopServer(); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); cleanupFailed = true; }
   try { await stopKdsServer(); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); cleanupFailed = true; }
+  try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (err) { console.error('[DevServer] Database request drain failed:', err); cleanupFailed = true; }
   try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); cleanupFailed = true; }
   Module._load = originalLoad;
   return cleanupFailed ? 1 : 0;
@@ -96,13 +96,13 @@ async function shutdown(exitCode = 0) {
   }
 }
 
-process.once('SIGINT', () => void shutdown(0));
-process.once('SIGTERM', () => void shutdown(0));
-process.once('uncaughtException', (err) => {
+process.on('SIGINT', () => void shutdown(0));
+process.on('SIGTERM', () => void shutdown(0));
+process.on('uncaughtException', (err) => {
   console.error('[DevServer] Uncaught exception:', err);
   void shutdown(1);
 });
-process.once('unhandledRejection', (err) => {
+process.on('unhandledRejection', (err) => {
   console.error('[DevServer] Unhandled rejection:', err);
   void shutdown(1);
 });

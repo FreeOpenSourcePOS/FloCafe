@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
+import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
@@ -540,13 +541,16 @@ router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (r
       }
 
       const controller = new AbortController();
+      const requestSignal = getHttpRequestSignal(req);
+      const abortForShutdown = () => controller.abort();
+      if (requestSignal?.aborted) controller.abort();
+      else requestSignal?.addEventListener('abort', abortForShutdown, { once: true });
       const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
 
       let hopResponse: { status: number; headers: Headers; body: Buffer };
       try {
         hopResponse = await fetchPinnedHttps(currentUrl, resolvedAddress, controller.signal);
       } catch (fetchError: any) {
-        clearTimeout(timeout);
         if (fetchError.name === 'AbortError') {
           return res.status(504).json({ error: 'Request timed out' });
         }
@@ -554,8 +558,10 @@ router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (r
           return res.status(413).json({ error: 'Image too large (max 10 MB)' });
         }
         return res.status(502).json({ error: 'Could not fetch the image' });
+      } finally {
+        clearTimeout(timeout);
+        requestSignal?.removeEventListener('abort', abortForShutdown);
       }
-      clearTimeout(timeout);
 
       // "manual" redirect mode surfaces 3xx as an opaqueredirect/redirect
       // response instead of following it — inspect Location ourselves.

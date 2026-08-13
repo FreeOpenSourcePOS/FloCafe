@@ -143,10 +143,11 @@ export function closeHttpServer(server: http.Server, label: string): Promise<voi
   const closePromise = Promise.all([closeListenerPromise, waitForHttpRequestWork(requestState)]).then(() => undefined);
 
   return withShutdownTimeout(closePromise, label, () => {
-    // This is only reached after the normal drain deadline. Active requests
-    // may be interrupted, but the bounded failure is returned to the caller.
     abortHttpRequests(requestState);
     closableServer.closeAllConnections?.();
+  }).catch(async (error) => {
+    await waitForHttpRequestWork(requestState);
+    throw error;
   });
 }
 
@@ -299,7 +300,7 @@ export type ShutdownEntrypointApp = {
 };
 
 export type ShutdownEntrypointProcess = {
-  once: (event: string, listener: (...args: any[]) => void) => unknown;
+  on: (event: string, listener: (...args: any[]) => void) => unknown;
   exit: (code?: number) => void;
 };
 
@@ -327,6 +328,7 @@ export function createShutdownEntrypoints({
   let cleanupFinished = false;
   let quitAfterCleanupRequested = false;
   let shutdownRequested = false;
+  let signalExitRequested = false;
 
   const requestShutdown = (): void => {
     shutdownRequested = true;
@@ -374,6 +376,11 @@ export function createShutdownEntrypoints({
   });
 
   const exitAfterCleanup = (): void => {
+    if (signalExitRequested) {
+      void runCleanup();
+      return;
+    }
+    signalExitRequested = true;
     requestShutdown();
     void runCleanup().then(
       () => process.exit(0),
@@ -384,8 +391,8 @@ export function createShutdownEntrypoints({
     );
   };
 
-  process.once('SIGTERM', exitAfterCleanup);
-  process.once('SIGINT', exitAfterCleanup);
+  process.on('SIGTERM', exitAfterCleanup);
+  process.on('SIGINT', exitAfterCleanup);
 
   return { runCleanup, isShutdownRequested: () => shutdownRequested };
 }

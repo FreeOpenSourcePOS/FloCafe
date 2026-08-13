@@ -514,7 +514,7 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
 }
 
 export function initDatabase(recoverInterruptedReplacement = true): void {
-  databaseShutdownRequested = false;
+  if (databaseShutdownRequested) throw createDatabaseShutdownError();
   const dbPath = getDbPath();
   const backupDir = getBackupDir();
 
@@ -817,7 +817,6 @@ export function waitForDatabaseRequests(): Promise<void> {
 }
 
 export function closeDatabase(): void {
-  databaseShutdownRequested = true;
   if (db) {
     db.close();
     db = null as unknown as Database.Database;

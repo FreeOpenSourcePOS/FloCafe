@@ -17,7 +17,7 @@ Module._load = function (request, parent, isMain) {
 
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { initDatabase, getDatabase, closeDatabase, now } = require('../dist/db');
+const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests, now } = require('../dist/db');
 const { createExitCodeAwareShutdown } = require('../dist/shutdown');
 const { startServer, stopServer } = require('../dist/server');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
@@ -146,6 +146,10 @@ const requestStop = createExitCodeAwareShutdown(async () => {
     cleanupFailed = true;
     console.error('[E2E] KDS server cleanup failed:', error);
   }
+  try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] Database request drain failed:', error);
+  }
   try { closeDatabase(); } catch (error) {
     cleanupFailed = true;
     console.error('[E2E] Database cleanup failed:', error);
@@ -178,5 +182,5 @@ async function stop(exitCode = 0) {
   stop(1);
 });
 
-process.once('SIGINT', () => stop());
-process.once('SIGTERM', () => stop());
+process.on('SIGINT', () => stop());
+process.on('SIGTERM', () => stop());

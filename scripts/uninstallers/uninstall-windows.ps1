@@ -179,6 +179,22 @@ function Get-ProcessTreeIds($rootId) {
   return $ids.ToArray()
 }
 
+function Add-ChildUninstallerProcessIds($ids) {
+  $script:ChildUninstallerProcessIds = @(
+    @($script:ChildUninstallerProcessIds + @($ids)) |
+      Where-Object { [int]$_ -gt 0 } |
+      Select-Object -Unique
+  )
+}
+
+function Update-ChildUninstallerProcessTree {
+  if ($null -eq $script:ChildUninstallerProcessId) { return $false }
+  $latestProcessTree = Get-ProcessTreeIds $script:ChildUninstallerProcessId
+  if ($null -eq $latestProcessTree) { return $false }
+  Add-ChildUninstallerProcessIds $latestProcessTree
+  return $true
+}
+
 function Confirm-ChildUninstallerStopped {
   if ($script:DryRun -or -not $script:ChildUninstallerRunning) { return $true }
   if ($script:ChildProcessInspectionFailed -or $null -eq $script:ChildUninstallerProcessId) {
@@ -187,14 +203,15 @@ function Confirm-ChildUninstallerStopped {
   }
 
   $script:ChildProcessInspectionFailed = $false
-  $latestProcessTree = Get-ProcessTreeIds $script:ChildUninstallerProcessId
-  if ($null -eq $latestProcessTree) { return $false }
-  $script:ChildUninstallerProcessIds = @($script:ChildUninstallerProcessIds + $latestProcessTree | Select-Object -Unique)
+  if (-not (Update-ChildUninstallerProcessTree)) { return $false }
   $stopped = Test-ProcessIdsStopped $script:ChildUninstallerProcessIds
   if ($null -eq $stopped) { return $false }
   if (-not $stopped) {
-    Mark-Partial ("the app's own uninstaller or one of its child processes is still running; skipping destructive cleanup")
-    return $false
+    Mark-Partial ("the app's own uninstaller or one of its child processes is still running; stopping it before cleanup")
+    if (-not (Stop-ChildUninstallerTree $script:AppForceCloseTimeoutSeconds)) {
+      Mark-Partial ("could not confirm that the app's own uninstaller and its child processes stopped after the bounded force wait")
+      return $false
+    }
   }
 
   $script:ChildUninstallerRunning = $false
@@ -236,6 +253,51 @@ function Wait-ForProcessIdsExit($ids, $timeoutSeconds) {
   } while ($true)
 
   $stopped = Test-ProcessIdsStopped $ids
+  return ($null -ne $stopped -and $stopped)
+}
+
+function Wait-ForChildUninstallerExit($process, $timeoutSeconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+  do {
+    if (-not (Update-ChildUninstallerProcessTree)) { return $false }
+    $remainingMilliseconds = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
+    if ($remainingMilliseconds -le 0) { break }
+    $waitMilliseconds = [Math]::Max(1, [Math]::Min(250, [int]$remainingMilliseconds))
+    try {
+      if ([bool]$process.WaitForExit($waitMilliseconds)) {
+        if (-not (Update-ChildUninstallerProcessTree)) { return $false }
+        return $true
+      }
+    } catch {
+      Mark-Partial ("could not wait for the app's own uninstaller: {0}" -f $_.Exception.Message)
+      return $false
+    }
+  } while ([DateTime]::UtcNow -lt $deadline)
+
+  return $false
+}
+
+function Stop-ChildUninstallerTree($timeoutSeconds) {
+  $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+  do {
+    if (-not (Update-ChildUninstallerProcessTree)) { return $false }
+    $stopped = Test-ProcessIdsStopped $script:ChildUninstallerProcessIds
+    if ($null -eq $stopped) { return $false }
+    if ($stopped) { return $true }
+
+    foreach ($processId in @($script:ChildUninstallerProcessIds | Sort-Object -Descending)) {
+      try {
+        Stop-Process -Id $processId -Force -ErrorAction Stop
+      } catch {
+        Mark-Partial ("could not stop the app uninstaller process {0}: {1}" -f $processId, $_.Exception.Message)
+      }
+    }
+    if ([DateTime]::UtcNow -ge $deadline) { break }
+    Start-Sleep -Milliseconds 250
+  } while ($true)
+
+  if (-not (Update-ChildUninstallerProcessTree)) { return $false }
+  $stopped = Test-ProcessIdsStopped $script:ChildUninstallerProcessIds
   return ($null -ne $stopped -and $stopped)
 }
 
@@ -483,15 +545,9 @@ function Invoke-FloCafeUninstall {
           $script:ChildUninstallerProcessId = $child.Id
           $script:ChildUninstallerProcessIds = @($child.Id)
           $childFinished = $false
-          try {
-            $childFinished = [bool]$child.WaitForExit($script:ChildUninstallerTimeoutSeconds * 1000)
-          } catch {
-            Mark-Partial ("could not wait for the app's own uninstaller: {0}" -f $_.Exception.Message)
-          }
+          $childFinished = [bool](Wait-ForChildUninstallerExit $child $script:ChildUninstallerTimeoutSeconds)
 
           if ($childFinished) {
-            $script:ChildUninstallerRunning = $false
-            $script:ChildUninstallerProcessId = $null
             $childExitCode = $null
             $childExitCodeRead = $true
             try { $childExitCode = $child.ExitCode } catch {
@@ -507,20 +563,6 @@ function Invoke-FloCafeUninstall {
             }
           } else {
             Mark-Partial ("the app's own uninstaller did not exit within {0} seconds; stopping it and continuing with manual cleanup" -f $script:ChildUninstallerTimeoutSeconds)
-            $processTreeIds = Get-ProcessTreeIds $child.Id
-            if ($null -ne $processTreeIds) {
-              $script:ChildUninstallerProcessIds = @($processTreeIds)
-            }
-            foreach ($processId in @($script:ChildUninstallerProcessIds | Sort-Object -Descending)) {
-              try {
-                Stop-Process -Id $processId -Force -ErrorAction Stop
-              } catch {
-                Mark-Partial ("could not stop the app uninstaller process {0}: {1}" -f $processId, $_.Exception.Message)
-              }
-            }
-            if (-not (Wait-ForProcessIdsExit $script:ChildUninstallerProcessIds $script:AppForceCloseTimeoutSeconds)) {
-              Mark-Partial ("could not confirm that the app's own uninstaller and its child processes stopped after the bounded force wait")
-            }
           }
         } catch {
           Mark-Partial ("the app's own uninstaller failed to run: {0}" -f $_.Exception.Message)

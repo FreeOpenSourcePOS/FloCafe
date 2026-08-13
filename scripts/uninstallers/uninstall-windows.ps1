@@ -165,13 +165,13 @@ function Get-ProcessTreeIds($rootIds, $deadline) {
 
   if ($ids.Count -eq 0) { return $ids.ToArray() }
   $remainingSeconds = ($deadline - [DateTime]::UtcNow).TotalSeconds
-  if ($remainingSeconds -lt 1) {
+  if ($remainingSeconds -le 0) {
     $script:ChildProcessInspectionFailed = $true
     Mark-Partial "could not inspect child processes of the app's own uninstaller within the bounded wait"
     return $null
   }
 
-  $operationTimeoutSeconds = [uint32][Math]::Max(1, [Math]::Floor($remainingSeconds))
+  $operationTimeoutSeconds = [uint32][Math]::Max(1, [Math]::Ceiling($remainingSeconds))
   $processes = @()
   try {
     $processes = @(Get-CimInstance -ClassName Win32_Process -OperationTimeoutSec $operationTimeoutSeconds -ErrorAction Stop)
@@ -597,7 +597,13 @@ function Invoke-FloCafeUninstall {
             if ($childFinished) {
               $childExitCode = $null
               $childExitCodeRead = $true
-              try { $childExitCode = $child.ExitCode } catch {
+              try {
+                $childExitCode = & { $ErrorActionPreference = 'Stop'; $child.ExitCode }
+                if ($null -eq $childExitCode) {
+                  $childExitCodeRead = $false
+                  Mark-Partial "could not verify the app's own uninstaller exit code: exit code is null"
+                }
+              } catch {
                 $childExitCodeRead = $false
                 Mark-Partial ("could not verify the app's own uninstaller exit code: {0}" -f $_.Exception.Message)
               }

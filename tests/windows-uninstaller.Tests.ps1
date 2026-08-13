@@ -46,8 +46,9 @@ Describe 'Flo Cafe Windows uninstaller' {
     }
 
     Mock Get-Process {
-      if ($PSBoundParameters.ContainsKey('Name') -and $process.IsRunning) { return @($process) }
-      if ($PSBoundParameters.ContainsKey('Id') -and $process.IsRunning) { return @($process) }
+      param($Name, $Id)
+      if ($Name -and $process.IsRunning) { return @($process) }
+      if ($Id -and $process.IsRunning) { return @($process) }
       return @()
     }
     Mock Get-ItemProperty { @() }
@@ -377,12 +378,12 @@ Describe 'Flo Cafe Windows uninstaller' {
       }
     }
     $remainingPaths = @{
-      $firstUninstaller = $true
-      $secondUninstaller = $true
-      $firstInstallPath = $true
-      $secondInstallPath = $true
-      $entries[0].PSPath = $true
-      $entries[1].PSPath = $true
+      ($firstUninstaller) = $true
+      ($secondUninstaller) = $true
+      ($firstInstallPath) = $true
+      ($secondInstallPath) = $true
+      ($entries[0].PSPath) = $true
+      ($entries[1].PSPath) = $true
     }
     $removedPaths = New-Object 'System.Collections.Generic.List[string]'
 

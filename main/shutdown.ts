@@ -60,7 +60,9 @@ export function trackHttpRequestWork<T>(request: object, operation: Promise<T>):
     requestState.work.delete(operation);
     if (requestState.released && requestState.work.size === 0) {
       requestState.owner.requests.delete(requestState);
-      shuttingDownHttpServers.delete(requestState.owner);
+      if (requestState.owner.requests.size === 0) {
+        shuttingDownHttpServers.delete(requestState.owner);
+      }
     }
   }).catch(() => {});
   return operation;
@@ -81,6 +83,8 @@ function abortHttpRequests(state: HttpServerState): void {
 export type ShutdownStep = {
   name: string;
   run: () => void | Promise<void>;
+  blocksDatabase?: boolean;
+  databaseClose?: boolean;
 };
 
 function isAlreadyClosedError(error: unknown): boolean {
@@ -295,12 +299,15 @@ export async function closeServerResources(
 /** Run all cleanup steps in order while still attempting later steps. */
 export async function runShutdownSteps(steps: readonly ShutdownStep[]): Promise<void> {
   const errors: unknown[] = [];
+  let databaseBlocked = false;
   for (const step of steps) {
+    if (step.databaseClose && databaseBlocked) continue;
     try {
       await step.run();
     } catch (error) {
       errors.push(error);
       console.error(`[Shutdown] ${step.name} failed:`, error);
+      if (step.blocksDatabase) databaseBlocked = true;
     }
   }
   if (errors.length > 0) {

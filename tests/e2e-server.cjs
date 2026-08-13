@@ -141,29 +141,37 @@ let exitRequested = false;
 let shutdownRequested = false;
 const requestStop = createExitCodeAwareShutdown(async () => {
   let cleanupFailed = false;
+  let databaseBlocked = false;
   try { await stopServer(); } catch (error) {
     cleanupFailed = true;
+    databaseBlocked = true;
     console.error('[E2E] Main server cleanup failed:', error);
   }
   try { await stopKdsServer(); } catch (error) {
     cleanupFailed = true;
+    databaseBlocked = true;
     console.error('[E2E] KDS server cleanup failed:', error);
   }
   try { await shutdownWhatsApp(); } catch (error) {
     cleanupFailed = true;
+    databaseBlocked = true;
     console.error('[E2E] WhatsApp cleanup failed:', error);
   }
   try { await waitForHttpShutdownWork(); } catch (error) {
     cleanupFailed = true;
+    databaseBlocked = true;
     console.error('[E2E] HTTP handler cleanup failed:', error);
   }
   try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (error) {
     cleanupFailed = true;
+    databaseBlocked = true;
     console.error('[E2E] Database request drain failed:', error);
   }
-  try { closeDatabase(); } catch (error) {
-    cleanupFailed = true;
-    console.error('[E2E] Database cleanup failed:', error);
+  if (!databaseBlocked) {
+    try { closeDatabase(); } catch (error) {
+      cleanupFailed = true;
+      console.error('[E2E] Database cleanup failed:', error);
+    }
   }
   Module._load = originalLoad;
   try { fs.rmSync(testDir, { recursive: true, force: true }); } catch (error) {

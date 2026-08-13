@@ -752,20 +752,20 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   },
   // The Server App can be forwarding an active request to the main API, so
   // drain it before closing the API listener it depends on.
-  { name: 'Server App', run: () => stopServerApp() },
-  { name: 'Main server', run: () => stopServer() },
-  { name: 'KDS server', run: () => stopKdsServer() },
-  { name: 'cloud sync', run: () => cloudSync.shutdown() },
-  { name: 'telemetry', run: () => telemetry.stop() },
-  { name: 'Google Drive', run: () => googleDrive.stop() },
-  { name: 'WhatsApp', run: () => shutdownWhatsApp() },
+  { name: 'Server App', run: () => stopServerApp(), blocksDatabase: true },
+  { name: 'Main server', run: () => stopServer(), blocksDatabase: true },
+  { name: 'KDS server', run: () => stopKdsServer(), blocksDatabase: true },
+  { name: 'cloud sync', run: () => cloudSync.shutdown(), blocksDatabase: true },
+  { name: 'telemetry', run: () => telemetry.stop(), blocksDatabase: true },
+  { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
+  { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
   { name: 'Bonjour', run: () => stopMdns() },
-  { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork() },
-  { name: 'database admission', run: () => beginDatabaseShutdown() },
-  { name: 'database requests', run: () => waitForDatabaseRequests() },
+  { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork(), blocksDatabase: true },
+  { name: 'database admission', run: () => beginDatabaseShutdown(), blocksDatabase: true },
+  { name: 'database requests', run: () => waitForDatabaseRequests(), blocksDatabase: true },
   // Database closure is deliberately last: all HTTP and WebSocket work must
   // have settled before handlers can lose access to SQLite.
-  { name: 'database', run: () => closeDatabase() },
+  { name: 'database', run: () => closeDatabase(), databaseClose: true },
 ]);
 
 const { runCleanup, isShutdownRequested } = createShutdownEntrypoints({

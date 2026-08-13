@@ -12,6 +12,7 @@ import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
   installHttpShutdownTracking,
+  runShutdownSteps,
   trackHttpRequestWork,
   waitForHttpShutdownWork,
 } from '../main/shutdown';
@@ -109,6 +110,23 @@ async function testCoordinatorOrderingAndIdempotency(): Promise<void> {
     return error instanceof AggregateError && error.errors.includes(startupFailure);
   });
   assert.deepEqual(failureEvents, ['listener', 'database'], 'later cleanup still runs after startup failure');
+}
+
+async function testDatabaseCloseRequiresSuccessfulDrains(): Promise<void> {
+  const events: string[] = [];
+  await assert.rejects(
+    runShutdownSteps([
+      {
+        name: 'listener',
+        blocksDatabase: true,
+        run: () => { events.push('listener'); throw new Error('listener did not drain'); },
+      },
+      { name: 'database admission', run: () => { events.push('admission'); } },
+      { name: 'database requests', run: () => { events.push('requests'); } },
+      { name: 'database', databaseClose: true, run: () => { events.push('database'); } },
+    ]),
+  );
+  assert.deepEqual(events, ['listener', 'admission', 'requests'], 'database closure waits for required drains');
 }
 
 async function testActiveHttpAndWebSocketDrain(): Promise<void> {
@@ -642,6 +660,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
 (async () => {
   console.log('phase coordinator');
   await testCoordinatorOrderingAndIdempotency();
+  await testDatabaseCloseRequiresSuccessfulDrains();
   console.log('phase resources');
   await testActiveHttpAndWebSocketDrain();
   await testHttpStopsAcceptingBeforeSlowWebSocketDrain();

@@ -75,6 +75,11 @@ function main() {
     generateCartItemId('burger', [addon('extra', { quantity: 1 })], ''),
     'missing add-on quantity matches the default quantity of one',
   );
+  assert.equal(
+    generateCartItemId('burger', [addon('extra', { quantity: 0 })], ''),
+    generateCartItemId('burger', [addon('extra', { quantity: 1 })], ''),
+    'falsy add-on quantity matches the existing default quantity of one',
+  );
 
   const normal = generateCartItemId('burger', [addon('cheese'), addon('sauce')], 'no onions');
   assert.equal(

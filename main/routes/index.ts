@@ -248,7 +248,7 @@ export function registerRoutes(app: Express): void {
     }
   });
 
-  // Soft-delete order item (frontend calls this)
+  // Cancel or void an order item (frontend calls this)
   app.patch('/api/orders/:orderId/items/:itemId/cancel', (req, res) => {
     try {
       const { orderId, itemId } = req.params;
@@ -396,7 +396,7 @@ export function registerRoutes(app: Express): void {
           db.prepare("UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?")
             .run(now(), now(), itemId);
         } else {
-          // Soft delete - mark as cancelled and restore inventory consumed by the item
+          // Cancel the item and restore the inventory quantity recorded when it was added.
           db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
             .run(now(), itemId);
 

@@ -637,7 +637,15 @@ async function main() {
     const flagToggleOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
       headers: authHeader,
-      body: { type: 'takeaway', items: [{ product_id: 'prod-track-1', quantity: 1 }] },
+      // Keep a separate active sibling so cancelling this item does not
+      // auto-cancel the parent before the restore assertion below.
+      body: {
+        type: 'takeaway',
+        items: [
+          { product_id: 'prod-track-1', quantity: 1 },
+          { product_id: 'prod-untrack', quantity: 1 },
+        ],
+      },
     });
     const flagToggleItemId = flagToggleOrder.data.order.items[0].id;
     const flagToggleStock = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity;

@@ -18,6 +18,7 @@ Module._load = function (request, parent, isMain) {
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../dist/db');
+const { createExitCodeAwareShutdown } = require('../dist/shutdown');
 const { startServer, stopServer } = require('../dist/server');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 // Country/currency stay TH/THB (this fixture's configured business country)
@@ -134,37 +135,34 @@ function seedPosFixture() {
   );
 }
 
-let stopPromise = null;
 let exitRequested = false;
-async function stop(exitCode = 0) {
-  if (!stopPromise) {
-    stopPromise = (async () => {
-      let cleanupFailed = false;
-      try { await stopServer(); } catch (error) {
-        cleanupFailed = true;
-        console.error('[E2E] Main server cleanup failed:', error);
-      }
-      try { await stopKdsServer(); } catch (error) {
-        cleanupFailed = true;
-        console.error('[E2E] KDS server cleanup failed:', error);
-      }
-      try { closeDatabase(); } catch (error) {
-        cleanupFailed = true;
-        console.error('[E2E] Database cleanup failed:', error);
-      }
-      Module._load = originalLoad;
-      try { fs.rmSync(testDir, { recursive: true, force: true }); } catch (error) {
-        cleanupFailed = true;
-        console.error('[E2E] Fixture cleanup failed:', error);
-      }
-      return { cleanupFailed, exitCode };
-    })();
+const requestStop = createExitCodeAwareShutdown(async () => {
+  let cleanupFailed = false;
+  try { await stopServer(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] Main server cleanup failed:', error);
   }
+  try { await stopKdsServer(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] KDS server cleanup failed:', error);
+  }
+  try { closeDatabase(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] Database cleanup failed:', error);
+  }
+  Module._load = originalLoad;
+  try { fs.rmSync(testDir, { recursive: true, force: true }); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] Fixture cleanup failed:', error);
+  }
+  return cleanupFailed ? 1 : 0;
+});
 
-  const result = await stopPromise;
+async function stop(exitCode = 0) {
+  const finalExitCode = await requestStop(exitCode);
   if (!exitRequested) {
     exitRequested = true;
-    process.exit(result.cleanupFailed ? 1 : result.exitCode);
+    process.exit(finalExitCode);
   }
 }
 

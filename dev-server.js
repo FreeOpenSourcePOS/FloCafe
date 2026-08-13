@@ -71,26 +71,24 @@ Module._load = function (request, parent, isMain) {
 // ── Now load and start the compiled backend ───────────────────────────────────
 const { initDatabase } = require('./dist/db');
 const { closeDatabase } = require('./dist/db');
+const { createExitCodeAwareShutdown } = require('./dist/shutdown');
 const { startServer, stopServer, getServerPort } = require('./dist/server');
 const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/kds-server');
 const { startServerApp, stopServerApp, getServerAppPort } = require('./dist/server-app');
 
-let shutdownPromise = null;
 let exitRequested = false;
-async function shutdown(exitCode = 0) {
-  if (!shutdownPromise) {
-    shutdownPromise = (async () => {
-      let finalExitCode = exitCode;
-      try { await stopServerApp(); } catch (err) { console.error('[DevServer] Server App shutdown failed:', err); finalExitCode = 1; }
-      try { await stopServer(); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); finalExitCode = 1; }
-      try { await stopKdsServer(); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); finalExitCode = 1; }
-      try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); finalExitCode = 1; }
-      Module._load = originalLoad;
-      return finalExitCode;
-    })();
-  }
+const requestShutdown = createExitCodeAwareShutdown(async () => {
+  let cleanupFailed = false;
+  try { await stopServerApp(); } catch (err) { console.error('[DevServer] Server App shutdown failed:', err); cleanupFailed = true; }
+  try { await stopServer(); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); cleanupFailed = true; }
+  try { await stopKdsServer(); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); cleanupFailed = true; }
+  try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); cleanupFailed = true; }
+  Module._load = originalLoad;
+  return cleanupFailed ? 1 : 0;
+});
 
-  const finalExitCode = await shutdownPromise;
+async function shutdown(exitCode = 0) {
+  const finalExitCode = await requestShutdown(exitCode);
   if (!exitRequested) {
     exitRequested = true;
     process.exit(finalExitCode);

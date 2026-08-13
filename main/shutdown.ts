@@ -150,25 +150,27 @@ export async function closeServerResources(
   label: string,
 ): Promise<void> {
   const errors: unknown[] = [];
+  const closePromises: Promise<void>[] = [];
 
-  // Upgraded WebSocket connections are owned by the HTTP listener but are not
-  // drained by server.close(). Close them first so they cannot keep the HTTP
-  // close callback pending forever. Continue to the listener even after a
-  // bounded WebSocket failure so one broken client cannot strand cleanup.
-  if (wss) {
+  if (server) {
     try {
-      await closeWebSocketServer(wss, `${label} WebSocket`);
+      closePromises.push(closeHttpServer(server, `${label} HTTP`));
     } catch (error) {
       errors.push(error);
     }
   }
 
-  if (server) {
+  if (wss) {
     try {
-      await closeHttpServer(server, `${label} HTTP`);
+      closePromises.push(closeWebSocketServer(wss, `${label} WebSocket`));
     } catch (error) {
       errors.push(error);
     }
+  }
+
+  const results = await Promise.allSettled(closePromises);
+  for (const result of results) {
+    if (result.status === 'rejected') errors.push(result.reason);
   }
 
   if (errors.length > 0) {
@@ -201,6 +203,117 @@ export function createShutdownCoordinator(getSteps: () => readonly ShutdownStep[
   return () => {
     if (!shutdownPromise) {
       shutdownPromise = runShutdownSteps(getSteps());
+    }
+    return shutdownPromise;
+  };
+}
+
+export type ShutdownEvent = {
+  preventDefault: () => void;
+};
+
+export type ShutdownEntrypointApp = {
+  on: (event: string, listener: (...args: any[]) => void) => unknown;
+  quit: () => void;
+  exit: (code?: number) => void;
+};
+
+export type ShutdownEntrypointProcess = {
+  once: (event: string, listener: (...args: any[]) => void) => unknown;
+  exit: (code?: number) => void;
+};
+
+export type ShutdownEntrypointOptions = {
+  app: ShutdownEntrypointApp;
+  process: ShutdownEntrypointProcess;
+  cleanup: () => Promise<void>;
+  setQuitting: () => void;
+  destroyWindow: () => void;
+  reportFailure?: (context: 'quit' | 'signal', error: unknown) => void;
+};
+
+export function createShutdownEntrypoints({
+  app,
+  process,
+  cleanup,
+  setQuitting,
+  destroyWindow,
+  reportFailure = () => {},
+}: ShutdownEntrypointOptions): { runCleanup: () => Promise<void> } {
+  let cleanupPromise: Promise<void> | null = null;
+  let cleanupFinished = false;
+  let quitAfterCleanupRequested = false;
+
+  const runCleanup = (): Promise<void> => {
+    if (!cleanupPromise) {
+      cleanupPromise = Promise.resolve().then(cleanup);
+      cleanupPromise.then(
+        () => { cleanupFinished = true; },
+        () => { cleanupFinished = true; },
+      );
+    }
+    return cleanupPromise;
+  };
+
+  const quitAfterCleanup = (): void => {
+    if (quitAfterCleanupRequested) return;
+    quitAfterCleanupRequested = true;
+    setQuitting();
+    void runCleanup().then(
+      () => {
+        destroyWindow();
+        app.quit();
+      },
+      (error) => {
+        reportFailure('quit', error);
+        app.exit(1);
+      },
+    );
+  };
+
+  app.on('before-quit', () => {
+    setQuitting();
+  });
+
+  app.on('will-quit', (event: ShutdownEvent) => {
+    if (cleanupFinished) {
+      destroyWindow();
+      return;
+    }
+    event.preventDefault();
+    quitAfterCleanup();
+  });
+
+  const exitAfterCleanup = (): void => {
+    setQuitting();
+    void runCleanup().then(
+      () => process.exit(0),
+      (error) => {
+        reportFailure('signal', error);
+        process.exit(1);
+      },
+    );
+  };
+
+  process.once('SIGTERM', exitAfterCleanup);
+  process.once('SIGINT', exitAfterCleanup);
+
+  return { runCleanup };
+}
+
+export function createExitCodeAwareShutdown(
+  cleanup: () => Promise<number>,
+): (exitCode?: number) => Promise<number> {
+  let shutdownPromise: Promise<number> | null = null;
+  let requestedExitCode = 0;
+
+  return (exitCode = 0): Promise<number> => {
+    requestedExitCode = Math.max(requestedExitCode, exitCode);
+    if (!shutdownPromise) {
+      shutdownPromise = (async () => {
+        const cleanupExitCode = await cleanup();
+        return Math.max(cleanupExitCode, requestedExitCode);
+      })();
     }
     return shutdownPromise;
   };

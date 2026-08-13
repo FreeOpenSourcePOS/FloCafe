@@ -7,13 +7,63 @@ import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import {
   closeServerResources,
+  createExitCodeAwareShutdown,
   createShutdownCoordinator,
+  createShutdownEntrypoints,
 } from '../main/shutdown';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-'));
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+class AppDouble {
+  private listeners = new Map<string, Array<(...args: any[]) => void>>();
+  quitCount = 0;
+  exitCodes: number[] = [];
+
+  on(event: string, listener: (...args: any[]) => void): void {
+    const listeners = this.listeners.get(event) || [];
+    listeners.push(listener);
+    this.listeners.set(event, listeners);
+  }
+
+  emit(event: string, ...args: any[]): void {
+    for (const listener of this.listeners.get(event) || []) listener(...args);
+  }
+
+  quit(): void {
+    this.quitCount++;
+  }
+
+  exit(code = 0): void {
+    this.exitCodes.push(code);
+  }
+}
+
+class ProcessDouble {
+  private listeners = new Map<string, Array<(...args: any[]) => void>>();
+  exitCodes: number[] = [];
+
+  once(event: string, listener: (...args: any[]) => void): void {
+    const wrapped = (...args: any[]) => {
+      const listeners = this.listeners.get(event) || [];
+      this.listeners.set(event, listeners.filter((candidate) => candidate !== wrapped));
+      listener(...args);
+    };
+    const listeners = this.listeners.get(event) || [];
+    listeners.push(wrapped);
+    this.listeners.set(event, listeners);
+  }
+
+  emit(event: string): void {
+    for (const listener of [...(this.listeners.get(event) || [])]) listener();
+  }
+
+  exit(code = 0): void {
+    this.exitCodes.push(code);
+  }
 }
 
 async function testCoordinatorOrderingAndIdempotency(): Promise<void> {
@@ -88,16 +138,136 @@ async function testActiveHttpAndWebSocketDrain(): Promise<void> {
   await delay(50);
   assert.equal(shutdownSettled, false, 'shutdown waits for the active HTTP request');
   if (wsClient.readyState !== WebSocket.CLOSED) await once(wsClient, 'close');
-  assert.equal(wsClient.readyState, WebSocket.CLOSED, 'shutdown closes WebSocket clients before the HTTP listener');
+  assert.equal(wsClient.readyState, WebSocket.CLOSED, 'shutdown closes WebSocket clients while HTTP drains');
 
   heldResponse?.end('drained');
   await shutdown;
   heldRequest.destroy();
 }
 
+async function testHttpStopsAcceptingBeforeSlowWebSocketDrain(): Promise<void> {
+  const server = http.createServer((_request, response) => response.end('ok'));
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  let websocketDrainFinished = false;
+  const slowWss = {
+    clients: new Set([{ readyState: WebSocket.OPEN, close: () => {} }]),
+    close: (callback: () => void) => {
+      setTimeout(() => {
+        websocketDrainFinished = true;
+        callback();
+      }, 100);
+    },
+  } as any;
+
+  try {
+    const shutdown = closeServerResources(server, slowWss, 'slow WebSocket test');
+    await delay(20);
+    assert.equal(server.listening, false, 'HTTP stops accepting before a slow WebSocket drain finishes');
+    assert.equal(websocketDrainFinished, false, 'the WebSocket drain is still pending');
+    await shutdown;
+  } finally {
+    if (server.listening) server.close();
+  }
+}
+
+async function testEntrypointCoverage(): Promise<void> {
+  const runScenario = async (signal: 'SIGTERM' | 'SIGINT'): Promise<void> => {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let cleanupCalls = 0;
+    let windowDestroyCalls = 0;
+    let quittingCalls = 0;
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => {
+        cleanupCalls++;
+        await delay(5);
+      },
+      setQuitting: () => { quittingCalls++; },
+      destroyWindow: () => { windowDestroyCalls++; },
+    });
+
+    const cleanupPromise = entrypoints.runCleanup();
+    assert.strictEqual(cleanupPromise, entrypoints.runCleanup(), 'repeated shutdown calls share one cleanup promise');
+    process.emit(signal);
+    await cleanupPromise;
+    await delay(0);
+    assert.equal(cleanupCalls, 1, `${signal} runs cleanup once`);
+    assert.deepEqual(process.exitCodes, [0], `${signal} exits after cleanup`);
+    assert.equal(quittingCalls, 1, `${signal} marks the app as quitting`);
+    assert.equal(windowDestroyCalls, 0, `${signal} does not destroy the window through the quit path`);
+  };
+
+  for (const [label, trayQuit] of [['normal quit', false], ['tray quit', true]] as const) {
+    const app = new AppDouble();
+    const process = new ProcessDouble();
+    let cleanupCalls = 0;
+    let windowDestroyCalls = 0;
+    let quittingCalls = 0;
+    const entrypoints = createShutdownEntrypoints({
+      app,
+      process,
+      cleanup: async () => {
+        cleanupCalls++;
+        await delay(5);
+      },
+      setQuitting: () => { quittingCalls++; },
+      destroyWindow: () => { windowDestroyCalls++; },
+    });
+    const firstWillQuit = { prevented: false, preventDefault: () => { firstWillQuit.prevented = true; } };
+    app.emit('before-quit');
+    if (trayQuit) quittingCalls++;
+    app.emit('will-quit', firstWillQuit);
+    await entrypoints.runCleanup();
+    await delay(0);
+    assert.equal(firstWillQuit.prevented, true, `${label} waits for cleanup`);
+    assert.equal(app.quitCount, 1, `${label} resumes Electron quit after cleanup`);
+    assert.equal(cleanupCalls, 1, `${label} runs cleanup once`);
+    assert.equal(quittingCalls, trayQuit ? 3 : 2, `${label} marks both quit entrypoints as quitting`);
+    assert.equal(windowDestroyCalls, 1, `${label} destroys the window after cleanup`);
+
+    const secondWillQuit = { prevented: false, preventDefault: () => { secondWillQuit.prevented = true; } };
+    app.emit('will-quit', secondWillQuit);
+    assert.equal(secondWillQuit.prevented, false, `${label} allows the resumed quit`);
+  }
+
+  await runScenario('SIGTERM');
+  await runScenario('SIGINT');
+
+  const startupFailure = new Error('startup failed');
+  const failingEntrypoints = createShutdownEntrypoints({
+    app: new AppDouble(),
+    process: new ProcessDouble(),
+    cleanup: async () => { throw startupFailure; },
+    setQuitting: () => {},
+    destroyWindow: () => {},
+  });
+  await assert.rejects(failingEntrypoints.runCleanup(), (error: unknown) => error === startupFailure);
+}
+
+async function testExitCodeEscalation(): Promise<void> {
+  let releaseCleanup: (() => void) | null = null;
+  const cleanupStarted = new Promise<void>((resolve) => {
+    releaseCleanup = resolve;
+  });
+  const shutdown = createExitCodeAwareShutdown(async () => {
+    await cleanupStarted;
+    return 0;
+  });
+
+  const first = shutdown(0);
+  const second = shutdown(1);
+  assert.strictEqual(first, second, 'exit-code callers share one cleanup promise');
+  releaseCleanup?.();
+  assert.equal(await first, 1, 'a later fatal shutdown caller escalates the exit code');
+}
+
 async function testOwnedServerStopEntrypoints(): Promise<void> {
   process.env.PORT = '0';
   process.env.KDS_PORT = '0';
+  process.env.SERVER_APP_PORT = '0';
 
   // Keep this test independent of a real Electron app while still exercising
   // the owned server entrypoints and their better-sqlite3-backed lifecycle.
@@ -126,12 +296,15 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     const { initDatabase, closeDatabase } = await import('../main/db');
     const mainServer = await import('../main/server');
     const kdsServer = await import('../main/kds-server');
+    const serverApp = await import('../main/server-app');
 
     await mainServer.stopServer();
     await kdsServer.stopKdsServer();
+    await serverApp.stopServerApp();
     initDatabase();
     await mainServer.startServer();
     await kdsServer.startKdsServer();
+    await serverApp.startServerApp();
 
     // Verify the listeners through their kernel-assigned ephemeral ports and
     // keep resource-level WebSocket coverage in the previous phase.
@@ -150,6 +323,13 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
         });
         request.once('error', reject);
       }),
+      new Promise<void>((resolve, reject) => {
+        const request = http.get({ host: '127.0.0.1', port: serverApp.getServerAppPort(), path: '/api/health' }, (response) => {
+          response.resume();
+          response.once('end', resolve);
+        });
+        request.once('error', reject);
+      }),
     ]);
 
     const firstMainStop = mainServer.stopServer();
@@ -162,8 +342,14 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     await firstKdsStop;
     assert.equal(kdsServer.isKdsServerRunning(), false);
 
+    const firstServerAppStop = serverApp.stopServerApp();
+    assert.strictEqual(firstServerAppStop, serverApp.stopServerApp(), 'server app stop is idempotent while draining');
+    await firstServerAppStop;
+    assert.equal(serverApp.isServerAppRunning(), false);
+
     await mainServer.stopServer();
     await kdsServer.stopKdsServer();
+    await serverApp.stopServerApp();
     closeDatabase();
   } finally {
     Module._load = originalLoad;
@@ -176,6 +362,10 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   await testCoordinatorOrderingAndIdempotency();
   console.log('phase resources');
   await testActiveHttpAndWebSocketDrain();
+  await testHttpStopsAcceptingBeforeSlowWebSocketDrain();
+  console.log('phase entrypoints');
+  await testEntrypointCoverage();
+  await testExitCodeEscalation();
   console.log('phase owned servers');
   await testOwnedServerStopEntrypoints();
   console.log('Shutdown lifecycle tests passed.');

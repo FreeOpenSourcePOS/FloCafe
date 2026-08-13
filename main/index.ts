@@ -16,7 +16,7 @@ import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from '
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
-import { createShutdownCoordinator, SHUTDOWN_TIMEOUT_MS } from './shutdown';
+import { createShutdownCoordinator, createShutdownEntrypoints, SHUTDOWN_TIMEOUT_MS } from './shutdown';
 
 // ── GPU compatibility ────────────────────────────────────────────────────────
 // On Windows, some systems hit "GPU process exited unexpectedly" (exit code
@@ -167,9 +167,6 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
-let cleanupFinished = false;
-let cleanupPromise: Promise<void> | null = null;
-let quitAfterCleanupRequested = false;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -754,75 +751,28 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   { name: 'database', run: () => closeDatabase() },
 ]);
 
-function runCleanup(): Promise<void> {
-  if (!cleanupPromise) {
+const { runCleanup } = createShutdownEntrypoints({
+  app,
+  process,
+  cleanup: async () => {
     console.log('[Flo] Running cleanup...');
-    cleanupPromise = cleanupCoordinator();
-    cleanupPromise.then(
-      () => {
-        cleanupFinished = true;
-        console.log('[Flo] Goodbye!');
-      },
-      (error) => {
-        cleanupFinished = true;
-        console.error('[Flo] Cleanup failed:', error);
-      },
-    );
-  }
-  return cleanupPromise;
-}
-
-function quitAfterCleanup(): void {
-  if (quitAfterCleanupRequested) return;
-  quitAfterCleanupRequested = true;
-  isQuitting = true;
-  void runCleanup().then(
-    () => {
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
-      app.quit();
-    },
-    (error) => {
-      console.error('[Flo] Cleanup failed before quit:', error);
-      app.exit(1);
-    },
-  );
-}
-
-app.on('before-quit', () => {
-  isQuitting = true;
-});
-
-app.on('will-quit', (event) => {
-  if (cleanupFinished) {
+    try {
+      await cleanupCoordinator();
+      console.log('[Flo] Goodbye!');
+    } catch (error) {
+      console.error('[Flo] Cleanup failed:', error);
+      throw error;
+    }
+  },
+  setQuitting: () => {
+    isQuitting = true;
+  },
+  destroyWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
-    return;
-  }
-  // Electron cannot await an event handler. Prevent the quit transition and
-  // resume it only after the shared cleanup promise has settled.
-  event.preventDefault();
-  quitAfterCleanup();
-});
-
-// --- SIGTERM/SIGINT handlers (Linux/Unix — clean shutdown on external signals) ---
-function exitAfterCleanup(exitCode: number): void {
-  isQuitting = true;
-  void runCleanup().then(
-    () => process.exit(exitCode),
-    (error) => {
-      console.error('[Flo] Cleanup failed before signal exit:', error);
-      process.exit(1);
-    },
-  );
-}
-
-process.once('SIGTERM', () => {
-  console.log('[Flo] SIGTERM received, cleaning up...');
-  exitAfterCleanup(0);
-});
-
-process.once('SIGINT', () => {
-  console.log('[Flo] SIGINT received, cleaning up...');
-  exitAfterCleanup(0);
+  },
+  reportFailure: (context, error) => {
+    console.error(`[Flo] Cleanup failed before ${context}:`, error);
+  },
 });
 
 process.on('uncaughtException', (error) => {

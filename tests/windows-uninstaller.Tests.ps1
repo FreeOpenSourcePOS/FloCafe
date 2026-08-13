@@ -96,7 +96,8 @@ Describe 'Flo Cafe Windows uninstaller' {
       $env:LOCALAPPDATA = 'C:\Flo Cafe Fixture'
       $script:ChildUninstallerTimeoutSeconds = 1
       Mock Get-Process {
-        if ($PSBoundParameters.ContainsKey('Name')) { return @() }
+        param($Name, $Id)
+        if ($Name) { return @() }
         if ($Id -eq $child.Id -and $state.RootRunning) { return @([pscustomobject]@{ Id = $child.Id }) }
         if ($Id -eq $intermediateId -and $state.IntermediateRunning) { return @([pscustomobject]@{ Id = $intermediateId }) }
         if ($Id -eq $descendantId -and $state.DescendantRunning) { return @([pscustomobject]@{ Id = $descendantId }) }
@@ -123,7 +124,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       }
       Mock Get-CimInstance {
         param($ClassName, $Filter, $OperationTimeoutSec)
-        if ($PSBoundParameters.ContainsKey('Filter')) {
+        if ($Filter) {
           $state.RootQueries++
           if ($Filter -eq "ParentProcessId = $($child.Id)" -and $state.RootQueries -eq 1) {
             return @([pscustomobject]@{ ProcessId = $intermediateId })

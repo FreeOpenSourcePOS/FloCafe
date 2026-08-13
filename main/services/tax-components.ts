@@ -177,9 +177,12 @@ function legacyItemComponents(document: TaxDocument): DecimalTaxComponent[] {
   });
 }
 
-function documentLegacyComponents(document: TaxDocument): DecimalTaxComponent[] {
+function documentLegacyComponents(
+  document: TaxDocument,
+  coveredComponents: DecimalTaxComponent[] = [],
+): DecimalTaxComponent[] {
   const remainingItems = new Map<string, Decimal>();
-  for (const component of legacyItemComponents(document)) {
+  for (const component of [...legacyItemComponents(document), ...coveredComponents]) {
     const key = `${component.title}\u0000${component.rate ?? ''}`;
     remainingItems.set(key, (remainingItems.get(key) || new Decimal(0)).plus(component.amount));
   }
@@ -214,7 +217,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
         mergeComponents([
           ...splitSnapshot.components,
           ...legacyItemComponents(document),
-          ...documentLegacyComponents(document),
+          ...documentLegacyComponents(document, splitSnapshot.components),
         ]),
         document.tax_amount,
       );

@@ -146,9 +146,15 @@ function legacyItemComponents(items: Array<TaxSource & { status?: string | null 
   });
 }
 
-function documentLegacyComponents(document: TaxDocument): DisplayTaxComponent[] {
+function documentLegacyComponents(
+  document: TaxDocument,
+  coveredComponents: DisplayTaxComponent[] = [],
+): DisplayTaxComponent[] {
   const remainingItems = new Map<string, number>();
-  for (const component of legacyItemComponents(document.order?.items ?? document.items)) {
+  for (const component of [
+    ...legacyItemComponents(document.order?.items ?? document.items),
+    ...coveredComponents,
+  ]) {
     const key = `${component.title}\u0000${component.rate ?? ''}`;
     remainingItems.set(key, (remainingItems.get(key) || 0) + component.amount);
   }
@@ -174,7 +180,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
       for (const component of [
         ...splitSnapshot.components,
         ...legacyItemComponents(document.order?.items ?? document.items),
-        ...documentLegacyComponents(document),
+        ...documentLegacyComponents(document, splitSnapshot.components),
       ]) {
         const key = `${component.title}\u0000${component.rate ?? ''}`;
         const current = merged.get(key);

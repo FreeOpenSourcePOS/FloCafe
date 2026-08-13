@@ -597,6 +597,54 @@ async function main() {
       assertEqual(Number(components.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'discounted sub-cent legacy components reconcile exactly');
     }
 
+    seedProduct(db, 'split-owner-local-tax-a', 'split-tax-cat', 'Owner Local Tax A', 1);
+    seedProduct(db, 'split-owner-local-tax-b', 'split-tax-cat', 'Owner Local Tax B', 1);
+    const ownerLocalOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 2,
+        items: [
+          { product_id: 'split-owner-local-tax-a', quantity: 3 },
+          { product_id: 'split-owner-local-tax-b', quantity: 3 },
+        ],
+      },
+      headers: authHeader,
+    });
+    const ownerLocalItems = ownerLocalOrderRes.data.order.items;
+    const ownerLocalBreakdowns = ownerLocalItems.map((_: any, index: number) => ([{
+      title: `Owner Local Tax ${index + 1}`,
+      rate: 2,
+      amount: 0.01,
+    }]));
+    ownerLocalItems.forEach((item: any, index: number) => {
+      db.prepare('UPDATE order_items SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = NULL, total = ? WHERE id = ?')
+        .run(0.01, JSON.stringify(ownerLocalBreakdowns[index]), 3.01, item.id);
+    });
+    db.prepare('UPDATE orders SET tax_amount = ?, tax_breakdown = ?, tax_snapshot = NULL, total = ? WHERE id = ?')
+      .run(0.02, JSON.stringify(ownerLocalBreakdowns), 6.02, ownerLocalOrderRes.data.order.id);
+    const ownerLocalBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: ownerLocalOrderRes.data.order.id },
+      headers: authHeader,
+    });
+    const ownerLocalSplit = await api(baseUrl, `/api/bills/${ownerLocalBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Owner local one', items: ownerLocalItems.map((item: any) => ({ order_item_id: item.id, quantity: 1 })) },
+        { label: 'Owner local two', items: ownerLocalItems.map((item: any) => ({ order_item_id: item.id, quantity: 2 })) },
+      ] },
+      headers: authHeader,
+    });
+    assertEqual(ownerLocalSplit.status, 201, 'nested owner-local legacy split returns 201');
+    assertEqual(JSON.stringify(ownerLocalSplit.data.bills.map((bill: any) => bill.tax_amount)), JSON.stringify([0, 0.02]), 'child tax totals use the same owner-local rounding as nested legacy evidence');
+    for (const [index, childBill] of ownerLocalSplit.data.bills.entries()) {
+      const breakdown = childBill.tax_breakdown as Array<Array<{ title: string; rate: number; amount: number }>>;
+      const breakdownTotal = Number(breakdown.flat().reduce((sum, component) => sum + component.amount, 0).toFixed(2));
+      assertEqual(breakdownTotal, childBill.tax_amount, 'nested owner-local breakdown reconciles to its child tax total');
+      assertEqual(JSON.stringify(breakdown.map((group) => group.map((component) => component.amount))), JSON.stringify(index === 0 ? [[0], [0]] : [[0.01], [0.01]]), 'nested legacy component cents remain with their owner allocation');
+    }
+
     const voidLegacyOrderRes = await api(baseUrl, '/api/orders', {
       method: 'POST',
       body: {

@@ -997,6 +997,10 @@ interface OrderBillSyncValues {
 interface LegacyTaxContribution {
   taxWeights: number[];
   exclusiveWeights: number[];
+  ownerTaxMinors: number[] | null;
+  ownerExclusiveTaxMinors: number[] | null;
+  ownerTaxSourceMinor: number | null;
+  ownerExclusiveTaxSourceMinor: number | null;
   exclusiveSourceMinor: number;
   allExclusive: boolean;
   hasLegacyTaxEvidence: boolean;
@@ -1011,6 +1015,11 @@ function collectLegacyTaxContribution(
 ): LegacyTaxContribution {
   const taxWeights = new Array(weights.length).fill(0);
   const exclusiveWeights = new Array(weights.length).fill(0);
+  const ownerTaxMinors = new Array(weights.length).fill(0);
+  const ownerExclusiveTaxMinors = new Array(weights.length).fill(0);
+  let ownerTaxSourceMinor = 0;
+  let ownerExclusiveTaxSourceMinor = 0;
+  let hasCompleteOwnerMinorAllocations = true;
   let exclusiveSourceMinor = 0;
   let allExclusive = true;
   let hasLegacyItems = false;
@@ -1027,6 +1036,18 @@ function collectLegacyTaxContribution(
     const effectiveWeights = ownerWeights.some((weight) => weight > 0) ? ownerWeights : weights;
     const totalWeight = effectiveWeights.reduce((sum, weight) => sum + weight, 0);
     if (totalWeight <= 0) continue;
+    if (persistedBreakdowns.has(Number(item.id))) {
+      const sourceMinor = Math.round(sourceCents);
+      const ownerAllocation = allocateSignedMinorUnits(sourceMinor, effectiveWeights);
+      for (let index = 0; index < weights.length; index += 1) {
+        ownerTaxMinors[index] += ownerAllocation[index];
+        if (item.tax_type !== 'inclusive') ownerExclusiveTaxMinors[index] += ownerAllocation[index];
+      }
+      ownerTaxSourceMinor += sourceMinor;
+      if (item.tax_type !== 'inclusive') ownerExclusiveTaxSourceMinor += sourceMinor;
+    } else {
+      hasCompleteOwnerMinorAllocations = false;
+    }
     const magnitude = Math.abs(sourceCents);
     for (let index = 0; index < weights.length; index += 1) {
       const contribution = magnitude * effectiveWeights[index] / totalWeight;
@@ -1041,6 +1062,12 @@ function collectLegacyTaxContribution(
   return {
     taxWeights,
     exclusiveWeights,
+    ownerTaxMinors: hasLegacyItems && hasCompleteOwnerMinorAllocations ? ownerTaxMinors : null,
+    ownerExclusiveTaxMinors: hasLegacyItems && hasCompleteOwnerMinorAllocations ? ownerExclusiveTaxMinors : null,
+    ownerTaxSourceMinor: hasLegacyItems && hasCompleteOwnerMinorAllocations ? ownerTaxSourceMinor : null,
+    ownerExclusiveTaxSourceMinor: hasLegacyItems && hasCompleteOwnerMinorAllocations
+      ? ownerExclusiveTaxSourceMinor
+      : null,
     exclusiveSourceMinor: Math.round(exclusiveSourceMinor),
     allExclusive,
     hasLegacyTaxEvidence: hasLegacyItems || hasDocumentLegacyTax,
@@ -1060,7 +1087,10 @@ function allocateLegacyTaxContribution(
     ? sourceTaxMinor
     : sourceTaxMinor - snapshotSourceTaxMinor;
   const taxWeights = contribution.taxWeights.some((weight) => weight > 0) ? contribution.taxWeights : fallbackWeights;
-  const legacyTaxMinors = allocateSignedMinorUnits(legacySourceTaxMinor, taxWeights);
+  const legacyTaxMinors = contribution.ownerTaxMinors !== null
+    && contribution.ownerTaxSourceMinor === legacySourceTaxMinor
+    ? contribution.ownerTaxMinors
+    : allocateSignedMinorUnits(legacySourceTaxMinor, taxWeights);
   const exclusiveSourceMinor = contribution.allExclusive
     ? legacySourceTaxMinor
     : contribution.exclusiveSourceMinor;
@@ -1068,7 +1098,10 @@ function allocateLegacyTaxContribution(
     ? contribution.exclusiveWeights
     : fallbackWeights;
   const legacyExclusiveTaxMinors = contribution.hasLegacyTaxEvidence || legacySourceTaxMinor !== 0
-    ? allocateSignedMinorUnits(exclusiveSourceMinor, exclusiveWeights)
+    ? contribution.ownerExclusiveTaxMinors !== null
+      && contribution.ownerExclusiveTaxSourceMinor === exclusiveSourceMinor
+      ? contribution.ownerExclusiveTaxMinors
+      : allocateSignedMinorUnits(exclusiveSourceMinor, exclusiveWeights)
     : new Array(fallbackWeights.length).fill(0);
   return { legacySourceTaxMinor, legacyTaxMinors, legacyExclusiveTaxMinors };
 }

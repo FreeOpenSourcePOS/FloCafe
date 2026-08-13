@@ -225,6 +225,31 @@ test('document legacy tax is not duplicated when child item evidence matches it'
   assert.deepEqual(resolveFrontendTaxComponents(document), expected);
 });
 
+test('marked child snapshots consume mirrored document components before residual legacy tax', () => {
+  const document = {
+    tax_amount: 1.75,
+    tax_snapshot: JSON.stringify({
+      splitAllocation: 'minor-unit-v1',
+      lines: [{ components: [
+        { label: 'Item Tax', rate: '5', amount: '1.00' },
+        { label: 'Charge Tax', rate: '5', amount: '0.50' },
+      ] }],
+    }),
+    tax_breakdown: [
+      { title: 'Item Tax', rate: 5, amount: 1 },
+      { title: 'Charge Tax', rate: 5, amount: 0.5 },
+      { title: 'Legacy Charge Tax', rate: 2, amount: 0.25 },
+    ],
+  };
+  const expected = [
+    { title: 'Item Tax', rate: 5, amount: 1 },
+    { title: 'Charge Tax', rate: 5, amount: 0.5 },
+    { title: 'Legacy Charge Tax', rate: 2, amount: 0.25 },
+  ];
+  assert.deepEqual(resolveBackendTaxComponents(document), expected);
+  assert.deepEqual(resolveFrontendTaxComponents(document), expected);
+});
+
 test('frontend split printing keeps the child-scoped order payload', () => {
   const childOrder = {
     items: [{

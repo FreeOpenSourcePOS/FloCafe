@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import type { Customer, Product, Addon, CartItem } from '@/lib/types';
+import { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
+
+export { generateCartItemId, normalizeCartItems } from '@/lib/cart-identity';
 
 interface CartState {
   items: CartItem[];
@@ -28,21 +31,6 @@ interface CartState {
 
   subtotal: () => number;
   itemCount: () => number;
-}
-
-function generateCartItemId(productId: number | string, addons: Addon[], specialInstructions: string): string {
-  const parts = [String(productId)];
-  if (addons.length > 0) {
-    const addonStr = [...addons]
-      .sort((a, b) => String(a.id).localeCompare(String(b.id)))
-      .map((a) => `${a.id}:${a.quantity || 1}`)
-      .join(',');
-    parts.push(addonStr);
-  }
-  if (specialInstructions) {
-    parts.push(specialInstructions);
-  }
-  return parts.join('-');
 }
 
 export const useCartStore = create<CartState>((set, get) => ({
@@ -127,7 +115,7 @@ export const useCartStore = create<CartState>((set, get) => ({
   },
 
   loadItems: (items, tableId, customerId, guestCount, orderNotes, heldOrderId) => {
-    set({ items, tableId, heldOrderId: heldOrderId || null, customerId, guestCount, orderNotes: orderNotes || '' });
+    set({ items: normalizeCartItems(items), tableId, heldOrderId: heldOrderId || null, customerId, guestCount, orderNotes: orderNotes || '' });
   },
 
   setOrderType: (type) => set((state) => ({ orderType: type, deliveryAddress: type !== 'delivery' ? '' : state.deliveryAddress })),

@@ -494,6 +494,37 @@ Restore a cancelled item (owner or manager only). The item returns to `pending`
 and its recorded inventory deduction is applied again. The request fails when
 the order is terminal, the order is paid, or available stock is insufficient.
 
+### POST `/api/orders/:id/items`
+Append items to an existing order.
+
+**Headers:** `Authorization: Bearer <token>`
+
+For a retry-safe append, send an `Idempotency-Key` header containing 1–128 printable, non-whitespace ASCII characters. Reuse the same key only for the same authenticated user's identical append request (order, items, and order notes) until its response is confirmed. A matching retry returns the original `200` response without adding items again, including if the order has since become non-editable; reusing the key for different data returns `409`.
+
+**Request:**
+```json
+{
+  "items": [
+    {
+      "product_id": "prod-1",
+      "quantity": 2,
+      "addons": [{ "id": "addon-1", "name": "Extra cheese", "price": 20, "quantity": 1 }],
+      "special_instructions": "No onions"
+    }
+  ],
+  "special_instructions": "Add drinks when ready"
+}
+```
+
+**Response (200):**
+```json
+{
+  "order": { "id": "order-1", "items": [ ... ] }
+}
+```
+
+---
+
 ### PATCH `/api/order-items/:id/status`
 Update item status (KDS workflow).
 

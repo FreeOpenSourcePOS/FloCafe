@@ -18,12 +18,38 @@ const router = Router();
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 
 function orderIdempotencyKey(req: Request): string | null {
-  const supplied = req.get('Idempotency-Key')?.trim();
+  const raw = req.get('Idempotency-Key');
+  if (raw === undefined) return null;
+  const supplied = raw.trim();
   if (!supplied) return null;
   if (supplied.length > MAX_ORDER_IDEMPOTENCY_KEY_LENGTH || !/^[\x21-\x7e]+$/.test(supplied)) {
     throw Object.assign(new Error('Idempotency-Key is invalid or too long'), { statusCode: 400 });
   }
   return supplied;
+}
+
+function getStoredOrderReplay(
+  db: ReturnType<typeof getDatabase>,
+  userId: string,
+  idempotencyKey: string,
+  requestHash: string,
+): unknown | null {
+  const prior = db.prepare(`
+    SELECT request_hash, response_json
+    FROM order_idempotency
+    WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
+    ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
+    LIMIT 1
+  `).get(userId, idempotencyKey, userId) as { request_hash: string; response_json: string } | undefined;
+  if (!prior) return null;
+  if (prior.request_hash !== requestHash) {
+    throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
+  }
+  try {
+    return JSON.parse(prior.response_json);
+  } catch {
+    throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
+  }
 }
 
 // Rate limiting for PIN validation (simple in-memory)
@@ -554,9 +580,6 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
-    if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
-      return res.status(409).json({ error: 'Items cannot be changed after a check has been split' });
-    }
     const body = req.body || {};
     const { items, special_instructions } = body;
     const idempotencyKey = orderIdempotencyKey(req);
@@ -564,6 +587,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     const requestHash = idempotencyKey
       ? createHash('sha256').update(JSON.stringify({ order_id: req.params.id, items, special_instructions })).digest('hex')
       : null;
+
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
@@ -574,20 +598,16 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       return res.status(403).json({ error: 'Waiters can only modify their own orders' });
     }
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'At least one item is required' });
+    // Replay before any mutable-order guard. A response-loss retry must return
+    // the committed result even if the order was split or its validation state
+    // changed after the original append.
+    if (idempotencyKey && requestHash) {
+      const replayResponse = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash);
+      if (replayResponse) return res.json(replayResponse);
     }
 
-    try {
-      for (const item of items) {
-        validateItemNotes(db, item.special_instructions);
-        validateItemAddonGroupLimits(db, item.addons);
-      }
-      if (special_instructions !== undefined) {
-        validateOrderNotes(db, special_instructions);
-      }
-    } catch (err: any) {
-      return res.status(400).json({ error: err.message });
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'At least one item is required' });
     }
 
     // Get settings
@@ -611,25 +631,35 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
-      if (idempotencyKey) {
-        const prior = db.prepare(`
-          SELECT request_hash, response_json
-          FROM order_idempotency
-          WHERE (user_id = ? OR user_id = 'legacy') AND idempotency_key = ?
-          ORDER BY CASE WHEN user_id = ? THEN 0 ELSE 1 END
-          LIMIT 1
-        `).get(idempotencyUserId, idempotencyKey, idempotencyUserId) as { request_hash: string; response_json: string } | undefined;
-        if (prior) {
-          if (prior.request_hash !== requestHash) throw Object.assign(new Error('Idempotency-Key was already used for a different order request'), { statusCode: 409 });
-          try {
-            return { replayResponse: JSON.parse(prior.response_json) };
-          } catch {
-            throw Object.assign(new Error('Stored order response is invalid'), { statusCode: 500 });
-          }
-        }
+      if (authUser?.role === 'waiter' && currentOrder.user_id !== authUser.userId) {
+        throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
+      }
+
+      // Re-check idempotency under the transaction lock in case the early
+      // lookup raced the first request. This must remain before mutable-order
+      // guards so a committed append always has a replay path.
+      if (idempotencyKey && requestHash) {
+        const replayResponse = getStoredOrderReplay(db, idempotencyUserId, idempotencyKey, requestHash);
+        if (replayResponse) return { replayResponse };
+      }
+
+      if (db.prepare('SELECT 1 FROM bills WHERE order_id = ? AND split_group_id IS NOT NULL LIMIT 1').get(req.params.id)) {
+        throw Object.assign(new Error('Items cannot be changed after a check has been split'), { statusCode: 409 });
       }
       if (['completed', 'cancelled'].includes(currentOrder.status)) {
         throw Object.assign(new Error('Cannot add items to a completed or cancelled order'), { statusCode: 400 });
+      }
+
+      try {
+        for (const item of items) {
+          validateItemNotes(db, item.special_instructions);
+          validateItemAddonGroupLimits(db, item.addons);
+        }
+        if (special_instructions !== undefined) {
+          validateOrderNotes(db, special_instructions);
+        }
+      } catch (err: unknown) {
+        throw Object.assign(new Error(err instanceof Error ? err.message : 'Invalid order item'), { statusCode: 400 });
       }
 
       const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;

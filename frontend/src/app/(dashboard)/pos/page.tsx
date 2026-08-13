@@ -32,6 +32,18 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 import { getCurrencySymbol, getCountryByCode } from '@/lib/countries';
+import {
+  buildAppendItemsFingerprint,
+  clearAppendAttempt,
+  createSafeAppendAttemptStorage,
+  getOrCreateAppendAttempt,
+  LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY,
+  getPostpaidOrderAttemptStorageKey,
+  migrateLegacyAppendAttempt,
+  readAppendAttempt,
+  type AppendAttempt,
+  type AppendAttemptStorage,
+} from '@/lib/append-attempt';
 
 const PREPAID_ATTEMPT_STORAGE_KEY = 'flo.prepaid.checkout.attempt';
 const POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
@@ -95,26 +107,80 @@ export default function POSPage() {
   const activeUserId = user?.id == null ? null : String(user.id);
   const prepaidAttemptRef = useRef<PrepaidAttempt | null>(null);
   const postpaidAttemptRef = useRef<PostpaidAttempt | null>(null);
-  const addItemsAttemptRef = useRef<{ orderId: string; key: string } | null>(null);
+  const postpaidAttemptKeyRef = useRef<string | null>(null);
+  const postpaidAttemptWasLegacyRef = useRef(false);
+  const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
+  const appendRecoveryStartedUsersRef = useRef<Set<string>>(new Set());
+  const appendAttemptStorageRef = useRef<AppendAttemptStorage | null>(null);
+
+  const getAppendAttemptStorage = (): AppendAttemptStorage => {
+    if (appendAttemptStorageRef.current) return appendAttemptStorageRef.current;
+    let browserStorage: AppendAttemptStorage | null = null;
+    let sessionStorage: AppendAttemptStorage | null = null;
+    try {
+      if (typeof window !== 'undefined') browserStorage = window.localStorage;
+    } catch {
+      // Private/restricted renderers may throw while reading localStorage.
+    }
+    try {
+      if (typeof window !== 'undefined') sessionStorage = window.sessionStorage;
+    } catch {
+      // Session storage may also be restricted.
+    }
+    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(
+      browserStorage,
+      sessionStorage,
+    );
+    return appendAttemptStorageRef.current;
+  };
 
   const readPostpaidAttempt = () => {
+    if (typeof window === 'undefined') return null;
+    let sharedLegacyAppendRetained = false;
+    try {
+      const migratedAppend = migrateLegacyAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId || undefined });
+      sharedLegacyAppendRetained = migratedAppend !== null
+        && getAppendAttemptStorage().getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) !== null;
+    } catch {
+      throw new Error('Unable to recover append retry state');
+    }
     if (postpaidAttemptRef.current?.userId === activeUserId) return postpaidAttemptRef.current;
     postpaidAttemptRef.current = null;
-    if (typeof window === 'undefined') return null;
+    postpaidAttemptKeyRef.current = null;
+    postpaidAttemptWasLegacyRef.current = false;
     try {
-      const stored = window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      const userStorageKey = activeUserId ? getPostpaidOrderAttemptStorageKey(activeUserId) : null;
+      const stored = userStorageKey ? window.localStorage.getItem(userStorageKey) : null;
       const parsed = stored ? JSON.parse(stored) as PostpaidAttempt : null;
-      if (parsed && parsed.userId === activeUserId) postpaidAttemptRef.current = parsed;
-      else window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      if (parsed && parsed.userId === activeUserId) {
+        postpaidAttemptRef.current = parsed;
+        postpaidAttemptKeyRef.current = userStorageKey;
+        return parsed;
+      }
+      if (userStorageKey && stored !== null) window.localStorage.removeItem(userStorageKey);
+      const legacyStored = sharedLegacyAppendRetained ? null : window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      const legacyParsed = legacyStored ? JSON.parse(legacyStored) as PostpaidAttempt : null;
+      if (legacyParsed && legacyParsed.userId === activeUserId) {
+        postpaidAttemptRef.current = legacyParsed;
+        postpaidAttemptKeyRef.current = POSTPAID_ATTEMPT_STORAGE_KEY;
+        postpaidAttemptWasLegacyRef.current = true;
+      } else if (legacyStored !== null) {
+        window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      }
     } catch {
-      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      if (activeUserId) window.localStorage.removeItem(getPostpaidOrderAttemptStorageKey(activeUserId));
+      if (!sharedLegacyAppendRetained) window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      return null;
     }
     return postpaidAttemptRef.current;
   };
   const savePostpaidAttempt = (attempt: PostpaidAttempt): boolean => {
     postpaidAttemptRef.current = attempt;
     try {
-      window.localStorage.setItem(POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify(attempt));
+      if (!activeUserId) return false;
+      const storageKey = getPostpaidOrderAttemptStorageKey(activeUserId);
+      window.localStorage.setItem(storageKey, JSON.stringify(attempt));
+      postpaidAttemptKeyRef.current = storageKey;
       return true;
     } catch {
       return false;
@@ -123,10 +189,13 @@ export default function POSPage() {
   const clearPostpaidAttempt = () => {
     postpaidAttemptRef.current = null;
     try {
-      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      if (postpaidAttemptKeyRef.current) window.localStorage.removeItem(postpaidAttemptKeyRef.current);
+      if (postpaidAttemptWasLegacyRef.current) window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
     } catch {
       // Ignore storage cleanup failures.
     }
+    postpaidAttemptKeyRef.current = null;
+    postpaidAttemptWasLegacyRef.current = false;
   };
 
   const readPrepaidAttempt = () => {
@@ -242,6 +311,47 @@ export default function POSPage() {
     } catch { /* ignore */ }
   };
 
+  // A full renderer reload resets the Zustand cart. Recovering the persisted
+  // request here lets a committed-but-response-lost append replay itself even
+  // before the cashier reconstructs the cart or selects the table again.
+  useEffect(() => {
+    if (!activeUserId || appendRecoveryStartedUsersRef.current.has(activeUserId)) return;
+
+    let pendingAttempt: AppendAttempt | null = null;
+    try {
+      pendingAttempt = readAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId });
+    } catch {
+      return;
+    }
+    if (!pendingAttempt) return;
+
+    appendRecoveryStartedUsersRef.current.add(activeUserId);
+    addItemsAttemptRef.current = pendingAttempt;
+    api.post(
+      `/orders/${pendingAttempt.orderId}/items`,
+      {
+        items: pendingAttempt.items,
+        special_instructions: pendingAttempt.specialInstructions,
+      },
+      { headers: { 'Idempotency-Key': pendingAttempt.idempotencyKey } },
+    ).then(() => {
+      const storage = getAppendAttemptStorage();
+      if (!clearAppendAttempt(storage, pendingAttempt!)) throw new Error('Unable to clear append retry state');
+      if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
+      addItemsAttemptRef.current = null;
+      // Do not clear cart or checkout state that may have been started while
+      // recovery was in flight. A reload starts empty; any current UI is newer.
+      toast.success(t('pos.itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }));
+      refreshTables();
+    }).catch((err: unknown) => {
+      const error = err as { response?: { data?: { message?: string } } };
+      toast.error(error.response?.data?.message || t('pos.addItemsFailed'));
+    });
+  // The recovery runs once per authenticated renderer and intentionally uses
+  // the persisted attempt rather than the transient cart state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeUserId]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -352,20 +462,28 @@ export default function POSPage() {
             : null,
           special_instructions: item.special_instructions || null,
         }));
-        const itemFingerprint = JSON.stringify({ order_id: pendingOrder.id, items: newItems, special_instructions: cart.orderNotes || undefined });
-        const priorItemsAttempt = readPostpaidAttempt();
-        const itemAttempt: PostpaidAttempt = priorItemsAttempt?.userId === activeUserId && priorItemsAttempt.fingerprint === itemFingerprint
-          ? priorItemsAttempt
-          : { userId: activeUserId || '', fingerprint: itemFingerprint, idempotencyKey: newIdempotencyKey() };
-        if (!savePostpaidAttempt(itemAttempt)) throw new Error(t('pos.placeOrderFailed'));
+        const specialInstructions = cart.orderNotes || undefined;
+        const itemFingerprint = buildAppendItemsFingerprint(pendingOrder.id, newItems, specialInstructions);
+        const storage = getAppendAttemptStorage();
+        const itemAttempt = getOrCreateAppendAttempt(storage, {
+          userId: activeUserId || '',
+          orderId: pendingOrder.id,
+          fingerprint: itemFingerprint,
+          createKey: newIdempotencyKey,
+          items: newItems,
+          specialInstructions,
+          orderNumber: pendingOrder.order_number,
+        });
+        addItemsAttemptRef.current = itemAttempt;
         const { data } = await api.post(
           `/orders/${pendingOrder.id}/items`,
-          { items: newItems, special_instructions: cart.orderNotes || undefined },
+          { items: newItems, special_instructions: specialInstructions },
           { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } },
         );
         toast.success(t('pos.itemsAddedToOrder', { number: pendingOrder.order_number }));
         orderForKot = data.order as Order;
-        clearPostpaidAttempt();
+        if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
+        addItemsAttemptRef.current = null;
         setPendingOrder(null);
       } else {
         const orderPayload = {
@@ -713,22 +831,34 @@ export default function POSPage() {
     }
     setSubmitting(true);
     try {
-      const existingAttempt = addItemsAttemptRef.current;
-      const idempotencyKey = existingAttempt?.orderId === String(order.id)
-        ? existingAttempt.key
-        : newIdempotencyKey();
-      addItemsAttemptRef.current = { orderId: String(order.id), key: idempotencyKey };
+      const items = cart.items.map((item) => ({
+        product_id: item.product.id,
+        quantity: item.quantity,
+        addons: item.addons.length > 0
+          ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
+          : null,
+        special_instructions: item.special_instructions || null,
+      }));
+      const specialInstructions = order.special_instructions || undefined;
+      const fingerprint = buildAppendItemsFingerprint(order.id, items, specialInstructions);
+      const storage = getAppendAttemptStorage();
+      const itemAttempt = getOrCreateAppendAttempt(storage, {
+        userId: activeUserId || '',
+        orderId: order.id,
+        fingerprint,
+        createKey: newIdempotencyKey,
+        items,
+        specialInstructions,
+        orderNumber: order.order_number,
+      });
+      addItemsAttemptRef.current = itemAttempt;
       await api.post(`/orders/${order.id}/items`, {
-        items: cart.items.map((item) => ({
-          product_id: item.product.id,
-          quantity: item.quantity,
-          addons: item.addons.length > 0
-            ? item.addons.map((a) => ({ id: a.id, name: a.name, price: a.price, quantity: a.quantity || 1 }))
-            : null,
-          special_instructions: item.special_instructions || null,
-        })),
-        special_instructions: order.special_instructions || undefined,
-      }, { headers: { 'Idempotency-Key': idempotencyKey } });
+        items,
+        special_instructions: specialInstructions,
+      }, { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } });
+      // A resolved response is the confirmation boundary. Keep the durable
+      // attempt through all network errors so a lost response can replay it.
+      if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
       toast.success(t('pos.itemsAddedToOrder', { number: order.order_number }));
       cart.clearCart();

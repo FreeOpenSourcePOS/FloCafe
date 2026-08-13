@@ -416,10 +416,10 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       const customer = customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as any : null;
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
+        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
           modifier_selection, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       for (const item of items) {
@@ -479,7 +479,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
         const itemCreatedAt = now();
         const insertItemResult = insertItem.run(
-          orderId, product.id, product.name, product.sku, unitPrice, quantity,
+          orderId, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
@@ -635,10 +635,10 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
+        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
           modifier_selection, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       for (const item of items) {
@@ -686,7 +686,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
 
         const itemCreatedAt = now();
         const insertItemResult = insertItem.run(
-          req.params.id, product.id, product.name, product.sku, unitPrice, quantity,
+          req.params.id, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
@@ -931,9 +931,9 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
 
           for (const item of eligibleItems) {
             const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-            if (product && product.track_inventory) {
+            if (product && item.inventory_deducted_quantity > 0) {
               db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-                .run(item.quantity, nowStr, product.id);
+                .run(item.inventory_deducted_quantity, nowStr, product.id);
             }
           }
 

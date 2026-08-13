@@ -3562,6 +3562,24 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insert.run('bill_footer_message', '', now());
     },
   },
+  {
+    version: 67,
+    name: 'persist_order_item_inventory_deductions',
+    up: () => {
+      if (!getColumns(db, 'order_items').includes('inventory_deducted_quantity')) {
+        db.exec(`ALTER TABLE order_items ADD COLUMN inventory_deducted_quantity REAL NOT NULL DEFAULT 0`);
+      }
+      db.prepare(`
+        UPDATE order_items
+        SET inventory_deducted_quantity = quantity
+        WHERE inventory_deducted_quantity = 0
+          AND EXISTS (
+            SELECT 1 FROM products
+            WHERE products.id = order_items.product_id AND products.track_inventory = 1
+          )
+      `).run();
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -3897,6 +3915,7 @@ function createSchema(): void {
       product_sku TEXT,
       unit_price REAL NOT NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
+      inventory_deducted_quantity REAL NOT NULL DEFAULT 0,
       subtotal REAL NOT NULL,
       tax_amount REAL DEFAULT 0,
       tax_breakdown TEXT,

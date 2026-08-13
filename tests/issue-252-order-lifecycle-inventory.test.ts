@@ -20,6 +20,7 @@ const originalLoad = Module._load;
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { Worker } = require('worker_threads');
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-issue-252-test-'));
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') return { app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' } };
@@ -51,6 +52,51 @@ function installOrderBoundaryMutation(db: any, orderId: number | string, mutate:
       if (!fired && row && String(row.id) === String(orderId)) {
         fired = true;
         mutate();
+      }
+      return row;
+    };
+    return statement;
+  };
+
+  return () => {
+    db.prepare = originalPrepare;
+  };
+}
+
+function installConcurrentOrderBoundaryMutation(db: any, dbPath: string, orderId: number | string): () => void {
+  const originalPrepare = db.prepare.bind(db);
+  let fired = false;
+  db.prepare = (sql: string) => {
+    const statement = originalPrepare(sql);
+    if (fired || sql !== 'SELECT * FROM orders WHERE id = ?') return statement;
+
+    const originalGet = statement.get.bind(statement);
+    statement.get = (...args: any[]) => {
+      const row = originalGet(...args);
+      if (!fired && row && String(row.id) === String(orderId)) {
+        fired = true;
+        const signal = new SharedArrayBuffer(4);
+        const state = new Int32Array(signal);
+        const worker = new Worker(`
+          const Database = require('better-sqlite3');
+          const { workerData } = require('worker_threads');
+          const state = new Int32Array(workerData.signal);
+          try {
+            const db = new Database(workerData.dbPath);
+            db.prepare("UPDATE orders SET status = 'preparing', updated_at = ? WHERE id = ?")
+              .run(new Date().toISOString().replace('T', ' ').slice(0, 19), workerData.orderId);
+            db.close();
+            Atomics.store(state, 0, 1);
+          } catch {
+            Atomics.store(state, 0, -1);
+          }
+          Atomics.notify(state, 0);
+        `, { eval: true, workerData: { dbPath, orderId, signal } });
+        const waitResult = Atomics.wait(state, 0, 0, 5000);
+        worker.terminate();
+        if (waitResult === 'timed-out' || Atomics.load(state, 0) !== 1) {
+          throw new Error('Concurrent boundary writer did not complete');
+        }
       }
       return row;
     };
@@ -279,6 +325,22 @@ async function main() {
       'preparing',
       'state changed at the transaction boundary is not overwritten by an unauthorized cancel',
     );
+
+    const roleRaceOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-untrack', quantity: 1 }] },
+    });
+    const roleRaceItemId = roleRaceOrder.data.order.items[0].id;
+    db.prepare("UPDATE users SET role = 'cashier', updated_at = ? WHERE id = 'owner-test-001'").run(new Date().toISOString());
+    const staleRoleCancel = await api(baseUrl, `/api/orders/${roleRaceOrder.data.order.id}/items/${roleRaceItemId}/cancel`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {},
+    });
+    assertEqual(staleRoleCancel.status, 403, 'demoted actor cannot cancel with a stale owner token');
+    assertEqual(db.prepare('SELECT status FROM order_items WHERE id = ?').get(roleRaceItemId).status, 'pending', 'demoted actor leaves item unchanged');
+    db.prepare("UPDATE users SET role = 'owner', updated_at = ? WHERE id = 'owner-test-001'").run(new Date().toISOString());
 
     const staleTotalsOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -520,6 +582,15 @@ async function main() {
     const stockTrack1_afterRepeatCancel = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity;
     assertEqual(stockTrack1_afterRepeatCancel, stockTrack1_afterCancel, 'Repeated pending item cancel MUST NOT restore stock again');
 
+    db.prepare("UPDATE users SET role = 'cashier', updated_at = ? WHERE id = 'owner-test-001'").run(new Date().toISOString());
+    const staleRoleRestore = await api(baseUrl, `/api/orders/${order4Id}/items/${itemTrack1Id}/restore`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {},
+    });
+    assertEqual(staleRoleRestore.status, 403, 'demoted actor cannot restore with a stale owner token');
+    db.prepare("UPDATE users SET role = 'owner', updated_at = ? WHERE id = 'owner-test-001'").run(new Date().toISOString());
+
     // Restore item 1
     const itemRestore1 = await api(baseUrl, `/api/orders/${order4Id}/items/${itemTrack1Id}/restore`, {
       method: 'PATCH',
@@ -541,6 +612,30 @@ async function main() {
 
     const stockTrack1_afterRepeatRestore = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity;
     assertEqual(stockTrack1_afterRepeatRestore, stockTrack1_afterRestore, 'Repeated item restore MUST NOT deduct stock again');
+
+    const flagToggleOrder = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      headers: authHeader,
+      body: { type: 'takeaway', items: [{ product_id: 'prod-track-1', quantity: 1 }] },
+    });
+    const flagToggleItemId = flagToggleOrder.data.order.items[0].id;
+    const flagToggleStock = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity;
+    db.prepare("UPDATE products SET track_inventory = 0, updated_at = ? WHERE id = 'prod-track-1'").run(new Date().toISOString());
+    const flagToggleCancel = await api(baseUrl, `/api/orders/${flagToggleOrder.data.order.id}/items/${flagToggleItemId}/cancel`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {},
+    });
+    assertEqual(flagToggleCancel.status, 200, 'item cancellation succeeds after tracking is disabled');
+    assertEqual(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity, flagToggleStock + 1, 'cancellation restores stock deducted before tracking was disabled');
+    const flagToggleRestore = await api(baseUrl, `/api/orders/${flagToggleOrder.data.order.id}/items/${flagToggleItemId}/restore`, {
+      method: 'PATCH',
+      headers: authHeader,
+      body: {},
+    });
+    assertEqual(flagToggleRestore.status, 200, 'item restore succeeds after tracking is disabled');
+    assertEqual(db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-track-1').stock_quantity, flagToggleStock, 'restore re-deducts the original inventory quantity');
+    db.prepare("UPDATE products SET track_inventory = 1, updated_at = ? WHERE id = 'prod-track-1'").run(new Date().toISOString());
 
     const insufficientOrder = await api(baseUrl, '/api/orders', {
       method: 'POST',
@@ -636,19 +731,25 @@ async function main() {
     let stockConc = db.prepare('SELECT stock_quantity FROM products WHERE id = ?').get('prod-concurrent').stock_quantity;
     assertEqual(stockConc, 8, 'Stock deducted on creation (10 -> 8)');
 
-    // Send two real HTTP whole-order cancellation requests concurrently
-    const [resConcA, resConcB] = await Promise.all([
-      api(baseUrl, `/api/orders/${concOrderId}/status`, {
-        method: 'PATCH',
-        headers: authHeader,
-        body: { status: 'cancelled', reason: 'Concurrent cancellation request A' },
-      }),
-      api(baseUrl, `/api/orders/${concOrderId}/status`, {
-        method: 'PATCH',
-        headers: authHeader,
-        body: { status: 'cancelled', reason: 'Concurrent cancellation request B' },
-      }),
-    ]);
+    const removeConcurrentWriter = installConcurrentOrderBoundaryMutation(db, path.join(testDir, 'flo.db'), concOrderId);
+    let resConcA: any;
+    let resConcB: any;
+    try {
+      [resConcA, resConcB] = await Promise.all([
+        api(baseUrl, `/api/orders/${concOrderId}/status`, {
+          method: 'PATCH',
+          headers: authHeader,
+          body: { status: 'cancelled', reason: 'Concurrent cancellation request A', override_pin: '1234' },
+        }),
+        api(baseUrl, `/api/orders/${concOrderId}/status`, {
+          method: 'PATCH',
+          headers: authHeader,
+          body: { status: 'cancelled', reason: 'Concurrent cancellation request B', override_pin: '1234' },
+        }),
+      ]);
+    } finally {
+      removeConcurrentWriter();
+    }
 
     assertEqual(resConcA.status, 200, 'Concurrent cancel request A returned 200');
     assertEqual(resConcB.status, 200, 'Concurrent cancel request B returned 200');

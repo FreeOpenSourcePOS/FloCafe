@@ -256,8 +256,8 @@ export function registerRoutes(app: Express): void {
 
       // requireAuth (main/server.ts) already verified the token and attached
       // the user's current DB role to req.user — use that, not the JWT claim.
-      const userRole = (req as any).user?.role;
-      if (!userRole) return res.status(403).json({ error: 'Authentication required' });
+      const actorId = String((req as any).user?.userId || '');
+      if (!actorId) return res.status(403).json({ error: 'Authentication required' });
 
       const db = getDatabase();
       // Keep these lookups only for the inexpensive not-found response. Every
@@ -280,7 +280,12 @@ export function registerRoutes(app: Express): void {
         if (!currentItem || !currentOrder) {
           throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
         }
-        if (userRole === 'waiter' && String(currentOrder.user_id) !== String((req as any).user.userId)) {
+        const actor = db.prepare('SELECT role FROM users WHERE id = ? AND is_active = 1').get(actorId) as { role: string } | undefined;
+        if (!actor) {
+          throw Object.assign(new Error('Authentication required'), { statusCode: 403 });
+        }
+        const userRole = actor.role;
+        if (userRole === 'waiter' && String(currentOrder.user_id) !== actorId) {
           throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
         }
 
@@ -377,14 +382,14 @@ export function registerRoutes(app: Express): void {
           db.prepare("UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?")
             .run(now(), now(), itemId);
         } else {
-          // Soft delete - mark as cancelled and restore stock for tracked product
+          // Soft delete - mark as cancelled and restore inventory consumed by the item
           db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
             .run(now(), itemId);
 
           const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
-          if (product && product.track_inventory) {
+          if (product && currentItem.inventory_deducted_quantity > 0) {
             db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-              .run(currentItem.quantity, now(), product.id);
+              .run(currentItem.inventory_deducted_quantity, now(), product.id);
           }
         }
 
@@ -518,10 +523,8 @@ export function registerRoutes(app: Express): void {
 
       // requireAuth (main/server.ts) already verified the token and attached
       // the user's current DB role to req.user — use that, not the JWT claim.
-      const userRole = (req as any).user?.role;
-      if (!userRole || !['owner', 'manager'].includes(userRole)) {
-        return res.status(403).json({ error: 'Only owner or manager can restore items' });
-      }
+      const actorId = String((req as any).user?.userId || '');
+      if (!actorId) return res.status(403).json({ error: 'Authentication required' });
 
       const db = getDatabase();
       // Keep these lookups only for the inexpensive not-found response. The
@@ -543,6 +546,10 @@ export function registerRoutes(app: Express): void {
         if (!currentItem || !currentOrder) {
           throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
         }
+        const actor = db.prepare('SELECT role FROM users WHERE id = ? AND is_active = 1').get(actorId) as { role: string } | undefined;
+        if (!actor || !['owner', 'manager'].includes(actor.role)) {
+          throw Object.assign(new Error('Only owner or manager can restore items'), { statusCode: 403 });
+        }
 
         if (['completed', 'cancelled'].includes(currentOrder.status)) {
           throw Object.assign(new Error('Cannot restore items on completed or cancelled orders'), { statusCode: 400 });
@@ -557,14 +564,14 @@ export function registerRoutes(app: Express): void {
           return { updatedOrder: currentOrder, items, changed: false };
         }
 
-        // Re-deduct stock for tracked product if available
+        // Re-deduct the inventory quantity originally consumed by the item
         const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
-        if (product && product.track_inventory) {
-          if (product.stock_quantity < currentItem.quantity) {
-            throw Object.assign(new Error(`Insufficient stock to restore item (Available: ${product.stock_quantity}, Required: ${currentItem.quantity})`), { statusCode: 400 });
+        if (product && currentItem.inventory_deducted_quantity > 0) {
+          if (product.stock_quantity < currentItem.inventory_deducted_quantity) {
+            throw Object.assign(new Error(`Insufficient stock to restore item (Available: ${product.stock_quantity}, Required: ${currentItem.inventory_deducted_quantity})`), { statusCode: 400 });
           }
           db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
-            .run(currentItem.quantity, now(), product.id);
+            .run(currentItem.inventory_deducted_quantity, now(), product.id);
         }
 
         // Restore - mark as pending

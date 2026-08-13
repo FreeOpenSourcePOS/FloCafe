@@ -15,6 +15,8 @@ interface TaxDocument extends TaxSource {
   items?: Array<TaxSource & { status?: string | null }>;
 }
 
+const SPLIT_TAX_SNAPSHOT_VERSION = 'minor-unit-v1';
+
 function parseJson(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   try {
@@ -22,6 +24,15 @@ function parseJson(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+function hasSplitAllocatedSnapshot(value: unknown): boolean {
+  const parsed = parseJson(value);
+  if (Array.isArray(parsed)) return parsed.some(hasSplitAllocatedSnapshot);
+  if (!parsed || typeof parsed !== 'object') return false;
+  const snapshot = parsed as Record<string, unknown>;
+  return snapshot.splitAllocation === SPLIT_TAX_SNAPSHOT_VERSION
+    && Array.isArray(snapshot.lines);
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -91,7 +102,52 @@ function legacyComponents(value: unknown): DisplayTaxComponent[] {
   return components;
 }
 
+function reconcileSplitSnapshotComponents(
+  components: DisplayTaxComponent[],
+  targetValue: unknown,
+): DisplayTaxComponent[] {
+  const target = finiteNumber(targetValue);
+  let result = components.map((component) => ({
+    ...component,
+    amount: Math.round(component.amount * 1_000_000) / 1_000_000,
+  }));
+  if (target === null) return result;
+  if (result.length === 0) return target === 0 ? [] : [{ title: 'Tax', rate: null, amount: target }];
+
+  const current = result.reduce((sum, component) => sum + component.amount, 0);
+  if (Math.abs(current - target) > 0.0000001) {
+    if (current === 0) return target === 0 ? result : [{ title: 'Tax', rate: null, amount: target }];
+    const ratio = target / current;
+    result = result.map((component) => ({
+      ...component,
+      amount: Math.round(component.amount * ratio * 1_000_000) / 1_000_000,
+    }));
+    const allocated = result.reduce((sum, component) => sum + component.amount, 0);
+    result[result.length - 1].amount = Math.round(
+      (result[result.length - 1].amount + target - allocated) * 1_000_000,
+    ) / 1_000_000;
+  }
+  return result;
+}
+
 export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent[] {
+  // A split bill carries child-specific snapshot amounts. The order-item rows
+  // are shared by every child and retain source-order amounts, so using them
+  // here would misattribute item tax against the full charge-tax snapshot.
+  if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
+    const splitSnapshot = snapshotComponents(document.tax_snapshot);
+    if (splitSnapshot.present) {
+      const merged = new Map<string, DisplayTaxComponent>();
+      for (const component of splitSnapshot.components) {
+        const key = `${component.title}\u0000${component.rate ?? ''}`;
+        const current = merged.get(key);
+        if (current) current.amount += component.amount;
+        else merged.set(key, { ...component });
+      }
+      return reconcileSplitSnapshotComponents(Array.from(merged.values()), document.tax_amount);
+    }
+  }
+
   const items = document.order?.items ?? document.items;
   const activeItems = items?.filter(
     (item) => item.status !== 'cancelled' && item.status !== 'voided',

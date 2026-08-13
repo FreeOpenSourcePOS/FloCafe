@@ -9,12 +9,15 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   return originalLoad.apply(this, arguments as any);
 };
 
-const { initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct, api, assert, assertEqual, getResults, closeDatabase, now } = require('./helpers/test-setup');
+const { initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct, installAndActivateTestTaxPack, api, assert, assertEqual, getResults, closeDatabase, now } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
-const { billRoutes } = require('../main/routes/bills');
+const { billRoutes, allocateTaxSnapshots } = require('../main/routes/bills');
 const { paymentMethodRoutes } = require('../main/routes/payment-methods');
 const { settingsRoutes } = require('../main/routes/settings');
+const { resolveTaxComponents: resolveBackendTaxComponents } = require('../main/services/tax-components');
+const { resolveTaxComponents: resolveFrontendTaxComponents } = require('../frontend/src/lib/printer/tax-components');
 const { MIGRATIONS } = require('../main/db');
+const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
 
 async function main() {
   const db = initTestDb();
@@ -286,6 +289,118 @@ async function main() {
       const compSum = Number(b.tax_breakdown.reduce((s: number, c: any) => s + Number(c.amount || 0), 0).toFixed(2));
       assertEqual(compSum, b.tax_amount, 'sum of flat component amounts equals bill tax_amount exactly');
     }
+
+    // I. Split Tax Snapshot Attribution (categorized item + configured charge)
+    const splitTaxPack = {
+      ...dualRatePackData,
+      id: 'test-split-tax-pack',
+      country: 'IN',
+      currency: 'INR',
+      categories: dualRatePackData.categories.map((category: any) => ({
+        ...category,
+        ruleIds: category.id === 'standard'
+          ? ['item-tax']
+          : category.id === 'packaging'
+            ? ['charge-tax']
+            : [],
+      })),
+      rules: [
+        { ...dualRatePackData.rules[0], id: 'item-tax', label: 'Item Tax', categoryIds: ['standard'], rate: '5' },
+        { ...dualRatePackData.rules[1], id: 'charge-tax', label: 'Charge Tax', categoryIds: ['packaging'], rate: '5' },
+      ],
+    };
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', ?), ('business_type', 'restaurant', ?), ('state_code', '27', ?)")
+      .run(now(), now(), now());
+    installAndActivateTestTaxPack(db, splitTaxPack);
+    seedCategory(db, 'split-tax-cat', 'Split tax menu');
+    seedProduct(db, 'split-tax-item-a', 'split-tax-cat', 'Tax Item A', 20, { tax_category_id: 'standard', tax_behavior: 'exclusive' });
+    seedProduct(db, 'split-tax-item-b', 'split-tax-cat', 'Tax Item B', 20, { tax_category_id: 'standard', tax_behavior: 'exclusive' });
+    db.prepare(`
+      INSERT OR REPLACE INTO tax_overrides (
+        id, pack_version_id, entity_type, entity_id, field_name, value_json,
+        created_by_user_id, created_at, updated_at
+      ) VALUES (?, ?, 'packaging', NULL, 'tax_category_id', ?, NULL, ?, ?)
+    `).run(
+      'split-packaging-tax-override',
+      `${splitTaxPack.id}@${splitTaxPack.version}`,
+      JSON.stringify({ categoryId: 'packaging' }),
+      now(),
+      now(),
+    );
+
+    const snapshotOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 2,
+        packaging_charge: 20,
+        items: [
+          { product_id: 'split-tax-item-a', quantity: 1 },
+          { product_id: 'split-tax-item-b', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    assertEqual(snapshotOrderRes.status, 201, 'categorized items plus configured packaging charge order is created');
+    assertEqual(snapshotOrderRes.data.order.tax_amount, 3, 'source tax includes two item taxes and one packaging tax');
+    const snapshotBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: snapshotOrderRes.data.order.id },
+      headers: authHeader,
+    });
+    const snapshotItems = snapshotOrderRes.data.order.items;
+    const snapshotSplit = await api(baseUrl, `/api/bills/${snapshotBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Snapshot Guest 1', items: [{ order_item_id: snapshotItems[0].id, quantity: 1 }] },
+        { label: 'Snapshot Guest 2', items: [{ order_item_id: snapshotItems[1].id, quantity: 1 }] },
+      ] },
+      headers: authHeader,
+    });
+    assertEqual(snapshotSplit.status, 201, 'snapshot-tax split returns 201');
+
+    const expectedSnapshotComponents = [
+      { title: 'Item Tax', rate: 5, amount: 1 },
+      { title: 'Charge Tax', rate: 5, amount: 0.5 },
+    ];
+    const aggregateSnapshotComponents = new Map<string, number>();
+    for (const splitBill of snapshotSplit.data.bills) {
+      const childRes = await api(baseUrl, `/api/bills/${splitBill.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const backendComponents = resolveBackendTaxComponents({
+        ...child,
+        items: child.order.items,
+      });
+      const frontendComponents = resolveFrontendTaxComponents(child);
+      assertEqual(JSON.stringify(backendComponents), JSON.stringify(expectedSnapshotComponents), 'backend thermal receipt tax components keep item and charge attribution per child');
+      assertEqual(JSON.stringify(frontendComponents), JSON.stringify(expectedSnapshotComponents), 'frontend receipt tax components keep item and charge attribution per child');
+      assertEqual(Number(backendComponents.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'resolved child tax components reconcile to child tax_amount');
+      for (const component of backendComponents) {
+        aggregateSnapshotComponents.set(component.title, (aggregateSnapshotComponents.get(component.title) || 0) + component.amount);
+      }
+    }
+    assertEqual(aggregateSnapshotComponents.get('Item Tax'), 2, 'item tax components reconcile across split children');
+    assertEqual(aggregateSnapshotComponents.get('Charge Tax'), 1, 'configured charge tax components reconcile across split children');
+    assertEqual(
+      Number(Array.from(aggregateSnapshotComponents.values()).reduce((sum, amount) => sum + amount, 0).toFixed(2)),
+      snapshotOrderRes.data.order.tax_amount,
+      'aggregate resolved snapshot tax equals source order tax exactly',
+    );
+
+    const signedSnapshot = JSON.stringify({
+      lines: [{
+        grossAmount: '-0.03',
+        taxableBase: '-0.03',
+        taxAmount: '-0.03',
+        components: [{ label: 'Signed Adjustment', rate: '5', amount: '-0.03' }],
+      }],
+    });
+    const signedChildren = allocateTaxSnapshots(signedSnapshot, [1, 1]);
+    const signedAmounts = signedChildren.map((raw: string | null) => Number(
+      JSON.parse(raw as string).lines[0].components[0].amount,
+    ));
+    assertEqual(JSON.stringify(signedAmounts), JSON.stringify([-0.02, -0.01]), 'signed tax snapshot allocation keeps each child non-duplicated');
+    assertEqual(Number(signedAmounts.reduce((sum: number, amount: number) => sum + amount, 0).toFixed(2)), -0.03, 'signed tax snapshot allocations reconcile exactly to the source');
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     closeDatabase();

@@ -22,6 +22,8 @@ interface DecimalTaxComponent {
   amount: Decimal;
 }
 
+const SPLIT_TAX_SNAPSHOT_VERSION = 'minor-unit-v1';
+
 function parseJson(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   try {
@@ -29,6 +31,15 @@ function parseJson(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+function hasSplitAllocatedSnapshot(value: unknown): boolean {
+  const parsed = parseJson(value);
+  if (Array.isArray(parsed)) return parsed.some(hasSplitAllocatedSnapshot);
+  if (!parsed || typeof parsed !== 'object') return false;
+  const snapshot = parsed as Record<string, unknown>;
+  return snapshot.splitAllocation === SPLIT_TAX_SNAPSHOT_VERSION
+    && Array.isArray(snapshot.lines);
 }
 
 function decimalOrNull(value: unknown): Decimal | null {
@@ -164,6 +175,16 @@ function reconcileTotal(
  * tax_breakdown. Document-level data is used only when item rows are absent.
  */
 export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent[] {
+  // Split bills persist child-specific snapshot amounts. Prefer those copies
+  // over the shared order-item snapshots, which describe the source order and
+  // would otherwise swap item tax for full document-level charge tax.
+  if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
+    const splitSnapshot = flattenSnapshots(document.tax_snapshot);
+    if (splitSnapshot.present) {
+      return reconcileTotal(mergeComponents(splitSnapshot.components), document.tax_amount);
+    }
+  }
+
   const activeItems = document.items?.filter(
     (item) => item.status !== 'cancelled' && item.status !== 'voided',
   );

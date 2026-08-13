@@ -177,6 +177,26 @@ function legacyItemComponents(document: TaxDocument): DecimalTaxComponent[] {
   });
 }
 
+function documentLegacyComponents(document: TaxDocument): DecimalTaxComponent[] {
+  const remainingItems = new Map<string, Decimal>();
+  for (const component of legacyItemComponents(document)) {
+    const key = `${component.title}\u0000${component.rate ?? ''}`;
+    remainingItems.set(key, (remainingItems.get(key) || new Decimal(0)).plus(component.amount));
+  }
+  return flattenLegacyBreakdown(document.tax_breakdown).flatMap((component) => {
+    const key = `${component.title}\u0000${component.rate ?? ''}`;
+    const itemAmount = remainingItems.get(key) || new Decimal(0);
+    const sameSign = itemAmount.isZero() || component.amount.isZero()
+      || itemAmount.isPositive() === component.amount.isPositive();
+    const consumed = sameSign
+      ? Decimal.min(itemAmount.abs(), component.amount.abs()).mul(component.amount.isNegative() ? -1 : 1)
+      : new Decimal(0);
+    const residual = component.amount.minus(consumed);
+    remainingItems.set(key, itemAmount.minus(consumed));
+    return residual.isZero() ? [] : [{ ...component, amount: residual }];
+  });
+}
+
 /**
  * Resolves receipt/report tax components without double-counting mixed orders.
  * A valid item snapshot (including an exempt snapshot with zero components)
@@ -191,7 +211,11 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
     const splitSnapshot = flattenSnapshots(document.tax_snapshot);
     if (splitSnapshot.present) {
       return reconcileTotal(
-        mergeComponents([...splitSnapshot.components, ...legacyItemComponents(document)]),
+        mergeComponents([
+          ...splitSnapshot.components,
+          ...legacyItemComponents(document),
+          ...documentLegacyComponents(document),
+        ]),
         document.tax_amount,
       );
     }

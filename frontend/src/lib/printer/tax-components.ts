@@ -146,6 +146,23 @@ function legacyItemComponents(items: Array<TaxSource & { status?: string | null 
   });
 }
 
+function documentLegacyComponents(document: TaxDocument): DisplayTaxComponent[] {
+  const remainingItems = new Map<string, number>();
+  for (const component of legacyItemComponents(document.order?.items ?? document.items)) {
+    const key = `${component.title}\u0000${component.rate ?? ''}`;
+    remainingItems.set(key, (remainingItems.get(key) || 0) + component.amount);
+  }
+  return legacyComponents(document.tax_breakdown).flatMap((component) => {
+    const key = `${component.title}\u0000${component.rate ?? ''}`;
+    const itemAmount = remainingItems.get(key) || 0;
+    const sameSign = itemAmount === 0 || component.amount === 0 || Math.sign(itemAmount) === Math.sign(component.amount);
+    const consumed = sameSign ? Math.min(Math.abs(itemAmount), Math.abs(component.amount)) * Math.sign(component.amount) : 0;
+    const residual = component.amount - consumed;
+    remainingItems.set(key, itemAmount - consumed);
+    return Math.abs(residual) < 0.0000001 ? [] : [{ ...component, amount: residual }];
+  });
+}
+
 export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent[] {
   // A split bill carries child-specific snapshot amounts. The order-item rows
   // are shared by every child and retain source-order amounts, so using them
@@ -154,7 +171,11 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
     const splitSnapshot = snapshotComponents(document.tax_snapshot);
     if (splitSnapshot.present) {
       const merged = new Map<string, DisplayTaxComponent>();
-      for (const component of [...splitSnapshot.components, ...legacyItemComponents(document.order?.items ?? document.items)]) {
+      for (const component of [
+        ...splitSnapshot.components,
+        ...legacyItemComponents(document.order?.items ?? document.items),
+        ...documentLegacyComponents(document),
+      ]) {
         const key = `${component.title}\u0000${component.rate ?? ''}`;
         const current = merged.get(key);
         if (current) current.amount += component.amount;

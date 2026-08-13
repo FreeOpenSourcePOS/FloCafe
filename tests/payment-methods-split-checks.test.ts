@@ -11,7 +11,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const { initTestDb, createApp, startServer, seedOwnerUser, seedManagerUser, seedCategory, seedProduct, installAndActivateTestTaxPack, api, assert, assertEqual, getResults, closeDatabase, now } = require('./helpers/test-setup');
 const { orderRoutes } = require('../main/routes/orders');
-const { billRoutes, allocateTaxSnapshots } = require('../main/routes/bills');
+const { billRoutes, allocateSignedMinorUnits, allocateTaxSnapshots } = require('../main/routes/bills');
 const { paymentMethodRoutes } = require('../main/routes/payment-methods');
 const { settingsRoutes } = require('../main/routes/settings');
 const { reportRoutes } = require('../main/routes/reports');
@@ -23,6 +23,7 @@ const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
 async function main() {
   const db = initTestDb();
   db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('telemetry_enabled', 'false', ?)").run(now());
+  assertEqual(JSON.stringify(allocateSignedMinorUnits(-2, [1, 3])), JSON.stringify([-1, -1]), 'negative round-off uses signed largest-remainder allocation');
   const { authHeader } = seedOwnerUser(db);
   seedCategory(db, 'split-cat', 'Split menu');
   seedProduct(db, 'split-coffee', 'split-cat', 'Coffee', 100);

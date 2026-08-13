@@ -573,7 +573,7 @@ function allocateMinorUnits(sourceMinor: number, weights: number[]): number[] {
 // Tax snapshots may contain signed evidence for a historical adjustment. Keep
 // allocateMinorUnits' non-negative contract unchanged and allocate the
 // magnitude with the same largest-remainder ordering before restoring the sign.
-function allocateSignedMinorUnits(sourceMinor: number, weights: number[]): number[] {
+export function allocateSignedMinorUnits(sourceMinor: number, weights: number[]): number[] {
   const sign = sourceMinor < 0 ? -1 : 1;
   return allocateMinorUnits(Math.abs(sourceMinor), weights).map((minor) => minor * sign);
 }
@@ -999,7 +999,7 @@ interface LegacyTaxContribution {
   exclusiveWeights: number[];
   exclusiveSourceMinor: number;
   allExclusive: boolean;
-  hasLegacyItems: boolean;
+  hasLegacyTaxEvidence: boolean;
 }
 
 function collectLegacyTaxContribution(
@@ -1037,7 +1037,14 @@ function collectLegacyTaxContribution(
     else allExclusive = false;
     hasLegacyItems = true;
   }
-  return { taxWeights, exclusiveWeights, exclusiveSourceMinor: Math.round(exclusiveSourceMinor), allExclusive, hasLegacyItems };
+  const hasDocumentLegacyTax = sourceBreakdownRaw !== undefined && taxBreakdownMinorTotal(sourceBreakdownRaw) !== 0;
+  return {
+    taxWeights,
+    exclusiveWeights,
+    exclusiveSourceMinor: Math.round(exclusiveSourceMinor),
+    allExclusive,
+    hasLegacyTaxEvidence: hasLegacyItems || hasDocumentLegacyTax,
+  };
 }
 
 function allocateLegacyTaxContribution(
@@ -1060,7 +1067,7 @@ function allocateLegacyTaxContribution(
   const exclusiveWeights = contribution.exclusiveWeights.some((weight) => weight > 0)
     ? contribution.exclusiveWeights
     : fallbackWeights;
-  const legacyExclusiveTaxMinors = contribution.hasLegacyItems
+  const legacyExclusiveTaxMinors = contribution.hasLegacyTaxEvidence || legacySourceTaxMinor !== 0
     ? allocateSignedMinorUnits(exclusiveSourceMinor, exclusiveWeights)
     : new Array(fallbackWeights.length).fill(0);
   return { legacySourceTaxMinor, legacyTaxMinors, legacyExclusiveTaxMinors };
@@ -1270,7 +1277,8 @@ export function syncUnpaidBillsForOrder(
   };
   const allocations = Object.fromEntries(Object.entries(fields).map(([field, value]) => [
     field,
-    allocateMinorUnits(value, weights).map((minor) => minor / 100),
+    (field === 'roundOff' ? allocateSignedMinorUnits(value, weights) : allocateMinorUnits(value, weights))
+      .map((minor) => minor / 100),
   ])) as Record<keyof typeof fields, number[]>;
   const allocatedTaxMinors = allocations.taxAmount.map((amount) => Math.round(amount * 100));
   const snapshotAllocation = allocateTaxSnapshotsWithTax(source.taxSnapshot, weights, snapshotWeights, snapshotExclusions);
@@ -1380,7 +1388,9 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
       const allocations: Record<string, number[]> = {};
       for (const field of fields) {
         const totalMinor = Math.round(Number(txnSource[field] || 0) * 100);
-        const allocatedMinors = allocateMinorUnits(totalMinor, weights);
+        const allocatedMinors = field === 'round_off'
+          ? allocateSignedMinorUnits(totalMinor, weights)
+          : allocateMinorUnits(totalMinor, weights);
         allocations[field] = allocatedMinors.map((minor) => minor / 100);
       }
 

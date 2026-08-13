@@ -181,6 +181,50 @@ test('charge snapshots are added once and stay unscaled by item discounts', () =
   );
 });
 
+test('marked split snapshots retain document-level legacy tax', () => {
+  const document = {
+    tax_amount: 1.5,
+    tax_snapshot: JSON.stringify({
+      splitAllocation: 'minor-unit-v1',
+      lines: [{ components: [{ label: 'Item Tax', rate: '5', amount: '1.00' }] }],
+    }),
+    tax_breakdown: [{ title: 'Legacy Charge Tax', rate: 2, amount: 0.5 }],
+    items: [{
+      status: 'pending',
+      tax_snapshot: JSON.stringify({ lines: [{ components: [{ label: 'Item Tax', rate: '5', amount: '1.00' }] }] }),
+      tax_breakdown: null,
+    }],
+  };
+  const expected = [
+    { title: 'Item Tax', rate: 5, amount: 1 },
+    { title: 'Legacy Charge Tax', rate: 2, amount: 0.5 },
+  ];
+  assert.deepEqual(resolveBackendTaxComponents(document), expected);
+  assert.deepEqual(resolveFrontendTaxComponents(document), expected);
+});
+
+test('document legacy tax is not duplicated when child item evidence matches it', () => {
+  const document = {
+    tax_amount: 1.5,
+    tax_snapshot: JSON.stringify({
+      splitAllocation: 'minor-unit-v1',
+      lines: [{ components: [{ label: 'Item Tax', rate: '5', amount: '1.00' }] }],
+    }),
+    tax_breakdown: [{ title: 'Legacy Item Tax', rate: 2, amount: 0.5 }],
+    items: [{
+      status: 'pending',
+      tax_snapshot: null,
+      tax_breakdown: [{ title: 'Legacy Item Tax', rate: 2, amount: 0.5 }],
+    }],
+  };
+  const expected = [
+    { title: 'Item Tax', rate: 5, amount: 1 },
+    { title: 'Legacy Item Tax', rate: 2, amount: 0.5 },
+  ];
+  assert.deepEqual(resolveBackendTaxComponents(document), expected);
+  assert.deepEqual(resolveFrontendTaxComponents(document), expected);
+});
+
 test('frontend split printing keeps the child-scoped order payload', () => {
   const childOrder = {
     items: [{

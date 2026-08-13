@@ -137,16 +137,12 @@ export default function POSPage() {
 
   const readPostpaidAttempt = () => {
     if (typeof window === 'undefined') return null;
+    let sharedLegacyAppendRetained = false;
     try {
       const migratedAppend = migrateLegacyAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId || undefined });
-      if (migratedAppend) {
-        if (getAppendAttemptStorage().getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) !== null) {
-          postpaidAttemptKeyRef.current = null;
-          postpaidAttemptWasLegacyRef.current = false;
-          return postpaidAttemptRef.current?.userId === activeUserId ? postpaidAttemptRef.current : null;
-        }
-        return null;
-      }
+      sharedLegacyAppendRetained = migratedAppend !== null
+        && getAppendAttemptStorage().getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) !== null;
+      if (migratedAppend && !sharedLegacyAppendRetained) return null;
     } catch {
       throw new Error('Unable to recover append retry state');
     }
@@ -164,7 +160,7 @@ export default function POSPage() {
         return parsed;
       }
       if (userStorageKey && stored !== null) window.localStorage.removeItem(userStorageKey);
-      const legacyStored = window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      const legacyStored = sharedLegacyAppendRetained ? null : window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
       const legacyParsed = legacyStored ? JSON.parse(legacyStored) as PostpaidAttempt : null;
       if (legacyParsed && legacyParsed.userId === activeUserId) {
         postpaidAttemptRef.current = legacyParsed;
@@ -175,7 +171,7 @@ export default function POSPage() {
       }
     } catch {
       if (activeUserId) window.localStorage.removeItem(getPostpaidOrderAttemptStorageKey(activeUserId));
-      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      if (!sharedLegacyAppendRetained) window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
       return null;
     }
     return postpaidAttemptRef.current;

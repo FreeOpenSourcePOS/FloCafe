@@ -165,6 +165,17 @@ function main() {
   assert.deepEqual(reloaded?.items, items, 'reload recovery retains the exact append payload');
   assert.equal(reloaded?.orderNumber, 'K-42', 'reload recovery retains the order display identity');
 
+  const stalePrimary = new MemoryStorage();
+  const freshFallback = new MemoryStorage();
+  stalePrimary.setItem(attemptStorageKey, JSON.stringify({ ...first, idempotencyKey: 'stale-primary-key' }));
+  freshFallback.setItem(attemptStorageKey, JSON.stringify({ ...first, idempotencyKey: 'fresh-fallback-key' }));
+  const conflictingStorage = createSafeAppendAttemptStorage(stalePrimary, freshFallback);
+  assert.throws(
+    () => readAppendAttempt(conflictingStorage, { userId: 'cashier-1', now: 2_001 }),
+    /Conflicting append retry state/,
+    'stale primary and fresh fallback retry values fail closed instead of selecting an ambiguous key',
+  );
+
   assert.throws(() => getOrCreateAppendAttempt(storage, {
     userId: 'cashier-1',
     orderId: '42',

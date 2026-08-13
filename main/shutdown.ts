@@ -13,6 +13,68 @@ type ClosableHttpServer = http.Server & {
   closeAllConnections?: () => void;
 };
 
+type HttpRequestState = {
+  controller: AbortController;
+  work: Set<Promise<unknown>>;
+  released: boolean;
+  owner: HttpServerState;
+};
+
+type HttpServerState = {
+  requests: Set<HttpRequestState>;
+};
+
+const httpServerStates = new WeakMap<http.Server, HttpServerState>();
+const httpRequestStates = new WeakMap<object, HttpRequestState>();
+
+export function installHttpShutdownTracking(server: http.Server): void {
+  const existing = httpServerStates.get(server);
+  if (existing) return;
+
+  const state: HttpServerState = { requests: new Set() };
+  httpServerStates.set(server, state);
+  server.prependListener('request', (request, response) => {
+    const requestState: HttpRequestState = { controller: new AbortController(), work: new Set(), released: false, owner: state };
+    state.requests.add(requestState);
+    httpRequestStates.set(request, requestState);
+    const release = (): void => {
+      requestState.released = true;
+      if (requestState.work.size === 0) state.requests.delete(requestState);
+    };
+    response.once('finish', release);
+    response.once('close', release);
+  });
+}
+
+export function getHttpRequestSignal(request: object): AbortSignal | undefined {
+  return httpRequestStates.get(request)?.controller.signal;
+}
+
+export function trackHttpRequestWork<T>(request: object, operation: Promise<T>): Promise<T> {
+  const requestState = httpRequestStates.get(request);
+  if (!requestState) return operation;
+  requestState.work.add(operation);
+  void operation.finally(() => {
+    requestState.work.delete(operation);
+    if (requestState.released && requestState.work.size === 0) {
+      requestState.owner.requests.delete(requestState);
+    }
+  }).catch(() => {});
+  return operation;
+}
+
+async function waitForHttpRequestWork(state: HttpServerState): Promise<void> {
+  while (true) {
+    const work = [...state.requests].flatMap((request) => [...request.work]);
+    if (work.length === 0) return;
+    await Promise.allSettled(work);
+  }
+}
+
+function abortHttpRequests(state: HttpServerState): void {
+  for (const request of state.requests) request.controller.abort();
+}
+
 export type ShutdownStep = {
   name: string;
   run: () => void | Promise<void>;
@@ -58,7 +120,8 @@ async function withShutdownTimeout<T>(
 /** Stop accepting HTTP connections and wait for active requests to finish. */
 export function closeHttpServer(server: http.Server, label: string): Promise<void> {
   const closableServer = server as ClosableHttpServer;
-  const closePromise = new Promise<void>((resolve, reject) => {
+  const requestState = installHttpShutdownTracking(server);
+  const closeListenerPromise = new Promise<void>((resolve, reject) => {
     try {
       closableServer.close((error?: Error) => {
         if (error && !isAlreadyClosedError(error)) {
@@ -76,10 +139,12 @@ export function closeHttpServer(server: http.Server, label: string): Promise<voi
       else reject(error);
     }
   });
+  const closePromise = Promise.all([closeListenerPromise, waitForHttpRequestWork(requestState)]).then(() => undefined);
 
   return withShutdownTimeout(closePromise, label, () => {
     // This is only reached after the normal drain deadline. Active requests
     // may be interrupted, but the bounded failure is returned to the caller.
+    abortHttpRequests(requestState);
     closableServer.closeAllConnections?.();
   });
 }

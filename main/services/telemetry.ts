@@ -70,6 +70,7 @@ export function sendEvent(eventType: string, payload?: Record<string, unknown>):
 }
 
 function maybeSendDailyPing(): void {
+  if (telemetryStopping) return;
   if (!isTelemetryEnabled()) return;
 
   const lastPingAt = getSettingValue('telemetry_last_ping_at');
@@ -77,7 +78,7 @@ function maybeSendDailyPing(): void {
   const elapsed = isNaN(lastPingMs) ? Infinity : Date.now() - lastPingMs;
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 
-  const operation = sendEventImpl('daily_ping').then((sent) => {
+  const operation = sendEvent('daily_ping').then((sent) => {
     if (sent) upsertTelemetryLastPing();
   });
   trackTelemetry(operation);

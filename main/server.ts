@@ -2,7 +2,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import * as http from 'http';
-import { closeServerResources } from './shutdown';
+import { closeServerResources, installHttpShutdownTracking } from './shutdown';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -259,17 +259,18 @@ export function startServer(): Promise<void> {
     let currentPort = PORT;
     let attempts = 0;
 
-    server = app.listen(currentPort, '0.0.0.0', () => {
+    let listeningServer: http.Server;
+    const onListening = () => {
       if (stopping) {
-        try { server?.close(); } catch { return; }
+        try { listeningServer.close(); } catch { return; }
         return;
       }
       startReject = null;
-      const address = server?.address();
+      const address = listeningServer.address();
       activePort = address && typeof address !== 'string' ? address.port : currentPort;
       console.log(`[Server] HTTP server running on http://localhost:${activePort}`);
 
-      if (server) {
+      if (listeningServer) {
         // noServer + a manual 'upgrade' handler (rather than passing `server`
         // straight to WebSocketServer) so a disabled KDS can 404 the upgrade
         // instead of completing it — checked fresh on every request since
@@ -278,7 +279,7 @@ export function startServer(): Promise<void> {
         wss = websocketServer;
         setupKdsWebSocket(websocketServer);
 
-        server.on('upgrade', (request, socket, head) => {
+        listeningServer.on('upgrade', (request, socket, head) => {
           const pathname = (request.url || '').split('?')[0];
           if (pathname !== '/kds') {
             socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
@@ -323,9 +324,12 @@ export function startServer(): Promise<void> {
       }
 
       resolve();
-    });
+    };
+    listeningServer = app.listen(currentPort, '0.0.0.0', onListening);
+    server = listeningServer;
+    installHttpShutdownTracking(listeningServer);
 
-    server?.on('error', (err: NodeJS.ErrnoException) => {
+    listeningServer.on('error', (err: NodeJS.ErrnoException) => {
       if (stopping) return;
       if (err.code === 'EADDRINUSE') {
         attempts++;
@@ -337,7 +341,7 @@ export function startServer(): Promise<void> {
         }
         currentPort++;
         console.log(`[Server] Port ${currentPort - 1} in use, trying ${currentPort}`);
-        server?.listen(currentPort, '0.0.0.0');
+        listeningServer.listen(currentPort, '0.0.0.0');
       } else {
         reject(err);
       }

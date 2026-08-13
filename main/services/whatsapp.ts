@@ -4,6 +4,7 @@ import * as path from 'path';
 import type { WASocket as BaileysSocket, WAMessageKey } from '@whiskeysockets/baileys';
 import { parsePhoneNumber } from 'libphonenumber-js';
 import { getDatabase, getSettingValue, now } from '../db';
+import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 
 const { loadBaileys: loadBaileysModule } = require('../baileys-loader.cjs') as {
   loadBaileys: () => Promise<typeof import('@whiskeysockets/baileys')>;
@@ -136,6 +137,44 @@ const state: {
 
 const inFlightWhatsAppWork = new Set<Promise<unknown>>();
 let whatsappShutdownPromise: Promise<void> | null = null;
+let whatsappAbortController = new AbortController();
+
+function createWhatsAppAbortError(): Error & { code: string } {
+  const error = new Error('WhatsApp work cancelled during shutdown') as Error & { code: string };
+  error.code = 'ERR_SHUTDOWN_ABORTED';
+  return error;
+}
+
+function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) {
+    void operation.catch(() => {});
+    return Promise.reject(createWhatsAppAbortError());
+  }
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const onAbort = (): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      reject(createWhatsAppAbortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    operation.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
+}
 
 function trackWhatsAppWork<T>(operation: Promise<T>): Promise<T> {
   inFlightWhatsAppWork.add(operation);
@@ -144,8 +183,25 @@ function trackWhatsAppWork<T>(operation: Promise<T>): Promise<T> {
 }
 
 async function waitForWhatsAppWork(): Promise<void> {
-  while (inFlightWhatsAppWork.size > 0) {
-    await Promise.allSettled([...inFlightWhatsAppWork]);
+  const drain = (async () => {
+    while (inFlightWhatsAppWork.size > 0) {
+      await Promise.allSettled([...inFlightWhatsAppWork]);
+    }
+  })();
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      drain,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => {
+          const error = new Error(`WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+          error.code = 'ERR_SHUTDOWN_TIMEOUT';
+          reject(error);
+        }, SHUTDOWN_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }
 
@@ -187,7 +243,7 @@ export function getStatus(): WhatsAppStatus {
  * to the naive phone-JID if onWhatsApp throws (network blip); better to
  * attempt the send than block the cashier behind a transient error.
  */
-async function resolveJid(phoneE164: string, sock: BaileysSocket): Promise<string | null> {
+async function resolveJid(phoneE164: string, sock: BaileysSocket, signal: AbortSignal): Promise<string | null> {
   let normalized: string;
   try {
     const pn = parsePhoneNumber(phoneE164);
@@ -198,7 +254,7 @@ async function resolveJid(phoneE164: string, sock: BaileysSocket): Promise<strin
   }
   const naive = `${normalized.replace('+', '')}@s.whatsapp.net`;
   try {
-    const results = (await sock.onWhatsApp(naive)) ?? [];
+    const results = (await abortable(sock.onWhatsApp(naive), signal)) ?? [];
     return results[0]?.exists ? results[0].jid : null;
   } catch {
     return naive;
@@ -219,7 +275,7 @@ function userFromJid(jid: string): string {
  * Falls back to the original JID if nothing resolves — better to record an
  * LID than to drop the message.
  */
-async function translateJid(jid: string, altJid: string | undefined, sock: BaileysSocket): Promise<string> {
+async function translateJid(jid: string, altJid: string | undefined, sock: BaileysSocket, signal: AbortSignal): Promise<string> {
   if (!jid.endsWith('@lid')) return jid;
   const lidUser = userFromJid(jid);
   const cached = state.lidToPhoneMap.get(lidUser);
@@ -230,7 +286,7 @@ async function translateJid(jid: string, altJid: string | undefined, sock: Baile
     return phoneJid;
   }
   try {
-    const pn: string | null = await sock.signalRepository.lidMapping.getPNForLID(jid);
+    const pn: string | null = await abortable(sock.signalRepository.lidMapping.getPNForLID(jid), signal);
     if (pn) {
       const phoneJid = `${userFromJid(pn)}@s.whatsapp.net`;
       state.lidToPhoneMap.set(lidUser, phoneJid);
@@ -430,6 +486,7 @@ function findMessageByExternalId(externalId: string): { id: number; phone_e164: 
 
 async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
   if (!msg?.message) return;
+  const signal = whatsappAbortController.signal;
   const rawJid: string = msg.key?.remoteJid ?? '';
   if (!rawJid || rawJid === 'status@broadcast') return;
   // Resolve LID → phone JID. Group chats intentionally keep their @g.us JID
@@ -437,7 +494,7 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
   // but DMs/contacts come in carrying @lid from WhatsApp's new ID system.
   const resolvedJid = rawJid.endsWith('@g.us')
     ? rawJid
-    : await translateJid(rawJid, msg.key?.remoteJidAlt, sock);
+    : await translateJid(rawJid, msg.key?.remoteJidAlt, sock, signal);
   if (state.shuttingDown) return;
   const phone = '+' + userFromJid(resolvedJid);
   const body =
@@ -460,7 +517,7 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
 
 function attachSocketHandlers(socket: BaileysSocket): void {
   socket.ev.on('connection.update', (update: any) => {
-    trackWhatsAppWork((async () => {
+    void trackWhatsAppWork((async () => {
     if (state.shuttingDown) return;
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
@@ -516,7 +573,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         state.state = 'disconnected';
       }
     }
-    })());
+    })()).catch(() => {});
   });
 
   socket.ev.on('creds.update', () => {});
@@ -532,7 +589,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
   });
 
   socket.ev.on('messages.upsert', ({ messages }: { messages: any[] }) => {
-    trackWhatsAppWork((async () => {
+    void trackWhatsAppWork((async () => {
     if (state.shuttingDown) return;
     const filterGroups = getSettingValue('whatsapp_filter_groups') === 'true';
     for (const msg of messages) {
@@ -545,11 +602,11 @@ function attachSocketHandlers(socket: BaileysSocket): void {
       if (filterGroups && msg.key?.remoteJid?.endsWith('@g.us')) continue;
       await persistIncoming(msg, socket);
     }
-    })());
+    })()).catch(() => {});
   });
 
   socket.ev.on('messages.update', (updates: any[]) => {
-    trackWhatsAppWork((async () => {
+    void trackWhatsAppWork((async () => {
     if (state.shuttingDown) return;
     for (const u of updates) {
       if (state.shuttingDown) return;
@@ -568,11 +625,11 @@ function attachSocketHandlers(socket: BaileysSocket): void {
       else if (status === 3) advanceStatus(stored.id, 'delivered');
       else if (status === 4) advanceStatus(stored.id, 'read');
     }
-    })());
+    })()).catch(() => {});
   });
 }
 
-async function resolveWaWebVersion(): Promise<[number, number, number] | undefined> {
+async function resolveWaWebVersion(signal: AbortSignal): Promise<[number, number, number] | undefined> {
   // Baileys' built-in fetchLatestWaWebVersion scrapes sw.js which is
   // aggressively rate-limited (429). When it fails, Baileys falls back to
   // a hardcoded version that goes stale within weeks — WhatsApp rejects
@@ -581,7 +638,7 @@ async function resolveWaWebVersion(): Promise<[number, number, number] | undefin
   // JSON API), then Baileys as a fallback.
   try {
     const res = await fetch('https://wppconnect.io/whatsapp-versions/', {
-      signal: AbortSignal.timeout(VERSION_FETCH_TIMEOUT_MS),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(VERSION_FETCH_TIMEOUT_MS)]),
     });
     if (res.ok) {
       const html = await res.text();
@@ -592,8 +649,8 @@ async function resolveWaWebVersion(): Promise<[number, number, number] | undefin
     // fall through
   }
   try {
-    const { fetchLatestWaWebVersion } = await loadBaileys();
-    const { version } = await fetchLatestWaWebVersion({});
+    const { fetchLatestWaWebVersion } = await abortable(loadBaileys(), signal);
+    const { version } = await abortable(fetchLatestWaWebVersion({}), signal);
     return version as [number, number, number];
   } catch {
     // fall through
@@ -603,18 +660,19 @@ async function resolveWaWebVersion(): Promise<[number, number, number] | undefin
 }
 
 async function startSocketImpl(): Promise<void> {
-  if (!state.enabled || state.shuttingDown) return;
+  const signal = whatsappAbortController.signal;
+  if (!state.enabled || state.shuttingDown || signal.aborted) return;
   if (state.socket) return;
   const authDir = getAuthDir();
   if (!fs.existsSync(authDir)) {
     fs.mkdirSync(authDir, { recursive: true, mode: 0o700 });
   }
-  const version = await resolveWaWebVersion();
-  if (state.shuttingDown) return;
-  const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await loadBaileys();
-  if (state.shuttingDown) return;
-  const { state: authState, saveCreds } = await useMultiFileAuthState(authDir);
-  if (state.shuttingDown) return;
+  const version = await resolveWaWebVersion(signal);
+  if (state.shuttingDown || signal.aborted) return;
+  const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await abortable(loadBaileys(), signal);
+  if (state.shuttingDown || signal.aborted) return;
+  const { state: authState, saveCreds } = await abortable(useMultiFileAuthState(authDir), signal);
+  if (state.shuttingDown || signal.aborted) return;
   const socket = makeWASocket({
     version,
     auth: authState,
@@ -655,6 +713,7 @@ export async function enable(userId: string): Promise<{ ok: boolean; error?: str
   // Reset shutdown flag so the auto-reconnect-on-disconnect logic in the
   // close handler is active again after a previous disable() round.
   state.shuttingDown = false;
+  whatsappAbortController = new AbortController();
   whatsappShutdownPromise = null;
   writeSetting('whatsapp_enabled', 'true');
   writeSetting('whatsapp_activated_by_user_id', userId);
@@ -677,6 +736,7 @@ export async function enable(userId: string): Promise<{ ok: boolean; error?: str
 export function disable(): void {
   state.enabled = false;
   state.shuttingDown = true;
+  whatsappAbortController.abort();
   writeSetting('whatsapp_enabled', 'false');
   writeSetting('whatsapp_connected_phone', '');
   if (state.socket) {
@@ -726,6 +786,7 @@ export function disconnect(): void {
   // close handler take the disconnected branch instead of scheduling a
   // reconnect. Without this, every logout re-pops a pairing QR 5s later.
   state.shuttingDown = true;
+  whatsappAbortController.abort();
   if (state.socket) {
     try { state.socket.logout(); } catch { /* ignore */ }
     try { state.socket.end(undefined); } catch { /* ignore */ }
@@ -768,27 +829,34 @@ export function sendMessage(req: QueuedSend): Promise<SendResult> {
 }
 
 async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
+  const signal = whatsappAbortController.signal;
   const previous = sendLocks.get(req.phoneE164) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
   sendLocks.set(req.phoneE164, current);
-  await previous;
   try {
-    return await sendMessageInternal(req);
+    await abortable(previous, signal);
+    if (state.shuttingDown) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    return await sendMessageInternal(req, signal);
+  } catch (error) {
+    if (state.shuttingDown || signal.aborted) {
+      return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    }
+    throw error;
   } finally {
     release();
     if (sendLocks.get(req.phoneE164) === current) sendLocks.delete(req.phoneE164);
   }
 }
 
-async function sendMessageInternal(req: QueuedSend): Promise<SendResult> {
+async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promise<SendResult> {
   if (!state.enabled || state.shuttingDown) return { ok: false, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
   if (!req.phoneE164) return { ok: false, error: 'Phone number required.', reason: 'no_phone' };
   if (state.state !== 'connected' || !state.socket) {
     return { ok: false, error: 'Flo is not connected to WhatsApp.', reason: 'not_connected' };
   }
   const socket = state.socket;
-  const jid = await resolveJid(req.phoneE164, socket);
+  const jid = await resolveJid(req.phoneE164, socket, signal);
   if (state.shuttingDown) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
   if (!jid) {
     return { ok: false, error: 'This phone is not registered on WhatsApp.', reason: 'not_on_whatsapp' };
@@ -854,12 +922,15 @@ async function sendMessageInternal(req: QueuedSend): Promise<SendResult> {
         updateMessageRow(messageId, { status: 'seen', timestamp_field: 'seen_at' });
       } catch { /* best-effort */ }
     }
-    await socket.presenceSubscribe(jid).catch(() => {});
-    await socket.sendPresenceUpdate('composing', jid).catch(() => {});
+    await abortable(socket.presenceSubscribe(jid), signal).catch(() => {});
+    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    await abortable(socket.sendPresenceUpdate('composing', jid), signal).catch(() => {});
+    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
     updateMessageRow(messageId, { status: 'typing', timestamp_field: 'typing_at' });
-    await new Promise((r) => setTimeout(r, randomDelayMs(req.body)));
-    await socket.sendPresenceUpdate('paused', jid).catch(() => {});
-    const sent = await socket.sendMessage(jid, { text: req.body });
+    await abortable(new Promise<void>((resolve) => setTimeout(resolve, randomDelayMs(req.body))), signal);
+    await abortable(socket.sendPresenceUpdate('paused', jid), signal).catch(() => {});
+    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    const sent = await abortable(socket.sendMessage(jid, { text: req.body }), signal);
     if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
     // sendMessage() only resolves when Baileys hands the payload to its
     // local queue — not when WhatsApp's servers ACK it. Don't claim 'sent'
@@ -1021,6 +1092,7 @@ export function initFromDb(): void {
 export function shutdown(): Promise<void> {
   if (whatsappShutdownPromise) return whatsappShutdownPromise;
   state.shuttingDown = true;
+  whatsappAbortController.abort();
   if (state.cooldownTimer) { clearTimeout(state.cooldownTimer); state.cooldownTimer = null; }
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
   if (state.socket) {

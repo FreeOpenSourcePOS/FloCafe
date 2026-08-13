@@ -44,6 +44,12 @@ function releaseDatabaseIdleWaiters(): void {
   waiters.forEach((resolve) => resolve());
 }
 
+function createMaintenanceAbortError(): Error & { code: string } {
+  const error = new Error('Database maintenance cancelled during shutdown') as Error & { code: string };
+  error.code = 'ERR_SHUTDOWN_ABORTED';
+  return error;
+}
+
 export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
   const run = (): Promise<T> => {
     // Reserve the request synchronously. A maintenance lock scheduled in the
@@ -119,12 +125,15 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
   next();
 }
 
-export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>): Promise<T> {
+export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
   const previous = databaseMaintenanceTail;
   databaseMaintenancePending += 1;
+  let started = false;
   let release!: () => void;
   databaseMaintenanceTail = new Promise<void>((resolve) => { release = resolve; });
-  return previous.then(async () => {
+  const queued = previous.then(async () => {
+    if (signal?.aborted) throw createMaintenanceAbortError();
+    started = true;
     databaseMaintenanceActive = true;
     for (const listener of databaseMaintenanceStartListeners) {
       try { listener(); } catch (error) { console.error('[DB] Maintenance listener failed:', error); }
@@ -150,6 +159,33 @@ export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>):
     release();
     releaseMaintenanceRequestWaiters();
     releaseDatabaseIdleWaiters();
+  });
+  if (!signal) return queued;
+
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const onAbort = (): void => {
+      if (started || settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      reject(createMaintenanceAbortError());
+    };
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+    queued.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
   });
 }
 
@@ -763,7 +799,7 @@ export function closeDatabase(): void {
   }
 }
 
-export async function createBackupUnlocked(targetPath?: string): Promise<{ path: string; schemaVersion: number }> {
+export async function createBackupUnlocked(targetPath?: string, signal?: AbortSignal): Promise<{ path: string; schemaVersion: number }> {
   // Internal callers must already hold withDatabaseMaintenanceLock().
   console.log('[DB] createBackup: Starting...');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -796,7 +832,14 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
 
   try {
     console.log('[DB] createBackup: Backing up to temp:', tempPath);
-    await db.backup(tempPath);
+    if (signal?.aborted) throw createMaintenanceAbortError();
+    await db.backup(tempPath, {
+      progress: () => {
+        if (signal?.aborted) throw createMaintenanceAbortError();
+        return 100;
+      },
+    });
+    if (signal?.aborted) throw createMaintenanceAbortError();
 
     let currentVersion = 0;
     let backupDb: Database.Database | undefined;
@@ -812,6 +855,7 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
         )
       `);
 
+      if (signal?.aborted) throw createMaintenanceAbortError();
       currentVersion = getCurrentSchemaVersion();
       backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
         .run('schema_version', String(currentVersion));
@@ -863,8 +907,8 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
   }
 }
 
-export function createBackup(targetPath?: string): Promise<{ path: string; schemaVersion: number }> {
-  return withDatabaseMaintenanceLock(() => createBackupUnlocked(targetPath));
+export function createBackup(targetPath?: string, signal?: AbortSignal): Promise<{ path: string; schemaVersion: number }> {
+  return withDatabaseMaintenanceLock(() => createBackupUnlocked(targetPath, signal), signal);
 }
 
 function removeDatabaseFiles(dbPath: string): string[] {

@@ -6,7 +6,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { closeServerResources } from './shutdown';
+import { closeServerResources, installHttpShutdownTracking } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
@@ -554,17 +554,18 @@ export function startKdsServer(): Promise<void> {
     let currentKdsPort = KDS_PORT;
     let attempts = 0;
 
+    let listeningServer: http.Server;
     const onListening = () => {
       if (stopping) {
-        try { kdsServer?.close(); } catch { return; }
+        try { listeningServer.close(); } catch { return; }
         return;
       }
       startReject = null;
-      const address = kdsServer?.address();
+      const address = listeningServer.address();
       activeKdsPort = address && typeof address !== 'string' ? address.port : currentKdsPort;
       console.log(`[KDS Server] HTTP server running on http://localhost:${activeKdsPort}`);
 
-      if (kdsServer) {
+      if (listeningServer) {
         // noServer + a manual 'upgrade' handler so a disabled KDS can 404 the
         // upgrade instead of completing it — see main/server.ts for the same
         // pattern on the primary API server (issue #133).
@@ -572,7 +573,7 @@ export function startKdsServer(): Promise<void> {
         kdsWss = wss;
         setupKdsWebSocket(wss);
 
-        kdsServer.on('upgrade', (request, socket, head) => {
+        listeningServer.on('upgrade', (request, socket, head) => {
           const pathname = (request.url || '').split('?')[0];
           if (pathname !== '/kds') {
             socket.write('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
@@ -608,9 +609,11 @@ export function startKdsServer(): Promise<void> {
       resolve();
     };
 
-    kdsServer = app.listen(currentKdsPort, '0.0.0.0', onListening);
+    listeningServer = app.listen(currentKdsPort, '0.0.0.0', onListening);
+    kdsServer = listeningServer;
+    installHttpShutdownTracking(listeningServer);
 
-    kdsServer?.on('error', (err: NodeJS.ErrnoException) => {
+    listeningServer.on('error', (err: NodeJS.ErrnoException) => {
       if (stopping) return;
       if (err.code === 'EADDRINUSE') {
         attempts++;
@@ -622,7 +625,7 @@ export function startKdsServer(): Promise<void> {
         }
         currentKdsPort++;
         console.log(`[KDS Server] Port ${currentKdsPort - 1} in use, trying ${currentKdsPort}`);
-        kdsServer?.listen(currentKdsPort, '0.0.0.0', onListening);
+        listeningServer.listen(currentKdsPort, '0.0.0.0', onListening);
       } else {
         reject(err);
       }

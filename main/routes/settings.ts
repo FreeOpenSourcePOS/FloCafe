@@ -7,6 +7,7 @@ import { requireMasterPin } from '../middleware/master-pin';
 import { validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
+import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 
 const router = Router();
 
@@ -662,12 +663,13 @@ router.put('/google-drive', requireRole('owner', 'manager'), (req: Request, res:
   }
 });
 
-router.post('/google-drive/connect', requireRole('owner'), async (_req: Request, res: Response) => {
+router.post('/google-drive/connect', requireRole('owner'), async (req: Request, res: Response) => {
   try {
-    const status = await googleDrive.connect();
+    const status = await trackHttpRequestWork(req, googleDrive.connect(getHttpRequestSignal(req)));
     res.json(status);
   } catch (error: any) {
     console.error('[API] Google Drive connection failed:', error);
+    if (getHttpRequestSignal(req)?.aborted) return;
     res.status(502).json({ error: 'Google Drive connection failed' });
   }
 });

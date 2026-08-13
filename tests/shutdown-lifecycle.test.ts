@@ -11,6 +11,8 @@ import {
   createExitCodeAwareShutdown,
   createShutdownCoordinator,
   createShutdownEntrypoints,
+  installHttpShutdownTracking,
+  trackHttpRequestWork,
 } from '../main/shutdown';
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-shutdown-lifecycle-'));
@@ -170,6 +172,32 @@ async function testHttpStopsAcceptingBeforeSlowWebSocketDrain(): Promise<void> {
   } finally {
     if (server.listening) server.close();
   }
+}
+
+async function testTrackedHttpHandlerDrain(): Promise<void> {
+  let releaseHandler: (() => void) | null = null;
+  let requestStarted: (() => void) | null = null;
+  const handlerStarted = new Promise<void>((resolve) => { requestStarted = resolve; });
+  const handlerWork = new Promise<void>((resolve) => { releaseHandler = resolve; });
+  const server = http.createServer((request, response) => {
+    requestStarted?.();
+    void trackHttpRequestWork(request, handlerWork).then(() => response.end('done'));
+  });
+  installHttpShutdownTracking(server);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert(address && typeof address !== 'string');
+  const heldRequest = http.get({ host: '127.0.0.1', port: address.port, path: '/' });
+  heldRequest.on('error', () => {});
+  await handlerStarted;
+
+  let settled = false;
+  const shutdown = closeServerResources(server, null, 'tracked HTTP handler test').then(() => { settled = true; });
+  await delay(20);
+  assert.equal(settled, false, 'shutdown waits for tracked handler work after listener close');
+  releaseHandler?.();
+  await shutdown;
+  heldRequest.destroy();
 }
 
 async function testPendingHttpListenIsCancelled(): Promise<void> {
@@ -512,6 +540,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   console.log('phase resources');
   await testActiveHttpAndWebSocketDrain();
   await testHttpStopsAcceptingBeforeSlowWebSocketDrain();
+  await testTrackedHttpHandlerDrain();
   await testPendingHttpListenIsCancelled();
   console.log('phase entrypoints');
   await testEntrypointCoverage();

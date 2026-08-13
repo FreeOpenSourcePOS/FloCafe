@@ -90,7 +90,7 @@
     "test:issue-133-kds-kot-toggles": "node tests/run-electron-node-test.cjs tests/issue-133-kds-kot-toggles.test.ts",
     "test:issue-137-barcode": "node tests/run-electron-node-test.cjs tests/issue-137-barcode.test.ts",
     "test:tables-string-ids": "node tests/run-electron-node-test.cjs tests/tables-string-ids.test.ts",
-    "test:held-orders": "node tests/run-electron-node-test.cjs tests/held-orders.test.ts",
+    "test:held-orders": "node tests/run-electron-node-test.cjs tests/held-orders.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/held-orders-store.test.ts",
     "test:product-images": "node tests/run-electron-node-test.cjs tests/product-images.test.ts",
     "test:schema-health": "node tests/run-electron-node-test.cjs tests/schema-health.test.ts",
     "test:upgrade-path": "node tests/run-electron-node-test.cjs tests/upgrade-path.test.ts",

@@ -395,7 +395,8 @@ export default function POSPage() {
 
       if (cart.tableId) {
         try {
-          await heldOrders.removeHeldOrder(cart.tableId);
+          const deleted = await heldOrders.removeHeldOrder(cart.tableId, cart.heldOrderId || undefined);
+          if (!deleted) await heldOrders.fetchHeldOrders();
         } catch (heldOrderError) {
           // The order has already been placed. Do not turn a cleanup failure
           // into a failed sale or leave an unhandled promise in the console.
@@ -596,7 +597,8 @@ export default function POSPage() {
       toast.success(successMsg);
       if (cart.tableId) {
         try {
-          await heldOrders.removeHeldOrder(cart.tableId);
+          const deleted = await heldOrders.removeHeldOrder(cart.tableId, cart.heldOrderId || undefined);
+          if (!deleted) await heldOrders.fetchHeldOrders();
         } catch (heldOrderError) {
           // The payment is complete; clearing the held-order record is cleanup.
           console.error('Failed to clear held order after payment', heldOrderError);
@@ -653,13 +655,21 @@ export default function POSPage() {
   };
 
   const handleSelectHeldTable = async (tableId: string) => {
-    const held = await heldOrders.restoreOrder(tableId);
-    if (held) {
-      cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes);
-      cart.setOrderType('dine_in');
+    try {
+      const held = await heldOrders.restoreOrder(tableId);
+      if (held) {
+        cart.loadItems(held.items, tableId, held.customerId, held.guestCount, held.orderNotes, held.id);
+        cart.setOrderType('dine_in');
+      } else {
+        await heldOrders.fetchHeldOrders();
+        toast.error(t('pos.loadOrderFailed'));
+      }
+    } catch {
+      toast.error(t('pos.loadOrderFailed'));
+    } finally {
+      setShowTablePicker(false);
+      await refreshTables();
     }
-    setShowTablePicker(false);
-    await refreshTables();
   };
 
   const handleHoldTable = async (tableId: string) => {

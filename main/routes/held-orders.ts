@@ -139,28 +139,33 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       return res.status(400).json({ error: error.message });
     }
     const { tableId, items, customerId, guestCount, orderNotes } = input;
+    let heldOrderId = '';
     
     withTxn(() => {
       const existing = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId) as { id: string } | undefined;
+      heldOrderId = `ho-${randomUUID().slice(0, 8)}`;
       
       if (existing) {
         db.prepare(`
           UPDATE held_orders
-          SET items = ?, customer_id = ?, guest_count = ?, order_notes = ?, updated_at = ?
+          SET id = ?, items = ?, customer_id = ?, guest_count = ?, order_notes = ?, updated_at = ?
           WHERE id = ?
-        `).run(JSON.stringify(items), customerId || null, guestCount || 1, orderNotes || '', now(), existing.id);
+        `).run(heldOrderId, JSON.stringify(items), customerId || null, guestCount || 1, orderNotes || '', now(), existing.id);
       } else {
-        const id = `ho-${randomUUID().slice(0, 8)}`;
         db.prepare(`
           INSERT INTO held_orders (id, table_id, items, customer_id, guest_count, order_notes, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(id, tableId, JSON.stringify(items), customerId || null, guestCount || 1, orderNotes || '', now(), now());
+        `).run(heldOrderId, tableId, JSON.stringify(items), customerId || null, guestCount || 1, orderNotes || '', now(), now());
       }
 
       db.prepare('UPDATE tables SET status = ?, updated_at = ? WHERE id = ?').run(TABLE_STATUS_HELD, now(), tableId);
     });
 
-    res.json({ success: true });
+    // Returning the current row identity lets a client prove that its cached
+    // snapshot is still the row it is consuming. Replacing a held order gets
+    // a new identity, so an older terminal receives deleted:false instead of
+    // deleting the replacement.
+    res.json({ success: true, id: heldOrderId });
   } catch (error: any) {
     console.error("[API] Hold order error:", error);
     res.status(500).json({ error: "Could not hold order" });
@@ -170,12 +175,20 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 router.delete('/:tableId', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const tableId = req.params.tableId;
+    const expectedHeldOrderId = typeof req.query.heldOrderId === 'string' && req.query.heldOrderId.length > 0
+      ? req.query.heldOrderId
+      : null;
+
+    if (!expectedHeldOrderId) {
+      return res.json({ success: true, deleted: false });
+    }
+
     const db = getDatabase();
     
     let deleted = false;
     withTxn(() => {
-      const existing = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId);
-      if (existing) {
+      const existing = db.prepare('SELECT id FROM held_orders WHERE table_id = ?').get(tableId) as { id: string } | undefined;
+      if (existing && existing.id === expectedHeldOrderId) {
         db.prepare('DELETE FROM held_orders WHERE table_id = ?').run(tableId);
         db.prepare('UPDATE tables SET status = ?, updated_at = ? WHERE id = ? AND status = ?').run(TABLE_STATUS_AVAILABLE, now(), tableId, TABLE_STATUS_HELD);
         deleted = true;

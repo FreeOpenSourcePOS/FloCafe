@@ -46,8 +46,8 @@ Describe 'Flo Cafe Windows uninstaller' {
     }
 
     Mock Get-Process {
-      if ($PSBoundParameters.ContainsKey('Name') -and $process.IsRunning) { return @($process) }
-      if ($PSBoundParameters.ContainsKey('Id') -and $process.IsRunning) { return @($process) }
+      if ($Name -and $process.IsRunning) { return @($process) }
+      if ($Id -and $process.IsRunning) { return @($process) }
       return @()
     }
     Mock Get-ItemProperty { @() }
@@ -77,6 +77,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     $child = [pscustomobject]@{ Id = 9898; ExitCode = 0 }
     $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
       param([int]$Milliseconds)
+      Start-Sleep -Milliseconds $Milliseconds
       return $false
     }
     $state = [pscustomobject]@{
@@ -91,62 +92,59 @@ Describe 'Flo Cafe Windows uninstaller' {
     $oldLocalAppData = $env:LOCALAPPDATA
     $oldChildTimeout = $script:ChildUninstallerTimeoutSeconds
 
+    Mock Get-Process {
+      if ($Name) { return @() }
+      if ($Id -eq $child.Id -and $state.RootRunning) { return @([pscustomobject]@{ Id = $child.Id }) }
+      if ($Id -eq $intermediateId -and $state.IntermediateRunning) { return @([pscustomobject]@{ Id = $intermediateId }) }
+      if ($Id -eq $descendantId -and $state.DescendantRunning) { return @([pscustomobject]@{ Id = $descendantId }) }
+      if ($Id -eq $lateDescendantId -and $state.LateDescendantRunning) { return @([pscustomobject]@{ Id = $lateDescendantId }) }
+      return @()
+    }
+    Mock Get-ItemProperty { return @($entry) }
+    Mock Test-Path {
+      if ($LiteralPath -eq $uninstallerExe) { return $true }
+      if ($LiteralPath -eq $fallbackInstallPath) { return $state.InstallExists }
+      return $false
+    }
+    Mock Start-Process { $child }
+    Mock Stop-Process {
+      if ($Id -eq $child.Id) { $state.RootRunning = $false }
+      if ($Id -eq $descendantId) { $state.DescendantRunning = $false }
+      if ($Id -eq $lateDescendantId) { $state.LateDescendantRunning = $false }
+    }
+    Mock Remove-Item {
+      if ($LiteralPath -eq $fallbackInstallPath) { $state.InstallExists = $false }
+    }
+    Mock Get-CimInstance {
+      if ($Filter) {
+        $state.RootQueries++
+        if ($Filter -eq "ParentProcessId = $($child.Id)" -and $state.RootQueries -eq 1) {
+          return @([pscustomobject]@{ ProcessId = $intermediateId })
+        }
+        return @()
+      }
+      $state.TreeCalls++
+      if ($state.TreeCalls -eq 1) {
+        return @([pscustomobject]@{ ProcessId = $intermediateId; ParentProcessId = $child.Id })
+      }
+      $processes = @([pscustomobject]@{ ProcessId = $descendantId; ParentProcessId = $intermediateId })
+      if ($state.TreeCalls -ge 4) {
+        $processes += [pscustomobject]@{ ProcessId = $lateDescendantId; ParentProcessId = $child.Id }
+      }
+      return $processes
+    }
+
     try {
       $env:LOCALAPPDATA = 'C:\Flo Cafe Fixture'
       $script:ChildUninstallerTimeoutSeconds = 1
-      Mock Get-Process {
-        if ($PSBoundParameters.ContainsKey('Name')) { return @() }
-        if ($Id -eq $child.Id -and $state.RootRunning) { return @([pscustomobject]@{ Id = $child.Id }) }
-        if ($Id -eq $intermediateId -and $state.IntermediateRunning) { return @([pscustomobject]@{ Id = $intermediateId }) }
-        if ($Id -eq $descendantId -and $state.DescendantRunning) { return @([pscustomobject]@{ Id = $descendantId }) }
-        if ($Id -eq $lateDescendantId -and $state.LateDescendantRunning) { return @([pscustomobject]@{ Id = $lateDescendantId }) }
-        return @()
-      }
-      Mock Get-ItemProperty { @($entry) }
-      Mock Test-Path {
-        param($LiteralPath)
-        if ($LiteralPath -eq $uninstallerExe) { return $true }
-        if ($LiteralPath -eq $fallbackInstallPath) { return $state.InstallExists }
-        return $false
-      }
-      Mock Start-Process { $child }
-      Mock Stop-Process {
-        param($Id)
-        if ($Id -eq $child.Id) { $state.RootRunning = $false }
-        if ($Id -eq $descendantId) { $state.DescendantRunning = $false }
-        if ($Id -eq $lateDescendantId) { $state.LateDescendantRunning = $false }
-      }
-      Mock Remove-Item {
-        param($LiteralPath)
-        if ($LiteralPath -eq $fallbackInstallPath) { $state.InstallExists = $false }
-      }
-      Mock Get-CimInstance {
-        param($ClassName, $Filter, $OperationTimeoutSec)
-        if ($PSBoundParameters.ContainsKey('Filter')) {
-          $state.RootQueries++
-          if ($Filter -eq "ParentProcessId = $($child.Id)" -and $state.RootQueries -eq 1) {
-            return @([pscustomobject]@{ ProcessId = $intermediateId })
-          }
-          return @()
-        }
-        $state.TreeCalls++
-        if ($state.TreeCalls -eq 1) {
-          return @([pscustomobject]@{ ProcessId = $intermediateId; ParentProcessId = $child.Id })
-        }
-        $processes = @([pscustomobject]@{ ProcessId = $descendantId; ParentProcessId = $intermediateId })
-        if ($state.TreeCalls -ge 4) {
-          $processes += [pscustomobject]@{ ProcessId = $lateDescendantId; ParentProcessId = $child.Id }
-        }
-        return $processes
-      }
 
       $result = Invoke-FloCafeUninstall
 
       $result.Complete | Should -BeFalse
       ($result.Issues -join "`n") | Should -Match 'did not exit within'
       $state.InstallExists | Should -BeFalse
-      Should -Invoke Stop-Process -Times 2 -Exactly -ParameterFilter { $Id -eq 9898 -and $Force }
-      Should -Invoke Stop-Process -Times 2 -Exactly -ParameterFilter { $Id -eq $descendantId -and $Force }
+      Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq 9898 -and $Force }
+      Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq $descendantId -and $Force }
       Should -Invoke Stop-Process -Times 1 -Exactly -ParameterFilter { $Id -eq $lateDescendantId -and $Force }
       Should -Invoke Remove-Item -Times 1 -Exactly -ParameterFilter { $LiteralPath -eq $fallbackInstallPath }
       Should -Invoke Start-Process -Times 1 -Exactly -ParameterFilter { $PassThru -and -not $Wait }
@@ -174,7 +172,6 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Get-Process { @() }
     Mock Get-ItemProperty { @($entry) }
     Mock Test-Path {
-      param($LiteralPath)
       return ($LiteralPath -eq $uninstallerExe)
     }
     Mock Start-Process { $child }
@@ -186,6 +183,36 @@ Describe 'Flo Cafe Windows uninstaller' {
     $result.Complete | Should -BeFalse
     ($result.Issues -join "`n") | Should -Match 'could not inspect child processes'
     Should -Invoke Remove-Item -Times 0 -Exactly
+  }
+
+  It 'rejects a process tree snapshot that completes after its deadline' {
+    $oldInspectionFailed = $script:ChildProcessInspectionFailed
+    $oldCleanupComplete = $script:CleanupComplete
+    $oldCleanupIssues = $script:CleanupIssues
+    $state = [pscustomobject]@{ CimCalls = 0 }
+    try {
+      $script:ChildProcessInspectionFailed = $false
+      $script:CleanupComplete = $true
+      $script:CleanupIssues = New-Object 'System.Collections.Generic.List[string]'
+
+      Mock Get-CimInstance {
+        $state.CimCalls++
+        Start-Sleep -Milliseconds 1100
+        return @([pscustomobject]@{ ProcessId = 9902; ParentProcessId = 9901 })
+      }
+
+      $result = Get-ProcessTreeIds @(9901) ([DateTime]::UtcNow.AddMilliseconds(1000))
+
+      $result | Should -Be $null
+      $state.CimCalls | Should -Be 1
+      $script:ChildProcessInspectionFailed | Should -BeTrue
+      $script:CleanupComplete | Should -BeFalse
+      ($script:CleanupIssues -join "`n") | Should -Match 'within the bounded wait'
+    } finally {
+      $script:ChildProcessInspectionFailed = $oldInspectionFailed
+      $script:CleanupComplete = $oldCleanupComplete
+      $script:CleanupIssues = $oldCleanupIssues
+    }
   }
 
   It 'reports partial cleanup when a completed child exit code cannot be read' {
@@ -209,10 +236,10 @@ Describe 'Flo Cafe Windows uninstaller' {
     Mock Get-Process { @() }
     Mock Get-ItemProperty { @($entry) }
     Mock Test-Path {
-      param($LiteralPath)
       return ($LiteralPath -eq $uninstallerExe)
     }
     Mock Start-Process { $child }
+    Mock Get-CimInstance { return @() }
 
     $result = Invoke-FloCafeUninstall
 
@@ -295,7 +322,6 @@ Describe 'Flo Cafe Windows uninstaller' {
     }
 
     Mock Get-Process {
-      param($Name)
       if ($Name) { return @([pscustomobject]@{ Id = 7777; MainWindowHandle = [IntPtr]0 }) }
       return @()
     }
@@ -322,17 +348,14 @@ Describe 'Flo Cafe Windows uninstaller' {
 
     Mock Get-Process { @() }
     Mock Get-ItemProperty {
-      param($Path)
       if ($Path -like 'HKCU:*') { throw 'access denied to HKCU' }
       return @($readableEntry)
     }
     Mock Test-Path {
-      param($LiteralPath)
       if ($LiteralPath -eq $readableEntry.PSPath) { return $state.RegistryExists }
       return $false
     }
     Mock Remove-Item {
-      param($LiteralPath)
       if ($LiteralPath -eq $readableEntry.PSPath) { $state.RegistryExists = $false }
     }
 
@@ -350,7 +373,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     $secondInstallPath = 'C:\Flo Cafe Second'
     $firstUninstaller = 'C:\Flo Cafe First\uninstall.exe'
     $secondUninstaller = 'C:\Flo Cafe Second\uninstall.exe'
-    $entries = @(
+    $testEntries = @(
       [pscustomobject]@{
         DisplayName     = 'Flo Cafe'
         PSChildName     = 'FloCafeFirst'
@@ -366,53 +389,44 @@ Describe 'Flo Cafe Windows uninstaller' {
         UninstallString = "`"$secondUninstaller`""
       }
     )
-    $children = @(
+    $testChildren = @(
       [pscustomobject]@{ Id = 9910; ExitCode = 0 }
       [pscustomobject]@{ Id = 9911; ExitCode = 0 }
     )
-    foreach ($child in $children) {
+    foreach ($child in $testChildren) {
       $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
         param([int]$Milliseconds)
         return $true
       }
     }
-    $remainingPaths = @{
-      $firstUninstaller = $true
-      $secondUninstaller = $true
-      $firstInstallPath = $true
-      $secondInstallPath = $true
-      $entries[0].PSPath = $true
-      $entries[1].PSPath = $true
+    $state = [pscustomobject]@{
+      ProcessedRegistryPaths = New-Object 'System.Collections.Generic.List[string]'
     }
-    $removedPaths = New-Object 'System.Collections.Generic.List[string]'
 
-    Mock Get-Process { @() }
-    Mock Get-ItemProperty { $entries }
+    Mock Get-Process { return @() }
+    Mock Get-ItemProperty { return $testEntries }
     Mock Test-Path {
-      param($LiteralPath)
-      if ($remainingPaths.ContainsKey($LiteralPath)) { return $remainingPaths[$LiteralPath] }
+      if ($LiteralPath -eq $firstUninstaller -or $LiteralPath -eq $secondUninstaller) { return $true }
       return $false
     }
     Mock Start-Process {
-      param($FilePath)
-      if ($FilePath -eq $firstUninstaller) { return $children[0] }
-      if ($FilePath -eq $secondUninstaller) { return $children[1] }
+      if ($FilePath -eq $firstUninstaller) { return $testChildren[0] }
+      if ($FilePath -eq $secondUninstaller) { return $testChildren[1] }
       throw "unexpected uninstaller $FilePath"
     }
-    Mock Get-CimInstance { @() }
-    Mock Remove-Item {
-      param($LiteralPath)
-      [void]$removedPaths.Add($LiteralPath)
-      if ($remainingPaths.ContainsKey($LiteralPath)) { $remainingPaths[$LiteralPath] = $false }
+    Mock Get-CimInstance { return @() }
+    Mock Invoke-RegistryRemoval {
+      [void]$state.ProcessedRegistryPaths.Add([string]$entry.PSPath)
+      return $true
     }
 
     $result = Invoke-FloCafeUninstall
 
-    $result.Complete | Should -BeFalse
+    $result.Complete | Should -BeTrue
     Should -Invoke Start-Process -Times 2 -Exactly
-    ($removedPaths -contains $entries[0].PSPath) | Should -BeTrue
-    ($removedPaths -contains $entries[1].PSPath) | Should -BeTrue
-    ($result.Issues -join "`n") | Should -Match 'C:\Flo Cafe First'
-    ($result.Issues -join "`n") | Should -Match 'C:\Flo Cafe Second'
+    $state.ProcessedRegistryPaths.Count | Should -Be 2
+    ($state.ProcessedRegistryPaths -contains $testEntries[0].PSPath) | Should -BeTrue
+    ($state.ProcessedRegistryPaths -contains $testEntries[1].PSPath) | Should -BeTrue
+    $result.Issues.Count | Should -Be 0
   }
 }

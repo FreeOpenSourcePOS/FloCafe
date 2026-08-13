@@ -39,6 +39,7 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       kds: ${{ steps.filter.outputs.kds }}
       db: ${{ steps.filter.outputs.db }}
+      uninstaller: ${{ steps.filter.outputs.uninstaller }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36 # v3.0.2
@@ -49,6 +50,7 @@ jobs:
             backend: ['main/**', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig.json']
             kds: ['main/kds-server.ts', 'main/services/kds.ts', 'main/routes/kds.ts', 'tests/kds-*.test.ts']
             db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
+            uninstaller: ['scripts/uninstallers/**', 'tests/windows-uninstaller.Tests.ps1', 'tests/run-windows-uninstaller-tests.cjs', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']
 
   # 3. Tax Safety Net
   # This deliberately runs independently of path filtering so every push to
@@ -167,3 +169,24 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 10
+
+  # 6. Windows Uninstaller Pester Suite
+  windows-uninstaller:
+    needs: changes
+    if: ${{ needs.changes.outputs.uninstaller == 'true' }}
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Windows uninstaller Pester tests
+        run: npm run test:windows-uninstaller

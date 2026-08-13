@@ -396,13 +396,31 @@ async function main() {
         ],
       }],
     });
-    const unevenComponentChildren = allocateTaxSnapshots(unevenComponentSnapshot, [1, 2], [1, 1]);
+    const unevenComponentChildren = allocateTaxSnapshots(unevenComponentSnapshot, [1, 2]);
     const unevenComponentAmounts = unevenComponentChildren.map((raw: string | null) => {
       const snapshot = JSON.parse(raw as string);
       return snapshot.lines[0].components.map((component: any) => Number(component.amount));
     });
-    assertEqual(JSON.stringify(unevenComponentAmounts.map((components: number[]) => Number(components.reduce((sum, amount) => sum + amount, 0).toFixed(2)))), JSON.stringify([0.01, 0.01]), 'uneven split snapshot components reconcile to each child tax target');
+    assertEqual(JSON.stringify(unevenComponentAmounts.map((components: number[]) => Number(components.reduce((sum, amount) => sum + amount, 0).toFixed(2)))), JSON.stringify([0, 0.02]), 'uneven split snapshot components reconcile within their owner');
     assertEqual(JSON.stringify(unevenComponentAmounts.reduce((totals: number[], components: number[]) => components.map((amount, index) => Number((totals[index] + amount).toFixed(2))), [0, 0])), JSON.stringify([0.01, 0.01]), 'uneven split snapshot components remain additive across children');
+
+    const ownedSnapshots = JSON.stringify([
+      { lines: [{ grossAmount: '0.03', taxableBase: '0.03', taxAmount: '0.01', components: [{ label: 'Item A Tax', rate: '5', amount: '0.01' }] }] },
+      { lines: [{ grossAmount: '0.04', taxableBase: '0.04', taxAmount: '0.01', components: [{ label: 'Item B Tax', rate: '5', amount: '0.01' }] }] },
+    ]);
+    const ownedChildren = allocateTaxSnapshots(ownedSnapshots, [1, 2], [[1, 0], [0, 1]]);
+    const ownedValues = ownedChildren.map((raw: string | null) => {
+      const snapshots = JSON.parse(raw as string);
+      return snapshots.map((snapshot: any) => ({
+        grossAmount: Number(snapshot.lines[0].grossAmount),
+        taxAmount: Number(snapshot.lines[0].taxAmount),
+        componentAmount: Number(snapshot.lines[0].components[0].amount),
+      }));
+    });
+    assertEqual(JSON.stringify(ownedValues), JSON.stringify([
+      [{ grossAmount: 0.03, taxAmount: 0.01, componentAmount: 0.01 }, { grossAmount: 0, taxAmount: 0, componentAmount: 0 }],
+      [{ grossAmount: 0, taxAmount: 0, componentAmount: 0 }, { grossAmount: 0.04, taxAmount: 0.01, componentAmount: 0.01 }],
+    ]), 'snapshot allocations preserve item ownership for tax and line bases');
 
     const cancelledSnapshotItem = snapshotItems[0];
     const cancelSnapshotRes = await api(baseUrl, `/api/orders/${snapshotOrderRes.data.order.id}/items/${cancelledSnapshotItem.id}/cancel`, {

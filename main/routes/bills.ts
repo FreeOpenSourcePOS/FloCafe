@@ -356,6 +356,11 @@ interface SnapshotTaxAllocation {
   allocations: number[];
 }
 
+interface TaxSnapshotAllocationResult {
+  snapshots: (string | null)[];
+  taxMinors: number[] | null;
+}
+
 function reconcileSnapshotAllocations(
   entries: SnapshotTaxAllocation[],
   targets: number[],
@@ -388,12 +393,11 @@ function reconcileSnapshotAllocations(
   }
 }
 
-export function allocateTaxSnapshots(
+function allocateTaxSnapshotsWithTax(
   sourceRaw: unknown,
   weights: number[],
-  targetTaxMinors?: number[],
   snapshotWeights?: number[][],
-): (string | null)[] {
+): TaxSnapshotAllocationResult {
   const parsed = parseTaxSnapshot(sourceRaw);
   const sourceText = typeof sourceRaw === 'string'
     ? sourceRaw
@@ -402,11 +406,13 @@ export function allocateTaxSnapshots(
   const hasTaxSnapshots = snapshots.some((snapshot) => (
     snapshot && typeof snapshot === 'object' && Array.isArray((snapshot as any).lines)
   ));
-  if (!hasTaxSnapshots) return new Array(weights.length).fill(sourceText);
+  if (!hasTaxSnapshots) {
+    return { snapshots: new Array(weights.length).fill(sourceText), taxMinors: null };
+  }
 
   const sourceSnapshots = Array.isArray(parsed) ? parsed : [parsed];
-  const allocations: SnapshotTaxAllocation[] = [];
   const entryByKey = new Map<string, SnapshotTaxAllocation>();
+  const snapshotTaxMinors = new Array(weights.length).fill(0);
 
   sourceSnapshots.forEach((sourceSnapshot: any, snapshotIndex: number) => {
     if (!sourceSnapshot || typeof sourceSnapshot !== 'object' || !Array.isArray(sourceSnapshot.lines)) return;
@@ -427,7 +433,6 @@ export function allocateTaxSnapshots(
             original: sourceComponent.amount,
             allocations: allocateSignedMinorUnits(sourceMinor, localWeights),
           };
-          allocations.push(entry);
           snapshotEntries.push(entry);
           entryByKey.set(`${snapshotIndex}:${lineIndex}:${componentIndex}`, entry);
         });
@@ -438,7 +443,6 @@ export function allocateTaxSnapshots(
             original: sourceLine.taxAmount,
             allocations: allocateSignedMinorUnits(sourceMinor, localWeights),
           };
-          allocations.push(entry);
           snapshotEntries.push(entry);
           entryByKey.set(`${snapshotIndex}:${lineIndex}:taxAmount`, entry);
         }
@@ -454,20 +458,26 @@ export function allocateTaxSnapshots(
         snapshotEntries,
         allocateSignedMinorUnits(snapshotTotal, localWeights),
       );
+      for (let childIndex = 0; childIndex < weights.length; childIndex += 1) {
+        snapshotTaxMinors[childIndex] += snapshotEntries.reduce(
+          (sum, entry) => sum + entry.allocations[childIndex],
+          0,
+        );
+      }
     }
   });
 
-  if (targetTaxMinors && targetTaxMinors.length === weights.length) {
-    reconcileSnapshotAllocations(allocations, targetTaxMinors);
-  }
-
-  return weights.map((_, childIndex) => {
+  const childSnapshots = weights.map((_, childIndex) => {
     const childResult = JSON.parse(JSON.stringify(parsed));
     const childResultSnapshots = Array.isArray(childResult) ? childResult : [childResult];
     sourceSnapshots.forEach((sourceSnapshot: any, snapshotIndex: number) => {
       const childSnapshot = childResultSnapshots[snapshotIndex];
       if (!sourceSnapshot || !childSnapshot || !Array.isArray(sourceSnapshot.lines)) return;
       childSnapshot.splitAllocation = SPLIT_TAX_SNAPSHOT_VERSION;
+      const localWeights = Array.isArray(snapshotWeights?.[snapshotIndex])
+        && snapshotWeights[snapshotIndex].length === weights.length
+        ? snapshotWeights[snapshotIndex]
+        : weights;
       sourceSnapshot.lines.forEach((sourceLine: any, lineIndex: number) => {
         const line = childSnapshot.lines?.[lineIndex];
         if (!sourceLine || !line || typeof line !== 'object') return;
@@ -476,7 +486,7 @@ export function allocateTaxSnapshots(
           if (sourceMinor !== null) {
             line[field] = formatSnapshotMinorAmount(
               sourceLine[field],
-              allocateSignedMinorUnits(sourceMinor, weights)[childIndex],
+              allocateSignedMinorUnits(sourceMinor, localWeights)[childIndex],
             );
           }
         }
@@ -512,6 +522,16 @@ export function allocateTaxSnapshots(
     });
     return JSON.stringify(childResult);
   });
+
+  return { snapshots: childSnapshots, taxMinors: snapshotTaxMinors };
+}
+
+export function allocateTaxSnapshots(
+  sourceRaw: unknown,
+  weights: number[],
+  snapshotWeights?: number[][],
+): (string | null)[] {
+  return allocateTaxSnapshotsWithTax(sourceRaw, weights, snapshotWeights).snapshots;
 }
 
 function allocateTaxBreakdown(
@@ -738,9 +758,16 @@ export function syncUnpaidBillsForOrder(
     field,
     allocateMinorUnits(value, weights).map((minor) => minor / 100),
   ])) as Record<keyof typeof fields, number[]>;
-  const taxMinors = allocations.taxAmount.map((amount) => Math.round(amount * 100));
+  const allocatedTaxMinors = allocations.taxAmount.map((amount) => Math.round(amount * 100));
+  const snapshotAllocation = allocateTaxSnapshotsWithTax(source.taxSnapshot, weights, snapshotWeights);
+  const sourceTaxMinor = Math.round(Number(source.taxAmount || 0) * 100);
+  const snapshotTaxMinors = snapshotAllocation.taxMinors;
+  const snapshotTaxMatches = snapshotTaxMinors !== null
+    && snapshotTaxMinors.reduce((sum, minor) => sum + minor, 0) === sourceTaxMinor;
+  const taxMinors = snapshotTaxMatches ? snapshotTaxMinors : allocatedTaxMinors;
+  if (snapshotTaxMatches) allocations.taxAmount = taxMinors.map((minor) => minor / 100);
   const breakdowns = allocateTaxBreakdown(source.taxBreakdown, taxMinors, weights);
-  const snapshots = allocateTaxSnapshots(source.taxSnapshot, weights, taxMinors, snapshotWeights);
+  const snapshots = snapshotAllocation.snapshots;
   const update = db.prepare(`
     UPDATE bills SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?,
       delivery_charge = ?, packaging_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ?
@@ -820,18 +847,25 @@ router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req
       }
 
       const checkTaxMinors = allocations.tax_amount.map((amt) => Math.round(amt * 100));
-      const checkTaxBreakdowns = allocateTaxBreakdown(txnSource.tax_breakdown, checkTaxMinors, weights);
       const snapshotWeights = txnActiveItems
         .filter((item) => hasSnapshotLines(item.tax_snapshot))
         .map((item) => txnNormalized.map((check: { items: { item: any; quantity: number }[] }) => (
           check.items.find((entry) => Number(entry.item.id) === Number(item.id))?.quantity || 0
         )));
-      const checkTaxSnapshots = allocateTaxSnapshots(txnSource.tax_snapshot, weights, checkTaxMinors, snapshotWeights);
+      const snapshotAllocation = allocateTaxSnapshotsWithTax(txnSource.tax_snapshot, weights, snapshotWeights);
+      const sourceTaxMinor = Math.round(Number(txnSource.tax_amount || 0) * 100);
+      const snapshotTaxMinors = snapshotAllocation.taxMinors;
+      const snapshotTaxMatches = snapshotTaxMinors !== null
+        && snapshotTaxMinors.reduce((sum, minor) => sum + minor, 0) === sourceTaxMinor;
+      const resolvedTaxMinors = snapshotTaxMatches ? snapshotTaxMinors : checkTaxMinors;
+      if (snapshotTaxMatches) allocations.tax_amount = resolvedTaxMinors.map((minor) => minor / 100);
+      const resolvedTaxBreakdowns = allocateTaxBreakdown(txnSource.tax_breakdown, resolvedTaxMinors, weights);
+      const checkTaxSnapshots = snapshotAllocation.snapshots;
 
       const billIds: number[] = [];
       txnNormalized.forEach((check, index) => {
         let billId: number;
-        const splitBk = checkTaxBreakdowns[index];
+        const splitBk = resolvedTaxBreakdowns[index];
         const splitSnapshot = checkTaxSnapshots[index];
         if (index === 0) {
           db.prepare(`UPDATE bills SET split_group_id = ?, split_label = ?, subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, delivery_charge = ?, packaging_charge = ?, round_off = ?, total = ?, balance = ?, updated_at = ? WHERE id = ?`)

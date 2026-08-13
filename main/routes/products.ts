@@ -17,17 +17,54 @@ const MAX_FETCH_BYTES = 10 * 1024 * 1024;
  */
 async function resolvePublicHostname(hostname: string, signal: AbortSignal): Promise<string> {
   let addresses: dns.LookupAddress[];
-  const lookup = dns.promises.lookup(hostname, { all: true, verbatim: true });
+  const resolver = new dns.promises.Resolver();
+  const createAbortError = () => {
+    const error = new Error('Hostname resolution aborted');
+    error.name = 'AbortError';
+    return error;
+  };
+  if (signal.aborted) {
+    throw createAbortError();
+  }
   let onAbort: (() => void) | undefined;
   const aborted = new Promise<never>((_resolve, reject) => {
     onAbort = () => {
-      const error = new Error('Hostname resolution aborted');
-      error.name = 'AbortError';
-      reject(error);
+      resolver.cancel();
+      reject(createAbortError());
     };
-    if (signal.aborted) onAbort();
-    else signal.addEventListener('abort', onAbort, { once: true });
+    signal.addEventListener('abort', onAbort, { once: true });
   });
+  const lookup = (async () => {
+    const results = await Promise.allSettled([
+      resolver.resolve4(hostname),
+      resolver.resolve6(hostname),
+    ]);
+    if (signal.aborted) {
+      throw createAbortError();
+    }
+    const resolvedAddresses: dns.LookupAddress[] = [];
+    let firstError: { code?: string } | undefined;
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'fulfilled') {
+        const family: 4 | 6 = index === 0 ? 4 : 6;
+        resolvedAddresses.push(...result.value.map((address) => ({ address, family })));
+      } else {
+        const error = result.reason as { code?: string } | undefined;
+        if (error?.code !== 'ENODATA' && error?.code !== 'ENOTFOUND') {
+          firstError ??= error;
+        }
+      }
+    }
+    if (resolvedAddresses.length > 0) {
+      return resolvedAddresses;
+    }
+    if (firstError) {
+      throw firstError;
+    }
+    const error = new Error('Hostname not found');
+    (error as NodeJS.ErrnoException).code = 'ENOTFOUND';
+    throw error;
+  })();
   try {
     addresses = await Promise.race([lookup, aborted]);
   } catch (error: any) {

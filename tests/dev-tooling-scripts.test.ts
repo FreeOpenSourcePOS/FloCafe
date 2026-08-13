@@ -1,5 +1,7 @@
 import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 // Import kill-ports functions
@@ -7,6 +9,24 @@ import path from 'node:path';
 const { isFloProcess, FLO_PATTERNS } = require('../kill-ports.js');
 
 const rootDir = path.resolve(__dirname, '..');
+const resetScript = path.join(rootDir, 'scripts/dev/nuclear-reset.sh');
+
+function mkdirp(target: string) {
+  fs.mkdirSync(target, { recursive: true });
+}
+
+function runReset(platform: string, env: NodeJS.ProcessEnv) {
+  return spawnSync('bash', [resetScript, '--electron-cache-only'], {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      FORCE: '',
+      CI: '',
+      FLO_RESET_PLATFORM: platform,
+      ...env,
+    },
+  });
+}
 
 function runTest() {
   console.log('Testing kill-ports.js process identity matching...');
@@ -58,7 +78,7 @@ function runTest() {
   console.log('Testing scripts/dev/nuclear-reset.sh confirmation guard...');
 
   // Running the reset script in non-interactive mode without -y should fail.
-  const nonInteractiveResult = spawnSync('bash', [path.join(rootDir, 'scripts/dev/nuclear-reset.sh')], {
+  const nonInteractiveResult = spawnSync('bash', [resetScript], {
     encoding: 'utf8',
     env: { ...process.env, FORCE: '', CI: '' },
   });
@@ -75,6 +95,83 @@ function runTest() {
   );
 
   console.log('✓ development reset non-interactive confirmation guard verified');
+
+  console.log('Testing nuclear-reset.sh Electron cache paths...');
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-reset-cache-test-'));
+  try {
+    const darwinHome = path.join(tmpDir, 'darwin-home');
+    const darwinPaths = [
+      path.join(darwinHome, 'Library/Application Support/flo-desktop/Cache'),
+      path.join(darwinHome, 'Library/Application Support/flo-desktop/Code Cache'),
+      path.join(darwinHome, 'Library/Caches/flo-desktop'),
+    ];
+    darwinPaths.forEach(mkdirp);
+    const darwinResult = runReset('Darwin', { HOME: darwinHome });
+    assert.strictEqual(darwinResult.status, 0, `Expected Darwin cache cleanup to pass: ${darwinResult.stderr}`);
+    darwinPaths.forEach((cachePath) => {
+      assert.strictEqual(fs.existsSync(cachePath), false, `Expected Darwin cache path to be removed: ${cachePath}`);
+    });
+    assert.match(darwinResult.stdout, /Cleared: Electron app cache/, 'Expected Darwin app cache removal message');
+    assert.match(darwinResult.stdout, /Cleared: Electron code cache/, 'Expected Darwin code cache removal message');
+    assert.match(darwinResult.stdout, /Cleared: Electron system cache/, 'Expected Darwin system cache removal message');
+
+    const linuxHome = path.join(tmpDir, 'linux-home');
+    const linuxConfigHome = path.join(tmpDir, 'linux-config');
+    const linuxCacheHome = path.join(tmpDir, 'linux-cache');
+    const linuxPaths = [
+      path.join(linuxConfigHome, 'flo-desktop/Cache'),
+      path.join(linuxConfigHome, 'flo-desktop/Code Cache'),
+      path.join(linuxCacheHome, 'flo-desktop'),
+    ];
+    linuxPaths.forEach(mkdirp);
+    const linuxResult = runReset('Linux', {
+      HOME: linuxHome,
+      XDG_CONFIG_HOME: linuxConfigHome,
+      XDG_CACHE_HOME: linuxCacheHome,
+    });
+    assert.strictEqual(linuxResult.status, 0, `Expected Linux cache cleanup to pass: ${linuxResult.stderr}`);
+    linuxPaths.forEach((cachePath) => {
+      assert.strictEqual(fs.existsSync(cachePath), false, `Expected Linux cache path to be removed: ${cachePath}`);
+    });
+
+    const windowsAppData = path.join(tmpDir, 'windows-appdata');
+    const windowsLocalAppData = path.join(tmpDir, 'windows-localappdata');
+    const windowsPaths = [
+      path.join(windowsAppData, 'flo-desktop/Cache'),
+      path.join(windowsAppData, 'flo-desktop/Code Cache'),
+      path.join(windowsLocalAppData, 'flo-desktop'),
+    ];
+    windowsPaths.forEach(mkdirp);
+    const windowsResult = runReset('Windows_NT', {
+      APPDATA: windowsAppData,
+      LOCALAPPDATA: windowsLocalAppData,
+    });
+    assert.strictEqual(windowsResult.status, 0, `Expected Windows cache cleanup to pass: ${windowsResult.stderr}`);
+    windowsPaths.forEach((cachePath) => {
+      assert.strictEqual(fs.existsSync(cachePath), false, `Expected Windows cache path to be removed: ${cachePath}`);
+    });
+
+    const missingWindowsResult = runReset('Windows_NT', {
+      APPDATA: '',
+      LOCALAPPDATA: '',
+    });
+    assert.strictEqual(missingWindowsResult.status, 0, 'Expected missing Windows cache roots to be reported without failing');
+    assert.match(
+      missingWindowsResult.stdout,
+      /Skipped: Electron app\/code cache unavailable \(APPDATA is not set\)/,
+      'Expected missing APPDATA diagnostic',
+    );
+    assert.match(
+      missingWindowsResult.stdout,
+      /Skipped: Electron system cache unavailable \(LOCALAPPDATA is not set\)/,
+      'Expected missing LOCALAPPDATA diagnostic',
+    );
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+
+  console.log('✓ nuclear reset Electron cache paths verified');
 
   console.log('All dev tooling script tests passed cleanly!');
 }

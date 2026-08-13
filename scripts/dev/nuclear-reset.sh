@@ -10,13 +10,76 @@ if [ ! -f "$ROOT_DIR/package.json" ]; then
   exit 1
 fi
 
+is_safe_clear_path() {
+  local target=$1
+  case "$target" in
+    "$ROOT_DIR/frontend/.next"|"$ROOT_DIR/frontend/node_modules/.cache"|"$ROOT_DIR/dist"|"$ROOT_DIR/tsconfig.tsbuildinfo")
+      return 0
+      ;;
+    *flo-desktop*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 clear_path() {
   local target=$1
   local label=$2
+  if [ -z "$target" ] || [ "$target" = "/" ] || ! is_safe_clear_path "$target"; then
+    echo -e "${RED}Refusing to clear unsafe path for ${label}: ${target}${NC}" >&2
+    exit 1
+  fi
+  if [ "${DRY_RUN:-false}" = "true" ]; then
+    if [ -e "$target" ]; then
+      echo -e "${YELLOW}Would clear: ${label} (${target})${NC}"
+    else
+      echo -e "${YELLOW}Skipped: ${label} not found (${target})${NC}"
+    fi
+    return
+  fi
   if [ -e "$target" ]; then
     rm -rf -- "$target"
     echo -e "${GREEN}Cleared: ${label}${NC}"
+  else
+    echo -e "${YELLOW}Skipped: ${label} not found (${target})${NC}"
   fi
+}
+
+clear_electron_caches() {
+  local platform="${FLO_RESET_PLATFORM:-$(uname -s)}"
+  case "$platform" in
+    Darwin)
+      clear_path "$HOME/Library/Application Support/flo-desktop/Cache" "Electron app cache"
+      clear_path "$HOME/Library/Application Support/flo-desktop/Code Cache" "Electron code cache"
+      clear_path "$HOME/Library/Caches/flo-desktop" "Electron system cache"
+      ;;
+    Linux)
+      local config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+      local cache_home="${XDG_CACHE_HOME:-$HOME/.cache}"
+      clear_path "$config_home/flo-desktop/Cache" "Electron app cache"
+      clear_path "$config_home/flo-desktop/Code Cache" "Electron code cache"
+      clear_path "$cache_home/flo-desktop" "Electron system cache"
+      ;;
+    MINGW*|MSYS*|CYGWIN*|Windows_NT)
+      if [ -n "${APPDATA:-}" ]; then
+        clear_path "$APPDATA/flo-desktop/Cache" "Electron app cache"
+        clear_path "$APPDATA/flo-desktop/Code Cache" "Electron code cache"
+      else
+        echo -e "${YELLOW}Skipped: Electron app/code cache unavailable (APPDATA is not set)${NC}"
+      fi
+      if [ -n "${LOCALAPPDATA:-}" ]; then
+        clear_path "$LOCALAPPDATA/flo-desktop" "Electron system cache"
+      else
+        echo -e "${YELLOW}Skipped: Electron system cache unavailable (LOCALAPPDATA is not set)${NC}"
+      fi
+      ;;
+    *)
+      echo -e "${YELLOW}Skipped: Electron cache cleanup not configured for platform ${platform}${NC}"
+      ;;
+  esac
 }
 
 # Colors for output
@@ -27,9 +90,25 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 CONFIRMED=false
+DRY_RUN=false
+CACHE_ONLY=false
+ELECTRON_CACHE_ONLY=false
 for arg in "$@"; do
   case $arg in
     -y|--yes)
+      CONFIRMED=true
+      ;;
+    --dry-run)
+      DRY_RUN=true
+      CONFIRMED=true
+      ;;
+    --cache-only)
+      CACHE_ONLY=true
+      CONFIRMED=true
+      ;;
+    --electron-cache-only)
+      CACHE_ONLY=true
+      ELECTRON_CACHE_ONLY=true
       CONFIRMED=true
       ;;
   esac
@@ -61,29 +140,45 @@ echo ""
 echo -e "${BLUE}Step 1: Killing Flo processes${NC}"
 echo "----------------------------------------"
 
-node kill-ports.js 3000 3001 3002 3003 3088
-sleep 1
-
-echo -e "${GREEN}Flo processes stopped${NC}"
+if [ "$DRY_RUN" = "true" ]; then
+  echo -e "${YELLOW}Dry run: would stop Flo processes on ports 3000, 3001, 3002, 3003, 3088${NC}"
+elif [ "$CACHE_ONLY" = "true" ]; then
+  echo -e "${YELLOW}Cache-only mode: process stop skipped${NC}"
+else
+  node kill-ports.js 3000 3001 3002 3003 3088
+  sleep 1
+  echo -e "${GREEN}Flo processes stopped${NC}"
+fi
 
 echo ""
 echo -e "${BLUE}Step 2: Clearing ALL caches${NC}"
 echo "----------------------------------------"
 
 # Project caches
-clear_path "$ROOT_DIR/frontend/.next" "frontend/.next"
-clear_path "$ROOT_DIR/frontend/node_modules/.cache" "frontend/node_modules/.cache"
-clear_path "$ROOT_DIR/dist" "dist/"
+if [ "$ELECTRON_CACHE_ONLY" != "true" ]; then
+  clear_path "$ROOT_DIR/frontend/.next" "frontend/.next"
+  clear_path "$ROOT_DIR/frontend/node_modules/.cache" "frontend/node_modules/.cache"
+  clear_path "$ROOT_DIR/dist" "dist/"
+fi
 
 # Electron caches
-clear_path "$HOME/Library/Application Support/flo-desktop/Cache" "Electron app cache"
-clear_path "$HOME/Library/Application Support/flo-desktop/Code Cache" "Electron code cache"
-clear_path "$HOME/Library/Caches/flo-desktop" "Electron system cache"
+clear_electron_caches
 
 # TypeScript incremental build cache
-if [ -e "$ROOT_DIR/tsconfig.tsbuildinfo" ]; then
-  rm -f -- "$ROOT_DIR/tsconfig.tsbuildinfo"
-  echo -e "${GREEN}Cleared: TS build info${NC}"
+if [ "$ELECTRON_CACHE_ONLY" != "true" ]; then
+  clear_path "$ROOT_DIR/tsconfig.tsbuildinfo" "TS build info"
+fi
+
+if [ "$DRY_RUN" = "true" ]; then
+  echo ""
+  echo -e "${YELLOW}Dry run complete; rebuild and route verification skipped.${NC}"
+  exit 0
+fi
+
+if [ "$CACHE_ONLY" = "true" ]; then
+  echo ""
+  echo -e "${GREEN}Cache cleanup complete; rebuild and route verification skipped.${NC}"
+  exit 0
 fi
 
 echo ""

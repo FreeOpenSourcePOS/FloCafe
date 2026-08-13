@@ -322,7 +322,10 @@ async function testStandaloneDevServerShutdown(): Promise<void> {
   }
 }
 
-async function testStartupFailureEntrypoint(): Promise<void> {
+async function testStartupEntrypoint(startupRace = false): Promise<void> {
+  const childEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
+  if (startupRace) childEnv.FLO_STARTUP_RACE = '1';
+  else delete childEnv.FLO_STARTUP_RACE;
   const child = spawn(process.execPath, [
     require.resolve('ts-node/dist/bin.js'),
     '--transpile-only',
@@ -331,7 +334,7 @@ async function testStartupFailureEntrypoint(): Promise<void> {
     path.join(__dirname, 'startup-failure-child.cjs'),
   ], {
     cwd: path.resolve(__dirname, '..'),
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
@@ -350,7 +353,7 @@ async function testStartupFailureEntrypoint(): Promise<void> {
     });
   });
   assert.equal(signal, null, `startup-failure child exited by signal: ${output}`);
-  assert.equal(code, 0, `startup-failure entrypoint coverage failed: ${output}`);
+  assert.equal(code, 0, `${startupRace ? 'startup cancellation' : 'startup failure'} entrypoint coverage failed: ${output}`);
   const resultLine = output.trim().split('\n').at(-1) || '';
   assert.equal(JSON.parse(resultLine).passed, true, output);
 }
@@ -384,7 +387,13 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   };
 
   try {
-    const { initDatabase, closeDatabase, waitForDatabaseRequests, withDatabaseRequest } = await import('../main/db');
+    const {
+      initDatabase,
+      closeDatabase,
+      waitForDatabaseRequests,
+      withDatabaseRequest,
+      withDatabaseMaintenanceLock,
+    } = await import('../main/db');
     const mainServer = await import('../main/server');
     const kdsServer = await import('../main/kds-server');
     const serverApp = await import('../main/server-app');
@@ -394,6 +403,25 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     await kdsServer.stopKdsServer();
     await serverApp.stopServerApp();
     initDatabase();
+
+    let releaseFirstMaintenance: (() => void) | null = null;
+    let releaseSecondMaintenance: (() => void) | null = null;
+    const firstMaintenance = withDatabaseMaintenanceLock(() => new Promise<void>((resolve) => {
+      releaseFirstMaintenance = resolve;
+    }));
+    const secondMaintenance = withDatabaseMaintenanceLock(() => new Promise<void>((resolve) => {
+      releaseSecondMaintenance = resolve;
+    }));
+    const maintenanceDrain = waitForDatabaseRequests();
+    let maintenanceDrainSettled = false;
+    void maintenanceDrain.then(() => { maintenanceDrainSettled = true; });
+    await delay(10);
+    assert.equal(maintenanceDrainSettled, false, 'the database barrier waits for queued maintenance');
+    releaseFirstMaintenance?.();
+    await delay(10);
+    assert.equal(maintenanceDrainSettled, false, 'the database barrier waits for the active queued operation');
+    releaseSecondMaintenance?.();
+    await Promise.all([firstMaintenance, secondMaintenance, maintenanceDrain]);
 
     let releaseDatabaseRequest: (() => void) | null = null;
     const activeDatabaseRequest = withDatabaseRequest(() => new Promise<void>((resolve) => {
@@ -479,7 +507,8 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   console.log('phase entrypoints');
   await testEntrypointCoverage();
   await testExitCodeEscalation();
-  await testStartupFailureEntrypoint();
+  await testStartupEntrypoint();
+  await testStartupEntrypoint(true);
   await testStandaloneDevServerShutdown();
   console.log('phase owned servers');
   await testOwnedServerStopEntrypoints();

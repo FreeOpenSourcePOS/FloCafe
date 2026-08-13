@@ -599,13 +599,16 @@ function showAbout(): void {
 
 async function initialize(): Promise<void> {
   try {
+    if (isShutdownRequested()) return;
     console.log('[Flo] Initializing...');
 
     console.log('[Flo] Initializing database...');
     initDatabase();
+    if (isShutdownRequested()) return;
 
     console.log('[Flo] Starting local server...');
     await startServer();
+    if (isShutdownRequested()) return;
 
     cloudSync.start();
     telemetry.start();
@@ -613,9 +616,11 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Starting KDS server on port 3002...');
     await startKdsServer();
+    if (isShutdownRequested()) return;
 
     console.log('[Flo] Starting Server App on port 3003...');
     await startServerApp();
+    if (isShutdownRequested()) return;
 
     console.log('[Flo] Initializing WhatsApp service...');
     initWhatsAppFromDb();
@@ -625,6 +630,7 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Initializing printer...');
     await initPrinter();
+    if (isShutdownRequested()) return;
 
     console.log('[Flo] Registering IPC handlers...');
     registerIpcHandlers();
@@ -680,6 +686,14 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Ready!');
   } catch (error) {
     console.error('[Flo] Initialization error:', error);
+    if (isShutdownRequested()) {
+      try {
+        await runCleanup();
+      } catch (cleanupError) {
+        console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+      }
+      return;
+    }
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
 
     // Best-effort: report the fatal startup failure so support can see which
@@ -752,7 +766,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   { name: 'database', run: () => closeDatabase() },
 ]);
 
-const { runCleanup } = createShutdownEntrypoints({
+const { runCleanup, isShutdownRequested } = createShutdownEntrypoints({
   app,
   process,
   cleanup: async () => {

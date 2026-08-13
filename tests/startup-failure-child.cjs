@@ -7,6 +7,13 @@ const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-startup-failure-'));
 const events = [];
 const exitCodes = [];
 const appListeners = new Map();
+const startupRace = process.env.FLO_STARTUP_RACE === '1';
+const realProcessExit = process.exit.bind(process);
+let releaseServerStart;
+
+if (startupRace) {
+  process.exit = (code = 0) => { exitCodes.push(code); };
+}
 
 function register(event, listener) {
   const listeners = appListeners.get(event) || [];
@@ -67,7 +74,11 @@ Module._load = function (request, parent, isMain) {
     };
   }
   if (request === './server') return {
-    startServer: async () => { events.push('server.start'); },
+    startServer: () => {
+      events.push('server.start');
+      if (!startupRace) return Promise.resolve();
+      return new Promise((resolve) => { releaseServerStart = resolve; });
+    },
     stopServer: async () => { events.push('server.stop'); },
     getLocalIP: () => '127.0.0.1',
     getServerPort: () => 0,
@@ -87,10 +98,18 @@ Module._load = function (request, parent, isMain) {
   };
   if (request === './services/cloud-sync') return { cloudSync: { shutdown: async () => { events.push('cloud.shutdown'); } } };
   if (request === './services/telemetry') return {
-    telemetry: { start() {}, stop: () => { events.push('telemetry.stop'); } },
+    telemetry: {
+      start() { events.push('telemetry.start'); },
+      stop: () => { events.push('telemetry.stop'); },
+    },
     sendEvent: async () => { events.push('telemetry.startup-failed'); return true; },
   };
-  if (request === './services/google-drive') return { googleDrive: { start() {}, stop: () => { events.push('drive.stop'); } } };
+  if (request === './services/google-drive') return {
+    googleDrive: {
+      start() { events.push('drive.start'); },
+      stop: () => { events.push('drive.stop'); },
+    },
+  };
   if (request === './printers/thermal') return { initPrinter: async () => {}, printReceipt() {}, printKOT() {} };
   if (request === './ipc') return { registerIpcHandlers() {} };
   if (request === './services/whatsapp') return { initFromDb() {}, shutdown: async () => { events.push('whatsapp.stop'); } };
@@ -99,23 +118,44 @@ Module._load = function (request, parent, isMain) {
 
 require('../main/index.ts');
 
+if (startupRace) {
+  setTimeout(() => process.kill(process.pid, 'SIGTERM'), 0);
+  setTimeout(() => releaseServerStart?.(), 10);
+}
+
 setTimeout(() => {
-  const expectedOrder = [
-    'dialog.showErrorBox',
-    'telemetry.startup-failed',
-    'cloud.shutdown',
-    'telemetry.stop',
-    'drive.stop',
-    'whatsapp.stop',
-    'server-app.stop',
-    'server.stop',
-    'kds.stop',
-    'database.close',
-  ];
+  const expectedOrder = startupRace
+    ? [
+      'database.init',
+      'server.start',
+      'cloud.shutdown',
+      'telemetry.stop',
+      'drive.stop',
+      'whatsapp.stop',
+      'server-app.stop',
+      'server.stop',
+      'kds.stop',
+      'database.close',
+    ]
+    : [
+      'database.init',
+      'dialog.showErrorBox',
+      'telemetry.startup-failed',
+      'cloud.shutdown',
+      'telemetry.stop',
+      'drive.stop',
+      'whatsapp.stop',
+      'server-app.stop',
+      'server.stop',
+      'kds.stop',
+      'database.close',
+    ];
   const orderMatches = expectedOrder.every((event, index) => events[index] === event);
-  const passed = orderMatches && exitCodes.length === 1 && exitCodes[0] === 1;
+  const passed = orderMatches && (startupRace
+    ? exitCodes.length === 1 && exitCodes[0] === 0 && !events.includes('telemetry.start') && !events.includes('drive.start')
+    : exitCodes.length === 1 && exitCodes[0] === 1);
   process.stdout.write(JSON.stringify({ passed, events, exitCodes }) + '\n');
   fs.rmSync(testDir, { recursive: true, force: true });
   Module._load = originalLoad;
-  process.exit(passed ? 0 : 1);
-}, 50);
+  realProcessExit(passed ? 0 : 1);
+}, startupRace ? 100 : 50);

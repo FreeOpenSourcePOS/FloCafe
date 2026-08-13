@@ -239,10 +239,19 @@ export function createShutdownEntrypoints({
   setQuitting,
   destroyWindow,
   reportFailure = () => {},
-}: ShutdownEntrypointOptions): { runCleanup: () => Promise<void> } {
+}: ShutdownEntrypointOptions): {
+  runCleanup: () => Promise<void>;
+  isShutdownRequested: () => boolean;
+} {
   let cleanupPromise: Promise<void> | null = null;
   let cleanupFinished = false;
   let quitAfterCleanupRequested = false;
+  let shutdownRequested = false;
+
+  const requestShutdown = (): void => {
+    shutdownRequested = true;
+    setQuitting();
+  };
 
   const runCleanup = (): Promise<void> => {
     if (!cleanupPromise) {
@@ -258,7 +267,7 @@ export function createShutdownEntrypoints({
   const quitAfterCleanup = (): void => {
     if (quitAfterCleanupRequested) return;
     quitAfterCleanupRequested = true;
-    setQuitting();
+    requestShutdown();
     void runCleanup().then(
       () => {
         destroyWindow();
@@ -272,7 +281,7 @@ export function createShutdownEntrypoints({
   };
 
   app.on('before-quit', () => {
-    setQuitting();
+    requestShutdown();
   });
 
   app.on('will-quit', (event: ShutdownEvent) => {
@@ -285,7 +294,7 @@ export function createShutdownEntrypoints({
   });
 
   const exitAfterCleanup = (): void => {
-    setQuitting();
+    requestShutdown();
     void runCleanup().then(
       () => process.exit(0),
       (error) => {
@@ -298,7 +307,7 @@ export function createShutdownEntrypoints({
   process.once('SIGTERM', exitAfterCleanup);
   process.once('SIGINT', exitAfterCleanup);
 
-  return { runCleanup };
+  return { runCleanup, isShutdownRequested: () => shutdownRequested };
 }
 
 export function createExitCodeAwareShutdown(

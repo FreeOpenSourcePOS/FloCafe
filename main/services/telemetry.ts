@@ -21,8 +21,17 @@ const DAILY_PING_INTERVAL_MS = 60 * 60_000; // check hourly, send at most once/2
 const DAILY_PING_MIN_GAP_MS = 24 * 60 * 60_000;
 
 let dailyPingTimer: ReturnType<typeof setInterval> | null = null;
+let telemetryStopping = false;
+let telemetryStopPromise: Promise<void> | null = null;
+const inFlightTelemetry = new Set<Promise<unknown>>();
 
-export async function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
+function trackTelemetry<T>(operation: Promise<T>): Promise<T> {
+  inFlightTelemetry.add(operation);
+  void operation.finally(() => inFlightTelemetry.delete(operation)).catch(() => {});
+  return operation;
+}
+
+async function sendEventImpl(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
   if (!isTelemetryEnabled()) return false;
 
   try {
@@ -55,6 +64,11 @@ export async function sendEvent(eventType: string, payload?: Record<string, unkn
   }
 }
 
+export function sendEvent(eventType: string, payload?: Record<string, unknown>): Promise<boolean> {
+  if (telemetryStopping) return Promise.resolve(false);
+  return trackTelemetry(sendEventImpl(eventType, payload));
+}
+
 function maybeSendDailyPing(): void {
   if (!isTelemetryEnabled()) return;
 
@@ -63,13 +77,16 @@ function maybeSendDailyPing(): void {
   const elapsed = isNaN(lastPingMs) ? Infinity : Date.now() - lastPingMs;
   if (elapsed < DAILY_PING_MIN_GAP_MS) return;
 
-  void sendEvent('daily_ping').then((sent) => {
+  const operation = sendEventImpl('daily_ping').then((sent) => {
     if (sent) upsertTelemetryLastPing();
   });
+  trackTelemetry(operation);
 }
 
 export const telemetry = {
   start(): void {
+    telemetryStopping = false;
+    telemetryStopPromise = null;
     if (dailyPingTimer) {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;
@@ -78,10 +95,14 @@ export const telemetry = {
     maybeSendDailyPing();
     dailyPingTimer = setInterval(maybeSendDailyPing, DAILY_PING_INTERVAL_MS);
   },
-  stop(): void {
+  stop(): Promise<void> {
+    if (telemetryStopPromise) return telemetryStopPromise;
+    telemetryStopping = true;
     if (dailyPingTimer) {
       clearInterval(dailyPingTimer);
       dailyPingTimer = null;
     }
+    telemetryStopPromise = Promise.allSettled([...inFlightTelemetry]).then(() => undefined);
+    return telemetryStopPromise;
   },
 };

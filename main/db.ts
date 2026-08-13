@@ -15,6 +15,7 @@ let dbHealthError: string | null = null;
 // a FIFO promise chain so a rejected operation cannot strand later work.
 let databaseMaintenanceTail: Promise<void> = Promise.resolve();
 let databaseMaintenanceActive = false;
+let databaseMaintenancePending = 0;
 let activeDatabaseRequests = 0;
 let maintenanceRequestWaiters: (() => void)[] = [];
 let maintenanceDrainWaiters: (() => void)[] = [];
@@ -30,14 +31,14 @@ function releaseMaintenanceDrainWaiters(): void {
 }
 
 function releaseMaintenanceRequestWaiters(): void {
-  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive) return;
+  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive || databaseMaintenancePending !== 0) return;
   const waiters = maintenanceRequestWaiters;
   maintenanceRequestWaiters = [];
   waiters.forEach((resolve) => resolve());
 }
 
 function releaseDatabaseIdleWaiters(): void {
-  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive) return;
+  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive || databaseMaintenancePending !== 0) return;
   const waiters = databaseIdleWaiters;
   databaseIdleWaiters = [];
   waiters.forEach((resolve) => resolve());
@@ -120,6 +121,7 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
 
 export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>): Promise<T> {
   const previous = databaseMaintenanceTail;
+  databaseMaintenancePending += 1;
   let release!: () => void;
   databaseMaintenanceTail = new Promise<void>((resolve) => { release = resolve; });
   return previous.then(async () => {
@@ -143,7 +145,12 @@ export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>):
       releaseMaintenanceRequestWaiters();
       releaseDatabaseIdleWaiters();
     }
-  }).finally(release);
+  }).finally(() => {
+    databaseMaintenancePending = Math.max(0, databaseMaintenancePending - 1);
+    release();
+    releaseMaintenanceRequestWaiters();
+    releaseDatabaseIdleWaiters();
+  });
 }
 
 const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
@@ -744,7 +751,7 @@ export function getDatabase(): Database.Database {
 }
 
 export function waitForDatabaseRequests(): Promise<void> {
-  if (activeDatabaseRequests === 0 && !databaseMaintenanceActive) return Promise.resolve();
+  if (activeDatabaseRequests === 0 && !databaseMaintenanceActive && databaseMaintenancePending === 0) return Promise.resolve();
   return new Promise<void>((resolve) => databaseIdleWaiters.push(resolve));
 }
 

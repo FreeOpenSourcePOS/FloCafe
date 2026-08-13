@@ -125,21 +125,34 @@ export function isBackupDue(lastBackupAtIso: string | null, frequency: BackupFre
 class GoogleDriveService {
   private scheduleTimer: ReturnType<typeof setInterval> | null = null;
   private backingUp = false;
+  private backupPromise: Promise<GoogleDriveStatus> | null = null;
+  private stopping = false;
+  private stopPromise: Promise<void> | null = null;
 
   /** Arms the hourly schedule check. Never makes a network call by itself — see module doc comment. */
   start(): void {
-    this.stop();
-    this.scheduleTimer = setInterval(() => void this.maybeRunScheduled(), SCHEDULE_CHECK_INTERVAL_MS);
-  }
-
-  stop(): void {
     if (this.scheduleTimer) {
       clearInterval(this.scheduleTimer);
       this.scheduleTimer = null;
     }
+    this.stopping = false;
+    this.stopPromise = null;
+    this.scheduleTimer = setInterval(() => void this.maybeRunScheduled(), SCHEDULE_CHECK_INTERVAL_MS);
+  }
+
+  stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+    this.stopping = true;
+    if (this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
+    this.stopPromise = this.backupPromise ? this.backupPromise.then(() => undefined) : Promise.resolve();
+    return this.stopPromise;
   }
 
   private async maybeRunScheduled(): Promise<void> {
+    if (this.stopping) return;
     const tokens = this.readTokens();
     if (!tokens) return; // never connected, or disconnected — stay silent
     const settings = this.readSettings();
@@ -270,8 +283,20 @@ class GoogleDriveService {
 
   /** Manual "Back up to Drive now" action, and the scheduled path. Reuses createBackup() — no second export path. */
   async backupNow(): Promise<GoogleDriveStatus> {
+    if (this.stopping) throw new Error('Google Drive is stopping');
     if (this.backingUp) return this.getStatus();
     this.backingUp = true;
+    const operation = this.runBackup();
+    this.backupPromise = operation;
+    try {
+      return await operation;
+    } finally {
+      this.backingUp = false;
+      this.backupPromise = null;
+    }
+  }
+
+  private async runBackup(): Promise<GoogleDriveStatus> {
     try {
       const client = await this.getAuthorizedClient();
       const drive = google.drive({ version: 'v3', auth: client });
@@ -303,8 +328,6 @@ class GoogleDriveService {
         google_drive_last_error: message,
       });
       throw err;
-    } finally {
-      this.backingUp = false;
     }
   }
 

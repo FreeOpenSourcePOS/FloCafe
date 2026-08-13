@@ -100,7 +100,7 @@ function parseCSV(text: string): string[][] {
         if (char === '\r' && text[i + 1] === '\n') i++;
         lineNumber++;
         afterClosingQuote = false;
-      } else if (char !== ' ' && char !== '\t') {
+      } else {
         throw new CsvImportError(`Malformed CSV: unexpected character after closing quote on row ${lineNumber}`);
       }
       continue;
@@ -538,6 +538,64 @@ router.post('/import/addons', requireRole('owner', 'manager'), (req: Request, re
     let skipped = 0, failed = 0;
     const errors: string[] = [];
     const groupCache: Record<string, string> = {};
+    type AddonGroupImportPlan = {
+      existing?: { id: string; is_active: number; is_required: number; min_selection: number; max_selection: number };
+      activeAddonNames: Set<string>;
+      activeAddonCount: number;
+      importedAddonNames: Set<string>;
+      minSelection: number;
+      maxSelection: number;
+      boundsError: string | null;
+    };
+    const groupPlans = new Map<string, AddonGroupImportPlan>();
+
+    for (const row of rows) {
+      if (!row.group_name || !row.addon_name) continue;
+
+      const priceResult = parseNumericField(row.price, 'price', { min: 0 });
+      const minResult = parseNumericField(row.group_min_select, 'group_min_select', { optional: true, defaultValue: 0, integer: true, min: 0 });
+      const maxResult = parseNumericField(row.group_max_select, 'group_max_select', { optional: true, defaultValue: 1, integer: true, min: 0 });
+      if (!priceResult.ok || !minResult.ok || !maxResult.ok) continue;
+
+      const key = row.group_name.toLowerCase();
+      let plan = groupPlans.get(key);
+      if (!plan) {
+        const existing = db.prepare(
+          'SELECT id, is_active, is_required, min_selection, max_selection FROM addon_groups WHERE name = ?',
+        ).get(row.group_name) as AddonGroupImportPlan['existing'];
+        const activeAddons = existing
+          ? db.prepare('SELECT name FROM addons WHERE addon_group_id = ? AND is_active = 1').all(existing.id) as { name: string }[]
+          : [];
+        const minSelection = hasGroupMinColumn ? minResult.value : (existing?.min_selection ?? 0);
+        const maxSelection = hasGroupMaxColumn ? maxResult.value : (existing?.max_selection ?? 1);
+        if (minSelection > maxSelection) continue;
+        plan = {
+          existing,
+          activeAddonNames: new Set(activeAddons.map((addon) => addon.name)),
+          activeAddonCount: activeAddons.length,
+          importedAddonNames: new Set(),
+          minSelection,
+          maxSelection,
+          boundsError: null,
+        };
+        groupPlans.set(key, plan);
+      }
+
+      const rowMinSelection = hasGroupMinColumn ? minResult.value : (plan.existing?.min_selection ?? 0);
+      const rowMaxSelection = hasGroupMaxColumn ? maxResult.value : (plan.existing?.max_selection ?? 1);
+      if (rowMinSelection > rowMaxSelection) continue;
+      plan.importedAddonNames.add(row.addon_name);
+    }
+
+    for (const plan of groupPlans.values()) {
+      const finalActiveAddonCount = plan.activeAddonCount
+        + [...plan.importedAddonNames].filter((name) => !plan.activeAddonNames.has(name)).length;
+      if (plan.minSelection > plan.maxSelection) {
+        plan.boundsError = 'group_min_select must not exceed group_max_select';
+      } else if (plan.minSelection > finalActiveAddonCount) {
+        plan.boundsError = `group_min_select cannot exceed the final number of active add-ons (${finalActiveAddonCount})`;
+      }
+    }
 
     db.transaction(() => { for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
@@ -567,13 +625,21 @@ router.post('/import/addons', requireRole('owner', 'manager'), (req: Request, re
         errors.push(`Row ${i + 2} (${r.group_name}/${r.addon_name}): ${maxResult.error}`);
         continue;
       }
-      if (minResult.value > maxResult.value) {
+      const key = r.group_name.toLowerCase();
+      const groupPlan = groupPlans.get(key);
+      const effectiveMinSelection = hasGroupMinColumn ? minResult.value : (groupPlan?.existing?.min_selection ?? 0);
+      const effectiveMaxSelection = hasGroupMaxColumn ? maxResult.value : (groupPlan?.existing?.max_selection ?? 1);
+      if (effectiveMinSelection > effectiveMaxSelection) {
         failed++;
         errors.push(`Row ${i + 2} (${r.group_name}/${r.addon_name}): group_min_select must not exceed group_max_select`);
         continue;
       }
+      if (groupPlan?.boundsError) {
+        failed++;
+        errors.push(`Row ${i + 2} (${r.group_name}/${r.addon_name}): ${groupPlan.boundsError}`);
+        continue;
+      }
 
-      const key = r.group_name.toLowerCase();
       let groupId = groupCache[key];
       if (!groupId) {
         const existing = db.prepare(

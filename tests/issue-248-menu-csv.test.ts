@@ -39,6 +39,10 @@ function addonCsv(...rows: string[]): string {
   return [ADDON_HEADER, ...rows].join('\n');
 }
 
+function addonCsvWithHeader(header: string, ...rows: string[]): string {
+  return [header, ...rows].join('\n');
+}
+
 async function main() {
   console.log('Integration Test: Issue #248 strict catalog CSV imports');
   console.log('='.repeat(58));
@@ -72,6 +76,19 @@ async function main() {
     assertEqual(quotedProduct.tags, JSON.stringify(['coffee', 'featured']), 'quoted comma-separated tags are preserved');
     const carriageReturnProduct = db.prepare('SELECT description FROM products WHERE name = ?').get('CR Product') as any;
     assertEqual(carriageReturnProduct.description, 'line1\rline2', 'quoted carriage returns are preserved');
+
+    const malformedPostQuote = await api(baseUrl, '/api/menu/csv/import/products', {
+      method: 'POST',
+      body: {
+        csv: productCsv(
+          ',,"Malformed" ,"CSV Category",10,Description,1,,,,,yes',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqual(malformedPostQuote.status, 400, 'spaces after a closing CSV quote are rejected');
+    assert(malformedPostQuote.data.error.includes('after closing quote'), 'post-quote whitespace error identifies the malformed record');
+    assertEqual(db.prepare('SELECT id FROM products WHERE name = ?').get('Malformed'), undefined, 'malformed post-quote row is not persisted');
 
     console.log('\n─── Unterminated quoted row rolls back the import ───');
     const beforeMalformedCount = (db.prepare('SELECT COUNT(*) AS count FROM products').get() as any).count;
@@ -202,6 +219,50 @@ async function main() {
     const updatedGroupRow = db.prepare('SELECT is_required, max_selection FROM addon_groups WHERE id = ?').get('group-csv-248-reactivate') as any;
     assertEqual(updatedGroupRow.is_required, 1, 'existing group required setting is updated');
     assertEqual(updatedGroupRow.max_selection, 2, 'existing group maximum selection is updated');
+
+    db.prepare(
+      `INSERT INTO addon_groups (id, name, is_required, min_selection, max_selection, is_active, sort_order, created_at, updated_at)
+       VALUES (?, ?, 0, 0, 3, 1, 0, ?, ?)`,
+    ).run('group-csv-248-partial', 'CSV Partial Bounds Group', now(), now());
+    db.prepare(
+      `INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, 0, ?, ?)`,
+    ).run('addon-csv-248-partial-existing', 'group-csv-248-partial', 'Existing Partial Addon', 2, now(), now());
+    const partialBounds = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: {
+        csv: addonCsvWithHeader(
+          'group_name,addon_name,price,group_min_select',
+          'CSV Partial Bounds Group,New Partial Addon,4,2',
+        ),
+      },
+      headers: authHeader,
+    });
+    assertEqual(partialBounds.status, 200, 'partial group settings use the existing maximum');
+    assertEqual(partialBounds.data.addons_created, 1, 'partial group settings allow the valid new addon');
+    assertEqual(partialBounds.data.failed, 0, 'partial group settings are not rejected by parser defaults');
+    const partialBoundsRow = db.prepare('SELECT min_selection, max_selection FROM addon_groups WHERE id = ?').get('group-csv-248-partial') as any;
+    assertEqual(partialBoundsRow.min_selection, 2, 'partial group minimum is updated');
+    assertEqual(partialBoundsRow.max_selection, 3, 'omitted group maximum is preserved');
+
+    db.prepare(
+      `INSERT INTO addon_groups (id, name, is_required, min_selection, max_selection, is_active, sort_order, created_at, updated_at)
+       VALUES (?, ?, 0, 0, 1, 1, 0, ?, ?)`,
+    ).run('group-csv-248-existing-invalid', 'CSV Existing Invalid Bounds', now(), now());
+    db.prepare(
+      `INSERT INTO addons (id, addon_group_id, name, price, is_active, sort_order, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 1, 0, ?, ?)`,
+    ).run('addon-csv-248-existing-invalid', 'group-csv-248-existing-invalid', 'Only Existing Addon', 2, now(), now());
+    const existingInvalidBounds = await api(baseUrl, '/api/menu/csv/import/addons', {
+      method: 'POST',
+      body: { csv: addonCsv('CSV Existing Invalid Bounds,Only Existing Addon,5,no,2,2') },
+      headers: authHeader,
+    });
+    assertEqual(existingInvalidBounds.data.failed, 1, 'existing groups reject impossible final selection bounds');
+    assert(existingInvalidBounds.data.errors[0].includes('final number of active add-ons'), 'final-count bound error identifies the effective active count');
+    const unchangedInvalidGroup = db.prepare('SELECT min_selection, max_selection FROM addon_groups WHERE id = ?').get('group-csv-248-existing-invalid') as any;
+    assertEqual(unchangedInvalidGroup.min_selection, 0, 'existing invalid group settings are not mutated');
+    assertEqual(unchangedInvalidGroup.max_selection, 1, 'existing invalid group maximum is not mutated');
 
     const invalidBounds = await api(baseUrl, '/api/menu/csv/import/addons', {
       method: 'POST',

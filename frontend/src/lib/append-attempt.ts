@@ -1,16 +1,17 @@
 export const APPEND_ATTEMPT_STORAGE_KEY = 'flo.pos.append-items.attempt';
 export const LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
 export const APPEND_ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-const APPEND_ATTEMPT_COMPLETION_SUFFIX = '.completed';
+const APPEND_ATTEMPT_USER_SUFFIX = '.user.';
+const APPEND_ATTEMPT_COMPLETION_SUFFIX = '.completion.';
 const confirmedAppendTombstones = new Map<string, number>();
 const APPEND_ATTEMPT_COOKIE_PREFIX = 'flo_append_attempt.';
 
 export function getAppendAttemptStorageKey(userId: string): string {
-  return `${APPEND_ATTEMPT_STORAGE_KEY}.${encodeURIComponent(userId)}`;
+  return `${APPEND_ATTEMPT_STORAGE_KEY}${APPEND_ATTEMPT_USER_SUFFIX}${encodeURIComponent(userId)}`;
 }
 
 function getAppendAttemptCompletionStorageKey(userId: string): string {
-  return `${getAppendAttemptStorageKey(userId)}${APPEND_ATTEMPT_COMPLETION_SUFFIX}`;
+  return `${APPEND_ATTEMPT_STORAGE_KEY}${APPEND_ATTEMPT_COMPLETION_SUFFIX}${encodeURIComponent(userId)}`;
 }
 
 function getConfirmedAppendTombstoneKey(userId: string, idempotencyKey: string, fingerprint: string): string {
@@ -171,6 +172,22 @@ function isExpired(createdAt: number, now: number, maxAgeMs: number): boolean {
 function removeAndVerify(storage: AppendAttemptStorage, key: string): boolean {
   const removed = storage.removeItem(key);
   return removed !== false && storage.getItem(key) === null;
+}
+
+function persistCompletionRecord(storage: AppendAttemptStorage, key: string, value: string): boolean {
+  try {
+    storage.setItem(key, value);
+    if (storage.getItem(key) === value) return true;
+  } catch {
+  }
+  const cookieStorage = createCookieAppendAttemptStorage();
+  if (!cookieStorage) return false;
+  try {
+    cookieStorage.setItem(key, value);
+    return cookieStorage.getItem(key) === value;
+  } catch {
+    return false;
+  }
 }
 
 function normalizeAppendFingerprint(fingerprint: string): string | null {
@@ -508,10 +525,6 @@ export function clearAppendAttempt(
       current.idempotencyKey !== completedAttempt.idempotencyKey
       || current.fingerprint !== completedAttempt.fingerprint
     ) return;
-    confirmedAppendTombstones.set(
-      getConfirmedAppendTombstoneKey(completedAttempt.userId, completedAttempt.idempotencyKey, completedAttempt.fingerprint),
-      Date.now(),
-    );
     const markerKey = getAppendAttemptCompletionStorageKey(completedAttempt.userId);
     const completionRecord = {
       completed: true,
@@ -521,19 +534,16 @@ export function clearAppendAttempt(
       completedAt: Date.now(),
     };
     let markerPersisted = false;
-    try {
-      storage.setItem(markerKey, JSON.stringify(completionRecord));
-      markerPersisted = true;
-    } catch {
-      markerPersisted = false;
-    }
+    const serializedCompletion = JSON.stringify(completionRecord);
+    markerPersisted = persistCompletionRecord(storage, markerKey, serializedCompletion);
     if (!markerPersisted) {
-      try {
-        storage.setItem(key, JSON.stringify(completionRecord));
-        markerPersisted = true;
-      } catch {
-        markerPersisted = false;
-      }
+      markerPersisted = persistCompletionRecord(storage, key, serializedCompletion);
+    }
+    if (markerPersisted) {
+      confirmedAppendTombstones.set(
+        getConfirmedAppendTombstoneKey(completedAttempt.userId, completedAttempt.idempotencyKey, completedAttempt.fingerprint),
+        Date.now(),
+      );
     }
     const removed = storage.removeItem(key);
     if (removed !== false && storage.getItem(key) === null && markerPersisted) storage.removeItem(markerKey);

@@ -136,7 +136,12 @@ export default function POSPage() {
     if (typeof window === 'undefined') return null;
     try {
       const migratedAppend = migrateLegacyAppendAttempt(getAppendAttemptStorage(), { userId: activeUserId || undefined });
-      if (migratedAppend) return null;
+      if (migratedAppend) {
+        if (getAppendAttemptStorage().getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY) !== null) {
+          throw new Error('Unable to recover append retry state');
+        }
+        return null;
+      }
     } catch {
       throw new Error('Unable to recover append retry state');
     }

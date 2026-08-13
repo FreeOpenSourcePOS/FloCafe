@@ -83,6 +83,31 @@ function main() {
     'falsy add-on quantity matches the existing default quantity of one',
   );
 
+  const namespaceStorage = new MemoryStorage();
+  const namespaceItems = [{ product_id: 'namespace-item', quantity: 1 }];
+  const namespaceFirst = getOrCreateAppendAttempt(namespaceStorage, {
+    userId: 'cashier',
+    orderId: '42',
+    fingerprint: buildAppendItemsFingerprint('42', namespaceItems),
+    createKey: () => 'namespace-first-key',
+    items: namespaceItems,
+    now: 500,
+  });
+  const namespaceSecond = getOrCreateAppendAttempt(namespaceStorage, {
+    userId: 'cashier.completed',
+    orderId: '43',
+    fingerprint: buildAppendItemsFingerprint('43', namespaceItems),
+    createKey: () => 'namespace-second-key',
+    items: namespaceItems,
+    now: 500,
+  });
+  clearAppendAttempt(namespaceStorage, namespaceFirst);
+  assert.equal(
+    readAppendAttempt(namespaceStorage, { userId: 'cashier.completed', now: 501 })?.idempotencyKey,
+    namespaceSecond.idempotencyKey,
+    'completion state cannot collide with another user\'s pending retry key',
+  );
+
   const normal = generateCartItemId('burger', [addon('cheese'), addon('sauce')], 'no onions');
   assert.equal(
     normal,
@@ -411,7 +436,7 @@ function main() {
   const combinedFailureStorage = createSafeAppendAttemptStorage({
     getItem: combinedFailureBacking.getItem.bind(combinedFailureBacking),
     setItem: (key, value) => {
-      if (combinedFailure && (key.endsWith('.completed') || key === attemptStorageKey)) throw new Error('completion writes blocked');
+      if (combinedFailure && (key.includes('.completion.') || key === attemptStorageKey)) throw new Error('completion writes blocked');
       combinedFailureBacking.setItem(key, value);
     },
     removeItem: (key) => {
@@ -439,7 +464,7 @@ function main() {
   const fallbackStorage = createSafeAppendAttemptStorage({
     getItem: fallbackBacking.getItem.bind(fallbackBacking),
     setItem: (key, value) => {
-      if (fallbackCleanupBlocked && (key.endsWith('.completed') || key === getAppendAttemptStorageKey('cashier-1'))) throw new Error('primary cleanup blocked');
+      if (fallbackCleanupBlocked && (key.includes('.completion.') || key === getAppendAttemptStorageKey('cashier-1'))) throw new Error('primary cleanup blocked');
       fallbackBacking.setItem(key, value);
     },
     removeItem: (key) => {

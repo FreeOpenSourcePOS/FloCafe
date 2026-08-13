@@ -176,18 +176,32 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
     const splitSnapshot = snapshotComponents(document.tax_snapshot);
     if (splitSnapshot.present) {
+      const represented = new Map<string, DisplayTaxComponent>();
       const merged = new Map<string, DisplayTaxComponent>();
       for (const component of [
         ...splitSnapshot.components,
         ...legacyItemComponents(document.order?.items ?? document.items),
-        ...documentLegacyComponents(document, splitSnapshot.components),
       ]) {
         const key = `${component.title}\u0000${component.rate ?? ''}`;
         const current = merged.get(key);
         if (current) current.amount += component.amount;
         else merged.set(key, { ...component });
       }
-      return reconcileSplitSnapshotComponents(Array.from(merged.values()), document.tax_amount);
+      for (const [key, component] of merged) represented.set(key, component);
+      const target = finiteNumber(document.tax_amount);
+      const representedTotal = Array.from(represented.values()).reduce((sum, component) => sum + component.amount, 0);
+      const needsDocumentResidual = target === null
+        || (target !== 0 && (target < 0 ? representedTotal > target : representedTotal < target));
+      const residual = needsDocumentResidual
+        ? documentLegacyComponents(document, splitSnapshot.components)
+        : [];
+      for (const component of residual) {
+        const key = `${component.title}\u0000${component.rate ?? ''}`;
+        const current = represented.get(key);
+        if (current) current.amount += component.amount;
+        else represented.set(key, { ...component });
+      }
+      return reconcileSplitSnapshotComponents(Array.from(represented.values()), document.tax_amount);
     }
   }
 

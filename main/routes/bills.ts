@@ -924,8 +924,16 @@ function allocateTaxBreakdown(
     return new Array(numChecks).fill(typeof sourceBreakdownRaw === 'string' ? sourceBreakdownRaw : JSON.stringify(sourceBreakdownRaw || null));
   }
 
+  const ownerWeightsForComponent = (comp: TaxCompRef): number[] | null => {
+    const weightIndex = comp.outerIndex === undefined ? comp.innerIndex : comp.outerIndex;
+    const candidate = componentWeights?.[weightIndex];
+    return candidate && candidate.length === weights.length && candidate.some((weight) => weight > 0)
+      ? candidate
+      : null;
+  };
+
   const compAllocations: number[][] = components.map((comp) => {
-    const ownerWeights = comp.outerIndex === undefined ? null : componentWeights?.[comp.outerIndex];
+    const ownerWeights = ownerWeightsForComponent(comp);
     const allocationWeights = ownerWeights && ownerWeights.length === weights.length && ownerWeights.some((weight) => weight > 0)
       ? ownerWeights
       : weights;
@@ -933,11 +941,18 @@ function allocateTaxBreakdown(
   });
 
   const allocationGroups = new Map<string, { entries: Array<{ allocations: number[] }>; weights: number[]; sourceMinor: number }>();
+  const flatOwnerAllocations = new Array(numChecks).fill(0);
   components.forEach((comp, index) => {
-    const ownerWeights = comp.outerIndex === undefined ? null : componentWeights?.[comp.outerIndex];
+    const ownerWeights = ownerWeightsForComponent(comp);
     const allocationWeights = ownerWeights && ownerWeights.length === weights.length && ownerWeights.some((weight) => weight > 0)
       ? ownerWeights
       : weights;
+    if (comp.outerIndex === undefined && ownerWeights) {
+      for (let checkIndex = 0; checkIndex < numChecks; checkIndex += 1) {
+        flatOwnerAllocations[checkIndex] += compAllocations[index][checkIndex];
+      }
+      return;
+    }
     const groupKey = comp.outerIndex === undefined ? 'flat' : `outer:${comp.outerIndex}`;
     const group = allocationGroups.get(groupKey) || { entries: [], weights: allocationWeights, sourceMinor: 0 };
     group.entries.push({ allocations: compAllocations[index] });
@@ -946,7 +961,7 @@ function allocateTaxBreakdown(
   });
   for (const [groupKey, group] of allocationGroups) {
     const target = groupKey === 'flat'
-      ? checkTaxMinors
+      ? checkTaxMinors.map((targetMinor, index) => targetMinor - flatOwnerAllocations[index])
       : allocateSignedMinorUnits(group.sourceMinor, group.weights);
     reconcileSnapshotAllocations(group.entries, target);
   }
@@ -1036,8 +1051,8 @@ function collectLegacyTaxContribution(
     const effectiveWeights = ownerWeights.some((weight) => weight > 0) ? ownerWeights : weights;
     const totalWeight = effectiveWeights.reduce((sum, weight) => sum + weight, 0);
     if (totalWeight <= 0) continue;
-    if (persistedBreakdowns.has(Number(item.id))) {
-      const sourceMinor = Math.round(sourceCents);
+    const sourceMinor = Math.round(sourceCents);
+    if (Number.isInteger(sourceMinor) && Math.abs(sourceCents - sourceMinor) < 1e-6) {
       const ownerAllocation = allocateSignedMinorUnits(sourceMinor, effectiveWeights);
       for (let index = 0; index < weights.length; index += 1) {
         ownerTaxMinors[index] += ownerAllocation[index];
@@ -1087,9 +1102,16 @@ function allocateLegacyTaxContribution(
     ? sourceTaxMinor
     : sourceTaxMinor - snapshotSourceTaxMinor;
   const taxWeights = contribution.taxWeights.some((weight) => weight > 0) ? contribution.taxWeights : fallbackWeights;
-  const legacyTaxMinors = contribution.ownerTaxMinors !== null
-    && contribution.ownerTaxSourceMinor === legacySourceTaxMinor
-    ? contribution.ownerTaxMinors
+  const ownerTaxSourceMinor = contribution.ownerTaxSourceMinor;
+  const ownerTaxFitsResidual = ownerTaxSourceMinor !== null
+    && (ownerTaxSourceMinor === 0
+      || legacySourceTaxMinor === 0
+      || Math.sign(ownerTaxSourceMinor) === Math.sign(legacySourceTaxMinor))
+    && (ownerTaxSourceMinor === 0 || Math.abs(ownerTaxSourceMinor) <= Math.abs(legacySourceTaxMinor));
+  const legacyTaxMinors = contribution.ownerTaxMinors !== null && ownerTaxFitsResidual
+    ? contribution.ownerTaxMinors.map((minor, index) => (
+      minor + allocateSignedMinorUnits(legacySourceTaxMinor - ownerTaxSourceMinor!, fallbackWeights)[index]
+    ))
     : allocateSignedMinorUnits(legacySourceTaxMinor, taxWeights);
   const exclusiveSourceMinor = contribution.allExclusive
     ? legacySourceTaxMinor
@@ -1097,10 +1119,17 @@ function allocateLegacyTaxContribution(
   const exclusiveWeights = contribution.exclusiveWeights.some((weight) => weight > 0)
     ? contribution.exclusiveWeights
     : fallbackWeights;
+  const ownerExclusiveSourceMinor = contribution.ownerExclusiveTaxSourceMinor;
+  const ownerExclusiveFitsResidual = ownerExclusiveSourceMinor !== null
+    && (ownerExclusiveSourceMinor === 0
+      || exclusiveSourceMinor === 0
+      || Math.sign(ownerExclusiveSourceMinor) === Math.sign(exclusiveSourceMinor))
+    && (ownerExclusiveSourceMinor === 0 || Math.abs(ownerExclusiveSourceMinor) <= Math.abs(exclusiveSourceMinor));
   const legacyExclusiveTaxMinors = contribution.hasLegacyTaxEvidence || legacySourceTaxMinor !== 0
-    ? contribution.ownerExclusiveTaxMinors !== null
-      && contribution.ownerExclusiveTaxSourceMinor === exclusiveSourceMinor
-      ? contribution.ownerExclusiveTaxMinors
+    ? contribution.ownerExclusiveTaxMinors !== null && ownerExclusiveFitsResidual
+      ? contribution.ownerExclusiveTaxMinors.map((minor, index) => (
+        minor + allocateSignedMinorUnits(exclusiveSourceMinor - ownerExclusiveSourceMinor!, fallbackWeights)[index]
+      ))
       : allocateSignedMinorUnits(exclusiveSourceMinor, exclusiveWeights)
     : new Array(fallbackWeights.length).fill(0);
   return { legacySourceTaxMinor, legacyTaxMinors, legacyExclusiveTaxMinors };
@@ -1226,7 +1255,29 @@ function getTaxBreakdownWeights(
   itemWeights: (item: any) => number[],
 ): Array<number[] | null> | undefined {
   const parsed = parseTaxSnapshot(sourceRaw);
-  if (!Array.isArray(parsed) || !Array.isArray(parsed[0])) return undefined;
+  if (!Array.isArray(parsed)) return undefined;
+  const componentKey = (component: any): string => `${component?.title ?? component?.name ?? component?.label ?? ''}\u0000${component?.rate ?? ''}`;
+  if (!Array.isArray(parsed[0])) {
+    const ownerWeightsByKey = new Map<string, number[]>();
+    for (const item of items) {
+      if (['cancelled', 'voided', 'void_adjustment'].includes(item.status) || hasSnapshotLines(item.tax_snapshot)) continue;
+      const itemBreakdown = parseTaxSnapshot(item.tax_breakdown);
+      if (!Array.isArray(itemBreakdown)) continue;
+      const itemComponents = itemBreakdown.flatMap((entry: any) => Array.isArray(entry) ? entry : [entry]);
+      const weights = itemWeights(item);
+      if (!weights.some((weight) => weight > 0)) continue;
+      for (const component of itemComponents) {
+        if (!component || typeof component !== 'object') continue;
+        const key = componentKey(component);
+        const ownerWeights = ownerWeightsByKey.get(key) || new Array(weights.length).fill(0);
+        for (let index = 0; index < weights.length; index += 1) ownerWeights[index] += weights[index];
+        ownerWeightsByKey.set(key, ownerWeights);
+      }
+    }
+    return parsed.map((component: any) => (
+      component && typeof component === 'object' ? ownerWeightsByKey.get(componentKey(component)) || null : null
+    ));
+  }
   const voidedByKey = new Map<string, any[]>();
   for (const item of items) {
     if (item.status !== 'voided') continue;

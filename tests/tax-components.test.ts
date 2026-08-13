@@ -250,6 +250,63 @@ test('marked child snapshots consume mirrored document components before residua
   assert.deepEqual(resolveFrontendTaxComponents(document), expected);
 });
 
+test('split flat legacy entries stay with their child item owners', () => {
+  const sourceSnapshot = (amount: string) => JSON.stringify({
+    splitAllocation: 'minor-unit-v1',
+    lines: [{ components: [{ label: 'Categorized Tax', rate: '5', amount }] }],
+  });
+  const childDocuments = [
+    {
+      tax_amount: 2,
+      tax_snapshot: sourceSnapshot('1.00'),
+      tax_breakdown: [
+        { title: 'Legacy Item A', rate: 2, amount: 0.33 },
+        { title: 'Legacy Item B', rate: 2, amount: 0.33 },
+      ],
+      items: [
+        { tax_snapshot: { lines: [{ components: [{ label: 'Categorized Tax', rate: '5', amount: '1.00' }] }] } },
+        { tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Item A', rate: 2, amount: 1 }] },
+      ],
+    },
+    {
+      tax_amount: 2,
+      tax_snapshot: sourceSnapshot('1.00'),
+      tax_breakdown: [
+        { title: 'Legacy Item A', rate: 2, amount: 0.67 },
+        { title: 'Legacy Item B', rate: 2, amount: 0.67 },
+      ],
+      items: [
+        { tax_snapshot: { lines: [{ components: [{ label: 'Categorized Tax', rate: '5', amount: '1.00' }] }] } },
+        { tax_snapshot: null, tax_breakdown: [{ title: 'Legacy Item B', rate: 2, amount: 1 }] },
+      ],
+    },
+  ];
+  const expected = [
+    [
+      { title: 'Categorized Tax', rate: 5, amount: 1 },
+      { title: 'Legacy Item A', rate: 2, amount: 1 },
+    ],
+    [
+      { title: 'Categorized Tax', rate: 5, amount: 1 },
+      { title: 'Legacy Item B', rate: 2, amount: 1 },
+    ],
+  ];
+
+  childDocuments.forEach((document, index) => {
+    assert.deepEqual(resolveBackendTaxComponents(document), expected[index]);
+    assert.deepEqual(resolveFrontendTaxComponents(document), expected[index]);
+  });
+  const aggregate = childDocuments.flatMap((document) => resolveBackendTaxComponents(document));
+  assert.deepEqual(aggregate.reduce((totals, component) => {
+    totals[component.title] = (totals[component.title] || 0) + component.amount;
+    return totals;
+  }, {} as Record<string, number>), {
+    'Categorized Tax': 2,
+    'Legacy Item A': 1,
+    'Legacy Item B': 1,
+  });
+});
+
 test('itemless generated bills retain residual document legacy tax beside mirrored snapshots', () => {
   const document = {
     tax_amount: 1.75,

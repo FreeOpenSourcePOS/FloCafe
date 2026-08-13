@@ -213,11 +213,25 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
     const splitSnapshot = flattenSnapshots(document.tax_snapshot);
     if (splitSnapshot.present) {
+      const represented = mergeComponents([
+        ...splitSnapshot.components,
+        ...legacyItemComponents(document),
+      ]);
+      const target = decimalOrNull(document.tax_amount);
+      const representedTotal = represented.reduce(
+        (sum, component) => sum.plus(component.amount),
+        new Decimal(0),
+      );
+      const needsDocumentResidual = !target
+        || (!target.isZero() && (target.isNegative()
+          ? representedTotal.comparedTo(target) > 0
+          : representedTotal.comparedTo(target) < 0));
       return reconcileTotal(
         mergeComponents([
-          ...splitSnapshot.components,
-          ...legacyItemComponents(document),
-          ...documentLegacyComponents(document, splitSnapshot.components),
+          ...represented,
+          ...(needsDocumentResidual
+            ? documentLegacyComponents(document, splitSnapshot.components)
+            : []),
         ]),
         document.tax_amount,
       );

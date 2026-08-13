@@ -895,8 +895,13 @@ export default function OrdersPage() {
                     <Button onClick={async () => {
                       if (await confirm(t('orders.deleteHeldConfirm'), { destructive: true })) {
                         try {
-                          await heldOrdersStore.removeHeldOrder(heldOrder.tableId, heldOrder.id);
-                          toast.success(t('orders.heldOrderRemoved'));
+                          const deleted = await heldOrdersStore.removeHeldOrder(heldOrder.tableId, heldOrder.id);
+                          if (deleted) {
+                            toast.success(t('orders.heldOrderRemoved'));
+                          } else {
+                            await heldOrdersStore.fetchHeldOrders();
+                            toast.error(t('orders.removeHeldOrderFailed'));
+                          }
                         } catch {
                           toast.error(t('orders.removeHeldOrderFailed'));
                         }

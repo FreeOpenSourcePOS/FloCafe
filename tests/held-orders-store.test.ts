@@ -186,10 +186,12 @@ async function main() {
   cleanupReplacement.orderNotes = 'cleanup replacement';
   serverOrders.set(cleanupTableId, cleanupReplacement);
   await replacementStore.getState().fetchHeldOrders();
-  await replacementStore.getState().removeHeldOrder(cleanupTableId, consumedReplacement?.id);
+  const staleCleanupDeleted = await replacementStore.getState().removeHeldOrder(cleanupTableId, consumedReplacement?.id);
+  assert.equal(staleCleanupDeleted, false, 'stale cleanup reports that no row was deleted');
   assert.equal(replacementStore.getState().getHeldOrder(cleanupTableId)?.id, cleanupReplacement.id, 'cleanup with the consumed identity preserves the replacement cache');
   assert.equal(serverOrders.get(cleanupTableId)?.id, cleanupReplacement.id, 'cleanup with the consumed identity preserves the replacement row');
-  await replacementStore.getState().removeHeldOrder(cleanupTableId);
+  const idlessCleanupDeleted = await replacementStore.getState().removeHeldOrder(cleanupTableId);
+  assert.equal(idlessCleanupDeleted, false, 'ID-less cleanup reports that no row was deleted');
   assert.equal(replacementStore.getState().getHeldOrder(cleanupTableId)?.id, cleanupReplacement.id, 'cleanup without an identity is a non-consuming no-op');
 
   deferNextGet = true;

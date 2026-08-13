@@ -145,9 +145,6 @@ export function closeHttpServer(server: http.Server, label: string): Promise<voi
   return withShutdownTimeout(closePromise, label, () => {
     abortHttpRequests(requestState);
     closableServer.closeAllConnections?.();
-  }).catch(async (error) => {
-    await waitForHttpRequestWork(requestState);
-    throw error;
   });
 }
 

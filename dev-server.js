@@ -75,6 +75,7 @@ const { createExitCodeAwareShutdown } = require('./dist/shutdown');
 const { startServer, stopServer, getServerPort } = require('./dist/server');
 const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/kds-server');
 const { startServerApp, stopServerApp, getServerAppPort } = require('./dist/server-app');
+const { shutdown: shutdownWhatsApp } = require('./dist/services/whatsapp');
 
 let exitRequested = false;
 const requestShutdown = createExitCodeAwareShutdown(async () => {
@@ -82,6 +83,7 @@ const requestShutdown = createExitCodeAwareShutdown(async () => {
   try { await stopServerApp(); } catch (err) { console.error('[DevServer] Server App shutdown failed:', err); cleanupFailed = true; }
   try { await stopServer(); } catch (err) { console.error('[DevServer] Main server shutdown failed:', err); cleanupFailed = true; }
   try { await stopKdsServer(); } catch (err) { console.error('[DevServer] KDS server shutdown failed:', err); cleanupFailed = true; }
+  try { await shutdownWhatsApp(); } catch (err) { console.error('[DevServer] WhatsApp shutdown failed:', err); cleanupFailed = true; }
   try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (err) { console.error('[DevServer] Database request drain failed:', err); cleanupFailed = true; }
   try { closeDatabase(); } catch (err) { console.error('[DevServer] Database shutdown failed:', err); cleanupFailed = true; }
   Module._load = originalLoad;

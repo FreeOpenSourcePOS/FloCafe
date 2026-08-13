@@ -20,6 +20,7 @@ const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests, now } = require('../dist/db');
 const { createExitCodeAwareShutdown } = require('../dist/shutdown');
 const { startServer, stopServer } = require('../dist/server');
+const { shutdown: shutdownWhatsApp } = require('../dist/services/whatsapp');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 // Country/currency stay TH/THB (this fixture's configured business country)
 // so getActiveCountryPack('TH') actually resolves this pack.
@@ -145,6 +146,10 @@ const requestStop = createExitCodeAwareShutdown(async () => {
   try { await stopKdsServer(); } catch (error) {
     cleanupFailed = true;
     console.error('[E2E] KDS server cleanup failed:', error);
+  }
+  try { await shutdownWhatsApp(); } catch (error) {
+    cleanupFailed = true;
+    console.error('[E2E] WhatsApp cleanup failed:', error);
   }
   try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (error) {
     cleanupFailed = true;

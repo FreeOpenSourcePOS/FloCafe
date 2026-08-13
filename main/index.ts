@@ -750,16 +750,16 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
       if (currentTray) currentTray.destroy();
     },
   },
-  { name: 'cloud sync', run: () => cloudSync.shutdown() },
-  { name: 'telemetry', run: () => telemetry.stop() },
-  { name: 'Google Drive', run: () => googleDrive.stop() },
-  { name: 'WhatsApp', run: () => shutdownWhatsApp() },
-  { name: 'Bonjour', run: () => stopMdns() },
   // The Server App can be forwarding an active request to the main API, so
   // drain it before closing the API listener it depends on.
   { name: 'Server App', run: () => stopServerApp() },
   { name: 'Main server', run: () => stopServer() },
   { name: 'KDS server', run: () => stopKdsServer() },
+  { name: 'cloud sync', run: () => cloudSync.shutdown() },
+  { name: 'telemetry', run: () => telemetry.stop() },
+  { name: 'Google Drive', run: () => googleDrive.stop() },
+  { name: 'WhatsApp', run: () => shutdownWhatsApp() },
+  { name: 'Bonjour', run: () => stopMdns() },
   { name: 'database admission', run: () => beginDatabaseShutdown() },
   { name: 'database requests', run: () => waitForDatabaseRequests() },
   // Database closure is deliberately last: all HTTP and WebSocket work must

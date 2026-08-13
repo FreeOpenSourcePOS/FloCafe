@@ -359,10 +359,11 @@ class GoogleDriveService {
   private async runBackup(signal: AbortSignal): Promise<GoogleDriveStatus> {
     try {
       const client = await this.getAuthorizedClient(signal);
+      this.throwIfStopping(signal);
       const drive = google.drive({ version: 'v3', auth: client });
       const folderId = await this.ensureAppFolder(drive, signal);
 
-      if (this.stopping) throw new Error('Google Drive backup cancelled during shutdown');
+      this.throwIfStopping(signal);
       const { path: backupPath } = await waitForDriveOperation(
         createBackup(undefined, signal),
         signal,
@@ -379,7 +380,7 @@ class GoogleDriveService {
 
       await this.applyRetention(drive, folderId, signal);
 
-      if (this.stopping) throw new Error('Google Drive backup cancelled during shutdown');
+      this.throwIfStopping(signal);
       this.upsertSettings({
         google_drive_folder_id: folderId,
         google_drive_last_backup_at: new Date().toISOString(),
@@ -433,7 +434,7 @@ class GoogleDriveService {
   }
 
   private async ensureAppFolder(drive: ReturnType<typeof google.drive>, signal?: AbortSignal): Promise<string> {
-    if (signal?.aborted) throw new Error('Google Drive operation cancelled during shutdown');
+    this.throwIfStopping(signal);
     const existingId = this.readSettings().google_drive_folder_id;
     if (existingId) {
       // Confirm it still exists / is still visible to this scope before reusing it.
@@ -463,6 +464,7 @@ class GoogleDriveService {
   }
 
   private async applyRetention(drive: ReturnType<typeof google.drive>, folderId: string, signal: AbortSignal): Promise<void> {
+    this.throwIfStopping(signal);
     const retention = this.retentionFromSettings(this.readSettings());
     const files: { id: string; createdTime: string }[] = [];
     let pageToken: string | undefined;
@@ -498,6 +500,12 @@ class GoogleDriveService {
     const parsed = parseInt(settings.google_drive_retention_count || '', 10);
     if (Number.isInteger(parsed) && parsed >= MIN_RETENTION && parsed <= MAX_RETENTION) return parsed;
     return DEFAULT_RETENTION;
+  }
+
+  private throwIfStopping(signal?: AbortSignal): void {
+    if (signal?.aborted || this.stopping) {
+      throw createDriveShutdownError('Google Drive operation');
+    }
   }
 
   // ── Loopback OAuth flow ────────────────────────────────────────────────

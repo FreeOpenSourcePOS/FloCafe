@@ -195,6 +195,7 @@ Describe 'Flo Cafe Windows uninstaller' {
     $oldInspectionFailed = $script:ChildProcessInspectionFailed
     $oldCleanupComplete = $script:CleanupComplete
     $oldCleanupIssues = $script:CleanupIssues
+    $state = [pscustomobject]@{ CimCalls = 0 }
     try {
       $script:ChildProcessInspectionFailed = $false
       $script:CleanupComplete = $true
@@ -202,13 +203,15 @@ Describe 'Flo Cafe Windows uninstaller' {
 
       Mock Get-CimInstance {
         param($ClassName, $Filter, $OperationTimeoutSec)
-        Start-Sleep -Milliseconds 25
+        $state.CimCalls++
+        Start-Sleep -Milliseconds 1100
         return @([pscustomobject]@{ ProcessId = 9902; ParentProcessId = 9901 })
       }
 
-      $result = Get-ProcessTreeIds @(9901) ([DateTime]::UtcNow.AddMilliseconds(1))
+      $result = Get-ProcessTreeIds @(9901) ([DateTime]::UtcNow.AddMilliseconds(1000))
 
       $result | Should -Be $null
+      $state.CimCalls | Should -Be 1
       $script:ChildProcessInspectionFailed | Should -BeTrue
       $script:CleanupComplete | Should -BeFalse
       ($script:CleanupIssues -join "`n") | Should -Match 'within the bounded wait'

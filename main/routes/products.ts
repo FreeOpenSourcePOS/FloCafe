@@ -15,15 +15,28 @@ const MAX_FETCH_BYTES = 10 * 1024 * 1024;
  * Resolves a hostname and rejects it if any resolved address is a
  * loopback/private/link-local/metadata/reserved IP (vuln-0003 SSRF guard).
  */
-async function resolvePublicHostname(hostname: string): Promise<string> {
+async function resolvePublicHostname(hostname: string, signal: AbortSignal): Promise<string> {
   let addresses: dns.LookupAddress[];
+  const lookup = dns.promises.lookup(hostname, { all: true, verbatim: true });
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => {
+      const error = new Error('Hostname resolution aborted');
+      error.name = 'AbortError';
+      reject(error);
+    };
+    if (signal.aborted) onAbort();
+    else signal.addEventListener('abort', onAbort, { once: true });
+  });
   try {
-    addresses = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+    addresses = await Promise.race([lookup, aborted]);
   } catch (error: any) {
-    if (error?.code === 'ENOTFOUND') {
+    if (error?.name === 'AbortError' || error?.code === 'ENOTFOUND') {
       throw error;
     }
     throw new Error('Could not resolve hostname');
+  } finally {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
   }
   if (addresses.length === 0) {
     throw new Error('Could not resolve hostname');
@@ -512,8 +525,15 @@ router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (r
     let currentUrl = url;
     // Named to avoid colliding with Express's Response type imported above.
     let response: { status: number; headers: Headers; body: Buffer } | undefined;
+    const controller = new AbortController();
+    const requestSignal = getHttpRequestSignal(req);
+    const abortForShutdown = () => controller.abort();
+    if (requestSignal?.aborted) controller.abort();
+    else requestSignal?.addEventListener('abort', abortForShutdown, { once: true });
+    const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
 
-    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    try {
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(currentUrl);
@@ -532,20 +552,16 @@ router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (r
 
       let resolvedAddress: string;
       try {
-        resolvedAddress = await resolvePublicHostname(parsedUrl.hostname);
+        resolvedAddress = await resolvePublicHostname(parsedUrl.hostname, controller.signal);
       } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          return res.status(504).json({ error: 'Request timed out' });
+        }
         if (error?.code === 'ENOTFOUND') {
           return res.status(502).json({ error: 'Could not resolve hostname' });
         }
         return res.status(400).json({ error: 'URL is not allowed' });
       }
-
-      const controller = new AbortController();
-      const requestSignal = getHttpRequestSignal(req);
-      const abortForShutdown = () => controller.abort();
-      if (requestSignal?.aborted) controller.abort();
-      else requestSignal?.addEventListener('abort', abortForShutdown, { once: true });
-      const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
 
       let hopResponse: { status: number; headers: Headers; body: Buffer };
       try {
@@ -558,9 +574,6 @@ router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (r
           return res.status(413).json({ error: 'Image too large (max 10 MB)' });
         }
         return res.status(502).json({ error: 'Could not fetch the image' });
-      } finally {
-        clearTimeout(timeout);
-        requestSignal?.removeEventListener('abort', abortForShutdown);
       }
 
       // "manual" redirect mode surfaces 3xx as an opaqueredirect/redirect
@@ -579,16 +592,16 @@ router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (r
 
       response = hopResponse;
       break;
-    }
+      }
 
-    if (!response) {
-      return res.status(502).json({ error: 'Could not fetch the image' });
-    }
-
-    try {
-      if (response.status < 200 || response.status >= 300) {
+      if (!response) {
         return res.status(502).json({ error: 'Could not fetch the image' });
       }
+
+      try {
+        if (response.status < 200 || response.status >= 300) {
+          return res.status(502).json({ error: 'Could not fetch the image' });
+        }
 
       // Content-Type check — must be an image
       const contentType = response.headers.get('content-type') || '';
@@ -607,9 +620,13 @@ router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (r
       const detectedType = contentType.split(';')[0].trim(); // e.g., "image/jpeg"
       const dataUri = `data:${detectedType};base64,${base64}`;
 
-      res.json({ data: dataUri });
-    } catch {
-      return res.status(502).json({ error: 'Could not fetch the image' });
+        res.json({ data: dataUri });
+      } catch {
+        return res.status(502).json({ error: 'Could not fetch the image' });
+      }
+    } finally {
+      clearTimeout(timeout);
+      requestSignal?.removeEventListener('abort', abortForShutdown);
     }
   } catch (error: any) {
     console.error("[API] Internal error:", error);

@@ -301,12 +301,12 @@ class CloudSyncService {
     if (!cfg) return;
 
     if (cfg.sync_enabled && cfg.api_key) {
-      void this.flushOutbox();
-      this.outboxTimer = setInterval(() => void this.flushOutbox(), OUTBOX_INTERVAL_MS);
-      void this.flushSupportTicketOutbox();
-      this.supportOutboxTimer = setInterval(() => void this.flushSupportTicketOutbox(), OUTBOX_INTERVAL_MS);
-      void this.flushDiagnosticsOutbox();
-      this.diagnosticsOutboxTimer = setInterval(() => void this.flushDiagnosticsOutbox(), OUTBOX_INTERVAL_MS);
+      this.runBackground(this.flushOutbox(), 'outbox flush');
+      this.outboxTimer = setInterval(() => this.runBackground(this.flushOutbox(), 'outbox flush'), OUTBOX_INTERVAL_MS);
+      this.runBackground(this.flushSupportTicketOutbox(), 'support outbox flush');
+      this.supportOutboxTimer = setInterval(() => this.runBackground(this.flushSupportTicketOutbox(), 'support outbox flush'), OUTBOX_INTERVAL_MS);
+      this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
+      this.diagnosticsOutboxTimer = setInterval(() => this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush'), OUTBOX_INTERVAL_MS);
     }
 
     this.maybeStartRelay();
@@ -781,7 +781,7 @@ class CloudSyncService {
           (client_ticket_id, payload, status, created_at, updated_at)
         VALUES (?, ?, 'pending', ?, ?)
       `).run(input.client_ticket_id, JSON.stringify(payload), timestamp, timestamp);
-      void this.flushSupportTicketOutbox();
+      this.runBackground(this.flushSupportTicketOutbox(), 'support outbox flush');
       return { queued: true, client_ticket_id: input.client_ticket_id };
     });
   }
@@ -856,7 +856,7 @@ class CloudSyncService {
    */
   reportDiagnostic(input: DiagnosticEventInput): void {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
-    void withDatabaseRequest(() => {
+    this.runBackground(withDatabaseRequest(() => {
       if (this.cloudDeletionInProgress || !isDiagnosticsConsentEnabled()) return;
       const db = getDatabase();
       const timestamp = now();
@@ -865,8 +865,8 @@ class CloudSyncService {
           (event_id, payload, status, created_at, updated_at)
         VALUES (?, ?, 'pending', ?, ?)
       `).run(input.event_id, JSON.stringify(input), timestamp, timestamp);
-      void this.flushDiagnosticsOutbox();
-    }).catch((error) => this.markError((error as Error).message));
+      this.runBackground(this.flushDiagnosticsOutbox(), 'diagnostics outbox flush');
+    }), 'diagnostic enqueue', (error) => this.markError((error as Error).message));
   }
 
   private flushDiagnosticsOutbox(): Promise<void> {
@@ -1052,7 +1052,7 @@ class CloudSyncService {
 
   private enqueueEvent(eventType: string, entityType: string, entityId: string, payload: unknown) {
     if (this.cloudDeletionInProgress || this.shutdownRequested) return;
-    void withDatabaseRequest(async () => {
+    this.runBackground(withDatabaseRequest(async () => {
       if (this.cloudDeletionInProgress) return;
       const cfg = this.loadSettings();
       if (!cfg?.sync_enabled) return;
@@ -1063,8 +1063,8 @@ class CloudSyncService {
           (id, event_type, entity_type, entity_id, payload, status, attempt_count, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 'pending', 0, ?, ?)
       `).run(id, eventType, entityType, entityId || null, JSON.stringify(payload), now(), now());
-      void this.flushOutbox();
-    }).catch((error) => this.markError((error as Error).message));
+      this.runBackground(this.flushOutbox(), 'outbox flush');
+    }), 'event enqueue', (error) => this.markError((error as Error).message));
   }
 
   private flushOutbox(): Promise<void> {
@@ -1242,12 +1242,18 @@ class CloudSyncService {
   }
 
   private attemptAutoRegister() {
-    const settings = this.readSettings(getDatabase());
-    if (this.shutdownRequested || this.cloudDeletionInProgress || isCloudDeletionBlocking(settings.cloud_deletion_status)
+    if (this.shutdownRequested) return;
+    let settings: Record<string, string>;
+    try {
+      settings = this.readSettings(getDatabase());
+    } catch {
+      return;
+    }
+    if (this.cloudDeletionInProgress || isCloudDeletionBlocking(settings.cloud_deletion_status)
       || settings.cloud_sync_enabled !== '1' || settings.cloud_services_disabled_by_user === 'true') return;
     if (this.autoRegisterTimer || this.autoRegisterInFlight) return;
     this.autoRegisterInFlight = true;
-    void this.register()
+    this.runBackground(this.register()
       .then(() => {
         this.autoRegisterAttempts = 0;
         this.autoRegisterInFlight = false;
@@ -1262,9 +1268,9 @@ class CloudSyncService {
         this.autoRegisterAttempts++;
         this.autoRegisterTimer = setTimeout(() => {
           this.autoRegisterTimer = null;
-          this.attemptAutoRegister();
+          if (!this.shutdownRequested) this.attemptAutoRegister();
         }, delay);
-      });
+      }), 'auto-registration');
   }
 
   // --- Live-relay connection (WSS primary, HTTP fallback) ---------------------------------
@@ -1330,8 +1336,8 @@ class CloudSyncService {
 
     const cfg = this.settings;
     if (cfg?.sync_enabled) {
-      void this.sendRelayHeartbeat();
-      this.relayHeartbeatFrameTimer = setInterval(() => void this.sendRelayHeartbeat(), HEARTBEAT_INTERVAL_MS);
+      this.runBackground(this.sendRelayHeartbeat(), 'relay heartbeat');
+      this.relayHeartbeatFrameTimer = setInterval(() => this.runBackground(this.sendRelayHeartbeat(), 'relay heartbeat'), HEARTBEAT_INTERVAL_MS);
     }
 
     this.upsertSettings({
@@ -1343,7 +1349,7 @@ class CloudSyncService {
   }
 
   private onRelayMessage(data: RawData) {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     let frame: any;
     try {
       frame = JSON.parse(data.toString());
@@ -1355,12 +1361,12 @@ class CloudSyncService {
       const envelope = frame.payload && typeof frame.payload === 'object' ? frame.payload : {};
       const commandPayload = envelope.version === 1 && envelope.payload && typeof envelope.payload === 'object'
         ? envelope.payload : envelope;
-      void this.executeRelayCommand({
+      this.runBackground(this.executeRelayCommand({
         id: frame.id,
         type: frame.cmd,
         payload: commandPayload,
         correlation_id: typeof envelope.correlation_id === 'string' ? envelope.correlation_id : frame.id,
-      });
+      }), 'relay command');
     } else if (frame?.type === 'heartbeat_ack') {
       this.applyFeatures(frame.features);
     }
@@ -1400,12 +1406,12 @@ class CloudSyncService {
     this.relayMode = 'http_fallback';
 
     if (cfg.sync_enabled && !this.heartbeatTimer) {
-      void this.sendHeartbeat();
-      this.heartbeatTimer = setInterval(() => void this.sendHeartbeat(), HEARTBEAT_INTERVAL_MS);
+      this.runBackground(this.sendHeartbeat(), 'heartbeat');
+      this.heartbeatTimer = setInterval(() => this.runBackground(this.sendHeartbeat(), 'heartbeat'), HEARTBEAT_INTERVAL_MS);
     }
     if (cfg.command_polling_enabled && !this.commandTimer) {
-      void this.pollCommands();
-      this.commandTimer = setInterval(() => void this.pollCommands(), COMMAND_POLL_INTERVAL_MS);
+      this.runBackground(this.pollCommands(), 'command polling');
+      this.commandTimer = setInterval(() => this.runBackground(this.pollCommands(), 'command polling'), COMMAND_POLL_INTERVAL_MS);
     }
     log.warn('[CloudSync] relay unavailable, falling back to HTTP polling');
   }
@@ -1712,6 +1718,21 @@ class CloudSyncService {
     }, allowDuringDeletion);
   }
 
+  private runBackground<T>(operation: Promise<T>, label: string, onError?: (error: unknown) => void): void {
+    void operation.catch((error) => {
+      if (this.shutdownRequested || (error as { code?: unknown })?.code === 'ERR_SHUTDOWN_ABORTED') return;
+      try {
+        if (onError) {
+          onError(error);
+        } else {
+          log.warn(`[CloudSync] ${label} failed`, (error as Error).message);
+        }
+      } catch (callbackError) {
+        log.warn(`[CloudSync] ${label} failure handling failed`, (callbackError as Error).message);
+      }
+    });
+  }
+
   private async trackedFetch(url: string | URL, init: RequestInit, allowDuringDeletion = false): Promise<Response> {
     if (this.cloudDeletionInProgress && !allowDuringDeletion) throw new Error('Cloud deletion in progress');
     this.cloudNetworkOperations += 1;
@@ -1796,7 +1817,7 @@ class CloudSyncService {
   private upsertSettings(entries: Record<string, string | undefined | null>, allowDuringDeletion = false) {
     if (this.shutdownRequested || (this.cloudDeletionInProgress && !allowDuringDeletion)) return;
     if (isDatabaseMaintenanceActive()) {
-      void withDatabaseRequest(() => this.upsertSettings(entries, allowDuringDeletion));
+      this.runBackground(withDatabaseRequest(() => this.upsertSettings(entries, allowDuringDeletion)), 'settings update');
       return;
     }
     const db = getDatabase();

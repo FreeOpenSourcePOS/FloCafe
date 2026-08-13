@@ -15,6 +15,7 @@
 
 // ── Electron Mock ────────────────────────────────────────────────────────────
 const Module = require('module');
+const nodeAssert = require('node:assert/strict');
 const originalLoad = Module._load;
 const fs = require('fs');
 const os = require('os');
@@ -33,6 +34,7 @@ const {
 } = require('./helpers/test-setup');
 
 const { productRoutes } = require('../main/routes/products');
+const { closeHttpServer, installHttpShutdownTracking } = require('../main/shutdown');
 const dns = require('dns');
 const https = require('https');
 const { EventEmitter } = require('events');
@@ -393,6 +395,43 @@ async function main() {
     // Verify addon group link exists
     const agpCount = db.prepare('SELECT COUNT(*) as count FROM addon_group_product WHERE product_id = ?').get(res.data.product.id);
     assertEqual(agpCount.count, 1, 'G1: Addon group link created');
+
+    // E8: Shutdown aborts a redirect hop that is blocked in DNS resolution.
+    const redirectLookup = dns.promises.lookup;
+    const redirectRequest = https.request;
+    let secondLookupStarted!: () => void;
+    const secondLookup = new Promise<void>((resolve) => { secondLookupStarted = resolve; });
+    dns.promises.lookup = async (hostname: string) => {
+      if (hostname === 'redirect.example') return [{ address: '93.184.216.34', family: 4 }];
+      secondLookupStarted();
+      return new Promise(() => {});
+    };
+    https.request = (_options: any, callback: (response: any) => void) => {
+      const request = new EventEmitter() as any;
+      request.end = () => {
+        const response = new EventEmitter() as any;
+        response.statusCode = 302;
+        response.headers = { location: 'https://next.example/photo.webp' };
+        callback(response);
+        response.emit('end');
+      };
+      request.destroy = () => undefined;
+      return request;
+    };
+    installHttpShutdownTracking(server);
+    try {
+      const redirectResponse = api(baseUrl, '/api/products/fetch-url', {
+        method: 'POST', headers: authHeader,
+        body: { url: 'https://redirect.example/photo.webp' },
+      });
+      await secondLookup;
+      await nodeAssert.rejects(closeHttpServer(server, 'product redirect shutdown', 20));
+      res = await redirectResponse;
+      assertEqual(res.status, 504, 'E8: Shutdown aborts a blocked redirected DNS lookup');
+    } finally {
+      dns.promises.lookup = redirectLookup;
+      https.request = redirectRequest;
+    }
 
     console.log('\n' + '='.repeat(50));
     const results = require('./helpers/test-setup').getResults();

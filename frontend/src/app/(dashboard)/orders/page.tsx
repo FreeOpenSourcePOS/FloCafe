@@ -163,12 +163,18 @@ export default function OrdersPage() {
   const getAppendAttemptStorage = (): AppendAttemptStorage => {
     if (appendAttemptStorageRef.current) return appendAttemptStorageRef.current;
     let browserStorage: AppendAttemptStorage | null = null;
+    let sessionStorage: AppendAttemptStorage | null = null;
     try {
       if (typeof window !== 'undefined') browserStorage = window.localStorage;
     } catch {
       browserStorage = null;
     }
-    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(browserStorage);
+    try {
+      if (typeof window !== 'undefined') sessionStorage = window.sessionStorage;
+    } catch {
+      sessionStorage = null;
+    }
+    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(browserStorage, sessionStorage);
     return appendAttemptStorageRef.current;
   };
 

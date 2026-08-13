@@ -29,24 +29,40 @@ export interface AppendAttemptStorage {
 }
 
 /** Wrap browser storage for append-attempt state. */
-export function createSafeAppendAttemptStorage(storage: AppendAttemptStorage | null): AppendAttemptStorage {
+export function createSafeAppendAttemptStorage(
+  storage: AppendAttemptStorage | null,
+  fallbackStorage: AppendAttemptStorage | null = null,
+): AppendAttemptStorage {
   const memory = new Map<string, string | null>();
+  const stores = [storage, fallbackStorage].filter((candidate, index, all) => candidate && all.indexOf(candidate) === index) as AppendAttemptStorage[];
   return {
     getItem: (key) => {
       if (memory.has(key)) return memory.get(key) ?? null;
-      try {
-        const persisted = storage?.getItem(key);
-        if (persisted !== null && persisted !== undefined) return persisted;
-      } catch {
-        // Fall back to the in-memory copy.
+      for (const candidate of stores) {
+        try {
+          const persisted = candidate.getItem(key);
+          if (persisted !== null && persisted !== undefined) return persisted;
+        } catch {
+          continue;
+        }
       }
       return null;
     },
     setItem: (key, value) => {
-      if (!storage) throw new Error('Unable to persist append retry state');
+      let persisted = false;
+      for (const candidate of stores) {
+        try {
+          candidate.setItem(key, value);
+          if (candidate.getItem(key) !== value) throw new Error('Append retry state was not persisted');
+          persisted = true;
+        } catch {
+          continue;
+        }
+      }
+      if (!persisted) {
+        throw new Error('Unable to persist append retry state');
+      }
       try {
-        storage.setItem(key, value);
-        if (storage.getItem(key) !== value) throw new Error('Append retry state was not persisted');
         memory.set(key, value);
       } catch {
         throw new Error('Unable to persist append retry state');
@@ -56,13 +72,17 @@ export function createSafeAppendAttemptStorage(storage: AppendAttemptStorage | n
       // A tombstone prevents a stale durable value from returning if cleanup
       // itself is blocked by the browser.
       memory.set(key, null);
-      if (!storage) return false;
-      try {
-        storage.removeItem(key);
-        return storage.getItem(key) === null;
-      } catch {
-        return false;
+      if (stores.length === 0) return false;
+      let removed = true;
+      for (const candidate of stores) {
+        try {
+          candidate.removeItem(key);
+          if (candidate.getItem(key) !== null) removed = false;
+        } catch {
+          removed = false;
+        }
       }
+      return removed;
     },
   };
 }
@@ -258,7 +278,7 @@ export function migrateLegacyAppendAttempt(
       && JSON.stringify(existing.items) === JSON.stringify(attempt.items)
       && (existing.specialInstructions || undefined) === (attempt.specialInstructions || undefined)
       && typeof existing.createdAt === 'number';
-    if (!equivalent) throw new Error('Unable to migrate legacy append retry state safely');
+    if (!equivalent) return attempt;
   }
   if (existingRaw === null) storage.setItem(scopedKey, JSON.stringify(attempt));
   if (!removeAndVerify(storage, LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY)) {
@@ -311,6 +331,24 @@ function appendAttemptsMatch(first: AppendAttempt, second: AppendAttempt): boole
     && (first.specialInstructions || undefined) === (second.specialInstructions || undefined);
 }
 
+function ensureCompletionStorage(storage: AppendAttemptStorage, userId: string): void {
+  const markerKey = getAppendAttemptCompletionStorageKey(userId);
+  const attemptKey = getAppendAttemptStorageKey(userId);
+  const probe = JSON.stringify({ completed: true, userId, idempotencyKey: 'append-storage-probe', fingerprint: '{}', completedAt: Date.now() });
+  try {
+    storage.setItem(markerKey, probe);
+    if (!removeAndVerify(storage, markerKey)) throw new Error('Completion marker cleanup was not persisted');
+    return;
+  } catch {
+    try {
+      storage.setItem(attemptKey, probe);
+      if (!removeAndVerify(storage, attemptKey)) throw new Error('Completion fallback cleanup was not persisted');
+    } catch {
+      throw new Error('Unable to persist append retry state');
+    }
+  }
+}
+
 function readUserAttempt(
   storage: AppendAttemptStorage,
   userId: string,
@@ -323,9 +361,7 @@ function readUserAttempt(
   const scoped = parseStoredAttempt(storage, scopedKey, now, maxAgeMs);
   const legacy = parseStoredAttempt(storage, APPEND_ATTEMPT_STORAGE_KEY, now, maxAgeMs);
   if (legacy?.userId === userId) {
-    if (scoped && scoped.userId === userId && !appendAttemptsMatch(scoped, legacy)) {
-      throw new Error('Unable to migrate conflicting append retry state');
-    }
+    if (scoped && scoped.userId === userId && !appendAttemptsMatch(scoped, legacy)) return { attempt: scoped, key: scopedKey };
     if (!scoped) storage.setItem(scopedKey, JSON.stringify(legacy));
     if (!removeAndVerify(storage, APPEND_ATTEMPT_STORAGE_KEY)) {
       throw new Error('Unable to complete append retry migration');
@@ -377,6 +413,7 @@ export function getOrCreateAppendAttempt(
   if (!isValidIdempotencyKey(idempotencyKey)) {
     throw new Error('Unable to create a valid append idempotency key');
   }
+  ensureCompletionStorage(storage, options.userId);
 
   const attempt: AppendAttempt = {
     userId: options.userId,

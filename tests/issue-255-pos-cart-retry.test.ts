@@ -205,10 +205,10 @@ function main() {
     items: [{ product_id: '002', quantity: 1 }],
     createdAt: 4_000,
   }));
-  assert.throws(
-    () => migrateLegacyAppendAttempt(conflictingMigrationStorage, { now: 4_000 }),
-    /Unable to migrate legacy append retry state safely/,
-    'a conflicting scoped attempt does not consume the legacy retry record',
+  assert.equal(
+    migrateLegacyAppendAttempt(conflictingMigrationStorage, { now: 4_000 })?.idempotencyKey,
+    'legacy-conflict-key',
+    'a conflicting scoped attempt preserves the legacy retry record',
   );
   assert.ok(conflictingMigrationStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'conflicting legacy retry remains available');
   assert.equal(
@@ -216,6 +216,8 @@ function main() {
     'scoped-conflict-key',
     'conflicting scoped retry is not overwritten during migration',
   );
+  assert.equal(readAppendAttempt(conflictingMigrationStorage, { userId: 'different-cashier', now: 4_000 }), null, 'foreign callers proceed without consuming a conflicting legacy retry');
+  assert.ok(conflictingMigrationStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'foreign callers preserve the conflicting legacy retry');
 
   const blockedMigrationBacking = new MemoryStorage();
   blockedMigrationBacking.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
@@ -279,10 +281,10 @@ function main() {
     items,
     createdAt: 4_000,
   }));
-  assert.throws(
-    () => readAppendAttempt(conflictingUnscopedStorage, { userId: 'unscoped-owner', now: 4_000 }),
-    /Unable to migrate conflicting append retry state/,
-    'a conflicting unscoped retry is not discarded beside a scoped attempt',
+  assert.equal(
+    readAppendAttempt(conflictingUnscopedStorage, { userId: 'unscoped-owner', now: 4_000 })?.idempotencyKey,
+    'scoped-append-key',
+    'a conflicting unscoped retry does not replace the scoped attempt',
   );
   assert.ok(conflictingUnscopedStorage.getItem(APPEND_ATTEMPT_STORAGE_KEY), 'conflicting unscoped retry remains available');
 
@@ -358,10 +360,14 @@ function main() {
   }), /Unable to persist append retry state/, 'unavailable storage prevents the append from starting');
 
   const cleanupBacking = new MemoryStorage();
+  let cleanupBlocked = false;
   const cleanupFailureStorage = createSafeAppendAttemptStorage({
     getItem: cleanupBacking.getItem.bind(cleanupBacking),
     setItem: cleanupBacking.setItem.bind(cleanupBacking),
-    removeItem: () => { throw new Error('cleanup blocked'); },
+    removeItem: (key) => {
+      if (cleanupBlocked && key === attemptStorageKey) throw new Error('cleanup blocked');
+      cleanupBacking.removeItem(key);
+    },
   });
   const completed = getOrCreateAppendAttempt(cleanupFailureStorage, {
     userId: 'cashier-1',
@@ -373,6 +379,7 @@ function main() {
     orderNumber: 'K-42',
     now: 21_000,
   });
+  cleanupBlocked = true;
   clearAppendAttempt(cleanupFailureStorage, completed);
   const reloadedCleanupStorage = createSafeAppendAttemptStorage(cleanupBacking);
   assert.equal(readAppendAttempt(reloadedCleanupStorage, { userId: 'cashier-1', now: 21_001 }), null, 'a durable completion marker suppresses a stale attempt after cleanup failure');
@@ -389,17 +396,19 @@ function main() {
   assert.equal(afterCleanupFailure.idempotencyKey, 'append-key-after-cleanup-failure', 'cleanup failure does not block a later append');
 
   const fallbackBacking = new MemoryStorage();
+  const fallbackDurable = new MemoryStorage();
+  let fallbackCleanupBlocked = false;
   const fallbackStorage = createSafeAppendAttemptStorage({
     getItem: fallbackBacking.getItem.bind(fallbackBacking),
     setItem: (key, value) => {
-      if (key.endsWith('.completed')) throw new Error('marker storage blocked');
+      if (fallbackCleanupBlocked && (key.endsWith('.completed') || key === getAppendAttemptStorageKey('cashier-1'))) throw new Error('primary cleanup blocked');
       fallbackBacking.setItem(key, value);
     },
     removeItem: (key) => {
-      if (key === getAppendAttemptStorageKey('cashier-1')) throw new Error('cleanup blocked');
+      if (fallbackCleanupBlocked && key === getAppendAttemptStorageKey('cashier-1')) throw new Error('cleanup blocked');
       fallbackBacking.removeItem(key);
     },
-  });
+  }, fallbackDurable);
   const fallbackCompleted = getOrCreateAppendAttempt(fallbackStorage, {
     userId: 'cashier-1',
     orderId: '42',
@@ -409,8 +418,9 @@ function main() {
     specialInstructions: 'table-note',
     now: 22_000,
   });
+  fallbackCleanupBlocked = true;
   clearAppendAttempt(fallbackStorage, fallbackCompleted);
-  const fallbackReload = createSafeAppendAttemptStorage(fallbackBacking);
+  const fallbackReload = createSafeAppendAttemptStorage(fallbackBacking, fallbackDurable);
   assert.equal(readAppendAttempt(fallbackReload, { userId: 'cashier-1', now: 22_001 }), null, 'fallback completion state suppresses a stale attempt after marker failure');
   assert.equal(
     getOrCreateAppendAttempt(fallbackReload, {

@@ -112,12 +112,18 @@ export default function POSPage() {
   const getAppendAttemptStorage = (): AppendAttemptStorage => {
     if (appendAttemptStorageRef.current) return appendAttemptStorageRef.current;
     let browserStorage: AppendAttemptStorage | null = null;
+    let sessionStorage: AppendAttemptStorage | null = null;
     try {
       if (typeof window !== 'undefined') browserStorage = window.localStorage;
     } catch {
       // Private/restricted renderers may throw while reading localStorage.
     }
-    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(browserStorage);
+    try {
+      if (typeof window !== 'undefined') sessionStorage = window.sessionStorage;
+    } catch {
+      // Session storage may also be restricted.
+    }
+    appendAttemptStorageRef.current = createSafeAppendAttemptStorage(browserStorage, sessionStorage);
     return appendAttemptStorageRef.current;
   };
 

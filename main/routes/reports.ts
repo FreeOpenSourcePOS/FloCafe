@@ -1,7 +1,8 @@
 import { Router, Request, Response } from 'express';
 import Decimal from 'decimal.js';
-import { getDatabase, getSettingValue, parseDbTimestamp, parseItemJson, utcDayBounds, utcTodayDate } from '../db';
+import { getDatabase, getSettingValue, parseDbTimestamp, utcDayBounds, utcTodayDate } from '../db';
 import { requireRole } from '../middleware/security';
+import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 
 const router = Router();
@@ -205,27 +206,12 @@ router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, re
       ORDER BY b.created_at, b.id
     `).all(windowStart, windowEnd) as any[];
 
-    const itemsByOrder = new Map<number, any[]>();
-    if (bills.length > 0) {
-      const orderIds = Array.from(new Set(bills.map((bill) => Number(bill.order_id))));
-      const placeholders = orderIds.map(() => '?').join(',');
-      const items = db.prepare(`
-        SELECT * FROM order_items
-        WHERE order_id IN (${placeholders})
-        ORDER BY order_id, id
-      `).all(...orderIds).map(parseItemJson) as any[];
-      for (const item of items) {
-        const list = itemsByOrder.get(item.order_id) || [];
-        list.push(item);
-        itemsByOrder.set(item.order_id, list);
-      }
-    }
-
+    const orders = getOrdersWithItemsForBills(db, bills);
     const documents = bills.map((bill) => ({
       tax_amount: bill.tax_amount,
       tax_snapshot: bill.tax_snapshot,
       tax_breakdown: bill.tax_breakdown,
-      items: itemsByOrder.get(bill.order_id) || [],
+      items: orders.get(Number(bill.id))?.items || [],
     }));
     const taxAmount = bills.reduce(
       (sum, bill) => sum.plus(bill.tax_amount || 0),

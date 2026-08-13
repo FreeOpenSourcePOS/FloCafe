@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
+import { getOrderWithItems } from './bills';
 import { v4 as uuidv4 } from 'uuid';
 import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
@@ -339,17 +340,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     }
 
     // Fetch order items
-    let items: any[] = getEffectiveOrderItems(db, bill.order_id);
-    const allocations = db.prepare('SELECT order_item_id, quantity FROM bill_items WHERE bill_id = ?').all(bill.id) as any[];
-    if (allocations.length > 0) {
-      const byItem = new Map(allocations.map((row) => [Number(row.order_item_id), Number(row.quantity)]));
-      items = items.filter((item) => byItem.has(Number(item.id))).map((item) => {
-        const quantity = byItem.get(Number(item.id))!;
-        const ratio = quantity / Number(item.quantity);
-        return { ...item, quantity, subtotal: Number((Number(item.subtotal) * ratio).toFixed(2)), tax_amount: Number((Number(item.tax_amount || 0) * ratio).toFixed(2)), total: Number((Number(item.total) * ratio).toFixed(2)) };
-      });
-    }
-    order.items = items;
+    order.items = getOrderWithItems(db, Number(bill.order_id), Number(bill.id))?.items || [];
 
     // Fetch table info
     if (order.table_id) {

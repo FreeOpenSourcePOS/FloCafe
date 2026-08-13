@@ -326,6 +326,15 @@ Each finalized transaction needs a tax snapshot containing:
 - Rounding
 - Final component amounts
 
+When a bill is split, each child bill stores its own copy of the relevant
+snapshots. These copies are marked with `splitAllocation: "minor-unit-v1"` and
+allocate snapshot bases and tax components in integer minor units, preserving
+signed reconciliation and the item-versus-charge attribution for that child.
+Receipt, thermal-print, and tax-report resolvers must consume the marked child
+copy rather than the shared source-order item snapshots. Existing nested and
+flat `tax_breakdown` values remain readable for legacy rows; they contribute
+only residual components that are not already represented by a snapshot.
+
 Later pack updates must never alter existing orders, bills, refunds or reports.
 
 Refunds must use the original transaction snapshot—not current tax rules.

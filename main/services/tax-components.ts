@@ -22,6 +22,8 @@ interface DecimalTaxComponent {
   amount: Decimal;
 }
 
+const SPLIT_TAX_SNAPSHOT_VERSION = 'minor-unit-v1';
+
 function parseJson(value: unknown): unknown {
   if (typeof value !== 'string') return value;
   try {
@@ -31,7 +33,17 @@ function parseJson(value: unknown): unknown {
   }
 }
 
+function hasSplitAllocatedSnapshot(value: unknown): boolean {
+  const parsed = parseJson(value);
+  if (Array.isArray(parsed)) return parsed.some(hasSplitAllocatedSnapshot);
+  if (!parsed || typeof parsed !== 'object') return false;
+  const snapshot = parsed as Record<string, unknown>;
+  return snapshot.splitAllocation === SPLIT_TAX_SNAPSHOT_VERSION
+    && Array.isArray(snapshot.lines);
+}
+
 function decimalOrNull(value: unknown): Decimal | null {
+  if (value instanceof Decimal) return value;
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   try {
     const decimal = new Decimal(value);
@@ -94,7 +106,7 @@ function flattenLegacyBreakdown(value: unknown): DecimalTaxComponent[] {
     if (!entry || typeof entry !== 'object') continue;
     const raw = entry as Record<string, unknown>;
     const amount = decimalOrNull(raw.amount);
-    if (!amount) continue;
+    if (!amount || amount.isZero()) continue;
     const rate = decimalOrNull(raw.rate);
     components.push({
       title: String(raw.title || raw.name || 'Tax'),
@@ -157,19 +169,92 @@ function reconcileTotal(
   return reconciled;
 }
 
+function legacyItemComponents(document: TaxDocument): DecimalTaxComponent[] {
+  return (document.items || []).filter(
+    (item) => item.status !== 'cancelled' && item.status !== 'voided' && item.status !== 'void_adjustment',
+  ).flatMap((item) => {
+    const snapshot = flattenSnapshots(item.tax_snapshot);
+    return snapshot.present ? [] : flattenLegacyBreakdown(item.tax_breakdown);
+  });
+}
+
+function documentLegacyComponents(
+  document: TaxDocument,
+  coveredComponents: DecimalTaxComponent[] = [],
+): DecimalTaxComponent[] {
+  const remainingItems = new Map<string, Decimal>();
+  for (const component of [...legacyItemComponents(document), ...coveredComponents]) {
+    const key = `${component.title}\u0000${component.rate ?? ''}`;
+    remainingItems.set(key, (remainingItems.get(key) || new Decimal(0)).plus(component.amount));
+  }
+  return flattenLegacyBreakdown(document.tax_breakdown).flatMap((component) => {
+    const key = `${component.title}\u0000${component.rate ?? ''}`;
+    const itemAmount = remainingItems.get(key) || new Decimal(0);
+    const sameSign = itemAmount.isZero() || component.amount.isZero()
+      || itemAmount.isPositive() === component.amount.isPositive();
+    const consumed = sameSign
+      ? Decimal.min(itemAmount.abs(), component.amount.abs()).mul(component.amount.isNegative() ? -1 : 1)
+      : new Decimal(0);
+    const residual = component.amount.minus(consumed);
+    remainingItems.set(key, itemAmount.minus(consumed));
+    return residual.isZero() ? [] : [{ ...component, amount: residual }];
+  });
+}
+
 /**
  * Resolves receipt/report tax components without double-counting mixed orders.
  * A valid item snapshot (including an exempt snapshot with zero components)
  * is authoritative for that item; uncategorized items retain their legacy
- * tax_breakdown. Document-level data is used only when item rows are absent.
+ * tax_breakdown. Split bills use their marked child snapshot, then add only
+ * document-level legacy residuals that are not already represented.
  */
 export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent[] {
+  // Split bills persist child-specific snapshot amounts. Prefer those copies
+  // over the shared order-item snapshots, which describe the source order and
+  // would otherwise swap item tax for full document-level charge tax.
+  if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
+    const splitSnapshot = flattenSnapshots(document.tax_snapshot);
+    if (splitSnapshot.present) {
+      const hasItemSnapshot = (document.items || []).some((item) => flattenSnapshots(item.tax_snapshot).present);
+      const snapshotComponents = hasItemSnapshot
+        ? splitSnapshot.components
+        : splitSnapshot.components.filter((component) => !component.amount.isZero());
+      const represented = mergeComponents([
+        ...snapshotComponents,
+        ...legacyItemComponents(document),
+      ]);
+      const target = decimalOrNull(document.tax_amount);
+      const representedTotal = represented.reduce(
+        (sum, component) => sum.plus(component.amount),
+        new Decimal(0),
+      );
+      const needsDocumentResidual = !target
+        || (!target.isZero() && (target.isNegative()
+          ? representedTotal.comparedTo(target) > 0
+          : representedTotal.comparedTo(target) < 0));
+      return reconcileTotal(
+        mergeComponents([
+          ...represented.map((component) => ({
+            title: component.title,
+            rate: component.rate === null ? null : new Decimal(component.rate).toString(),
+            amount: new Decimal(component.amount),
+          })),
+          ...(needsDocumentResidual
+            ? documentLegacyComponents(document, snapshotComponents)
+            : []),
+        ]),
+        document.tax_amount,
+      );
+    }
+  }
+
   const activeItems = document.items?.filter(
-    (item) => item.status !== 'cancelled' && item.status !== 'voided',
+    (item) => item.status !== 'cancelled' && item.status !== 'voided' && item.status !== 'void_adjustment',
   );
 
   if (activeItems && activeItems.length > 0) {
     const components: DecimalTaxComponent[] = [];
+    const itemSnapshotComponents: DecimalTaxComponent[] = [];
     let hasItemTaxEvidence = false;
     let hasSnapshotEvidence = false;
     for (const item of activeItems) {
@@ -178,6 +263,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
       hasSnapshotEvidence ||= snapshot.present;
       hasItemTaxEvidence ||= snapshot.present || legacy.length > 0;
       components.push(...(snapshot.present ? snapshot.components : legacy));
+      if (snapshot.present) itemSnapshotComponents.push(...snapshot.components);
     }
     if (hasItemTaxEvidence) {
       const chargeSnapshot = flattenSnapshots(document.tax_snapshot, true);
@@ -196,19 +282,33 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
         return mergeComponents([
           ...reconcileTotal(mergeComponents(components), itemTarget),
           ...chargeComponents,
+          ...documentLegacyComponents(document, [
+            ...itemSnapshotComponents,
+            ...chargeSnapshot.components,
+          ]),
         ].map((component) => ({
           title: component.title,
           rate: component.rate === null ? null : new Decimal(component.rate).toString(),
           amount: new Decimal(component.amount),
         })));
       }
-      return reconcileTotal(mergeComponents(components), document.tax_amount);
+      const legacyItems = legacyItemComponents(document);
+      const documentResidual = hasSnapshotEvidence
+        && ((document.tax_amount !== undefined && document.tax_amount !== null) || legacyItems.length > 0)
+        ? documentLegacyComponents(document, itemSnapshotComponents)
+        : [];
+      return reconcileTotal(mergeComponents([...components, ...documentResidual]), document.tax_amount);
     }
   }
 
   const snapshot = flattenSnapshots(document.tax_snapshot);
   const components = mergeComponents(
-    snapshot.present ? snapshot.components : flattenLegacyBreakdown(document.tax_breakdown),
+    snapshot.present
+      ? [
+        ...snapshot.components,
+        ...documentLegacyComponents(document, snapshot.components),
+      ]
+      : flattenLegacyBreakdown(document.tax_breakdown),
   );
   return reconcileTotal(
     components,

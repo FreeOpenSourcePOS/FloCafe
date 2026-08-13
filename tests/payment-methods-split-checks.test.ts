@@ -359,6 +359,24 @@ async function main() {
     });
     assertEqual(snapshotSplit.status, 201, 'snapshot-tax split returns 201');
 
+    const splitDiscountSnapshot = db.prepare('SELECT tax_snapshot FROM bills WHERE id = ?').get(snapshotSplit.data.bills[0].id) as any;
+    const splitDiscountRes = await api(baseUrl, `/api/bills/${snapshotSplit.data.bills[0].id}/applyDiscount`, {
+      method: 'POST',
+      body: { type: 'percentage', value: 10 },
+      headers: authHeader,
+    });
+    assertEqual(splitDiscountRes.status, 409, 'discounting a split child is rejected before overwriting its tax snapshot');
+    const preservedDiscountBill = db.prepare('SELECT * FROM bills WHERE id = ?').get(snapshotSplit.data.bills[0].id) as any;
+    assertEqual(preservedDiscountBill.tax_snapshot, splitDiscountSnapshot.tax_snapshot, 'rejected split-child discount preserves the marked tax snapshot');
+    const preservedDiscountComponents = resolveBackendTaxComponents({
+      ...preservedDiscountBill,
+      tax_breakdown: JSON.parse(preservedDiscountBill.tax_breakdown),
+      tax_snapshot: preservedDiscountBill.tax_snapshot,
+      items: snapshotItems,
+    });
+    assertEqual(JSON.stringify(preservedDiscountComponents.map((component: any) => component.title)), JSON.stringify(['Item Tax', 'Charge Tax']), 'rejected split-child discount preserves tax attribution');
+    assertEqual(Number(preservedDiscountComponents.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), preservedDiscountBill.tax_amount, 'preserved split-child discount snapshot still reconciles to tax_amount');
+
     const expectedSnapshotComponents = [
       { title: 'Item Tax', rate: 5, amount: 1 },
       { title: 'Charge Tax', rate: 5, amount: 0.5 },
@@ -386,6 +404,65 @@ async function main() {
       snapshotOrderRes.data.order.tax_amount,
       'aggregate resolved snapshot tax equals source order tax exactly',
     );
+
+    const voidSnapshotOrderRes = await api(baseUrl, '/api/orders', {
+      method: 'POST',
+      body: {
+        type: 'dine_in',
+        guest_count: 2,
+        packaging_charge: 20,
+        items: [
+          { product_id: 'split-tax-item-a', quantity: 1 },
+          { product_id: 'split-tax-item-b', quantity: 1 },
+        ],
+      },
+      headers: authHeader,
+    });
+    const voidSnapshotItems = voidSnapshotOrderRes.data.order.items;
+    const voidSnapshotBillRes = await api(baseUrl, '/api/bills/generate', {
+      method: 'POST',
+      body: { order_id: voidSnapshotOrderRes.data.order.id },
+      headers: authHeader,
+    });
+    const voidSnapshotSplit = await api(baseUrl, `/api/bills/${voidSnapshotBillRes.data.bill.id}/split-check`, {
+      method: 'POST',
+      body: { checks: [
+        { label: 'Void Snapshot Guest 1', items: [{ order_item_id: voidSnapshotItems[0].id, quantity: 1 }] },
+        { label: 'Void Snapshot Guest 2', items: [{ order_item_id: voidSnapshotItems[1].id, quantity: 1 }] },
+      ] },
+      headers: authHeader,
+    });
+    assertEqual(voidSnapshotSplit.status, 201, 'snapshot-tax split for void regression returns 201');
+    const voidTargetItem = voidSnapshotItems.find((item: any) => item.product_id === 'split-tax-item-a');
+    const voidSurvivingItem = voidSnapshotItems.find((item: any) => item.product_id === 'split-tax-item-b');
+    const voidPrepareRes = await api(baseUrl, `/api/order-items/${voidTargetItem.id}/status`, {
+      method: 'PATCH',
+      body: { status: 'preparing' },
+      headers: authHeader,
+    });
+    assertEqual(voidPrepareRes.status, 200, 'snapshot item moves to preparing before the void regression');
+    const voidSnapshotCancelRes = await api(baseUrl, `/api/orders/${voidSnapshotOrderRes.data.order.id}/items/${voidTargetItem.id}/cancel`, {
+      method: 'PATCH',
+      body: { override_pin: '1234' },
+      headers: mgrUser.authHeader,
+    });
+    assertEqual(voidSnapshotCancelRes.status, 200, 'voiding a split snapshot item keeps the mutation supported');
+    const voidSnapshotBills = db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY id').all(voidSnapshotOrderRes.data.order.id) as any[];
+    let voidResolvedTax = 0;
+    for (const childBill of voidSnapshotBills) {
+      const childRes = await api(baseUrl, `/api/bills/${childBill.id}`, { headers: authHeader });
+      const child = childRes.data.bill;
+      const components = resolveBackendTaxComponents({ ...child, items: child.order.items });
+      const billItems = db.prepare('SELECT order_item_id FROM bill_items WHERE bill_id = ?').all(child.id) as any[];
+      const ownsSurvivingItem = billItems.some((item: any) => Number(item.order_item_id) === Number(voidSurvivingItem.id));
+      const expectedAmounts = ownsSurvivingItem ? [1, 1] : [0, 0];
+      assertEqual(JSON.stringify(components.map((component: any) => component.title)), JSON.stringify(['Item Tax', 'Charge Tax']), 'voided split child keeps item and charge tax categories');
+      assertEqual(JSON.stringify(components.map((component: any) => component.amount)), JSON.stringify(expectedAmounts), 'void evidence is not allocated to the sibling child');
+      assertEqual(Number(components.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'voided split child tax components reconcile exactly');
+      assert(child.tax_snapshot && JSON.parse(child.tax_snapshot).some((snapshot: any) => snapshot && snapshot.splitAllocation === 'minor-unit-v1'), 'void sync preserves marked child tax snapshots');
+      voidResolvedTax = Number((voidResolvedTax + child.tax_amount).toFixed(2));
+    }
+    assertEqual(voidResolvedTax, voidSnapshotCancelRes.data.order.tax_amount, 'voided split child tax totals reconcile to the updated order');
 
     const unevenComponentSnapshot = JSON.stringify({
       lines: [{

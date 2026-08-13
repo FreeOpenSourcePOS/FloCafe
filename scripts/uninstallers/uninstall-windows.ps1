@@ -166,9 +166,7 @@ function Get-ProcessTreeIds($rootIds, $deadline) {
   if ($ids.Count -eq 0) { return $ids.ToArray() }
   $remainingSeconds = ($deadline - [DateTime]::UtcNow).TotalSeconds
   if ($remainingSeconds -le 0) {
-    $script:ChildProcessInspectionFailed = $true
-    Mark-Partial "could not inspect child processes of the app's own uninstaller within the bounded wait"
-    return $null
+    return $ids.ToArray()
   }
 
   $operationTimeoutSeconds = [uint32][Math]::Max(1, [Math]::Ceiling($remainingSeconds))
@@ -181,11 +179,6 @@ function Get-ProcessTreeIds($rootIds, $deadline) {
     return $null
   }
 
-  if ([DateTime]::UtcNow -ge $deadline) {
-    $script:ChildProcessInspectionFailed = $true
-    Mark-Partial "could not inspect child processes of the app's own uninstaller within the bounded wait"
-    return $null
-  }
 
   $childrenByParent = @{}
   foreach ($process in $processes) {

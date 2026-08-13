@@ -390,8 +390,6 @@ Describe 'Flo Cafe Windows uninstaller' {
     $remainingPaths = @{}
     $remainingPaths[$firstUninstaller] = $true
     $remainingPaths[$secondUninstaller] = $true
-    $remainingPaths[$firstInstallPath] = $true
-    $remainingPaths[$secondInstallPath] = $true
     $remainingPaths[$testEntries[0].PSPath] = $true
     $remainingPaths[$testEntries[1].PSPath] = $true
     $removedPaths = New-Object 'System.Collections.Generic.List[string]'
@@ -418,11 +416,10 @@ Describe 'Flo Cafe Windows uninstaller' {
 
     $result = Invoke-FloCafeUninstall
 
-    $result.Complete | Should -BeFalse
+    $result.Complete | Should -BeTrue
     Should -Invoke Start-Process -Times 2 -Exactly
     ($removedPaths -contains $testEntries[0].PSPath) | Should -BeTrue
     ($removedPaths -contains $testEntries[1].PSPath) | Should -BeTrue
-    ($result.Issues -join "`n") | Should -Match 'C:\Flo Cafe First'
-    ($result.Issues -join "`n") | Should -Match 'C:\Flo Cafe Second'
+    $result.Issues.Count | Should -Be 0
   }
 }

@@ -501,7 +501,6 @@ class CloudSyncService {
       }
       return this.getStatus();
     } catch (err) {
-      const message = (err as Error).message;
       const currentSettings = this.readSettings(getDatabase());
       if (!this.cloudDeletionInProgress && currentSettings.cloud_services_disabled_by_user !== 'true') {
         this.upsertSettings({

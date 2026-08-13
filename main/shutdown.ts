@@ -333,14 +333,18 @@ export type ShutdownEvent = {
   preventDefault: () => void;
 };
 
+type ShutdownEventListener = (...args: never[]) => unknown;
+type ShutdownAppEvent = 'before-quit' | 'will-quit';
+type ShutdownProcessEvent = 'SIGINT' | 'SIGTERM' | 'uncaughtException' | 'unhandledRejection';
+
 export type ShutdownEntrypointApp = {
-  on: (...args: any[]) => unknown;
+  on: (event: ShutdownAppEvent, listener: ShutdownEventListener) => unknown;
   quit: () => void;
   exit: (code?: number) => void;
 };
 
 export type ShutdownEntrypointProcess = {
-  on: (event: string, listener: (...args: any[]) => void) => unknown;
+  on: (event: ShutdownProcessEvent, listener: ShutdownEventListener) => unknown;
   exit: (code?: number) => void;
 };
 

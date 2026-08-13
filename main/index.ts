@@ -16,7 +16,14 @@ import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from '
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
-import { createShutdownCoordinator, createShutdownEntrypoints, SHUTDOWN_TIMEOUT_MS, waitForHttpShutdownWork } from './shutdown';
+import {
+  createShutdownCoordinator,
+  createShutdownEntrypoints,
+  SHUTDOWN_TIMEOUT_MS,
+  waitForHttpShutdownWork,
+  type ShutdownEntrypointApp,
+  type ShutdownEntrypointProcess,
+} from './shutdown';
 
 // ── GPU compatibility ────────────────────────────────────────────────────────
 // On Windows, some systems hit "GPU process exited unexpectedly" (exit code
@@ -769,8 +776,8 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
 ]);
 
 const { runCleanup, isShutdownRequested } = createShutdownEntrypoints({
-  app,
-  process,
+  app: app as unknown as ShutdownEntrypointApp,
+  process: process as unknown as ShutdownEntrypointProcess,
   cleanup: async () => {
     console.log('[Flo] Running cleanup...');
     try {

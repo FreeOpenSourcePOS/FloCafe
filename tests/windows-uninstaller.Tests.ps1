@@ -113,7 +113,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       }
       Mock Start-Process { $child }
       Mock Stop-Process {
-        param($Id)
+        param($Id, [switch]$Force)
         if ($Id -eq $child.Id) { $state.RootRunning = $false }
         if ($Id -eq $descendantId) { $state.DescendantRunning = $false }
         if ($Id -eq $lateDescendantId) { $state.LateDescendantRunning = $false }
@@ -378,14 +378,13 @@ Describe 'Flo Cafe Windows uninstaller' {
         return $true
       }
     }
-    $remainingPaths = @{
-      ($firstUninstaller) = $true
-      ($secondUninstaller) = $true
-      ($firstInstallPath) = $true
-      ($secondInstallPath) = $true
-      ($entries[0].PSPath) = $true
-      ($entries[1].PSPath) = $true
-    }
+    $remainingPaths = @{}
+    $remainingPaths[$firstUninstaller] = $true
+    $remainingPaths[$secondUninstaller] = $true
+    $remainingPaths[$firstInstallPath] = $true
+    $remainingPaths[$secondInstallPath] = $true
+    $remainingPaths[$entries[0].PSPath] = $true
+    $remainingPaths[$entries[1].PSPath] = $true
     $removedPaths = New-Object 'System.Collections.Generic.List[string]'
 
     Mock Get-Process { @() }

@@ -221,8 +221,9 @@ function Get-ProcessTreeIds($rootIds, $deadline) {
 }
 
 function Add-ChildUninstallerProcessIds($ids) {
+  $combined = @($script:ChildUninstallerProcessId) + @($script:ChildUninstallerProcessIds) + @($ids)
   $script:ChildUninstallerProcessIds = @(
-    @($script:ChildUninstallerProcessIds + @($ids)) |
+    $combined |
       Where-Object { [int]$_ -gt 0 } |
       Select-Object -Unique
   )

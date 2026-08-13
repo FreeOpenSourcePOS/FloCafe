@@ -11,10 +11,8 @@ import { usePosSettingsStore } from '@/store/pos-settings';
  * readers always have the correct BCP 47 locale and text-direction cues,
  * even though the root layout is a static Next.js export.
  *
- * Used in every layout subtree that can switch languages (main app, KDS
- * standalone).  Server-standalone keeps lang="en" hardcoded because the
- * customer-facing ordering UI is in the tenant language, not the operator
- * language, and no i18n switching is wired there yet.
+ * HtmlLangSync handles the main application document.
+ * KDS performs equivalent synchronization separately through KdsHtmlLang.
  */
 export function HtmlLangSync() {
   const language = usePosSettingsStore((s) => s.language);

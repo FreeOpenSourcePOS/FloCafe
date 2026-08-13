@@ -2,6 +2,7 @@ export const APPEND_ATTEMPT_STORAGE_KEY = 'flo.pos.append-items.attempt';
 export const LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY = 'flo.postpaid.order.attempt';
 export const APPEND_ATTEMPT_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const APPEND_ATTEMPT_COMPLETION_SUFFIX = '.completed';
+const confirmedAppendTombstones = new Map<string, number>();
 
 export function getAppendAttemptStorageKey(userId: string): string {
   return `${APPEND_ATTEMPT_STORAGE_KEY}.${encodeURIComponent(userId)}`;
@@ -9,6 +10,27 @@ export function getAppendAttemptStorageKey(userId: string): string {
 
 function getAppendAttemptCompletionStorageKey(userId: string): string {
   return `${getAppendAttemptStorageKey(userId)}${APPEND_ATTEMPT_COMPLETION_SUFFIX}`;
+}
+
+function getConfirmedAppendTombstoneKey(userId: string, idempotencyKey: string, fingerprint: string): string {
+  return `${userId}\u0000${idempotencyKey}\u0000${fingerprint}`;
+}
+
+function hasConfirmedAppendTombstone(
+  userId: string,
+  idempotencyKey: string,
+  fingerprint: string,
+  now: number,
+  maxAgeMs: number,
+): boolean {
+  const key = getConfirmedAppendTombstoneKey(userId, idempotencyKey, fingerprint);
+  const completedAt = confirmedAppendTombstones.get(key);
+  if (completedAt === undefined) return false;
+  if (isExpired(completedAt, now, maxAgeMs)) {
+    confirmedAppendTombstones.delete(key);
+    return false;
+  }
+  return true;
 }
 
 export interface AppendAttempt {
@@ -359,6 +381,7 @@ function readUserAttempt(
   const migrated = migrateLegacyAppendAttempt(storage, { now, maxAgeMs });
   if (hasCompletedAttempt(storage, userId, now, maxAgeMs)) return null;
   const scoped = parseStoredAttempt(storage, scopedKey, now, maxAgeMs);
+  if (scoped && hasConfirmedAppendTombstone(userId, scoped.idempotencyKey, scoped.fingerprint, now, maxAgeMs)) return null;
   const legacy = parseStoredAttempt(storage, APPEND_ATTEMPT_STORAGE_KEY, now, maxAgeMs);
   if (legacy?.userId === userId) {
     if (scoped && scoped.userId === userId && !appendAttemptsMatch(scoped, legacy)) return { attempt: scoped, key: scopedKey };
@@ -443,6 +466,10 @@ export function clearAppendAttempt(
       current.idempotencyKey !== completedAttempt.idempotencyKey
       || current.fingerprint !== completedAttempt.fingerprint
     ) return;
+    confirmedAppendTombstones.set(
+      getConfirmedAppendTombstoneKey(completedAttempt.userId, completedAttempt.idempotencyKey, completedAttempt.fingerprint),
+      Date.now(),
+    );
     const markerKey = getAppendAttemptCompletionStorageKey(completedAttempt.userId);
     const completionRecord = {
       completed: true,

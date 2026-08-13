@@ -53,8 +53,8 @@ function main() {
   const delimiterSecond = generateCartItemId('burger', [], 'a-b-c');
   assert.notEqual(delimiterFirst, delimiterSecond, 'delimiter-bearing product/note values keep distinct cart lines');
 
-  const addonDelimiterFirst = generateCartItemId('burger', [addon('extra-a')], 'b-c');
-  const addonDelimiterSecond = generateCartItemId('burger', [addon('extra')], 'a-b-c');
+  const addonDelimiterFirst = generateCartItemId('burger', [addon('extra')], 'a:1-b-c');
+  const addonDelimiterSecond = generateCartItemId('burger-extra:1-a:1', [], 'b-c');
   assert.notEqual(addonDelimiterFirst, addonDelimiterSecond, 'delimiter-bearing add-on/note values keep distinct cart lines');
 
   assert.notEqual(
@@ -394,6 +394,32 @@ function main() {
     now: 21_002,
   });
   assert.equal(afterCleanupFailure.idempotencyKey, 'append-key-after-cleanup-failure', 'cleanup failure does not block a later append');
+
+  const combinedFailureBacking = new MemoryStorage();
+  let combinedFailure = false;
+  const combinedFailureStorage = createSafeAppendAttemptStorage({
+    getItem: combinedFailureBacking.getItem.bind(combinedFailureBacking),
+    setItem: (key, value) => {
+      if (combinedFailure && (key.endsWith('.completed') || key === attemptStorageKey)) throw new Error('completion writes blocked');
+      combinedFailureBacking.setItem(key, value);
+    },
+    removeItem: (key) => {
+      if (combinedFailure && key === attemptStorageKey) throw new Error('completion removal blocked');
+      combinedFailureBacking.removeItem(key);
+    },
+  });
+  const combinedFailureAttempt = getOrCreateAppendAttempt(combinedFailureStorage, {
+    userId: 'cashier-1',
+    orderId: '42',
+    fingerprint,
+    createKey: () => 'append-key-combined-failure',
+    items,
+    specialInstructions: 'table-note',
+    now: 21_500,
+  });
+  combinedFailure = true;
+  clearAppendAttempt(combinedFailureStorage, combinedFailureAttempt);
+  assert.equal(readAppendAttempt(combinedFailureStorage, { userId: 'cashier-1', now: 21_501 }), null, 'confirmed completion tombstone prevents a combined storage failure from blocking the current renderer');
 
   const fallbackBacking = new MemoryStorage();
   const fallbackDurable = new MemoryStorage();

@@ -384,6 +384,80 @@ Update order status.
 
 ---
 
+## Held Orders
+
+### GET `/api/held-orders`
+List held orders. Requires an authenticated owner, manager, cashier, or waiter.
+
+**Response (200):**
+```json
+{
+  "orders": [
+    {
+      "id": "ho-abc12345",
+      "tableId": "table-1",
+      "items": [
+        {
+          "id": "line-1",
+          "product": { "id": "prod-1", "name": "Cheeseburger", "price": 250 },
+          "quantity": 1,
+          "addons": [],
+          "special_instructions": ""
+        }
+      ],
+      "customerId": null,
+      "guestCount": 1,
+      "orderNotes": "",
+      "heldAt": "2025-03-31T12:00:00Z"
+    }
+  ],
+  "skippedCount": 0
+}
+```
+
+### POST `/api/held-orders`
+Create or replace the held order for a table. The response `id` identifies the
+specific row returned to the client; replacing an existing held order creates a
+new identity. Requires an authenticated owner, manager, cashier, or waiter.
+
+**Request:**
+```json
+{
+  "tableId": "table-1",
+  "items": [
+    {
+      "id": "line-1",
+      "product": { "id": "prod-1", "name": "Cheeseburger", "price": 250 },
+      "quantity": 1,
+      "addons": [],
+      "special_instructions": ""
+    }
+  ],
+  "customerId": null,
+  "guestCount": 1,
+  "orderNotes": ""
+}
+```
+
+**Response (200):**
+```json
+{
+  "success": true,
+  "id": "ho-abc12345"
+}
+```
+
+### DELETE `/api/held-orders/:tableId?heldOrderId=:id`
+Consume the held order only when `heldOrderId` matches the current row. A
+matching request deletes the row, releases the table, and returns
+`{"success":true,"deleted":true}`. Requests without an identity, for an
+already-consumed row, or for a replacement row return
+`{"success":true,"deleted":false}` without deleting the current row or
+releasing the table. Requires an authenticated owner, manager, cashier, or
+waiter.
+
+---
+
 ## Order Items
 
 ### PATCH `/api/order-items/:id/status`

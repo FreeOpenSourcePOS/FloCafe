@@ -4,7 +4,7 @@
  * Tests that:
  * A) POST /held-orders creates a held order for a table
  * B) GET /held-orders returns a list of held orders
- * C) DELETE /held-orders/:tableId removes the held order
+ * C) DELETE /held-orders/:tableId consumes matching rows and safely handles stale rows
  *
  * Usage: node tests/run-electron-node-test.cjs tests/held-orders.test.ts
  */

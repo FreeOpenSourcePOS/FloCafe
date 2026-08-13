@@ -205,7 +205,8 @@ function documentLegacyComponents(
  * Resolves receipt/report tax components without double-counting mixed orders.
  * A valid item snapshot (including an exempt snapshot with zero components)
  * is authoritative for that item; uncategorized items retain their legacy
- * tax_breakdown. Document-level data is used only when item rows are absent.
+ * tax_breakdown. Split bills use their marked child snapshot, then add only
+ * document-level legacy residuals that are not already represented.
  */
 export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent[] {
   // Split bills persist child-specific snapshot amounts. Prefer those copies

@@ -64,6 +64,7 @@ Describe 'Flo Cafe Windows uninstaller' {
   It 'bounds a hung child uninstaller and continues with manual cleanup' {
     $uninstallerExe = 'C:\Flo Cafe\uninstall.exe'
     $fallbackInstallPath = 'C:\Flo Cafe Fixture\Programs\Flo Cafe'
+    $intermediateId = 9899
     $descendantId = 9900
     $entry = [pscustomobject]@{
       DisplayName     = 'Flo Cafe'
@@ -80,8 +81,10 @@ Describe 'Flo Cafe Windows uninstaller' {
     $state = [pscustomobject]@{
       InstallExists       = $true
       RootRunning         = $true
+      IntermediateRunning = $false
       DescendantRunning   = $true
       TreeCalls           = 0
+      RootQueries         = 0
     }
     $oldLocalAppData = $env:LOCALAPPDATA
     $oldChildTimeout = $script:ChildUninstallerTimeoutSeconds
@@ -92,6 +95,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       Mock Get-Process {
         if ($PSBoundParameters.ContainsKey('Name')) { return @() }
         if ($Id -eq $child.Id -and $state.RootRunning) { return @([pscustomobject]@{ Id = $child.Id }) }
+        if ($Id -eq $intermediateId -and $state.IntermediateRunning) { return @([pscustomobject]@{ Id = $intermediateId }) }
         if ($Id -eq $descendantId -and $state.DescendantRunning) { return @([pscustomobject]@{ Id = $descendantId }) }
         return @()
       }
@@ -113,12 +117,19 @@ Describe 'Flo Cafe Windows uninstaller' {
         if ($LiteralPath -eq $fallbackInstallPath) { $state.InstallExists = $false }
       }
       Mock Get-CimInstance {
-        param($Filter)
-        $state.TreeCalls++
-        if ($Filter -eq "ParentProcessId = $($child.Id)" -and $state.TreeCalls -ge 2) {
-          return @([pscustomobject]@{ ProcessId = $descendantId })
+        param($ClassName, $Filter, $OperationTimeoutSec)
+        if ($PSBoundParameters.ContainsKey('Filter')) {
+          $state.RootQueries++
+          if ($Filter -eq "ParentProcessId = $($child.Id)" -and $state.RootQueries -eq 1) {
+            return @([pscustomobject]@{ ProcessId = $intermediateId })
+          }
+          return @()
         }
-        return @()
+        $state.TreeCalls++
+        if ($state.TreeCalls -eq 1) {
+          return @([pscustomobject]@{ ProcessId = $intermediateId; ParentProcessId = $child.Id })
+        }
+        return @([pscustomobject]@{ ProcessId = $descendantId; ParentProcessId = $intermediateId })
       }
 
       $result = Invoke-FloCafeUninstall
@@ -134,6 +145,38 @@ Describe 'Flo Cafe Windows uninstaller' {
       $env:LOCALAPPDATA = $oldLocalAppData
       $script:ChildUninstallerTimeoutSeconds = $oldChildTimeout
     }
+  }
+
+  It 'blocks cleanup when child process inspection times out' {
+    $uninstallerExe = 'C:\Flo Cafe\uninstall.exe'
+    $entry = [pscustomobject]@{
+      DisplayName     = 'Flo Cafe'
+      PSChildName     = 'FloCafe'
+      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
+      InstallLocation = ''
+      UninstallString = '"C:\Flo Cafe\uninstall.exe"'
+    }
+    $child = [pscustomobject]@{ Id = 9901; ExitCode = 0 }
+    $child | Add-Member -MemberType ScriptMethod -Name WaitForExit -Value {
+      param([int]$Milliseconds)
+      return $true
+    }
+
+    Mock Get-Process { @() }
+    Mock Get-ItemProperty { @($entry) }
+    Mock Test-Path {
+      param($LiteralPath)
+      return ($LiteralPath -eq $uninstallerExe)
+    }
+    Mock Start-Process { $child }
+    Mock Get-CimInstance { throw 'WMI operation timed out' }
+    Mock Remove-Item {}
+
+    $result = Invoke-FloCafeUninstall
+
+    $result.Complete | Should -BeFalse
+    ($result.Issues -join "`n") | Should -Match 'could not inspect child processes'
+    Should -Invoke Remove-Item -Times 0 -Exactly
   }
 
   It 'reports partial cleanup when a completed child exit code cannot be read' {

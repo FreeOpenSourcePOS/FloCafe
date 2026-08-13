@@ -150,26 +150,67 @@ function Confirm-FloCafeStopped {
   return $true
 }
 
-function Get-ProcessTreeIds($rootId) {
+function Get-ProcessTreeIds($rootIds, $deadline) {
   $ids = New-Object 'System.Collections.Generic.List[int]'
   $pending = New-Object 'System.Collections.Queue'
-  [void]$ids.Add([int]$rootId)
-  $pending.Enqueue([int]$rootId)
+
+  foreach ($rootId in @($rootIds)) {
+    $processId = 0
+    try { $processId = [int]$rootId } catch { $processId = 0 }
+    if ($processId -gt 0 -and -not $ids.Contains($processId)) {
+      [void]$ids.Add($processId)
+      $pending.Enqueue($processId)
+    }
+  }
+
+  if ($ids.Count -eq 0) { return $ids.ToArray() }
+  $remainingSeconds = ($deadline - [DateTime]::UtcNow).TotalSeconds
+  if ($remainingSeconds -lt 1) {
+    $script:ChildProcessInspectionFailed = $true
+    Mark-Partial "could not inspect child processes of the app's own uninstaller within the bounded wait"
+    return $null
+  }
+
+  $operationTimeoutSeconds = [uint32][Math]::Max(1, [Math]::Floor($remainingSeconds))
+  $processes = @()
+  try {
+    $processes = @(Get-CimInstance -ClassName Win32_Process -OperationTimeoutSec $operationTimeoutSeconds -ErrorAction Stop)
+  } catch {
+    $script:ChildProcessInspectionFailed = $true
+    Mark-Partial ("could not inspect child processes of the app's own uninstaller: {0}" -f $_.Exception.Message)
+    return $null
+  }
+
+  if ([DateTime]::UtcNow -ge $deadline) {
+    $script:ChildProcessInspectionFailed = $true
+    Mark-Partial "could not inspect child processes of the app's own uninstaller within the bounded wait"
+    return $null
+  }
+
+  $childrenByParent = @{}
+  foreach ($process in $processes) {
+    $processId = 0
+    $parentId = 0
+    try {
+      $processId = [int]$process.ProcessId
+      $parentId = [int]$process.ParentProcessId
+    } catch {
+      continue
+    }
+    if ($processId -le 0 -or $parentId -le 0) { continue }
+    if (-not $childrenByParent.ContainsKey($parentId)) {
+      $childrenByParent[$parentId] = New-Object 'System.Collections.Generic.List[int]'
+    }
+    if (-not $childrenByParent[$parentId].Contains($processId)) {
+      [void]$childrenByParent[$parentId].Add($processId)
+    }
+  }
 
   while ($pending.Count -gt 0) {
     $parentId = [int]$pending.Dequeue()
-    try {
-      $children = @(Get-CimInstance -ClassName Win32_Process -Filter "ParentProcessId = $parentId" -ErrorAction Stop)
-    } catch {
-      $script:ChildProcessInspectionFailed = $true
-      Mark-Partial ("could not inspect child processes of the app's own uninstaller: {0}" -f $_.Exception.Message)
-      return $null
-    }
-
-    foreach ($child in $children) {
-      $childId = 0
-      try { $childId = [int]$child.ProcessId } catch { $childId = 0 }
-      if ($childId -gt 0 -and -not $ids.Contains($childId)) {
+    if (-not $childrenByParent.ContainsKey($parentId)) { continue }
+    foreach ($childId in $childrenByParent[$parentId]) {
+      if (-not $ids.Contains($childId)) {
         [void]$ids.Add($childId)
         $pending.Enqueue($childId)
       }
@@ -187,9 +228,9 @@ function Add-ChildUninstallerProcessIds($ids) {
   )
 }
 
-function Update-ChildUninstallerProcessTree {
+function Update-ChildUninstallerProcessTree($deadline) {
   if ($null -eq $script:ChildUninstallerProcessId) { return $false }
-  $latestProcessTree = Get-ProcessTreeIds $script:ChildUninstallerProcessId
+  $latestProcessTree = Get-ProcessTreeIds $script:ChildUninstallerProcessIds $deadline
   if ($null -eq $latestProcessTree) { return $false }
   Add-ChildUninstallerProcessIds $latestProcessTree
   return $true
@@ -203,12 +244,13 @@ function Confirm-ChildUninstallerStopped {
   }
 
   $script:ChildProcessInspectionFailed = $false
-  if (-not (Update-ChildUninstallerProcessTree)) { return $false }
+  $deadline = [DateTime]::UtcNow.AddSeconds($script:AppForceCloseTimeoutSeconds)
+  if (-not (Update-ChildUninstallerProcessTree $deadline)) { return $false }
   $stopped = Test-ProcessIdsStopped $script:ChildUninstallerProcessIds
   if ($null -eq $stopped) { return $false }
   if (-not $stopped) {
     Mark-Partial ("the app's own uninstaller or one of its child processes is still running; stopping it before cleanup")
-    if (-not (Stop-ChildUninstallerTree $script:AppForceCloseTimeoutSeconds)) {
+    if (-not (Stop-ChildUninstallerTree $deadline)) {
       Mark-Partial ("could not confirm that the app's own uninstaller and its child processes stopped after the bounded force wait")
       return $false
     }
@@ -259,13 +301,13 @@ function Wait-ForProcessIdsExit($ids, $timeoutSeconds) {
 function Wait-ForChildUninstallerExit($process, $timeoutSeconds) {
   $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
   do {
-    if (-not (Update-ChildUninstallerProcessTree)) { return $false }
+    if (-not (Update-ChildUninstallerProcessTree $deadline)) { return $false }
     $remainingMilliseconds = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
     if ($remainingMilliseconds -le 0) { break }
     $waitMilliseconds = [Math]::Max(1, [Math]::Min(250, [int]$remainingMilliseconds))
     try {
       if ([bool]$process.WaitForExit($waitMilliseconds)) {
-        if (-not (Update-ChildUninstallerProcessTree)) { return $false }
+        if (-not (Update-ChildUninstallerProcessTree $deadline)) { return $false }
         return $true
       }
     } catch {
@@ -277,10 +319,10 @@ function Wait-ForChildUninstallerExit($process, $timeoutSeconds) {
   return $false
 }
 
-function Stop-ChildUninstallerTree($timeoutSeconds) {
-  $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
+function Stop-ChildUninstallerTree($deadline) {
   do {
-    if (-not (Update-ChildUninstallerProcessTree)) { return $false }
+    if ([DateTime]::UtcNow -ge $deadline) { break }
+    if (-not (Update-ChildUninstallerProcessTree $deadline)) { return $false }
     $stopped = Test-ProcessIdsStopped $script:ChildUninstallerProcessIds
     if ($null -eq $stopped) { return $false }
     if ($stopped) { return $true }
@@ -293,10 +335,10 @@ function Stop-ChildUninstallerTree($timeoutSeconds) {
       }
     }
     if ([DateTime]::UtcNow -ge $deadline) { break }
-    Start-Sleep -Milliseconds 250
+    $remainingMilliseconds = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
+    Start-Sleep -Milliseconds ([Math]::Max(1, [Math]::Min(250, [int]$remainingMilliseconds)))
   } while ($true)
 
-  if (-not (Update-ChildUninstallerProcessTree)) { return $false }
   $stopped = Test-ProcessIdsStopped $script:ChildUninstallerProcessIds
   return ($null -ne $stopped -and $stopped)
 }

@@ -372,7 +372,7 @@ Get order details.
 
 ---
 
-### PATCH `/api/orders/:id`
+### PATCH `/api/orders/:id/status`
 Update order status.
 
 **Request:**
@@ -381,6 +381,23 @@ Update order status.
   "status": "preparing"
 }
 ```
+
+**Valid transitions:**
+
+| Current status | Allowed next statuses |
+|----------------|-----------------------|
+| `pending` | `preparing`, `ready`, `served`, `completed`, `cancelled` |
+| `preparing` | `ready`, `served`, `completed`, `cancelled` |
+| `ready` | `served`, `completed`, `cancelled` |
+| `served` | `completed`, `cancelled` |
+| `completed` | none (terminal) |
+| `cancelled` | none (terminal) |
+
+Repeating a request for the order's current status is an idempotent no-op.
+Cancelling an order requires a manager PIN when the order has progressed beyond
+`pending` or any item is already in progress. Cancellation restores inventory
+only for non-terminal items that recorded an inventory deduction; cancelled,
+voided, and accounting-adjustment items are excluded.
 
 ---
 
@@ -459,6 +476,23 @@ waiter.
 ---
 
 ## Order Items
+
+### PATCH `/api/orders/:orderId/items/:itemId/cancel`
+Cancel an order item.
+
+- A cancellable item outside `preparing` or `ready` becomes `cancelled` and
+  restores its recorded inventory deduction.
+- An item in `preparing` or `ready` becomes `voided`, adds a negative
+  `void_adjustment` bill line, and does not restore inventory; a manager PIN is
+  required for the void.
+- A new cancellation on a completed, cancelled, paid, or partially paid order
+  is rejected. Repeating cancellation of a terminal item is an idempotent
+  no-op for an owner or manager.
+
+### PATCH `/api/orders/:orderId/items/:itemId/restore`
+Restore a cancelled item (owner or manager only). The item returns to `pending`
+and its recorded inventory deduction is applied again. The request fails when
+the order is terminal, the order is paid, or available stock is insufficient.
 
 ### PATCH `/api/order-items/:id/status`
 Update item status (KDS workflow).
@@ -985,9 +1019,10 @@ Get KDS access URLs and QR code.
 
 ## Order Status Flow
 
-```
-pending → preparing → ready → served
-```
+The order-level transition matrix is documented with
+`PATCH /api/orders/:id/status` above. The KDS item progression is
+`pending` → `preparing` → `ready` → `served`; cancellation and void statuses
+are documented in the Order Items section.
 
 Each item in an order has its own status, allowing:
 - Multiple items in one order

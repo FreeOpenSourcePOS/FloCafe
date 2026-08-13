@@ -416,10 +416,10 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       const customer = customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(customer_id) as any : null;
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
+        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
           modifier_selection, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       for (const item of items) {
@@ -479,7 +479,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
         const itemCreatedAt = now();
         const insertItemResult = insertItem.run(
-          orderId, product.id, product.name, product.sku, unitPrice, quantity,
+          orderId, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
@@ -635,10 +635,10 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       const customer = currentOrder.customer_id ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any : null;
 
       const insertItem = db.prepare(`
-        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity,
+        INSERT INTO order_items (order_id, product_id, product_name, product_sku, unit_price, quantity, inventory_deducted_quantity,
           subtotal, tax_amount, tax_breakdown, tax_snapshot, tax_type, discount_amount, total, variant_selection,
           modifier_selection, special_instructions, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
       `);
 
       for (const item of items) {
@@ -686,7 +686,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
 
         const itemCreatedAt = now();
         const insertItemResult = insertItem.run(
-          req.params.id, product.id, product.name, product.sku, unitPrice, quantity,
+          req.params.id, product.id, product.name, product.sku, unitPrice, quantity, product.track_inventory ? quantity : 0,
           itemSubtotal, taxResult.tax_amount, JSON.stringify(taxResult.tax_breakdown), itemTaxSnapshotJson,
           taxResult.tax_type, itemDiscount, itemTotal,
           JSON.stringify(item.variant_selection || null),
@@ -819,50 +819,86 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
     // reason is optional for cancellation
 
     const db = getDatabase();
+    // Keep the pre-transaction lookup limited to not-found reporting. All
+    // order/item-dependent authorization and policy decisions are repeated
+    // from currentOrder inside the authoritative transaction below.
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    const authUser = (req as any).user;
-    if (authUser?.role === 'waiter' && String((order as any).user_id) !== String(authUser.userId)) {
-      return res.status(403).json({ error: 'Waiters can only modify their own orders' });
-    }
-
-    // Override validation: cancelling an order in preparing+ status (or with items in preparing+) requires manager PIN
-    const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
-    const currentStatusIndex = statusOrder.indexOf((order as any).status);
-    const hasItemsInProgress = db.prepare(`
-      SELECT 1 FROM order_items 
-      WHERE order_id = ? AND status IN ('preparing', 'ready', 'served', 'completed') 
-      LIMIT 1
-    `).get(req.params.id) !== undefined;
-    const requiresOverride = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
-
-    if (requiresOverride) {
-      if (!override_pin) {
-        return res.status(400).json({ error: 'Manager PIN required to cancel order in progress' });
-      }
-
-      // Rate limit PIN attempts per IP
-      const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-      const rateLimitKey = `pin:${clientIp}:${req.params.id}`;
-      if (!checkPinRateLimit(rateLimitKey)) {
-        return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
-      }
-
-      // Validate PIN against active owner/manager accounts only
-      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-        .all()
-        .find((u: any) => verifyPin(u.pin_hash, override_pin));
-
-      if (!user) {
-        return res.status(403).json({ error: 'Invalid manager PIN' });
-      }
-    }
 
     const nowStr = now();
 
-    const { updatedOrder, orderItems, table } = withTxn(() => {
+    const { updatedOrder, orderItems, table, changed } = withTxn(() => {
+      const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
+      if (!currentOrder) {
+        throw Object.assign(new Error('Order not found'), { statusCode: 404 });
+      }
+
+      const authUser = (req as any).user;
+      const currentUser = authUser?.userId
+        ? db.prepare('SELECT role, is_active FROM users WHERE id = ?').get(authUser.userId) as { role: string; is_active: number } | undefined
+        : undefined;
+      if (!currentUser || currentUser.is_active !== 1 || !['owner', 'manager', 'cashier', 'chef', 'waiter'].includes(currentUser.role)) {
+        throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
+      }
+      if (currentUser.role === 'waiter' && String(currentOrder.user_id) !== String(authUser.userId)) {
+        throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
+      }
+
+      if (currentOrder.status === status) {
+        // Idempotent same-state request for order
+        const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
+        const tableRow = currentOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(currentOrder.table_id) as any : null;
+        const tableObj = tableRow ? { ...tableRow, name: tableRow.number } : null;
+        return { updatedOrder: parseRowJson(currentOrder), orderItems: items, table: tableObj, changed: false };
+      }
+
+      const VALID_TRANSITIONS: Record<string, string[]> = {
+        pending: ['preparing', 'ready', 'served', 'completed', 'cancelled'],
+        preparing: ['ready', 'served', 'completed', 'cancelled'],
+        ready: ['served', 'completed', 'cancelled'],
+        served: ['completed', 'cancelled'],
+        completed: [],
+        cancelled: [],
+      };
+
+      const allowedTargets = VALID_TRANSITIONS[currentOrder.status] || [];
+      if (!allowedTargets.includes(status)) {
+        throw Object.assign(new Error(`Cannot transition order status from '${currentOrder.status}' to '${status}'`), { statusCode: 400 });
+      }
+
+      // Cancellation authorization is based on the same transaction-local
+      // order and item snapshot that will be mutated below.
+      const hasItemsInProgress = db.prepare(`
+        SELECT 1 FROM order_items
+        WHERE order_id = ? AND status IN ('preparing', 'ready', 'served', 'completed')
+        LIMIT 1
+      `).get(req.params.id) !== undefined;
+      const statusOrder = ['pending', 'preparing', 'ready', 'served', 'completed'];
+      const currentStatusIndex = statusOrder.indexOf(currentOrder.status);
+      const requiresOverride = (currentStatusIndex > 0 || hasItemsInProgress) && status === 'cancelled';
+
+      if (requiresOverride) {
+        if (!override_pin) {
+          throw Object.assign(new Error('Manager PIN required to cancel order in progress'), { statusCode: 400 });
+        }
+
+        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+        const rateLimitKey = `pin:${clientIp}:${req.params.id}`;
+        if (!checkPinRateLimit(rateLimitKey)) {
+          throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
+        }
+
+        const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
+          .all()
+          .find((u: any) => verifyPin(u.pin_hash, override_pin));
+
+        if (!user) {
+          throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+        }
+      }
+
       switch (status) {
         case 'preparing':
           db.prepare('UPDATE orders SET status = ?, cooking_started_at = ?, updated_at = ? WHERE id = ?')
@@ -886,27 +922,38 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
             UPDATE order_items SET status = 'served', updated_at = ?
             WHERE order_id = ? AND status IN ('pending', 'preparing', 'ready')
           `).run(nowStr, req.params.id);
-          if ((order as any).table_id) {
+          if (currentOrder.table_id) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-              .run(nowStr, (order as any).table_id);
+              .run(nowStr, currentOrder.table_id);
           }
           break;
 
         case 'cancelled': {
-          const items = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id) as any[];
-          for (const item of items) {
+          // Select only items eligible for restocking (exclude already cancelled, voided, or accounting adjustments)
+          const eligibleItems = db.prepare(`
+            SELECT * FROM order_items
+            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')
+          `).all(req.params.id) as any[];
+
+          for (const item of eligibleItems) {
             const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.product_id) as any;
-            if (product && product.track_inventory) {
+            if (product && item.inventory_deducted_quantity > 0) {
               db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-                .run(item.quantity, nowStr, product.id);
+                .run(item.inventory_deducted_quantity, nowStr, product.id);
             }
           }
+
+          db.prepare(`
+            UPDATE order_items SET status = 'cancelled', updated_at = ?
+            WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')
+          `).run(nowStr, req.params.id);
+
           db.prepare('UPDATE orders SET status = ?, cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?')
             .run(status, nowStr, reason, nowStr, req.params.id);
           // Only free table if explicitly requested (default: true for backward compatibility)
-          if ((order as any).table_id && free_table !== false) {
+          if (currentOrder.table_id && free_table !== false) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-              .run(nowStr, (order as any).table_id);
+              .run(nowStr, currentOrder.table_id);
           }
           break;
         }
@@ -916,16 +963,18 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
       const orderItems = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(req.params.id).map(parseItemJson) as any[]);
       const tableRow2 = updatedOrder.table_id ? db.prepare('SELECT * FROM tables WHERE id = ?').get(updatedOrder.table_id) as any : null;
       const table = tableRow2 ? { ...tableRow2, name: tableRow2.number } : null;
-      return { updatedOrder, orderItems, table };
+      return { updatedOrder, orderItems, table, changed: true };
     });
 
-    cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
-    notifyKdsUpdate();
+    if (changed) {
+      cloudSync.recordOrderChanged(req.params.id as string, `order.${status}`);
+      notifyKdsUpdate();
+    }
 
     res.json({ order: Object.assign({}, updatedOrder, { items: orderItems, table }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : "Internal server error" });
   }
 });
 

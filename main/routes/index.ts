@@ -248,7 +248,7 @@ export function registerRoutes(app: Express): void {
     }
   });
 
-  // Soft-delete order item (frontend calls this)
+  // Cancel or void an order item (frontend calls this)
   app.patch('/api/orders/:orderId/items/:itemId/cancel', (req, res) => {
     try {
       const { orderId, itemId } = req.params;
@@ -256,71 +256,120 @@ export function registerRoutes(app: Express): void {
 
       // requireAuth (main/server.ts) already verified the token and attached
       // the user's current DB role to req.user — use that, not the JWT claim.
-      const userRole = (req as any).user?.role;
-      if (!userRole) return res.status(403).json({ error: 'Authentication required' });
+      const actorId = String((req as any).user?.userId || '');
+      if (!actorId) return res.status(403).json({ error: 'Authentication required' });
 
       const db = getDatabase();
+      // Keep these lookups only for the inexpensive not-found response. Every
+      // authorization, policy, and mutation decision is repeated from the
+      // transaction-local rows below so a concurrent writer cannot authorize
+      // against this pre-transaction snapshot.
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
       }
-      if (userRole === 'waiter' && String(order.user_id) !== String((req as any).user.userId)) {
-        return res.status(403).json({ error: 'Waiters can only modify their own orders' });
-      }
-
       const item = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
       if (!item) {
         return res.status(404).json({ error: 'Item not found in this order' });
       }
 
-      // #150: an item the kitchen has already started on (preparing/ready)
-      // can't be silently deleted like a pending one — the ingredients are
-      // already consumed. Voiding it instead requires a manager PIN, mirrors
-      // the whole-order-cancel override pattern below (routes/orders.ts
-      // ~L580-609), and leaves a negative bill line so the removal stays
-      // visible on the bill rather than the item just vanishing.
-      const isInProgressVoid = ['preparing', 'ready'].includes(item.status);
-      const isPrivilegedRole = ['owner', 'manager'].includes(userRole);
-      const canUseOverride = ['cashier', 'waiter'].includes(userRole) && isInProgressVoid;
-      if (!isPrivilegedRole && !canUseOverride) {
-        return res.status(403).json({ error: 'Only owner or manager can cancel this item' });
-      }
-      if (isInProgressVoid) {
-        if (!override_pin) {
-          return res.status(400).json({ error: 'Manager PIN required to void an item already in progress' });
-        }
-
-        const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-        const rateLimitKey = `pin:${clientIp}:item-void:${itemId}`;
-        if (!checkPinRateLimit(rateLimitKey)) {
-          return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
-        }
-
-        const managerId = req.body.manager_id || req.body.user_id;
-        let pinUser: any = null;
-        if (managerId) {
-          const candidate = db.prepare("SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").get(managerId) as any;
-          if (candidate && verifyPin(candidate.pin_hash, override_pin)) {
-            pinUser = candidate;
-          }
-        }
-        if (!pinUser) {
-          const managers = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").all() as any[];
-          for (const u of managers) {
-            if (verifyPin(u.pin_hash, override_pin)) {
-              pinUser = u;
-              break;
-            }
-          }
-        }
-        if (!pinUser) {
-          return res.status(403).json({ error: 'Invalid manager PIN' });
-        }
-      }
-
       // BUG #17 FIX: Wrap cancel + total recalc in transaction
       const result = withTxn(() => {
-        if (isInProgressVoid) {
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        const currentItem = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
+        if (!currentItem || !currentOrder) {
+          throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
+        }
+        const actor = db.prepare('SELECT role FROM users WHERE id = ? AND is_active = 1').get(actorId) as { role: string } | undefined;
+        if (!actor) {
+          throw Object.assign(new Error('Authentication required'), { statusCode: 403 });
+        }
+        const userRole = actor.role;
+        if (userRole === 'waiter' && String(currentOrder.user_id) !== actorId) {
+          throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
+        }
+
+        // A repeated request against an already terminal item is an
+        // intentional idempotent no-op. Check it before the parent terminal
+        // policy so a retry cannot turn a harmless repeat into a new error.
+        if (['cancelled', 'voided', 'void_adjustment'].includes(currentItem.status)) {
+          if (!['owner', 'manager'].includes(userRole)) {
+            throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
+          }
+          const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
+          return {
+            updatedOrder: currentOrder,
+            items,
+            orderCancelled: currentOrder.status === 'cancelled',
+            eventType: null,
+          };
+        }
+
+        if (db.prepare(`
+          SELECT 1
+          FROM bills
+          WHERE order_id = ?
+            AND (
+              COALESCE(payment_status, 'unpaid') <> 'unpaid'
+              OR COALESCE(paid_amount, 0) > 0
+              OR (payment_details IS NOT NULL AND TRIM(payment_details) NOT IN ('', '[]', '{}', 'null'))
+            )
+          LIMIT 1
+        `).get(orderId)) {
+          throw Object.assign(new Error('Cannot cancel items on a paid or partially paid order'), { statusCode: 400 });
+        }
+
+        // Completed and cancelled orders are terminal. This guard must run
+        // before any item, stock, order, table, or bill mutation.
+        if (['completed', 'cancelled'].includes(currentOrder.status)) {
+          throw Object.assign(new Error('Cannot cancel items on completed or cancelled orders'), { statusCode: 400 });
+        }
+
+        // #150: an item the kitchen has already started on (preparing/ready)
+        // can't be silently deleted like a pending one — the ingredients are
+        // already consumed. Voiding it instead requires a manager PIN, mirrors
+        // the whole-order-cancel override pattern, and leaves a negative bill
+        // line so the removal stays visible on the bill.
+        const isItemVoid = ['preparing', 'ready'].includes(currentItem.status);
+        const isPrivilegedRole = ['owner', 'manager'].includes(userRole);
+        const canUseOverride = ['cashier', 'waiter'].includes(userRole) && isItemVoid;
+        if (!isPrivilegedRole && !canUseOverride) {
+          throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
+        }
+        if (isItemVoid) {
+          if (!override_pin) {
+            throw Object.assign(new Error('Manager PIN required to void an item already in progress'), { statusCode: 400 });
+          }
+
+          const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
+          const rateLimitKey = `pin:${clientIp}:item-void:${itemId}`;
+          if (!checkPinRateLimit(rateLimitKey)) {
+            throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
+          }
+
+          const managerId = req.body.manager_id || req.body.user_id;
+          let pinUser: any = null;
+          if (managerId) {
+            const candidate = db.prepare("SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").get(managerId) as any;
+            if (candidate && verifyPin(candidate.pin_hash, override_pin)) {
+              pinUser = candidate;
+            }
+          }
+          if (!pinUser) {
+            const managers = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").all() as any[];
+            for (const u of managers) {
+              if (verifyPin(u.pin_hash, override_pin)) {
+                pinUser = u;
+                break;
+              }
+            }
+          }
+          if (!pinUser) {
+            throw Object.assign(new Error('Invalid manager PIN'), { statusCode: 403 });
+          }
+        }
+
+        if (isItemVoid) {
           // Leave the original line alone (it's a true record of what was
           // ordered and prepared) and add a mirrored negative line instead of
           // deleting anything — the bill total nets to the refund/comp
@@ -333,28 +382,33 @@ export function registerRoutes(app: Express): void {
               variant_selection, modifier_selection, status, created_at, updated_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'void_adjustment', ?, ?)
           `).run(
-            orderId, item.product_id, `Void: ${item.product_name}`, item.product_sku,
-            -item.unit_price, item.quantity, -item.subtotal, -(item.tax_amount || 0),
-            invertTaxBreakdown(item.tax_breakdown), invertTaxSnapshot(item.tax_snapshot), item.tax_type,
-            -(item.discount_amount || 0), -item.total,
-            item.variant_selection, item.modifier_selection, now(), now(),
+            orderId, currentItem.product_id, `Void: ${currentItem.product_name}`, currentItem.product_sku,
+            -currentItem.unit_price, currentItem.quantity, -currentItem.subtotal, -(currentItem.tax_amount || 0),
+            invertTaxBreakdown(currentItem.tax_breakdown), invertTaxSnapshot(currentItem.tax_snapshot), currentItem.tax_type,
+            -(currentItem.discount_amount || 0), -currentItem.total,
+            currentItem.variant_selection, currentItem.modifier_selection, now(), now(),
           );
           // #150 Q1-Q4 decision: mark 'voided', not 'cancelled' — a distinct,
-          // terminal status. Item stage-change endpoints (routes/kds.ts,
-          // routes/order-items.ts, kds-server.ts) reject any further
+          // terminal status. Item stage-change endpoints reject any further
           // transition once status is 'voided', and inventory is
           // deliberately left alone: it was already deducted when the item
           // was added, and voiding an already-prepared item must not restock it.
           db.prepare("UPDATE order_items SET status = 'voided', voided_at = ?, updated_at = ? WHERE id = ?")
             .run(now(), now(), itemId);
         } else {
-          // Soft delete - mark as cancelled
+          // Cancel the item and restore the inventory quantity recorded when it was added.
           db.prepare("UPDATE order_items SET status = 'cancelled', updated_at = ? WHERE id = ?")
             .run(now(), itemId);
+
+          const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
+          if (product && currentItem.inventory_deducted_quantity > 0) {
+            db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
+              .run(currentItem.inventory_deducted_quantity, now(), product.id);
+          }
         }
 
-        // Recalculate order totals excluding cancelled items
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'")
+        // Recalculate order totals excluding cancelled, voided, and void_adjustment items
+        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')")
           .all(orderId) as any[];
         let subtotal = 0;
         let totalTax = 0;
@@ -376,11 +430,11 @@ export function registerRoutes(app: Express): void {
           allTaxSnapshots.push(i.tax_snapshot || null);
         }
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
-        const existingDiscountAmount = order.discount_amount || 0;
+        const existingDiscountAmount = currentOrder.discount_amount || 0;
         let newDiscountAmount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && order.subtotal > 0) {
-          if (order.discount_type === 'percentage') {
-            const pct = order.discount_value || 0;
+        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
+          if (currentOrder.discount_type === 'percentage') {
+            const pct = currentOrder.discount_value || 0;
             newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
           }
           // amount type: keep same value
@@ -401,11 +455,11 @@ export function registerRoutes(app: Express): void {
           state_code: getSettingValue('state_code') || '',
           taxes_enabled: getSettingValue('taxes_enabled') === 'true',
         };
-        const customer = order.customer_id
-          ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any
+        const customer = currentOrder.customer_id
+          ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
           : null;
         const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
-          ...order,
+          ...currentOrder,
           service_charge: 0,
         }, customer);
         const taxRollup = combineItemAndChargeTaxes({
@@ -419,34 +473,24 @@ export function registerRoutes(app: Express): void {
 
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
         const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-          + (order.delivery_charge || 0) + (order.packaging_charge || 0);
+          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0);
         const roundOff = 0;
         const total = Number(preRoundTotal.toFixed(2));
 
         // #132 FIX: cancelling the last active item leaves nothing to serve or
         // bill — treat it as the whole order being cancelled, the same way the
         // explicit order-level cancel (routes/orders.ts) does: free the table,
-        // restore tracked inventory, and stamp cancelled_at/cancellation_reason.
-        // Without this the order silently stayed "active" with zero items,
-        // cluttering the Active list and permanently holding its table.
-        const orderCancelled = activeItems.length === 0 && order.status !== 'cancelled';
+        // and stamp cancelled_at/cancellation_reason. (Item stock was already restored above).
+        const orderCancelled = activeItems.length === 0 && currentOrder.status !== 'cancelled';
 
         if (orderCancelled) {
-          const allItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId) as any[];
-          for (const i of allItems) {
-            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(i.product_id) as any;
-            if (product?.track_inventory) {
-              db.prepare('UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = ? WHERE id = ?')
-                .run(i.quantity, now(), product.id);
-            }
-          }
           db.prepare(`
             UPDATE orders SET subtotal = ?, tax_amount = ?, tax_breakdown = ?, tax_snapshot = ?, discount_amount = ?, total = ?, round_off = ?,
               status = 'cancelled', cancelled_at = ?, cancellation_reason = ?, updated_at = ? WHERE id = ?
           `).run(subtotal, taxRollup.taxAmount, JSON.stringify(taxRollup.breakdowns), taxRollup.snapshotJson, newDiscountAmount, total, roundOff, now(), 'All items cancelled', now(), orderId);
-          if (order.table_id) {
+          if (currentOrder.table_id) {
             db.prepare("UPDATE tables SET status = 'available', updated_at = ? WHERE id = ?")
-              .run(now(), order.table_id);
+              .run(now(), currentOrder.table_id);
           }
         } else {
           db.prepare(`
@@ -466,14 +510,18 @@ export function registerRoutes(app: Express): void {
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
-        return { updatedOrder, items, orderCancelled };
+        return {
+          updatedOrder,
+          items,
+          orderCancelled,
+          eventType: orderCancelled ? 'order.cancelled' : (isItemVoid ? 'order.item_voided' : 'order.item_cancelled'),
+        };
       });
 
-      cloudSync.recordOrderChanged(
-        orderId,
-        result.orderCancelled ? 'order.cancelled' : (isInProgressVoid ? 'order.item_voided' : 'order.item_cancelled'),
-      );
-      notifyKdsUpdate();
+      if (result.eventType) {
+        cloudSync.recordOrderChanged(orderId, result.eventType);
+        notifyKdsUpdate();
+      }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Cancel item error:', error);
@@ -489,12 +537,12 @@ export function registerRoutes(app: Express): void {
 
       // requireAuth (main/server.ts) already verified the token and attached
       // the user's current DB role to req.user — use that, not the JWT claim.
-      const userRole = (req as any).user?.role;
-      if (!userRole || !['owner', 'manager'].includes(userRole)) {
-        return res.status(403).json({ error: 'Only owner or manager can restore items' });
-      }
+      const actorId = String((req as any).user?.userId || '');
+      if (!actorId) return res.status(403).json({ error: 'Authentication required' });
 
       const db = getDatabase();
+      // Keep these lookups only for the inexpensive not-found response. The
+      // transaction repeats all mutable state and policy checks authoritatively.
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
       if (!order) {
         return res.status(404).json({ error: 'Order not found' });
@@ -505,22 +553,47 @@ export function registerRoutes(app: Express): void {
         return res.status(404).json({ error: 'Item not found in this order' });
       }
 
-      if (['completed', 'cancelled'].includes(order.status)) {
-        return res.status(400).json({ error: 'Cannot restore items on completed or cancelled orders' });
-      }
-      const paidBill = db.prepare("SELECT id FROM bills WHERE order_id = ? AND payment_status = 'paid'").get(orderId);
-      if (paidBill) {
-        return res.status(400).json({ error: 'Cannot restore items on a paid order' });
-      }
-
       // BUG #17 FIX: Wrap restore + total recalc in transaction
       const result = withTxn(() => {
+        const currentOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
+        const currentItem = db.prepare('SELECT * FROM order_items WHERE id = ? AND order_id = ?').get(itemId, orderId) as any;
+        if (!currentItem || !currentOrder) {
+          throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
+        }
+        const actor = db.prepare('SELECT role FROM users WHERE id = ? AND is_active = 1').get(actorId) as { role: string } | undefined;
+        if (!actor || !['owner', 'manager'].includes(actor.role)) {
+          throw Object.assign(new Error('Only owner or manager can restore items'), { statusCode: 403 });
+        }
+
+        if (['completed', 'cancelled'].includes(currentOrder.status)) {
+          throw Object.assign(new Error('Cannot restore items on completed or cancelled orders'), { statusCode: 400 });
+        }
+        if (db.prepare("SELECT id FROM bills WHERE order_id = ? AND payment_status = 'paid'").get(orderId)) {
+          throw Object.assign(new Error('Cannot restore items on a paid order'), { statusCode: 400 });
+        }
+
+        // Only cancelled items can be restored; ignore if already active or voided
+        if (currentItem.status !== 'cancelled') {
+          const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
+          return { updatedOrder: currentOrder, items, changed: false };
+        }
+
+        // Re-deduct the inventory quantity originally consumed by the item
+        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(currentItem.product_id) as any;
+        if (product && currentItem.inventory_deducted_quantity > 0) {
+          if (product.stock_quantity < currentItem.inventory_deducted_quantity) {
+            throw Object.assign(new Error(`Insufficient stock to restore item (Available: ${product.stock_quantity}, Required: ${currentItem.inventory_deducted_quantity})`), { statusCode: 400 });
+          }
+          db.prepare('UPDATE products SET stock_quantity = stock_quantity - ?, updated_at = ? WHERE id = ?')
+            .run(currentItem.inventory_deducted_quantity, now(), product.id);
+        }
+
         // Restore - mark as pending
         db.prepare("UPDATE order_items SET status = 'pending', updated_at = ? WHERE id = ?")
           .run(now(), itemId);
 
         // Recalculate order totals
-        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status != 'cancelled'")
+        const activeItems = db.prepare("SELECT * FROM order_items WHERE order_id = ? AND status NOT IN ('cancelled', 'voided', 'void_adjustment')")
           .all(orderId) as any[];
         let subtotal = 0;
         let totalTax = 0;
@@ -542,11 +615,11 @@ export function registerRoutes(app: Express): void {
           allTaxSnapshots.push(i.tax_snapshot || null);
         }
         // BUG #13 FIX: Preserve order-level discount (scale percentage proportionally)
-        const existingDiscountAmount = order.discount_amount || 0;
+        const existingDiscountAmount = currentOrder.discount_amount || 0;
         let newDiscountAmount = existingDiscountAmount;
-        if (existingDiscountAmount > 0 && order.subtotal > 0) {
-          if (order.discount_type === 'percentage') {
-            const pct = order.discount_value || 0;
+        if (existingDiscountAmount > 0 && currentOrder.subtotal > 0) {
+          if (currentOrder.discount_type === 'percentage') {
+            const pct = currentOrder.discount_value || 0;
             newDiscountAmount = Math.round(subtotal * pct / 100 * 100) / 100;
           }
           // amount type: keep same value
@@ -567,11 +640,11 @@ export function registerRoutes(app: Express): void {
           state_code: getSettingValue('state_code') || '',
           taxes_enabled: getSettingValue('taxes_enabled') === 'true',
         };
-        const customer = order.customer_id
-          ? db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id) as any
+        const customer = currentOrder.customer_id
+          ? db.prepare('SELECT * FROM customers WHERE id = ?').get(currentOrder.customer_id) as any
           : null;
         const chargeTaxes = calculateConfiguredChargeTaxes(tenantInfo, {
-          ...order,
+          ...currentOrder,
           service_charge: 0,
         }, customer);
         const taxRollup = combineItemAndChargeTaxes({
@@ -585,7 +658,7 @@ export function registerRoutes(app: Express): void {
 
         // BUG #5 FIX: Correct round-off formula; BUG #24 FIX: include delivery_charge (was missing, causing total mismatch with bill generation)
         const preRoundTotal = discountedSubtotal + taxRollup.exclusiveTaxAmount
-          + (order.delivery_charge || 0) + (order.packaging_charge || 0);
+          + (currentOrder.delivery_charge || 0) + (currentOrder.packaging_charge || 0);
         const roundOff = 0;
         const total = Number(preRoundTotal.toFixed(2));
 
@@ -605,11 +678,13 @@ export function registerRoutes(app: Express): void {
 
         const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId) as any;
         const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
-        return { updatedOrder, items };
+        return { updatedOrder, items, changed: true };
       });
 
-      cloudSync.recordOrderChanged(orderId, 'order.item_restored');
-      notifyKdsUpdate();
+      if (result.changed) {
+        cloudSync.recordOrderChanged(orderId, 'order.item_restored');
+        notifyKdsUpdate();
+      }
       res.json({ order: { ...result.updatedOrder, items: result.items } });
     } catch (error: any) {
       console.error('[Orders] Restore item error:', error);

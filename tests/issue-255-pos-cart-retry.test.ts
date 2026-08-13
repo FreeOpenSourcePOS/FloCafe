@@ -253,6 +253,36 @@ function main() {
     'scoped-conflict-key',
     'conflicting scoped retry is not overwritten during migration',
   );
+
+  const freshnessMigrationStorage = new MemoryStorage();
+  freshnessMigrationStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'fresh-owner',
+    fingerprint,
+    idempotencyKey: 'fresh-legacy-key',
+    createdAt: 49_999,
+  }));
+  freshnessMigrationStorage.setItem(getAppendAttemptStorageKey('fresh-owner'), JSON.stringify({
+    userId: 'fresh-owner',
+    orderId: '42',
+    fingerprint,
+    idempotencyKey: 'fresh-legacy-key',
+    items,
+    specialInstructions: 'table-note',
+    createdAt: 40_000,
+  }));
+  const freshMigration = migrateLegacyAppendAttempt(freshnessMigrationStorage, { now: 50_000, maxAgeMs: 5_000 });
+  assert.equal(freshMigration?.createdAt, 49_999, 'fresh shared retry replaces an expired equivalent scoped copy');
+  assert.equal(
+    JSON.parse(freshnessMigrationStorage.getItem(getAppendAttemptStorageKey('fresh-owner'))).createdAt,
+    49_999,
+    'fresh migrated retry remains durable in the scoped slot',
+  );
+  assert.equal(
+    readAppendAttempt(freshnessMigrationStorage, { userId: 'fresh-owner', now: 50_001, maxAgeMs: 5_000 })?.idempotencyKey,
+    'fresh-legacy-key',
+    'fresh migrated retry survives a reload after migration',
+  );
+
   assert.equal(readAppendAttempt(conflictingMigrationStorage, { userId: 'different-cashier', now: 4_000 }), null, 'foreign callers proceed without consuming a conflicting legacy retry');
   assert.ok(conflictingMigrationStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), 'foreign callers preserve the conflicting legacy retry');
   assert.equal(
@@ -401,6 +431,22 @@ function main() {
     now: 20_000,
   }), /Unable to persist append retry state/, 'blocked storage prevents the append from starting');
   assert.equal(readAppendAttempt(blockedStorage, { userId: 'cashier-1', now: 20_001 }), null, 'blocked storage does not leave an in-memory-only retry attempt');
+
+  const fallbackStorage = createSafeAppendAttemptStorage({
+    getItem: () => { throw new Error('primary storage unavailable'); },
+    setItem: () => { throw new Error('primary storage unavailable'); },
+    removeItem: () => { throw new Error('primary storage unavailable'); },
+  }, new MemoryStorage());
+  const fallbackAttempt = getOrCreateAppendAttempt(fallbackStorage, {
+    userId: 'cashier-fallback',
+    orderId: '42',
+    fingerprint,
+    createKey: () => 'append-key-fallback-only',
+    items,
+    specialInstructions: 'table-note',
+    now: 20_500,
+  });
+  assert.equal(fallbackAttempt.idempotencyKey, 'append-key-fallback-only', 'verified fallback storage remains authoritative when primary storage is unavailable');
 
   const unavailableStorage = createSafeAppendAttemptStorage(null);
   assert.throws(() => getOrCreateAppendAttempt(unavailableStorage, {

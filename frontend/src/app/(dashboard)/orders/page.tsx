@@ -28,7 +28,6 @@ import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
   createSafeAppendAttemptStorage,
-  createCookieAppendAttemptStorage,
   getOrCreateAppendAttempt,
   readAppendAttempt,
   type AppendAttempt,
@@ -178,7 +177,6 @@ export default function OrdersPage() {
     appendAttemptStorageRef.current = createSafeAppendAttemptStorage(
       browserStorage,
       sessionStorage,
-      createCookieAppendAttemptStorage(),
     );
     return appendAttemptStorageRef.current;
   };

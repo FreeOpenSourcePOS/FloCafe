@@ -80,12 +80,16 @@ export interface AppendAttemptStorage {
   getItem: (key: string) => string | null;
   setItem: (key: string, value: string) => void;
   removeItem: (key: string) => void | boolean;
+  hasUnverifiedRead?: (key: string) => boolean;
+  hasUnverifiedRemoval?: (key: string) => boolean;
 }
 
-export function createCookieAppendAttemptStorage(): AppendAttemptStorage | null {
+function createCookieCompletionStorage(): AppendAttemptStorage | null {
   if (typeof document === 'undefined') return null;
   const cookieName = (key: string) => `${APPEND_ATTEMPT_COOKIE_PREFIX}${encodeURIComponent(key)}`;
+  const isCompletionKey = (key: string) => key.includes(APPEND_ATTEMPT_COMPLETION_COOKIE_SUFFIX);
   const readCookie = (key: string): string | null => {
+    if (!isCompletionKey(key)) return null;
     const name = `${cookieName(key)}=`;
     const entry = document.cookie.split('; ').find((value) => value.startsWith(name));
     return entry ? decodeURIComponent(entry.slice(name.length)) : null;
@@ -93,10 +97,12 @@ export function createCookieAppendAttemptStorage(): AppendAttemptStorage | null 
   return {
     getItem: readCookie,
     setItem: (key, value) => {
+      if (!isCompletionKey(key)) throw new Error('Invalid append completion cookie key');
       document.cookie = `${cookieName(key)}=${encodeURIComponent(value)}; Max-Age=172800; Path=/; SameSite=Strict`;
       if (readCookie(key) !== value) throw new Error('Append retry state was not persisted');
     },
     removeItem: (key) => {
+      if (!isCompletionKey(key)) return false;
       document.cookie = `${cookieName(key)}=; Max-Age=0; Path=/; SameSite=Strict`;
       return readCookie(key) === null;
     },
@@ -109,9 +115,12 @@ export function createSafeAppendAttemptStorage(
   ...fallbackStorages: Array<AppendAttemptStorage | null>
 ): AppendAttemptStorage {
   const memory = new Map<string, string | null>();
+  const unverifiedReads = new Set<string>();
+  const unverifiedRemovals = new Set<string>();
   const stores = [storage, ...fallbackStorages].filter((candidate, index, all) => candidate && all.indexOf(candidate) === index) as AppendAttemptStorage[];
   const readPersisted = (key: string): string | null => {
     let value: string | undefined;
+    let unavailable = false;
     for (const candidate of stores) {
       try {
         const persisted = candidate.getItem(key);
@@ -120,8 +129,11 @@ export function createSafeAppendAttemptStorage(
         value = persisted;
       } catch (error) {
         if (error instanceof Error && error.message === 'Conflicting append retry state') throw error;
+        unavailable = true;
       }
     }
+    if (unavailable) unverifiedReads.add(key);
+    else unverifiedReads.delete(key);
     return value ?? null;
   };
   return {
@@ -144,6 +156,7 @@ export function createSafeAppendAttemptStorage(
         throw new Error('Unable to persist append retry state');
       }
       if (readPersisted(key) !== value) throw new Error('Conflicting append retry state');
+      unverifiedRemovals.delete(key);
       try {
         memory.set(key, value);
       } catch {
@@ -155,17 +168,24 @@ export function createSafeAppendAttemptStorage(
       // itself is blocked by the browser.
       memory.set(key, null);
       if (stores.length === 0) return false;
-      let removed = true;
+      let removed = false;
+      let remaining = false;
+      let unavailable = false;
       for (const candidate of stores) {
         try {
           candidate.removeItem(key);
-          if (candidate.getItem(key) !== null) removed = false;
+          if (candidate.getItem(key) === null) removed = true;
+          else remaining = true;
         } catch {
-          removed = false;
+          unavailable = true;
         }
       }
-      return removed;
+      if (unavailable) unverifiedRemovals.add(key);
+      else unverifiedRemovals.delete(key);
+      return removed && !remaining;
     },
+    hasUnverifiedRead: (key) => unverifiedReads.has(key),
+    hasUnverifiedRemoval: (key) => unverifiedRemovals.has(key),
   };
 }
 
@@ -223,11 +243,19 @@ function persistCompletionRecord(
   } catch (error) {
     void error;
   }
-  const cookieStorage = createCookieAppendAttemptStorage();
+  const cookieStorage = createCookieCompletionStorage();
   if (!cookieStorage) return false;
   try {
-    cookieStorage.setItem(cookieKey, value);
-    return cookieStorage.getItem(cookieKey) === value;
+    const completion = JSON.parse(value) as Partial<AppendAttemptCompletion> & { completed?: boolean };
+    const cookieValue = JSON.stringify({
+      completed: completion.completed,
+      userId: completion.userId,
+      idempotencyKey: completion.idempotencyKey,
+      fingerprintHash: getFingerprintHash(completion.fingerprint || ''),
+      completedAt: completion.completedAt,
+    });
+    cookieStorage.setItem(cookieKey, cookieValue);
+    return cookieStorage.getItem(cookieKey) === cookieValue;
   } catch {
     return false;
   }
@@ -257,7 +285,8 @@ function normalizeAppendFingerprint(fingerprint: string): string | null {
 interface AppendAttemptCompletion {
   userId: string;
   idempotencyKey: string;
-  fingerprint: string;
+  fingerprint?: string;
+  fingerprintHash?: string;
   completedAt: number;
 }
 
@@ -272,8 +301,21 @@ function isCompletionRecord(value: Partial<AppendAttemptCompletion> & { complete
   return value.completed === true
     && typeof value.userId === 'string'
     && typeof value.idempotencyKey === 'string'
-    && typeof value.fingerprint === 'string'
+    && (typeof value.fingerprint === 'string' || typeof value.fingerprintHash === 'string')
     && typeof value.completedAt === 'number';
+}
+
+function readCompletionRecord(storage: AppendAttemptStorage, key: string): string | null {
+  if (key.includes(APPEND_ATTEMPT_COMPLETION_COOKIE_SUFFIX)) return createCookieCompletionStorage()?.getItem(key) ?? null;
+  return storage.getItem(key);
+}
+
+function removeCompletionRecord(storage: AppendAttemptStorage, key: string): void {
+  if (key.includes(APPEND_ATTEMPT_COMPLETION_COOKIE_SUFFIX)) {
+    createCookieCompletionStorage()?.removeItem(key);
+    return;
+  }
+  storage.removeItem(key);
 }
 
 function completedAttemptMatches(
@@ -284,15 +326,25 @@ function completedAttemptMatches(
 ): boolean {
   const raw = storage.getItem(attemptKey);
   if (!raw) {
-    storage.removeItem(completionKey);
+    if (storage.hasUnverifiedRead?.(attemptKey)) return true;
+    removeCompletionRecord(storage, completionKey);
     return true;
   }
   try {
     const current = JSON.parse(raw) as Partial<AppendAttempt>;
-    if (current.idempotencyKey !== completion.idempotencyKey || current.fingerprint !== completion.fingerprint) return false;
+    if (
+      current.idempotencyKey !== completion.idempotencyKey
+      || (typeof completion.fingerprint === 'string'
+        ? current.fingerprint !== completion.fingerprint
+        : getFingerprintHash(current.fingerprint || '') !== completion.fingerprintHash)
+    ) return false;
     const removed = storage.removeItem(attemptKey);
-    if (removed !== false && storage.getItem(attemptKey) === null) {
-      storage.removeItem(completionKey);
+    if (
+      removed !== false
+      && storage.getItem(attemptKey) === null
+      && !storage.hasUnverifiedRemoval?.(attemptKey)
+    ) {
+      removeCompletionRecord(storage, completionKey);
     }
     return true;
   } catch {
@@ -313,7 +365,7 @@ function hasCompletedAttempt(
     getAppendAttemptCompletionCookieStorageKey(userId),
   ];
   for (const completionKey of completionKeys) {
-    const raw = storage.getItem(completionKey);
+    const raw = readCompletionRecord(storage, completionKey);
     if (!raw) continue;
     try {
       const completion = JSON.parse(raw) as Partial<AppendAttemptCompletion>;
@@ -321,16 +373,16 @@ function hasCompletedAttempt(
         completion.userId !== userId
         || typeof completion.idempotencyKey !== 'string'
         || !isValidIdempotencyKey(completion.idempotencyKey)
-        || typeof completion.fingerprint !== 'string'
+        || (typeof completion.fingerprint !== 'string' && typeof completion.fingerprintHash !== 'string')
         || typeof completion.completedAt !== 'number'
         || isExpired(completion.completedAt, now, maxAgeMs)
       ) {
-        storage.removeItem(completionKey);
+        removeCompletionRecord(storage, completionKey);
         continue;
       }
       if (completedAttemptMatches(storage, attemptKey, completionKey, completion as AppendAttemptCompletion)) return true;
     } catch {
-      storage.removeItem(completionKey);
+      removeCompletionRecord(storage, completionKey);
     }
   }
   return false;
@@ -406,8 +458,25 @@ export function migrateLegacyAppendAttempt(
       if (options.userId === parsed.userId) throw new LegacyAppendAttemptConflictError();
       return attempt;
     }
+    const existingCreatedAt = existing?.createdAt as number;
+    const selectedAttempt: AppendAttempt = {
+      ...attempt,
+      createdAt: !isExpired(existingCreatedAt, now, maxAgeMs) && existingCreatedAt > attempt.createdAt
+        ? existingCreatedAt
+        : attempt.createdAt,
+      orderNumber: typeof existing?.orderNumber === 'string' ? existing.orderNumber : attempt.orderNumber,
+    };
+    const serializedSelectedAttempt = JSON.stringify(selectedAttempt);
+    storage.setItem(scopedKey, serializedSelectedAttempt);
+    if (storage.getItem(scopedKey) !== serializedSelectedAttempt) throw new Error('Unable to complete legacy append retry migration');
+    if (!removeAndVerify(storage, LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY)) {
+      throw new Error('Unable to complete legacy append retry migration');
+    }
+    return selectedAttempt;
   }
-  if (existingRaw === null) storage.setItem(scopedKey, JSON.stringify(attempt));
+  const serializedAttempt = JSON.stringify(attempt);
+  storage.setItem(scopedKey, serializedAttempt);
+  if (storage.getItem(scopedKey) !== serializedAttempt) throw new Error('Unable to complete legacy append retry migration');
   if (!removeAndVerify(storage, LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY)) {
     throw new Error('Unable to complete legacy append retry migration');
   }
@@ -608,10 +677,15 @@ export function clearAppendAttempt(
       pruneConfirmedAppendTombstones(Date.now(), APPEND_ATTEMPT_MAX_AGE_MS);
     }
     const removed = storage.removeItem(key);
-    if (removed !== false && storage.getItem(key) === null && markerPersisted) {
+    if (
+      removed !== false
+      && storage.getItem(key) === null
+      && markerPersisted
+      && !storage.hasUnverifiedRemoval?.(key)
+    ) {
       storage.removeItem(markerKey);
       storage.removeItem(retryKey);
-      storage.removeItem(cookieKey);
+      removeCompletionRecord(storage, cookieKey);
     }
     return markerPersisted || (removed !== false && storage.getItem(key) === null);
   } catch {

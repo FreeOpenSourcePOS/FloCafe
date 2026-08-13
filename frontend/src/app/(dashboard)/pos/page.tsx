@@ -36,7 +36,6 @@ import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
   createSafeAppendAttemptStorage,
-  createCookieAppendAttemptStorage,
   getOrCreateAppendAttempt,
   getPostpaidOrderAttemptStorageKey,
   migrateLegacyAppendAttempt,
@@ -130,7 +129,6 @@ export default function POSPage() {
     appendAttemptStorageRef.current = createSafeAppendAttemptStorage(
       browserStorage,
       sessionStorage,
-      createCookieAppendAttemptStorage(),
     );
     return appendAttemptStorageRef.current;
   };

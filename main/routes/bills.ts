@@ -186,7 +186,7 @@ function applyPersistedChildTaxBreakdowns(
     if (hasSnapshotLines(item.tax_snapshot)) return item;
     const breakdown = childBreakdowns.get(Number(item.id));
     if (breakdown === undefined) return item;
-    return { ...item, tax_breakdown: breakdown, tax_amount: taxBreakdownMinorTotal(breakdown) / 100 };
+    return { ...item, tax_breakdown: [breakdown], tax_amount: taxBreakdownMinorTotal(breakdown) / 100 };
   });
 }
 
@@ -857,13 +857,17 @@ function composeSplitTotals(
   allocations: Record<string, number[]>,
   exclusiveTaxMinors: number[],
 ): number[] {
+  const discountAmount = allocations.discount_amount ?? allocations.discountAmount;
+  const deliveryCharge = allocations.delivery_charge ?? allocations.deliveryCharge;
+  const packagingCharge = allocations.packaging_charge ?? allocations.packagingCharge;
+  const roundOff = allocations.round_off ?? allocations.roundOff;
   return allocations.subtotal.map((subtotal, index) => Number((
     subtotal
-    - allocations.discountAmount[index]
+    - discountAmount[index]
     + exclusiveTaxMinors[index] / 100
-    + allocations.deliveryCharge[index]
-    + allocations.packagingCharge[index]
-    + allocations.roundOff[index]
+    + deliveryCharge[index]
+    + packagingCharge[index]
+    + roundOff[index]
   ).toFixed(2)));
 }
 

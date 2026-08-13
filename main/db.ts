@@ -4647,7 +4647,7 @@ export function parseRowJson(row: any): any {
         merged[key].amount += line.amount;
       }
     }
-    taxBreakdown = Object.values(merged).map((line) => ({
+    taxBreakdown = Object.values(merged).filter((line) => line.amount !== 0).map((line) => ({
       ...line,
       amount: Math.round(line.amount * 100) / 100,
     }));

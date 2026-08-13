@@ -99,7 +99,7 @@ function legacyComponents(value: unknown): DisplayTaxComponent[] {
     if (!entry || typeof entry !== 'object') continue;
     const raw = entry as Record<string, unknown>;
     const amount = finiteNumber(raw.amount);
-    if (amount === null) continue;
+    if (amount === null || amount === 0) continue;
     components.push({
       title: String(raw.title || raw.name || 'Tax'),
       rate: finiteNumber(raw.rate),
@@ -176,11 +176,16 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
     const splitSnapshot = snapshotComponents(document.tax_snapshot);
     if (splitSnapshot.present) {
+      const items = document.order?.items ?? document.items;
+      const hasItemSnapshot = items?.some((item) => snapshotComponents(item.tax_snapshot).present) ?? false;
+      const snapshotComponentsForDocument = hasItemSnapshot
+        ? splitSnapshot.components
+        : splitSnapshot.components.filter((component) => component.amount !== 0);
       const represented = new Map<string, DisplayTaxComponent>();
       const merged = new Map<string, DisplayTaxComponent>();
       for (const component of [
-        ...splitSnapshot.components,
-        ...legacyItemComponents(document.order?.items ?? document.items),
+        ...snapshotComponentsForDocument,
+        ...legacyItemComponents(items),
       ]) {
         const key = `${component.title}\u0000${component.rate ?? ''}`;
         const current = merged.get(key);
@@ -193,7 +198,7 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
       const needsDocumentResidual = target === null
         || (target !== 0 && (target < 0 ? representedTotal > target : representedTotal < target));
       const residual = needsDocumentResidual
-        ? documentLegacyComponents(document, splitSnapshot.components)
+        ? documentLegacyComponents(document, snapshotComponentsForDocument)
         : [];
       for (const component of residual) {
         const key = `${component.title}\u0000${component.rate ?? ''}`;
@@ -256,7 +261,10 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
         ]));
         chargeReconciledSeparately = true;
       } else if (usedSnapshot) {
-        components.push(...documentLegacyComponents(document, itemSnapshotComponents));
+        const legacyItems = legacyItemComponents(document.order?.items ?? document.items);
+        if ((document.tax_amount !== undefined && document.tax_amount !== null) || legacyItems.length > 0) {
+          components.push(...documentLegacyComponents(document, itemSnapshotComponents));
+        }
       } else {
         const documentLegacy = legacyComponents(document.tax_breakdown);
         if (documentLegacy.length > 0) components.splice(0, components.length, ...documentLegacy);

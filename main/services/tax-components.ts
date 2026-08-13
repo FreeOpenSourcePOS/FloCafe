@@ -43,6 +43,7 @@ function hasSplitAllocatedSnapshot(value: unknown): boolean {
 }
 
 function decimalOrNull(value: unknown): Decimal | null {
+  if (value instanceof Decimal) return value;
   if (typeof value !== 'string' && typeof value !== 'number') return null;
   try {
     const decimal = new Decimal(value);
@@ -105,7 +106,7 @@ function flattenLegacyBreakdown(value: unknown): DecimalTaxComponent[] {
     if (!entry || typeof entry !== 'object') continue;
     const raw = entry as Record<string, unknown>;
     const amount = decimalOrNull(raw.amount);
-    if (!amount) continue;
+    if (!amount || amount.isZero()) continue;
     const rate = decimalOrNull(raw.rate);
     components.push({
       title: String(raw.title || raw.name || 'Tax'),
@@ -213,8 +214,12 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
   if (hasSplitAllocatedSnapshot(document.tax_snapshot)) {
     const splitSnapshot = flattenSnapshots(document.tax_snapshot);
     if (splitSnapshot.present) {
+      const hasItemSnapshot = (document.items || []).some((item) => flattenSnapshots(item.tax_snapshot).present);
+      const snapshotComponents = hasItemSnapshot
+        ? splitSnapshot.components
+        : splitSnapshot.components.filter((component) => !component.amount.isZero());
       const represented = mergeComponents([
-        ...splitSnapshot.components,
+        ...snapshotComponents,
         ...legacyItemComponents(document),
       ]);
       const target = decimalOrNull(document.tax_amount);
@@ -228,9 +233,13 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
           : representedTotal.comparedTo(target) < 0));
       return reconcileTotal(
         mergeComponents([
-          ...represented,
+          ...represented.map((component) => ({
+            title: component.title,
+            rate: component.rate === null ? null : new Decimal(component.rate).toString(),
+            amount: new Decimal(component.amount),
+          })),
           ...(needsDocumentResidual
-            ? documentLegacyComponents(document, splitSnapshot.components)
+            ? documentLegacyComponents(document, snapshotComponents)
             : []),
         ]),
         document.tax_amount,
@@ -282,13 +291,12 @@ export function resolveTaxComponents(document: TaxDocument): DisplayTaxComponent
           amount: new Decimal(component.amount),
         })));
       }
-      return reconcileTotal(
-        mergeComponents([
-          ...components,
-          ...(hasSnapshotEvidence ? documentLegacyComponents(document, itemSnapshotComponents) : []),
-        ]),
-        document.tax_amount,
-      );
+      const legacyItems = legacyItemComponents(document);
+      const documentResidual = hasSnapshotEvidence
+        && ((document.tax_amount !== undefined && document.tax_amount !== null) || legacyItems.length > 0)
+        ? documentLegacyComponents(document, itemSnapshotComponents)
+        : [];
+      return reconcileTotal(mergeComponents([...components, ...documentResidual]), document.tax_amount);
     }
   }
 

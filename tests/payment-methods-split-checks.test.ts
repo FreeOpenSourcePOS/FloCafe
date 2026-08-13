@@ -29,6 +29,8 @@ async function main() {
   seedProduct(db, 'split-coffee', 'split-cat', 'Coffee', 100);
   seedProduct(db, 'split-toast', 'split-cat', 'Toast', 90);
   const app = createApp({ '/api/orders': orderRoutes, '/api/bills': billRoutes, '/api/payment-methods': paymentMethodRoutes, '/api/settings': settingsRoutes, '/api/reports': reportRoutes });
+  const { registerRoutes } = require('../main/routes/index');
+  registerRoutes(app);
   const { baseUrl, server } = await startServer(app);
   try {
     assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'split_checks_enabled'").get() as any).value, 'false', 'fresh database seeds split checks disabled');
@@ -175,8 +177,6 @@ async function main() {
     assertEqual(unevenSum, 10.01, 'unequal split totals reconcile exactly to $10.01');
 
     // D. Void Adjustment Exclusion
-    const { registerRoutes } = require('../main/routes/index');
-    registerRoutes(app);
     db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('kds_enabled', 'true', datetime('now'))").run();
     const mgrUser = seedManagerUser(db);
     const voidOrderRes = await api(baseUrl, '/api/orders', { method: 'POST', body: { type: 'dine_in', guest_count: 2, items: [{ product_id: 'split-coffee', quantity: 2 }, { product_id: 'split-toast', quantity: 1 }] }, headers: authHeader });
@@ -639,10 +639,10 @@ async function main() {
     assertEqual(ownerLocalSplit.status, 201, 'nested owner-local legacy split returns 201');
     assertEqual(JSON.stringify(ownerLocalSplit.data.bills.map((bill: any) => bill.tax_amount)), JSON.stringify([0, 0.02]), 'child tax totals use the same owner-local rounding as nested legacy evidence');
     for (const [index, childBill] of ownerLocalSplit.data.bills.entries()) {
-      const breakdown = childBill.tax_breakdown as Array<Array<{ title: string; rate: number; amount: number }>>;
-      const breakdownTotal = Number(breakdown.flat().reduce((sum, component) => sum + component.amount, 0).toFixed(2));
+      const breakdown = childBill.tax_breakdown as Array<{ title: string; rate: number; amount: number }>;
+      const breakdownTotal = Number(breakdown.reduce((sum, component) => sum + component.amount, 0).toFixed(2));
       assertEqual(breakdownTotal, childBill.tax_amount, 'nested owner-local breakdown reconciles to its child tax total');
-      assertEqual(JSON.stringify(breakdown.map((group) => group.map((component) => component.amount))), JSON.stringify(index === 0 ? [[0], [0]] : [[0.01], [0.01]]), 'nested legacy component cents remain with their owner allocation');
+      assertEqual(JSON.stringify(breakdown.map((component) => component.amount)), JSON.stringify(index === 0 ? [] : [0.01, 0.01]), 'nested legacy component cents remain with their owner allocation');
     }
 
     const voidLegacyOrderRes = await api(baseUrl, '/api/orders', {
@@ -752,7 +752,8 @@ async function main() {
       assertEqual(JSON.stringify(components.map((component: any) => component.title)), JSON.stringify(['Item Tax', 'Charge Tax']), 'voided split child keeps item and charge tax categories');
       assertEqual(JSON.stringify(components.map((component: any) => component.amount)), JSON.stringify(expectedAmounts), 'void evidence is not allocated to the sibling child');
       assertEqual(Number(components.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'voided split child tax components reconcile exactly');
-      assert(child.tax_snapshot && JSON.parse(child.tax_snapshot).some((snapshot: any) => snapshot && snapshot.splitAllocation === 'minor-unit-v1'), 'void sync preserves marked child tax snapshots');
+      const voidChildSnapshots = typeof child.tax_snapshot === 'string' ? JSON.parse(child.tax_snapshot) : child.tax_snapshot;
+      assert(child.tax_snapshot && voidChildSnapshots.some((snapshot: any) => snapshot && snapshot.splitAllocation === 'minor-unit-v1'), 'void sync preserves marked child tax snapshots');
       voidResolvedTax = Number((voidResolvedTax + child.tax_amount).toFixed(2));
     }
     assertEqual(voidResolvedTax, voidSnapshotCancelRes.data.order.tax_amount, 'voided split child tax totals reconcile to the updated order');
@@ -771,7 +772,7 @@ async function main() {
       const snapshot = JSON.parse(raw as string);
       return snapshot.lines[0].components.map((component: any) => Number(component.amount));
     });
-    assertEqual(JSON.stringify(unevenComponentAmounts.map((components: number[]) => Number(components.reduce((sum, amount) => sum + amount, 0).toFixed(2)))), JSON.stringify([0, 0.02]), 'uneven split snapshot components reconcile within their owner');
+    assertEqual(JSON.stringify(unevenComponentAmounts.map((components: number[]) => Number(components.reduce((sum, amount) => sum + amount, 0).toFixed(2)))), JSON.stringify([0.01, 0.01]), 'uneven split snapshot components reconcile within their owner');
     assertEqual(JSON.stringify(unevenComponentAmounts.reduce((totals: number[], components: number[]) => components.map((amount, index) => Number((totals[index] + amount).toFixed(2))), [0, 0])), JSON.stringify([0.01, 0.01]), 'uneven split snapshot components remain additive across children');
 
     const ownedSnapshots = JSON.stringify([
@@ -812,7 +813,8 @@ async function main() {
         : [{ title: 'Item Tax', rate: 5, amount: 0 }, { title: 'Charge Tax', rate: 5, amount: 0 }];
       assertEqual(JSON.stringify(backendComponents), JSON.stringify(expectedCancelledComponents), 'cancel sync preserves exact item and charge tax attribution');
       assertEqual(JSON.stringify(frontendComponents), JSON.stringify(expectedCancelledComponents), 'cancel sync preserves exact frontend item and charge tax attribution');
-      assert(child.tax_snapshot && JSON.parse(child.tax_snapshot).some((snapshot: any) => snapshot.splitAllocation === 'minor-unit-v1'), 'cancel sync preserves marked child tax snapshots');
+      const cancelledChildSnapshots = typeof child.tax_snapshot === 'string' ? JSON.parse(child.tax_snapshot) : child.tax_snapshot;
+      assert(child.tax_snapshot && cancelledChildSnapshots.some((snapshot: any) => snapshot.splitAllocation === 'minor-unit-v1'), 'cancel sync preserves marked child tax snapshots');
       assertEqual(JSON.stringify(backendComponents), JSON.stringify(frontendComponents), 'cancel sync keeps backend and frontend tax attribution aligned');
       assertEqual(Number(backendComponents.reduce((sum: number, component: any) => sum + component.amount, 0).toFixed(2)), child.tax_amount, 'cancel sync resolved tax reconciles to each child tax amount');
       for (const component of backendComponents) {

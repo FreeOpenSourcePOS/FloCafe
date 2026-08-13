@@ -11,6 +11,7 @@ const {
   buildAppendItemsFingerprint,
   createSafeAppendAttemptStorage,
   getOrCreateAppendAttempt,
+  migrateLegacyAppendAttempt,
   readAppendAttempt,
   clearAppendAttempt,
 } = require('../frontend/src/lib/append-attempt');
@@ -152,7 +153,7 @@ function main() {
   const legacyStorage = new MemoryStorage();
   legacyStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
     userId: 'legacy-cashier',
-    fingerprint: buildAppendItemsFingerprint('42', items, 'table-note'),
+    fingerprint: JSON.stringify({ order_id: 42, items, special_instructions: 'table-note' }),
     idempotencyKey: 'legacy-append-key',
   }));
   const migrated = readAppendAttempt(legacyStorage, { userId: 'legacy-cashier', now: 4_000 });
@@ -160,6 +161,34 @@ function main() {
   assert.equal(migrated?.orderId, '42', 'legacy migration preserves the appended order');
   assert.deepEqual(migrated?.items, items, 'legacy migration preserves the append payload');
   assert.equal(legacyStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), null, 'legacy append storage is removed after migration');
+  const migratedRetry = getOrCreateAppendAttempt(legacyStorage, {
+    userId: 'legacy-cashier',
+    orderId: '42',
+    fingerprint: buildAppendItemsFingerprint('42', items, 'table-note'),
+    createKey: () => 'new-key-after-migration',
+    items,
+    specialInstructions: 'table-note',
+    now: 4_001,
+  });
+  assert.equal(migratedRetry.idempotencyKey, 'legacy-append-key', 'migrated append reuses its key for the normalized logical payload');
+
+  const foreignLegacyStorage = new MemoryStorage();
+  foreignLegacyStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'legacy-owner',
+    fingerprint: JSON.stringify({ order_id: 42, items }),
+    idempotencyKey: 'foreign-legacy-key',
+  }));
+  assert.equal(readAppendAttempt(foreignLegacyStorage, { userId: 'different-cashier', now: 4_000 }), null, 'foreign cashier cannot read a migrated append');
+  assert.equal(foreignLegacyStorage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY), null, 'recognized foreign append is removed from the shared legacy slot');
+  assert.equal(readAppendAttempt(foreignLegacyStorage, { userId: 'legacy-owner', now: 4_001 })?.idempotencyKey, 'foreign-legacy-key', 'recognized foreign append remains recoverable in its owner-scoped slot');
+
+  const directMigrationStorage = new MemoryStorage();
+  directMigrationStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({
+    userId: 'direct-owner',
+    fingerprint: JSON.stringify({ order_id: 42, items }),
+    idempotencyKey: 'direct-legacy-key',
+  }));
+  assert.equal(migrateLegacyAppendAttempt(directMigrationStorage, { now: 4_000 })?.userId, 'direct-owner', 'legacy append migration identifies the recorded owner');
 
   const legacyOrderStorage = new MemoryStorage();
   legacyOrderStorage.setItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY, JSON.stringify({

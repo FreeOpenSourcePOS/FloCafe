@@ -163,12 +163,12 @@ function hasCompletedAttempt(
   }
 }
 
-function migrateLegacyPostpaidAppendAttempt(
+export function migrateLegacyAppendAttempt(
   storage: AppendAttemptStorage,
-  userId: string,
-  now: number,
-  maxAgeMs: number,
-): StoredAttempt | null {
+  options: { now?: number; maxAgeMs?: number } = {},
+): AppendAttempt | null {
+  const now = options.now ?? Date.now();
+  const maxAgeMs = options.maxAgeMs ?? APPEND_ATTEMPT_MAX_AGE_MS;
   const raw = storage.getItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
   if (!raw) return null;
 
@@ -179,7 +179,7 @@ function migrateLegacyPostpaidAppendAttempt(
       idempotencyKey?: unknown;
       createdAt?: unknown;
     };
-    if (parsed.userId !== userId || typeof parsed.fingerprint !== 'string') return null;
+    if (typeof parsed.userId !== 'string' || typeof parsed.fingerprint !== 'string') return null;
     const payload = JSON.parse(parsed.fingerprint) as {
       order_id?: unknown;
       items?: unknown;
@@ -198,19 +198,24 @@ function migrateLegacyPostpaidAppendAttempt(
       storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
       return null;
     }
+    const scopedKey = getAppendAttemptStorageKey(parsed.userId);
+    const existingScoped = storage.getItem(scopedKey);
     const attempt: AppendAttempt = {
-      userId,
+      userId: parsed.userId,
       orderId: String(payload.order_id),
-      fingerprint: parsed.fingerprint,
+      fingerprint: buildAppendItemsFingerprint(
+        String(payload.order_id),
+        payload.items,
+        typeof payload.special_instructions === 'string' ? payload.special_instructions || undefined : undefined,
+      ),
       idempotencyKey: parsed.idempotencyKey,
       items: payload.items,
-      specialInstructions: typeof payload.special_instructions === 'string' ? payload.special_instructions : undefined,
+      specialInstructions: typeof payload.special_instructions === 'string' ? payload.special_instructions || undefined : undefined,
       createdAt,
     };
-    const scopedKey = getAppendAttemptStorageKey(userId);
-    storage.setItem(scopedKey, JSON.stringify(attempt));
+    if (!existingScoped) storage.setItem(scopedKey, JSON.stringify(attempt));
     storage.removeItem(LEGACY_POSTPAID_ATTEMPT_STORAGE_KEY);
-    return { attempt, key: scopedKey };
+    return existingScoped ? null : attempt;
   } catch {
     return null;
   }
@@ -257,6 +262,7 @@ function readUserAttempt(
   maxAgeMs: number,
 ): StoredAttempt | null {
   const scopedKey = getAppendAttemptStorageKey(userId);
+  const migrated = migrateLegacyAppendAttempt(storage, { now, maxAgeMs });
   if (hasCompletedAttempt(storage, userId, now, maxAgeMs)) return null;
   const scoped = parseStoredAttempt(storage, scopedKey, now, maxAgeMs);
   if (scoped?.userId === userId) return { attempt: scoped, key: scopedKey };
@@ -270,7 +276,8 @@ function readUserAttempt(
     return { attempt: legacy, key: scopedKey };
   }
 
-  return migrateLegacyPostpaidAppendAttempt(storage, userId, now, maxAgeMs);
+  if (migrated?.userId === userId) return { attempt: migrated, key: scopedKey };
+  return null;
 }
 
 /** Read a pending attempt for automatic recovery after a renderer reload. */

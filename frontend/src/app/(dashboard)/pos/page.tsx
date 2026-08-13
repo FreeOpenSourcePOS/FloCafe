@@ -37,6 +37,7 @@ import {
   clearAppendAttempt,
   createSafeAppendAttemptStorage,
   getOrCreateAppendAttempt,
+  migrateLegacyAppendAttempt,
   readAppendAttempt,
   type AppendAttempt,
   type AppendAttemptStorage,
@@ -125,12 +126,13 @@ export default function POSPage() {
     postpaidAttemptRef.current = null;
     if (typeof window === 'undefined') return null;
     try {
+      migrateLegacyAppendAttempt(getAppendAttemptStorage());
       const stored = window.localStorage.getItem(POSTPAID_ATTEMPT_STORAGE_KEY);
       const parsed = stored ? JSON.parse(stored) as PostpaidAttempt : null;
       if (parsed && parsed.userId === activeUserId) postpaidAttemptRef.current = parsed;
       else window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
     } catch {
-      window.localStorage.removeItem(POSTPAID_ATTEMPT_STORAGE_KEY);
+      return null;
     }
     return postpaidAttemptRef.current;
   };

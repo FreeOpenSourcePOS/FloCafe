@@ -111,9 +111,11 @@ function seedPosFixture() {
   for (const [key, value] of [
     ['country', 'TH'],
     ['currency', 'THB'],
+    ['timezone', 'Asia/Bangkok'],
     ['billing_type', 'prepaid'],
     ['business_type', 'restaurant'],
     ['tables_required', 'false'],
+    ['whatsapp_enabled', 'true'],
     // Tax defaults off (migration 40) until explicitly enabled — this fixture's
     // product carries a real tax_category_id expecting real tax, so it must
     // turn taxes on itself rather than rely on a global default.
@@ -202,6 +204,7 @@ async function stop(exitCode = 0) {
   await startStandaloneServers({
     initializeDatabase: initDatabase,
     prepare: () => {
+      seedUser('e2e-owner', 'owner@flo.local', 'owner');
       seedUser('e2e-manager', 'manager@flo.local', 'manager');
       seedPosFixture();
     },

@@ -14,7 +14,7 @@ import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { COUNTRIES, countryName } from '@/lib/countries';
-import { dialCodeFor } from '@/lib/phone';
+import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
@@ -1881,11 +1881,12 @@ export default function SettingsPage() {
   };
 
   const saveBusinessInfo = async (silent = false) => {
-    const phone = form.businessPhone.trim();
-    if (phone && !/^\+?[\d\s\-().]{7,20}$/.test(phone)) {
+    const norm = normalizeOptionalPhone(form.businessPhone, form.countryCode || 'IN');
+    if (!norm.valid) {
       toast.error(t('settings.invalidPhoneFormat', { defaultValue: 'Invalid phone number format' }));
       return;
     }
+    const normalizedBusinessPhone = norm.e164 ?? '';
 
     setSavingBusiness(true);
     try {
@@ -1899,7 +1900,7 @@ export default function SettingsPage() {
         tax_registered: form.taxRegistered,
         tax_registration_number: form.taxRegistrationNumber,
         business_address: form.businessAddress,
-        business_phone: form.businessPhone,
+        business_phone: normalizedBusinessPhone,
         instagram_handle: form.instagramHandle,
       });
       if (savedBusiness.countryCode !== form.countryCode) {
@@ -1931,10 +1932,12 @@ export default function SettingsPage() {
           }
         }
       }
-      setSavedBusiness(form);
+      const updatedForm = { ...form, businessPhone: normalizedBusinessPhone };
+      setSavedBusiness(updatedForm);
+      setForm(updatedForm);
       posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
-      posSettings.setBillPhone(form.businessPhone);
+      posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode });

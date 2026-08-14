@@ -7,7 +7,7 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/auth';
 import { useI18n } from '@/hooks/useI18n';
-import { dialCodeFor } from '@/lib/phone';
+import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import type { Customer } from '@/lib/types';
 
 interface Props {
@@ -19,7 +19,8 @@ interface Props {
 export default function EditCustomerModal({ customer, onClose, onSaved }: Props) {
   const { currentTenant } = useAuthStore();
   const { t } = useI18n();
-  const dialCode = dialCodeFor(currentTenant?.country ?? 'IN');
+  const country = currentTenant?.country ?? 'IN';
+  const dialCode = dialCodeFor(country);
   const [name, setName] = useState(customer.name);
   const [phone, setPhone] = useState(customer.phone || '');
   const [saving, setSaving] = useState(false);
@@ -29,11 +30,19 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
       toast.error(t('pos.nameRequired', { defaultValue: 'Name is required' }));
       return;
     }
+
+    const norm = normalizeOptionalPhone(phone.trim(), country);
+    if (!norm.valid) {
+      toast.error(t('pos.invalidPhone', { country, defaultValue: 'Invalid phone number' }));
+      return;
+    }
+
     setSaving(true);
     try {
       const { data } = await api.put(`/customers/${customer.id}`, {
         name: name.trim(),
-        phone: phone.trim(),
+        phone: norm.e164 ?? '',
+        country_code: norm.countryCode ?? '',
       });
       onSaved(data.customer);
       toast.success(t('pos.customerUpdated', { defaultValue: 'Customer updated' }));

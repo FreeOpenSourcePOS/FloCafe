@@ -224,13 +224,13 @@ export function startServer(): Promise<void> {
         });
       }
 
-      app.use(express.static(frontendDir, { dotfiles: 'deny', index: false }));
+      app.use(express.static(frontendDir, { dotfiles: 'allow', index: false }));
 
       // Serve each Next.js static route's own index. Returning the root export
       // for /whatsapp (or any direct link/refresh) runs app/page.tsx and sends
       // the user to Dashboard instead of the requested page.
       app.get(/^(?!\/api|\/kds).*$/, (req: Request, res: Response) => {
-        res.sendFile(resolveStaticPage(frontendDir, req.path));
+        res.sendFile(resolveStaticPage(frontendDir, req.path), { dotfiles: 'allow' });
       });
     } else {
       console.warn('[Server] Frontend build not found. Run `npm run build:frontend` first.');

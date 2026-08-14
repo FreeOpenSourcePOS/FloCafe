@@ -515,7 +515,7 @@ export function startKdsServer(): Promise<void> {
         });
       }
 
-      app.use(express.static(staticDir, { index: false }));
+      app.use(express.static(staticDir, { dotfiles: 'allow', index: false }));
 
       // Redirect root to standalone KDS
       app.get('/', (_req: Request, res: Response) => {
@@ -528,9 +528,9 @@ export function startKdsServer(): Promise<void> {
         const staticRoot = path.resolve(staticDir);
         const routePath = path.resolve(staticRoot, `.${req.path}`, 'index.html');
         if (routePath.startsWith(`${staticRoot}${path.sep}`) && fs.existsSync(routePath)) {
-          res.sendFile(routePath);
+          res.sendFile(routePath, { dotfiles: 'allow' });
         } else {
-          res.sendFile(path.join(staticDir, 'kds-standalone', 'index.html'));
+          res.sendFile(path.join(staticDir, 'kds-standalone', 'index.html'), { dotfiles: 'allow' });
         }
       });
     } else {

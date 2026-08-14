@@ -4,6 +4,7 @@ import axios, { AxiosInstance } from 'axios';
 import toast from 'react-hot-toast';
 import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, RefreshCw, Search, Send, Smartphone, UserRound } from 'lucide-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { parsePhone } from '@/lib/phone';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
@@ -200,16 +201,19 @@ export default function ServerStandalonePage() {
   async function ensureCustomer(): Promise<string | null> {
     if (!api) return null;
     const name = customerName.trim();
-    const phone = customerPhone.trim();
-    if (!name && !phone) return null;
-    if (phone) {
+    const rawPhone = customerPhone.trim();
+    if (!name && !rawPhone) return null;
+    let normalizedPhone: string | undefined = undefined;
+    if (rawPhone) {
+      const parsed = parsePhone(rawPhone, 'IN');
+      normalizedPhone = parsed ? parsed.e164 : rawPhone;
       try {
-        const lookup = await api.get('/api/crm/lookup', { params: { phone } });
+        const lookup = await api.get('/api/crm/lookup', { params: { phone: normalizedPhone } });
         if (lookup.data.found && lookup.data.customer?.id) return lookup.data.customer.id;
       } catch {}
     }
-    const fallbackName = name || `Guest ${phone.slice(-4)}`;
-    const res = await api.post('/api/customers', { name: fallbackName, phone: phone || undefined });
+    const fallbackName = name || `Guest ${rawPhone.slice(-4)}`;
+    const res = await api.post('/api/customers', { name: fallbackName, phone: normalizedPhone || undefined });
     return res.data.customer?.id || null;
   }
 

@@ -19,7 +19,7 @@ import { useI18n } from '@/hooks/useI18n';
 import { useConfirm } from '@/hooks/use-confirm';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { formatDate, formatTime } from '@/lib/printer/format-date';
-import { dialCodeFor } from '@/lib/phone';
+import { dialCodeFor, parsePhone } from '@/lib/phone';
 
 interface WhatsAppStatus {
   enabled: boolean;
@@ -349,17 +349,19 @@ export default function WhatsAppPage() {
   };
 
   const addBlock = async () => {
-    if (!/^\+[1-9]\d{7,14}$/.test(blockPhone.trim())) {
+    const tenantCountry = currentTenant?.country ?? 'IN';
+    const parsed = parsePhone(blockPhone.trim(), tenantCountry);
+    if (!parsed) {
       toast.error(t('whatsapp.blocklist.phoneRequired'));
       return;
     }
     try {
-      await api.post('/whatsapp/blocklist', { phone_e164: blockPhone.trim(), reason: blockReason });
+      await api.post('/whatsapp/blocklist', { phone_e164: parsed.e164, reason: blockReason });
       setBlockPhone('');
       setBlockReason('');
       void refreshBlocklist();
       toast.success(t('whatsapp.blocklist.addedSuccess'));
-} catch (err) { toastApiError(err, t('whatsapp.blocklist.failed'), t);
+    } catch (err) { toastApiError(err, t('whatsapp.blocklist.failed'), t);
     }
   };
 

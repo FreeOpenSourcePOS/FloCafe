@@ -13,7 +13,7 @@ import { parseDbTimestamp } from '@/lib/utils';
 
 import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
-import { dialCodeFor, parsePhone } from '@/lib/phone';
+import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
@@ -101,12 +101,16 @@ export default function CustomersPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    const parsed = parsePhone(form.phone, defaultCountry);
-    if (!parsed) {
+    const norm = normalizeOptionalPhone(form.phone, defaultCountry);
+    if (!norm.valid) {
       toast.error(t('pos.invalidPhone', { country: countryName(defaultCountry) }));
       return;
     }
-    const payload = { ...form, phone: parsed.e164, country_code: parsed.countryCode };
+    if (!editingCustomer && !norm.e164) {
+      toast.error(t('pos.invalidPhone', { country: countryName(defaultCountry) }));
+      return;
+    }
+    const payload = { ...form, phone: norm.e164 ?? '', country_code: norm.countryCode ?? '' };
     try {
       if (editingCustomer) {
         await api.put(`/customers/${editingCustomer.id}`, payload);
@@ -318,7 +322,7 @@ export default function CustomersPage() {
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
               <div className="flex items-stretch gap-2">
                 <input type="tel" placeholder={dialCode ? `${dialCode} ${t('customer.phone')}` : t('customer.phone')} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                  className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                  className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required={!editingCustomer} />
               </div>
               <input type="email" placeholder={`${t('customer.email')} (${t('common.optional')})`} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />

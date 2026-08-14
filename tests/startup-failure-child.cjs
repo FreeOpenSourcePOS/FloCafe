@@ -136,7 +136,7 @@ Module._load = function (request, parent, isMain) {
 require('../main/index.ts');
 
 if (startupRace || startupFailureRace) {
-  setTimeout(() => process.kill(process.pid, 'SIGTERM'), 0);
+  setTimeout(() => process.emit('SIGTERM'), 0);
 }
 
 setTimeout(() => {

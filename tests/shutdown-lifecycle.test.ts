@@ -509,7 +509,7 @@ async function testStandaloneDevServerShutdown(): Promise<void> {
       SERVER_APP_PORT: '0',
       FLO_DEV_USER_DATA: devServerDataDir,
     },
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['pipe', 'pipe', 'pipe'],
   });
 
   let output = '';
@@ -538,7 +538,11 @@ async function testStandaloneDevServerShutdown(): Promise<void> {
 
   try {
     await ready;
-    child.kill('SIGTERM');
+    if (process.platform === 'win32') {
+      child.stdin?.write('SIGTERM\n');
+    } else {
+      child.kill('SIGTERM');
+    }
     const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`dev-server did not exit: ${output}`)), 20_000);
       child.once('exit', (exitCode, exitSignal) => {

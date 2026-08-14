@@ -277,7 +277,6 @@ class GoogleDriveService {
         this.backupAbortController?.abort();
         this.cancelActiveDriveOperations();
         settled = true;
-        this.stopSettled = true;
         clearTimeout(timeout);
         const timeoutError = new Error(`Google Drive shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
         timeoutError.code = 'ERR_SHUTDOWN_TIMEOUT';
@@ -308,6 +307,7 @@ class GoogleDriveService {
     this.activeDriveOperations.add(operation);
     void operation.finally(() => {
       this.activeDriveOperations.delete(operation);
+      if (this.terminalCleanup && !this.backupPromise && this.activeDriveOperations.size === 0) this.stopSettled = true;
     }).catch(() => {});
   }
 
@@ -477,6 +477,7 @@ class GoogleDriveService {
       this.backingUp = false;
       this.backupPromise = null;
       if (this.backupAbortController === abortController) this.backupAbortController = null;
+      if (this.terminalCleanup && this.activeDriveOperations.size === 0) this.stopSettled = true;
     }
   }
 

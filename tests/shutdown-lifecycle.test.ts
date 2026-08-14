@@ -144,6 +144,25 @@ async function testDatabaseCloseRequiresSuccessfulDrains(): Promise<void> {
   assert.deepEqual(events, ['listener', 'admission', 'requests'], 'database closure waits for required drains');
 }
 
+async function testTimedOutCleanupUsesFatalBarrier(): Promise<void> {
+  const timeout = Object.assign(new Error('Drive ownership did not settle'), { code: 'ERR_SHUTDOWN_TIMEOUT' });
+  const events: string[] = [];
+  await assert.rejects(
+    runShutdownSteps([
+      {
+        name: 'Google Drive',
+        blocksDatabase: true,
+        run: () => { events.push('drive'); throw timeout; },
+      },
+      { name: 'WhatsApp', blocksDatabase: true, run: () => { events.push('whatsapp'); } },
+      { name: 'database admission', run: () => { events.push('admission'); } },
+      { name: 'database', databaseClose: true, run: () => { events.push('database'); } },
+    ]),
+    (error: unknown) => error instanceof AggregateError && error.errors.includes(timeout),
+  );
+  assert.deepEqual(events, ['drive'], 'a bounded timeout stops cleanup before later side effects or database progression');
+}
+
 async function testActiveHttpAndWebSocketDrain(): Promise<void> {
   let releaseHeldResponse: (() => void) | null = null;
   const requestStarted = new Promise<void>((resolve) => {
@@ -818,6 +837,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   console.log('phase coordinator');
   await testCoordinatorOrderingAndIdempotency();
   await testDatabaseCloseRequiresSuccessfulDrains();
+  await testTimedOutCleanupUsesFatalBarrier();
   console.log('phase resources');
   await testActiveHttpAndWebSocketDrain();
   await testHttpStopsAcceptingBeforeSlowWebSocketDrain();

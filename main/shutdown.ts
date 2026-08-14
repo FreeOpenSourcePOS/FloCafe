@@ -108,6 +108,11 @@ function createTimeoutError(label: string, timeoutMs: number): Error & { code: s
   return error;
 }
 
+function containsShutdownTimeout(error: unknown): boolean {
+  if ((error as { code?: unknown } | null)?.code === 'ERR_SHUTDOWN_TIMEOUT') return true;
+  return error instanceof AggregateError && error.errors.some((nested) => containsShutdownTimeout(nested));
+}
+
 async function withShutdownTimeout<T>(
   operation: Promise<T>,
   label: string,
@@ -324,6 +329,7 @@ export async function runShutdownSteps(steps: readonly ShutdownStep[]): Promise<
       errors.push(error);
       console.error(`[Shutdown] ${step.name} failed:`, error);
       if (step.blocksDatabase) databaseBlocked = true;
+      if (containsShutdownTimeout(error)) break;
     }
   }
   if (errors.length > 0) {

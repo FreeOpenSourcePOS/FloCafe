@@ -47,6 +47,7 @@ const fakeBaileys = {
 
 const whatsapp = require('../main/services/whatsapp');
 const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
+const { runShutdownSteps } = require('../main/shutdown');
 
 async function main(): Promise<void> {
   const originalFetch = globalThis.fetch;
@@ -71,10 +72,15 @@ async function main(): Promise<void> {
     (globalThis as any).setTimeout = ((handler: (...args: any[]) => void, delay?: number, ...args: any[]) =>
       originalSetTimeout(handler, delay === 10_000 ? 1 : delay, ...args)) as typeof setTimeout;
 
+    let databaseClosed = false;
     await assert.rejects(
-      whatsapp.shutdown(),
-      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
+      runShutdownSteps([
+        { name: 'WhatsApp', blocksDatabase: true, run: () => whatsapp.shutdown() },
+        { name: 'database', databaseClose: true, run: () => { databaseClosed = true; } },
+      ]),
+      (error: any) => error instanceof AggregateError && error.errors.some((nested: any) => nested?.code === 'ERR_SHUTDOWN_TIMEOUT'),
     );
+    assert.equal(databaseClosed, false, 'a bounded WhatsApp timeout blocks database closure');
     assert.equal(presenceSettled, false, 'terminal shutdown reports a bounded error while raw WhatsApp work remains pending');
 
     releasePendingPresence();

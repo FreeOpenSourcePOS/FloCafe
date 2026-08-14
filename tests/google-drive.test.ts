@@ -47,6 +47,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const { initDatabase, closeDatabase } = require('../main/db');
+const { runShutdownSteps } = require('../main/shutdown');
 
 async function main(): Promise<void> {
   console.log('🧪 FloCafe Google Drive Tests');
@@ -177,12 +178,17 @@ async function main(): Promise<void> {
   (globalThis as any).setTimeout = ((handler: (...args: any[]) => void, delay?: number, ...args: any[]) =>
     originalSetTimeout(handler, delay === 10_000 ? 1 : delay, ...args)) as typeof setTimeout;
   const stopPromise = gd.googleDrive.stop();
+  let databaseClosed = false;
   try {
     await assert.rejects(
-      stopPromise,
-      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
-      'stop() settles with a bounded timeout when backup work will not cancel',
+      runShutdownSteps([
+        { name: 'Google Drive', blocksDatabase: true, run: () => stopPromise },
+        { name: 'database', databaseClose: true, run: () => { databaseClosed = true; } },
+      ]),
+      (error: any) => error instanceof AggregateError && error.errors.some((nested: any) => nested?.code === 'ERR_SHUTDOWN_TIMEOUT'),
+      'shutdown reports a bounded timeout when backup ownership will not settle',
     );
+    assert.equal(databaseClosed, false, 'a bounded Drive timeout blocks database closure');
     assert.equal(driveCancelCalled, true, 'stop() cancels tracked Drive work before reporting timeout');
   } finally {
     (globalThis as any).setTimeout = originalSetTimeout;

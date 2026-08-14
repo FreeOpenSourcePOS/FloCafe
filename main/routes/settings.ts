@@ -9,6 +9,7 @@ import { sendEvent } from '../services/telemetry';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
+import { normalizeOptionalPhone } from '../lib/phone';
 
 const router = Router();
 
@@ -170,12 +171,24 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
     }
     const effectiveCountry = country || currentSettings.country || 'IN';
     const effectiveCurrency = currency || currentSettings.currency || 'INR';
+
+    let normalizedPhone: string | undefined = undefined;
+    if (business_phone !== undefined) {
+      const phoneRes = normalizeOptionalPhone(business_phone, effectiveCountry);
+      if (!phoneRes.valid) {
+        return res.status(400).json({ error: phoneRes.error || 'Invalid business phone number' });
+      }
+      normalizedPhone = phoneRes.e164 || '';
+    }
+
     upsertSettings(db, {
       business_name, timezone, currency, country, language,
       currency_symbol: (currency !== undefined || country !== undefined)
         ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
         : undefined,
-      tax_registration_number, state_code, business_address, business_phone, instagram_handle,
+      tax_registration_number, state_code, business_address,
+      business_phone: normalizedPhone !== undefined ? normalizedPhone : undefined,
+      instagram_handle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
@@ -825,10 +838,20 @@ router.put('/:key', requireRole('owner', 'manager'), (req: Request, res: Respons
       }
     }
 
+    let valueToPersist = value;
+    if (req.params.key === 'business_phone') {
+      const effectiveCountry = getAllSettings(db).country || 'IN';
+      const phoneRes = normalizeOptionalPhone(value, effectiveCountry);
+      if (!phoneRes.valid) {
+        return res.status(400).json({ error: phoneRes.error || 'Invalid business phone number' });
+      }
+      valueToPersist = phoneRes.e164 || '';
+    }
+
     db.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `).run(req.params.key, value, now());
+    `).run(req.params.key, valueToPersist, now());
 
     // Keep the legacy setting as a compatibility mirror. The canonical runtime
     // switch is telemetry_enabled; this route is the only user-facing writer,

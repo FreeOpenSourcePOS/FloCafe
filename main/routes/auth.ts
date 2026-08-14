@@ -10,6 +10,7 @@ import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenSt
 import { getCurrencySymbol, getCountryByCode } from '../countries';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
+import { normalizeOptionalPhone } from '../lib/phone';
 
 const router = Router();
 
@@ -159,11 +160,14 @@ function insertTable(db: ReturnType<typeof getDatabase>, id: string, number: str
   `).run(id, number, capacity, now(), now());
 }
 
-function insertCustomer(db: ReturnType<typeof getDatabase>, id: string, name: string, phone: string, countryCode: string): void {
+function insertCustomer(db: ReturnType<typeof getDatabase>, id: string, name: string, rawPhone: string, fallbackDialCode: string, country = 'IN'): void {
+  const norm = normalizeOptionalPhone(rawPhone, country);
+  const finalPhone = norm.valid && norm.e164 ? norm.e164 : rawPhone;
+  const finalCountryCode = norm.valid && norm.countryCode ? norm.countryCode : fallbackDialCode;
   db.prepare(`
     INSERT OR IGNORE INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, 1, ?, ?)
-  `).run(id, name, phone, countryCode, now(), now());
+  `).run(id, name, finalPhone, finalCountryCode, now(), now());
 }
 
 function insertStaffUser(db: ReturnType<typeof getDatabase>, id: string, name: string, email: string, role: string, password: string, isActive = 1): void {
@@ -257,18 +261,19 @@ function seedDemoRestaurant(db: ReturnType<typeof getDatabase>, serviceModel: st
     insertTable(db, 'tbl-demo-4', `${tableLabel}4`, 2);
   }
 
+  const demoCountry = country || (lang === 'es' ? 'AR' : lang === 'pt' ? 'BR' : 'IN');
   if (lang === 'es') {
-    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode);
-    insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '1145678903', dialCode);
+    insertCustomer(db, 'cust-demo-1', 'Juan Pérez', '1145678901', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'María González', '1145678902', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Rodríguez', '1145678903', dialCode, demoCountry);
   } else if (lang === 'pt') {
-    insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode);
-    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode);
-    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '1198765434', dialCode);
+    insertCustomer(db, 'cust-demo-1', 'João Silva', '1198765432', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Maria Santos', '1198765433', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Carlos Oliveira', '1198765434', dialCode, demoCountry);
   } else {
-    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode);
-    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode);
-    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '9876543212', dialCode);
+    insertCustomer(db, 'cust-demo-1', 'Aarav Sharma', '9876543210', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-2', 'Maya Iyer', '9876543211', dialCode, demoCountry);
+    insertCustomer(db, 'cust-demo-3', 'Kabir Khan', '9876543212', dialCode, demoCountry);
   }
 
   const managerName = lang === 'es' ? 'Gerente Demo' : lang === 'pt' ? 'Gerente Demo' : 'Demo Manager';
@@ -757,7 +762,15 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const storeName = String(store_name || business_name || '').trim();
     const resolvedStoreName = storeName || 'Store';
     const outletAddress = String(business_address || address || '').trim();
-    const outletPhone = String(business_phone || phone || '').trim();
+    const rawOutletPhone = String(business_phone || phone || '').trim();
+    let outletPhone = '';
+    if (rawOutletPhone) {
+      const normPhone = normalizeOptionalPhone(rawOutletPhone, country);
+      if (!normPhone.valid) {
+        return res.status(400).json({ error: normPhone.error || 'Invalid business phone number' });
+      }
+      outletPhone = normPhone.e164 || '';
+    }
     if (!displayName || !email || !password) {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }

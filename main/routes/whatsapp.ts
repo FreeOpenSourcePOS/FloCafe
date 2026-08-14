@@ -5,6 +5,7 @@ import { getDatabase, getSettingValue, upsertSettings } from '../db';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import * as whatsapp from '../services/whatsapp';
 import * as QRCode from 'qrcode';
+import { parsePhoneE164 } from '../lib/phone';
 
 const router = Router();
 
@@ -77,7 +78,13 @@ router.post('/connect', requireRole('owner', 'manager'), asyncHandler(async (req
       res.status(400).json({ error: 'phone required for pairing code', reason: 'phone_required_pairing' });
       return;
     }
-    res.json(await trackHttpRequestWork(req, whatsapp.connectWithPairingCode(String(phone), getHttpRequestSignal(req))));
+    const tenantCountry = getSettingValue('country') || 'IN';
+    const parsedPhone = parsePhoneE164(String(phone), tenantCountry);
+    if (!parsedPhone) {
+      res.status(400).json({ error: 'Valid phone number required for pairing code', reason: 'invalid_phone' });
+      return;
+    }
+    res.json(await trackHttpRequestWork(req, whatsapp.connectWithPairingCode(parsedPhone.e164, getHttpRequestSignal(req))));
   } else {
     res.status(400).json({ error: 'method must be "qr" or "pairing_code"', reason: 'bad_connect_method' });
   }
@@ -92,6 +99,12 @@ router.post('/send', requireRole('owner', 'manager', 'cashier'), asyncHandler(as
   const { bill_id, phone_e164, body, kind } = req.body ?? {};
   if (!phone_e164) {
     res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
+    return;
+  }
+  const tenantCountry = getSettingValue('country') || 'IN';
+  const parsedPhone = parsePhoneE164(String(phone_e164), tenantCountry);
+  if (!parsedPhone) {
+    res.status(400).json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });
     return;
   }
   if (!body || typeof body !== 'string') {
@@ -186,13 +199,14 @@ router.get('/blocklist', requireRole('owner', 'manager'), (_req: Request, res: R
 
 router.post('/blocklist', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   const { phone_e164, reason } = req.body ?? {};
-  const normalizedPhone = typeof phone_e164 === 'string' ? phone_e164.trim() : '';
-  if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
-    res.status(400).json({ error: 'phone_e164 required', reason: 'phone_required' });
+  const tenantCountry = getSettingValue('country') || 'IN';
+  const parsed = parsePhoneE164(String(phone_e164 || ''), tenantCountry);
+  if (!parsed) {
+    res.status(400).json({ error: 'Valid phone_e164 required', reason: 'invalid_phone' });
     return;
   }
   const userId = (req as any).user?.userId ?? null;
-  whatsapp.addToBlocklist(normalizedPhone, String(reason ?? ''), userId ?? 'unknown');
+  whatsapp.addToBlocklist(parsed.e164, String(reason ?? ''), userId ?? 'unknown');
   res.json({ ok: true });
 });
 

@@ -42,6 +42,51 @@ router.delete('/admin/cleanup', requireRole('owner'), (req: Request, res: Respon
   }
 });
 
+router.post('/admin/repair-phones', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+  try {
+    const db = getDatabase();
+    const tenantCountry = getSettingValue('country') || 'IN';
+    const customers = db.prepare(`
+      SELECT id, phone, country_code 
+      FROM customers 
+      WHERE is_active = 1 
+      AND phone IS NOT NULL AND phone != '' 
+      AND phone != '+' || phone_digits
+    `).all() as Array<{ id: string; phone: string; country_code: string | null }>;
+
+    let normalizedCount = 0;
+    let unparseableCount = 0;
+    let conflictedCount = 0;
+
+    for (const c of customers) {
+      const parsed = parsePhoneE164(c.phone, tenantCountry);
+      if (parsed) {
+        const phoneDigits = stripPhoneDigits(parsed.e164);
+        const conflict = db.prepare('SELECT id FROM customers WHERE phone_digits = ? AND id != ?').get(phoneDigits, c.id) as any;
+        if (conflict) {
+          conflictedCount++;
+        } else {
+          db.prepare('UPDATE customers SET phone = ?, country_code = ?, updated_at = ? WHERE id = ?')
+            .run(parsed.e164, parsed.countryCode, now(), c.id);
+          normalizedCount++;
+        }
+      } else {
+        unparseableCount++;
+      }
+    }
+
+    res.json({
+      totalScanned: customers.length,
+      normalizedCount,
+      unparseableCount,
+      conflictedCount,
+    });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -286,42 +331,62 @@ router.put('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, re
     } = req.body;
     const db = getDatabase();
 
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
+    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id) as any;
     if (!customer) {
       return res.status(404).json({ error: 'Customer not found' });
     }
 
-    let finalPhone = phone ? String(phone).trim() : null;
-    let finalCountryCode = country_code ? String(country_code).trim() : null;
+    let finalPhone: string | null = customer.phone;
+    let finalCountryCode: string | null = customer.country_code;
 
-    if (finalPhone) {
-      const tenantCountry = getSettingValue('country') || 'IN';
-      const parsed = parsePhoneE164(finalPhone, tenantCountry);
-      if (!parsed) {
-        return res.status(400).json({ error: 'Phone number is not valid. Use international format (e.g. +919876543210).' });
-      }
-      finalPhone = parsed.e164;
-      finalCountryCode = parsed.countryCode;
+    if (phone !== undefined) {
+      if (phone === null || String(phone).trim() === '') {
+        finalPhone = null;
+        finalCountryCode = null;
+      } else {
+        const tenantCountry = getSettingValue('country') || 'IN';
+        const parsed = parsePhoneE164(String(phone).trim(), tenantCountry);
+        if (!parsed) {
+          return res.status(400).json({ error: 'Phone number is not valid. Use international format (e.g. +919876543210).' });
+        }
+        finalPhone = parsed.e164;
+        finalCountryCode = parsed.countryCode;
 
-      const phoneDigits = stripPhoneDigits(finalPhone);
-      const existing = db.prepare('SELECT id FROM customers WHERE phone_digits = ? AND id != ?').get(phoneDigits, req.params.id) as any;
-      if (existing) {
-        return res.status(409).json({ error: 'Customer with this phone already exists' });
+        const phoneDigits = stripPhoneDigits(finalPhone);
+        const existing = db.prepare('SELECT id FROM customers WHERE phone_digits = ? AND id != ?').get(phoneDigits, req.params.id) as any;
+        if (existing) {
+          return res.status(409).json({ error: 'Customer with this phone already exists' });
+        }
       }
+    } else if (country_code !== undefined) {
+      finalCountryCode = country_code ? String(country_code).trim() : null;
     }
+
+    let finalName = customer.name;
+    if (name !== undefined) {
+      const trimmedName = String(name).trim();
+      if (!trimmedName) {
+        return res.status(400).json({ error: 'Name is required' });
+      }
+      finalName = trimmedName;
+    }
+
+    const finalEmail = email !== undefined ? (email ? String(email).trim() : null) : customer.email;
+    const finalAddress = address !== undefined ? (address ? String(address).trim() : null) : customer.address;
+    const finalNotes = notes !== undefined ? (notes ? String(notes).trim() : null) : customer.notes;
 
     db.prepare(`
       UPDATE customers SET
-        phone = COALESCE(NULLIF(?, ''), phone),
-        name = COALESCE(NULLIF(?, ''), name),
-        email = COALESCE(NULLIF(?, ''), email),
-        country_code = COALESCE(NULLIF(?, ''), country_code),
-        address = COALESCE(NULLIF(?, ''), address),
-        notes = COALESCE(NULLIF(?, ''), notes),
+        phone = ?,
+        name = ?,
+        email = ?,
+        country_code = ?,
+        address = ?,
+        notes = ?,
         updated_at = ?
       WHERE id = ?
     `).run(
-      finalPhone, name, email, finalCountryCode, address, notes, now(), req.params.id
+      finalPhone, finalName, finalEmail, finalCountryCode, finalAddress, finalNotes, now(), req.params.id
     );
 
     const updated = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);

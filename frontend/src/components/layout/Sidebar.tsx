@@ -40,8 +40,17 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 
+type NavItem = {
+  href: string;
+  labelKey?: string;
+  label?: string;
+  icon: typeof ShoppingCart;
+  roles: string[];
+  businessTypes: string[] | null;
+};
+
 // null = show for all business types
-const ALL_NAV_ITEMS = [
+const ALL_NAV_ITEMS: NavItem[] = [
   { href: '/pos', labelKey: 'nav.pos', icon: ShoppingCart, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard, roles: ['owner'], businessTypes: null },
   { href: '/orders', labelKey: 'nav.orders', icon: ClipboardList, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
@@ -150,9 +159,10 @@ export default function AppSidebar() {
               {navItems.map((item) => {
                 const [hrefPath, hrefQuery] = item.href.split('?');
                 const isActive = !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
+                const label = item.label || t(item.labelKey || 'nav.products');
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={item.label || t(item.labelKey)}>
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={label}>
                       <Link href={item.href} onClick={closeMobile}>
                         <span className="relative flex size-4 shrink-0 items-center justify-center">
                           <item.icon className="size-4 shrink-0" />
@@ -160,7 +170,7 @@ export default function AppSidebar() {
                             <span aria-label="Email verification required" className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
                           )}
                         </span>
-                        <span>{item.label || t(item.labelKey)}</span>
+                        <span>{label}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

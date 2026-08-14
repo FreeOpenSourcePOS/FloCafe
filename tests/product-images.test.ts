@@ -33,7 +33,7 @@ const {
 } = require('./helpers/test-setup');
 
 const { productRoutes } = require('../main/routes/products');
-const { closeHttpServer, installHttpShutdownTracking } = require('../main/shutdown');
+const { closeHttpServer, installHttpShutdownTracking, cancelHttpShutdownWork } = require('../main/shutdown');
 const dns = require('dns');
 const https = require('https');
 const { EventEmitter } = require('events');
@@ -447,7 +447,8 @@ async function main() {
         body: { url: 'https://redirect.example/photo.webp' },
       });
       await secondLookup;
-      await closeHttpServer(server, 'product redirect shutdown', 20);
+      cancelHttpShutdownWork();
+      await closeHttpServer(server, 'product redirect shutdown');
       res = await redirectResponse;
       assertEqual(resolverCanceled, true, 'E8: Shutdown cancels the blocked redirected DNS lookup');
       assertEqual(res.status, 504, 'E8: Shutdown aborts a blocked redirected DNS lookup');

@@ -88,7 +88,11 @@ Module._load = function (request, parent, isMain) {
         rejectServerStart = reject;
       });
     },
-    stopServer: async () => { events.push('server.stop'); },
+    stopServer: async () => {
+      events.push('server.stop');
+      if (startupFailureRace) rejectServerStart?.(new Error('simulated startup failure after shutdown'));
+      else releaseServerStart?.();
+    },
     getLocalIP: () => '127.0.0.1',
     getServerPort: () => 0,
     isServerRunning: () => false,
@@ -133,10 +137,6 @@ require('../main/index.ts');
 
 if (startupRace || startupFailureRace) {
   setTimeout(() => process.kill(process.pid, 'SIGTERM'), 0);
-  setTimeout(() => {
-    if (startupFailureRace) rejectServerStart?.(new Error('simulated startup failure after shutdown'));
-    else releaseServerStart?.();
-  }, 10);
 }
 
 setTimeout(() => {

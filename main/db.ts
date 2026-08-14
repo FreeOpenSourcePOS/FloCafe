@@ -1054,7 +1054,7 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
       initDatabase(false, true);
       await new Promise<void>((resolve) => setImmediate(resolve));
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
-      getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+      (db ?? getDatabase()).pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit reset database');
@@ -2131,7 +2131,7 @@ export function getSchemaVersionFromBackup(backupPath: string): number | null {
 }
 
 export function getCurrentSchemaVersion(): number {
-  return getDatabase().pragma('user_version', { simple: true }) as number;
+  return (db ?? getDatabase()).pragma('user_version', { simple: true }) as number;
 }
 
 /**

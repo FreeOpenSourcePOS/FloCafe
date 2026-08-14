@@ -10,7 +10,7 @@ import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry
 import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
-import { initPrinter, printReceipt, printKOT } from './printers/thermal';
+import { initPrinter } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
 import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';

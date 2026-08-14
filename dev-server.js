@@ -110,6 +110,14 @@ async function shutdown(exitCode = 0) {
 
 process.once('SIGINT', () => void shutdown(0));
 process.once('SIGTERM', () => void shutdown(0));
+if (process.platform === 'win32') {
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    if (chunk.includes('SIGTERM') || chunk.includes('SIGINT') || chunk.includes('SHUTDOWN')) {
+      void shutdown(0);
+    }
+  });
+}
 process.on('uncaughtException', (err) => {
   console.error('[DevServer] Uncaught exception:', err);
   void shutdown(1);

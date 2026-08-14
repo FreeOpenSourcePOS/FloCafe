@@ -50,6 +50,7 @@ const fakeBaileys = {
 };
 
 const whatsapp = require('../main/services/whatsapp');
+const { createShutdownEntrypoints } = require('../main/shutdown');
 
 async function main(): Promise<void> {
   console.log('Testing WhatsApp service API surface...');
@@ -110,6 +111,7 @@ async function main(): Promise<void> {
     eventHandlers.get('connection.update')?.({ connection: 'open' });
     await new Promise((resolve) => setImmediate(resolve));
 
+    const requestAbort = new AbortController();
     const sendPromise = whatsapp.sendMessage({
       phoneE164: '+15555550100',
       body: 'shutdown cancellation test',
@@ -117,9 +119,19 @@ async function main(): Promise<void> {
       customerId: null,
       kind: 'manual_reply',
       userId: null,
+      signal: requestAbort.signal,
     });
     await presenceStartedPromise;
-    const shutdownPromise = whatsapp.shutdown();
+    const shutdownEntrypoints = createShutdownEntrypoints({
+      app: { on: () => {}, quit: () => {}, exit: () => {} },
+      process: { on: () => {}, exit: () => {} },
+      cleanup: () => whatsapp.shutdown(),
+      setQuitting: () => {},
+      onShutdownRequested: whatsapp.requestShutdown,
+      destroyWindow: () => {},
+    });
+    const shutdownPromise = shutdownEntrypoints.runCleanup();
+    requestAbort.abort();
     let sendSettled = false;
     void sendPromise.then(() => { sendSettled = true; }, () => { sendSettled = true; });
     let shutdownSettled = false;

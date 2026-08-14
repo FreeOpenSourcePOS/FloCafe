@@ -142,6 +142,7 @@ let whatsappShutdownPromise: Promise<void> | null = null;
 let whatsappAbortController = new AbortController();
 let shutdownSocket: BaileysSocket | null = null;
 let whatsappTerminalCleanup = false;
+let whatsappShutdownRequested = false;
 
 function isWhatsAppTerminal(): boolean {
   return state.shuttingDown || whatsappTerminalCleanup;
@@ -792,7 +793,7 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
 }
 
 export async function enable(userId: string): Promise<{ ok: boolean; error?: string }> {
-  if (whatsappShutdownPromise) return { ok: false, error: 'WhatsApp is shutting down.' };
+  if (whatsappShutdownPromise || whatsappShutdownRequested) return { ok: false, error: 'WhatsApp is shutting down.' };
   state.enabled = true;
   // Reset shutdown flag so the auto-reconnect-on-disconnect logic in the
   // close handler is active again after a previous disable() round.
@@ -840,7 +841,7 @@ export function disable(): void {
 
 export async function connectWithQr(requestSignal?: AbortSignal): Promise<{ ok: boolean; qr?: string; error?: string }> {
   if (!state.enabled) return { ok: false, error: 'WhatsApp is not enabled.' };
-  if (whatsappShutdownPromise) return { ok: false, error: 'WhatsApp is shutting down.' };
+  if (whatsappShutdownPromise || whatsappShutdownRequested) return { ok: false, error: 'WhatsApp is shutting down.' };
   state.shuttingDown = false;
   if (whatsappAbortController.signal.aborted) whatsappAbortController = new AbortController();
   const signal = requestSignal
@@ -856,7 +857,7 @@ export async function connectWithQr(requestSignal?: AbortSignal): Promise<{ ok: 
 
 export async function connectWithPairingCode(phone: string, requestSignal?: AbortSignal): Promise<{ ok: boolean; code?: string; error?: string }> {
   if (!state.enabled) return { ok: false, error: 'WhatsApp is not enabled.' };
-  if (whatsappShutdownPromise) return { ok: false, error: 'WhatsApp is shutting down.' };
+  if (whatsappShutdownPromise || whatsappShutdownRequested) return { ok: false, error: 'WhatsApp is shutting down.' };
   state.shuttingDown = false;
   if (whatsappAbortController.signal.aborted) whatsappAbortController = new AbortController();
   const signal = requestSignal
@@ -1203,6 +1204,21 @@ export function initFromDb(): void {
 
 export function shutdown(): Promise<void> {
   if (whatsappShutdownPromise) return whatsappShutdownPromise;
+  requestShutdown();
+  const socket = state.socket;
+  shutdownSocket = socket;
+  whatsappShutdownPromise = waitForWhatsAppWork().finally(() => {
+    if (inFlightWhatsAppWork.size === 0) {
+      if (state.socket === socket) state.socket = null;
+      shutdownSocket = null;
+    }
+  });
+  return whatsappShutdownPromise;
+}
+
+export function requestShutdown(): void {
+  if (whatsappShutdownRequested) return;
+  whatsappShutdownRequested = true;
   state.shuttingDown = true;
   whatsappAbortController.abort();
   cancelInFlightWhatsAppWork();
@@ -1213,11 +1229,4 @@ export function shutdown(): Promise<void> {
   if (socket) {
     try { socket.end(undefined); } catch { /* ignore */ }
   }
-  whatsappShutdownPromise = waitForWhatsAppWork().finally(() => {
-    if (inFlightWhatsAppWork.size === 0) {
-      if (state.socket === socket) state.socket = null;
-      shutdownSocket = null;
-    }
-  });
-  return whatsappShutdownPromise;
 }

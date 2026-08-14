@@ -375,6 +375,7 @@ export type ShutdownEntrypointOptions = {
   process: ShutdownEntrypointProcess;
   cleanup: () => Promise<void>;
   setQuitting: () => void;
+  onShutdownRequested?: () => void;
   destroyWindow: () => void;
   reportFailure?: (context: 'quit' | 'signal', error: unknown) => void;
   getSignalExitCode?: () => number;
@@ -385,6 +386,7 @@ export function createShutdownEntrypoints({
   process,
   cleanup,
   setQuitting,
+  onShutdownRequested = () => {},
   destroyWindow,
   reportFailure = () => {},
   getSignalExitCode = () => 0,
@@ -400,22 +402,23 @@ export function createShutdownEntrypoints({
   let signalExitRequested = false;
   const shutdownController = new AbortController();
 
-  const requestShutdown = (): void => {
+  const beginShutdown = (): void => {
     if (!shutdownRequested) {
       shutdownRequested = true;
+      onShutdownRequested();
       shutdownController.abort();
     }
     cancelHttpShutdownWork();
+  };
+
+  const requestShutdown = (): void => {
+    beginShutdown();
     setQuitting();
   };
 
   const runCleanup = (): Promise<void> => {
     if (!cleanupPromise) {
-      if (!shutdownRequested) {
-        shutdownRequested = true;
-        shutdownController.abort();
-      }
-      cancelHttpShutdownWork();
+      beginShutdown();
       cleanupPromise = Promise.resolve().then(cleanup);
       cleanupPromise.then(
         () => { cleanupFinished = true; },

@@ -12,7 +12,7 @@ import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from '.
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter, printReceipt, printKOT } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
-import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from './services/whatsapp';
+import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
@@ -797,6 +797,7 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
   setQuitting: () => {
     isQuitting = true;
   },
+  onShutdownRequested: requestWhatsAppShutdown,
   destroyWindow: () => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
   },

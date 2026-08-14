@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 
-const EVIDENCE_DIR = '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M015ZA6NNGWY6D97SNJBNNXS';
+const EVIDENCE_DIR = path.join(os.tmpdir(), 'no-mistakes-evidence', 'phone-unification');
 if (!fs.existsSync(EVIDENCE_DIR)) {
   fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 }

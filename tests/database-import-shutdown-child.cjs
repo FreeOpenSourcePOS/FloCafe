@@ -124,15 +124,16 @@ async function run() {
         confirmation_phrase: 'INITIALIZE',
       });
     }
-    await shutdownEntrypoints.runCleanup();
     if (response.status !== 500) throw new Error(`expected ${mode} cancellation response, got ${response.status}`);
     if (mode === 'import' && commitSeen) throw new Error('database import committed after shutdown cancellation');
     if (mode === 'reset' && !resetShutdownTriggered) throw new Error('reset cancellation did not reach the database replacement boundary');
     const survivorId = mode === 'import' ? 'shutdown-import-category' : 'reset-survivor';
-    const recoveredDatabase = dbModule.getDatabase();
+    const recoveredDatabase = new Database(dbModule.getDbPath(), { readonly: true, fileMustExist: true });
     const count = recoveredDatabase.prepare('SELECT COUNT(*) AS count FROM categories WHERE id = ?').get(survivorId).count;
+    recoveredDatabase.close();
     if (mode === 'import' && count !== 0) throw new Error('cancelled database import left committed rows');
     if (mode === 'reset' && count !== 1) throw new Error('cancelled reset removed live database data');
+    await shutdownEntrypoints.runCleanup();
     const backupFiles = fs.readdirSync(path.join(testDir, 'backups')).filter((file) => file.endsWith('.db'));
     if (backupFiles.length === 0) throw new Error('database import did not execute its safety backup');
     if (mode === 'reset' && backupFiles.some((file) => file.includes('flo-reset-recovery-'))) {

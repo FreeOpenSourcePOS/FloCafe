@@ -8,10 +8,12 @@ const events = [];
 const exitCodes = [];
 const appListeners = new Map();
 const startupRace = process.env.FLO_STARTUP_RACE === '1';
+const startupFailureRace = process.env.FLO_STARTUP_FAILURE_RACE === '1';
 const realProcessExit = process.exit.bind(process);
 let releaseServerStart;
+let rejectServerStart;
 
-if (startupRace) {
+if (startupRace || startupFailureRace) {
   process.exit = (code = 0) => { exitCodes.push(code); };
 }
 
@@ -69,7 +71,7 @@ Module._load = function (request, parent, isMain) {
     return {
       initDatabase: () => {
         events.push('database.init');
-        if (!startupRace) throw new Error('simulated startup failure');
+        if (!startupRace && !startupFailureRace) throw new Error('simulated startup failure');
       },
       beginDatabaseShutdown: () => { events.push('database.admission'); },
       closeDatabase: () => { events.push('database.close'); },
@@ -80,8 +82,11 @@ Module._load = function (request, parent, isMain) {
   if (request === './server') return {
     startServer: () => {
       events.push('server.start');
-      if (!startupRace) return Promise.resolve();
-      return new Promise((resolve) => { releaseServerStart = resolve; });
+      if (!startupRace && !startupFailureRace) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        releaseServerStart = resolve;
+        rejectServerStart = reject;
+      });
     },
     stopServer: async () => { events.push('server.stop'); },
     getLocalIP: () => '127.0.0.1',
@@ -122,13 +127,16 @@ Module._load = function (request, parent, isMain) {
 
 require('../main/index.ts');
 
-if (startupRace) {
+if (startupRace || startupFailureRace) {
   setTimeout(() => process.kill(process.pid, 'SIGTERM'), 0);
-  setTimeout(() => releaseServerStart?.(), 10);
+  setTimeout(() => {
+    if (startupFailureRace) rejectServerStart?.(new Error('simulated startup failure after shutdown'));
+    else releaseServerStart?.();
+  }, 10);
 }
 
 setTimeout(() => {
-  const expectedOrder = startupRace
+  const expectedOrder = startupRace || startupFailureRace
     ? [
       'database.init',
       'server.start',
@@ -157,11 +165,13 @@ setTimeout(() => {
       'database.close',
     ];
   const orderMatches = expectedOrder.every((event, index) => events[index] === event);
-  const passed = orderMatches && (startupRace
+  const passed = orderMatches && (startupFailureRace
+    ? exitCodes.length === 1 && exitCodes[0] === 1 && !events.includes('telemetry.start') && !events.includes('drive.start')
+    : startupRace
     ? exitCodes.length === 1 && exitCodes[0] === 0 && !events.includes('telemetry.start') && !events.includes('drive.start')
     : exitCodes.length === 1 && exitCodes[0] === 1);
   process.stdout.write(JSON.stringify({ passed, events, exitCodes }) + '\n');
   fs.rmSync(testDir, { recursive: true, force: true });
   Module._load = originalLoad;
   realProcessExit(passed ? 0 : 1);
-}, startupRace ? 100 : 50);
+}, startupRace || startupFailureRace ? 100 : 50);

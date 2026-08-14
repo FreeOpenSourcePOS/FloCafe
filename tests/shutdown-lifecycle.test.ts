@@ -359,6 +359,7 @@ async function testEntrypointCoverage(): Promise<void> {
     });
 
     const cleanupPromise = entrypoints.runCleanup();
+    assert.equal(entrypoints.shutdownSignal.aborted, true, `${signal} aborts the shared shutdown signal before cleanup settles`);
     assert.strictEqual(cleanupPromise, entrypoints.runCleanup(), 'repeated shutdown calls share one cleanup promise');
     process.emit(signal);
     process.emit(signal);
@@ -508,10 +509,12 @@ async function testStandaloneDevServerShutdown(): Promise<void> {
   }
 }
 
-async function testStartupEntrypoint(startupRace = false): Promise<void> {
+async function testStartupEntrypoint(startupRace = false, startupFailureRace = false): Promise<void> {
   const childEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
   if (startupRace) childEnv.FLO_STARTUP_RACE = '1';
   else delete childEnv.FLO_STARTUP_RACE;
+  if (startupFailureRace) childEnv.FLO_STARTUP_FAILURE_RACE = '1';
+  else delete childEnv.FLO_STARTUP_FAILURE_RACE;
   const child = spawn(process.execPath, [
     require.resolve('ts-node/dist/bin.js'),
     '--transpile-only',
@@ -539,7 +542,7 @@ async function testStartupEntrypoint(startupRace = false): Promise<void> {
     });
   });
   assert.equal(signal, null, `startup-failure child exited by signal: ${output}`);
-  assert.equal(code, 0, `${startupRace ? 'startup cancellation' : 'startup failure'} entrypoint coverage failed: ${output}`);
+  assert.equal(code, 0, `${startupFailureRace ? 'startup failure race' : startupRace ? 'startup cancellation' : 'startup failure'} entrypoint coverage failed: ${output}`);
   const resultLine = output.trim().split('\n').at(-1) || '';
   assert.equal(JSON.parse(resultLine).passed, true, output);
 }
@@ -781,6 +784,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   await testExitCodeEscalation();
   await testStartupEntrypoint();
   await testStartupEntrypoint(true);
+  await testStartupEntrypoint(false, true);
   await testStandaloneDevServerShutdown();
   await testStandaloneStartupCancellation();
   await testDatabaseImportShutdownCancellation();

@@ -281,6 +281,32 @@ async function run() {
     }
 
     setSettings({
+      cloud_deletion_request_id: 'deletion-id',
+      cloud_deletion_status_token: 'deletion-status-token',
+      cloud_deletion_status: 'pending',
+    });
+    const originalDeletionStatusFetch = globalThis.fetch;
+    let deletionStatusFetchStarted!: () => void;
+    const deletionStatusFetchStartedPromise = new Promise<void>((resolve) => { deletionStatusFetchStarted = resolve; });
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      deletionStatusFetchStarted();
+      const signal = init?.signal as AbortSignal;
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    })) as typeof fetch;
+    try {
+      const requestSignal = new AbortController();
+      const deletionStatusRequest = cloudSync.getDeletionRequestStatus({ allowRemote: true, signal: requestSignal.signal });
+      await deletionStatusFetchStartedPromise;
+      requestSignal.abort();
+      let deletionStatusCancelled = false;
+      try { await deletionStatusRequest; } catch { deletionStatusCancelled = true; }
+      assert(deletionStatusCancelled, 'cloud account status honors request cancellation');
+    } finally {
+      globalThis.fetch = originalDeletionStatusFetch;
+    }
+
+    setSettings({
       cloud_api_key: 'registered-api-key',
       cloud_pos_hash: 'registered-pos-hash',
       cloud_registration_status: 'registered',

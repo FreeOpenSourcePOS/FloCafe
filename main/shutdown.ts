@@ -379,21 +379,30 @@ export function createShutdownEntrypoints({
 }: ShutdownEntrypointOptions): {
   runCleanup: () => Promise<void>;
   isShutdownRequested: () => boolean;
+  shutdownSignal: AbortSignal;
 } {
   let cleanupPromise: Promise<void> | null = null;
   let cleanupFinished = false;
   let quitAfterCleanupRequested = false;
   let shutdownRequested = false;
   let signalExitRequested = false;
+  const shutdownController = new AbortController();
 
   const requestShutdown = (): void => {
-    shutdownRequested = true;
+    if (!shutdownRequested) {
+      shutdownRequested = true;
+      shutdownController.abort();
+    }
     cancelHttpShutdownWork();
     setQuitting();
   };
 
   const runCleanup = (): Promise<void> => {
     if (!cleanupPromise) {
+      if (!shutdownRequested) {
+        shutdownRequested = true;
+        shutdownController.abort();
+      }
       cancelHttpShutdownWork();
       cleanupPromise = Promise.resolve().then(cleanup);
       cleanupPromise.then(
@@ -452,7 +461,7 @@ export function createShutdownEntrypoints({
   process.on('SIGTERM', exitAfterCleanup);
   process.on('SIGINT', exitAfterCleanup);
 
-  return { runCleanup, isShutdownRequested: () => shutdownRequested };
+  return { runCleanup, isShutdownRequested: () => shutdownRequested, shutdownSignal: shutdownController.signal };
 }
 
 export function createExitCodeAwareShutdown(

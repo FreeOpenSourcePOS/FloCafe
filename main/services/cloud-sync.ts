@@ -18,6 +18,15 @@ const HEARTBEAT_INTERVAL_MS = 5 * 60_000;
 const OUTBOX_INTERVAL_MS = 15_000;
 const COMMAND_POLL_INTERVAL_MS = 10_000;
 const REQUEST_TIMEOUT_MS = 8_000;
+
+function requestSignal(signal?: AbortSignal): AbortSignal {
+  return signal ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+}
+
+function throwIfRequestAborted(signal?: AbortSignal): void {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error ? signal.reason : new Error('Cloud request cancelled');
+}
 const MAX_COMMAND_RANGE_DAYS = 370;
 
 // Live-relay channel (commands + heartbeat): WSS primary, HTTP poll/POST fallback.
@@ -442,9 +451,11 @@ class CloudSyncService {
 
   // Registration carries contact metadata for FloAdmin support. It is not an
   // authentication credential and does not create a cloud owner account.
-  async register(): Promise<Record<string, unknown>> {
+  async register(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress || this.shutdownRequested) throw new Error('Cloud shutdown in progress');
     return withDatabaseRequest(async () => {
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress || this.shutdownRequested) throw new Error('Cloud shutdown in progress');
     const db = getDatabase();
     const settings = this.readSettings(db);
@@ -485,9 +496,10 @@ class CloudSyncService {
           'X-Flo-POS-Hash': posHash,
         },
         body: JSON.stringify(body),
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        signal: requestSignal(signal),
       });
       const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+      throwIfRequestAborted(signal);
       if (this.cloudDeletionInProgress || this.shutdownRequested) throw new Error('Cloud shutdown in progress');
       if (!res.ok) {
         throw new Error(String(data.error || `Registration failed (${res.status})`));
@@ -507,6 +519,7 @@ class CloudSyncService {
         cloud_deletion_status: '', cloud_deletion_outcome: '',
         cloud_last_heartbeat: new Date().toISOString(),
       });
+      throwIfRequestAborted(signal);
       if (this.shutdownRequested) throw new Error('Cloud shutdown in progress');
       this.reload();
       if (settings.cloud_verification_welcome_requested !== '1') {
@@ -515,10 +528,12 @@ class CloudSyncService {
             product_updates: settings.email_product_updates === 'true',
             marketing: settings.email_marketing === 'true',
             source: 'signup',
-          });
+          }, signal);
+          throwIfRequestAborted(signal);
           if (this.shutdownRequested) throw new Error('Cloud shutdown in progress');
           this.upsertSettings({ cloud_verification_welcome_requested: '1' });
         } catch (emailError) {
+          throwIfRequestAborted(signal);
           log.warn('[CloudSync] welcome email request failed (registration remains valid)', (emailError as Error).message);
         }
       }
@@ -538,10 +553,12 @@ class CloudSyncService {
     });
   }
 
-  async testConnection(): Promise<Record<string, unknown>> {
+  async testConnection(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
-    const res = await this.signedFetch('/api/pos/connection-test', { method: 'POST', body: '{}' });
+    const res = await this.signedFetch('/api/pos/connection-test', { method: 'POST', body: '{}', signal });
     await res.json().catch(() => ({}));
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(`Cloud test failed (${res.status})`);
     this.upsertSettings({
@@ -555,6 +572,7 @@ class CloudSyncService {
   async getEmailPreferences(signal?: AbortSignal): Promise<Record<string, unknown>> {
     const res = await this.signedFetch('/api/pos/email-preferences', { method: 'GET', signal });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Email status failed (${res.status})`));
     this.upsertSettings({
@@ -573,15 +591,18 @@ class CloudSyncService {
       signal,
     });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Preference update failed (${res.status})`));
     await this.getEmailPreferences(signal);
     return data;
   }
 
-  async requestEmailVerification(preferences: { product_updates?: boolean; marketing?: boolean; source?: string } = {}): Promise<Record<string, unknown>> {
-    const res = await this.signedFetch('/api/pos/email/verification', { method: 'POST', body: JSON.stringify(preferences) });
+  async requestEmailVerification(preferences: { product_updates?: boolean; marketing?: boolean; source?: string } = {}, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    throwIfRequestAborted(signal);
+    const res = await this.signedFetch('/api/pos/email/verification', { method: 'POST', body: JSON.stringify(preferences), signal });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Verification request failed (${res.status})`));
     this.upsertSettings({
@@ -591,9 +612,9 @@ class CloudSyncService {
     return data;
   }
 
-  async stopAllCloudServices(): Promise<Record<string, unknown>> {
+  async stopAllCloudServices(signal?: AbortSignal): Promise<Record<string, unknown>> {
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
-    await this.setDiagnosticsConsent(false);
+    await this.setDiagnosticsConsent(false, signal);
     this.stop();
     this.upsertSettings({
       cloud_sync_enabled: '0', cloud_orders_enabled: '0', cloud_reports_enabled: '0',
@@ -604,7 +625,8 @@ class CloudSyncService {
     return this.getStatus();
   }
 
-  async deleteCloudData(): Promise<Record<string, unknown>> {
+  async deleteCloudData(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion already in progress');
     const currentSettings = this.readSettings(getDatabase());
     if (isCloudDeletionBlocking(currentSettings.cloud_deletion_status)
@@ -637,8 +659,10 @@ class CloudSyncService {
     })();
     const res = await this.signedFetch('/api/pos/cloud-data/delete', {
       method: 'POST', body: JSON.stringify({ confirmation: 'DELETE CLOUD DATA' }),
+      signal,
     }, true);
     const data = await res.json().catch(() => null) as Record<string, unknown> | null;
+    throwIfRequestAborted(signal);
     if (!res.ok) {
       deletionOutcome = 'rejected';
       throw new Error(String(data?.error || `Cloud deletion failed (${res.status})`));
@@ -688,8 +712,10 @@ class CloudSyncService {
     }).finally(() => { this.cloudDeletionInProgress = false; });
   }
 
-  async getDeletionRequestStatus(options: { allowRemote?: boolean } = {}): Promise<Record<string, unknown> | null> {
+  async getDeletionRequestStatus(options: { allowRemote?: boolean; signal?: AbortSignal } = {}): Promise<Record<string, unknown> | null> {
+    throwIfRequestAborted(options.signal);
     return withDatabaseRequest(async () => {
+    throwIfRequestAborted(options.signal);
     const settings = this.readSettings(getDatabase());
     const requestId = settings.cloud_deletion_request_id;
     const statusToken = settings.cloud_deletion_status_token;
@@ -702,8 +728,9 @@ class CloudSyncService {
     }
     const serverUrl = normalizeCloudServerUrl(settings.cloud_server_url || DEFAULT_CLOUD_SERVER_URL);
     const url = endpoint(serverUrl, `/api/cloud-data/deletion-request/status?id=${encodeURIComponent(requestId)}&token=${encodeURIComponent(statusToken)}`);
-    const res = await this.trackedFetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const res = await this.trackedFetch(url, { signal: requestSignal(options.signal) });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throwIfRequestAborted(options.signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Deletion status failed (${res.status})`));
     const deletion = validateCloudDeletionResponse(data, requestId, statusToken);
@@ -743,7 +770,8 @@ class CloudSyncService {
     });
   }
 
-  async cancelDeletionRequest(): Promise<Record<string, unknown>> {
+  async cancelDeletionRequest(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     return withDatabaseRequest(async () => {
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
@@ -751,8 +779,10 @@ class CloudSyncService {
     if (!settings.cloud_deletion_request_id) throw new Error('No pending deletion request');
     const res = await this.signedFetch('/api/pos/cloud-data/deletion-request/cancel', {
       method: 'POST', body: JSON.stringify({ request_id: settings.cloud_deletion_request_id }),
+      signal,
     }, true);
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Cancellation failed (${res.status})`));
     this.upsertSettings({
@@ -772,14 +802,16 @@ class CloudSyncService {
    * next reportDiagnostic() call (when back online) is gated locally anyway,
    * and the next successful call here will still bring the server in sync.
    */
-  async setDiagnosticsConsent(enabled: boolean): Promise<void> {
+  async setDiagnosticsConsent(enabled: boolean, signal?: AbortSignal): Promise<void> {
     try {
       const res = await this.signedFetch('/api/pos/diagnostics-consent', {
         method: 'POST',
         body: JSON.stringify({ enabled }),
+        signal,
       });
       await this.drainResponse(res);
     } catch (err) {
+      if (signal?.aborted) throw err;
       log.debug('[CloudSync] diagnostics consent sync failed (non-fatal):', (err as Error).message);
     }
   }

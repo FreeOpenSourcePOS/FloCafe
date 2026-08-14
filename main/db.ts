@@ -53,8 +53,8 @@ function createMaintenanceAbortError(): Error & { code: string } {
   return error;
 }
 
-export function throwIfDatabaseMaintenanceAborted(signal: AbortSignal): void {
-  if (signal.aborted) throw createMaintenanceAbortError();
+export function throwIfDatabaseMaintenanceAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw createMaintenanceAbortError();
 }
 
 function createDatabaseShutdownError(): Error & { code: string } {
@@ -1629,7 +1629,8 @@ function mergeRevocations(dbInstance: Database.Database, rows: RevocationRow[]):
   for (const row of rows) merge.run(row.token_hash, row.expires_at, row.revoked_at);
 }
 
-export function restoreBackup(backupPath: string, forceDirect: boolean = false): RestoreResult {
+export function restoreBackup(backupPath: string, forceDirect: boolean = false, signal?: AbortSignal): RestoreResult {
+  throwIfDatabaseMaintenanceAborted(signal);
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
   try {
     backupPath = materializeRestoreSource(backupPath, getDbPath());
@@ -1702,6 +1703,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   if (forceDirect || backupSchemaVersion === currentVersion) {
+    throwIfDatabaseMaintenanceAborted(signal);
     const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
     const validationError = validateDirectBackup(backupPath, currentDb, currentVersion, baselineForeignKeyViolations);
     if (validationError) {
@@ -1732,11 +1734,14 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
       });
       recoveryCopyReady = true;
+      throwIfDatabaseMaintenanceAborted(signal);
       closeDatabase();
+      throwIfDatabaseMaintenanceAborted(signal);
       const removeFailures = removeDatabaseFiles(dbPath);
       if (removeFailures.length > 0) {
         throw new Error(`Could not remove database files: ${removeFailures.join(', ')}`);
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       fs.copyFileSync(backupPath, dbPath);
       initDatabase(false);
 
@@ -1757,11 +1762,13 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       ) {
         throw new Error('Restored database failed integrity validation');
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       freshDb.pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit restored database');
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       writeReplacementJournal(journalPath, {
         phase: 'committed', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
@@ -1813,7 +1820,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, preservedOutboxes);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, preservedOutboxes, signal);
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -1892,7 +1899,9 @@ function dataOnlyRestore(
   preservedKdsEnabled: KdsEnabledSettingState = { present: false, value: null },
   preservedProtectedSettings: RestoreProtectedSettingState[] = [],
   preservedOutboxes: RestoreOutboxState = { cloud: [], support: [], diagnostics: [] },
+  signal?: AbortSignal,
 ): RestoreResult {
+  throwIfDatabaseMaintenanceAborted(signal);
   const livePath = getDbPath();
   if ([livePath, `${livePath}-wal`, `${livePath}-shm`].some((liveTarget) => isLiveDatabaseTarget(backupPath, liveTarget))) {
     return {
@@ -1957,6 +1966,7 @@ function dataOnlyRestore(
   }
 
   try {
+    throwIfDatabaseMaintenanceAborted(signal);
     // FK enforcement must be disabled before BEGIN. With it off, deleting a
     // common parent does not cascade-delete current-only child tables that an
     // older backup does not contain. The final check below protects commit.
@@ -1964,10 +1974,12 @@ function dataOnlyRestore(
     const safeBackupPath = backupPath.replace(/'/g, "''");
     currentDb.exec(`ATTACH DATABASE '${safeBackupPath}' AS _restore_src`);
     attached = true;
+    throwIfDatabaseMaintenanceAborted(signal);
     currentDb.exec('BEGIN IMMEDIATE');
     inTransaction = true;
 
     for (const tableName of commonTables) {
+      throwIfDatabaseMaintenanceAborted(signal);
       if (!isSafeIdentifier(tableName)) {
         console.warn(`[DB] dataOnlyRestore: skipping unsafe table: ${JSON.stringify(tableName)}`);
         continue;
@@ -2008,6 +2020,7 @@ function dataOnlyRestore(
     // SQLite does not allow DETACH while a write transaction is active.
     // Commit only after the integrity check, then detach the already-closed
     // source handle immediately so the long-lived connection stays clean.
+    throwIfDatabaseMaintenanceAborted(signal);
     currentDb.exec('COMMIT');
     inTransaction = false;
     try {
@@ -2063,6 +2076,7 @@ function dataOnlyRestore(
         );
       }
     }
+    throwIfDatabaseMaintenanceAborted(signal);
     console.error('[DB] dataOnlyRestore failed:', error);
     return {
       success: false,

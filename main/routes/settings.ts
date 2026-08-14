@@ -513,6 +513,7 @@ router.post('/cloud/register', requireRole('owner', 'manager'), asyncHandler(asy
   try {
     const deletionRequest = await cloudSync.getDeletionRequestStatus({
       allowRemote: cloudSync.isCloudAccountAvailable(),
+      signal: getHttpRequestSignal(req),
     });
     if (deletionRequest?.status === 'pending') {
       return res.status(409).json({ error: 'A cloud deletion request is pending review. Cancel it before re-enabling cloud services.' });
@@ -530,7 +531,7 @@ router.post('/cloud/register', requireRole('owner', 'manager'), asyncHandler(asy
     }
     // Registration sends contact metadata for FloAdmin support; it does not
     // create a cloud owner account or grant authentication access.
-    await cloudSync.register();
+    await cloudSync.register(getHttpRequestSignal(req));
     upsertSettings(getDatabase(), {
       cloud_sync_enabled: '1', cloud_reports_enabled: '1', cloud_command_polling_enabled: '1',
       cloud_services_disabled_by_user: 'false',
@@ -543,9 +544,9 @@ router.post('/cloud/register', requireRole('owner', 'manager'), asyncHandler(asy
   }
 }));
 
-router.post('/cloud/test', requireRole('owner', 'manager'), asyncHandler(async (_req: Request, res: Response) => {
+router.post('/cloud/test', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const result = await cloudSync.testConnection();
+    const result = await cloudSync.testConnection(getHttpRequestSignal(req));
     res.json(result);
   } catch (error: any) {
     console.error('[API] Cloud test failed:', error);
@@ -553,10 +554,11 @@ router.post('/cloud/test', requireRole('owner', 'manager'), asyncHandler(async (
   }
 }));
 
-router.get('/cloud/account', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
+router.get('/cloud/account', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const cloudAccountAvailable = cloudSync.isCloudAccountAvailable();
-    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: cloudAccountAvailable });
+    const signal = getHttpRequestSignal(req);
+    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: cloudAccountAvailable, signal });
     const safeDeletionRequest = publicDeletionRequest(deletionRequest);
     if (deletionRequest?.status === 'approved' || !cloudSync.isCloudAccountAvailable()) {
       return res.json({
@@ -571,7 +573,7 @@ router.get('/cloud/account', requireRole('owner'), asyncHandler(async (_req: Req
       });
     }
     res.json({
-      ...publicEmailPreferences(await cloudSync.getEmailPreferences()),
+      ...publicEmailPreferences(await cloudSync.getEmailPreferences(signal)),
       cloud_account_available: true,
       deletion_request: safeDeletionRequest,
     });
@@ -594,20 +596,20 @@ router.put('/cloud/account/preferences', requireRole('owner'), asyncHandler(asyn
   }
 }));
 
-router.post('/cloud/account/verification', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
+router.post('/cloud/account/verification', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
   if (!cloudSync.isCloudAccountAvailable()) {
     return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
   }
   try {
-    res.json(publicEmailPreferences(await cloudSync.requestEmailVerification({ source: 'settings' })));
+    res.json(publicEmailPreferences(await cloudSync.requestEmailVerification({ source: 'settings' }, getHttpRequestSignal(req))));
   } catch {
     res.status(502).json({ error: 'Could not send verification email' });
   }
 }));
 
-router.get('/cloud/delete-data/status', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
+router.get('/cloud/delete-data/status', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: true });
+    const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: true, signal: getHttpRequestSignal(req) });
     res.json({
       cloud_account_available: cloudSync.isCloudAccountAvailable(),
       deletion_request: publicDeletionRequest(deletionRequest),
@@ -617,8 +619,8 @@ router.get('/cloud/delete-data/status', requireRole('owner'), asyncHandler(async
   }
 }));
 
-router.post('/cloud/stop-all', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
-  res.json(await cloudSync.stopAllCloudServices());
+router.post('/cloud/stop-all', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+  res.json(await cloudSync.stopAllCloudServices(getHttpRequestSignal(req)));
 }));
 
 router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
@@ -626,15 +628,15 @@ router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, asyncH
     return res.status(400).json({ error: 'Type DELETE CLOUD DATA to confirm' });
   }
   try {
-    res.json(await cloudSync.deleteCloudData());
+    res.json(await cloudSync.deleteCloudData(getHttpRequestSignal(req)));
   } catch {
     res.status(502).json({ error: 'Cloud data deletion failed' });
   }
 }));
 
-router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin, asyncHandler(async (_req: Request, res: Response) => {
+router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   try {
-    res.json(await cloudSync.cancelDeletionRequest());
+    res.json(await cloudSync.cancelDeletionRequest(getHttpRequestSignal(req)));
   } catch {
     res.status(502).json({ error: 'Could not cancel deletion request' });
   }

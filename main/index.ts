@@ -641,7 +641,7 @@ async function initialize(): Promise<void> {
     if (isShutdownRequested()) return;
 
     console.log('[Flo] Registering IPC handlers...');
-    registerIpcHandlers();
+    registerIpcHandlers(shutdownSignal);
 
     ipcMain.handle('get-update-status', () => ({
       status: updateDownloaded ? 'ready-to-install' as const
@@ -694,6 +694,11 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Ready!');
   } catch (error) {
     console.error('[Flo] Initialization error:', error);
+    const errorDetails = error as { code?: unknown; name?: unknown } | null;
+    const expectedShutdownCancellation = errorDetails?.code === 'ERR_SHUTDOWN_ABORTED'
+      || errorDetails?.code === 'ABORT_ERR'
+      || errorDetails?.name === 'AbortError';
+    if (!expectedShutdownCancellation) startupFailure = true;
     if (isShutdownRequested()) {
       try {
         await runCleanup();
@@ -702,7 +707,6 @@ async function initialize(): Promise<void> {
       }
       return;
     }
-    startupFailure = true;
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
 
     // Best-effort: report the fatal startup failure so support can see which
@@ -777,7 +781,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   { name: 'database', run: () => closeDatabase(), databaseClose: true },
 ]);
 
-const { runCleanup, isShutdownRequested } = createShutdownEntrypoints({
+const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntrypoints({
   app: app as unknown as ShutdownEntrypointApp,
   process: process as unknown as ShutdownEntrypointProcess,
   cleanup: async () => {

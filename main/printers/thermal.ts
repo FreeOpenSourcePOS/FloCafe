@@ -540,15 +540,16 @@ export async function initPrinter(): Promise<void> {
   }
 }
 
-export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false): Promise<DispatchResult> {
+export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, signal?: AbortSignal): Promise<DispatchResult> {
   try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     console.log('[Printer] printReceipt called, template:', template, 'useUnicode:', useUnicode, 'isReprint:', isReprint);
     const { printer, data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint);
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
     console.log('[Printer] Receipt data length:', data.length, 'bytes');
     console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
 
-    const dispatch = await dispatchPrint(printer, data);
+    const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
   } catch (error: any) {
     console.error('[Printer] Print error:', error);
@@ -556,8 +557,9 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
   }
 }
 
-export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any): Promise<DispatchResult> {
+export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any, signal?: AbortSignal): Promise<DispatchResult> {
   try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     console.log('[Printer] printKOT called, items count:', items?.length || 0, 'useUnicode:', useUnicode, 'station:', stationName);
     const printer = targetPrinter || getPrinterConfig();
     if (!printer) {
@@ -577,7 +579,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const warnings: PrintWarning[] = [];
     const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings);
     console.log('[Printer] KOT data length:', data.length, 'bytes');
-    const dispatch = await dispatchPrint(printer, data);
+    const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
   } catch (error: any) {
     console.error('[Printer] KOT print error:', error);
@@ -721,17 +723,17 @@ function columnsForPaperWidth(paperWidth: string): number | null {
   }
 }
 
-async function dispatchPrint(printer: any, data: Buffer): Promise<DispatchResult> {
+async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
   switch (printer.connection_type) {
     case 'network':
-      return await printViaNetwork(printer.ip_address, printer.port || 9100, data);
+      return await printViaNetwork(printer.ip_address, printer.port || 9100, data, signal);
     case 'usb':
       if (isMasBuild) {
         const detail = 'USB printers are not supported in the App Store build. Use a network printer.';
         console.log(`[Printer] ${detail}`);
         return { ok: false, detail };
       }
-      return await printViaUSB(data, printer.name);
+      return await printViaUSB(data, printer.name, signal);
     case 'webusb':
       console.log('[Printer] WebUSB printer — not supported in Electron');
       return { ok: false, detail: 'WebUSB printers are handled in the browser, not by the desktop app' };
@@ -1406,39 +1408,52 @@ export function escPosToText(data: Buffer | Uint8Array): string {
   return Buffer.from(text).toString('utf8').replace(/\n+$/, '');
 }
 
-export async function printViaNetwork(ip: string, port: number, data: Buffer): Promise<DispatchResult> {
+export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
   return new Promise((resolve) => {
     const client = new net.Socket();
+    let settled = false;
+    const onAbort = (): void => {
+      client.destroy();
+      finish({ ok: false, detail: 'Print cancelled during shutdown' });
+    };
+    const finish = (result: DispatchResult): void => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      resolve(result);
+    };
 
     client.connect(port, ip, () => {
       client.write(data, () => {
         client.end();
-        resolve({ ok: true });
+        finish({ ok: true });
       });
     });
 
     client.on('error', (err) => {
       console.error(`[Printer] Network error: ${err.message}`);
       client.destroy();
-      resolve({ ok: false, detail: `Network error: ${err.message}` });
+      finish({ ok: false, detail: `Network error: ${err.message}` });
     });
 
     client.setTimeout(5000, () => {
       client.destroy();
-      resolve({ ok: false, detail: `Timed out connecting to ${ip}:${port}` });
+      finish({ ok: false, detail: `Timed out connecting to ${ip}:${port}` });
     });
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }
 
-export async function printViaUSB(data: Buffer, printerName?: string): Promise<DispatchResult> {
+export async function printViaUSB(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   console.log('[Printer] printViaUSB called, platform:', process.platform, 'printer:', printerName);
 
   if (process.platform === 'darwin' || process.platform === 'linux') {
-    return await printViaCups(data, printerName);
+    return await printViaCups(data, printerName, signal);
   }
 
   if (process.platform === 'win32') {
-    return await printViaUSBWindows(data, printerName);
+    return await printViaUSBWindows(data, printerName, signal);
   }
 
   console.warn('[Printer] Unsupported platform:', process.platform);
@@ -1453,11 +1468,11 @@ export async function printViaUSB(data: Buffer, printerName?: string): Promise<D
 // Returns a human-readable problem, or null to proceed. Anything unexpected
 // (no CUPS, unknown queue) returns null so `lp` still gets its chance: this
 // check only ever turns a silent failure into a visible one.
-async function describeCupsQueueProblem(printerName?: string): Promise<string | null> {
+async function describeCupsQueueProblem(printerName?: string, signal?: AbortSignal): Promise<string | null> {
   if (!printerName) return null;
 
   // LC_ALL=C — the state words below are matched in English, and lpstat is localised.
-  const opts = { encoding: 'utf8' as const, timeout: 5000, env: { ...process.env, LC_ALL: 'C' } };
+  const opts = { encoding: 'utf8' as const, timeout: 5000, signal, env: { ...process.env, LC_ALL: 'C' } };
 
   try {
     const { stdout } = await execFileAsync('lpstat', ['-p', printerName], opts);
@@ -1479,10 +1494,11 @@ async function describeCupsQueueProblem(printerName?: string): Promise<string | 
   return null;
 }
 
-async function printViaCups(data: Buffer, printerName?: string): Promise<DispatchResult> {
+async function printViaCups(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   const label = printerName || 'default';
 
-  const problem = await describeCupsQueueProblem(printerName);
+  const problem = await describeCupsQueueProblem(printerName, signal);
+  if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
   if (problem) {
     console.error(`[Printer] CUPS print aborted for "${label}": ${problem}`);
     return { ok: false, detail: problem };
@@ -1496,7 +1512,7 @@ async function printViaCups(data: Buffer, printerName?: string): Promise<Dispatc
     const args = printerName
       ? ['-d', printerName, '-o', 'raw', tmpFile]
       : ['-o', 'raw', tmpFile];
-    const { stdout } = await execFileAsync('lp', args, { encoding: 'utf8', timeout: 20000 });
+    const { stdout } = await execFileAsync('lp', args, { encoding: 'utf8', timeout: 20000, signal });
 
     console.log(`[Printer] CUPS print queued for "${label}" (${stdout.trim()})`);
     return { ok: true };
@@ -1715,7 +1731,7 @@ function parseWindowsPrintOutput(output: unknown): Pick<DispatchResult, 'jobId' 
   return parsed;
 }
 
-async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<DispatchResult> {
+async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   if (!printerName) {
     const detail = 'No Windows printer configured; refusing to guess a target';
     console.error(`[Printer] ${detail}`);
@@ -1736,6 +1752,7 @@ async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<D
       {
         encoding: 'utf8',
         timeout: 20000,
+        signal,
         windowsHide: true,
         env: { ...process.env, FLO_PRINTER_NAME: printerName, FLO_PRINT_FILE: tmpFile },
       },

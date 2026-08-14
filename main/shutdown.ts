@@ -8,6 +8,12 @@ import { WebSocket, type WebSocketServer } from 'ws';
  */
 export const SHUTDOWN_TIMEOUT_MS = 10_000;
 
+export function createShutdownCancellationError(label: string): Error & { code: string } {
+  const error = new Error(`${label} startup cancelled during shutdown`) as Error & { code: string };
+  error.code = 'ERR_SHUTDOWN_ABORTED';
+  return error;
+}
+
 type ClosableHttpServer = http.Server & {
   closeIdleConnections?: () => void;
   closeAllConnections?: () => void;

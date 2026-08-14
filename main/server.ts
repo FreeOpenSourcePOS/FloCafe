@@ -2,7 +2,7 @@ import express, { Express, Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import { WebSocketServer } from 'ws';
 import * as http from 'http';
-import { closeServerResources, installHttpShutdownTracking } from './shutdown';
+import { closeServerResources, createShutdownCancellationError, installHttpShutdownTracking } from './shutdown';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -355,7 +355,7 @@ export function stopServer(): Promise<void> {
   stopping = true;
   const rejectStart = startReject;
   startReject = null;
-  rejectStart?.(new Error('Main server startup cancelled during shutdown'));
+  rejectStart?.(createShutdownCancellationError('Main server'));
   const serverToClose = server;
   const wssToClose = wss;
   // Mark resources unavailable immediately. Repeated callers share the same

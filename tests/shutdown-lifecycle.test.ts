@@ -296,7 +296,7 @@ async function testStandaloneStartupCancellation(): Promise<void> {
       startServerApp: async () => { events.push('server-app'); },
       isShutdownRequested: () => shutdownRequested,
     }),
-    /startup cancelled during shutdown/,
+    (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED' && /startup cancelled during shutdown/.test(error.message),
   );
   assert.deepEqual(events, ['database', 'prepare', 'main'], 'shutdown between startup awaits prevents later listeners');
 }

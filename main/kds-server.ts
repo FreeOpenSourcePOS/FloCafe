@@ -6,7 +6,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { closeServerResources, installHttpShutdownTracking } from './shutdown';
+import { closeServerResources, createShutdownCancellationError, installHttpShutdownTracking } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
@@ -639,7 +639,7 @@ export function stopKdsServer(): Promise<void> {
   stopping = true;
   const rejectStart = startReject;
   startReject = null;
-  rejectStart?.(new Error('KDS server startup cancelled during shutdown'));
+  rejectStart?.(createShutdownCancellationError('KDS server'));
   const serverToClose = kdsServer;
   const wssToClose = kdsWss;
   // Mark resources unavailable immediately while the captured listeners and

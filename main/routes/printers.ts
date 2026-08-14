@@ -7,6 +7,7 @@ import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/
 import { requireRole } from '../middleware/security';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
+import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
@@ -278,10 +279,10 @@ router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (re
     switch (printer.connection_type) {
       case 'network':
         if (!printer.ip_address) return res.status(400).json({ error: 'No IP address configured' });
-        result = await printViaNetwork(printer.ip_address, printer.port || 9100, testData);
+        result = await printViaNetwork(printer.ip_address, printer.port || 9100, testData, getHttpRequestSignal(req));
         break;
       case 'usb':
-        result = await printViaUSB(testData, printer.name);
+        result = await printViaUSB(testData, printer.name, getHttpRequestSignal(req));
         break;
       case 'webusb':
         // WebUSB is handled entirely in the browser; return the bytes for the frontend to send
@@ -431,7 +432,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
-    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint);
+    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req));
     console.log('[Print Bill] Print completed', result);
 
     if (result.ok) {
@@ -543,14 +544,14 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
     if (stationName || items) {
       const kotItems = items || orderItems;
       const station = stationName || 'Kitchen';
-      const result = await printKOTDetailed(order, kotItems, station, useUnicode);
+      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req));
       success = result.ok;
       failure = result.ok ? null : result;
       warnings.push(...(result.warnings || []));
     } else {
       const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
       for (const group of groups) {
-        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined);
+        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req));
         success = success && result.ok;
         warnings.push(...(result.warnings || []));
         if (!result.ok && !failure) failure = result;

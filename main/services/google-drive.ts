@@ -69,25 +69,38 @@ function isExpectedShutdownCancellation(error: unknown): boolean {
 }
 
 function cancelDriveOperation(operation: Promise<unknown>): void {
-  const cancellable = operation as Promise<unknown> & { cancel?: () => void };
-  if (typeof cancellable.cancel !== 'function') return;
-  try { cancellable.cancel(); } catch { }
+  const cancellable = operation as Promise<unknown> & { cancel?: () => void; abort?: () => void };
+  try {
+    if (typeof cancellable.cancel === 'function') cancellable.cancel();
+    else if (typeof cancellable.abort === 'function') cancellable.abort();
+  } catch { }
 }
 
-function waitForDriveOperation<T>(operationFactory: () => Promise<T>, signal: AbortSignal | undefined, timeoutMs: number, label: string): Promise<T> {
+function waitForDriveOperation<T>(operationFactory: (signal: AbortSignal) => Promise<T>, signal: AbortSignal | undefined, timeoutMs: number, label: string): Promise<T> {
   if (signal?.aborted) return Promise.reject(createDriveShutdownError(label));
+  const operationController = new AbortController();
+  const operationSignal = signal ? AbortSignal.any([signal, operationController.signal]) : operationController.signal;
   let operation: Promise<T>;
   try {
-    operation = operationFactory();
+    operation = operationFactory(operationSignal);
   } catch (error) {
     return Promise.reject(error);
   }
   let timeout: NodeJS.Timeout | undefined;
   let onAbort: (() => void) | undefined;
+  let operationSettled = false;
+  let cancellationStarted = false;
+  void operation.then(
+    () => { operationSettled = true; },
+    () => { operationSettled = true; },
+  );
   const cancellation = new Promise<never>((_resolve, reject) => {
     const rejectAfterOperation = (error: Error & { code: string }) => {
+      if (cancellationStarted || operationSettled) return;
+      cancellationStarted = true;
+      operationController.abort();
       cancelDriveOperation(operation);
-      operation.then(() => reject(error), () => reject(error));
+      void operation.then(() => reject(error), () => reject(error));
     };
     const abort = () => rejectAfterOperation(createDriveShutdownError(label));
     onAbort = abort;
@@ -97,8 +110,7 @@ function waitForDriveOperation<T>(operationFactory: () => Promise<T>, signal: Ab
     }
     if (signal) signal.addEventListener('abort', abort, { once: true });
     timeout = setTimeout(() => {
-      cancelDriveOperation(operation);
-      reject(createDriveShutdownError(label, true));
+      rejectAfterOperation(createDriveShutdownError(label, true));
     }, timeoutMs);
   });
   return Promise.race([operation, cancellation]).finally(() => {
@@ -397,7 +409,7 @@ class GoogleDriveService {
 
       this.throwIfStopping(signal);
       const { path: backupPath } = await waitForDriveOperation(
-        () => createBackup(undefined, signal),
+        (operationSignal) => createBackup(undefined, operationSignal),
         signal,
         SHUTDOWN_TIMEOUT_MS,
         'Google Drive local backup',

@@ -5,7 +5,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
-import { closeServerResources, getHttpRequestSignal, installHttpShutdownTracking, trackHttpRequestWork } from './shutdown';
+import { closeServerResources, createShutdownCancellationError, getHttpRequestSignal, installHttpShutdownTracking, trackHttpRequestWork } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled } from './db';
 import { getJWTSecret } from './routes/auth';
 import { authRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
@@ -327,7 +327,7 @@ export function stopServerApp(): Promise<void> {
   stopping = true;
   const rejectStart = startReject;
   startReject = null;
-  rejectStart?.(new Error('Server App startup cancelled during shutdown'));
+  rejectStart?.(createShutdownCancellationError('Server App'));
   const serverToClose = serverApp;
   // Mark the server unavailable immediately while active requests drain.
   serverApp = null;

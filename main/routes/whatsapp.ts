@@ -71,7 +71,7 @@ router.post('/disable', requireRole('owner', 'manager'), (_req: Request, res: Re
 router.post('/connect', requireRole('owner', 'manager'), asyncHandler(async (req, res) => {
   const { method, phone } = req.body ?? {};
   if (method === 'qr') {
-    res.json(await whatsapp.connectWithQr());
+    res.json(await trackHttpRequestWork(req, whatsapp.connectWithQr(getHttpRequestSignal(req))));
   } else if (method === 'pairing_code') {
     if (!phone) {
       res.status(400).json({ error: 'phone required for pairing code', reason: 'phone_required_pairing' });

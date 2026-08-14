@@ -136,6 +136,7 @@ process.on('unhandledRejection', (err) => {
     console.log('[DevServer]    API health: http://localhost:3001/api/health');
   } catch (err) {
     console.error('[DevServer] Failed to start:', err);
-    await shutdown(1);
+    const code = err && (err.code === 'ERR_SHUTDOWN_ABORTED' || err.code === 'ABORT_ERR' || err.name === 'AbortError') ? 0 : 1;
+    await shutdown(code);
   }
 })();

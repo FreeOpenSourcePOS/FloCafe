@@ -136,7 +136,8 @@ const state: {
   lidToPhoneMap: new Map(),
 };
 
-const inFlightWhatsAppWork = new Set<Promise<unknown>>();
+type WhatsAppWorkCancellation = () => void;
+const inFlightWhatsAppWork = new Map<Promise<unknown>, WhatsAppWorkCancellation>();
 let whatsappShutdownPromise: Promise<void> | null = null;
 let whatsappAbortController = new AbortController();
 
@@ -146,7 +147,12 @@ function createWhatsAppAbortError(): Error & { code: string } {
   return error;
 }
 
-function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal): Promise<T> {
+function cancelWhatsAppSocket(): void {
+  if (!state.shuttingDown || !state.socket) return;
+  try { state.socket.end(undefined); } catch { }
+}
+
+function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal, cancel: WhatsAppWorkCancellation = cancelWhatsAppSocket): Promise<T> {
   if (signal.aborted) return Promise.reject(createWhatsAppAbortError());
   let operation: Promise<T>;
   try {
@@ -154,7 +160,7 @@ function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal): 
   } catch (error) {
     return Promise.reject(error);
   }
-  trackWhatsAppWork(operation);
+  trackWhatsAppWork(operation, cancel);
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     let aborted = false;
@@ -164,6 +170,7 @@ function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal): 
       if (settled || aborted) return;
       aborted = true;
       cleanup();
+      cancel();
       operation.then(
         () => {
           if (settled) return;
@@ -214,10 +221,16 @@ function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void
   });
 }
 
-function trackWhatsAppWork<T>(operation: Promise<T>): Promise<T> {
-  inFlightWhatsAppWork.add(operation);
+function trackWhatsAppWork<T>(operation: Promise<T>, cancel: WhatsAppWorkCancellation = cancelWhatsAppSocket): Promise<T> {
+  inFlightWhatsAppWork.set(operation, cancel);
   void operation.finally(() => inFlightWhatsAppWork.delete(operation)).catch(() => {});
   return operation;
+}
+
+function cancelInFlightWhatsAppWork(): void {
+  for (const cancel of inFlightWhatsAppWork.values()) {
+    try { cancel(); } catch { }
+  }
 }
 
 async function waitForWhatsAppWork(): Promise<void> {
@@ -232,6 +245,7 @@ async function waitForWhatsAppWork(): Promise<void> {
       drain,
       new Promise<never>((_resolve, reject) => {
         timeout = setTimeout(() => {
+          cancelInFlightWhatsAppWork();
           const error = new Error(`WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
           error.code = 'ERR_SHUTDOWN_TIMEOUT';
           reject(error);
@@ -697,8 +711,10 @@ async function resolveWaWebVersion(signal: AbortSignal): Promise<[number, number
   return undefined;
 }
 
-async function startSocketImpl(): Promise<void> {
-  const signal = whatsappAbortController.signal;
+async function startSocketImpl(requestSignal?: AbortSignal): Promise<void> {
+  const signal = requestSignal
+    ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
+    : whatsappAbortController.signal;
   if (!state.enabled || state.shuttingDown || signal.aborted) return;
   if (state.socket) return;
   const authDir = getAuthDir();
@@ -742,8 +758,8 @@ function wipeAuthDir(): void {
   }
 }
 
-function startSocket(): Promise<void> {
-  return trackWhatsAppWork(startSocketImpl());
+function startSocket(requestSignal?: AbortSignal): Promise<void> {
+  return trackWhatsAppWork(startSocketImpl(requestSignal));
 }
 
 export async function enable(userId: string): Promise<{ ok: boolean; error?: string }> {
@@ -793,14 +809,18 @@ export function disable(): void {
   wipeAuthDir();
 }
 
-export async function connectWithQr(): Promise<{ ok: boolean; qr?: string; error?: string }> {
+export async function connectWithQr(requestSignal?: AbortSignal): Promise<{ ok: boolean; qr?: string; error?: string }> {
   if (!state.enabled) return { ok: false, error: 'WhatsApp is not enabled.' };
   if (whatsappShutdownPromise) return { ok: false, error: 'WhatsApp is shutting down.' };
   state.shuttingDown = false;
   if (whatsappAbortController.signal.aborted) whatsappAbortController = new AbortController();
+  const signal = requestSignal
+    ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
+    : whatsappAbortController.signal;
+  if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
   state.lastQr = null;
   state.lastPairingCode = null;
-  await startSocket();
+  await abortable(() => startSocket(signal), signal);
   // QR arrives asynchronously via connection.update
   return { ok: true };
 }
@@ -816,7 +836,7 @@ export async function connectWithPairingCode(phone: string, requestSignal?: Abor
   if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
   try {
     if (!state.socket) {
-      await abortable(() => startSocket(), signal);
+      await abortable(() => startSocket(signal), signal);
       await abortableDelay(1500, signal);
     }
     if (!state.socket) return { ok: false, error: 'Socket not ready, try again.' };

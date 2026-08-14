@@ -52,12 +52,12 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
       }),
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
-    if (!response.ok) {
+    const ok = response.ok;
+    if (!ok) {
       log.debug(`[Flo] telemetry rejected with HTTP ${response.status}`);
-      return false;
     }
-    await response.body?.cancel();
-    return true;
+    await response.body?.cancel().catch(() => {});
+    return ok;
   } catch (e) {
     // Telemetry must never disrupt the app or surface to the user.
     log.debug('[Flo] telemetry send failed (non-fatal):', e);

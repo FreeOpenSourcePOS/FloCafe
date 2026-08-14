@@ -18,6 +18,7 @@ import {
   UserCircle,
   MessageCircle,
   LifeBuoy,
+  ArrowDownUp,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -46,6 +47,7 @@ const ALL_NAV_ITEMS = [
   { href: '/orders', labelKey: 'nav.orders', icon: ClipboardList, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/whatsapp', labelKey: 'nav.whatsapp', icon: MessageCircle, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
   { href: '/products', labelKey: 'nav.products', icon: Package, roles: ['owner', 'manager'], businessTypes: null },
+  { href: '/products/order', label: 'Pořadí POS', icon: ArrowDownUp, roles: ['owner', 'manager'], businessTypes: null },
   { href: '/tables', labelKey: 'nav.tables', icon: Grid3X3, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
   { href: '/settings?tab=kds', labelKey: 'nav.kds', icon: ChefHat, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
   { href: '/customers', labelKey: 'nav.customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
@@ -150,7 +152,7 @@ export default function AppSidebar() {
                 const isActive = !hrefQuery && (pathname === hrefPath || pathname?.startsWith(hrefPath + '/'));
                 return (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={isActive} tooltip={t(item.labelKey)}>
+                    <SidebarMenuButton asChild isActive={isActive} tooltip={item.label || t(item.labelKey)}>
                       <Link href={item.href} onClick={closeMobile}>
                         <span className="relative flex size-4 shrink-0 items-center justify-center">
                           <item.icon className="size-4 shrink-0" />
@@ -158,7 +160,7 @@ export default function AppSidebar() {
                             <span aria-label="Email verification required" className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
                           )}
                         </span>
-                        <span>{t(item.labelKey)}</span>
+                        <span>{item.label || t(item.labelKey)}</span>
                       </Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>

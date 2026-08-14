@@ -81,6 +81,7 @@
     "test:integration-loyalty": "node tests/run-electron-node-test.cjs tests/integration-loyalty.test.ts",
     "test:integration-discount": "node tests/run-electron-node-test.cjs tests/integration-discount-edge.test.ts",
     "test:sequence": "node tests/run-electron-node-test.cjs tests/sequence-generation.test.ts",
+    "test:order-numbering-settings": "node tests/run-electron-node-test.cjs tests/order-numbering-settings.test.ts",
     "test:loyalty-toggle": "node tests/run-electron-node-test.cjs tests/loyalty-toggle.test.ts",
     "test:discount-system": "node tests/run-electron-node-test.cjs tests/discount-system.test.ts",
     "test:integration-discount-settings": "node tests/run-electron-node-test.cjs tests/integration-discount-settings.test.ts",

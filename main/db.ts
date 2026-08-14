@@ -3580,6 +3580,17 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `).run();
     },
   },
+  {
+    version: 68,
+    name: 'add_invoice_numbering_settings',
+    up: () => {
+      insertSettingIfMissing('invoice_number_prefix', 'INV');
+      insertSettingIfMissing('invoice_number_include_period', 'true');
+      insertSettingIfMissing('invoice_number_reset_period', 'daily');
+      insertSettingIfMissing('invoice_financial_year_start_month', '4');
+      insertSettingIfMissing('invoice_financial_year_start_day', '1');
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4336,6 +4347,11 @@ function seedInstallDefaults(): void {
   insert('order_number_prefix', 'ORD');
   insert('order_number_include_date', 'true');
   insert('order_number_reset_daily', 'true');
+  insert('invoice_number_prefix', 'INV');
+  insert('invoice_number_include_period', 'true');
+  insert('invoice_number_reset_period', 'daily');
+  insert('invoice_financial_year_start_month', '4');
+  insert('invoice_financial_year_start_day', '1');
 
   seedCloudSyncDefaults();
 
@@ -4403,6 +4419,52 @@ export function dateStampInTimezone(timezone: string): string {
   }
 }
 
+type InvoiceResetPeriod = 'never' | 'daily' | 'monthly' | 'financial_year';
+
+function datePartsInTimezone(timezone: string): { year: number; month: number; day: number } {
+  try {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).formatToParts(new Date());
+    const get = (type: string) => Number(parts.find((p) => p.type === type)?.value);
+    const year = get('year');
+    const month = get('month');
+    const day = get('day');
+    if (Number.isInteger(year) && Number.isInteger(month) && Number.isInteger(day)) {
+      return { year, month, day };
+    }
+  } catch { }
+
+  const [year, month, day] = new Date().toISOString().slice(0, 10).split('-').map(Number);
+  return { year, month, day };
+}
+
+function clampFinancialYearStart(monthValue: string | null | undefined, dayValue: string | null | undefined) {
+  const month = Number.parseInt(monthValue || '4', 10);
+  const day = Number.parseInt(dayValue || '1', 10);
+  return {
+    month: Number.isInteger(month) && month >= 1 && month <= 12 ? month : 4,
+    day: Number.isInteger(day) && day >= 1 && day <= 31 ? day : 1,
+  };
+}
+
+function financialYearSegment(timezone: string, startMonth: number, startDay: number): string {
+  const current = datePartsInTimezone(timezone);
+  const startsThisYear = current.month > startMonth || (current.month === startMonth && current.day >= startDay);
+  const startYear = startsThisYear ? current.year : current.year - 1;
+  return `FY${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
+}
+
+function invoicePeriodSegment(period: InvoiceResetPeriod, timezone: string, startMonth: number, startDay: number): string {
+  const date = dateStampInTimezone(timezone);
+  if (period === 'monthly') return date.slice(0, 6);
+  if (period === 'financial_year') return financialYearSegment(timezone, startMonth, startDay);
+  return date;
+}
+
 export function generateOrderNumber(): string {
   const prefix = getSettingValue('order_number_prefix') ?? 'ORD';
   const includeDate = getSettingValue('order_number_include_date') !== 'false';
@@ -4420,9 +4482,21 @@ export function generateOrderNumber(): string {
 }
 
 export function generateBillNumber(): string {
-  const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const next = getNextSequence('bills', date);
-  return `INV-${date}-${String(next).padStart(4, '0')}`;
+  const prefix = getSettingValue('invoice_number_prefix') ?? 'INV';
+  const includePeriod = getSettingValue('invoice_number_include_period') !== 'false';
+  const configuredPeriod = getSettingValue('invoice_number_reset_period') || 'daily';
+  const resetPeriod: InvoiceResetPeriod = ['never', 'daily', 'monthly', 'financial_year'].includes(configuredPeriod)
+    ? configuredPeriod as InvoiceResetPeriod
+    : 'daily';
+  const timezone = getSettingValue('timezone') || 'Asia/Kolkata';
+  const fyStart = clampFinancialYearStart(
+    getSettingValue('invoice_financial_year_start_month'),
+    getSettingValue('invoice_financial_year_start_day'),
+  );
+  const periodSegment = invoicePeriodSegment(resetPeriod === 'never' ? 'daily' : resetPeriod, timezone, fyStart.month, fyStart.day);
+  const bucket = resetPeriod === 'never' ? 'ALL' : periodSegment;
+  const next = getNextSequence('bills', bucket);
+  return [prefix, includePeriod ? periodSegment : '', String(next).padStart(4, '0')].filter(Boolean).join('-');
 }
 
 export function now(): string {

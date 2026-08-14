@@ -116,6 +116,22 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
   );
 }
 
+type InvoiceResetPeriod = 'never' | 'daily' | 'monthly' | 'financial_year';
+
+function invoicePreviewSegment(period: InvoiceResetPeriod, month: number, day: number): string {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  if (period === 'monthly') return `${yyyy}${mm}`;
+  if (period === 'financial_year') {
+    const startsThisYear = now.getMonth() + 1 > month || (now.getMonth() + 1 === month && now.getDate() >= day);
+    const startYear = startsThisYear ? yyyy : yyyy - 1;
+    return `FY${startYear}-${String((startYear + 1) % 100).padStart(2, '0')}`;
+  }
+  return `${yyyy}${mm}${dd}`;
+}
+
 function SettingsNavItem({
   label, value, active, onClick, indent, attention,
 }: {
@@ -1253,9 +1269,25 @@ export default function SettingsPage() {
   const [kotPrintingEnabledSetting, setKotPrintingEnabledSetting] = useState(true);
   const [savingKotPrintingEnabled, setSavingKotPrintingEnabled] = useState(false);
 
-  type OrderNumberForm = { prefix: string; includeDate: boolean; resetDaily: boolean };
+  type OrderNumberForm = {
+    prefix: string;
+    includeDate: boolean;
+    resetDaily: boolean;
+    invoicePrefix: string;
+    invoiceIncludePeriod: boolean;
+    invoiceResetPeriod: InvoiceResetPeriod;
+    invoiceFinancialYearStartMonth: number;
+    invoiceFinancialYearStartDay: number;
+  };
   const [savedOrderNumberForm, setSavedOrderNumberForm] = useState<OrderNumberForm>({
-    prefix: 'ORD', includeDate: true, resetDaily: true,
+    prefix: 'ORD',
+    includeDate: true,
+    resetDaily: true,
+    invoicePrefix: 'INV',
+    invoiceIncludePeriod: true,
+    invoiceResetPeriod: 'daily',
+    invoiceFinancialYearStartMonth: 4,
+    invoiceFinancialYearStartDay: 1,
   });
   const [orderNumberForm, setOrderNumberForm] = useState<OrderNumberForm>(savedOrderNumberForm);
   const [savingOrderNumbering, setSavingOrderNumbering] = useState(false);
@@ -1329,6 +1361,11 @@ export default function SettingsPage() {
         prefix: orderNumberingRes.data.order_number_prefix ?? 'ORD',
         includeDate: orderNumberingRes.data.order_number_include_date !== false,
         resetDaily: orderNumberingRes.data.order_number_reset_daily !== false,
+        invoicePrefix: orderNumberingRes.data.invoice_number_prefix ?? 'INV',
+        invoiceIncludePeriod: orderNumberingRes.data.invoice_number_include_period !== false,
+        invoiceResetPeriod: (orderNumberingRes.data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
+        invoiceFinancialYearStartMonth: Number(orderNumberingRes.data.invoice_financial_year_start_month) || 4,
+        invoiceFinancialYearStartDay: Number(orderNumberingRes.data.invoice_financial_year_start_day) || 1,
       };
       setOrderNumberForm(loadedOrderNumbering);
       setSavedOrderNumberForm(loadedOrderNumbering);
@@ -1473,6 +1510,11 @@ export default function SettingsPage() {
         prefix: res.data.order_number_prefix ?? 'ORD',
         includeDate: res.data.order_number_include_date !== false,
         resetDaily: res.data.order_number_reset_daily !== false,
+        invoicePrefix: res.data.invoice_number_prefix ?? 'INV',
+        invoiceIncludePeriod: res.data.invoice_number_include_period !== false,
+        invoiceResetPeriod: (res.data.invoice_number_reset_period || 'daily') as InvoiceResetPeriod,
+        invoiceFinancialYearStartMonth: Number(res.data.invoice_financial_year_start_month) || 4,
+        invoiceFinancialYearStartDay: Number(res.data.invoice_financial_year_start_day) || 1,
       };
       setOrderNumberForm(loaded);
       setSavedOrderNumberForm(loaded);
@@ -1914,17 +1956,27 @@ export default function SettingsPage() {
       toast.error(t('settings.orderNumberPrefixInvalid', { defaultValue: 'Prefix must be up to 12 characters (letters, numbers, - or _)' }));
       return;
     }
+    const invoicePrefix = orderNumberForm.invoicePrefix.trim();
+    if (invoicePrefix && !/^[A-Za-z0-9_-]{0,12}$/.test(invoicePrefix)) {
+      toast.error(t('settings.invoiceNumberPrefixInvalid', { defaultValue: 'Invoice prefix must be up to 12 characters (letters, numbers, - or _)' }));
+      return;
+    }
     setSavingOrderNumbering(true);
     try {
       await api.put('/settings/order-numbering', {
         order_number_prefix: prefix,
         order_number_include_date: orderNumberForm.includeDate,
         order_number_reset_daily: orderNumberForm.resetDaily,
+        invoice_number_prefix: invoicePrefix,
+        invoice_number_include_period: orderNumberForm.invoiceIncludePeriod,
+        invoice_number_reset_period: orderNumberForm.invoiceResetPeriod,
+        invoice_financial_year_start_month: orderNumberForm.invoiceFinancialYearStartMonth,
+        invoice_financial_year_start_day: orderNumberForm.invoiceFinancialYearStartDay,
       });
-      const saved = { ...orderNumberForm, prefix };
+      const saved = { ...orderNumberForm, prefix, invoicePrefix };
       setOrderNumberForm(saved);
       setSavedOrderNumberForm(saved);
-      if (!silent) toast.success(t('settings.orderNumberingSaved', { defaultValue: 'Order number settings saved' }));
+      if (!silent) toast.success(t('settings.orderNumberingSaved', { defaultValue: 'Numbering settings saved' }));
     } catch (err) {
       if (!silent) toast.error(t('settings.saveFailed'));
       throw err;
@@ -2269,11 +2321,11 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* Order Number Format */}
+            {/* Number Formats */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Hash size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.orderNumberFormat', { defaultValue: 'Order Number Format' })}</h2>
+                <h2 className="font-semibold text-gray-900">{t('settings.orderNumberFormat', { defaultValue: 'Number Formats' })}</h2>
                 {!isAdmin && (
                   <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
                     <Lock size={12} /> {t('settings.adminOnly')}
@@ -2281,6 +2333,7 @@ export default function SettingsPage() {
                 )}
               </div>
 
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('settings.orderNumbers', { defaultValue: 'Order numbers' })}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.orderNumberPrefix', { defaultValue: 'Prefix' })}</label>
@@ -2329,6 +2382,99 @@ export default function SettingsPage() {
                     value={orderNumberForm.resetDaily}
                     onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, resetDaily: v })) : () => {}}
                   />
+                </div>
+              </div>
+
+              <div className="mt-6 pt-5 border-t border-gray-100">
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('settings.invoiceNumbers', { defaultValue: 'Invoice numbers' })}</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-gray-500 mb-1">{t('settings.invoiceNumberPrefix', { defaultValue: 'Prefix' })}</label>
+                    {isAdmin ? (
+                      <input
+                        type="text"
+                        value={orderNumberForm.invoicePrefix}
+                        onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoicePrefix: e.target.value.toUpperCase() }))}
+                        placeholder="INV"
+                        maxLength={12}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                      />
+                    ) : (
+                      <p className="font-medium text-gray-900">{orderNumberForm.invoicePrefix || '—'}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-500 mb-1">{t('settings.invoiceNumberPreview', { defaultValue: 'Preview' })}</label>
+                    <p className="font-mono font-medium text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                      {[
+                        orderNumberForm.invoicePrefix,
+                        orderNumberForm.invoiceIncludePeriod ? invoicePreviewSegment(
+                          orderNumberForm.invoiceResetPeriod,
+                          orderNumberForm.invoiceFinancialYearStartMonth,
+                          orderNumberForm.invoiceFinancialYearStartDay,
+                        ) : '',
+                        '0001',
+                      ].filter(Boolean).join('-')}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-gray-500 mb-1">{t('settings.invoiceResetPeriod', { defaultValue: 'Reset series' })}</label>
+                    {isAdmin ? (
+                      <select
+                        value={orderNumberForm.invoiceResetPeriod}
+                        onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceResetPeriod: e.target.value as InvoiceResetPeriod }))}
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                      >
+                        <option value="daily">{t('settings.invoiceResetDaily', { defaultValue: 'Daily' })}</option>
+                        <option value="monthly">{t('settings.invoiceResetMonthly', { defaultValue: 'Monthly' })}</option>
+                        <option value="financial_year">{t('settings.invoiceResetFinancialYear', { defaultValue: 'Financial year' })}</option>
+                        <option value="never">{t('settings.invoiceResetNever', { defaultValue: 'Never' })}</option>
+                      </select>
+                    ) : (
+                      <p className="font-medium text-gray-900">{orderNumberForm.invoiceResetPeriod.replace('_', ' ')}</p>
+                    )}
+                  </div>
+                  {orderNumberForm.invoiceResetPeriod === 'financial_year' && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-sm text-gray-500 mb-1">{t('settings.financialYearStartMonth', { defaultValue: 'FY start month' })}</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={12}
+                          value={orderNumberForm.invoiceFinancialYearStartMonth}
+                          disabled={!isAdmin}
+                          onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartMonth: Number(e.target.value) }))}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand disabled:bg-gray-50"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-500 mb-1">{t('settings.financialYearStartDay', { defaultValue: 'FY start day' })}</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={31}
+                          value={orderNumberForm.invoiceFinancialYearStartDay}
+                          disabled={!isAdmin}
+                          onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceFinancialYearStartDay: Number(e.target.value) }))}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand disabled:bg-gray-50"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-5 pt-5 border-t border-gray-100">
+                  <div className="flex items-center justify-between py-2">
+                    <div>
+                      <span className="text-sm text-gray-700">{t('settings.invoiceNumberIncludePeriod', { defaultValue: 'Include period in invoice number' })}</span>
+                      <p className="text-xs text-gray-500">{t('settings.invoiceNumberIncludePeriodHint', { defaultValue: 'Adds the date, month, or financial year after the prefix.' })}</p>
+                    </div>
+                    <Toggle
+                      value={orderNumberForm.invoiceIncludePeriod}
+                      onChange={isAdmin ? (v) => setOrderNumberForm((p) => ({ ...p, invoiceIncludePeriod: v })) : () => {}}
+                    />
+                  </div>
                 </div>
               </div>
             </div>

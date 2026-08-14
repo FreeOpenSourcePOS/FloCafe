@@ -415,7 +415,7 @@ class GoogleDriveService {
   // ── Drive helpers ──────────────────────────────────────────────────────
 
   private async getAuthorizedClient(signal?: AbortSignal): Promise<OAuth2Client> {
-    if (signal?.aborted) throw new Error('Google Drive backup cancelled during shutdown');
+    if (signal?.aborted) throw createDriveShutdownError('Google Drive operation');
     const creds = getClientCredentials();
     if (!creds) throw new Error('Google Drive integration is not configured for this build');
     const tokens = this.readTokens();

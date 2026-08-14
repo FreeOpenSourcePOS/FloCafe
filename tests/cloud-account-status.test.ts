@@ -251,6 +251,49 @@ async function run() {
     assertEqual(unavailableUpstream.status, 502, 'registered cloud outage remains distinguishable as a gateway error');
     assertEqual(upstreamCalls, 2, 'registered cloud outage attempts the upstream request');
 
+    setSettings({
+      cloud_api_key: 'registered-api-key',
+      cloud_pos_hash: 'registered-pos-hash',
+      cloud_registration_status: 'registered',
+      cloud_services_disabled_by_user: 'false',
+      cloud_deletion_status: '',
+      cloud_command_polling_enabled: '1',
+      cloud_sync_enabled: '0',
+    });
+    const service = cloudSync as any;
+    service.settings = {
+      server_url: 'https://blue.flopos.com/',
+      api_key: 'registered-api-key',
+      pos_hash: 'registered-pos-hash',
+      command_polling_enabled: true,
+      sync_enabled: false,
+    };
+    const originalPollingFetch = globalThis.fetch;
+    let pollingStarted!: () => void;
+    const pollingStartedPromise = new Promise<void>((resolve) => { pollingStarted = resolve; });
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+      pollingStarted();
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal;
+        const rejectOnAbort = () => reject(signal.reason || new Error('poll cancelled'));
+        if (signal.aborted) rejectOnAbort();
+        else signal.addEventListener('abort', rejectOnAbort, { once: true });
+      });
+    }) as typeof fetch;
+    try {
+      service.trackCommandPoll(service.pollCommands());
+      await pollingStartedPromise;
+      const pollingShutdown = cloudSync.shutdown();
+      const settled = await Promise.race([
+        pollingShutdown.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1_000)),
+      ]);
+      assertEqual(settled, true, 'cloud shutdown cancels and awaits an active command poll');
+      await pollingShutdown;
+    } finally {
+      globalThis.fetch = originalPollingFetch;
+    }
+
     const results = getResults();
     if (results.failed > 0) throw new Error(`${results.failed} cloud account status assertions failed`);
     console.log('✅ Cloud account status tests passed');

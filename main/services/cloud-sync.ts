@@ -269,6 +269,8 @@ class CloudSyncService {
   private cloudNetworkOperations = 0;
   private cloudNetworkIdleWaiters: (() => void)[] = [];
   private relayCommandPromises = new Set<Promise<unknown>>();
+  private commandPollPromises = new Set<Promise<unknown>>();
+  private commandPollAbortController: AbortController | null = null;
   private shutdownPromise: Promise<void> | null = null;
   private shutdownRequested = false;
 
@@ -331,6 +333,8 @@ class CloudSyncService {
     if (this.supportOutboxTimer) { clearInterval(this.supportOutboxTimer); this.supportOutboxTimer = null; }
     if (this.diagnosticsOutboxTimer) { clearInterval(this.diagnosticsOutboxTimer); this.diagnosticsOutboxTimer = null; }
     if (this.commandTimer) { clearInterval(this.commandTimer); this.commandTimer = null; }
+    this.commandPollAbortController?.abort();
+    this.commandPollAbortController = null;
     if (this.autoRegisterTimer) { clearTimeout(this.autoRegisterTimer); this.autoRegisterTimer = null; }
     this.httpFallbackActive = false;
     this.teardownRelay();
@@ -344,7 +348,8 @@ class CloudSyncService {
     const activeFlushes = [this.outboxFlushPromise, this.supportFlushPromise, this.diagnosticsFlushPromise]
       .filter((promise): promise is Promise<void> => promise !== null);
     const activeRelayCommands = [...this.relayCommandPromises];
-    this.shutdownPromise = Promise.allSettled([...activeFlushes, ...activeRelayCommands])
+    const activeCommandPolls = [...this.commandPollPromises];
+    this.shutdownPromise = Promise.allSettled([...activeFlushes, ...activeRelayCommands, ...activeCommandPolls])
       .then(() => this.waitForCloudNetworkIdle())
       .then(() => undefined);
     return this.shutdownPromise;
@@ -1158,30 +1163,33 @@ class CloudSyncService {
 
   private async pollCommands() {
     return withDatabaseRequest(async () => {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     const cfg = this.settings;
     if (!cfg?.command_polling_enabled || !cfg.api_key || this.pollingCommands) return;
     this.pollingCommands = true;
+    const abortController = new AbortController();
+    this.commandPollAbortController = abortController;
     try {
-      const res = await this.signedFetch('/api/pos/commands?limit=5', { method: 'GET' });
+      const res = await this.signedFetch('/api/pos/commands?limit=5', { method: 'GET', signal: abortController.signal });
       const data = await res.json().catch(() => ({})) as { commands?: CloudCommand[] };
-      if (this.cloudDeletionInProgress) return;
+      if (this.cloudDeletionInProgress || this.shutdownRequested || abortController.signal.aborted) return;
       if (!res.ok) throw new Error(`command poll failed (${res.status})`);
       const commands = Array.isArray(data.commands) ? data.commands : [];
       for (const command of commands) {
-        if (this.cloudDeletionInProgress) return;
-        await this.executeCommand(command);
+        if (this.cloudDeletionInProgress || this.shutdownRequested || abortController.signal.aborted) return;
+        await this.executeCommand(command, abortController.signal);
       }
     } catch (err) {
-      this.markError((err as Error).message);
+      if (!this.shutdownRequested && !abortController.signal.aborted) this.markError((err as Error).message);
     } finally {
       this.pollingCommands = false;
+      if (this.commandPollAbortController === abortController) this.commandPollAbortController = null;
     }
     });
   }
 
-  private async executeCommand(command: CloudCommand) {
-    if (this.cloudDeletionInProgress) return;
+  private async executeCommand(command: CloudCommand, signal?: AbortSignal) {
+    if (this.cloudDeletionInProgress || this.shutdownRequested || signal?.aborted) return;
     let body: Record<string, unknown>;
     try {
       const result = this.runCommand(command);
@@ -1193,9 +1201,10 @@ class CloudSyncService {
     const res = await this.signedFetch(`/api/pos/commands/${encodeURIComponent(command.id)}/result`, {
       method: 'POST',
       body: JSON.stringify(body),
+      signal,
     });
     await this.drainResponse(res);
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested || signal?.aborted) return;
     if (!res.ok) throw new Error(`command result failed (${res.status})`);
   }
 
@@ -1221,6 +1230,13 @@ class CloudSyncService {
     tracked = command.finally(() => this.relayCommandPromises.delete(tracked));
     this.relayCommandPromises.add(tracked);
     this.runBackground(tracked, 'relay command');
+  }
+
+  private trackCommandPoll(poll: Promise<unknown>): void {
+    let tracked: Promise<unknown>;
+    tracked = poll.finally(() => this.commandPollPromises.delete(tracked));
+    this.commandPollPromises.add(tracked);
+    this.runBackground(tracked, 'command polling');
   }
 
   /**
@@ -1418,8 +1434,8 @@ class CloudSyncService {
       this.heartbeatTimer = setInterval(() => this.runBackground(this.sendHeartbeat(), 'heartbeat'), HEARTBEAT_INTERVAL_MS);
     }
     if (cfg.command_polling_enabled && !this.commandTimer) {
-      this.runBackground(this.pollCommands(), 'command polling');
-      this.commandTimer = setInterval(() => this.runBackground(this.pollCommands(), 'command polling'), COMMAND_POLL_INTERVAL_MS);
+      this.trackCommandPoll(this.pollCommands());
+      this.commandTimer = setInterval(() => this.trackCommandPoll(this.pollCommands()), COMMAND_POLL_INTERVAL_MS);
     }
     log.warn('[CloudSync] relay unavailable, falling back to HTTP polling');
   }
@@ -1722,7 +1738,7 @@ class CloudSyncService {
         ...(init.headers || {}),
       },
       body: method === 'GET' ? undefined : body,
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     }, allowDuringDeletion);
   }
 

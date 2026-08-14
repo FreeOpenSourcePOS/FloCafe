@@ -8,6 +8,10 @@ import type { Order } from '@/lib/types';
 
 const ACTIVE_STATUSES = new Set<Order['status']>(['pending', 'preparing', 'ready']);
 
+function getCustomerOrderNumber(order: Order): string {
+  return order.bill?.bill_number || order.order_number;
+}
+
 export default function CustomerDisplayPage() {
   const router = useRouter();
   const { user, currentTenant, loading: authLoading, loadFromStorage } = useAuthStore();
@@ -90,7 +94,7 @@ export default function CustomerDisplayPage() {
               ) : preparing.map((order) => (
                 <div key={order.id} className="rounded-2xl bg-slate-900/80 border border-blue-900/60 p-5 text-center">
                   <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Order</div>
-                  <div className="text-3xl md:text-4xl font-black">{order.order_number}</div>
+                  <div className="text-3xl md:text-4xl font-black">{getCustomerOrderNumber(order)}</div>
                 </div>
               ))}
             </div>
@@ -107,7 +111,7 @@ export default function CustomerDisplayPage() {
               ) : ready.map((order) => (
                 <div key={order.id} className="rounded-2xl bg-slate-900/80 border border-emerald-900/60 p-5 text-center">
                   <div className="text-xs uppercase tracking-widest text-slate-500 mb-2">Order</div>
-                  <div className="text-3xl md:text-4xl font-black">{order.order_number}</div>
+                  <div className="text-3xl md:text-4xl font-black">{getCustomerOrderNumber(order)}</div>
                 </div>
               ))}
             </div>

@@ -383,10 +383,23 @@ function orderNumberingShape(s: Record<string, string>) {
     order_number_prefix: s.order_number_prefix ?? 'ORD',
     order_number_include_date: s.order_number_include_date !== 'false',
     order_number_reset_daily: s.order_number_reset_daily !== 'false',
+    invoice_number_prefix: s.invoice_number_prefix ?? 'INV',
+    invoice_number_include_period: s.invoice_number_include_period !== 'false',
+    invoice_number_reset_period: ['never', 'daily', 'monthly', 'financial_year'].includes(s.invoice_number_reset_period)
+      ? s.invoice_number_reset_period
+      : 'daily',
+    invoice_financial_year_start_month: parseBoundedInt(s.invoice_financial_year_start_month, 1, 12, 4),
+    invoice_financial_year_start_day: parseBoundedInt(s.invoice_financial_year_start_day, 1, 31, 1),
   };
 }
 
 const ORDER_NUMBER_PREFIX_PATTERN = /^[A-Za-z0-9_-]{0,12}$/;
+const INVOICE_RESET_PERIODS = new Set(['never', 'daily', 'monthly', 'financial_year']);
+
+function parseBoundedInt(value: unknown, min: number, max: number, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(String(value ?? ''), 10);
+  return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
+}
 
 router.get('/order-numbering', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
   try {
@@ -400,10 +413,31 @@ router.get('/order-numbering', requireRole('owner', 'manager', 'cashier', 'waite
 
 router.put('/order-numbering', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
-    const { order_number_prefix, order_number_include_date, order_number_reset_daily } = req.body;
+    const {
+      order_number_prefix,
+      order_number_include_date,
+      order_number_reset_daily,
+      invoice_number_prefix,
+      invoice_number_include_period,
+      invoice_number_reset_period,
+      invoice_financial_year_start_month,
+      invoice_financial_year_start_day,
+    } = req.body;
 
     if (order_number_prefix !== undefined && !ORDER_NUMBER_PREFIX_PATTERN.test(order_number_prefix)) {
       return res.status(400).json({ error: 'order_number_prefix must be up to 12 characters (letters, numbers, - or _)' });
+    }
+    if (invoice_number_prefix !== undefined && !ORDER_NUMBER_PREFIX_PATTERN.test(invoice_number_prefix)) {
+      return res.status(400).json({ error: 'invoice_number_prefix must be up to 12 characters (letters, numbers, - or _)' });
+    }
+    if (invoice_number_reset_period !== undefined && !INVOICE_RESET_PERIODS.has(invoice_number_reset_period)) {
+      return res.status(400).json({ error: 'invoice_number_reset_period must be one of never, daily, monthly, financial_year' });
+    }
+    if (invoice_financial_year_start_month !== undefined && parseBoundedInt(invoice_financial_year_start_month, 1, 12, NaN) !== Number(invoice_financial_year_start_month)) {
+      return res.status(400).json({ error: 'invoice_financial_year_start_month must be a whole number between 1 and 12' });
+    }
+    if (invoice_financial_year_start_day !== undefined && parseBoundedInt(invoice_financial_year_start_day, 1, 31, NaN) !== Number(invoice_financial_year_start_day)) {
+      return res.status(400).json({ error: 'invoice_financial_year_start_day must be a whole number between 1 and 31' });
     }
 
     const db = getDatabase();
@@ -411,6 +445,11 @@ router.put('/order-numbering', requireRole('owner', 'manager'), (req: Request, r
       order_number_prefix,
       order_number_include_date: boolFlag(order_number_include_date),
       order_number_reset_daily: boolFlag(order_number_reset_daily),
+      invoice_number_prefix,
+      invoice_number_include_period: boolFlag(invoice_number_include_period),
+      invoice_number_reset_period,
+      invoice_financial_year_start_month,
+      invoice_financial_year_start_day,
     });
     res.json(orderNumberingShape(getAllSettings(db)));
   } catch (error: any) {

@@ -18,9 +18,9 @@ Module._load = function (request, parent, isMain) {
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests, now } = require('../dist/db');
-const { createExitCodeAwareShutdown, waitForHttpShutdownWork } = require('../dist/shutdown');
+const { createExitCodeAwareShutdown, waitForHttpShutdownWork, isShutdownTimeout } = require('../dist/shutdown');
 const { startServer, stopServer } = require('../dist/server');
-const { shutdown: shutdownWhatsApp } = require('../dist/services/whatsapp');
+const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } = require('../dist/services/whatsapp');
 const { startStandaloneServers } = require('../dist/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 // Country/currency stay TH/THB (this fixture's configured business country)
@@ -146,26 +146,31 @@ const requestStop = createExitCodeAwareShutdown(async () => {
     cleanupFailed = true;
     databaseBlocked = true;
     console.error('[E2E] Main server cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
   }
   try { await stopKdsServer(); } catch (error) {
     cleanupFailed = true;
     databaseBlocked = true;
     console.error('[E2E] KDS server cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
   }
   try { await shutdownWhatsApp(); } catch (error) {
     cleanupFailed = true;
     databaseBlocked = true;
     console.error('[E2E] WhatsApp cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
   }
   try { await waitForHttpShutdownWork(); } catch (error) {
     cleanupFailed = true;
     databaseBlocked = true;
     console.error('[E2E] HTTP handler cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
   }
   try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (error) {
     cleanupFailed = true;
     databaseBlocked = true;
     console.error('[E2E] Database request drain failed:', error);
+    if (isShutdownTimeout(error)) throw error;
   }
   if (!databaseBlocked) {
     try { closeDatabase(); } catch (error) {
@@ -179,6 +184,9 @@ const requestStop = createExitCodeAwareShutdown(async () => {
     console.error('[E2E] Fixture cleanup failed:', error);
   }
   return cleanupFailed ? 1 : 0;
+}, {
+  onShutdownRequested: requestWhatsAppShutdown,
+  onFatalTimeout: () => process.exit(1),
 });
 
 async function stop(exitCode = 0) {

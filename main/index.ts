@@ -779,7 +779,7 @@ const cleanupCoordinator = createShutdownCoordinator(() => [
   // Database closure is deliberately last: all HTTP and WebSocket work must
   // have settled before handlers can lose access to SQLite.
   { name: 'database', run: () => closeDatabase(), databaseClose: true },
-]);
+], { onFatalTimeout: () => app.exit(1) });
 
 const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntrypoints({
   app: app as unknown as ShutdownEntrypointApp,
@@ -805,6 +805,7 @@ const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntryp
     console.error(`[Flo] Cleanup failed before ${context}:`, error);
   },
   getSignalExitCode: () => startupFailure ? 1 : 0,
+  getQuitExitCode: () => startupFailure ? 1 : 0,
 });
 
 process.on('uncaughtException', (error) => {

@@ -179,16 +179,18 @@ async function main(): Promise<void> {
     originalSetTimeout(handler, delay === 10_000 ? 1 : delay, ...args)) as typeof setTimeout;
   const stopPromise = gd.googleDrive.stop();
   let databaseClosed = false;
+  let fatalTimeoutObserved = false;
   try {
     await assert.rejects(
       runShutdownSteps([
         { name: 'Google Drive', blocksDatabase: true, run: () => stopPromise },
         { name: 'database', databaseClose: true, run: () => { databaseClosed = true; } },
-      ]),
+      ], { onFatalTimeout: () => { fatalTimeoutObserved = true; } }),
       (error: any) => error instanceof AggregateError && error.errors.some((nested: any) => nested?.code === 'ERR_SHUTDOWN_TIMEOUT'),
       'shutdown reports a bounded timeout when backup ownership will not settle',
     );
     assert.equal(databaseClosed, false, 'a bounded Drive timeout blocks database closure');
+    assert.equal(fatalTimeoutObserved, true, 'a bounded Drive timeout invokes fatal termination');
     assert.equal(driveCancelCalled, true, 'stop() cancels tracked Drive work before reporting timeout');
   } finally {
     (globalThis as any).setTimeout = originalSetTimeout;

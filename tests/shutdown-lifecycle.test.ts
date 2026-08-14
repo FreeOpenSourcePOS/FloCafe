@@ -147,6 +147,7 @@ async function testDatabaseCloseRequiresSuccessfulDrains(): Promise<void> {
 async function testTimedOutCleanupUsesFatalBarrier(): Promise<void> {
   const timeout = Object.assign(new Error('Drive ownership did not settle'), { code: 'ERR_SHUTDOWN_TIMEOUT' });
   const events: string[] = [];
+  let fatalTimeoutObserved = false;
   await assert.rejects(
     runShutdownSteps([
       {
@@ -157,10 +158,11 @@ async function testTimedOutCleanupUsesFatalBarrier(): Promise<void> {
       { name: 'WhatsApp', blocksDatabase: true, run: () => { events.push('whatsapp'); } },
       { name: 'database admission', run: () => { events.push('admission'); } },
       { name: 'database', databaseClose: true, run: () => { events.push('database'); } },
-    ]),
+    ], { onFatalTimeout: () => { fatalTimeoutObserved = true; events.push('fatal-timeout'); } }),
     (error: unknown) => error instanceof AggregateError && error.errors.includes(timeout),
   );
-  assert.deepEqual(events, ['drive'], 'a bounded timeout stops cleanup before later side effects or database progression');
+  assert.equal(fatalTimeoutObserved, true, 'a bounded timeout invokes the fatal termination hook');
+  assert.deepEqual(events, ['drive', 'fatal-timeout'], 'a bounded timeout stops cleanup before later side effects or database progression');
 }
 
 async function testActiveHttpAndWebSocketDrain(): Promise<void> {
@@ -452,6 +454,22 @@ async function testEntrypointCoverage(): Promise<void> {
     destroyWindow: () => {},
   });
   await assert.rejects(failingEntrypoints.runCleanup(), (error: unknown) => error === startupFailure);
+
+  const startupFailureApp = new AppDouble();
+  const startupFailureQuit = createShutdownEntrypoints({
+    app: startupFailureApp,
+    process: new ProcessDouble(),
+    cleanup: async () => {},
+    setQuitting: () => {},
+    destroyWindow: () => {},
+    getQuitExitCode: () => 1,
+  });
+  const startupFailureQuitEvent = { prevented: false, preventDefault: () => { startupFailureQuitEvent.prevented = true; } };
+  startupFailureApp.emit('will-quit', startupFailureQuitEvent);
+  await startupFailureQuit.runCleanup();
+  await delay(0);
+  assert.deepEqual(startupFailureApp.exitCodes, [1], 'normal Electron quit preserves a concurrent startup failure exit code');
+  assert.equal(startupFailureApp.quitCount, 0, 'startup failure does not resume Electron quit as success');
 }
 
 async function testExitCodeEscalation(): Promise<void> {
@@ -469,6 +487,14 @@ async function testExitCodeEscalation(): Promise<void> {
   assert.strictEqual(first, second, 'exit-code callers share one cleanup promise');
   releaseCleanup?.();
   assert.equal(await first, 1, 'a later fatal shutdown caller escalates the exit code');
+
+  const events: string[] = [];
+  const orderedShutdown = createExitCodeAwareShutdown(async () => {
+    events.push('cleanup');
+    return 0;
+  }, { onShutdownRequested: () => { events.push('requested'); } });
+  await orderedShutdown();
+  assert.deepEqual(events, ['requested', 'cleanup'], 'shared standalone shutdown requests integration cancellation before HTTP abort');
 }
 
 async function testStandaloneDevServerShutdown(): Promise<void> {

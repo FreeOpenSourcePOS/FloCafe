@@ -97,6 +97,10 @@ export type ShutdownStep = {
   databaseClose?: boolean;
 };
 
+export type ShutdownCoordinatorOptions = {
+  onFatalTimeout?: (error: unknown) => void;
+};
+
 function isAlreadyClosedError(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   return code === 'ERR_SERVER_NOT_RUNNING' || code === 'ERR_SOCKET_CLOSED';
@@ -108,9 +112,9 @@ function createTimeoutError(label: string, timeoutMs: number): Error & { code: s
   return error;
 }
 
-function containsShutdownTimeout(error: unknown): boolean {
+export function isShutdownTimeout(error: unknown): boolean {
   if ((error as { code?: unknown } | null)?.code === 'ERR_SHUTDOWN_TIMEOUT') return true;
-  return error instanceof AggregateError && error.errors.some((nested) => containsShutdownTimeout(nested));
+  return error instanceof AggregateError && error.errors.some((nested) => isShutdownTimeout(nested));
 }
 
 async function withShutdownTimeout<T>(
@@ -318,7 +322,10 @@ export async function closeServerResources(
 }
 
 /** Run all cleanup steps in order while still attempting later steps. */
-export async function runShutdownSteps(steps: readonly ShutdownStep[]): Promise<void> {
+export async function runShutdownSteps(
+  steps: readonly ShutdownStep[],
+  options: ShutdownCoordinatorOptions = {},
+): Promise<void> {
   const errors: unknown[] = [];
   let databaseBlocked = false;
   for (const step of steps) {
@@ -329,7 +336,10 @@ export async function runShutdownSteps(steps: readonly ShutdownStep[]): Promise<
       errors.push(error);
       console.error(`[Shutdown] ${step.name} failed:`, error);
       if (step.blocksDatabase) databaseBlocked = true;
-      if (containsShutdownTimeout(error)) break;
+      if (isShutdownTimeout(error)) {
+        options.onFatalTimeout?.(error);
+        break;
+      }
     }
   }
   if (errors.length > 0) {
@@ -341,11 +351,14 @@ export async function runShutdownSteps(steps: readonly ShutdownStep[]): Promise<
  * Create an idempotent shutdown operation. Concurrent callers share the same
  * promise, so signal, tray, and Electron quit paths cannot race cleanup.
  */
-export function createShutdownCoordinator(getSteps: () => readonly ShutdownStep[]): () => Promise<void> {
+export function createShutdownCoordinator(
+  getSteps: () => readonly ShutdownStep[],
+  options: ShutdownCoordinatorOptions = {},
+): () => Promise<void> {
   let shutdownPromise: Promise<void> | null = null;
   return () => {
     if (!shutdownPromise) {
-      shutdownPromise = runShutdownSteps(getSteps());
+      shutdownPromise = runShutdownSteps(getSteps(), options);
     }
     return shutdownPromise;
   };
@@ -379,6 +392,7 @@ export type ShutdownEntrypointOptions = {
   destroyWindow: () => void;
   reportFailure?: (context: 'quit' | 'signal', error: unknown) => void;
   getSignalExitCode?: () => number;
+  getQuitExitCode?: () => number;
 };
 
 export function createShutdownEntrypoints({
@@ -390,6 +404,7 @@ export function createShutdownEntrypoints({
   destroyWindow,
   reportFailure = () => {},
   getSignalExitCode = () => 0,
+  getQuitExitCode = () => 0,
 }: ShutdownEntrypointOptions): {
   runCleanup: () => Promise<void>;
   isShutdownRequested: () => boolean;
@@ -434,8 +449,10 @@ export function createShutdownEntrypoints({
     requestShutdown();
     void runCleanup().then(
       () => {
+        const exitCode = getQuitExitCode();
         destroyWindow();
-        app.quit();
+        if (exitCode === 0) app.quit();
+        else app.exit(exitCode);
       },
       (error) => {
         reportFailure('quit', error);
@@ -481,6 +498,10 @@ export function createShutdownEntrypoints({
 
 export function createExitCodeAwareShutdown(
   cleanup: () => Promise<number>,
+  options: {
+    onShutdownRequested?: () => void;
+    onFatalTimeout?: (error: unknown) => void;
+  } = {},
 ): (exitCode?: number) => Promise<number> {
   let shutdownPromise: Promise<number> | null = null;
   let requestedExitCode = 0;
@@ -488,10 +509,16 @@ export function createExitCodeAwareShutdown(
   return (exitCode = 0): Promise<number> => {
     requestedExitCode = Math.max(requestedExitCode, exitCode);
     if (!shutdownPromise) {
+      options.onShutdownRequested?.();
       cancelHttpShutdownWork();
       shutdownPromise = (async () => {
-        const cleanupExitCode = await cleanup();
-        return Math.max(cleanupExitCode, requestedExitCode);
+        try {
+          const cleanupExitCode = await cleanup();
+          return Math.max(cleanupExitCode, requestedExitCode);
+        } catch (error) {
+          if (isShutdownTimeout(error)) options.onFatalTimeout?.(error);
+          throw error;
+        }
       })();
     }
     return shutdownPromise;

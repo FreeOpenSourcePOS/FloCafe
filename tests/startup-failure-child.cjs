@@ -121,7 +121,11 @@ Module._load = function (request, parent, isMain) {
   };
   if (request === './printers/thermal') return { initPrinter: async () => {}, printReceipt() {}, printKOT() {} };
   if (request === './ipc') return { registerIpcHandlers() {} };
-  if (request === './services/whatsapp') return { initFromDb() {}, shutdown: async () => { events.push('whatsapp.stop'); } };
+  if (request === './services/whatsapp') return {
+    initFromDb() {},
+    requestShutdown() {},
+    shutdown: async () => { events.push('whatsapp.stop'); },
+  };
   return originalLoad.apply(this, arguments);
 };
 

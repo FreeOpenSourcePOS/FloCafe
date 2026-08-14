@@ -240,18 +240,15 @@ async function waitForWhatsAppWork(): Promise<void> {
     }
   })();
   let timeout: NodeJS.Timeout | undefined;
+  let timeoutError: (Error & { code: string }) | null = null;
+  timeout = setTimeout(() => {
+    cancelInFlightWhatsAppWork();
+    timeoutError = new Error(`WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+    timeoutError.code = 'ERR_SHUTDOWN_TIMEOUT';
+  }, SHUTDOWN_TIMEOUT_MS);
   try {
-    await Promise.race([
-      drain,
-      new Promise<never>((_resolve, reject) => {
-        timeout = setTimeout(() => {
-          cancelInFlightWhatsAppWork();
-          const error = new Error(`WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
-          error.code = 'ERR_SHUTDOWN_TIMEOUT';
-          reject(error);
-        }, SHUTDOWN_TIMEOUT_MS);
-      }),
-    ]);
+    await drain;
+    if (timeoutError) throw timeoutError;
   } finally {
     if (timeout) clearTimeout(timeout);
   }
@@ -763,12 +760,12 @@ function startSocket(requestSignal?: AbortSignal): Promise<void> {
 }
 
 export async function enable(userId: string): Promise<{ ok: boolean; error?: string }> {
+  if (whatsappShutdownPromise) return { ok: false, error: 'WhatsApp is shutting down.' };
   state.enabled = true;
   // Reset shutdown flag so the auto-reconnect-on-disconnect logic in the
   // close handler is active again after a previous disable() round.
   state.shuttingDown = false;
   whatsappAbortController = new AbortController();
-  whatsappShutdownPromise = null;
   writeSetting('whatsapp_enabled', 'true');
   writeSetting('whatsapp_activated_by_user_id', userId);
   writeSetting('whatsapp_activated_at', now());
@@ -1174,12 +1171,15 @@ export function shutdown(): Promise<void> {
   if (whatsappShutdownPromise) return whatsappShutdownPromise;
   state.shuttingDown = true;
   whatsappAbortController.abort();
+  cancelInFlightWhatsAppWork();
   if (state.cooldownTimer) { clearTimeout(state.cooldownTimer); state.cooldownTimer = null; }
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
-  if (state.socket) {
-    try { state.socket.end(undefined); } catch { /* ignore */ }
-    state.socket = null;
+  const socket = state.socket;
+  if (socket) {
+    try { socket.end(undefined); } catch { /* ignore */ }
   }
-  whatsappShutdownPromise = waitForWhatsAppWork();
+  whatsappShutdownPromise = waitForWhatsAppWork().finally(() => {
+    if (state.socket === socket) state.socket = null;
+  });
   return whatsappShutdownPromise;
 }

@@ -200,9 +200,12 @@ class GoogleDriveService {
   private backupAbortController: AbortController | null = null;
   private stopping = false;
   private stopPromise: Promise<void> | null = null;
+  private stopSettled = true;
+  private terminalCleanup = false;
 
   /** Arms the hourly schedule check. Never makes a network call by itself — see module doc comment. */
   start(): void {
+    if (this.terminalCleanup || !this.stopSettled) return;
     if (this.scheduleTimer) {
       clearInterval(this.scheduleTimer);
       this.scheduleTimer = null;
@@ -215,29 +218,39 @@ class GoogleDriveService {
   stop(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     this.stopping = true;
+    this.stopSettled = false;
     this.backupAbortController?.abort();
     if (this.scheduleTimer) {
       clearInterval(this.scheduleTimer);
       this.scheduleTimer = null;
     }
     if (!this.backupPromise) {
+      this.stopSettled = true;
       this.stopPromise = Promise.resolve();
       return this.stopPromise;
     }
     const backup = this.backupPromise;
     void backup.catch(() => {});
     this.stopPromise = new Promise<void>((resolve, reject) => {
+      let timeoutError: (Error & { code: string }) | null = null;
       const timeout = setTimeout(() => {
+        this.terminalCleanup = true;
         this.backupAbortController?.abort();
-        const error = new Error(`Google Drive shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
-        error.code = 'ERR_SHUTDOWN_TIMEOUT';
-        reject(error);
+        timeoutError = new Error(`Google Drive shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+        timeoutError.code = 'ERR_SHUTDOWN_TIMEOUT';
       }, SHUTDOWN_TIMEOUT_MS);
       backup.then(
-        () => { clearTimeout(timeout); resolve(); },
+        () => {
+          clearTimeout(timeout);
+          this.stopSettled = true;
+          if (timeoutError) reject(timeoutError);
+          else resolve();
+        },
         (error) => {
           clearTimeout(timeout);
-          if (this.stopping && isExpectedShutdownCancellation(error)) resolve();
+          this.stopSettled = true;
+          if (timeoutError) reject(timeoutError);
+          else if (this.stopping && isExpectedShutdownCancellation(error)) resolve();
           else reject(error);
         },
       );

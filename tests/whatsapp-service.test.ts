@@ -23,7 +23,7 @@ const fakeSocket = {
   presenceSubscribe: async () => { presenceStarted(); return pendingPresence; },
   sendPresenceUpdate: async () => {},
   sendMessage: async () => ({ key: { id: 'shutdown-test-message' } }),
-  end: () => { releasePendingPresence(); },
+  end: () => {},
 };
 const fakeBaileys = {
   fetchLatestWaWebVersion: async () => ({ version: [2, 3000, 1] }),
@@ -120,6 +120,11 @@ async function main(): Promise<void> {
     });
     await presenceStartedPromise;
     const shutdownPromise = whatsapp.shutdown();
+    let shutdownSettled = false;
+    void shutdownPromise.then(() => { shutdownSettled = true; }, () => { shutdownSettled = true; });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert(!shutdownSettled, 'shutdown remains pending while underlying WhatsApp work is active');
+    releasePendingPresence();
     const cancelled = await sendPromise;
     await shutdownPromise;
     const row = getDatabase().prepare(`

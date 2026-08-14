@@ -148,6 +148,10 @@ function main() {
   const activeBackup = gd.googleDrive.backupNow();
   await new Promise((resolve) => setImmediate(resolve));
   const stopPromise = gd.googleDrive.stop();
+  let stopSettled = false;
+  void stopPromise.then(() => { stopSettled = true; }, () => { stopSettled = true; });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(stopSettled, false, 'stop() stays pending while the underlying backup is still active');
   const shutdownCancellation = Object.assign(new Error('backup cancelled'), { code: 'ERR_SHUTDOWN_ABORTED' });
   rejectBackup(shutdownCancellation);
   await stopPromise;

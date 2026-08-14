@@ -108,8 +108,8 @@ async function shutdown(exitCode = 0) {
   }
 }
 
-process.on('SIGINT', () => void shutdown(0));
-process.on('SIGTERM', () => void shutdown(0));
+process.once('SIGINT', () => void shutdown(0));
+process.once('SIGTERM', () => void shutdown(0));
 process.on('uncaughtException', (err) => {
   console.error('[DevServer] Uncaught exception:', err);
   void shutdown(1);

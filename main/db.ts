@@ -1761,7 +1761,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
       }
       throwIfDatabaseMaintenanceAborted(signal);
       fs.copyFileSync(backupPath, dbPath);
-      initDatabase(false);
+      initDatabase(false, true);
 
       const freshDb = getDatabase();
       mergeUserSecurityState(freshDb, preservedUserSecurity);
@@ -1813,7 +1813,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
         if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
           throw new Error('Could not durably recover direct-restore database');
         }
-        initDatabase(false);
+        initDatabase(false, true);
         recoveryCompleted = true;
       } catch (recoveryError: any) {
         throw new Error(
@@ -2051,7 +2051,7 @@ function dataOnlyRestore(
       // already changed.
       try {
         closeDatabase();
-        initDatabase(false);
+        initDatabase(false, true);
         attached = false;
       } catch (recoveryError: any) {
         throw new Error(
@@ -2085,7 +2085,7 @@ function dataOnlyRestore(
     if (cleanupFailure) {
       try {
         closeDatabase();
-        initDatabase(false);
+        initDatabase(false, true);
         attached = false;
       } catch (recoveryError: any) {
         error = new Error(

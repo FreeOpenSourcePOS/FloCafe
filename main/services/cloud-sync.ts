@@ -1869,9 +1869,16 @@ export class CloudSyncService {
     try { await response.arrayBuffer(); } catch { }
   }
 
-  private waitForCloudNetworkIdle(): Promise<void> {
+  private waitForCloudNetworkIdle(timeoutMs = 5_000): Promise<void> {
     if (this.cloudNetworkOperations === 0) return Promise.resolve();
-    return new Promise((resolve) => this.cloudNetworkIdleWaiters.push(resolve));
+    let timeout: NodeJS.Timeout | undefined;
+    const idlePromise = new Promise<void>((resolve) => this.cloudNetworkIdleWaiters.push(resolve));
+    const timeoutPromise = new Promise<void>((resolve) => {
+      timeout = setTimeout(() => resolve(), timeoutMs);
+    });
+    return Promise.race([idlePromise, timeoutPromise]).finally(() => {
+      if (timeout) clearTimeout(timeout);
+    });
   }
 
   private loadSettings(ensureIdentity = true): CloudSettings | null {

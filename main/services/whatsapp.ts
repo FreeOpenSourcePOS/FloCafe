@@ -154,7 +154,7 @@ function createWhatsAppAbortError(): Error & { code: string } {
 }
 
 function cancelWhatsAppSocket(): void {
-  if (!state.shuttingDown) return;
+  if (!isWhatsAppTerminal()) return;
   const socket = state.socket ?? shutdownSocket;
   if (!socket) return;
   try { socket.end(undefined); } catch { }
@@ -188,7 +188,7 @@ function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal, c
         cleanup();
         reject(createWhatsAppAbortError());
       };
-      if (!state.shuttingDown) {
+      if (!isWhatsAppTerminal()) {
         settleCancellation();
         return;
       }
@@ -591,7 +591,7 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
 function attachSocketHandlers(socket: BaileysSocket): void {
   socket.ev.on('connection.update', (update: any) => {
     void trackWhatsAppWork((async () => {
-    if (state.shuttingDown) return;
+    if (isWhatsAppTerminal()) return;
     const { connection, lastDisconnect, qr } = update;
     if (qr) {
       state.lastQr = qr;
@@ -626,7 +626,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         state.lastError = 'Logged out. Reconnect to continue.';
         state.lastErrorReason = 'logged_out';
         wipeAuthDir();
-      } else if (!state.shuttingDown && state.enabled) {
+      } else if (!isWhatsAppTerminal() && state.enabled) {
         // Auto-reconnect on any transient failure (network blip, server
         // restart, etc). Don't penalize the operator for an infrastructure
         // blip — the cooldown only applies to explicit 429s on sends.
@@ -636,7 +636,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
         if (state.reconnectTimer) clearTimeout(state.reconnectTimer);
         state.reconnectTimer = setTimeout(() => {
           state.reconnectTimer = null;
-          if (state.enabled && !state.shuttingDown) {
+          if (state.enabled && !isWhatsAppTerminal()) {
             void startSocket().catch((err) => {
               console.warn('[WhatsApp] Reconnect failed:', err?.message ?? err);
             });
@@ -653,6 +653,7 @@ function attachSocketHandlers(socket: BaileysSocket): void {
 
   // Keep the LID→phone cache fresh. WhatsApp rotates these over time.
   socket.ev.on('lid-mapping.update', (update: any) => {
+    if (isWhatsAppTerminal()) return;
     const lid = update?.lid as string | undefined;
     const pn = update?.pn as string | undefined;
     if (!lid || !pn) return;
@@ -663,10 +664,10 @@ function attachSocketHandlers(socket: BaileysSocket): void {
 
   socket.ev.on('messages.upsert', ({ messages }: { messages: any[] }) => {
     void trackWhatsAppWork((async () => {
-    if (state.shuttingDown) return;
+    if (isWhatsAppTerminal()) return;
     const filterGroups = getSettingValue('whatsapp_filter_groups') === 'true';
     for (const msg of messages) {
-      if (state.shuttingDown) return;
+      if (isWhatsAppTerminal()) return;
       if (msg.key?.fromMe) continue;
       // No one asks Flo to deliver a paid bill into a group chat. When the
       // operator enables the group filter, drop inbound @g.us messages
@@ -680,9 +681,9 @@ function attachSocketHandlers(socket: BaileysSocket): void {
 
   socket.ev.on('messages.update', (updates: any[]) => {
     void trackWhatsAppWork((async () => {
-    if (state.shuttingDown) return;
+    if (isWhatsAppTerminal()) return;
     for (const u of updates) {
-      if (state.shuttingDown) return;
+      if (isWhatsAppTerminal()) return;
       const id = u.key?.id;
       if (!id) continue;
       const stored = findMessageByExternalId(id);
@@ -736,18 +737,18 @@ async function startSocketImpl(requestSignal?: AbortSignal): Promise<void> {
   const signal = requestSignal
     ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
     : whatsappAbortController.signal;
-  if (!state.enabled || state.shuttingDown || signal.aborted) return;
+  if (!state.enabled || isWhatsAppTerminal() || signal.aborted) return;
   if (state.socket) return;
   const authDir = getAuthDir();
   if (!fs.existsSync(authDir)) {
     fs.mkdirSync(authDir, { recursive: true, mode: 0o700 });
   }
   const version = await resolveWaWebVersion(signal);
-  if (state.shuttingDown || signal.aborted) return;
+  if (isWhatsAppTerminal() || signal.aborted) return;
   const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await abortable(() => loadBaileys(), signal);
-  if (state.shuttingDown || signal.aborted) return;
+  if (isWhatsAppTerminal() || signal.aborted) return;
   const { state: authState, saveCreds } = await abortable(() => useMultiFileAuthState(authDir), signal);
-  if (state.shuttingDown || signal.aborted) return;
+  if (isWhatsAppTerminal() || signal.aborted) return;
   const socket = makeWASocket({
     version,
     auth: authState,
@@ -765,8 +766,15 @@ async function startSocketImpl(requestSignal?: AbortSignal): Promise<void> {
       return proto.Message.create({});
     },
   });
+  if (isWhatsAppTerminal() || signal.aborted) {
+    try { socket.end(undefined); } catch { }
+    return;
+  }
   attachSocketHandlers(socket);
-  socket.ev.on('creds.update', saveCreds);
+  socket.ev.on('creds.update', (...args: any[]) => {
+    if (isWhatsAppTerminal()) return;
+    (saveCreds as (...values: any[]) => unknown)(...args);
+  });
   state.socket = socket;
   state.state = 'connecting';
 }

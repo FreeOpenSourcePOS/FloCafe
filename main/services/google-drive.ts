@@ -275,6 +275,7 @@ class GoogleDriveService {
       const timeout = setTimeout(() => {
         this.terminalCleanup = true;
         this.backupAbortController?.abort();
+        this.cancelActiveDriveOperations();
         settled = true;
         this.stopSettled = true;
         clearTimeout(timeout);
@@ -308,6 +309,10 @@ class GoogleDriveService {
     void operation.finally(() => {
       this.activeDriveOperations.delete(operation);
     }).catch(() => {});
+  }
+
+  private cancelActiveDriveOperations(): void {
+    for (const operation of this.activeDriveOperations) cancelDriveOperation(operation);
   }
 
   private async maybeRunScheduled(): Promise<void> {
@@ -386,10 +391,10 @@ class GoogleDriveService {
     }
 
     const { code, redirectUri } = await this.runLoopbackFlow(creds, signal);
-    if (signal.aborted) throw createDriveShutdownError('Google Drive connection');
+    this.throwIfStopping(signal);
     const client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
     const { tokens } = await waitForDriveOperation(() => client.getToken(code), signal, DRIVE_REQUEST_TIMEOUT_MS, 'Google Drive token exchange', (operation) => this.trackDriveOperation(operation), () => this.stopping);
-    if (signal.aborted) throw createDriveShutdownError('Google Drive connection');
+    this.throwIfStopping(signal);
     if (!tokens.refresh_token) {
       // Google only issues a refresh_token on first consent (or with prompt=consent,
       // which we always pass) — without it we can't run unattended scheduled backups.
@@ -402,7 +407,7 @@ class GoogleDriveService {
     try {
       email = await this.fetchAccountEmail(client, signal);
     } catch (err) {
-      if (signal.aborted) throw err;
+      if (this.stopping || signal.aborted) throw err;
       log.warn('[GoogleDrive] could not fetch account email', (err as Error).message);
     }
 
@@ -411,11 +416,11 @@ class GoogleDriveService {
       const drive = google.drive({ version: 'v3', auth: client });
       folderId = await this.ensureAppFolder(drive, signal);
     } catch (err) {
-      if (signal.aborted) throw err;
+      if (this.stopping || signal.aborted) throw err;
       log.warn('[GoogleDrive] could not prepare app folder', (err as Error).message);
     }
 
-    if (signal.aborted) throw createDriveShutdownError('Google Drive connection');
+    this.throwIfStopping(signal);
 
     this.upsertSettings({
       google_drive_account_email: email || '',
@@ -493,6 +498,7 @@ class GoogleDriveService {
       );
       const fileName = path.basename(backupPath);
 
+      this.throwIfStopping(signal);
       await drive.files.create({
         requestBody: { name: fileName, parents: [folderId] },
         media: { mimeType: 'application/x-sqlite3', body: fs.createReadStream(backupPath) },
@@ -537,7 +543,7 @@ class GoogleDriveService {
     // refresh_token when it's expired; persist whatever it hands back so the
     // next scheduled run doesn't have to refresh again.
     client.on('tokens', (refreshed) => {
-      if (this.stopping || signal?.aborted) return;
+      if (this.stopping || this.terminalCleanup || signal?.aborted) return;
       const merged = { ...this.readTokens(), ...refreshed };
       this.writeTokens(merged);
     });

@@ -154,6 +154,19 @@ async function main(): Promise<void> {
   gd.googleDrive.start();
   console.log('   ✓ normal shutdown accepts nested cancellation failures from tracked Drive work');
 
+  let releaseActiveDriveOperation!: () => void;
+  let driveCancelCalled = false;
+  const activeDriveOperation = Object.assign(new Promise<void>((resolve) => {
+    releaseActiveDriveOperation = resolve;
+  }), {
+    cancel: () => {
+      driveCancelCalled = true;
+      releaseActiveDriveOperation();
+    },
+  });
+  activeDriveOperations.add(activeDriveOperation);
+  void activeDriveOperation.finally(() => activeDriveOperations.delete(activeDriveOperation)).catch(() => {});
+
   let rejectBackup!: (error: Error & { code: string }) => void;
   (gd.googleDrive as any).runBackup = () => new Promise((_resolve: unknown, reject: typeof rejectBackup) => {
     rejectBackup = reject;
@@ -170,6 +183,7 @@ async function main(): Promise<void> {
       (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
       'stop() settles with a bounded timeout when backup work will not cancel',
     );
+    assert.equal(driveCancelCalled, true, 'stop() cancels tracked Drive work before reporting timeout');
   } finally {
     (globalThis as any).setTimeout = originalSetTimeout;
   }

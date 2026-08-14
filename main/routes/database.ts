@@ -7,7 +7,7 @@ import { clearJWTSecretCache } from './auth';
 import * as fs from 'fs';
 import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';
-import { getHttpRequestSignal } from '../shutdown';
+import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 
 const router = Router();
 
@@ -355,10 +355,39 @@ router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(asy
     // Download a clean checkpointed backup rather than streaming the live WAL
     // file. The temporary snapshot is independent of later restore/reset work.
     await createBackup(snapshotPath, getHttpRequestSignal(req));
-    res.download(snapshotPath, filename, (error) => {
-      try { if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
-      if (error) console.error('[DB Download] Stream error:', error);
+    const signal = getHttpRequestSignal(req);
+    const download = new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const onAbort = (): void => {
+        try { res.destroy(); } catch (error) { settle(error as Error); return; }
+      };
+      const settle = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', onAbort);
+        if (error) reject(error);
+        else resolve();
+      };
+      res.once('finish', () => settle());
+      res.once('close', () => settle());
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      try {
+        res.download(snapshotPath, filename, (error) => settle(error));
+      } catch (error) {
+        settle(error as Error);
+      }
     });
+    void trackHttpRequestWork(req, download)
+      .finally(() => {
+        try { if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
+      })
+      .catch((error) => {
+        console.error('[DB Download] Stream error:', (error as Error).message);
+      });
   } catch (error: any) {
     if (tempDir) {
       try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }

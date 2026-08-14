@@ -6,6 +6,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { cloudSync } from '../services/cloud-sync';
 import { getDatabase } from '../db';
 import { getHttpRequestSignal } from '../shutdown';
+import { normalizeOptionalPhone } from '../lib/phone';
 
 const router = Router();
 
@@ -110,6 +111,19 @@ router.post('/', requireRole(...supportRoles), asyncHandler(async (req: Request,
   if (contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contactEmail)) {
     return res.status(400).json({ error: 'contact_email must be a valid email address' });
   }
+
+  let contactPhone: string | undefined = undefined;
+  if (body.contact_phone !== undefined && body.contact_phone !== null && String(body.contact_phone).trim() !== '') {
+    const phoneRes = normalizeOptionalPhone(body.contact_phone, profile.country || 'IN');
+    if (!phoneRes.valid || !phoneRes.e164) {
+      return res.status(400).json({ error: 'contact_phone must be a valid phone number' });
+    }
+    contactPhone = phoneRes.e164;
+  } else if (profile.contact_phone) {
+    const phoneRes = normalizeOptionalPhone(profile.contact_phone, profile.country || 'IN');
+    contactPhone = phoneRes.valid && phoneRes.e164 ? phoneRes.e164 : undefined;
+  }
+
   const suppliedDiagnostics = body.diagnostics && typeof body.diagnostics === 'object' && !Array.isArray(body.diagnostics)
     ? body.diagnostics : {};
   const diagnostics = { ...suppliedDiagnostics, ...buildSystemDiagnostics(req, category) };
@@ -124,7 +138,7 @@ router.post('/', requireRole(...supportRoles), asyncHandler(async (req: Request,
     correlation_id: String(body.correlation_id || '').slice(0, 64) || undefined,
     contact_name: String(body.contact_name || profile.contact_name).trim().slice(0, 255) || undefined,
     contact_email: contactEmail || undefined,
-    contact_phone: String(body.contact_phone || profile.contact_phone).trim().slice(0, 50) || undefined,
+    contact_phone: contactPhone,
     diagnostics,
   }, getHttpRequestSignal(req));
   res.status(queued.queued ? 202 : 503).json({

@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
+import { parsePhoneE164 } from '../lib/phone';
 
 const router = Router();
 
@@ -251,6 +252,9 @@ router.post('/import', requireRole('owner'),
           `INSERT INTO ${tableName} (${colList}) VALUES (${placeholders})`
         );
         
+        const tenantCountryRow = db.prepare("SELECT value FROM settings WHERE key = 'country'").get() as any;
+        const tenantCountry = tenantCountryRow?.value || 'IN';
+
         for (const row of rows) {
           throwIfDatabaseMaintenanceAborted(signal);
           // Exported secret fields are deliberately redacted. Never import the
@@ -260,6 +264,17 @@ router.post('/import', requireRole('owner'),
             EXPORT_SETTINGS_REDACT.has(String(row.key)) &&
             row.value === '[REDACTED]'
           ) continue;
+
+          if (tableName === 'customers' && row.phone) {
+            const parsed = parsePhoneE164(String(row.phone), tenantCountry);
+            if (parsed) {
+              row.phone = parsed.e164;
+              if (commonCols.includes('country_code')) {
+                row.country_code = parsed.countryCode;
+              }
+            }
+          }
+
           insertStmt.run(...commonCols.map(col => row[col]));
         }
         

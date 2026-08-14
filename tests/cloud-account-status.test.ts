@@ -251,6 +251,35 @@ async function run() {
     assertEqual(unavailableUpstream.status, 502, 'registered cloud outage remains distinguishable as a gateway error');
     assertEqual(upstreamCalls, 2, 'registered cloud outage attempts the upstream request');
 
+    const service = cloudSync as any;
+    service.settings = {
+      server_url: 'https://blue.flopos.com/',
+      api_key: 'registered-api-key',
+      pos_hash: 'registered-pos-hash',
+      command_polling_enabled: false,
+      sync_enabled: false,
+    };
+    const originalPreferencesFetch = globalThis.fetch;
+    let preferencesFetchStarted!: () => void;
+    const preferencesFetchStartedPromise = new Promise<void>((resolve) => { preferencesFetchStarted = resolve; });
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      preferencesFetchStarted();
+      const signal = init?.signal as AbortSignal;
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    })) as typeof fetch;
+    try {
+      const requestSignal = new AbortController();
+      const preferencesRequest = cloudSync.updateEmailPreferences({ product_updates: true }, requestSignal.signal);
+      await preferencesFetchStartedPromise;
+      requestSignal.abort();
+      let preferencesCancelled = false;
+      try { await preferencesRequest; } catch { preferencesCancelled = true; }
+      assert(preferencesCancelled, 'cloud preference updates honor request cancellation');
+    } finally {
+      globalThis.fetch = originalPreferencesFetch;
+    }
+
     setSettings({
       cloud_api_key: 'registered-api-key',
       cloud_pos_hash: 'registered-pos-hash',
@@ -260,7 +289,6 @@ async function run() {
       cloud_command_polling_enabled: '1',
       cloud_sync_enabled: '0',
     });
-    const service = cloudSync as any;
     service.settings = {
       server_url: 'https://blue.flopos.com/',
       api_key: 'registered-api-key',

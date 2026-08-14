@@ -110,6 +110,7 @@ async function fetchText(
   maxBytes: number,
   fetchImpl: FetchLike,
   headers?: Record<string, string>,
+  signal?: AbortSignal,
 ): Promise<string> {
   const response = await fetchImpl(url, {
     headers: {
@@ -118,7 +119,9 @@ async function fetchText(
       ...headers,
     },
     redirect: 'follow',
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)])
+      : AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`Download failed with HTTP ${response.status}`);
   const declaredLength = Number(response.headers.get('content-length') || 0);
@@ -130,6 +133,7 @@ async function fetchText(
 
 export async function fetchRemoteTaxPackCatalog(
   fetchImpl: FetchLike = fetch,
+  signal?: AbortSignal,
 ): Promise<RemoteTaxPackCatalog> {
   for (let page = 1; page <= MAX_RELEASE_PAGES; page += 1) {
     const releasesJson = await fetchText(
@@ -137,6 +141,7 @@ export async function fetchRemoteTaxPackCatalog(
       MAX_CATALOG_BYTES,
       fetchImpl,
       { Accept: 'application/vnd.github+json' },
+      signal,
     );
     let releases: GitHubRelease[];
     try {
@@ -164,6 +169,8 @@ export async function fetchRemoteTaxPackCatalog(
         catalogAsset.browser_download_url,
         MAX_CATALOG_BYTES,
         fetchImpl,
+        undefined,
+        signal,
       );
       let parsed: unknown;
       try {
@@ -210,11 +217,12 @@ export async function downloadAndVerifyTaxPack(
   entry: TaxPackCatalogEntry,
   fetchImpl: FetchLike = fetch,
   publicKey: KeyLike = TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY,
+  signal?: AbortSignal,
 ): Promise<VerifiedTaxPackArtifact> {
   if (!validCatalogEntry(entry)) throw new Error('Tax pack catalog entry is invalid');
   const [packJson, signature] = await Promise.all([
-    fetchText(entry.downloadUrl, MAX_PACK_BYTES, fetchImpl),
-    fetchText(entry.signatureUrl, MAX_SIGNATURE_BYTES, fetchImpl, { Accept: 'text/plain' }),
+    fetchText(entry.downloadUrl, MAX_PACK_BYTES, fetchImpl, undefined, signal),
+    fetchText(entry.signatureUrl, MAX_SIGNATURE_BYTES, fetchImpl, { Accept: 'text/plain' }, signal),
   ]);
   if (taxPackSha256(packJson) !== entry.digest) {
     throw new Error('Tax pack digest does not match the catalog');

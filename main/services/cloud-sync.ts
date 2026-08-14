@@ -552,8 +552,8 @@ class CloudSyncService {
     return { ok: true, status: this.getStatus() };
   }
 
-  async getEmailPreferences(): Promise<Record<string, unknown>> {
-    const res = await this.signedFetch('/api/pos/email-preferences', { method: 'GET' });
+  async getEmailPreferences(signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const res = await this.signedFetch('/api/pos/email-preferences', { method: 'GET', signal });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Email status failed (${res.status})`));
@@ -566,12 +566,16 @@ class CloudSyncService {
     return data;
   }
 
-  async updateEmailPreferences(preferences: { product_updates?: boolean; marketing?: boolean }): Promise<Record<string, unknown>> {
-    const res = await this.signedFetch('/api/pos/email-preferences', { method: 'PUT', body: JSON.stringify(preferences) });
+  async updateEmailPreferences(preferences: { product_updates?: boolean; marketing?: boolean }, signal?: AbortSignal): Promise<Record<string, unknown>> {
+    const res = await this.signedFetch('/api/pos/email-preferences', {
+      method: 'PUT',
+      body: JSON.stringify(preferences),
+      signal,
+    });
     const data = await res.json().catch(() => ({})) as Record<string, unknown>;
     if (this.cloudDeletionInProgress) throw new Error('Cloud deletion in progress');
     if (!res.ok) throw new Error(String(data.error || `Preference update failed (${res.status})`));
-    await this.getEmailPreferences();
+    await this.getEmailPreferences(signal);
     return data;
   }
 

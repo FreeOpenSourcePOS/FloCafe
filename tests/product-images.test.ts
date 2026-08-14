@@ -330,6 +330,13 @@ async function main() {
       assertEqual(res.status, 200, 'E7a: Pinned HTTPS image is fetched');
       assertEqual(Array.isArray(pinnedAddresses), true, 'E7b: Pinned lookup returns an address list when requested');
       assertEqual(pinnedAddresses[0].address, '93.184.216.34', 'E7c: Pinned lookup returns only validated IP');
+
+      res = await api(baseUrl, '/api/products/fetch-url', {
+        method: 'POST', headers: authHeader,
+        body: { url: 'https://93.184.216.34/photo.webp' },
+      });
+      assertEqual(res.status, 200, 'E7d: Public IP image URL is fetched');
+      assertEqual(requestOptions.hostname, '93.184.216.34', 'E7e: Public IP URL remains pinned to its literal address');
     } finally {
       (dns.promises as any).Resolver = originalResolver;
       https.request = originalRequest;

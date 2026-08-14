@@ -14,6 +14,7 @@ import {
 } from '../tax-packs/catalog';
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from '../tax-packs/trusted-signing-key';
 import { asyncHandler } from '../middleware/async-handler';
+import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 const BUNDLED_PACKS_BY_ID = new Map(BUNDLED_COUNTRY_PACKS.map((pack) => [pack.id, pack]));
@@ -540,6 +541,7 @@ interface InstallCatalogEntryOptions {
   actorUserId: string | null;
   fetchImpl?: typeof fetch;
   publicKey?: KeyLike;
+  signal?: AbortSignal;
 }
 
 export async function installCatalogEntry(
@@ -552,7 +554,7 @@ export async function installCatalogEntry(
   validation: ReturnType<typeof validationChecklist>;
 }> {
   const publicKey = options.publicKey || TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY;
-  const artifact = await downloadAndVerifyTaxPack(entry, options.fetchImpl || fetch, publicKey);
+  const artifact = await downloadAndVerifyTaxPack(entry, options.fetchImpl || fetch, publicKey, options.signal);
   const db = getDatabase();
   const existingPack = db.prepare('SELECT * FROM country_packs WHERE id = ?')
     .get(artifact.pack.id) as PackRow | undefined;
@@ -691,9 +693,9 @@ router.get('/audit', requireRole('owner', 'manager'), (req: Request, res: Respon
   }
 });
 
-router.get('/catalog', requireRole('owner', 'manager'), asyncHandler(async (_req: Request, res: Response) => {
+router.get('/catalog', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const remote = await fetchRemoteTaxPackCatalog();
+    const remote = await fetchRemoteTaxPackCatalog(fetch, getHttpRequestSignal(req));
     const installedRows = getDatabase().prepare(
       'SELECT pack_id, version FROM country_pack_versions'
     ).all() as Array<{ pack_id: string; version: string }>;
@@ -732,12 +734,13 @@ router.post('/ensure-country', requireRole('owner', 'manager'), asyncHandler(asy
       `).get(pack.id) as VersionRow | undefined;
     }
     if (!version) {
-      const remote = await fetchRemoteTaxPackCatalog();
+      const requestSignal = getHttpRequestSignal(req);
+      const remote = await fetchRemoteTaxPackCatalog(fetch, requestSignal);
       const entry = remote.catalog.packs
         .filter((candidate) => candidate.country === country)
         .sort((left, right) => right.version.localeCompare(left.version, undefined, { numeric: true }))[0];
       if (!entry) return res.status(404).json({ plugin_available: false, country, error: `Tax support for ${country} is not available yet` });
-      const installed = await installCatalogEntry(entry, { actorUserId: actorUserId(req) });
+      const installed = await installCatalogEntry(entry, { actorUserId: actorUserId(req), signal: requestSignal });
       pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(installed.packId) as PackRow;
       version = db.prepare('SELECT * FROM country_pack_versions WHERE id = ?').get(installed.versionId) as VersionRow;
     }
@@ -1040,12 +1043,13 @@ router.post('/catalog/install', requireRole('owner'), asyncHandler(async (req: R
     if (!packId || !version) {
       return res.status(400).json({ error: 'pack_id and version are required' });
     }
-    const remote = await fetchRemoteTaxPackCatalog();
+    const requestSignal = getHttpRequestSignal(req);
+    const remote = await fetchRemoteTaxPackCatalog(fetch, requestSignal);
     const entry = remote.catalog.packs.find(
       (candidate) => candidate.id === packId && candidate.version === version,
     );
     if (!entry) return res.status(404).json({ error: 'Tax pack version is not in the current catalog' });
-    const installed = await installCatalogEntry(entry, { actorUserId: actorUserId(req) });
+    const installed = await installCatalogEntry(entry, { actorUserId: actorUserId(req), signal: requestSignal });
     res.status(201).json({ installed });
   } catch (error: any) {
     const statusCode = error.statusCode || 502;

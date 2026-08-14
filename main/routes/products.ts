@@ -16,6 +16,11 @@ const MAX_FETCH_BYTES = 10 * 1024 * 1024;
  * loopback/private/link-local/metadata/reserved IP (vuln-0003 SSRF guard).
  */
 async function resolvePublicHostname(hostname: string, signal: AbortSignal): Promise<string> {
+  const directAddress = hostname.replace(/^\[|\]$/g, '');
+  if (net.isIP(directAddress)) {
+    if (isBlockedSsrfTarget(directAddress)) throw new Error('URL resolves to a disallowed address');
+    return directAddress;
+  }
   let addresses: dns.LookupAddress[];
   const resolver = new dns.promises.Resolver();
   const createAbortError = () => {

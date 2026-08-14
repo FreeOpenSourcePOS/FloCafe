@@ -588,7 +588,7 @@ router.put('/cloud/account/preferences', requireRole('owner'), asyncHandler(asyn
     res.json(publicEmailPreferences(await cloudSync.updateEmailPreferences({
       product_updates: req.body?.product_updates,
       marketing: req.body?.marketing,
-    })));
+    }, getHttpRequestSignal(req))));
   } catch {
     res.status(502).json({ error: 'Could not update email preferences' });
   }

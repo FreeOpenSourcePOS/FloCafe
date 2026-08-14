@@ -48,9 +48,12 @@ export default function CustomerDisplayPage() {
 
   useEffect(() => {
     if (!user || !currentTenant) return;
-    fetchOrders();
+    const initial = setTimeout(fetchOrders, 0);
     const interval = setInterval(fetchOrders, 3000);
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(initial);
+      clearInterval(interval);
+    };
   }, [user, currentTenant]);
 
   const preparing = useMemo(

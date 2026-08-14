@@ -7,10 +7,11 @@
 import { Router, Request, Response } from 'express';
 import QRCode from 'qrcode';
 import { getLocalIP, getAllLocalIPs, getServerPort } from '../server';
+import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();
 
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', asyncHandler(async (_req: Request, res: Response) => {
   const port = getServerPort();
   const ip = getLocalIP();
   const allIps = getAllLocalIPs();
@@ -43,6 +44,6 @@ router.get('/', async (_req: Request, res: Response) => {
     qr_data_url: qrDataUrl,
     ips_data:    ipsData,
   });
-});
+}));
 
 export const posInfoRoutes = router;

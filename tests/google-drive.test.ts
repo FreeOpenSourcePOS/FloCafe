@@ -47,8 +47,9 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const { initDatabase, closeDatabase } = require('../main/db');
+const { runShutdownSteps } = require('../main/shutdown');
 
-function main() {
+async function main(): Promise<void> {
   console.log('🧪 FloCafe Google Drive Tests');
   console.log('='.repeat(60));
 
@@ -131,6 +132,74 @@ function main() {
   status = gd.googleDrive.getStatus();
   assert.equal(status.connected, true, 'connected once a token file is present');
   console.log('   ✓ getStatus() reports connected once a token file exists');
+
+  const requestAbort = new AbortController();
+  requestAbort.abort();
+  await assert.rejects(
+    gd.googleDrive.backupNow(requestAbort.signal),
+    (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED',
+    'backupNow observes an already-aborted request signal',
+  );
+
+  const originalRunBackup = (gd.googleDrive as any).runBackup;
+  const expectedShutdown = Object.assign(new Error('backup cancelled'), { code: 'ERR_SHUTDOWN_ABORTED' });
+  (gd.googleDrive as any).runBackup = () => Promise.reject(expectedShutdown);
+  const aggregateChild = Promise.reject(expectedShutdown);
+  const activeDriveOperations = (gd.googleDrive as any).activeDriveOperations as Set<Promise<unknown>>;
+  activeDriveOperations.add(aggregateChild);
+  void aggregateChild.finally(() => activeDriveOperations.delete(aggregateChild)).catch(() => {});
+  const aggregateBackup = gd.googleDrive.backupNow();
+  void aggregateBackup.catch(() => {});
+  await gd.googleDrive.stop();
+  await assert.rejects(aggregateBackup, (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED');
+  gd.googleDrive.start();
+  console.log('   ✓ normal shutdown accepts nested cancellation failures from tracked Drive work');
+
+  let releaseActiveDriveOperation!: () => void;
+  let driveCancelCalled = false;
+  const activeDriveOperation = Object.assign(new Promise<void>((resolve) => {
+    releaseActiveDriveOperation = resolve;
+  }), {
+    cancel: () => {
+      driveCancelCalled = true;
+      releaseActiveDriveOperation();
+    },
+  });
+  activeDriveOperations.add(activeDriveOperation);
+  void activeDriveOperation.finally(() => activeDriveOperations.delete(activeDriveOperation)).catch(() => {});
+
+  let rejectBackup!: (error: Error & { code: string }) => void;
+  (gd.googleDrive as any).runBackup = () => new Promise((_resolve: unknown, reject: typeof rejectBackup) => {
+    rejectBackup = reject;
+  });
+  const activeBackup = gd.googleDrive.backupNow();
+  await new Promise((resolve) => setImmediate(resolve));
+  const originalSetTimeout = globalThis.setTimeout;
+  (globalThis as any).setTimeout = ((handler: (...args: any[]) => void, delay?: number, ...args: any[]) =>
+    originalSetTimeout(handler, delay === 10_000 ? 1 : delay, ...args)) as typeof setTimeout;
+  const stopPromise = gd.googleDrive.stop();
+  let databaseClosed = false;
+  let fatalTimeoutObserved = false;
+  try {
+    await assert.rejects(
+      runShutdownSteps([
+        { name: 'Google Drive', blocksDatabase: true, run: () => stopPromise },
+        { name: 'database', databaseClose: true, run: () => { databaseClosed = true; } },
+      ], { onFatalTimeout: () => { fatalTimeoutObserved = true; } }),
+      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
+      'shutdown reports a bounded timeout when backup ownership will not settle',
+    );
+    assert.equal(databaseClosed, false, 'a bounded Drive timeout blocks database closure');
+    assert.equal(fatalTimeoutObserved, true, 'a bounded Drive timeout invokes fatal termination');
+    assert.equal(driveCancelCalled, true, 'stop() cancels tracked Drive work before reporting timeout');
+  } finally {
+    (globalThis as any).setTimeout = originalSetTimeout;
+  }
+  const shutdownCancellation = Object.assign(new Error('backup cancelled'), { code: 'ERR_SHUTDOWN_ABORTED' });
+  rejectBackup(shutdownCancellation);
+  await assert.rejects(activeBackup, (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED');
+  (gd.googleDrive as any).runBackup = originalRunBackup;
+  console.log('   ✓ stop() bounds non-cooperative backup cleanup and guards late completion');
 
   const rawTokenFile = fs.readFileSync(tokenPath, 'utf8');
   assert.ok(!rawTokenFile.includes('flo-backup'), 'sanity: file is the token blob, not something else');

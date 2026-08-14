@@ -10,6 +10,7 @@
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as http from 'node:http';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -43,6 +44,7 @@ const { authRoutes } = require('../main/routes/auth');
 const { databaseToolsRoutes } = require('../main/routes/database-tools');
 const { databaseRoutes } = require('../main/routes/database');
 const { verifyMasterPin, isMasterPinSet } = require('../main/services/master-pin');
+const { cancelHttpShutdownWork, closeHttpServer, installHttpShutdownTracking } = require('../main/shutdown');
 
 let passed = 0;
 let failed = 0;
@@ -76,6 +78,9 @@ try {
 }
 
 const app = express();
+let stalledDownloadStarted!: () => void;
+const stalledDownloadStartedPromise = new Promise<void>((resolve) => { stalledDownloadStarted = resolve; });
+let stalledDownloadDestroyed = false;
 app.use(express.json());
 app.use((req: any, res: any, next: any) => {
   if (!req.path.startsWith('/api')) { next(); return; }
@@ -93,9 +98,25 @@ app.use((req: any, res: any, next: any) => {
     res.status(401).json({ error: 'Invalid or expired token' });
   }
 });
+app.use((req: any, res: any, next: any) => {
+  if (req.path === '/api/db/download' && req.headers['x-test-stall-download'] === '1') {
+    const destroy = res.destroy.bind(res);
+    res.destroy = (...args: any[]) => {
+      stalledDownloadDestroyed = true;
+      return destroy(...args);
+    };
+    res.download = (_filePath: string, _filename: string, _callback: (error?: Error) => void) => {
+      stalledDownloadStarted();
+    };
+  }
+  next();
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/db-tools', databaseToolsRoutes);
 app.use('/api/db', databaseRoutes);
+
+const downloadServer = http.createServer(app);
+installHttpShutdownTracking(downloadServer);
 
 function tokenFor(userId: string, role: string): string {
   return jwt.sign({ userId, email: `${userId}@flo.local`, role }, getJWTSecret(), { expiresIn: '1h' });
@@ -129,6 +150,19 @@ async function runTests() {
   const db = getDatabase();
   db.exec(`INSERT OR IGNORE INTO users (id, name, password, role, is_active) VALUES ('cashier-1', 'Cashier', 'hash', 'cashier', 1)`);
   const cashierToken = tokenFor('cashier-1', 'cashier');
+
+  await new Promise<void>((resolve) => downloadServer.listen(0, '127.0.0.1', resolve));
+  const stalledDownload = request(downloadServer)
+    .get('/api/db/download')
+    .set('Authorization', `Bearer ${ownerToken}`)
+    .set('x-test-stall-download', '1')
+    .send({ master_pin: '1234' });
+  void stalledDownload.then(() => undefined, () => undefined);
+  await stalledDownloadStartedPromise;
+  cancelHttpShutdownWork();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert(stalledDownloadDestroyed, 'database download destroys its response when HTTP shutdown cancels the request');
+  await closeHttpServer(downloadServer, 'database download stream test', 100);
 
   const unresolvedUserImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
     master_pin: '1234',

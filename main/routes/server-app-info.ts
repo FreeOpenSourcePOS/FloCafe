@@ -8,10 +8,11 @@ import QRCode from 'qrcode';
 import { getLocalIP, getAllLocalIPs } from '../server';
 import { getServerAppPort } from '../server-app-state';
 import { isServerAppEnabled } from '../db';
+import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();
 
-router.get('/', async (_req: Request, res: Response) => {
+router.get('/', asyncHandler(async (_req: Request, res: Response) => {
   if (!isServerAppEnabled()) {
     return res.status(404).json({ error: 'Not found' });
   }
@@ -46,6 +47,6 @@ router.get('/', async (_req: Request, res: Response) => {
     console.error('[API] Internal error:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
-});
+}));
 
 export const serverAppInfoRoutes = router;

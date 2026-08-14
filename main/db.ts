@@ -7,6 +7,7 @@ import * as fs from 'fs';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
+import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -15,9 +16,13 @@ let dbHealthError: string | null = null;
 // a FIFO promise chain so a rejected operation cannot strand later work.
 let databaseMaintenanceTail: Promise<void> = Promise.resolve();
 let databaseMaintenanceActive = false;
+let databaseMaintenancePending = 0;
 let activeDatabaseRequests = 0;
+let databaseShutdownRequested = false;
+const databaseShutdownController = new AbortController();
 let maintenanceRequestWaiters: (() => void)[] = [];
 let maintenanceDrainWaiters: (() => void)[] = [];
+let databaseIdleWaiters: (() => void)[] = [];
 const databaseMaintenanceStartListeners = new Set<() => void>();
 const databaseMaintenanceEndListeners = new Set<() => void>();
 
@@ -29,13 +34,73 @@ function releaseMaintenanceDrainWaiters(): void {
 }
 
 function releaseMaintenanceRequestWaiters(): void {
-  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive) return;
+  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive || databaseMaintenancePending !== 0) return;
   const waiters = maintenanceRequestWaiters;
   maintenanceRequestWaiters = [];
   waiters.forEach((resolve) => resolve());
 }
 
-export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
+function releaseDatabaseIdleWaiters(): void {
+  if (activeDatabaseRequests !== 0 || databaseMaintenanceActive || databaseMaintenancePending !== 0) return;
+  const waiters = databaseIdleWaiters;
+  databaseIdleWaiters = [];
+  waiters.forEach((resolve) => resolve());
+}
+
+function createMaintenanceAbortError(): Error & { code: string } {
+  const error = new Error('Database maintenance cancelled during shutdown') as Error & { code: string };
+  error.code = 'ERR_SHUTDOWN_ABORTED';
+  return error;
+}
+
+export function throwIfDatabaseMaintenanceAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw createMaintenanceAbortError();
+}
+
+function createDatabaseShutdownError(): Error & { code: string } {
+  const error = new Error('Database access is closed during shutdown') as Error & { code: string };
+  error.code = 'ERR_SHUTDOWN_ABORTED';
+  return error;
+}
+
+function createDatabaseShutdownTimeoutError(): Error & { code: string } {
+  const error = new Error(`Database shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+  error.code = 'ERR_SHUTDOWN_TIMEOUT';
+  return error;
+}
+
+export function beginDatabaseShutdown(): void {
+  databaseShutdownRequested = true;
+  databaseShutdownController.abort();
+}
+
+function getMaintenanceSignal(signal?: AbortSignal): AbortSignal {
+  return signal ? AbortSignal.any([signal, databaseShutdownController.signal]) : databaseShutdownController.signal;
+}
+
+function waitForActiveDatabaseRequests(signal: AbortSignal): Promise<void> {
+  if (activeDatabaseRequests === 0) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const finish = () => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    };
+    const onAbort = () => {
+      const index = maintenanceDrainWaiters.indexOf(finish);
+      if (index >= 0) maintenanceDrainWaiters.splice(index, 1);
+      reject(createMaintenanceAbortError());
+    };
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    maintenanceDrainWaiters.push(finish);
+  });
+}
+
+export function withDatabaseRequest<T>(operation: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (databaseShutdownRequested || signal?.aborted) return Promise.reject(createDatabaseShutdownError());
   const run = (): Promise<T> => {
     // Reserve the request synchronously. A maintenance lock scheduled in the
     // same turn must observe this request before it starts replacing the DB.
@@ -44,11 +109,36 @@ export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise
       activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
       releaseMaintenanceDrainWaiters();
       releaseMaintenanceRequestWaiters();
+      releaseDatabaseIdleWaiters();
     });
   };
   if (!databaseMaintenanceActive) return run();
   return new Promise<T>((resolve, reject) => {
-    maintenanceRequestWaiters.push(() => { run().then(resolve, reject); });
+    let settled = false;
+    let waiter!: () => void;
+    const onAbort = (): void => {
+      if (settled) return;
+      settled = true;
+      const index = maintenanceRequestWaiters.indexOf(waiter);
+      if (index >= 0) maintenanceRequestWaiters.splice(index, 1);
+      signal?.removeEventListener('abort', onAbort);
+      reject(createMaintenanceAbortError());
+    };
+    waiter = () => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      if (databaseShutdownRequested) {
+        reject(createDatabaseShutdownError());
+        return;
+      }
+      run().then(resolve, reject);
+    };
+    maintenanceRequestWaiters.push(waiter);
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
 }
 
@@ -78,6 +168,10 @@ function isDatabaseMaintenanceRoute(req: Request): boolean {
 }
 
 export function databaseMaintenanceMiddleware(req: Request, res: Response, next: NextFunction): void {
+  if (databaseShutdownRequested) {
+    res.status(503).json({ error: 'Database is shutting down' });
+    return;
+  }
   // A later request must still be rejected here, before authentication or
   // route middleware can query a database handle that the active operation may
   // close and replace.
@@ -102,37 +196,76 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
     activeDatabaseRequests = Math.max(0, activeDatabaseRequests - 1);
     releaseMaintenanceDrainWaiters();
     releaseMaintenanceRequestWaiters();
+    releaseDatabaseIdleWaiters();
   };
   res.once('finish', release);
   res.once('close', release);
   next();
 }
 
-export function withDatabaseMaintenanceLock<T>(operation: () => T | Promise<T>): Promise<T> {
+export function withDatabaseMaintenanceLock<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (databaseShutdownRequested) return Promise.reject(createMaintenanceAbortError());
+  const maintenanceSignal = getMaintenanceSignal(signal);
   const previous = databaseMaintenanceTail;
+  databaseMaintenancePending += 1;
+  let started = false;
   let release!: () => void;
   databaseMaintenanceTail = new Promise<void>((resolve) => { release = resolve; });
-  return previous.then(async () => {
+  const queued = previous.then(async () => {
+    if (maintenanceSignal.aborted || databaseShutdownRequested) throw createMaintenanceAbortError();
+    started = true;
     databaseMaintenanceActive = true;
     for (const listener of databaseMaintenanceStartListeners) {
       try { listener(); } catch (error) { console.error('[DB] Maintenance listener failed:', error); }
     }
-    // Maintenance routes are excluded from activeDatabaseRequests by the
-    // middleware above. Any remaining active requests were already in flight
-    // before maintenance began and must drain first.
-    if (activeDatabaseRequests > 0) {
-      await new Promise<void>((resolve) => maintenanceDrainWaiters.push(resolve));
-    }
     try {
-      return await operation();
+      // Maintenance routes are excluded from activeDatabaseRequests by the
+      // middleware above. Any remaining active requests were already in flight
+      // before maintenance began and must drain first.
+      if (activeDatabaseRequests > 0) {
+        await waitForActiveDatabaseRequests(maintenanceSignal);
+      }
+      if (maintenanceSignal.aborted || databaseShutdownRequested) throw createMaintenanceAbortError();
+      return await operation(maintenanceSignal);
     } finally {
       databaseMaintenanceActive = false;
       for (const listener of databaseMaintenanceEndListeners) {
         try { listener(); } catch (error) { console.error('[DB] Maintenance end listener failed:', error); }
       }
       releaseMaintenanceRequestWaiters();
+      releaseDatabaseIdleWaiters();
     }
-  }).finally(release);
+  }).finally(() => {
+    databaseMaintenancePending = Math.max(0, databaseMaintenancePending - 1);
+    release();
+    releaseMaintenanceRequestWaiters();
+    releaseDatabaseIdleWaiters();
+  });
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const onAbort = (): void => {
+      if (started || settled) return;
+      settled = true;
+      maintenanceSignal.removeEventListener('abort', onAbort);
+      reject(createMaintenanceAbortError());
+    };
+    if (maintenanceSignal.aborted) onAbort();
+    else maintenanceSignal.addEventListener('abort', onAbort, { once: true });
+    queued.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        maintenanceSignal.removeEventListener('abort', onAbort);
+        resolve(value);
+      },
+      (error) => {
+        if (settled) return;
+        settled = true;
+        maintenanceSignal.removeEventListener('abort', onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
@@ -436,7 +569,8 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
   }
 }
 
-export function initDatabase(recoverInterruptedReplacement = true): void {
+export function initDatabase(recoverInterruptedReplacement = true, allowDuringShutdown = false): void {
+  if (databaseShutdownRequested && !allowDuringShutdown) throw createDatabaseShutdownError();
   const dbPath = getDbPath();
   const backupDir = getBackupDir();
 
@@ -728,8 +862,23 @@ function autoRepairDefaultPrinter(): void {
 }
 
 export function getDatabase(): Database.Database {
+  if (databaseShutdownRequested) throw createDatabaseShutdownError();
   if (!db) throw new Error('Database not initialized');
   return db;
+}
+
+export function waitForDatabaseRequests(timeoutMs?: number): Promise<void> {
+  if (activeDatabaseRequests === 0 && !databaseMaintenanceActive && databaseMaintenancePending === 0) return Promise.resolve();
+  const drain = new Promise<void>((resolve) => databaseIdleWaiters.push(resolve));
+  const effectiveTimeoutMs = timeoutMs ?? (databaseShutdownRequested ? SHUTDOWN_TIMEOUT_MS : undefined);
+  if (effectiveTimeoutMs === undefined) return drain;
+  return new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(createDatabaseShutdownTimeoutError()), effectiveTimeoutMs);
+    drain.then(
+      () => { clearTimeout(timeout); resolve(); },
+      (error) => { clearTimeout(timeout); reject(error); },
+    );
+  });
 }
 
 export function closeDatabase(): void {
@@ -740,8 +889,9 @@ export function closeDatabase(): void {
   }
 }
 
-export async function createBackupUnlocked(targetPath?: string): Promise<{ path: string; schemaVersion: number }> {
+export async function createBackupUnlocked(targetPath?: string, signal?: AbortSignal): Promise<{ path: string; schemaVersion: number }> {
   // Internal callers must already hold withDatabaseMaintenanceLock().
+  if (signal?.aborted) throw createMaintenanceAbortError();
   console.log('[DB] createBackup: Starting...');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const uniqueSuffix = crypto.randomBytes(4).toString('hex');
@@ -773,7 +923,14 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
 
   try {
     console.log('[DB] createBackup: Backing up to temp:', tempPath);
-    await db.backup(tempPath);
+    if (signal?.aborted) throw createMaintenanceAbortError();
+    await db.backup(tempPath, {
+      progress: () => {
+        if (signal?.aborted) throw createMaintenanceAbortError();
+        return 100;
+      },
+    });
+    if (signal?.aborted) throw createMaintenanceAbortError();
 
     let currentVersion = 0;
     let backupDb: Database.Database | undefined;
@@ -789,6 +946,7 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
         )
       `);
 
+      if (signal?.aborted) throw createMaintenanceAbortError();
       currentVersion = getCurrentSchemaVersion();
       backupDb.prepare(`INSERT OR REPLACE INTO _flo_meta (key, value) VALUES (?, ?)`)
         .run('schema_version', String(currentVersion));
@@ -840,8 +998,8 @@ export async function createBackupUnlocked(targetPath?: string): Promise<{ path:
   }
 }
 
-export function createBackup(targetPath?: string): Promise<{ path: string; schemaVersion: number }> {
-  return withDatabaseMaintenanceLock(() => createBackupUnlocked(targetPath));
+export function createBackup(targetPath?: string, signal?: AbortSignal): Promise<{ path: string; schemaVersion: number }> {
+  return withDatabaseMaintenanceLock((maintenanceSignal) => createBackupUnlocked(targetPath, maintenanceSignal), signal);
 }
 
 function removeDatabaseFiles(dbPath: string): string[] {
@@ -863,15 +1021,17 @@ function removeDatabaseFiles(dbPath: string): string[] {
  * restore the safety backup before surfacing the error so callers never see a
  * false success or an intentionally closed database.
  */
-export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }> {
-  return withDatabaseMaintenanceLock(async () => {
-    const { path: backupPath } = await createBackupUnlocked();
+export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ backupPath: string }> {
+  return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
+    const { path: backupPath } = await createBackupUnlocked(undefined, maintenanceSignal);
+    throwIfDatabaseMaintenanceAborted(maintenanceSignal);
     const dbPath = getDbPath();
     const baselineForeignKeyViolations = getForeignKeyViolationKeys(getDatabase());
     const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
     const journalPath = recoveryPath.replace(/\.db$/, '.json');
     let replacementCompleted = false;
     let recoveryCompleted = false;
+    let replacementStarted = false;
 
     try {
       fs.copyFileSync(backupPath, recoveryPath);
@@ -880,17 +1040,27 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
         phase: 'prepared', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
       });
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+      replacementStarted = true;
       closeDatabase();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       const failures = removeDatabaseFiles(dbPath);
       if (failures.length > 0) {
         throw new Error(`Could not remove database files: ${failures.join(', ')}`);
       }
-      initDatabase(false);
-      getDatabase().pragma('wal_checkpoint(TRUNCATE)');
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+      initDatabase(false, true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
+      (db ?? getDatabase()).pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit reset database');
       }
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       writeReplacementJournal(journalPath, {
         phase: 'committed', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
@@ -900,6 +1070,10 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
     } catch (error: any) {
       // Reopen the pre-wipe snapshot so a partial filesystem failure cannot
       // leave the process serving an empty or closed database.
+      if (!replacementStarted) {
+        removeReplacementArtifacts(journalPath, recoveryPath);
+        throw error;
+      }
       try {
         closeDatabase();
         removeDatabaseFiles(dbPath);
@@ -908,7 +1082,7 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
         if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
           throw new Error('Could not durably recover reset database');
         }
-        initDatabase(false);
+        initDatabase(false, true);
         recoveryCompleted = true;
       } catch (recoveryError: any) {
         throw new Error(
@@ -920,7 +1094,7 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
     } finally {
       if (replacementCompleted || recoveryCompleted) removeReplacementArtifacts(journalPath, recoveryPath);
     }
-  });
+  }, signal);
 }
 
 /** Reads the canonical schema_version stamp createBackup() writes into _flo_meta. */
@@ -1473,7 +1647,8 @@ function mergeRevocations(dbInstance: Database.Database, rows: RevocationRow[]):
   for (const row of rows) merge.run(row.token_hash, row.expires_at, row.revoked_at);
 }
 
-export function restoreBackup(backupPath: string, forceDirect: boolean = false): RestoreResult {
+export function restoreBackup(backupPath: string, forceDirect: boolean = false, signal?: AbortSignal): RestoreResult {
+  throwIfDatabaseMaintenanceAborted(signal);
   console.log('[DB] restoreBackup: Starting restore from:', backupPath);
   try {
     backupPath = materializeRestoreSource(backupPath, getDbPath());
@@ -1546,6 +1721,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   if (forceDirect || backupSchemaVersion === currentVersion) {
+    throwIfDatabaseMaintenanceAborted(signal);
     const baselineForeignKeyViolations = getForeignKeyViolationKeys(currentDb);
     const validationError = validateDirectBackup(backupPath, currentDb, currentVersion, baselineForeignKeyViolations);
     if (validationError) {
@@ -1576,13 +1752,16 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
       });
       recoveryCopyReady = true;
+      throwIfDatabaseMaintenanceAborted(signal);
       closeDatabase();
+      throwIfDatabaseMaintenanceAborted(signal);
       const removeFailures = removeDatabaseFiles(dbPath);
       if (removeFailures.length > 0) {
         throw new Error(`Could not remove database files: ${removeFailures.join(', ')}`);
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       fs.copyFileSync(backupPath, dbPath);
-      initDatabase(false);
+      initDatabase(false, true);
 
       const freshDb = getDatabase();
       mergeUserSecurityState(freshDb, preservedUserSecurity);
@@ -1601,11 +1780,13 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
       ) {
         throw new Error('Restored database failed integrity validation');
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       freshDb.pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit restored database');
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       writeReplacementJournal(journalPath, {
         phase: 'committed', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
@@ -1632,7 +1813,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
         if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
           throw new Error('Could not durably recover direct-restore database');
         }
-        initDatabase(false);
+        initDatabase(false, true);
         recoveryCompleted = true;
       } catch (recoveryError: any) {
         throw new Error(
@@ -1657,7 +1838,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false):
   }
 
   console.log('[DB] restoreBackup: Data-only restore (schema version mismatch)');
-  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, preservedOutboxes);
+  return dataOnlyRestore(backupPath, backupSchemaVersion, currentVersion, preservedRevocations, preservedUserSecurity, preservedUserStations, preservedStationSecurity, preservedKdsEnabled, preservedProtectedSettings, preservedOutboxes, signal);
 }
 
 /** Return stable keys for existing FK violations so legacy dirty data can be preserved without accepting new damage. */
@@ -1736,7 +1917,9 @@ function dataOnlyRestore(
   preservedKdsEnabled: KdsEnabledSettingState = { present: false, value: null },
   preservedProtectedSettings: RestoreProtectedSettingState[] = [],
   preservedOutboxes: RestoreOutboxState = { cloud: [], support: [], diagnostics: [] },
+  signal?: AbortSignal,
 ): RestoreResult {
+  throwIfDatabaseMaintenanceAborted(signal);
   const livePath = getDbPath();
   if ([livePath, `${livePath}-wal`, `${livePath}-shm`].some((liveTarget) => isLiveDatabaseTarget(backupPath, liveTarget))) {
     return {
@@ -1801,6 +1984,7 @@ function dataOnlyRestore(
   }
 
   try {
+    throwIfDatabaseMaintenanceAborted(signal);
     // FK enforcement must be disabled before BEGIN. With it off, deleting a
     // common parent does not cascade-delete current-only child tables that an
     // older backup does not contain. The final check below protects commit.
@@ -1808,10 +1992,12 @@ function dataOnlyRestore(
     const safeBackupPath = backupPath.replace(/'/g, "''");
     currentDb.exec(`ATTACH DATABASE '${safeBackupPath}' AS _restore_src`);
     attached = true;
+    throwIfDatabaseMaintenanceAborted(signal);
     currentDb.exec('BEGIN IMMEDIATE');
     inTransaction = true;
 
     for (const tableName of commonTables) {
+      throwIfDatabaseMaintenanceAborted(signal);
       if (!isSafeIdentifier(tableName)) {
         console.warn(`[DB] dataOnlyRestore: skipping unsafe table: ${JSON.stringify(tableName)}`);
         continue;
@@ -1852,6 +2038,7 @@ function dataOnlyRestore(
     // SQLite does not allow DETACH while a write transaction is active.
     // Commit only after the integrity check, then detach the already-closed
     // source handle immediately so the long-lived connection stays clean.
+    throwIfDatabaseMaintenanceAborted(signal);
     currentDb.exec('COMMIT');
     inTransaction = false;
     try {
@@ -1864,7 +2051,7 @@ function dataOnlyRestore(
       // already changed.
       try {
         closeDatabase();
-        initDatabase(false);
+        initDatabase(false, true);
         attached = false;
       } catch (recoveryError: any) {
         throw new Error(
@@ -1898,7 +2085,7 @@ function dataOnlyRestore(
     if (cleanupFailure) {
       try {
         closeDatabase();
-        initDatabase(false);
+        initDatabase(false, true);
         attached = false;
       } catch (recoveryError: any) {
         error = new Error(
@@ -1907,6 +2094,7 @@ function dataOnlyRestore(
         );
       }
     }
+    throwIfDatabaseMaintenanceAborted(signal);
     console.error('[DB] dataOnlyRestore failed:', error);
     return {
       success: false,
@@ -1943,7 +2131,7 @@ export function getSchemaVersionFromBackup(backupPath: string): number | null {
 }
 
 export function getCurrentSchemaVersion(): number {
-  return db.pragma('user_version', { simple: true }) as number;
+  return (db ?? getDatabase()).pragma('user_version', { simple: true }) as number;
 }
 
 /**

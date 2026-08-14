@@ -17,8 +17,11 @@ Module._load = function (request, parent, isMain) {
 
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
-const { initDatabase, getDatabase, closeDatabase, now } = require('../dist/db');
+const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests, now } = require('../dist/db');
+const { createExitCodeAwareShutdown, waitForHttpShutdownWork, isShutdownTimeout } = require('../dist/shutdown');
 const { startServer, stopServer } = require('../dist/server');
+const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } = require('../dist/services/whatsapp');
+const { startStandaloneServers } = require('../dist/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
 // Country/currency stay TH/THB (this fixture's configured business country)
 // so getActiveCountryPack('TH') actually resolves this pack.
@@ -134,42 +137,83 @@ function seedPosFixture() {
   );
 }
 
-let stopping = false;
-function stop(exitCode = 0) {
-  if (stopping) return;
-  stopping = true;
+let exitRequested = false;
+let shutdownRequested = false;
+const requestStop = createExitCodeAwareShutdown(async () => {
   let cleanupFailed = false;
-  try { stopServer(); } catch (error) {
+  let databaseBlocked = false;
+  try { await stopServer(); } catch (error) {
     cleanupFailed = true;
+    databaseBlocked = true;
     console.error('[E2E] Main server cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
   }
-  try { stopKdsServer(); } catch (error) {
+  try { await stopKdsServer(); } catch (error) {
     cleanupFailed = true;
+    databaseBlocked = true;
     console.error('[E2E] KDS server cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
   }
-  try { closeDatabase(); } catch (error) {
+  try { await shutdownWhatsApp(); } catch (error) {
     cleanupFailed = true;
-    console.error('[E2E] Database cleanup failed:', error);
+    databaseBlocked = true;
+    console.error('[E2E] WhatsApp cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
+  }
+  try { await waitForHttpShutdownWork(); } catch (error) {
+    cleanupFailed = true;
+    databaseBlocked = true;
+    console.error('[E2E] HTTP handler cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
+  }
+  try { beginDatabaseShutdown(); await waitForDatabaseRequests(); } catch (error) {
+    cleanupFailed = true;
+    databaseBlocked = true;
+    console.error('[E2E] Database request drain failed:', error);
+    if (isShutdownTimeout(error)) throw error;
+  }
+  if (!databaseBlocked) {
+    try { closeDatabase(); } catch (error) {
+      cleanupFailed = true;
+      console.error('[E2E] Database cleanup failed:', error);
+    }
   }
   Module._load = originalLoad;
   try { fs.rmSync(testDir, { recursive: true, force: true }); } catch (error) {
     cleanupFailed = true;
     console.error('[E2E] Fixture cleanup failed:', error);
   }
-  process.exit(cleanupFailed ? 1 : exitCode);
+  return cleanupFailed ? 1 : 0;
+}, {
+  onShutdownRequested: requestWhatsAppShutdown,
+  onFatalTimeout: () => process.exit(1),
+});
+
+async function stop(exitCode = 0) {
+  shutdownRequested = true;
+  const finalExitCode = await requestStop(exitCode);
+  if (!exitRequested) {
+    exitRequested = true;
+    process.exit(finalExitCode);
+  }
 }
 
 (async () => {
-  initDatabase();
-  seedUser('e2e-manager', 'manager@flo.local', 'manager');
-  seedPosFixture();
-  await startServer();
-  await startKdsServer();
+  await startStandaloneServers({
+    initializeDatabase: initDatabase,
+    prepare: () => {
+      seedUser('e2e-manager', 'manager@flo.local', 'manager');
+      seedPosFixture();
+    },
+    startServer,
+    startKdsServer,
+    isShutdownRequested: () => shutdownRequested,
+  });
   console.log('[E2E] Main and KDS servers ready');
 })().catch((error) => {
   console.error(error);
   stop(1);
 });
 
-process.once('SIGINT', () => stop());
-process.once('SIGTERM', () => stop());
+process.on('SIGINT', () => stop());
+process.on('SIGTERM', () => stop());

@@ -29,6 +29,7 @@ import * as crypto from 'crypto';
 import log from 'electron-log';
 import { google } from 'googleapis';
 import { getDatabase, now, createBackup } from '../db';
+import { SHUTDOWN_TIMEOUT_MS } from '../shutdown';
 
 // googleapis bundles its own internal copy of google-auth-library — use its
 // re-exported OAuth2 client (google.auth.OAuth2) rather than depending on
@@ -47,6 +48,99 @@ const DAY_MS = 24 * 60 * 60_000;
 const WEEK_MS = 7 * DAY_MS;
 const SCHEDULE_CHECK_INTERVAL_MS = 60 * 60_000; // hourly, same cadence as telemetry's daily-ping check
 const LOOPBACK_TIMEOUT_MS = 5 * 60_000;
+const DRIVE_REQUEST_TIMEOUT_MS = 10_000;
+
+function requestSignal(signal: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+}
+
+function createDriveShutdownError(label: string, timedOut = false): Error & { code: string } {
+  const error = new Error(`${label} ${timedOut ? 'timed out' : 'cancelled'} during shutdown`) as Error & { code: string };
+  error.code = timedOut ? 'ERR_SHUTDOWN_TIMEOUT' : 'ERR_SHUTDOWN_ABORTED';
+  return error;
+}
+
+function isExpectedShutdownCancellation(error: unknown): boolean {
+  if (error instanceof AggregateError) {
+    return error.errors.length > 0 && error.errors.every((nested) => isExpectedShutdownCancellation(nested));
+  }
+  const candidate = error as { code?: unknown; name?: unknown } | null;
+  return candidate?.code === 'ERR_SHUTDOWN_ABORTED'
+    || candidate?.code === 'ABORT_ERR'
+    || candidate?.name === 'AbortError';
+}
+
+function cancelDriveOperation(operation: Promise<unknown>): void {
+  const cancellable = operation as Promise<unknown> & { cancel?: () => void; abort?: () => void };
+  try {
+    if (typeof cancellable.cancel === 'function') cancellable.cancel();
+    else if (typeof cancellable.abort === 'function') cancellable.abort();
+  } catch { }
+}
+
+function waitForDriveOperation<T>(
+  operationFactory: (signal: AbortSignal) => Promise<T>,
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+  label: string,
+  trackOperation?: (operation: Promise<unknown>) => void,
+  joinOnCancellation: () => boolean = () => false,
+): Promise<T> {
+  if (signal?.aborted) return Promise.reject(createDriveShutdownError(label));
+  const operationController = new AbortController();
+  const operationSignal = signal ? AbortSignal.any([signal, operationController.signal]) : operationController.signal;
+  let operation: Promise<T>;
+  try {
+    operation = operationFactory(operationSignal);
+  } catch (error) {
+    return Promise.reject(error);
+  }
+  trackOperation?.(operation);
+  let timeout: NodeJS.Timeout | undefined;
+  let cancellationTimeout: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
+  let operationSettled = false;
+  let cancellationStarted = false;
+  void operation.then(
+    () => { operationSettled = true; },
+    () => { operationSettled = true; },
+  );
+  void operation.catch(() => {});
+  const cancellation = new Promise<never>((_resolve, reject) => {
+    const rejectAfterOperation = (error: Error & { code: string }) => {
+      if (cancellationStarted || operationSettled) return;
+      cancellationStarted = true;
+      operationController.abort();
+      cancelDriveOperation(operation);
+      if (!joinOnCancellation()) {
+        reject(error);
+        return;
+      }
+      const settleCancellation = () => {
+        if (cancellationTimeout) clearTimeout(cancellationTimeout);
+        reject(error);
+      };
+      cancellationTimeout = setTimeout(settleCancellation, timeoutMs);
+      void operation.then(settleCancellation, settleCancellation);
+    };
+    const abort = () => rejectAfterOperation(createDriveShutdownError(label));
+    onAbort = abort;
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    if (signal) signal.addEventListener('abort', abort, { once: true });
+    timeout = setTimeout(() => {
+      rejectAfterOperation(createDriveShutdownError(label, true));
+    }, timeoutMs);
+  });
+  return Promise.race([operation, cancellation]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+    if (cancellationTimeout) clearTimeout(cancellationTimeout);
+    if (signal && onAbort) signal.removeEventListener('abort', onAbort);
+  });
+}
 
 export type BackupFrequency = 'daily' | 'weekly';
 
@@ -125,21 +219,104 @@ export function isBackupDue(lastBackupAtIso: string | null, frequency: BackupFre
 class GoogleDriveService {
   private scheduleTimer: ReturnType<typeof setInterval> | null = null;
   private backingUp = false;
+  private backupPromise: Promise<GoogleDriveStatus> | null = null;
+  private backupAbortController: AbortController | null = null;
+  private stopping = false;
+  private stopPromise: Promise<void> | null = null;
+  private stopSettled = true;
+  private terminalCleanup = false;
+  private activeDriveOperations = new Set<Promise<unknown>>();
+  private shutdownController = new AbortController();
 
   /** Arms the hourly schedule check. Never makes a network call by itself — see module doc comment. */
   start(): void {
-    this.stop();
-    this.scheduleTimer = setInterval(() => void this.maybeRunScheduled(), SCHEDULE_CHECK_INTERVAL_MS);
-  }
-
-  stop(): void {
+    if (this.terminalCleanup || !this.stopSettled) return;
     if (this.scheduleTimer) {
       clearInterval(this.scheduleTimer);
       this.scheduleTimer = null;
     }
+    this.stopping = false;
+    this.stopPromise = null;
+    this.shutdownController = new AbortController();
+    this.scheduleTimer = setInterval(() => void this.maybeRunScheduled(), SCHEDULE_CHECK_INTERVAL_MS);
+  }
+
+  stop(): Promise<void> {
+    if (this.stopPromise) return this.stopPromise;
+    this.stopping = true;
+    this.stopSettled = false;
+    this.shutdownController.abort();
+    this.backupAbortController?.abort();
+    if (this.scheduleTimer) {
+      clearInterval(this.scheduleTimer);
+      this.scheduleTimer = null;
+    }
+    if (!this.backupPromise && this.activeDriveOperations.size === 0) {
+      this.stopSettled = true;
+      this.stopPromise = Promise.resolve();
+      return this.stopPromise;
+    }
+    const waitForWork = async (): Promise<void> => {
+      const errors: unknown[] = [];
+      while (this.backupPromise || this.activeDriveOperations.size > 0) {
+        const work: Promise<unknown>[] = [...this.activeDriveOperations];
+        if (this.backupPromise) work.push(this.backupPromise);
+        const results = await Promise.allSettled(work);
+        for (const result of results) {
+          if (result.status === 'rejected') errors.push(result.reason);
+        }
+      }
+      if (errors.length > 0) throw errors.length === 1 ? errors[0] : new AggregateError(errors, 'Google Drive work failed');
+    };
+    const backup = waitForWork();
+    void backup.catch(() => {});
+    this.stopPromise = new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const timeout = setTimeout(() => {
+        this.terminalCleanup = true;
+        this.backupAbortController?.abort();
+        this.cancelActiveDriveOperations();
+        settled = true;
+        clearTimeout(timeout);
+        const timeoutError = new Error(`Google Drive shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+        timeoutError.code = 'ERR_SHUTDOWN_TIMEOUT';
+        reject(timeoutError);
+      }, SHUTDOWN_TIMEOUT_MS);
+      backup.then(
+        () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          this.stopSettled = true;
+          resolve();
+        },
+        (error) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timeout);
+          this.stopSettled = true;
+          if (this.stopping && isExpectedShutdownCancellation(error)) resolve();
+          else reject(error);
+        },
+      );
+    });
+    return this.stopPromise;
+  }
+
+  private trackDriveOperation(operation: Promise<unknown>): void {
+    this.activeDriveOperations.add(operation);
+    void operation.finally(() => {
+      this.activeDriveOperations.delete(operation);
+      if (this.terminalCleanup && !this.backupPromise && this.activeDriveOperations.size === 0) this.stopSettled = true;
+    }).catch(() => {});
+  }
+
+  private cancelActiveDriveOperations(): void {
+    for (const operation of this.activeDriveOperations) cancelDriveOperation(operation);
   }
 
   private async maybeRunScheduled(): Promise<void> {
+    if (this.stopping) return;
     const tokens = this.readTokens();
     if (!tokens) return; // never connected, or disconnected — stay silent
     const settings = this.readSettings();
@@ -194,7 +371,17 @@ class GoogleDriveService {
    * redirect. Throws with a user-facing message if this build has no
    * client credentials configured, or secure storage isn't available.
    */
-  async connect(): Promise<GoogleDriveStatus> {
+  async connect(signal?: AbortSignal): Promise<GoogleDriveStatus> {
+    if (this.stopping) throw new Error('Google Drive is stopping');
+    const operationSignal = signal
+      ? AbortSignal.any([signal, this.shutdownController.signal])
+      : this.shutdownController.signal;
+    const operation = this.connectInternal(operationSignal);
+    this.trackDriveOperation(operation);
+    return operation;
+  }
+
+  private async connectInternal(signal: AbortSignal): Promise<GoogleDriveStatus> {
     const creds = getClientCredentials();
     if (!creds) {
       throw new Error('Google Drive integration is not configured for this build');
@@ -203,9 +390,11 @@ class GoogleDriveService {
       throw new Error('Secure storage is not available on this device — cannot safely store the Google Drive connection');
     }
 
-    const { code, redirectUri } = await this.runLoopbackFlow(creds);
+    const { code, redirectUri } = await this.runLoopbackFlow(creds, signal);
+    this.throwIfStopping(signal);
     const client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
-    const { tokens } = await client.getToken(code);
+    const { tokens } = await waitForDriveOperation(() => client.getToken(code), signal, DRIVE_REQUEST_TIMEOUT_MS, 'Google Drive token exchange', (operation) => this.trackDriveOperation(operation), () => this.stopping);
+    this.throwIfStopping(signal);
     if (!tokens.refresh_token) {
       // Google only issues a refresh_token on first consent (or with prompt=consent,
       // which we always pass) — without it we can't run unattended scheduled backups.
@@ -216,18 +405,22 @@ class GoogleDriveService {
     client.setCredentials(tokens);
     let email: string | null = null;
     try {
-      email = await this.fetchAccountEmail(client);
+      email = await this.fetchAccountEmail(client, signal);
     } catch (err) {
+      if (this.stopping || signal.aborted) throw err;
       log.warn('[GoogleDrive] could not fetch account email', (err as Error).message);
     }
 
     let folderId: string | null = null;
     try {
       const drive = google.drive({ version: 'v3', auth: client });
-      folderId = await this.ensureAppFolder(drive);
+      folderId = await this.ensureAppFolder(drive, signal);
     } catch (err) {
+      if (this.stopping || signal.aborted) throw err;
       log.warn('[GoogleDrive] could not prepare app folder', (err as Error).message);
     }
+
+    this.throwIfStopping(signal);
 
     this.upsertSettings({
       google_drive_account_email: email || '',
@@ -269,25 +462,54 @@ class GoogleDriveService {
   }
 
   /** Manual "Back up to Drive now" action, and the scheduled path. Reuses createBackup() — no second export path. */
-  async backupNow(): Promise<GoogleDriveStatus> {
+  async backupNow(signal?: AbortSignal): Promise<GoogleDriveStatus> {
+    if (this.stopping) throw new Error('Google Drive is stopping');
     if (this.backingUp) return this.getStatus();
     this.backingUp = true;
+    const abortController = new AbortController();
+    this.backupAbortController = abortController;
+    const operationSignal = signal ? AbortSignal.any([signal, abortController.signal]) : abortController.signal;
+    const operation = this.runBackup(operationSignal);
+    this.backupPromise = operation;
     try {
-      const client = await this.getAuthorizedClient();
-      const drive = google.drive({ version: 'v3', auth: client });
-      const folderId = await this.ensureAppFolder(drive);
+      return await operation;
+    } finally {
+      this.backingUp = false;
+      this.backupPromise = null;
+      if (this.backupAbortController === abortController) this.backupAbortController = null;
+      if (this.terminalCleanup && this.activeDriveOperations.size === 0) this.stopSettled = true;
+    }
+  }
 
-      const { path: backupPath } = await createBackup();
+  private async runBackup(signal: AbortSignal): Promise<GoogleDriveStatus> {
+    try {
+      const client = await this.getAuthorizedClient(signal);
+      this.throwIfStopping(signal);
+      const drive = google.drive({ version: 'v3', auth: client });
+      const folderId = await this.ensureAppFolder(drive, signal);
+
+      this.throwIfStopping(signal);
+      const { path: backupPath } = await waitForDriveOperation(
+        (operationSignal) => createBackup(undefined, operationSignal),
+        signal,
+        SHUTDOWN_TIMEOUT_MS,
+        'Google Drive local backup',
+        (operation) => this.trackDriveOperation(operation),
+        () => this.stopping,
+      );
       const fileName = path.basename(backupPath);
 
+      this.throwIfStopping(signal);
       await drive.files.create({
         requestBody: { name: fileName, parents: [folderId] },
         media: { mimeType: 'application/x-sqlite3', body: fs.createReadStream(backupPath) },
         fields: 'id',
-      });
+      }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+      this.throwIfStopping(signal);
 
-      await this.applyRetention(drive, folderId);
+      await this.applyRetention(drive, folderId, signal);
 
+      this.throwIfStopping(signal);
       this.upsertSettings({
         google_drive_folder_id: folderId,
         google_drive_last_backup_at: new Date().toISOString(),
@@ -297,20 +519,20 @@ class GoogleDriveService {
       });
       return this.getStatus();
     } catch (err) {
+      if (this.stopping) throw err;
       const message = (err as Error).message;
       this.upsertSettings({
         google_drive_last_backup_status: 'error',
         google_drive_last_error: message,
       });
       throw err;
-    } finally {
-      this.backingUp = false;
     }
   }
 
   // ── Drive helpers ──────────────────────────────────────────────────────
 
-  private async getAuthorizedClient(): Promise<OAuth2Client> {
+  private async getAuthorizedClient(signal?: AbortSignal): Promise<OAuth2Client> {
+    if (signal?.aborted) throw createDriveShutdownError('Google Drive operation');
     const creds = getClientCredentials();
     if (!creds) throw new Error('Google Drive integration is not configured for this build');
     const tokens = this.readTokens();
@@ -322,34 +544,41 @@ class GoogleDriveService {
     // refresh_token when it's expired; persist whatever it hands back so the
     // next scheduled run doesn't have to refresh again.
     client.on('tokens', (refreshed) => {
+      if (this.stopping || this.terminalCleanup || signal?.aborted) return;
       const merged = { ...this.readTokens(), ...refreshed };
       this.writeTokens(merged);
     });
     return client;
   }
 
-  private async fetchAccountEmail(client: OAuth2Client): Promise<string | null> {
-    const accessToken = (await client.getAccessToken()).token;
+  private async fetchAccountEmail(client: OAuth2Client, signal?: AbortSignal): Promise<string | null> {
+    const accessToken = (await waitForDriveOperation(() => client.getAccessToken(), signal, DRIVE_REQUEST_TIMEOUT_MS, 'Google Drive access token refresh', (operation) => this.trackDriveOperation(operation), () => this.stopping)).token;
     if (!accessToken) return null;
     const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
-      signal: AbortSignal.timeout(8_000),
+      signal: requestSignal(signal, 8_000),
     });
+    this.throwIfStopping(signal);
     if (!res.ok) return null;
     const data = (await res.json().catch(() => ({}))) as { email?: string };
+    this.throwIfStopping(signal);
     return data.email || null;
   }
 
-  private async ensureAppFolder(drive: ReturnType<typeof google.drive>): Promise<string> {
+  private async ensureAppFolder(drive: ReturnType<typeof google.drive>, signal?: AbortSignal): Promise<string> {
+    this.throwIfStopping(signal);
     const existingId = this.readSettings().google_drive_folder_id;
     if (existingId) {
       // Confirm it still exists / is still visible to this scope before reusing it.
       try {
-        const res = await drive.files.get({ fileId: existingId, fields: 'id, trashed' });
+        const res = await drive.files.get({ fileId: existingId, fields: 'id, trashed' }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+        this.throwIfStopping(signal);
         if (res.data.id && !res.data.trashed) return res.data.id;
       } catch {
         // fall through and re-resolve / recreate below
       }
+
+      this.throwIfStopping(signal);
     }
 
     const found = await drive.files.list({
@@ -357,19 +586,22 @@ class GoogleDriveService {
       fields: 'files(id, name)',
       spaces: 'drive',
       pageSize: 1,
-    });
+    }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+    this.throwIfStopping(signal);
     const existing = found.data.files?.[0]?.id;
     if (existing) return existing;
 
     const created = await drive.files.create({
       requestBody: { name: DRIVE_BACKUP_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
       fields: 'id',
-    });
+    }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+    this.throwIfStopping(signal);
     if (!created.data.id) throw new Error('Google Drive did not return a folder id');
     return created.data.id;
   }
 
-  private async applyRetention(drive: ReturnType<typeof google.drive>, folderId: string): Promise<void> {
+  private async applyRetention(drive: ReturnType<typeof google.drive>, folderId: string, signal: AbortSignal): Promise<void> {
+    this.throwIfStopping(signal);
     const retention = this.retentionFromSettings(this.readSettings());
     const files: { id: string; createdTime: string }[] = [];
     let pageToken: string | undefined;
@@ -381,7 +613,8 @@ class GoogleDriveService {
         pageSize: 1000,
         pageToken,
         spaces: 'drive',
-      });
+      }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+      this.throwIfStopping(signal);
       files.push(...(res.data.files || [])
         .filter((f): f is { id: string; name?: string | null; createdTime: string } => Boolean(f.id && f.createdTime))
         .map((f) => ({ id: f.id, createdTime: f.createdTime })));
@@ -393,8 +626,10 @@ class GoogleDriveService {
     for (let i = 0; i < toDelete.length; i += 5) {
       await Promise.all(toDelete.slice(i, i + 5).map(async (id) => {
         try {
-          await drive.files.delete({ fileId: id });
+          this.throwIfStopping(signal);
+          await drive.files.delete({ fileId: id }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
         } catch (err) {
+          if (this.stopping || signal.aborted) throw err;
           log.warn('[GoogleDrive] retention delete failed', id, (err as Error).message);
         }
       }));
@@ -407,21 +642,31 @@ class GoogleDriveService {
     return DEFAULT_RETENTION;
   }
 
+  private throwIfStopping(signal?: AbortSignal): void {
+    if (signal?.aborted || this.stopping || this.terminalCleanup) {
+      throw createDriveShutdownError('Google Drive operation');
+    }
+  }
+
   // ── Loopback OAuth flow ────────────────────────────────────────────────
 
-  private runLoopbackFlow(creds: { clientId: string; clientSecret: string }): Promise<{ code: string; redirectUri: string }> {
+  private runLoopbackFlow(creds: { clientId: string; clientSecret: string }, signal?: AbortSignal): Promise<{ code: string; redirectUri: string }> {
     return new Promise((resolve, reject) => {
       const state = crypto.randomBytes(16).toString('hex');
       let settled = false;
       let redirectUri = '';
+      let abort: () => void = () => {};
 
       const finish = (fn: () => void) => {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
+        signal?.removeEventListener('abort', abort);
         try { server.close(); } catch { /* already closing */ }
         fn();
       };
+
+      abort = () => finish(() => reject(createDriveShutdownError('Google Drive connection')));
 
       const server = http.createServer((req, res) => {
         let reqUrl: URL;
@@ -455,6 +700,12 @@ class GoogleDriveService {
       const timeout = setTimeout(() => {
         finish(() => reject(new Error('Timed out waiting for Google authorization')));
       }, LOOPBACK_TIMEOUT_MS);
+
+      if (signal?.aborted) {
+        abort();
+        return;
+      }
+      signal?.addEventListener('abort', abort, { once: true });
 
       server.on('error', (err) => finish(() => reject(err)));
 

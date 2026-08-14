@@ -1,11 +1,13 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, throwIfDatabaseMaintenanceAborted, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
 import * as fs from 'fs';
 import * as path from 'path';
+import { asyncHandler } from '../middleware/async-handler';
+import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 
 const router = Router();
 
@@ -106,9 +108,10 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
 
 router.post('/import', requireRole('owner'),
   (req: Request, res: Response, next: () => void) => (req.body?.overwrite ? requireMasterPin(req, res, next) : next()),
-  async (req: Request, res: Response) => {
-  return withDatabaseMaintenanceLock(async () => {
+  asyncHandler(async (req: Request, res: Response) => {
+  return withDatabaseMaintenanceLock(async (signal) => {
     try {
+    throwIfDatabaseMaintenanceAborted(signal);
     const { data, overwrite } = req.body;
 
     if (!data || !data.data || typeof data.data !== 'object') {
@@ -181,7 +184,8 @@ router.post('/import', requireRole('owner'),
       });
     }
 
-    const { path: backupPath } = await createBackupUnlocked();
+    const { path: backupPath } = await createBackupUnlocked(undefined, signal);
+    throwIfDatabaseMaintenanceAborted(signal);
     const hasVersionMismatch = importSchemaVersion !== getCurrentSchemaVersion();
 
     if (hasVersionMismatch) {
@@ -192,9 +196,11 @@ router.post('/import', requireRole('owner'),
     db.pragma('foreign_keys = OFF');
 
     try {
+      throwIfDatabaseMaintenanceAborted(signal);
       db.exec('BEGIN IMMEDIATE');
       try {
       for (const tableName of importedTables) {
+        throwIfDatabaseMaintenanceAborted(signal);
         if (EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
         // Validate table name to prevent SQL injection
         if (!isSafeIdentifier(tableName)) {
@@ -246,6 +252,7 @@ router.post('/import', requireRole('owner'),
         );
         
         for (const row of rows) {
+          throwIfDatabaseMaintenanceAborted(signal);
           // Exported secret fields are deliberately redacted. Never import the
           // marker itself as a real credential (which would make it known).
           if (
@@ -279,6 +286,7 @@ router.post('/import', requireRole('owner'),
       if (newForeignKeyViolations.length > 0) {
         throw new Error(`Import would introduce ${newForeignKeyViolations.length} new foreign-key violation(s)`);
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       db.exec('COMMIT');
       clearUserAuthCache();
       clearInMemoryRevokedTokens();
@@ -304,8 +312,8 @@ router.post('/import', requireRole('owner'),
       console.error('[DB Import] Error:', error);
       res.status(500).json({ error: 'Import failed' });
     }
-  });
-});
+  }, getHttpRequestSignal(req));
+}));
 
 function getTableColumns(db: Database.Database, tableName: string): string[] {
   if (!isSafeIdentifier(tableName)) {
@@ -320,9 +328,9 @@ function getTableColumns(db: Database.Database, tableName: string): string[] {
   }
 }
 
-router.post('/backup', requireRole('owner'), requireMasterPin, async (req: Request, res: Response) => {
+router.post('/backup', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { path: backupPath, schemaVersion } = await createBackup();
+    const { path: backupPath, schemaVersion } = await createBackup(undefined, getHttpRequestSignal(req));
     res.json({ 
       success: true, 
       path: backupPath,
@@ -333,9 +341,9 @@ router.post('/backup', requireRole('owner'), requireMasterPin, async (req: Reque
     console.error('[DB Backup] Error:', error);
     res.status(500).json({ error: 'Backup failed' });
   }
-});
+}));
 
-router.get('/download', requireRole('owner'), requireMasterPin, async (_req: Request, res: Response) => {
+router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   let tempDir: string | null = null;
   try {
     const dbPath = getDbPath();
@@ -346,11 +354,40 @@ router.get('/download', requireRole('owner'), requireMasterPin, async (_req: Req
 
     // Download a clean checkpointed backup rather than streaming the live WAL
     // file. The temporary snapshot is independent of later restore/reset work.
-    await createBackup(snapshotPath);
-    res.download(snapshotPath, filename, (error) => {
-      try { if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
-      if (error) console.error('[DB Download] Stream error:', error);
+    await createBackup(snapshotPath, getHttpRequestSignal(req));
+    const signal = getHttpRequestSignal(req);
+    const download = new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const onAbort = (): void => {
+        try { res.destroy(); } catch (error) { settle(error as Error); return; }
+      };
+      const settle = (error?: Error): void => {
+        if (settled) return;
+        settled = true;
+        signal?.removeEventListener('abort', onAbort);
+        if (error) reject(error);
+        else resolve();
+      };
+      res.once('finish', () => settle());
+      res.once('close', () => settle());
+      signal?.addEventListener('abort', onAbort, { once: true });
+      if (signal?.aborted) {
+        onAbort();
+        return;
+      }
+      try {
+        res.download(snapshotPath, filename, (error) => settle(error));
+      } catch (error) {
+        settle(error as Error);
+      }
     });
+    void trackHttpRequestWork(req, download)
+      .finally(() => {
+        try { if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
+      })
+      .catch((error) => {
+        console.error('[DB Download] Stream error:', (error as Error).message);
+      });
   } catch (error: any) {
     if (tempDir) {
       try { fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
@@ -358,7 +395,7 @@ router.get('/download', requireRole('owner'), requireMasterPin, async (_req: Req
     console.error('[DB Download] Error:', error);
     res.status(500).json({ error: 'Download failed' });
   }
-});
+}));
 
 router.get('/tables', requireRole('owner'), (req: Request, res: Response) => {
   try {

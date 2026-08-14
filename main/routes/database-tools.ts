@@ -2,9 +2,11 @@ import { Router, Request, Response } from 'express';
 import { resetDatabaseWithBackup, listBackups, deleteBackup } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
+import { asyncHandler } from '../middleware/async-handler';
 import { runHealthCheck, applySafeFixes } from '../services/schema-health';
 import { isMasterPinAvailable, isMasterPinSet, resetMasterPin } from '../services/master-pin';
 import { clearJWTSecretCache } from './auth';
+import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
@@ -79,12 +81,12 @@ router.post('/master-pin/reset', requireRole('owner'), (req: Request, res: Respo
 
 const INITIALIZE_CONFIRM_PHRASE = 'INITIALIZE';
 
-router.post('/initialize', requireRole('owner'), requireMasterPin, async (req: Request, res: Response) => {
+router.post('/initialize', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   if (req.body?.confirmation_phrase !== INITIALIZE_CONFIRM_PHRASE) {
     return res.status(400).json({ error: `Type "${INITIALIZE_CONFIRM_PHRASE}" to confirm` });
   }
   try {
-    const { backupPath } = await resetDatabaseWithBackup();
+    const { backupPath } = await resetDatabaseWithBackup(getHttpRequestSignal(req));
     clearUserAuthCache();
     clearInMemoryRevokedTokens();
     clearJWTSecretCache();
@@ -93,6 +95,6 @@ router.post('/initialize', requireRole('owner'), requireMasterPin, async (req: R
     console.error('[DB Tools] initialize error:', error);
     res.status(500).json({ error: 'Initialize failed' });
   }
-});
+}));
 
 export const databaseToolsRoutes = router;

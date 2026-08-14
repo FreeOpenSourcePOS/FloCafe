@@ -6,6 +6,8 @@ import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, prin
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
+import { asyncHandler } from '../middleware/async-handler';
+import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
@@ -88,17 +90,22 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // GET /api/printers/detect — detect connected USB/network printers
-router.get('/detect', async (_req: Request, res: Response) => {
+router.get('/detect', asyncHandler(async (req: Request, res: Response) => {
   try {
-    const printers = await detectConnectedPrinters();
+    const printers = await detectConnectedPrinters(getHttpRequestSignal(req));
     console.log('[Printer] Detected printers:', printers);
     res.json({ printers });
   } catch (error: any) {
+    if (getHttpRequestSignal(req)?.aborted) {
+      if (!res.headersSent) res.status(503).end();
+      else if (!res.writableEnded) res.destroy();
+      return;
+    }
     console.error('[Printer] Detection error:', error);
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 // GET /api/printers/supported — list known printer profiles
 router.get('/supported', (_req: Request, res: Response) => {
@@ -264,7 +271,7 @@ router.post('/:id/set-default', requireRole('owner', 'manager'), (req: Request, 
 });
 
 // POST /api/printers/:id/test — send a test print job
-router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -277,10 +284,10 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
     switch (printer.connection_type) {
       case 'network':
         if (!printer.ip_address) return res.status(400).json({ error: 'No IP address configured' });
-        result = await printViaNetwork(printer.ip_address, printer.port || 9100, testData);
+        result = await printViaNetwork(printer.ip_address, printer.port || 9100, testData, getHttpRequestSignal(req));
         break;
       case 'usb':
-        result = await printViaUSB(testData, printer.name);
+        result = await printViaUSB(testData, printer.name, getHttpRequestSignal(req));
         break;
       case 'webusb':
         // WebUSB is handled entirely in the browser; return the bytes for the frontend to send
@@ -299,10 +306,10 @@ router.post('/:id/test', requireRole('owner', 'manager'), async (req: Request, r
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 // POST /api/printers/print-bill — print bill via backend (desktop app)
-router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
+router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
     console.log('[Print Bill] Request received', { useUnicode, isReprint, preview });
@@ -430,7 +437,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
-    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint);
+    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req));
     console.log('[Print Bill] Print completed', result);
 
     if (result.ok) {
@@ -443,7 +450,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), async (re
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 // Groups order items across active, fully-configured kitchen stations (has both
 // a category allowlist and a linked printer). Items whose category isn't claimed
@@ -497,7 +504,7 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
 }
 
 // POST /api/printers/print-kot — print KOT via backend (desktop app)
-router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req: Request, res: Response) => {
+router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
   // Coarser than auto_print_kot — when this is off, no KOT print command
   // should ever be sent, automatic or manual (issue #133).
   if (!isKotPrintingEnabled()) {
@@ -542,14 +549,14 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req
     if (stationName || items) {
       const kotItems = items || orderItems;
       const station = stationName || 'Kitchen';
-      const result = await printKOTDetailed(order, kotItems, station, useUnicode);
+      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req));
       success = result.ok;
       failure = result.ok ? null : result;
       warnings.push(...(result.warnings || []));
     } else {
       const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
       for (const group of groups) {
-        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined);
+        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req));
         success = success && result.ok;
         warnings.push(...(result.warnings || []));
         if (!result.ok && !failure) failure = result;
@@ -566,6 +573,6 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), async (req
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 export const printerRoutes = router;

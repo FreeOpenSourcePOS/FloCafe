@@ -33,6 +33,7 @@ const {
 } = require('./helpers/test-setup');
 
 const { productRoutes } = require('../main/routes/products');
+const { closeHttpServer, installHttpShutdownTracking, cancelHttpShutdownWork } = require('../main/shutdown');
 const dns = require('dns');
 const https = require('https');
 const { EventEmitter } = require('events');
@@ -295,11 +296,15 @@ async function main() {
 
     // E7: Node's automatic address-family selection requests an address list.
     // The proxy must return its one validated, pinned IP in that shape.
-    const originalLookup = dns.promises.lookup;
+    const originalResolver = (dns.promises as any).Resolver;
     const originalRequest = https.request;
     let requestOptions: any;
     let pinnedAddresses: any;
-    dns.promises.lookup = async () => [{ address: '93.184.216.34', family: 4 }];
+    (dns.promises as any).Resolver = class {
+      resolve4 = async () => ['93.184.216.34'];
+      resolve6 = async () => [];
+      cancel = () => undefined;
+    };
     https.request = (options: any, callback: (response: any) => void) => {
       requestOptions = options;
       options.lookup('example.com', { all: true }, (_error: unknown, addresses: unknown) => {
@@ -325,8 +330,15 @@ async function main() {
       assertEqual(res.status, 200, 'E7a: Pinned HTTPS image is fetched');
       assertEqual(Array.isArray(pinnedAddresses), true, 'E7b: Pinned lookup returns an address list when requested');
       assertEqual(pinnedAddresses[0].address, '93.184.216.34', 'E7c: Pinned lookup returns only validated IP');
+
+      res = await api(baseUrl, '/api/products/fetch-url', {
+        method: 'POST', headers: authHeader,
+        body: { url: 'https://93.184.216.34/photo.webp' },
+      });
+      assertEqual(res.status, 200, 'E7d: Public IP image URL is fetched');
+      assertEqual(requestOptions.hostname, '93.184.216.34', 'E7e: Public IP URL remains pinned to its literal address');
     } finally {
-      dns.promises.lookup = originalLookup;
+      (dns.promises as any).Resolver = originalResolver;
       https.request = originalRequest;
     }
 
@@ -393,6 +405,57 @@ async function main() {
     // Verify addon group link exists
     const agpCount = db.prepare('SELECT COUNT(*) as count FROM addon_group_product WHERE product_id = ?').get(res.data.product.id);
     assertEqual(agpCount.count, 1, 'G1: Addon group link created');
+
+    // E8: Shutdown aborts a redirect hop that is blocked in DNS resolution.
+    const redirectResolver = (dns.promises as any).Resolver;
+    const redirectRequest = https.request;
+    let secondLookupStarted!: () => void;
+    const secondLookup = new Promise<void>((resolve) => { secondLookupStarted = resolve; });
+    let resolverCanceled = false;
+    (dns.promises as any).Resolver = class {
+      resolve4 = (hostname: string) => {
+        if (hostname === 'redirect.example') return Promise.resolve(['93.184.216.34']);
+        secondLookupStarted();
+        return new Promise<string[]>((_resolve, reject) => {
+          this.cancel = () => {
+            resolverCanceled = true;
+            const error = new Error('DNS lookup cancelled') as NodeJS.ErrnoException;
+            error.code = 'ECANCELLED';
+            reject(error);
+          };
+        });
+      };
+      resolve6 = async () => [];
+      cancel = () => { resolverCanceled = true; };
+    };
+    https.request = (_options: any, callback: (response: any) => void) => {
+      const request = new EventEmitter() as any;
+      request.end = () => {
+        const response = new EventEmitter() as any;
+        response.statusCode = 302;
+        response.headers = { location: 'https://next.example/photo.webp' };
+        callback(response);
+        response.emit('end');
+      };
+      request.destroy = () => undefined;
+      return request;
+    };
+    installHttpShutdownTracking(server);
+    try {
+      const redirectResponse = api(baseUrl, '/api/products/fetch-url', {
+        method: 'POST', headers: authHeader,
+        body: { url: 'https://redirect.example/photo.webp' },
+      });
+      await secondLookup;
+      cancelHttpShutdownWork();
+      await closeHttpServer(server, 'product redirect shutdown');
+      res = await redirectResponse;
+      assertEqual(resolverCanceled, true, 'E8: Shutdown cancels the blocked redirected DNS lookup');
+      assertEqual(res.status, 504, 'E8: Shutdown aborts a blocked redirected DNS lookup');
+    } finally {
+      (dns.promises as any).Resolver = redirectResolver;
+      https.request = redirectRequest;
+    }
 
     console.log('\n' + '='.repeat(50));
     const results = require('./helpers/test-setup').getResults();

@@ -21,7 +21,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 };
 
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
-const { sendEvent, TELEMETRY_URL } = require('../main/services/telemetry');
+const { telemetry, sendEvent, TELEMETRY_URL } = require('../main/services/telemetry');
 
 async function main() {
   initDatabase();
@@ -47,8 +47,42 @@ async function main() {
     assert.equal(requestBody?.app, 'flocafe');
     assert.equal(requestBody?.app_version, '2.7.2-test');
 
-    globalThis.fetch = (async () => new Response('rejected', { status: 503 })) as typeof fetch;
+    let bodyCancelled = false;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 204,
+      body: { cancel: async () => { bodyCancelled = true; } },
+    }) as unknown as Response) as typeof fetch;
+    assert.equal(await sendEvent('app_launch'), true, 'telemetry delivery succeeds with a response body');
+    assert.equal(bodyCancelled, true, 'telemetry cancels the response body before settling');
+
+    let non2xxBodyCancelled = false;
+    globalThis.fetch = (async () => ({
+      ok: false,
+      status: 503,
+      body: { cancel: async () => { non2xxBodyCancelled = true; } },
+    }) as unknown as Response) as typeof fetch;
     assert.equal(await sendEvent('daily_ping'), false, 'non-2xx telemetry is reported as undelivered');
+    assert.equal(non2xxBodyCancelled, true, 'telemetry cancels the response body on non-2xx responses');
+
+    // Verify telemetry.stop() drains and cancels non-2xx in-flight work before settling
+    let stopBodyCancelled = false;
+    let finishFetch: () => void = () => {};
+    const fetchDeferred = new Promise<Response>((resolve) => {
+      finishFetch = () => resolve({
+        ok: false,
+        status: 500,
+        body: { cancel: async () => { stopBodyCancelled = true; } },
+      } as unknown as Response);
+    });
+    globalThis.fetch = (() => fetchDeferred) as unknown as typeof fetch;
+
+    const inFlightOp = sendEvent('app_launch');
+    const stopPromise = telemetry.stop();
+    finishFetch();
+    assert.equal(await inFlightOp, false);
+    await stopPromise;
+    assert.equal(stopBodyCancelled, true, 'telemetry.stop() drains in-flight non-2xx requests and cancels response body');
 
     set.run('telemetry_enabled', 'false', now());
     let calledWhileDisabled = false;

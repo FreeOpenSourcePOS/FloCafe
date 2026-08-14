@@ -32,8 +32,9 @@ const {
   now,
   createApp,
 } = require('./helpers/test-setup');
+const { withDatabaseMaintenanceLock, isDatabaseMaintenanceActive } = require('../main/db');
 const { settingsRoutes } = require('../main/routes/settings');
-const { cloudSync } = require('../main/services/cloud-sync');
+const { cloudSync, CloudSyncService } = require('../main/services/cloud-sync');
 
 function setSettings(entries: Record<string, string>) {
   const db = getDatabase();
@@ -250,6 +251,131 @@ async function run() {
       .set(owner.authHeader);
     assertEqual(unavailableUpstream.status, 502, 'registered cloud outage remains distinguishable as a gateway error');
     assertEqual(upstreamCalls, 2, 'registered cloud outage attempts the upstream request');
+
+    const service = cloudSync as any;
+    service.settings = {
+      server_url: 'https://blue.flopos.com/',
+      api_key: 'registered-api-key',
+      pos_hash: 'registered-pos-hash',
+      command_polling_enabled: false,
+      sync_enabled: false,
+    };
+    const originalPreferencesFetch = globalThis.fetch;
+    let preferencesFetchStarted!: () => void;
+    const preferencesFetchStartedPromise = new Promise<void>((resolve) => { preferencesFetchStarted = resolve; });
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      preferencesFetchStarted();
+      const signal = init?.signal as AbortSignal;
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    })) as typeof fetch;
+    try {
+      const requestSignal = new AbortController();
+      const preferencesRequest = cloudSync.updateEmailPreferences({ product_updates: true }, requestSignal.signal);
+      await preferencesFetchStartedPromise;
+      requestSignal.abort();
+      let preferencesCancelled = false;
+      try { await preferencesRequest; } catch { preferencesCancelled = true; }
+      assert(preferencesCancelled, 'cloud preference updates honor request cancellation');
+    } finally {
+      globalThis.fetch = originalPreferencesFetch;
+    }
+
+    setSettings({
+      cloud_deletion_request_id: 'deletion-id',
+      cloud_deletion_status_token: 'deletion-status-token',
+      cloud_deletion_status: 'pending',
+    });
+    const originalDeletionStatusFetch = globalThis.fetch;
+    let deletionStatusFetchStarted!: () => void;
+    const deletionStatusFetchStartedPromise = new Promise<void>((resolve) => { deletionStatusFetchStarted = resolve; });
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      deletionStatusFetchStarted();
+      const signal = init?.signal as AbortSignal;
+      if (signal.aborted) reject(signal.reason);
+      else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+    })) as typeof fetch;
+    try {
+      const requestSignal = new AbortController();
+      const deletionStatusRequest = cloudSync.getDeletionRequestStatus({ allowRemote: true, signal: requestSignal.signal });
+      await deletionStatusFetchStartedPromise;
+      requestSignal.abort();
+      let deletionStatusCancelled = false;
+      try { await deletionStatusRequest; } catch { deletionStatusCancelled = true; }
+      assert(deletionStatusCancelled, 'cloud account status honors request cancellation');
+    } finally {
+      globalThis.fetch = originalDeletionStatusFetch;
+    }
+
+    setSettings({
+      cloud_api_key: 'registered-api-key',
+      cloud_pos_hash: 'registered-pos-hash',
+      cloud_registration_status: 'registered',
+      cloud_services_disabled_by_user: 'false',
+      cloud_deletion_status: '',
+      cloud_command_polling_enabled: '1',
+      cloud_sync_enabled: '0',
+    });
+    service.settings = {
+      server_url: 'https://blue.flopos.com/',
+      api_key: 'registered-api-key',
+      pos_hash: 'registered-pos-hash',
+      command_polling_enabled: true,
+      sync_enabled: false,
+    };
+    const originalPollingFetch = globalThis.fetch;
+    let pollingStarted!: () => void;
+    const pollingStartedPromise = new Promise<void>((resolve) => { pollingStarted = resolve; });
+    globalThis.fetch = (async (_url: string | URL, init?: RequestInit) => {
+      pollingStarted();
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal as AbortSignal;
+        const rejectOnAbort = () => reject(signal.reason || new Error('poll cancelled'));
+        if (signal.aborted) rejectOnAbort();
+        else signal.addEventListener('abort', rejectOnAbort, { once: true });
+      });
+    }) as typeof fetch;
+    try {
+      service.trackCommandPoll(service.pollCommands());
+      await pollingStartedPromise;
+      const pollingShutdown = cloudSync.shutdown();
+      const settled = await Promise.race([
+        pollingShutdown.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1_000)),
+      ]);
+      assertEqual(settled, true, 'cloud shutdown cancels and awaits an active command poll');
+      await pollingShutdown;
+    } finally {
+      globalThis.fetch = originalPollingFetch;
+    }
+
+    const queuedService = new CloudSyncService();
+    setSettings({ diagnostics_consent: 'true' });
+    let releaseMaintenance!: () => void;
+    const maintenance = withDatabaseMaintenanceLock(() => new Promise<void>((resolve) => {
+      releaseMaintenance = resolve;
+    }));
+    for (let attempt = 0; attempt < 20 && !isDatabaseMaintenanceActive(); attempt++) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    assert(isDatabaseMaintenanceActive(), 'database maintenance starts for queued CloudSync work');
+    queuedService.reportDiagnostic({
+      event_id: 'queued-cloud-sync-shutdown-test',
+      event_code: 'shutdown.test',
+      occurred_at: new Date().toISOString(),
+      severity: 'info',
+      metadata: { test: true },
+    });
+    const queuedShutdown = queuedService.shutdown();
+    const queuedSettled = await Promise.race([
+      queuedShutdown.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1_000)),
+    ]);
+    assertEqual(queuedSettled, true, 'CloudSync shutdown cancels database-maintenance queued work');
+    releaseMaintenance();
+    await maintenance;
+    const queuedDiagnostic = db.prepare('SELECT 1 FROM store_diagnostics_outbox WHERE event_id = ?').get('queued-cloud-sync-shutdown-test');
+    assertEqual(queuedDiagnostic, undefined, 'cancelled queued CloudSync work does not write after shutdown');
 
     const results = getResults();
     if (results.failed > 0) throw new Error(`${results.failed} cloud account status assertions failed`);

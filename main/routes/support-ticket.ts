@@ -2,8 +2,10 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import * as os from 'os';
 import { requireRole } from '../middleware/security';
+import { asyncHandler } from '../middleware/async-handler';
 import { cloudSync } from '../services/cloud-sync';
 import { getDatabase } from '../db';
+import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
@@ -91,7 +93,7 @@ router.get('/:clientTicketId/status', requireRole(...supportRoles), (req: Reques
   res.json({ status: row.status, support_code: row.support_code, last_error: row.last_error });
 });
 
-router.post('/', requireRole(...supportRoles), async (req: Request, res: Response) => {
+router.post('/', requireRole(...supportRoles), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const subject = String(body.subject || '').trim().slice(0, 255);
   const message = String(body.message || '').trim().slice(0, 20000);
@@ -124,7 +126,7 @@ router.post('/', requireRole(...supportRoles), async (req: Request, res: Respons
     contact_email: contactEmail || undefined,
     contact_phone: String(body.contact_phone || profile.contact_phone).trim().slice(0, 50) || undefined,
     diagnostics,
-  });
+  }, getHttpRequestSignal(req));
   res.status(queued.queued ? 202 : 503).json({
     ...queued,
     status: queued.queued ? 'queued' : 'unavailable',
@@ -132,6 +134,6 @@ router.post('/', requireRole(...supportRoles), async (req: Request, res: Respons
       ? 'Your request is queued and will be sent when FloCafe is online.'
       : 'Cloud data deletion is in progress; please try again later.',
   });
-});
+}));
 
 export const supportTicketRoutes = router;

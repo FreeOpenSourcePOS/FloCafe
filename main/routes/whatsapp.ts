@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { requireRole } from '../middleware/security';
 import { asyncHandler } from '../middleware/async-handler';
 import { getDatabase, getSettingValue, upsertSettings } from '../db';
+import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import * as whatsapp from '../services/whatsapp';
 import * as QRCode from 'qrcode';
 
@@ -70,13 +71,13 @@ router.post('/disable', requireRole('owner', 'manager'), (_req: Request, res: Re
 router.post('/connect', requireRole('owner', 'manager'), asyncHandler(async (req, res) => {
   const { method, phone } = req.body ?? {};
   if (method === 'qr') {
-    res.json(await whatsapp.connectWithQr());
+    res.json(await trackHttpRequestWork(req, whatsapp.connectWithQr(getHttpRequestSignal(req))));
   } else if (method === 'pairing_code') {
     if (!phone) {
       res.status(400).json({ error: 'phone required for pairing code', reason: 'phone_required_pairing' });
       return;
     }
-    res.json(await whatsapp.connectWithPairingCode(String(phone)));
+    res.json(await trackHttpRequestWork(req, whatsapp.connectWithPairingCode(String(phone), getHttpRequestSignal(req))));
   } else {
     res.status(400).json({ error: 'method must be "qr" or "pairing_code"', reason: 'bad_connect_method' });
   }
@@ -98,14 +99,15 @@ router.post('/send', requireRole('owner', 'manager', 'cashier'), asyncHandler(as
     return;
   }
   const userId = (req as any).user?.userId ?? null;
-  const result = await whatsapp.sendMessage({
+  const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
     phoneE164: String(phone_e164),
     body: String(body),
     billId: bill_id != null ? Number(bill_id) : null,
     customerId: null,
     kind: (kind as any) || 'manual_reply',
     userId,
-  });
+    signal: getHttpRequestSignal(req),
+  }));
   if (!result.ok) {
     const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
     res.status(status).json({ error: result.error, reason: result.reason });
@@ -161,14 +163,15 @@ router.post('/inbox/:messageId/reply', requireRole('owner', 'manager', 'cashier'
     return;
   }
   const userId = (req as any).user?.userId ?? null;
-  const result = await whatsapp.sendMessage({
+  const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
     phoneE164: msg.phone_e164,
     body: String(body),
     billId: null,
     customerId: null,
     kind: 'manual_reply',
     userId,
-  });
+    signal: getHttpRequestSignal(req),
+  }));
   if (!result.ok) {
     const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
     res.status(status).json({ error: result.error, reason: result.reason });

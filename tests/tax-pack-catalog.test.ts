@@ -126,6 +126,29 @@ test('download rejects digest mismatches, signature tampering, and non-release U
   );
 });
 
+test('catalog discovery honors a caller cancellation signal', async () => {
+  const controller = new AbortController();
+  let fetchStarted!: () => void;
+  const fetchStartedPromise = new Promise<void>((resolve) => { fetchStarted = resolve; });
+  const fetchImpl: typeof fetch = async (_input, init) => new Promise<Response>((_resolve, reject) => {
+    fetchStarted();
+    const signal = init?.signal;
+    if (!signal) {
+      reject(new Error('catalog fetch did not receive a signal'));
+      return;
+    }
+    if (signal.aborted) reject(signal.reason);
+    else signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+  const request = fetchRemoteTaxPackCatalog(fetchImpl, controller.signal);
+  await fetchStartedPromise;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    setTimeout(() => reject(new Error('catalog fetch ignored caller cancellation')), 100);
+  });
+  controller.abort();
+  await assert.rejects(Promise.race([request, timeout]));
+});
+
 test('release builder signs exact pack bytes and preserves other catalog entries', () => {
   const { privateKey, publicKey } = generateKeyPairSync('ed25519');
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-tax-pack-release-'));

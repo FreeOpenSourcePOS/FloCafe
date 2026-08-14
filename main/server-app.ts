@@ -5,6 +5,7 @@ import * as http from 'http';
 import * as path from 'path';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
+import { closeServerResources, createShutdownCancellationError, getHttpRequestSignal, installHttpShutdownTracking, trackHttpRequestWork } from './shutdown';
 import { databaseMaintenanceMiddleware, getDatabase, isServerAppEnabled } from './db';
 import { getJWTSecret } from './routes/auth';
 import { authRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
@@ -12,6 +13,9 @@ import { getServerPort } from './server';
 import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, setServerAppPort } from './server-app-state';
 
 let serverApp: http.Server | null = null;
+let stopPromise: Promise<void> | null = null;
+let startReject: ((error: Error) => void) | null = null;
+let stopping = false;
 const SERVER_APP_PORT = getDefaultServerAppPort();
 
 type ServerAppUser = {
@@ -88,6 +92,10 @@ function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
 }
 
 async function forwardToMainApi(req: Request, res: Response, targetPath: string) {
+  return trackHttpRequestWork(req, forwardToMainApiImpl(req, res, targetPath));
+}
+
+async function forwardToMainApiImpl(req: Request, res: Response, targetPath: string) {
   const target = new URL(`/api${targetPath}`, `http://127.0.0.1:${getServerPort()}`);
   for (const [key, value] of Object.entries(req.query)) {
     if (Array.isArray(value)) {
@@ -106,19 +114,28 @@ async function forwardToMainApi(req: Request, res: Response, targetPath: string)
         ...(req.get('Idempotency-Key') ? { 'Idempotency-Key': req.get('Idempotency-Key')! } : {}),
       },
       body: ['GET', 'HEAD'].includes(req.method) ? undefined : JSON.stringify(req.body || {}),
+      signal: getHttpRequestSignal(req),
     });
     const text = await upstream.text();
     res.status(upstream.status);
     res.type(upstream.headers.get('content-type') || 'application/json');
     res.send(text);
   } catch (error: any) {
+    if (getHttpRequestSignal(req)?.aborted) {
+      if (!res.headersSent) res.status(503).end();
+      else if (!res.writableEnded) res.destroy();
+      return;
+    }
     console.error('[Server App] Main API forward failed:', error);
     res.status(502).json({ error: 'Could not reach the local POS API' });
   }
 }
 
 export function startServerApp(): Promise<void> {
+  stopPromise = null;
+  stopping = false;
   return new Promise((resolve, reject) => {
+    startReject = reject;
     const app: Express = express();
 
     app.use(cors(corsOptions));
@@ -259,18 +276,26 @@ export function startServerApp(): Promise<void> {
 
     let currentPort = SERVER_APP_PORT;
     let attempts = 0;
-    serverApp = http.createServer(app);
+    const listeningServer = http.createServer(app);
+    serverApp = listeningServer;
+    installHttpShutdownTracking(listeningServer);
 
     const tryListen = () => {
       const attemptedPort = currentPort;
       const onListening = () => {
-        serverApp?.off('error', onError);
+        if (stopping) {
+          try { listeningServer.close(); } catch { return; }
+          return;
+        }
+        startReject = null;
+        listeningServer.off('error', onError);
         setServerAppPort(attemptedPort);
         console.log(`[Server App] HTTP server running on http://localhost:${getActiveServerAppPort()}`);
         resolve();
       };
       const onError = (err: NodeJS.ErrnoException) => {
-        serverApp?.off('listening', onListening);
+        if (stopping) return;
+        listeningServer.off('listening', onListening);
         if (err.code === 'EADDRINUSE') {
           attempts++;
           if (attempts >= 10) {
@@ -287,21 +312,31 @@ export function startServerApp(): Promise<void> {
         reject(err);
       };
 
-      serverApp?.once('listening', onListening);
-      serverApp?.once('error', onError);
-      serverApp?.listen(attemptedPort, '0.0.0.0');
+      listeningServer.once('listening', onListening);
+      listeningServer.once('error', onError);
+      listeningServer.listen(attemptedPort, '0.0.0.0');
     };
 
     tryListen();
   });
 }
 
-export function stopServerApp(): void {
-  if (serverApp) {
-    serverApp.close();
-    serverApp = null;
-    console.log('[Server App] HTTP server stopped');
-  }
+export function stopServerApp(): Promise<void> {
+  if (stopPromise) return stopPromise;
+
+  stopping = true;
+  const rejectStart = startReject;
+  startReject = null;
+  rejectStart?.(createShutdownCancellationError('Server App'));
+  const serverToClose = serverApp;
+  // Mark the server unavailable immediately while active requests drain.
+  serverApp = null;
+
+  stopPromise = closeServerResources(serverToClose, null, 'Server App')
+    .then(() => {
+      console.log('[Server App] HTTP server stopped');
+    });
+  return stopPromise;
 }
 
 export function getServerAppPort(): number {

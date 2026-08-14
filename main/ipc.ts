@@ -39,7 +39,7 @@ function maskSetting(key: string, value: string): string {
   return value ? `****${value.slice(-4)}` : '';
 }
 
-export function registerIpcHandlers(): void {
+export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   // Database backup/restore
   ipcMain.handle('backup-database', async (event, pin?: string) => {
     const auth = authorizeMasterPin(pin, 'ipc:backup');
@@ -58,7 +58,7 @@ export function registerIpcHandlers(): void {
         return { success: false, error: 'Cancelled' };
       }
 
-      const { path: backupPath, schemaVersion } = await createBackup(result.filePath);
+      const { path: backupPath, schemaVersion } = await createBackup(result.filePath, shutdownSignal);
 
       console.log('[IPC] backup-database: Complete:', backupPath);
       return {
@@ -120,7 +120,10 @@ export function registerIpcHandlers(): void {
           return { success: false, error: 'Cancelled' };
         }
 
-        const restoreResult = await withDatabaseMaintenanceLock(() => restoreBackup(backupPath, false));
+        const restoreResult = await withDatabaseMaintenanceLock(
+          (signal) => restoreBackup(backupPath, false, signal),
+          shutdownSignal,
+        );
         clearUserAuthCache();
         clearInMemoryRevokedTokens();
         clearJWTSecretCache();
@@ -137,7 +140,10 @@ export function registerIpcHandlers(): void {
         };
       }
 
-      const restoreResult = await withDatabaseMaintenanceLock(() => restoreBackup(backupPath, true));
+      const restoreResult = await withDatabaseMaintenanceLock(
+        (signal) => restoreBackup(backupPath, true, signal),
+        shutdownSignal,
+      );
       clearUserAuthCache();
       clearInMemoryRevokedTokens();
       clearJWTSecretCache();
@@ -189,7 +195,7 @@ export function registerIpcHandlers(): void {
     }
 
     try {
-      const { backupPath } = await resetDatabaseWithBackup();
+      const { backupPath } = await resetDatabaseWithBackup(shutdownSignal);
       clearUserAuthCache();
       clearInMemoryRevokedTokens();
       clearJWTSecretCache();

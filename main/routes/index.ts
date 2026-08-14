@@ -41,6 +41,7 @@ import {
 import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import QRCode from 'qrcode';
+import { asyncHandler } from '../middleware/async-handler';
 
 // "Cloud POS is not registered" (thrown synchronously by cloud-sync.ts's
 // signedFetch, no network call even attempted) means this store was never
@@ -98,15 +99,15 @@ export function registerRoutes(app: Express): void {
   app.use('/api/support-ticket', supportTicketRoutes);
 
   // Tax preview
-  app.post('/api/tax/preview', async (req, res) => {
+  app.post('/api/tax/preview', asyncHandler(async (req, res) => {
     const { calculateTaxPreview } = await import('../services/tax');
     calculateTaxPreview(req, res);
-  });
+  }));
 
   // Categories available under the store's active country pack — powers the
   // product-page category selector. Read-only; pack activation/management
   // (installing/updating a pack) is a separate, later feature.
-  app.get('/api/tax/categories', requireRole('owner', 'manager'), async (req, res) => {
+  app.get('/api/tax/categories', requireRole('owner', 'manager'), asyncHandler(async (req, res) => {
     try {
       const { getActiveCountryPack, hasConfiguredTaxCategories, previewCategoryRate } = await import('../services/tax');
       const country = getSettingValue('country') || 'IN';
@@ -138,12 +139,12 @@ export function registerRoutes(app: Express): void {
       console.error('[API] Internal error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
-  });
+  }));
 
   // Mobile pairing code — proxies FloAdmin (see cloud-sync.ts generatePairingCode).
   // Cache-first: repeat GETs (e.g. reopening Settings) must NOT generate a new
   // code or disconnect paired devices — only a stale/missing cache calls out.
-  app.get('/api/mobile/pairing-code', requireRole('owner'), async (req, res) => {
+  app.get('/api/mobile/pairing-code', requireRole('owner'), asyncHandler(async (req, res) => {
     try {
       const cached = getCachedPairingCode();
       if (cached) {
@@ -163,10 +164,10 @@ export function registerRoutes(app: Express): void {
     } catch (error: any) {
       res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
     }
-  });
+  }));
 
   // Explicit rotate — disconnects every currently-paired RevFlo device.
-  app.post('/api/mobile/rotate-code', requireRole('owner'), async (req, res) => {
+  app.post('/api/mobile/rotate-code', requireRole('owner'), asyncHandler(async (req, res) => {
     try {
       const { code, expires_at } = await cloudSync.generatePairingCode(true);
       setCachedPairingCode(code, expires_at);
@@ -178,10 +179,10 @@ export function registerRoutes(app: Express): void {
     } catch (error: any) {
       res.status(mobilePairingErrorStatus(error)).json({ error: mobilePairingErrorMessage(error) });
     }
-  });
+  }));
 
   // Paired RevFlo devices for this store — Settings > Mobile App session list.
-  app.get('/api/mobile/devices', requireRole('owner'), async (req, res) => {
+  app.get('/api/mobile/devices', requireRole('owner'), asyncHandler(async (req, res) => {
     try {
       const devices = await cloudSync.listPairedDevices();
       res.json({ devices });
@@ -189,7 +190,7 @@ export function registerRoutes(app: Express): void {
       console.error('[API] FloAdmin request failed:', error);
       res.status(502).json({ error: 'Could not reach FloAdmin' });
     }
-  });
+  }));
 
   // Legacy/flat customer search endpoint (frontend uses this)
   app.get('/api/customers-search', requireRole('owner', 'manager', 'cashier', 'waiter'), (req, res) => {

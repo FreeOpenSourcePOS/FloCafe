@@ -3,19 +3,27 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
-import { initDatabase, closeDatabase, SchemaVersionMismatchError } from './db';
+import { initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError } from './db';
 import { startServer, stopServer, getLocalIP, isServerRunning } from './server';
 import { cloudSync } from './services/cloud-sync';
 import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry';
 import { googleDrive } from './services/google-drive';
 import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from './kds-server';
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
-import { initPrinter, printReceipt, printKOT } from './printers/thermal';
+import { initPrinter } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
-import { initFromDb as initWhatsAppFromDb, shutdown as shutdownWhatsApp } from './services/whatsapp';
+import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
+import {
+  createShutdownCoordinator,
+  createShutdownEntrypoints,
+  SHUTDOWN_TIMEOUT_MS,
+  waitForHttpShutdownWork,
+  type ShutdownEntrypointApp,
+  type ShutdownEntrypointProcess,
+} from './shutdown';
 
 // ── GPU compatibility ────────────────────────────────────────────────────────
 // On Windows, some systems hit "GPU process exited unexpectedly" (exit code
@@ -57,6 +65,7 @@ console.log('[Log] Log files location:', logPath);
 
 let updateAvailable = false;
 let updateDownloaded = false;
+let startupFailure = false;
 
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
@@ -166,7 +175,6 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
-let hasCleanedUp = false;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 const PORT = parseInt(process.env.PORT || '3001', 10);
@@ -356,13 +364,10 @@ function createTray(): void {
                 tray.destroy();
                 tray = null;
               }
+              // will-quit owns the same awaited cleanup sequence as every
+              // other Electron entrypoint. Do not force-exit while resources
+              // are still draining.
               app.quit();
-              // Fallback: force exit if will-quit does not fire in time
-              setTimeout(() => {
-                console.log('[Tray] app.quit() hung, forcing exit');
-                runCleanup();
-                app.exit(0);
-              }, 1000);
             }, 100);
           },
         },
@@ -428,11 +433,43 @@ function startMdns(): void {
   }
 }
 
-function stopMdns(): void {
-  if (bonjour) {
-    bonjour.unpublishAll(() => bonjour?.destroy());
-    bonjour = null;
-  }
+function stopMdns(): Promise<void> {
+  // Capture the instance before clearing the global reference. Bonjour invokes
+  // this callback later, after unpublishAll has finished.
+  const instance = bonjour;
+  bonjour = null;
+  if (!instance) return Promise.resolve();
+
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      finish(new Error(`Bonjour shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`));
+    }, SHUTDOWN_TIMEOUT_MS);
+
+    const finish = (unpublishError?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        instance.destroy();
+      } catch (destroyError) {
+        if (unpublishError) {
+          reject(new AggregateError([unpublishError, destroyError], 'Bonjour shutdown failed'));
+        } else {
+          reject(destroyError);
+        }
+        return;
+      }
+      if (unpublishError) reject(unpublishError);
+      else resolve();
+    };
+
+    try {
+      instance.unpublishAll(() => finish());
+    } catch (error) {
+      finish(error);
+    }
+  });
 }
 
 function createMenu(): void {
@@ -570,13 +607,16 @@ function showAbout(): void {
 
 async function initialize(): Promise<void> {
   try {
+    if (isShutdownRequested()) return;
     console.log('[Flo] Initializing...');
 
     console.log('[Flo] Initializing database...');
     initDatabase();
+    if (isShutdownRequested()) return;
 
     console.log('[Flo] Starting local server...');
     await startServer();
+    if (isShutdownRequested()) return;
 
     cloudSync.start();
     telemetry.start();
@@ -584,9 +624,11 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Starting KDS server on port 3002...');
     await startKdsServer();
+    if (isShutdownRequested()) return;
 
     console.log('[Flo] Starting Server App on port 3003...');
     await startServerApp();
+    if (isShutdownRequested()) return;
 
     console.log('[Flo] Initializing WhatsApp service...');
     initWhatsAppFromDb();
@@ -596,9 +638,10 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Initializing printer...');
     await initPrinter();
+    if (isShutdownRequested()) return;
 
     console.log('[Flo] Registering IPC handlers...');
-    registerIpcHandlers();
+    registerIpcHandlers(shutdownSignal);
 
     ipcMain.handle('get-update-status', () => ({
       status: updateDownloaded ? 'ready-to-install' as const
@@ -651,12 +694,25 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Ready!');
   } catch (error) {
     console.error('[Flo] Initialization error:', error);
+    const errorDetails = error as { code?: unknown; name?: unknown } | null;
+    const expectedShutdownCancellation = errorDetails?.code === 'ERR_SHUTDOWN_ABORTED'
+      || errorDetails?.code === 'ABORT_ERR'
+      || errorDetails?.name === 'AbortError';
+    if (!expectedShutdownCancellation) startupFailure = true;
+    if (isShutdownRequested()) {
+      try {
+        await runCleanup();
+      } catch (cleanupError) {
+        console.error('[Flo] Cleanup after interrupted initialization failed:', cleanupError);
+      }
+      return;
+    }
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
 
     // Best-effort: report the fatal startup failure so support can see which
     // installs are stuck on a stale build without waiting for a user to
-    // describe the error message themselves. Never let this delay/block the
-    // actual quit — db may not even be open yet depending on where init failed.
+    // describe the error message themselves. The cleanup below remains safe
+    // even when initialization failed before the database or listeners opened.
     try {
       const payload: Record<string, unknown> = {
         error_message: String(error instanceof Error ? error.message : error).slice(0, 500),
@@ -670,8 +726,14 @@ async function initialize(): Promise<void> {
       console.error('[Flo] Failed to report startup error via telemetry:', telemetryError);
     }
 
-    app.quit();
-    process.exit(1);
+    isQuitting = true;
+    try {
+      await runCleanup();
+    } catch (cleanupError) {
+      console.error('[Flo] Cleanup after initialization failure failed:', cleanupError);
+    }
+    // Cleanup has settled (or reported its bounded failure) before exiting.
+    app.exit(1);
   }
 }
 
@@ -691,73 +753,59 @@ app.on('activate', () => {
   }
 });
 
-// --- Cleanup function (idempotent — safe to call from multiple places) ---
-function runCleanup(): void {
-  if (hasCleanedUp) return;
-  hasCleanedUp = true;
-  console.log('[Flo] Running cleanup...');
+// --- Cleanup function (idempotent — safe to call from every entrypoint) ---
+const cleanupCoordinator = createShutdownCoordinator(() => [
+  {
+    name: 'tray',
+    run: () => {
+      const currentTray = tray;
+      tray = null;
+      if (currentTray) currentTray.destroy();
+    },
+  },
+  // The Server App can be forwarding an active request to the main API, so
+  // drain it before closing the API listener it depends on.
+  { name: 'Server App', run: () => stopServerApp(), blocksDatabase: true },
+  { name: 'Main server', run: () => stopServer(), blocksDatabase: true },
+  { name: 'KDS server', run: () => stopKdsServer(), blocksDatabase: true },
+  { name: 'cloud sync', run: () => cloudSync.shutdown(), blocksDatabase: true },
+  { name: 'telemetry', run: () => telemetry.stop(), blocksDatabase: true },
+  { name: 'Google Drive', run: () => googleDrive.stop(), blocksDatabase: true },
+  { name: 'WhatsApp', run: () => shutdownWhatsApp(), blocksDatabase: true },
+  { name: 'Bonjour', run: () => stopMdns() },
+  { name: 'HTTP handler cleanup', run: () => waitForHttpShutdownWork(), blocksDatabase: true },
+  { name: 'database admission', run: () => beginDatabaseShutdown(), blocksDatabase: true },
+  { name: 'database requests', run: () => waitForDatabaseRequests(), blocksDatabase: true },
+  // Database closure is deliberately last: all HTTP and WebSocket work must
+  // have settled before handlers can lose access to SQLite.
+  { name: 'database', run: () => closeDatabase(), databaseClose: true },
+], { onFatalTimeout: () => app.exit(1) });
 
-  // Destroy tray to prevent ghost icons on X11/GNOME/KDE
-  if (tray) {
-    try { tray.destroy(); } catch (e) { console.error('[Flo] tray.destroy error:', e); }
-    tray = null;
-  }
-
-  // Tear down services — each wrapped so one failure doesn't block others
-  try { cloudSync.stop(); } catch (e) { console.error('[Flo] cloudSync.stop error:', e); }
-  try { telemetry.stop(); } catch (e) { console.error('[Flo] telemetry.stop error:', e); }
-  try { googleDrive.stop(); } catch (e) { console.error('[Flo] googleDrive.stop error:', e); }
-  try { shutdownWhatsApp(); } catch (e) { console.error('[Flo] shutdownWhatsApp error:', e); }
-  try { stopMdns(); } catch (e) { console.error('[Flo] stopMdns error:', e); }
-  try { stopServerApp(); } catch (e) { console.error('[Flo] stopServerApp error:', e); }
-  try { stopKdsServer(); } catch (e) { console.error('[Flo] stopKdsServer error:', e); }
-  try { stopServer(); } catch (e) { console.error('[Flo] stopServer error:', e); }
-  try { closeDatabase(); } catch (e) { console.error('[Flo] closeDatabase error:', e); }
-
-  console.log('[Flo] Goodbye!');
-}
-
-app.on('before-quit', () => {
-  if (isQuitting) return; // guard against re-entry
-  isQuitting = true;
-});
-
-app.on('will-quit', (event) => {
-  // Run cleanup if it hasn't run yet
-  if (!hasCleanedUp) {
+const { runCleanup, isShutdownRequested, shutdownSignal } = createShutdownEntrypoints({
+  app: app as unknown as ShutdownEntrypointApp,
+  process: process as unknown as ShutdownEntrypointProcess,
+  cleanup: async () => {
+    console.log('[Flo] Running cleanup...');
     try {
-      runCleanup();
-    } catch (e) {
-      console.error('[Flo] Cleanup failed, retrying:', e);
-      event.preventDefault(); // delay quit to retry
-      setTimeout(() => {
-        runCleanup();
-        app.exit(0); // force exit after retry
-      }, 500);
-      return;
+      await cleanupCoordinator();
+      console.log('[Flo] Goodbye!');
+    } catch (error) {
+      console.error('[Flo] Cleanup failed:', error);
+      throw error;
     }
-  }
-  // Force-destroy window to prevent Linux compositor stall
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.destroy();
-  }
-});
-
-app.on('quit', () => {
-  runCleanup(); // fallback — defense in depth
-});
-
-// --- SIGTERM/SIGINT handlers (Linux/Unix — clean shutdown on external signals) ---
-process.on('SIGTERM', () => {
-  console.log('[Flo] SIGTERM received, cleaning up...');
-  runCleanup();
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('[Flo] SIGINT received, cleaning up...');
-  runCleanup();
-  process.exit(0);
+  },
+  setQuitting: () => {
+    isQuitting = true;
+  },
+  onShutdownRequested: requestWhatsAppShutdown,
+  destroyWindow: () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.destroy();
+  },
+  reportFailure: (context, error) => {
+    console.error(`[Flo] Cleanup failed before ${context}:`, error);
+  },
+  getSignalExitCode: () => startupFailure ? 1 : 0,
+  getQuitExitCode: () => startupFailure ? 1 : 0,
 });
 
 process.on('uncaughtException', (error) => {

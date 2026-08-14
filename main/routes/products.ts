@@ -1,11 +1,13 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
+import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import * as crypto from 'crypto';
 import * as dns from 'dns';
 import * as https from 'https';
 import * as net from 'net';
+import { asyncHandler } from '../middleware/async-handler';
 
 const MAX_FETCH_BYTES = 10 * 1024 * 1024;
 
@@ -13,15 +15,70 @@ const MAX_FETCH_BYTES = 10 * 1024 * 1024;
  * Resolves a hostname and rejects it if any resolved address is a
  * loopback/private/link-local/metadata/reserved IP (vuln-0003 SSRF guard).
  */
-async function resolvePublicHostname(hostname: string): Promise<string> {
+async function resolvePublicHostname(hostname: string, signal: AbortSignal): Promise<string> {
+  const directAddress = hostname.replace(/^\[|\]$/g, '');
+  if (net.isIP(directAddress)) {
+    if (isBlockedSsrfTarget(directAddress)) throw new Error('URL resolves to a disallowed address');
+    return directAddress;
+  }
   let addresses: dns.LookupAddress[];
+  const resolver = new dns.promises.Resolver();
+  const createAbortError = () => {
+    const error = new Error('Hostname resolution aborted');
+    error.name = 'AbortError';
+    return error;
+  };
+  if (signal.aborted) {
+    throw createAbortError();
+  }
+  let onAbort: (() => void) | undefined;
+  const aborted = new Promise<never>((_resolve, reject) => {
+    onAbort = () => {
+      resolver.cancel();
+      reject(createAbortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+  });
+  const lookup = (async () => {
+    const results = await Promise.allSettled([
+      resolver.resolve4(hostname),
+      resolver.resolve6(hostname),
+    ]);
+    if (signal.aborted) {
+      throw createAbortError();
+    }
+    const resolvedAddresses: dns.LookupAddress[] = [];
+    let firstError: { code?: string } | undefined;
+    for (const [index, result] of results.entries()) {
+      if (result.status === 'fulfilled') {
+        const family: 4 | 6 = index === 0 ? 4 : 6;
+        resolvedAddresses.push(...result.value.map((address) => ({ address, family })));
+      } else {
+        const error = result.reason as { code?: string } | undefined;
+        if (error?.code !== 'ENODATA' && error?.code !== 'ENOTFOUND') {
+          firstError ??= error;
+        }
+      }
+    }
+    if (resolvedAddresses.length > 0) {
+      return resolvedAddresses;
+    }
+    if (firstError) {
+      throw firstError;
+    }
+    const error = new Error('Hostname not found');
+    (error as NodeJS.ErrnoException).code = 'ENOTFOUND';
+    throw error;
+  })();
   try {
-    addresses = await dns.promises.lookup(hostname, { all: true, verbatim: true });
+    addresses = await Promise.race([lookup, aborted]);
   } catch (error: any) {
-    if (error?.code === 'ENOTFOUND') {
+    if (error?.name === 'AbortError' || error?.code === 'ENOTFOUND') {
       throw error;
     }
     throw new Error('Could not resolve hostname');
+  } finally {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
   }
   if (addresses.length === 0) {
     throw new Error('Could not resolve hostname');
@@ -406,7 +463,7 @@ router.get('/', (req: Request, res: Response) => {
 });
 
 // ── GET /:id — single product with relations ───────────────────────────
-router.get('/:id/image', async (req: Request, res: Response) => {
+router.get('/:id/image', asyncHandler(async (req: Request, res: Response) => {
   // Image endpoint — must be defined BEFORE /:id to avoid route conflict
   try {
     const db = getDatabase();
@@ -465,7 +522,7 @@ router.get('/:id/image', async (req: Request, res: Response) => {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 router.get('/:id', (req: Request, res: Response) => {
   try {
@@ -490,7 +547,7 @@ router.get('/:id', (req: Request, res: Response) => {
 // When a user pastes an https:// URL, the backend fetches the image and
 // returns it as a Base64 data URI. The frontend then runs it through the
 // same crop → compress pipeline as a local upload.
-router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, res: Response) => {
+router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { url } = req.body;
 
@@ -510,8 +567,15 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
     let currentUrl = url;
     // Named to avoid colliding with Express's Response type imported above.
     let response: { status: number; headers: Headers; body: Buffer } | undefined;
+    const controller = new AbortController();
+    const requestSignal = getHttpRequestSignal(req);
+    const abortForShutdown = () => controller.abort();
+    if (requestSignal?.aborted) controller.abort();
+    else requestSignal?.addEventListener('abort', abortForShutdown, { once: true });
+    const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
 
-    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    try {
+      for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
       let parsedUrl: URL;
       try {
         parsedUrl = new URL(currentUrl);
@@ -530,22 +594,21 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
 
       let resolvedAddress: string;
       try {
-        resolvedAddress = await resolvePublicHostname(parsedUrl.hostname);
+        resolvedAddress = await resolvePublicHostname(parsedUrl.hostname, controller.signal);
       } catch (error: any) {
+        if (error?.name === 'AbortError') {
+          return res.status(504).json({ error: 'Request timed out' });
+        }
         if (error?.code === 'ENOTFOUND') {
           return res.status(502).json({ error: 'Could not resolve hostname' });
         }
         return res.status(400).json({ error: 'URL is not allowed' });
       }
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15_000); // 15s timeout
-
       let hopResponse: { status: number; headers: Headers; body: Buffer };
       try {
         hopResponse = await fetchPinnedHttps(currentUrl, resolvedAddress, controller.signal);
       } catch (fetchError: any) {
-        clearTimeout(timeout);
         if (fetchError.name === 'AbortError') {
           return res.status(504).json({ error: 'Request timed out' });
         }
@@ -554,7 +617,6 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
         }
         return res.status(502).json({ error: 'Could not fetch the image' });
       }
-      clearTimeout(timeout);
 
       // "manual" redirect mode surfaces 3xx as an opaqueredirect/redirect
       // response instead of following it — inspect Location ourselves.
@@ -572,16 +634,16 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
 
       response = hopResponse;
       break;
-    }
+      }
 
-    if (!response) {
-      return res.status(502).json({ error: 'Could not fetch the image' });
-    }
-
-    try {
-      if (response.status < 200 || response.status >= 300) {
+      if (!response) {
         return res.status(502).json({ error: 'Could not fetch the image' });
       }
+
+      try {
+        if (response.status < 200 || response.status >= 300) {
+          return res.status(502).json({ error: 'Could not fetch the image' });
+        }
 
       // Content-Type check — must be an image
       const contentType = response.headers.get('content-type') || '';
@@ -600,15 +662,19 @@ router.post('/fetch-url', requireRole('owner', 'manager'), async (req: Request, 
       const detectedType = contentType.split(';')[0].trim(); // e.g., "image/jpeg"
       const dataUri = `data:${detectedType};base64,${base64}`;
 
-      res.json({ data: dataUri });
-    } catch {
-      return res.status(502).json({ error: 'Could not fetch the image' });
+        res.json({ data: dataUri });
+      } catch {
+        return res.status(502).json({ error: 'Could not fetch the image' });
+      }
+    } finally {
+      clearTimeout(timeout);
+      requestSignal?.removeEventListener('abort', abortForShutdown);
     }
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {

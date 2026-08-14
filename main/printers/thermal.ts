@@ -2,7 +2,7 @@ import * as net from 'net';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync, exec, execFile, execFileSync } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { getDatabase, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
@@ -83,6 +83,7 @@ function extractPlatformErrorCode(detail?: string): number | undefined {
 const isMasBuild =
   process.env.MAS_BUILD === '1' ||
   (process as NodeJS.Process & { mas?: boolean }).mas === true;
+const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
 const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
 const RECEIPT_BRANDING_URL = 'https://flopos.com';
@@ -124,33 +125,38 @@ function parseDeviceUri(uri: string): { ip?: string; port?: number } {
   return { ip: isIp ? host : host, port };
 }
 
-export async function detectConnectedPrinters(): Promise<PrinterInfo[]> {
+export async function detectConnectedPrinters(signal?: AbortSignal): Promise<PrinterInfo[]> {
   const printers: PrinterInfo[] = [];
 
-  if (isMasBuild) {
+  if (isMasBuild || signal?.aborted) {
     return printers;
   }
 
   if (process.platform === 'darwin') {
-    return await detectMacOSPrinters();
+    return await detectMacOSPrinters(signal);
   }
 
   if (process.platform === 'win32') {
-    return detectWindowsPrinters();
+    return detectWindowsPrinters(signal);
   }
 
   if (process.platform === 'linux') {
-    return detectLinuxPrinters();
+    return detectLinuxPrinters(signal);
   }
 
   return printers;
 }
 
-async function detectMacOSPrinters(): Promise<PrinterInfo[]> {
+async function detectMacOSPrinters(signal?: AbortSignal): Promise<PrinterInfo[]> {
   const printers: PrinterInfo[] = [];
 
   try {
-    const lpStatOutput = execSync('lpstat -v 2>/dev/null', { encoding: 'utf8' });
+    const { stdout: lpStatOutput } = await execFileAsync('lpstat', ['-v'], {
+      encoding: 'utf8',
+      timeout: PRINTER_DETECTION_TIMEOUT_MS,
+      signal,
+      maxBuffer: 10 * 1024 * 1024,
+    });
     const lines = lpStatOutput.split('\n');
 
     const printerNames = new Set<string>();
@@ -158,15 +164,17 @@ async function detectMacOSPrinters(): Promise<PrinterInfo[]> {
     for (const line of lines) {
       const match = line.match(/device for (\S+):\s*(.+)/);
       if (match) {
+        if (signal?.aborted) return printers;
         const name = match[1];
         const uri = match[2].trim();
 
         if (!printerNames.has(name)) {
           printerNames.add(name);
 
-          const makeModel = await getMacOSPrinterDetails(name);
-          const isDefault = await isMacOSDefaultPrinter(name);
-          const status = await getMacOSPrinterStatus(name);
+          const makeModel = await getMacOSPrinterDetails(name, signal);
+          const isDefault = await isMacOSDefaultPrinter(name, signal);
+          const status = await getMacOSPrinterStatus(name, signal);
+          if (signal?.aborted) return printers;
           const isNetwork = /^(socket|ipp|ipps|http|https|lpd):\/\//i.test(uri);
           const { ip, port } = isNetwork ? parseDeviceUri(uri) : {};
 
@@ -192,9 +200,15 @@ async function detectMacOSPrinters(): Promise<PrinterInfo[]> {
   return printers;
 }
 
-async function getMacOSPrinterStatus(name: string): Promise<'idle' | 'printing' | 'offline'> {
+async function getMacOSPrinterStatus(name: string, signal?: AbortSignal): Promise<'idle' | 'printing' | 'offline'> {
   try {
-    const out = execFileSync('lpstat', ['-p', name], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).toLowerCase();
+    const { stdout } = await execFileAsync('lpstat', ['-p', name], {
+      encoding: 'utf8',
+      timeout: PRINTER_DETECTION_TIMEOUT_MS,
+      signal,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    const out = stdout.toLowerCase();
     if (out.includes('disabled')) return 'offline';
     if (out.includes('printing') || out.includes('now printing')) return 'printing';
     return 'idle';
@@ -203,12 +217,17 @@ async function getMacOSPrinterStatus(name: string): Promise<'idle' | 'printing' 
   }
 }
 
-async function getMacOSPrinterDetails(name: string): Promise<{ make: string; model: string }> {
+async function getMacOSPrinterDetails(name: string, signal?: AbortSignal): Promise<{ make: string; model: string }> {
   let make = 'Unknown';
   let model = 'Thermal Printer';
 
   try {
-    const info = execFileSync('lpoptions', ['-p', name, '-l'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    const { stdout: info } = await execFileAsync('lpoptions', ['-p', name, '-l'], {
+      encoding: 'utf8',
+      timeout: PRINTER_DETECTION_TIMEOUT_MS,
+      signal,
+      maxBuffer: 10 * 1024 * 1024,
+    });
 
     const lower = info.toLowerCase();
 
@@ -274,9 +293,14 @@ function extractEpsonModel(name: string, info: string): string {
   return 'Epson Thermal';
 }
 
-async function isMacOSDefaultPrinter(name: string): Promise<boolean> {
+async function isMacOSDefaultPrinter(name: string, signal?: AbortSignal): Promise<boolean> {
   try {
-    const defaultPrinter = execFileSync('lpstat', ['-d'], { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+    const { stdout: defaultPrinter } = await execFileAsync('lpstat', ['-d'], {
+      encoding: 'utf8',
+      timeout: PRINTER_DETECTION_TIMEOUT_MS,
+      signal,
+      maxBuffer: 10 * 1024 * 1024,
+    });
     return defaultPrinter.includes(name);
   } catch {
     return false;
@@ -307,7 +331,7 @@ function mapWindowsPrinterStatus(printerStatus: unknown): 'idle' | 'printing' | 
   return 'offline';
 }
 
-async function detectWindowsPrinters(): Promise<PrinterInfo[]> {
+async function detectWindowsPrinters(signal?: AbortSignal): Promise<PrinterInfo[]> {
   const printers: PrinterInfo[] = [];
 
   try {
@@ -315,7 +339,7 @@ async function detectWindowsPrinters(): Promise<PrinterInfo[]> {
     const { stdout } = await execFileAsync(
       'powershell',
       ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-      { encoding: 'utf8', timeout: 10000, windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
+      { encoding: 'utf8', timeout: PRINTER_DETECTION_TIMEOUT_MS, signal, windowsHide: true, maxBuffer: 10 * 1024 * 1024 },
     );
 
     const trimmed = stdout.trim();
@@ -413,10 +437,15 @@ function parseCupsDeviceUri(uri: string): { make: string; model: string } | null
   return null;
 }
 
-function getMakeModelFromLpstat(): Map<string, { make: string; model: string }> {
+async function getMakeModelFromLpstat(signal?: AbortSignal): Promise<Map<string, { make: string; model: string }>> {
   const result = new Map<string, { make: string; model: string }>();
   try {
-    const output = execSync('lpstat -l -p 2>/dev/null', { encoding: 'utf8' });
+    const { stdout: output } = await execFileAsync('lpstat', ['-l', '-p'], {
+      encoding: 'utf8',
+      timeout: PRINTER_DETECTION_TIMEOUT_MS,
+      signal,
+      maxBuffer: 10 * 1024 * 1024,
+    });
     let currentName = '';
     for (const line of output.split('\n')) {
       const nameMatch = line.match(/^printer (\S+) is/);
@@ -457,21 +486,28 @@ function readSysfsSafe(filePath: string): string | null {
   catch { return null; }
 }
 
-function detectLinuxPrinters(): PrinterInfo[] {
+async function detectLinuxPrinters(signal?: AbortSignal): Promise<PrinterInfo[]> {
   const printers: PrinterInfo[] = [];
 
   try {
     // Layer 1: Get make/model from CUPS Device URI (most reliable)
-    const cupsMakeModel = getMakeModelFromLpstat();
+    const cupsMakeModel = await getMakeModelFromLpstat(signal);
+    if (signal?.aborted) return printers;
 
     // Layer 2: Get USB vendor IDs from sysfs (works without CUPS)
     const usbVendors = getUsbPrinterVendorIds();
 
     // Get printer list from CUPS
-    const output = execSync('lpstat -v 2>/dev/null', { encoding: 'utf8' });
+    const { stdout: output } = await execFileAsync('lpstat', ['-v'], {
+      encoding: 'utf8',
+      timeout: PRINTER_DETECTION_TIMEOUT_MS,
+      signal,
+      maxBuffer: 10 * 1024 * 1024,
+    });
     const lines = output.split('\n');
 
     for (const line of lines) {
+      if (signal?.aborted) return printers;
       const match = line.match(/device for (\S+):\s*(.+)/);
       if (match) {
         const name = match[1];
@@ -540,15 +576,16 @@ export async function initPrinter(): Promise<void> {
   }
 }
 
-export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false): Promise<DispatchResult> {
+export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, signal?: AbortSignal): Promise<DispatchResult> {
   try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     console.log('[Printer] printReceipt called, template:', template, 'useUnicode:', useUnicode, 'isReprint:', isReprint);
     const { printer, data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint);
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
     console.log('[Printer] Receipt data length:', data.length, 'bytes');
     console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
 
-    const dispatch = await dispatchPrint(printer, data);
+    const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
   } catch (error: any) {
     console.error('[Printer] Print error:', error);
@@ -556,8 +593,9 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
   }
 }
 
-export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any): Promise<DispatchResult> {
+export async function printKOT(order: any, items: any[], stationName: string, useUnicode: boolean = false, targetPrinter?: any, signal?: AbortSignal): Promise<DispatchResult> {
   try {
+    if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     console.log('[Printer] printKOT called, items count:', items?.length || 0, 'useUnicode:', useUnicode, 'station:', stationName);
     const printer = targetPrinter || getPrinterConfig();
     if (!printer) {
@@ -577,7 +615,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const warnings: PrintWarning[] = [];
     const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings);
     console.log('[Printer] KOT data length:', data.length, 'bytes');
-    const dispatch = await dispatchPrint(printer, data);
+    const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
   } catch (error: any) {
     console.error('[Printer] KOT print error:', error);
@@ -721,17 +759,17 @@ function columnsForPaperWidth(paperWidth: string): number | null {
   }
 }
 
-async function dispatchPrint(printer: any, data: Buffer): Promise<DispatchResult> {
+async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
   switch (printer.connection_type) {
     case 'network':
-      return await printViaNetwork(printer.ip_address, printer.port || 9100, data);
+      return await printViaNetwork(printer.ip_address, printer.port || 9100, data, signal);
     case 'usb':
       if (isMasBuild) {
         const detail = 'USB printers are not supported in the App Store build. Use a network printer.';
         console.log(`[Printer] ${detail}`);
         return { ok: false, detail };
       }
-      return await printViaUSB(data, printer.name);
+      return await printViaUSB(data, printer.name, signal);
     case 'webusb':
       console.log('[Printer] WebUSB printer — not supported in Electron');
       return { ok: false, detail: 'WebUSB printers are handled in the browser, not by the desktop app' };
@@ -1406,39 +1444,52 @@ export function escPosToText(data: Buffer | Uint8Array): string {
   return Buffer.from(text).toString('utf8').replace(/\n+$/, '');
 }
 
-export async function printViaNetwork(ip: string, port: number, data: Buffer): Promise<DispatchResult> {
+export async function printViaNetwork(ip: string, port: number, data: Buffer, signal?: AbortSignal): Promise<DispatchResult> {
   return new Promise((resolve) => {
     const client = new net.Socket();
+    let settled = false;
+    const onAbort = (): void => {
+      client.destroy();
+      finish({ ok: false, detail: 'Print cancelled during shutdown' });
+    };
+    const finish = (result: DispatchResult): void => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
+      resolve(result);
+    };
 
     client.connect(port, ip, () => {
       client.write(data, () => {
         client.end();
-        resolve({ ok: true });
+        finish({ ok: true });
       });
     });
 
     client.on('error', (err) => {
       console.error(`[Printer] Network error: ${err.message}`);
       client.destroy();
-      resolve({ ok: false, detail: `Network error: ${err.message}` });
+      finish({ ok: false, detail: `Network error: ${err.message}` });
     });
 
     client.setTimeout(5000, () => {
       client.destroy();
-      resolve({ ok: false, detail: `Timed out connecting to ${ip}:${port}` });
+      finish({ ok: false, detail: `Timed out connecting to ${ip}:${port}` });
     });
+    signal?.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }
 
-export async function printViaUSB(data: Buffer, printerName?: string): Promise<DispatchResult> {
+export async function printViaUSB(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   console.log('[Printer] printViaUSB called, platform:', process.platform, 'printer:', printerName);
 
   if (process.platform === 'darwin' || process.platform === 'linux') {
-    return await printViaCups(data, printerName);
+    return await printViaCups(data, printerName, signal);
   }
 
   if (process.platform === 'win32') {
-    return await printViaUSBWindows(data, printerName);
+    return await printViaUSBWindows(data, printerName, signal);
   }
 
   console.warn('[Printer] Unsupported platform:', process.platform);
@@ -1453,11 +1504,11 @@ export async function printViaUSB(data: Buffer, printerName?: string): Promise<D
 // Returns a human-readable problem, or null to proceed. Anything unexpected
 // (no CUPS, unknown queue) returns null so `lp` still gets its chance: this
 // check only ever turns a silent failure into a visible one.
-async function describeCupsQueueProblem(printerName?: string): Promise<string | null> {
+async function describeCupsQueueProblem(printerName?: string, signal?: AbortSignal): Promise<string | null> {
   if (!printerName) return null;
 
   // LC_ALL=C — the state words below are matched in English, and lpstat is localised.
-  const opts = { encoding: 'utf8' as const, timeout: 5000, env: { ...process.env, LC_ALL: 'C' } };
+  const opts = { encoding: 'utf8' as const, timeout: 5000, signal, env: { ...process.env, LC_ALL: 'C' } };
 
   try {
     const { stdout } = await execFileAsync('lpstat', ['-p', printerName], opts);
@@ -1479,10 +1530,11 @@ async function describeCupsQueueProblem(printerName?: string): Promise<string | 
   return null;
 }
 
-async function printViaCups(data: Buffer, printerName?: string): Promise<DispatchResult> {
+async function printViaCups(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   const label = printerName || 'default';
 
-  const problem = await describeCupsQueueProblem(printerName);
+  const problem = await describeCupsQueueProblem(printerName, signal);
+  if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
   if (problem) {
     console.error(`[Printer] CUPS print aborted for "${label}": ${problem}`);
     return { ok: false, detail: problem };
@@ -1496,7 +1548,7 @@ async function printViaCups(data: Buffer, printerName?: string): Promise<Dispatc
     const args = printerName
       ? ['-d', printerName, '-o', 'raw', tmpFile]
       : ['-o', 'raw', tmpFile];
-    const { stdout } = await execFileAsync('lp', args, { encoding: 'utf8', timeout: 20000 });
+    const { stdout } = await execFileAsync('lp', args, { encoding: 'utf8', timeout: 20000, signal });
 
     console.log(`[Printer] CUPS print queued for "${label}" (${stdout.trim()})`);
     return { ok: true };
@@ -1715,7 +1767,7 @@ function parseWindowsPrintOutput(output: unknown): Pick<DispatchResult, 'jobId' 
   return parsed;
 }
 
-async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<DispatchResult> {
+async function printViaUSBWindows(data: Buffer, printerName?: string, signal?: AbortSignal): Promise<DispatchResult> {
   if (!printerName) {
     const detail = 'No Windows printer configured; refusing to guess a target';
     console.error(`[Printer] ${detail}`);
@@ -1736,6 +1788,7 @@ async function printViaUSBWindows(data: Buffer, printerName?: string): Promise<D
       {
         encoding: 'utf8',
         timeout: 20000,
+        signal,
         windowsHide: true,
         env: { ...process.env, FLO_PRINTER_NAME: printerName, FLO_PRINT_FILE: tmpFile },
       },

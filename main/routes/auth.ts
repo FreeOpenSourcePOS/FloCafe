@@ -9,6 +9,7 @@ import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../servi
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode } from '../countries';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
+import { asyncHandler } from '../middleware/async-handler';
 
 const router = Router();
 
@@ -340,7 +341,7 @@ function resetSuccessfulLogin(ip: string) {
 
 // ── POST /api/auth/login ──────────────────────────────────────────────────────
 
-router.post('/login', authRateLimit(), async (req: Request, res: Response) => {
+router.post('/login', authRateLimit(), asyncHandler(async (req: Request, res: Response) => {
   try {
     const ip = req.ip || req.socket.remoteAddress || 'unknown';
     const rateLimit = checkRateLimit(ip);
@@ -405,7 +406,7 @@ router.post('/login', authRateLimit(), async (req: Request, res: Response) => {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
-});
+}));
 
 // ── POST /api/auth/tenants/select ─────────────────────────────────────────────
 // Frontend calls this after login (even when auto-selecting the single tenant).

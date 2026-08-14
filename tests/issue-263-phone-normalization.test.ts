@@ -116,10 +116,10 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     }
 
     const alertResult = db.prepare(`
-      SELECT COUNT(*) as count 
-      FROM customers 
-      WHERE is_active = 1 
-      AND phone IS NOT NULL AND phone != '' 
+      SELECT COUNT(*) as count
+      FROM customers
+      WHERE is_active = 1
+      AND phone IS NOT NULL AND phone != ''
       AND phone != '+' || phone_digits
     `).get();
 

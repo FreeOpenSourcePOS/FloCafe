@@ -47,10 +47,10 @@ router.post('/admin/repair-phones', requireRole('owner', 'manager'), (req: Reque
     const db = getDatabase();
     const tenantCountry = getSettingValue('country') || 'IN';
     const customers = db.prepare(`
-      SELECT id, phone, country_code 
-      FROM customers 
-      WHERE is_active = 1 
-      AND phone IS NOT NULL AND phone != '' 
+      SELECT id, phone, country_code
+      FROM customers
+      WHERE is_active = 1
+      AND phone IS NOT NULL AND phone != ''
       AND phone != '+' || phone_digits
     `).all() as Array<{ id: string; phone: string; country_code: string | null }>;
 

@@ -90,12 +90,17 @@ router.get('/', (_req: Request, res: Response) => {
 });
 
 // GET /api/printers/detect — detect connected USB/network printers
-router.get('/detect', asyncHandler(async (_req: Request, res: Response) => {
+router.get('/detect', asyncHandler(async (req: Request, res: Response) => {
   try {
-    const printers = await detectConnectedPrinters();
+    const printers = await detectConnectedPrinters(getHttpRequestSignal(req));
     console.log('[Printer] Detected printers:', printers);
     res.json({ printers });
   } catch (error: any) {
+    if (getHttpRequestSignal(req)?.aborted) {
+      if (!res.headersSent) res.status(503).end();
+      else if (!res.writableEnded) res.destroy();
+      return;
+    }
     console.error('[Printer] Detection error:', error);
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

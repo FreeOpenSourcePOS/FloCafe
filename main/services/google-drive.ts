@@ -94,13 +94,14 @@ function waitForDriveOperation<T>(operationFactory: (signal: AbortSignal) => Pro
     () => { operationSettled = true; },
     () => { operationSettled = true; },
   );
+  void operation.catch(() => {});
   const cancellation = new Promise<never>((_resolve, reject) => {
     const rejectAfterOperation = (error: Error & { code: string }) => {
       if (cancellationStarted || operationSettled) return;
       cancellationStarted = true;
       operationController.abort();
       cancelDriveOperation(operation);
-      void operation.then(() => reject(error), () => reject(error));
+      reject(error);
     };
     const abort = () => rejectAfterOperation(createDriveShutdownError(label));
     onAbort = abort;
@@ -232,25 +233,31 @@ class GoogleDriveService {
     const backup = this.backupPromise;
     void backup.catch(() => {});
     this.stopPromise = new Promise<void>((resolve, reject) => {
-      let timeoutError: (Error & { code: string }) | null = null;
+      let settled = false;
       const timeout = setTimeout(() => {
         this.terminalCleanup = true;
         this.backupAbortController?.abort();
-        timeoutError = new Error(`Google Drive shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+        settled = true;
+        this.stopSettled = true;
+        clearTimeout(timeout);
+        const timeoutError = new Error(`Google Drive shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
         timeoutError.code = 'ERR_SHUTDOWN_TIMEOUT';
+        reject(timeoutError);
       }, SHUTDOWN_TIMEOUT_MS);
       backup.then(
         () => {
+          if (settled) return;
+          settled = true;
           clearTimeout(timeout);
           this.stopSettled = true;
-          if (timeoutError) reject(timeoutError);
-          else resolve();
+          resolve();
         },
         (error) => {
+          if (settled) return;
+          settled = true;
           clearTimeout(timeout);
           this.stopSettled = true;
-          if (timeoutError) reject(timeoutError);
-          else if (this.stopping && isExpectedShutdownCancellation(error)) resolve();
+          if (this.stopping && isExpectedShutdownCancellation(error)) resolve();
           else reject(error);
         },
       );
@@ -472,6 +479,7 @@ class GoogleDriveService {
     // refresh_token when it's expired; persist whatever it hands back so the
     // next scheduled run doesn't have to refresh again.
     client.on('tokens', (refreshed) => {
+      if (this.stopping || signal?.aborted) return;
       const merged = { ...this.readTokens(), ...refreshed };
       this.writeTokens(merged);
     });
@@ -497,10 +505,13 @@ class GoogleDriveService {
       // Confirm it still exists / is still visible to this scope before reusing it.
       try {
         const res = await drive.files.get({ fileId: existingId, fields: 'id, trashed' }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+        this.throwIfStopping(signal);
         if (res.data.id && !res.data.trashed) return res.data.id;
       } catch {
         // fall through and re-resolve / recreate below
       }
+
+      this.throwIfStopping(signal);
     }
 
     const found = await drive.files.list({
@@ -509,6 +520,7 @@ class GoogleDriveService {
       spaces: 'drive',
       pageSize: 1,
     }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+    this.throwIfStopping(signal);
     const existing = found.data.files?.[0]?.id;
     if (existing) return existing;
 
@@ -516,6 +528,7 @@ class GoogleDriveService {
       requestBody: { name: DRIVE_BACKUP_FOLDER_NAME, mimeType: 'application/vnd.google-apps.folder' },
       fields: 'id',
     }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+    this.throwIfStopping(signal);
     if (!created.data.id) throw new Error('Google Drive did not return a folder id');
     return created.data.id;
   }
@@ -534,6 +547,7 @@ class GoogleDriveService {
         pageToken,
         spaces: 'drive',
       }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+      this.throwIfStopping(signal);
       files.push(...(res.data.files || [])
         .filter((f): f is { id: string; name?: string | null; createdTime: string } => Boolean(f.id && f.createdTime))
         .map((f) => ({ id: f.id, createdTime: f.createdTime })));
@@ -545,8 +559,10 @@ class GoogleDriveService {
     for (let i = 0; i < toDelete.length; i += 5) {
       await Promise.all(toDelete.slice(i, i + 5).map(async (id) => {
         try {
+          this.throwIfStopping(signal);
           await drive.files.delete({ fileId: id }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
         } catch (err) {
+          if (this.stopping || signal.aborted) throw err;
           log.warn('[GoogleDrive] retention delete failed', id, (err as Error).message);
         }
       }));

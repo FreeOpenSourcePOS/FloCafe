@@ -512,6 +512,11 @@ console.log('\n✅ Test 10: Print failure telemetry classification');
 console.log('\n✅ Test 11: Detect connected printers (hardware discovery)');
 (async () => {
   try {
+    const cancelledDetection = new AbortController();
+    cancelledDetection.abort();
+    const cancelledPrinters = await detectConnectedPrinters(cancelledDetection.signal);
+    assert('printer detection returns promptly when its request is already cancelled', Array.isArray(cancelledPrinters) && cancelledPrinters.length === 0);
+
     const printers = await detectConnectedPrinters();
     console.log(`   Found ${printers.length} printer(s):`);
     for (const p of printers) {

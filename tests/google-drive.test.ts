@@ -147,17 +147,24 @@ function main() {
   });
   const activeBackup = gd.googleDrive.backupNow();
   await new Promise((resolve) => setImmediate(resolve));
+  const originalSetTimeout = globalThis.setTimeout;
+  (globalThis as any).setTimeout = ((handler: (...args: any[]) => void, delay?: number, ...args: any[]) =>
+    originalSetTimeout(handler, delay === 10_000 ? 1 : delay, ...args)) as typeof setTimeout;
   const stopPromise = gd.googleDrive.stop();
-  let stopSettled = false;
-  void stopPromise.then(() => { stopSettled = true; }, () => { stopSettled = true; });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(stopSettled, false, 'stop() stays pending while the underlying backup is still active');
+  try {
+    await assert.rejects(
+      stopPromise,
+      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
+      'stop() settles with a bounded timeout when backup work will not cancel',
+    );
+  } finally {
+    (globalThis as any).setTimeout = originalSetTimeout;
+  }
   const shutdownCancellation = Object.assign(new Error('backup cancelled'), { code: 'ERR_SHUTDOWN_ABORTED' });
   rejectBackup(shutdownCancellation);
-  await stopPromise;
   await assert.rejects(activeBackup, (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED');
   (gd.googleDrive as any).runBackup = originalRunBackup;
-  console.log('   ✓ stop() treats expected backup cancellation as successful cleanup');
+  console.log('   ✓ stop() bounds non-cooperative backup cleanup and guards late completion');
 
   const rawTokenFile = fs.readFileSync(tokenPath, 'utf8');
   assert.ok(!rawTokenFile.includes('flo-backup'), 'sanity: file is the token blob, not something else');

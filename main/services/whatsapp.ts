@@ -140,6 +140,7 @@ type WhatsAppWorkCancellation = () => void;
 const inFlightWhatsAppWork = new Map<Promise<unknown>, WhatsAppWorkCancellation>();
 let whatsappShutdownPromise: Promise<void> | null = null;
 let whatsappAbortController = new AbortController();
+let shutdownSocket: BaileysSocket | null = null;
 
 function createWhatsAppAbortError(): Error & { code: string } {
   const error = new Error('WhatsApp work cancelled during shutdown') as Error & { code: string };
@@ -148,8 +149,10 @@ function createWhatsAppAbortError(): Error & { code: string } {
 }
 
 function cancelWhatsAppSocket(): void {
-  if (!state.shuttingDown || !state.socket) return;
-  try { state.socket.end(undefined); } catch { }
+  if (!state.shuttingDown) return;
+  const socket = state.socket ?? shutdownSocket;
+  if (!socket) return;
+  try { socket.end(undefined); } catch { }
 }
 
 function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal, cancel: WhatsAppWorkCancellation = cancelWhatsAppSocket): Promise<T> {
@@ -171,18 +174,8 @@ function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal, c
       aborted = true;
       cleanup();
       cancel();
-      operation.then(
-        () => {
-          if (settled) return;
-          settled = true;
-          reject(createWhatsAppAbortError());
-        },
-        () => {
-          if (settled) return;
-          settled = true;
-          reject(createWhatsAppAbortError());
-        },
-      );
+      settled = true;
+      reject(createWhatsAppAbortError());
     };
     signal.addEventListener('abort', onAbort, { once: true });
     operation.then(
@@ -223,7 +216,10 @@ function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void
 
 function trackWhatsAppWork<T>(operation: Promise<T>, cancel: WhatsAppWorkCancellation = cancelWhatsAppSocket): Promise<T> {
   inFlightWhatsAppWork.set(operation, cancel);
-  void operation.finally(() => inFlightWhatsAppWork.delete(operation)).catch(() => {});
+  void operation.finally(() => {
+    inFlightWhatsAppWork.delete(operation);
+    if (state.shuttingDown && inFlightWhatsAppWork.size === 0) shutdownSocket = null;
+  }).catch(() => {});
   return operation;
 }
 
@@ -239,19 +235,25 @@ async function waitForWhatsAppWork(): Promise<void> {
       await Promise.allSettled([...inFlightWhatsAppWork]);
     }
   })();
-  let timeout: NodeJS.Timeout | undefined;
-  let timeoutError: (Error & { code: string }) | null = null;
-  timeout = setTimeout(() => {
-    cancelInFlightWhatsAppWork();
-    timeoutError = new Error(`WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
-    timeoutError.code = 'ERR_SHUTDOWN_TIMEOUT';
-  }, SHUTDOWN_TIMEOUT_MS);
-  try {
-    await drain;
-    if (timeoutError) throw timeoutError;
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
+  void drain.catch(() => {});
+  await new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      cancelInFlightWhatsAppWork();
+      const timeoutError = new Error(`WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
+      timeoutError.code = 'ERR_SHUTDOWN_TIMEOUT';
+      reject(timeoutError);
+    }, SHUTDOWN_TIMEOUT_MS);
+    drain.then(
+      () => {
+        clearTimeout(timeout);
+        resolve();
+      },
+      (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
 }
 
 function getAuthDir(): string {
@@ -1175,11 +1177,13 @@ export function shutdown(): Promise<void> {
   if (state.cooldownTimer) { clearTimeout(state.cooldownTimer); state.cooldownTimer = null; }
   if (state.reconnectTimer) { clearTimeout(state.reconnectTimer); state.reconnectTimer = null; }
   const socket = state.socket;
+  shutdownSocket = socket;
   if (socket) {
     try { socket.end(undefined); } catch { /* ignore */ }
   }
   whatsappShutdownPromise = waitForWhatsAppWork().finally(() => {
     if (state.socket === socket) state.socket = null;
+    if (inFlightWhatsAppWork.size === 0) shutdownSocket = null;
   });
   return whatsappShutdownPromise;
 }

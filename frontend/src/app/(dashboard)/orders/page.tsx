@@ -25,6 +25,13 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import {
+  defaultDiscountTypeForMode,
+  isDiscountTypeAllowed,
+  normalizeDiscountMode,
+  type DiscountMode,
+  type DiscountType,
+} from '@/lib/discount-settings';
+import {
   buildAppendItemsFingerprint,
   clearAppendAttempt,
   createSafeAppendAttemptStorage,
@@ -95,7 +102,7 @@ interface VoidItemModal {
 
 interface DiscountModal {
   order: Order;
-  type: 'percentage' | 'amount';
+  type: DiscountType;
   value: number;
   reason: string;
 }
@@ -136,6 +143,7 @@ export default function OrdersPage() {
 
   // Consolidated discount modal state
   const [discountModal, setDiscountModal] = useState<DiscountModal | null>(null);
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
 
@@ -192,6 +200,15 @@ export default function OrdersPage() {
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
   const fmt = useFormatCurrency();
   const isOwnerOrManager = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
+
+  if (discountModal && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
+    setDiscountModal({
+      ...discountModal,
+      type: defaultDiscountTypeForMode(discountMode),
+      value: 0,
+    });
+    setDiscountPin('');
+  }
 
   const fetchPrintHistory = async (billId: number) => {
     try {
@@ -280,7 +297,10 @@ export default function OrdersPage() {
       }
 
       api.get('/settings/discount')
-        .then((res) => setDiscountRequiresApproval(!!res.data.discount_requires_approval))
+        .then((res) => {
+          setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
+          setDiscountRequiresApproval(!!res.data.discount_requires_approval);
+        })
         .catch(() => {});
     };
 
@@ -681,6 +701,10 @@ export default function OrdersPage() {
     // Check if PIN is required
     if (discountRequiresApproval && discountModal.value > 0 && !discountPin) {
       toast.error(t('orders.managerPinRequired'));
+      return;
+    }
+    if (discountModal.value > 0 && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
+      toast.error(t('orders.discountFailed'));
       return;
     }
 
@@ -1520,28 +1544,32 @@ placeholder={t('orders.managerPin')}
             <div className="space-y-4">
               {/* Discount Type Toggle */}
               <div className="flex rounded-lg overflow-hidden border border-gray-200">
-                <button
-                  onClick={() => updateDiscountModal({ type: 'percentage', value: 0 })}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${
-                    discountModal.type === 'percentage'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <Percent size={14} />
-                  {t('common.percentage')}
-                </button>
-                <button
-                  onClick={() => updateDiscountModal({ type: 'amount', value: 0 })}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${
-                    discountModal.type === 'amount'
-                      ? 'bg-purple-600 text-white'
-                      : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  <Banknote size={14} />
-                  {t('common.amount')}
-                </button>
+                {isDiscountTypeAllowed(discountMode, 'percentage') && (
+                  <button
+                    onClick={() => updateDiscountModal({ type: 'percentage', value: 0 })}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${
+                      discountModal.type === 'percentage'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Percent size={14} />
+                    {t('common.percentage')}
+                  </button>
+                )}
+                {isDiscountTypeAllowed(discountMode, 'amount') && (
+                  <button
+                    onClick={() => updateDiscountModal({ type: 'amount', value: 0 })}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${
+                      discountModal.type === 'amount'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Banknote size={14} />
+                    {t('common.amount')}
+                  </button>
+                )}
               </div>
 
               {/* Discount Value */}

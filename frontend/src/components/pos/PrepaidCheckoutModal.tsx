@@ -11,6 +11,13 @@ import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import {
+  defaultDiscountTypeForMode,
+  isDiscountTypeAllowed,
+  normalizeDiscountMode,
+  type DiscountMode,
+  type DiscountType,
+} from '@/lib/discount-settings';
 
 interface LoyaltySettings {
   loyalty_enabled: boolean;
@@ -23,7 +30,7 @@ export interface PrepaidPayment {
 }
 
 export interface PrepaidDiscount {
-  type: 'percentage' | 'amount';
+  type: DiscountType;
   value: number;
   reason?: string;
   override_pin?: string;
@@ -59,9 +66,10 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
   // Discount state (applied to the order once checkout is confirmed)
   const [discountOpen, setDiscountOpen] = useState(false);
-  const [discountType, setDiscountType] = useState<'percentage' | 'amount'>('percentage');
+  const [discountType, setDiscountType] = useState<DiscountType>('percentage');
   const [discountValue, setDiscountValue] = useState('');
   const [discountReason, setDiscountReason] = useState('');
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
 
@@ -89,12 +97,23 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   // auto-rescaling payment splits (e.g. on discount edits) so we don't clobber their entry.
   const [paymentsTouched, setPaymentsTouched] = useState(false);
 
+  if (!isDiscountTypeAllowed(discountMode, discountType)) {
+    setDiscountType(defaultDiscountTypeForMode(discountMode));
+    setDiscountValue('');
+    setDiscountReason('');
+    setDiscountPin('');
+    setPaymentsTouched(false);
+  }
+
   useEffect(() => {
     api.get('/settings/loyalty')
       .then((res) => setLoyaltySettings(res.data))
       .catch(() => {});
     api.get('/settings/discount')
-      .then((res) => setDiscountRequiresApproval(!!res.data.discount_requires_approval))
+      .then((res) => {
+        setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
+        setDiscountRequiresApproval(!!res.data.discount_requires_approval);
+      })
       .catch(() => {});
     api.get('/payment-methods')
       .then((res) => {
@@ -220,6 +239,10 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
     }
     if (preview.discountAmount > 0 && discountRequiresApproval && !discountPin) {
       toast.error(t('pos.managerPinRequired'));
+      return;
+    }
+    if (preview.discountAmount > 0 && !isDiscountTypeAllowed(discountMode, discountType)) {
+      toast.error(t('pos.discountInvalid'));
       return;
     }
 
@@ -349,19 +372,23 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
             {discountOpen && (
               <div className="bg-purple-50 border-t border-purple-200 p-3 space-y-2">
                 <div className="flex rounded-lg overflow-hidden border border-purple-200">
-                  <button
-                    onClick={() => setDiscountType('percentage')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    <Percent size={14} />
-                    {t('pos.percentage')}
-                  </button>
-                  <button
-                    onClick={() => setDiscountType('amount')}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    {t('pos.flatAmount')}
-                  </button>
+                  {isDiscountTypeAllowed(discountMode, 'percentage') && (
+                    <button
+                      onClick={() => setDiscountType('percentage')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      <Percent size={14} />
+                      {t('pos.percentage')}
+                    </button>
+                  )}
+                  {isDiscountTypeAllowed(discountMode, 'amount') && (
+                    <button
+                      onClick={() => setDiscountType('amount')}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      {t('pos.flatAmount')}
+                    </button>
+                  )}
                 </div>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">

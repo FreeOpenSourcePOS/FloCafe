@@ -16,6 +16,13 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
+import {
+  defaultDiscountTypeForMode,
+  isDiscountTypeAllowed,
+  normalizeDiscountMode,
+  type DiscountMode,
+  type DiscountType,
+} from '@/lib/discount-settings';
 
 interface Props {
   bill: Bill;
@@ -64,10 +71,11 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
 
   // Discount state
   const [showDiscount, setShowDiscount] = useState(false);
-  const [discountType, setDiscountType] = useState<'percentage' | 'amount'>('percentage');
+  const [discountType, setDiscountType] = useState<DiscountType>('percentage');
   const [discountValue, setDiscountValue] = useState('');
   const [discountReason, setDiscountReason] = useState('');
 
+  const [discountMode, setDiscountMode] = useState<DiscountMode>('percentage');
   const [discountRequiresApproval, setDiscountRequiresApproval] = useState(false);
   const [discountPin, setDiscountPin] = useState('');
   const [applyingDiscount, setApplyingDiscount] = useState(false);
@@ -80,7 +88,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   if (bill !== syncedBill) {
     setSyncedBill(bill);
     if (bill && Number(bill.discount_amount) > 0) {
-      setDiscountType((bill.discount_type as 'percentage' | 'amount') || 'percentage');
+      const nextType = (bill.discount_type === 'percentage' || bill.discount_type === 'amount')
+        ? bill.discount_type
+        : defaultDiscountTypeForMode(discountMode);
+      setDiscountType(isDiscountTypeAllowed(discountMode, nextType) ? nextType : defaultDiscountTypeForMode(discountMode));
       setDiscountValue(String(bill.discount_value || ''));
       setDiscountReason(bill.discount_reason || '');
       setShowDiscount(true);
@@ -90,6 +101,13 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       setDiscountReason('');
       setShowDiscount(false);
     }
+  }
+
+  if (!isDiscountTypeAllowed(discountMode, discountType)) {
+    setDiscountType(defaultDiscountTypeForMode(discountMode));
+    setDiscountValue('');
+    setDiscountReason('');
+    setDiscountPin('');
   }
 
   // Dynamically update payment inputs when remaining balance changes, but only until the
@@ -120,7 +138,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       .then((res) => setLoyaltySettings(res.data))
       .catch(() => {});
     api.get('/settings/discount')
-      .then((res) => setDiscountRequiresApproval(!!res.data.discount_requires_approval))
+      .then((res) => {
+        setDiscountMode(normalizeDiscountMode(res.data.discount_mode));
+        setDiscountRequiresApproval(!!res.data.discount_requires_approval);
+      })
       .catch(() => {});
     api.get('/payment-methods')
       .then((res) => {
@@ -167,6 +188,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     // Check if PIN is required
     if (discountRequiresApproval && val > 0 && !discountPin) {
       toast.error(t('pos.managerPinRequired'));
+      return;
+    }
+    if (val > 0 && !isDiscountTypeAllowed(discountMode, discountType)) {
+      toast.error(t('pos.discountInvalid'));
       return;
     }
     setApplyingDiscount(true);
@@ -427,19 +452,23 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             {showDiscount && (
               <div className="bg-purple-50 border-t border-purple-200 p-3 space-y-2">
                 <div className="flex rounded-lg overflow-hidden border border-purple-200">
-                  <button
-                    onClick={() => { setDiscountType('percentage'); }}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    <Percent size={14} />
-                    {t('pos.percentage')}
-                  </button>
-                  <button
-                    onClick={() => { setDiscountType('amount'); }}
-                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
-                  >
-                    {t('pos.flatAmount')}
-                  </button>
+                  {isDiscountTypeAllowed(discountMode, 'percentage') && (
+                    <button
+                      onClick={() => { setDiscountType('percentage'); }}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      <Percent size={14} />
+                      {t('pos.percentage')}
+                    </button>
+                  )}
+                  {isDiscountTypeAllowed(discountMode, 'amount') && (
+                    <button
+                      onClick={() => { setDiscountType('amount'); }}
+                      className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      {t('pos.flatAmount')}
+                    </button>
+                  )}
                 </div>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">

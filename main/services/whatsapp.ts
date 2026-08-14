@@ -97,6 +97,7 @@ interface QueuedSend {
   customerId: number | null;
   kind: 'bill_receipt' | 'manual_reply' | 'auto_followup';
   userId: string | null;
+  signal?: AbortSignal;
 }
 
 const state: {
@@ -145,34 +146,71 @@ function createWhatsAppAbortError(): Error & { code: string } {
   return error;
 }
 
-function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
-  trackWhatsAppWork(operation);
-  if (signal.aborted) {
-    return Promise.reject(createWhatsAppAbortError());
+function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(createWhatsAppAbortError());
+  let operation: Promise<T>;
+  try {
+    operation = operationFactory();
+  } catch (error) {
+    return Promise.reject(error);
   }
+  trackWhatsAppWork(operation);
   return new Promise<T>((resolve, reject) => {
     let settled = false;
-    const onAbort = (): void => {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener('abort', onAbort);
-      reject(createWhatsAppAbortError());
+    let aborted = false;
+    let onAbort = (): void => {};
+    const cleanup = (): void => signal.removeEventListener('abort', onAbort);
+    onAbort = (): void => {
+      if (settled || aborted) return;
+      aborted = true;
+      cleanup();
+      operation.then(
+        () => {
+          if (settled) return;
+          settled = true;
+          reject(createWhatsAppAbortError());
+        },
+        () => {
+          if (settled) return;
+          settled = true;
+          reject(createWhatsAppAbortError());
+        },
+      );
     };
     signal.addEventListener('abort', onAbort, { once: true });
     operation.then(
       (value) => {
-        if (settled) return;
+        if (settled || aborted) return;
         settled = true;
-        signal.removeEventListener('abort', onAbort);
+        cleanup();
         resolve(value);
       },
       (error) => {
-        if (settled) return;
+        if (settled || aborted) return;
         settled = true;
-        signal.removeEventListener('abort', onAbort);
+        cleanup();
         reject(error);
       },
     );
+    if (signal.aborted) onAbort();
+  });
+}
+
+function abortableDelay(milliseconds: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.reject(createWhatsAppAbortError());
+  return new Promise<void>((resolve, reject) => {
+    let onAbort = (): void => {};
+    const timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    onAbort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      reject(createWhatsAppAbortError());
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    if (signal.aborted) onAbort();
   });
 }
 
@@ -254,7 +292,7 @@ async function resolveJid(phoneE164: string, sock: BaileysSocket, signal: AbortS
   }
   const naive = `${normalized.replace('+', '')}@s.whatsapp.net`;
   try {
-    const results = (await abortable(sock.onWhatsApp(naive), signal)) ?? [];
+    const results = (await abortable(() => sock.onWhatsApp(naive), signal)) ?? [];
     return results[0]?.exists ? results[0].jid : null;
   } catch {
     return naive;
@@ -286,7 +324,7 @@ async function translateJid(jid: string, altJid: string | undefined, sock: Baile
     return phoneJid;
   }
   try {
-    const pn: string | null = await abortable(sock.signalRepository.lidMapping.getPNForLID(jid), signal);
+    const pn: string | null = await abortable(() => sock.signalRepository.lidMapping.getPNForLID(jid), signal);
     if (pn) {
       const phoneJid = `${userFromJid(pn)}@s.whatsapp.net`;
       state.lidToPhoneMap.set(lidUser, phoneJid);
@@ -649,8 +687,8 @@ async function resolveWaWebVersion(signal: AbortSignal): Promise<[number, number
     // fall through
   }
   try {
-    const { fetchLatestWaWebVersion } = await abortable(loadBaileys(), signal);
-    const { version } = await abortable(fetchLatestWaWebVersion({}), signal);
+    const { fetchLatestWaWebVersion } = await abortable(() => loadBaileys(), signal);
+    const { version } = await abortable(() => fetchLatestWaWebVersion({}), signal);
     return version as [number, number, number];
   } catch {
     // fall through
@@ -669,9 +707,9 @@ async function startSocketImpl(): Promise<void> {
   }
   const version = await resolveWaWebVersion(signal);
   if (state.shuttingDown || signal.aborted) return;
-  const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await abortable(loadBaileys(), signal);
+  const { useMultiFileAuthState, makeWASocket, Browsers, proto } = await abortable(() => loadBaileys(), signal);
   if (state.shuttingDown || signal.aborted) return;
-  const { state: authState, saveCreds } = await abortable(useMultiFileAuthState(authDir), signal);
+  const { state: authState, saveCreds } = await abortable(() => useMultiFileAuthState(authDir), signal);
   if (state.shuttingDown || signal.aborted) return;
   const socket = makeWASocket({
     version,
@@ -778,11 +816,11 @@ export async function connectWithPairingCode(phone: string, requestSignal?: Abor
   if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
   try {
     if (!state.socket) {
-      await abortable(startSocket(), signal);
-      await abortable(new Promise<void>((resolve) => setTimeout(resolve, 1500)), signal);
+      await abortable(() => startSocket(), signal);
+      await abortableDelay(1500, signal);
     }
     if (!state.socket) return { ok: false, error: 'Socket not ready, try again.' };
-    const code = await abortable(state.socket.requestPairingCode(phone.replace(/\D/g, '')), signal);
+    const code = await abortable(() => state.socket!.requestPairingCode(phone.replace(/\D/g, '')), signal);
     state.lastPairingCode = code;
     state.state = 'waiting_pairing';
     return { ok: true, code };
@@ -839,13 +877,15 @@ export function sendMessage(req: QueuedSend): Promise<SendResult> {
 }
 
 async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
-  const signal = whatsappAbortController.signal;
+  const signal = req.signal
+    ? AbortSignal.any([whatsappAbortController.signal, req.signal])
+    : whatsappAbortController.signal;
   const previous = sendLocks.get(req.phoneE164) ?? Promise.resolve();
   let release!: () => void;
   const current = new Promise<void>((resolve) => { release = resolve; });
   sendLocks.set(req.phoneE164, current);
   try {
-    await abortable(previous, signal);
+    await abortable(() => previous, signal);
     if (state.shuttingDown) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
     return await sendMessageInternal(req, signal);
   } catch (error) {
@@ -943,15 +983,15 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
         updateMessageRow(messageId, { status: 'seen', timestamp_field: 'seen_at' });
       } catch { /* best-effort */ }
     }
-    await abortable(socket.presenceSubscribe(jid), signal).catch(() => {});
+    await abortable(() => socket.presenceSubscribe(jid), signal).catch(() => {});
     if (state.shuttingDown || signal.aborted) return shutdownFailure();
-    await abortable(socket.sendPresenceUpdate('composing', jid), signal).catch(() => {});
+    await abortable(() => socket.sendPresenceUpdate('composing', jid), signal).catch(() => {});
     if (state.shuttingDown || signal.aborted) return shutdownFailure();
     updateMessageRow(messageId, { status: 'typing', timestamp_field: 'typing_at' });
-    await abortable(new Promise<void>((resolve) => setTimeout(resolve, randomDelayMs(req.body))), signal);
-    await abortable(socket.sendPresenceUpdate('paused', jid), signal).catch(() => {});
+    await abortableDelay(randomDelayMs(req.body), signal);
+    await abortable(() => socket.sendPresenceUpdate('paused', jid), signal).catch(() => {});
     if (state.shuttingDown || signal.aborted) return shutdownFailure();
-    const sent = await abortable(socket.sendMessage(jid, { text: req.body }), signal);
+    const sent = await abortable(() => socket.sendMessage(jid, { text: req.body }), signal);
     if (state.shuttingDown || signal.aborted) return shutdownFailure();
     // sendMessage() only resolves when Baileys hands the payload to its
     // local queue — not when WhatsApp's servers ACK it. Don't claim 'sent'

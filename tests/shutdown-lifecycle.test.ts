@@ -586,6 +586,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
       waitForDatabaseRequests,
       withDatabaseRequest,
       withDatabaseMaintenanceLock,
+      isDatabaseMaintenanceActive,
     } = await import('../main/db');
     const mainServer = await import('../main/server');
     const kdsServer = await import('../main/kds-server');
@@ -615,6 +616,42 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     assert.equal(maintenanceDrainSettled, false, 'the database barrier waits for the active queued operation');
     releaseSecondMaintenance?.();
     await Promise.all([firstMaintenance, secondMaintenance, maintenanceDrain]);
+
+    const queuedCloudSync = new cloudSync.CloudSyncService();
+    const db = getDatabase();
+    db.prepare(`
+      INSERT INTO settings (key, value, updated_at) VALUES ('diagnostics_consent', 'true', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(new Date().toISOString());
+    let releaseQueuedMaintenance: (() => void) | null = null;
+    const queuedMaintenance = withDatabaseMaintenanceLock(() => new Promise<void>((resolve) => {
+      releaseQueuedMaintenance = resolve;
+    }));
+    for (let attempt = 0; attempt < 20 && !isDatabaseMaintenanceActive(); attempt++) await delay(1);
+    assert.equal(isDatabaseMaintenanceActive(), true, 'database maintenance starts before CloudSync queues work');
+    queuedCloudSync.reportDiagnostic({
+      event_id: 'shutdown-lifecycle-cloud-queue',
+      event_code: 'shutdown.test',
+      severity: 'info',
+      occurred_at: new Date().toISOString(),
+      metadata: { test: true },
+    });
+    try {
+      const queuedCloudShutdown = queuedCloudSync.shutdown();
+      const queuedCloudShutdownSettled = await Promise.race([
+        queuedCloudShutdown.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1_000)),
+      ]);
+      assert.equal(queuedCloudShutdownSettled, true, 'CloudSync shutdown cancels its queued database work');
+    } finally {
+      releaseQueuedMaintenance?.();
+      await queuedMaintenance;
+    }
+    assert.equal(
+      db.prepare('SELECT 1 FROM store_diagnostics_outbox WHERE event_id = ?').get('shutdown-lifecycle-cloud-queue'),
+      undefined,
+      'cancelled CloudSync work does not write after shutdown',
+    );
 
     let releaseDatabaseRequest: (() => void) | null = null;
     const activeDatabaseRequest = withDatabaseRequest(() => new Promise<void>((resolve) => {
@@ -666,7 +703,6 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
       }),
     ]);
 
-    const db = getDatabase();
     const serverAppUserId = 'server-app-shutdown-user';
     db.prepare(`
       INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at)

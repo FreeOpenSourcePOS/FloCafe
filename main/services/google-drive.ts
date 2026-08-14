@@ -68,18 +68,38 @@ function isExpectedShutdownCancellation(error: unknown): boolean {
     || candidate?.name === 'AbortError';
 }
 
-function waitForDriveOperation<T>(operation: Promise<T>, signal: AbortSignal | undefined, timeoutMs: number, label: string): Promise<T> {
+function cancelDriveOperation(operation: Promise<unknown>): void {
+  const cancellable = operation as Promise<unknown> & { cancel?: () => void };
+  if (typeof cancellable.cancel !== 'function') return;
+  try { cancellable.cancel(); } catch { }
+}
+
+function waitForDriveOperation<T>(operationFactory: () => Promise<T>, signal: AbortSignal | undefined, timeoutMs: number, label: string): Promise<T> {
+  if (signal?.aborted) return Promise.reject(createDriveShutdownError(label));
+  let operation: Promise<T>;
+  try {
+    operation = operationFactory();
+  } catch (error) {
+    return Promise.reject(error);
+  }
   let timeout: NodeJS.Timeout | undefined;
   let onAbort: (() => void) | undefined;
   const cancellation = new Promise<never>((_resolve, reject) => {
-    const abort = () => reject(createDriveShutdownError(label));
+    const rejectAfterOperation = (error: Error & { code: string }) => {
+      cancelDriveOperation(operation);
+      operation.then(() => reject(error), () => reject(error));
+    };
+    const abort = () => rejectAfterOperation(createDriveShutdownError(label));
     onAbort = abort;
     if (signal?.aborted) {
       abort();
       return;
     }
     if (signal) signal.addEventListener('abort', abort, { once: true });
-    timeout = setTimeout(() => reject(createDriveShutdownError(label, true)), timeoutMs);
+    timeout = setTimeout(() => {
+      cancelDriveOperation(operation);
+      reject(createDriveShutdownError(label, true));
+    }, timeoutMs);
   });
   return Promise.race([operation, cancellation]).finally(() => {
     if (timeout) clearTimeout(timeout);
@@ -281,7 +301,7 @@ class GoogleDriveService {
     const { code, redirectUri } = await this.runLoopbackFlow(creds, signal);
     if (signal?.aborted) throw new Error('Google Drive connection cancelled during shutdown');
     const client = new google.auth.OAuth2(creds.clientId, creds.clientSecret, redirectUri);
-    const { tokens } = await waitForDriveOperation(client.getToken(code), signal, DRIVE_REQUEST_TIMEOUT_MS, 'Google Drive token exchange');
+    const { tokens } = await waitForDriveOperation(() => client.getToken(code), signal, DRIVE_REQUEST_TIMEOUT_MS, 'Google Drive token exchange');
     if (signal?.aborted) throw new Error('Google Drive connection cancelled during shutdown');
     if (!tokens.refresh_token) {
       // Google only issues a refresh_token on first consent (or with prompt=consent,
@@ -377,7 +397,7 @@ class GoogleDriveService {
 
       this.throwIfStopping(signal);
       const { path: backupPath } = await waitForDriveOperation(
-        createBackup(undefined, signal),
+        () => createBackup(undefined, signal),
         signal,
         SHUTDOWN_TIMEOUT_MS,
         'Google Drive local backup',
@@ -434,7 +454,7 @@ class GoogleDriveService {
   }
 
   private async fetchAccountEmail(client: OAuth2Client, signal?: AbortSignal): Promise<string | null> {
-    const accessToken = (await waitForDriveOperation(client.getAccessToken(), signal, DRIVE_REQUEST_TIMEOUT_MS, 'Google Drive access token refresh')).token;
+    const accessToken = (await waitForDriveOperation(() => client.getAccessToken(), signal, DRIVE_REQUEST_TIMEOUT_MS, 'Google Drive access token refresh')).token;
     if (!accessToken) return null;
     const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },

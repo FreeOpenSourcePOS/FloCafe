@@ -99,14 +99,15 @@ router.post('/send', requireRole('owner', 'manager', 'cashier'), asyncHandler(as
     return;
   }
   const userId = (req as any).user?.userId ?? null;
-  const result = await whatsapp.sendMessage({
+  const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
     phoneE164: String(phone_e164),
     body: String(body),
     billId: bill_id != null ? Number(bill_id) : null,
     customerId: null,
     kind: (kind as any) || 'manual_reply',
     userId,
-  });
+    signal: getHttpRequestSignal(req),
+  }));
   if (!result.ok) {
     const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
     res.status(status).json({ error: result.error, reason: result.reason });
@@ -162,14 +163,15 @@ router.post('/inbox/:messageId/reply', requireRole('owner', 'manager', 'cashier'
     return;
   }
   const userId = (req as any).user?.userId ?? null;
-  const result = await whatsapp.sendMessage({
+  const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
     phoneE164: msg.phone_e164,
     body: String(body),
     billId: null,
     customerId: null,
     kind: 'manual_reply',
     userId,
-  });
+    signal: getHttpRequestSignal(req),
+  }));
   if (!result.ok) {
     const status = result.reason === 'not_connected' || result.reason === 'cooldown' ? 503 : 400;
     res.status(status).json({ error: result.error, reason: result.reason });

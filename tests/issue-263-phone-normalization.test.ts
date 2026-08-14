@@ -322,15 +322,74 @@ describe('Issue #263: Phone Normalization, Validation, and Privacy', () => {
     assert.equal(resInvalid.status, 400);
   });
 
-  test('Privacy guarantee: telemetry payloads never include phone numbers', () => {
-    const { TELEMETRY_URL } = require('../main/services/telemetry');
+  test('POST /api/whatsapp/send validates and normalizes phone_e164', async () => {
+    const resInvalid = await api(baseUrl, '/api/whatsapp/send', {
+      method: 'POST',
+      body: {
+        phone_e164: 'not-a-phone',
+        body: 'Hello',
+      },
+      headers: ownerAuth.authHeader,
+    });
+    assert.equal(resInvalid.status, 400);
+    assert.equal(resInvalid.data.reason, 'invalid_phone');
+
+    await api(baseUrl, '/api/whatsapp/enable', {
+      method: 'POST',
+      body: {},
+      headers: ownerAuth.authHeader,
+    });
+
+    const resNational = await api(baseUrl, '/api/whatsapp/send', {
+      method: 'POST',
+      body: {
+        phone_e164: '9876543210',
+        body: 'Hello',
+      },
+      headers: ownerAuth.authHeader,
+    });
+    assert.equal(resNational.status, 503);
+    assert.equal(resNational.data.reason, 'not_connected');
+  });
+
+  test('Privacy guarantee: telemetry payloads never include phone numbers', async () => {
+    const { sendEvent, TELEMETRY_URL } = require('../main/services/telemetry');
     assert.equal(TELEMETRY_URL, 'https://telemetry.flopos.com/collect');
 
     const db = getDatabase();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('telemetry_enabled', 'true', datetime('now'))").run();
+    db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))").run();
     db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('business_phone', '+919876543210', datetime('now'))").run();
     db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('phone', '+919876543210', datetime('now'))").run();
 
-    const storedSettings = db.prepare("SELECT key, value FROM settings WHERE key IN ('business_phone', 'phone')").all();
-    assert.equal(storedSettings.length, 2);
+    const originalFetch = globalThis.fetch;
+    let sentUrl = '';
+    let sentBody = '';
+    globalThis.fetch = async (url, init) => {
+      sentUrl = String(url);
+      sentBody = String(init?.body || '');
+      return new Response(null, { status: 204 });
+    };
+
+    try {
+      const delivered = await sendEvent('app_launch');
+      assert.equal(delivered, true);
+      assert.equal(sentUrl, TELEMETRY_URL);
+      assert.ok(sentBody.length > 0);
+
+      const payload = JSON.parse(sentBody);
+      assert.equal(payload.app, 'flocafe');
+      assert.equal(payload.event_type, 'app_launch');
+      assert.equal(payload.country, 'IN');
+      assert.ok(payload.anon_id);
+
+      assert.equal(sentBody.includes('+919876543210'), false);
+      assert.equal(sentBody.includes('9876543210'), false);
+      assert.equal('phone' in payload, false);
+      assert.equal('business_phone' in payload, false);
+      assert.equal('contact_phone' in payload, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });

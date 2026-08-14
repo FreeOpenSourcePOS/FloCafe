@@ -113,7 +113,7 @@ router.post('/send', requireRole('owner', 'manager', 'cashier'), asyncHandler(as
   }
   const userId = (req as any).user?.userId ?? null;
   const result = await trackHttpRequestWork(req, whatsapp.sendMessage({
-    phoneE164: String(phone_e164),
+    phoneE164: parsedPhone.e164,
     body: String(body),
     billId: bill_id != null ? Number(bill_id) : null,
     customerId: null,

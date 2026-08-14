@@ -56,6 +56,7 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
       log.debug(`[Flo] telemetry rejected with HTTP ${response.status}`);
       return false;
     }
+    await response.body?.cancel();
     return true;
   } catch (e) {
     // Telemetry must never disrupt the app or surface to the user.

@@ -47,6 +47,15 @@ async function main() {
     assert.equal(requestBody?.app, 'flocafe');
     assert.equal(requestBody?.app_version, '2.7.2-test');
 
+    let bodyCancelled = false;
+    globalThis.fetch = (async () => ({
+      ok: true,
+      status: 204,
+      body: { cancel: async () => { bodyCancelled = true; } },
+    }) as unknown as Response) as typeof fetch;
+    assert.equal(await sendEvent('app_launch'), true, 'telemetry delivery succeeds with a response body');
+    assert.equal(bodyCancelled, true, 'telemetry cancels the response body before settling');
+
     globalThis.fetch = (async () => new Response('rejected', { status: 503 })) as typeof fetch;
     assert.equal(await sendEvent('daily_ping'), false, 'non-2xx telemetry is reported as undelivered');
 

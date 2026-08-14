@@ -79,7 +79,7 @@ async function main(): Promise<void> {
         { name: 'WhatsApp', blocksDatabase: true, run: () => whatsapp.shutdown() },
         { name: 'database', databaseClose: true, run: () => { databaseClosed = true; } },
       ], { onFatalTimeout: () => { fatalTimeoutObserved = true; } }),
-      (error: any) => error instanceof AggregateError && error.errors.some((nested: any) => nested?.code === 'ERR_SHUTDOWN_TIMEOUT'),
+      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
     );
     assert.equal(databaseClosed, false, 'a bounded WhatsApp timeout blocks database closure');
     assert.equal(fatalTimeoutObserved, true, 'a bounded WhatsApp timeout invokes fatal termination');

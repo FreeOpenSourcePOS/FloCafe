@@ -186,7 +186,7 @@ async function main(): Promise<void> {
         { name: 'Google Drive', blocksDatabase: true, run: () => stopPromise },
         { name: 'database', databaseClose: true, run: () => { databaseClosed = true; } },
       ], { onFatalTimeout: () => { fatalTimeoutObserved = true; } }),
-      (error: any) => error instanceof AggregateError && error.errors.some((nested: any) => nested?.code === 'ERR_SHUTDOWN_TIMEOUT'),
+      (error: any) => error?.code === 'ERR_SHUTDOWN_TIMEOUT',
       'shutdown reports a bounded timeout when backup ownership will not settle',
     );
     assert.equal(databaseClosed, false, 'a bounded Drive timeout blocks database closure');

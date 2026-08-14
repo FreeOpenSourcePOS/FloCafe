@@ -321,7 +321,7 @@ export async function closeServerResources(
   }
 }
 
-/** Run all cleanup steps in order while still attempting later steps. */
+/** Run cleanup steps in order until a fatal timeout boundary is reached. */
 export async function runShutdownSteps(
   steps: readonly ShutdownStep[],
   options: ShutdownCoordinatorOptions = {},
@@ -338,7 +338,7 @@ export async function runShutdownSteps(
       if (step.blocksDatabase) databaseBlocked = true;
       if (isShutdownTimeout(error)) {
         options.onFatalTimeout?.(error);
-        break;
+        throw error;
       }
     }
   }

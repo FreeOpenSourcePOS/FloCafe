@@ -159,7 +159,7 @@ async function testTimedOutCleanupUsesFatalBarrier(): Promise<void> {
       { name: 'database admission', run: () => { events.push('admission'); } },
       { name: 'database', databaseClose: true, run: () => { events.push('database'); } },
     ], { onFatalTimeout: () => { fatalTimeoutObserved = true; events.push('fatal-timeout'); } }),
-    (error: unknown) => error instanceof AggregateError && error.errors.includes(timeout),
+    (error: unknown) => error === timeout,
   );
   assert.equal(fatalTimeoutObserved, true, 'a bounded timeout invokes the fatal termination hook');
   assert.deepEqual(events, ['drive', 'fatal-timeout'], 'a bounded timeout stops cleanup before later side effects or database progression');

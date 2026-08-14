@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 
-const EVIDENCE_DIR = path.join(os.tmpdir(), 'no-mistakes-evidence', 'phone-unification');
+const EVIDENCE_DIR = process.env.EVIDENCE_DIR || path.join(os.tmpdir(), 'no-mistakes-evidence', '01M017SAY4WPNZWT0YAB197D9H');
 if (!fs.existsSync(EVIDENCE_DIR)) {
   fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 }
@@ -25,7 +25,7 @@ test.describe('Frontend Phone Unification End-to-End Visual Suite (Issue #263)',
     // 1. Add customer with local Thai/national phone
     const addBtn = page.getByRole('button', { name: /Add Customer|Add/i }).first();
     await addBtn.click();
-    
+
     // Target the input elements inside the modal form specifically
     const modal = page.locator('.fixed.inset-0 form');
     await expect(modal).toBeVisible();

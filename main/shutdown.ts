@@ -22,9 +22,11 @@ type HttpRequestState = {
 
 type HttpServerState = {
   requests: Set<HttpRequestState>;
+  closed: boolean;
 };
 
 const httpServerStates = new WeakMap<http.Server, HttpServerState>();
+const trackedHttpServerStates = new Set<HttpServerState>();
 const httpRequestStates = new WeakMap<object, HttpRequestState>();
 const shuttingDownHttpServers = new Set<HttpServerState>();
 
@@ -32,8 +34,9 @@ export function installHttpShutdownTracking(server: http.Server): HttpServerStat
   const existing = httpServerStates.get(server);
   if (existing) return existing;
 
-  const state: HttpServerState = { requests: new Set() };
+  const state: HttpServerState = { requests: new Set(), closed: false };
   httpServerStates.set(server, state);
+  trackedHttpServerStates.add(state);
   server.prependListener('request', (request, response) => {
     const requestState: HttpRequestState = { controller: new AbortController(), work: new Set(), released: false, owner: state };
     state.requests.add(requestState);
@@ -62,6 +65,7 @@ export function trackHttpRequestWork<T>(request: object, operation: Promise<T>):
       requestState.owner.requests.delete(requestState);
       if (requestState.owner.requests.size === 0) {
         shuttingDownHttpServers.delete(requestState.owner);
+        if (requestState.owner.closed) trackedHttpServerStates.delete(requestState.owner);
       }
     }
   }).catch(() => {});
@@ -167,7 +171,9 @@ export async function closeHttpServer(server: http.Server, label: string, timeou
     }
     throw error;
   } finally {
+    requestState.closed = true;
     if (requestState.requests.size === 0) shuttingDownHttpServers.delete(requestState);
+    if (requestState.requests.size === 0) trackedHttpServerStates.delete(requestState);
   }
 }
 
@@ -185,6 +191,10 @@ export async function waitForHttpShutdownWork(timeoutMs = SHUTDOWN_TIMEOUT_MS): 
       if (state.requests.size === 0) shuttingDownHttpServers.delete(state);
     }
   }
+}
+
+export function cancelHttpShutdownWork(): void {
+  for (const state of trackedHttpServerStates) abortHttpRequests(state);
 }
 
 function terminateWebSocketClients(wss: WebSocketServer): void {
@@ -376,11 +386,13 @@ export function createShutdownEntrypoints({
 
   const requestShutdown = (): void => {
     shutdownRequested = true;
+    cancelHttpShutdownWork();
     setQuitting();
   };
 
   const runCleanup = (): Promise<void> => {
     if (!cleanupPromise) {
+      cancelHttpShutdownWork();
       cleanupPromise = Promise.resolve().then(cleanup);
       cleanupPromise.then(
         () => { cleanupFinished = true; },
@@ -450,6 +462,7 @@ export function createExitCodeAwareShutdown(
   return (exitCode = 0): Promise<number> => {
     requestedExitCode = Math.max(requestedExitCode, exitCode);
     if (!shutdownPromise) {
+      cancelHttpShutdownWork();
       shutdownPromise = (async () => {
         const cleanupExitCode = await cleanup();
         return Math.max(cleanupExitCode, requestedExitCode);

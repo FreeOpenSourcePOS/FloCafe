@@ -71,7 +71,7 @@ Module._load = function (request, parent, isMain) {
 
 // ── Now load and start the compiled backend ───────────────────────────────────
 const { initDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests } = require('./dist/db');
-const { createExitCodeAwareShutdown, waitForHttpShutdownWork } = require('./dist/shutdown');
+const { createExitCodeAwareShutdown, waitForHttpShutdownWork, cancelHttpShutdownWork } = require('./dist/shutdown');
 const { startServer, stopServer, getServerPort } = require('./dist/server');
 const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/kds-server');
 const { startServerApp, stopServerApp, getServerAppPort } = require('./dist/server-app');
@@ -98,6 +98,7 @@ const requestShutdown = createExitCodeAwareShutdown(async () => {
 
 async function shutdown(exitCode = 0) {
   shutdownRequested = true;
+  cancelHttpShutdownWork();
   const finalExitCode = await requestShutdown(exitCode);
   if (!exitRequested) {
     exitRequested = true;

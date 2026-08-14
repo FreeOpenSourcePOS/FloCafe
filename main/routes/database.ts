@@ -7,6 +7,7 @@ import { clearJWTSecretCache } from './auth';
 import * as fs from 'fs';
 import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';
+import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
@@ -311,7 +312,7 @@ router.post('/import', requireRole('owner'),
       console.error('[DB Import] Error:', error);
       res.status(500).json({ error: 'Import failed' });
     }
-  });
+  }, getHttpRequestSignal(req));
 }));
 
 function getTableColumns(db: Database.Database, tableName: string): string[] {

@@ -1003,10 +1003,10 @@ function removeDatabaseFiles(dbPath: string): string[] {
  * restore the safety backup before surfacing the error so callers never see a
  * false success or an intentionally closed database.
  */
-export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }> {
-  return withDatabaseMaintenanceLock(async (signal) => {
-    const { path: backupPath } = await createBackupUnlocked(undefined, signal);
-    throwIfDatabaseMaintenanceAborted(signal);
+export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ backupPath: string }> {
+  return withDatabaseMaintenanceLock(async (maintenanceSignal) => {
+    const { path: backupPath } = await createBackupUnlocked(undefined, maintenanceSignal);
+    throwIfDatabaseMaintenanceAborted(maintenanceSignal);
     const dbPath = getDbPath();
     const baselineForeignKeyViolations = getForeignKeyViolationKeys(getDatabase());
     const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
@@ -1022,23 +1022,23 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
         phase: 'prepared', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
       });
-      throwIfDatabaseMaintenanceAborted(signal);
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       replacementStarted = true;
       closeDatabase();
-      throwIfDatabaseMaintenanceAborted(signal);
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       const failures = removeDatabaseFiles(dbPath);
       if (failures.length > 0) {
         throw new Error(`Could not remove database files: ${failures.join(', ')}`);
       }
-      throwIfDatabaseMaintenanceAborted(signal);
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       initDatabase(false, true);
-      throwIfDatabaseMaintenanceAborted(signal);
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       getDatabase().pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit reset database');
       }
-      throwIfDatabaseMaintenanceAborted(signal);
+      throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       writeReplacementJournal(journalPath, {
         phase: 'committed', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
@@ -1072,7 +1072,7 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
     } finally {
       if (replacementCompleted || recoveryCompleted) removeReplacementArtifacts(journalPath, recoveryPath);
     }
-  });
+  }, signal);
 }
 
 /** Reads the canonical schema_version stamp createBackup() writes into _flo_meta. */

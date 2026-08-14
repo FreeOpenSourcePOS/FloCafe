@@ -6,6 +6,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { runHealthCheck, applySafeFixes } from '../services/schema-health';
 import { isMasterPinAvailable, isMasterPinSet, resetMasterPin } from '../services/master-pin';
 import { clearJWTSecretCache } from './auth';
+import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
@@ -85,7 +86,7 @@ router.post('/initialize', requireRole('owner'), requireMasterPin, asyncHandler(
     return res.status(400).json({ error: `Type "${INITIALIZE_CONFIRM_PHRASE}" to confirm` });
   }
   try {
-    const { backupPath } = await resetDatabaseWithBackup();
+    const { backupPath } = await resetDatabaseWithBackup(getHttpRequestSignal(req));
     clearUserAuthCache();
     clearInMemoryRevokedTokens();
     clearJWTSecretCache();

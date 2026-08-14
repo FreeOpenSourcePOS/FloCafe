@@ -301,31 +301,33 @@ async function testStandaloneStartupCancellation(): Promise<void> {
 }
 
 async function testDatabaseImportShutdownCancellation(): Promise<void> {
-  const child = spawn(process.execPath, [path.join(__dirname, 'database-import-shutdown-child.cjs')], {
-    cwd: path.resolve(__dirname, '..'),
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  let output = '';
-  child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-  child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
-  try {
-    const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`database import cancellation child timed out: ${output}`)), 20_000);
-      child.once('error', (error) => {
-        clearTimeout(timer);
-        reject(error);
-      });
-      child.once('exit', (exitCode, exitSignal) => {
-        clearTimeout(timer);
-        resolve([exitCode, exitSignal]);
-      });
+  for (const mode of ['import', 'reset'] as const) {
+    const child = spawn(process.execPath, [path.join(__dirname, 'database-import-shutdown-child.cjs'), mode], {
+      cwd: path.resolve(__dirname, '..'),
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
     });
-    assert.equal(signal, null, `database import cancellation child exited by signal: ${output}`);
-    assert.equal(code, 0, `database import cancellation regression failed: ${output}`);
-  } finally {
-    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+
+    let output = '';
+    child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+    try {
+      const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error(`database ${mode} cancellation child timed out: ${output}`)), 20_000);
+        child.once('error', (error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+        child.once('exit', (exitCode, exitSignal) => {
+          clearTimeout(timer);
+          resolve([exitCode, exitSignal]);
+        });
+      });
+      assert.equal(signal, null, `database ${mode} cancellation child exited by signal: ${output}`);
+      assert.equal(code, 0, `database ${mode} cancellation regression failed: ${output}`);
+    } finally {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+    }
   }
 }
 

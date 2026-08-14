@@ -1,4 +1,5 @@
 const fs = require('node:fs');
+const http = require('node:http');
 const os = require('node:os');
 const path = require('node:path');
 const Module = require('node:module');
@@ -16,7 +17,7 @@ Module._load = function (request, parent, isMain) {
     return {
       app: mockApp,
       safeStorage: {
-        isEncryptionAvailable: () => false,
+        isEncryptionAvailable: () => true,
         encryptString: (value) => Buffer.from(value),
         decryptString: (value) => value.toString(),
       },
@@ -35,6 +36,14 @@ const express = require('express');
 const request = require('supertest');
 const Database = require('better-sqlite3');
 const dbModule = require('../main/db');
+const {
+  createShutdownCoordinator,
+  createShutdownEntrypoints,
+  installHttpShutdownTracking,
+} = require('../main/shutdown');
+const { setMasterPin } = require('../main/services/master-pin');
+
+const mode = process.argv[2] || 'import';
 
 async function run() {
   dbModule.initDatabase();
@@ -47,6 +56,22 @@ async function run() {
     next();
   });
   app.use('/api/db', databaseRoutes);
+  app.use('/api/db-tools', require('../main/routes/database-tools').databaseToolsRoutes);
+
+  const server = http.createServer(app);
+  installHttpShutdownTracking(server);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+
+  const shutdownCoordinator = createShutdownCoordinator(() => [
+    { name: 'database admission', run: () => dbModule.beginDatabaseShutdown() },
+  ]);
+  const shutdownEntrypoints = createShutdownEntrypoints({
+    app: { on() {}, quit() {}, exit() {} },
+    process: { on() {}, exit() {} },
+    cleanup: shutdownCoordinator,
+    setQuitting() {},
+    destroyWindow() {},
+  });
 
   const originalPrepare = Database.prototype.prepare;
   const originalExec = Database.prototype.exec;
@@ -54,8 +79,8 @@ async function run() {
   let commitSeen = false;
   Database.prototype.prepare = function (sql, ...params) {
     const statement = originalPrepare.call(this, sql, ...params);
-    if (sql === 'PRAGMA foreign_key_check' && ++foreignKeyChecks === 2) {
-      dbModule.beginDatabaseShutdown();
+    if (mode === 'import' && sql === 'PRAGMA foreign_key_check' && ++foreignKeyChecks === 2) {
+      void shutdownEntrypoints.runCleanup();
     }
     return statement;
   };
@@ -64,29 +89,56 @@ async function run() {
     return originalExec.call(this, sql, ...params);
   };
 
+  const originalCopyFileSync = fs.copyFileSync;
+  fs.copyFileSync = function (source, destination, ...args) {
+    const result = originalCopyFileSync.call(this, source, destination, ...args);
+    if (mode === 'reset' && String(destination).includes('flo-reset-recovery-')) {
+      void shutdownEntrypoints.runCleanup();
+    }
+    return result;
+  };
+
   try {
-    const response = await request(app).post('/api/db/import').send({
-      overwrite: false,
-      data: {
-        schema_version: String(dbModule.getCurrentSchemaVersion()),
+    let response;
+    if (mode === 'import') {
+      response = await request(server).post('/api/db/import').send({
+        overwrite: false,
         data: {
-          settings: [],
-          categories: [{ id: 'shutdown-import-category', name: 'Shutdown import' }],
-          products: [],
-          users: [],
+          schema_version: String(dbModule.getCurrentSchemaVersion()),
+          data: {
+            settings: [],
+            categories: [{ id: 'shutdown-import-category', name: 'Shutdown import' }],
+            products: [],
+            users: [],
+          },
         },
-      },
-    });
-    if (response.status !== 500) throw new Error(`expected import cancellation response, got ${response.status}`);
-    if (commitSeen) throw new Error('database import committed after shutdown cancellation');
-    const count = db.prepare("SELECT COUNT(*) AS count FROM categories WHERE id = 'shutdown-import-category'").get().count;
-    if (count !== 0) throw new Error('cancelled database import left committed rows');
+      });
+    } else {
+      setMasterPin('1234');
+      db.prepare("INSERT INTO categories (id, name) VALUES ('reset-survivor', 'Reset survivor')").run();
+      response = await request(server).post('/api/db-tools/initialize').send({
+        master_pin: '1234',
+        confirmation_phrase: 'INITIALIZE',
+      });
+    }
+    await shutdownEntrypoints.runCleanup();
+    if (response.status !== 500) throw new Error(`expected ${mode} cancellation response, got ${response.status}`);
+    if (mode === 'import' && commitSeen) throw new Error('database import committed after shutdown cancellation');
+    const survivorId = mode === 'import' ? 'shutdown-import-category' : 'reset-survivor';
+    const count = db.prepare('SELECT COUNT(*) AS count FROM categories WHERE id = ?').get(survivorId).count;
+    if (mode === 'import' && count !== 0) throw new Error('cancelled database import left committed rows');
+    if (mode === 'reset' && count !== 1) throw new Error('cancelled reset removed live database data');
     const backupFiles = fs.readdirSync(path.join(testDir, 'backups')).filter((file) => file.endsWith('.db'));
     if (backupFiles.length === 0) throw new Error('database import did not execute its safety backup');
+    if (mode === 'reset' && backupFiles.some((file) => file.includes('flo-reset-recovery-'))) {
+      throw new Error('cancelled reset left replacement artifacts');
+    }
   } finally {
+    fs.copyFileSync = originalCopyFileSync;
     Database.prototype.prepare = originalPrepare;
     Database.prototype.exec = originalExec;
     dbModule.closeDatabase();
+    await new Promise((resolve) => server.close(() => resolve()));
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
   }

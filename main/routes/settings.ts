@@ -6,6 +6,7 @@ import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
+import { getCountryByCode, getCurrencySymbol } from '../countries';
 
 const router = Router();
 
@@ -85,6 +86,10 @@ function bool01Flag(value: unknown): string | undefined {
   return flag === undefined ? undefined : flag === 'true' ? '1' : '0';
 }
 
+function deriveCurrencySymbol(currency: string, country: string): string {
+  return getCurrencySymbol(currency || 'INR', getCountryByCode(country || 'IN')?.locale) || currency || 'INR';
+}
+
 function isMaskedSecret(value: unknown): boolean {
   return typeof value === 'string' && value.startsWith('****');
 }
@@ -150,8 +155,9 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
     }
 
     const db = getDatabase();
+    const currentSettings = getAllSettings(db);
     if (tax_registration_number) {
-      const effectiveCountry = country || getAllSettings(db).country || 'IN';
+      const effectiveCountry = country || currentSettings.country || 'IN';
       const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
       if (!valid && format) {
         return res.status(400).json({
@@ -160,8 +166,13 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
         });
       }
     }
+    const effectiveCountry = country || currentSettings.country || 'IN';
+    const effectiveCurrency = currency || currentSettings.currency || 'INR';
     upsertSettings(db, {
       business_name, timezone, currency, country, language,
+      currency_symbol: (currency !== undefined || country !== undefined)
+        ? deriveCurrencySymbol(effectiveCurrency, effectiveCountry)
+        : undefined,
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
@@ -195,8 +206,9 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
     }
 
     const db = getDatabase();
+    const currentSettings = getAllSettings(db);
     if (tax_registration_number) {
-      const effectiveCountry = country || getAllSettings(db).country || 'IN';
+      const effectiveCountry = country || currentSettings.country || 'IN';
       const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
       if (!valid && format) {
         return res.status(400).json({
@@ -205,7 +217,16 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
         });
       }
     }
-    upsertSettings(db, { tax_registered, tax_registration_number, state_code, tax_scheme, country });
+    upsertSettings(db, {
+      tax_registered,
+      tax_registration_number,
+      state_code,
+      tax_scheme,
+      country,
+      currency_symbol: country !== undefined
+        ? deriveCurrencySymbol(currentSettings.currency || 'INR', country || currentSettings.country || 'IN')
+        : undefined,
+    });
     cloudSync.refreshRegistrationProfile();
     res.json(taxShape(getAllSettings(db)));
   } catch (error: any) {

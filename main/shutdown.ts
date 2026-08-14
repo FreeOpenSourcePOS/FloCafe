@@ -365,6 +365,7 @@ export type ShutdownEntrypointOptions = {
   setQuitting: () => void;
   destroyWindow: () => void;
   reportFailure?: (context: 'quit' | 'signal', error: unknown) => void;
+  getSignalExitCode?: () => number;
 };
 
 export function createShutdownEntrypoints({
@@ -374,6 +375,7 @@ export function createShutdownEntrypoints({
   setQuitting,
   destroyWindow,
   reportFailure = () => {},
+  getSignalExitCode = () => 0,
 }: ShutdownEntrypointOptions): {
   runCleanup: () => Promise<void>;
   isShutdownRequested: () => boolean;
@@ -439,7 +441,7 @@ export function createShutdownEntrypoints({
     signalExitRequested = true;
     requestShutdown();
     void runCleanup().then(
-      () => process.exit(0),
+      () => process.exit(getSignalExitCode()),
       (error) => {
         reportFailure('signal', error);
         process.exit(1);

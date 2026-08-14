@@ -406,6 +406,23 @@ async function testEntrypointCoverage(): Promise<void> {
   await runScenario('SIGTERM');
   await runScenario('SIGINT');
 
+  const startupFailureProcess = new ProcessDouble();
+  let startupFailureObserved = false;
+  const startupFailureEntrypoints = createShutdownEntrypoints({
+    app: new AppDouble(),
+    process: startupFailureProcess,
+    cleanup: async () => { await delay(5); },
+    setQuitting: () => {},
+    destroyWindow: () => {},
+    getSignalExitCode: () => startupFailureObserved ? 1 : 0,
+  });
+  const startupFailureCleanup = startupFailureEntrypoints.runCleanup();
+  startupFailureObserved = true;
+  startupFailureProcess.emit('SIGTERM');
+  await startupFailureCleanup;
+  await delay(0);
+  assert.deepEqual(startupFailureProcess.exitCodes, [1], 'signal cleanup preserves a concurrent startup failure exit code');
+
   const startupFailure = new Error('startup failed');
   const failingEntrypoints = createShutdownEntrypoints({
     app: new AppDouble(),

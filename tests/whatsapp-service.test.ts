@@ -13,14 +13,17 @@ const realLoad = (Module as any)._load;
 const eventHandlers = new Map<string, (value: any) => void>();
 let presenceStarted!: () => void;
 const presenceStartedPromise = new Promise<void>((resolve) => { presenceStarted = resolve; });
-const pendingPresence = new Promise<void>(() => {});
+let releasePendingPresence!: () => void;
+const pendingPresence = new Promise<void>((resolve) => { releasePendingPresence = resolve; });
+let presenceSettled = false;
+void pendingPresence.then(() => { presenceSettled = true; });
 const fakeSocket = {
   ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
   onWhatsApp: async () => [{ exists: true, jid: '15555550100@s.whatsapp.net' }],
   presenceSubscribe: async () => { presenceStarted(); return pendingPresence; },
   sendPresenceUpdate: async () => {},
   sendMessage: async () => ({ key: { id: 'shutdown-test-message' } }),
-  end: () => {},
+  end: () => { releasePendingPresence(); },
 };
 const fakeBaileys = {
   fetchLatestWaWebVersion: async () => ({ version: [2, 3000, 1] }),
@@ -127,6 +130,7 @@ async function main(): Promise<void> {
     assert(cancelled.ok === false && cancelled.reason === 'send_failed', 'shutdown-cancelled send returns send_failed');
     assert(row.status === 'failed', 'shutdown-cancelled send persists a failed status');
     assert(row.error === 'WhatsApp is shutting down.' && row.failed_at !== null, 'shutdown-cancelled send records its failure details');
+    assert(presenceSettled, 'shutdown waits for the underlying WhatsApp operation to settle');
   } finally {
     globalThis.fetch = originalFetch;
     closeDatabase();

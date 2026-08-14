@@ -89,10 +89,13 @@ async function run() {
     return originalExec.call(this, sql, ...params);
   };
 
-  const originalCopyFileSync = fs.copyFileSync;
-  fs.copyFileSync = function (source, destination, ...args) {
-    const result = originalCopyFileSync.call(this, source, destination, ...args);
-    if (mode === 'reset' && String(destination).includes('flo-reset-recovery-')) {
+  const originalUnlinkSync = fs.unlinkSync;
+  const resetDatabasePath = dbModule.getDbPath();
+  let resetShutdownTriggered = false;
+  fs.unlinkSync = function (filePath, ...args) {
+    const result = originalUnlinkSync.call(this, filePath, ...args);
+    if (mode === 'reset' && !resetShutdownTriggered && String(filePath) === resetDatabasePath) {
+      resetShutdownTriggered = true;
       void shutdownEntrypoints.runCleanup();
     }
     return result;
@@ -124,8 +127,10 @@ async function run() {
     await shutdownEntrypoints.runCleanup();
     if (response.status !== 500) throw new Error(`expected ${mode} cancellation response, got ${response.status}`);
     if (mode === 'import' && commitSeen) throw new Error('database import committed after shutdown cancellation');
+    if (mode === 'reset' && !resetShutdownTriggered) throw new Error('reset cancellation did not reach the database replacement boundary');
     const survivorId = mode === 'import' ? 'shutdown-import-category' : 'reset-survivor';
-    const count = db.prepare('SELECT COUNT(*) AS count FROM categories WHERE id = ?').get(survivorId).count;
+    const recoveredDatabase = dbModule.getDatabase();
+    const count = recoveredDatabase.prepare('SELECT COUNT(*) AS count FROM categories WHERE id = ?').get(survivorId).count;
     if (mode === 'import' && count !== 0) throw new Error('cancelled database import left committed rows');
     if (mode === 'reset' && count !== 1) throw new Error('cancelled reset removed live database data');
     const backupFiles = fs.readdirSync(path.join(testDir, 'backups')).filter((file) => file.endsWith('.db'));
@@ -134,7 +139,7 @@ async function run() {
       throw new Error('cancelled reset left replacement artifacts');
     }
   } finally {
-    fs.copyFileSync = originalCopyFileSync;
+    fs.unlinkSync = originalUnlinkSync;
     Database.prototype.prepare = originalPrepare;
     Database.prototype.exec = originalExec;
     dbModule.closeDatabase();

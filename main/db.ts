@@ -1025,19 +1025,23 @@ export async function resetDatabaseWithBackup(signal?: AbortSignal): Promise<{ b
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       replacementStarted = true;
       closeDatabase();
+      await new Promise<void>((resolve) => setImmediate(resolve));
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       const failures = removeDatabaseFiles(dbPath);
       if (failures.length > 0) {
         throw new Error(`Could not remove database files: ${failures.join(', ')}`);
       }
+      await new Promise<void>((resolve) => setImmediate(resolve));
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       initDatabase(false, true);
+      await new Promise<void>((resolve) => setImmediate(resolve));
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       getDatabase().pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit reset database');
       }
+      await new Promise<void>((resolve) => setImmediate(resolve));
       throwIfDatabaseMaintenanceAborted(maintenanceSignal);
       writeReplacementJournal(journalPath, {
         phase: 'committed', recoveryPath, dbPath,

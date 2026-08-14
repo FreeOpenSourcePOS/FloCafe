@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { requireRole } from '../middleware/security';
 import { asyncHandler } from '../middleware/async-handler';
 import { getDatabase, getSettingValue, upsertSettings } from '../db';
+import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import * as whatsapp from '../services/whatsapp';
 import * as QRCode from 'qrcode';
 
@@ -76,7 +77,7 @@ router.post('/connect', requireRole('owner', 'manager'), asyncHandler(async (req
       res.status(400).json({ error: 'phone required for pairing code', reason: 'phone_required_pairing' });
       return;
     }
-    res.json(await whatsapp.connectWithPairingCode(String(phone)));
+    res.json(await trackHttpRequestWork(req, whatsapp.connectWithPairingCode(String(phone), getHttpRequestSignal(req))));
   } else {
     res.status(400).json({ error: 'method must be "qr" or "pairing_code"', reason: 'bad_connect_method' });
   }

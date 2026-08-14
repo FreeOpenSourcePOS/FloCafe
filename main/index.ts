@@ -65,6 +65,7 @@ console.log('[Log] Log files location:', logPath);
 
 let updateAvailable = false;
 let updateDownloaded = false;
+let startupFailure = false;
 
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
@@ -701,6 +702,7 @@ async function initialize(): Promise<void> {
       }
       return;
     }
+    startupFailure = true;
     dialog.showErrorBox('Initialization Error', `Failed to start Flo: ${error}`);
 
     // Best-effort: report the fatal startup failure so support can see which
@@ -797,6 +799,7 @@ const { runCleanup, isShutdownRequested } = createShutdownEntrypoints({
   reportFailure: (context, error) => {
     console.error(`[Flo] Cleanup failed before ${context}:`, error);
   },
+  getSignalExitCode: () => startupFailure ? 1 : 0,
 });
 
 process.on('uncaughtException', (error) => {

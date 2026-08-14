@@ -146,8 +146,8 @@ function createWhatsAppAbortError(): Error & { code: string } {
 }
 
 function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
+  trackWhatsAppWork(operation);
   if (signal.aborted) {
-    void operation.catch(() => {});
     return Promise.reject(createWhatsAppAbortError());
   }
   return new Promise<T>((resolve, reject) => {
@@ -767,18 +767,22 @@ export async function connectWithQr(): Promise<{ ok: boolean; qr?: string; error
   return { ok: true };
 }
 
-export async function connectWithPairingCode(phone: string): Promise<{ ok: boolean; code?: string; error?: string }> {
+export async function connectWithPairingCode(phone: string, requestSignal?: AbortSignal): Promise<{ ok: boolean; code?: string; error?: string }> {
   if (!state.enabled) return { ok: false, error: 'WhatsApp is not enabled.' };
   if (whatsappShutdownPromise) return { ok: false, error: 'WhatsApp is shutting down.' };
   state.shuttingDown = false;
   if (whatsappAbortController.signal.aborted) whatsappAbortController = new AbortController();
-  if (!state.socket) {
-    await startSocket();
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-  if (!state.socket) return { ok: false, error: 'Socket not ready, try again.' };
+  const signal = requestSignal
+    ? AbortSignal.any([requestSignal, whatsappAbortController.signal])
+    : whatsappAbortController.signal;
+  if (signal.aborted) return { ok: false, error: 'WhatsApp request cancelled.' };
   try {
-    const code = await state.socket.requestPairingCode(phone.replace(/\D/g, ''));
+    if (!state.socket) {
+      await abortable(startSocket(), signal);
+      await abortable(new Promise<void>((resolve) => setTimeout(resolve, 1500)), signal);
+    }
+    if (!state.socket) return { ok: false, error: 'Socket not ready, try again.' };
+    const code = await abortable(state.socket.requestPairingCode(phone.replace(/\D/g, '')), signal);
     state.lastPairingCode = code;
     state.state = 'waiting_pairing';
     return { ok: true, code };

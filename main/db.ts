@@ -99,8 +99,8 @@ function waitForActiveDatabaseRequests(signal: AbortSignal): Promise<void> {
   });
 }
 
-export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
-  if (databaseShutdownRequested) return Promise.reject(createDatabaseShutdownError());
+export function withDatabaseRequest<T>(operation: () => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+  if (databaseShutdownRequested || signal?.aborted) return Promise.reject(createDatabaseShutdownError());
   const run = (): Promise<T> => {
     // Reserve the request synchronously. A maintenance lock scheduled in the
     // same turn must observe this request before it starts replacing the DB.
@@ -114,13 +114,31 @@ export function withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise
   };
   if (!databaseMaintenanceActive) return run();
   return new Promise<T>((resolve, reject) => {
-    maintenanceRequestWaiters.push(() => {
+    let settled = false;
+    let waiter!: () => void;
+    const onAbort = (): void => {
+      if (settled) return;
+      settled = true;
+      const index = maintenanceRequestWaiters.indexOf(waiter);
+      if (index >= 0) maintenanceRequestWaiters.splice(index, 1);
+      signal?.removeEventListener('abort', onAbort);
+      reject(createMaintenanceAbortError());
+    };
+    waiter = () => {
+      if (settled) return;
+      settled = true;
+      signal?.removeEventListener('abort', onAbort);
       if (databaseShutdownRequested) {
         reject(createDatabaseShutdownError());
         return;
       }
       run().then(resolve, reject);
-    });
+    };
+    maintenanceRequestWaiters.push(waiter);
+    if (signal) {
+      if (signal.aborted) onAbort();
+      else signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
 }
 

@@ -32,8 +32,9 @@ const {
   now,
   createApp,
 } = require('./helpers/test-setup');
+const { withDatabaseMaintenanceLock, isDatabaseMaintenanceActive } = require('../main/db');
 const { settingsRoutes } = require('../main/routes/settings');
-const { cloudSync } = require('../main/services/cloud-sync');
+const { cloudSync, CloudSyncService } = require('../main/services/cloud-sync');
 
 function setSettings(entries: Record<string, string>) {
   const db = getDatabase();
@@ -347,6 +348,34 @@ async function run() {
     } finally {
       globalThis.fetch = originalPollingFetch;
     }
+
+    const queuedService = new CloudSyncService();
+    setSettings({ diagnostics_consent: 'true' });
+    let releaseMaintenance!: () => void;
+    const maintenance = withDatabaseMaintenanceLock(() => new Promise<void>((resolve) => {
+      releaseMaintenance = resolve;
+    }));
+    for (let attempt = 0; attempt < 20 && !isDatabaseMaintenanceActive(); attempt++) {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    assert(isDatabaseMaintenanceActive(), 'database maintenance starts for queued CloudSync work');
+    queuedService.reportDiagnostic({
+      event_id: 'queued-cloud-sync-shutdown-test',
+      event_code: 'shutdown.test',
+      occurred_at: new Date().toISOString(),
+      severity: 'info',
+      metadata: { test: true },
+    });
+    const queuedShutdown = queuedService.shutdown();
+    const queuedSettled = await Promise.race([
+      queuedShutdown.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 1_000)),
+    ]);
+    assertEqual(queuedSettled, true, 'CloudSync shutdown cancels database-maintenance queued work');
+    releaseMaintenance();
+    await maintenance;
+    const queuedDiagnostic = db.prepare('SELECT 1 FROM store_diagnostics_outbox WHERE event_id = ?').get('queued-cloud-sync-shutdown-test');
+    assertEqual(queuedDiagnostic, undefined, 'cancelled queued CloudSync work does not write after shutdown');
 
     const results = getResults();
     if (results.failed > 0) throw new Error(`${results.failed} cloud account status assertions failed`);

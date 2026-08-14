@@ -48,7 +48,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
 
 const { initDatabase, closeDatabase } = require('../main/db');
 
-function main() {
+async function main(): Promise<void> {
   console.log('🧪 FloCafe Google Drive Tests');
   console.log('='.repeat(60));
 
@@ -141,6 +141,19 @@ function main() {
   );
 
   const originalRunBackup = (gd.googleDrive as any).runBackup;
+  const expectedShutdown = Object.assign(new Error('backup cancelled'), { code: 'ERR_SHUTDOWN_ABORTED' });
+  (gd.googleDrive as any).runBackup = () => Promise.reject(expectedShutdown);
+  const aggregateChild = Promise.reject(expectedShutdown);
+  const activeDriveOperations = (gd.googleDrive as any).activeDriveOperations as Set<Promise<unknown>>;
+  activeDriveOperations.add(aggregateChild);
+  void aggregateChild.finally(() => activeDriveOperations.delete(aggregateChild)).catch(() => {});
+  const aggregateBackup = gd.googleDrive.backupNow();
+  void aggregateBackup.catch(() => {});
+  await gd.googleDrive.stop();
+  await assert.rejects(aggregateBackup, (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED');
+  gd.googleDrive.start();
+  console.log('   ✓ normal shutdown accepts nested cancellation failures from tracked Drive work');
+
   let rejectBackup!: (error: Error & { code: string }) => void;
   (gd.googleDrive as any).runBackup = () => new Promise((_resolve: unknown, reject: typeof rejectBackup) => {
     rejectBackup = reject;

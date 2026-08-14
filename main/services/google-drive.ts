@@ -62,6 +62,9 @@ function createDriveShutdownError(label: string, timedOut = false): Error & { co
 }
 
 function isExpectedShutdownCancellation(error: unknown): boolean {
+  if (error instanceof AggregateError) {
+    return error.errors.length > 0 && error.errors.every((nested) => isExpectedShutdownCancellation(nested));
+  }
   const candidate = error as { code?: unknown; name?: unknown } | null;
   return candidate?.code === 'ERR_SHUTDOWN_ABORTED'
     || candidate?.code === 'ABORT_ERR'
@@ -495,6 +498,7 @@ class GoogleDriveService {
         media: { mimeType: 'application/x-sqlite3', body: fs.createReadStream(backupPath) },
         fields: 'id',
       }, { signal: requestSignal(signal, DRIVE_REQUEST_TIMEOUT_MS), timeout: DRIVE_REQUEST_TIMEOUT_MS });
+      this.throwIfStopping(signal);
 
       await this.applyRetention(drive, folderId, signal);
 
@@ -547,8 +551,10 @@ class GoogleDriveService {
       headers: { Authorization: `Bearer ${accessToken}` },
       signal: requestSignal(signal, 8_000),
     });
+    this.throwIfStopping(signal);
     if (!res.ok) return null;
     const data = (await res.json().catch(() => ({}))) as { email?: string };
+    this.throwIfStopping(signal);
     return data.email || null;
   }
 
@@ -630,7 +636,7 @@ class GoogleDriveService {
   }
 
   private throwIfStopping(signal?: AbortSignal): void {
-    if (signal?.aborted || this.stopping) {
+    if (signal?.aborted || this.stopping || this.terminalCleanup) {
       throw createDriveShutdownError('Google Drive operation');
     }
   }

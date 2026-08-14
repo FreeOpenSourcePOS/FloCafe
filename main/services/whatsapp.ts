@@ -141,6 +141,11 @@ const inFlightWhatsAppWork = new Map<Promise<unknown>, WhatsAppWorkCancellation>
 let whatsappShutdownPromise: Promise<void> | null = null;
 let whatsappAbortController = new AbortController();
 let shutdownSocket: BaileysSocket | null = null;
+let whatsappTerminalCleanup = false;
+
+function isWhatsAppTerminal(): boolean {
+  return state.shuttingDown || whatsappTerminalCleanup;
+}
 
 function createWhatsAppAbortError(): Error & { code: string } {
   const error = new Error('WhatsApp work cancelled during shutdown') as Error & { code: string };
@@ -231,7 +236,10 @@ function trackWhatsAppWork<T>(operation: Promise<T>, cancel: WhatsAppWorkCancell
   inFlightWhatsAppWork.set(operation, cancel);
   void operation.finally(() => {
     inFlightWhatsAppWork.delete(operation);
-    if (state.shuttingDown && inFlightWhatsAppWork.size === 0) shutdownSocket = null;
+    if (isWhatsAppTerminal() && inFlightWhatsAppWork.size === 0) {
+      if (state.socket === shutdownSocket) state.socket = null;
+      shutdownSocket = null;
+    }
   }).catch(() => {});
   return operation;
 }
@@ -251,6 +259,7 @@ async function waitForWhatsAppWork(): Promise<void> {
   void drain.catch(() => {});
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
+      whatsappTerminalCleanup = true;
       cancelInFlightWhatsAppWork();
       const timeoutError = new Error(`WhatsApp shutdown timed out after ${SHUTDOWN_TIMEOUT_MS}ms`) as Error & { code: string };
       timeoutError.code = 'ERR_SHUTDOWN_TIMEOUT';
@@ -559,7 +568,7 @@ async function persistIncoming(msg: any, sock: BaileysSocket): Promise<void> {
   const resolvedJid = rawJid.endsWith('@g.us')
     ? rawJid
     : await translateJid(rawJid, msg.key?.remoteJidAlt, sock, signal);
-  if (state.shuttingDown) return;
+  if (isWhatsAppTerminal()) return;
   const phone = '+' + userFromJid(resolvedJid);
   const body =
     msg.message?.conversation ??
@@ -918,10 +927,10 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
   sendLocks.set(req.phoneE164, current);
   try {
     await abortable(() => previous, signal);
-    if (state.shuttingDown) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    if (isWhatsAppTerminal()) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
     return await sendMessageInternal(req, signal);
   } catch (error) {
-    if (state.shuttingDown || signal.aborted) {
+    if (isWhatsAppTerminal() || signal.aborted) {
       return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
     }
     throw error;
@@ -932,14 +941,14 @@ async function sendMessageWithLock(req: QueuedSend): Promise<SendResult> {
 }
 
 async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promise<SendResult> {
-  if (!state.enabled || state.shuttingDown) return { ok: false, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
+  if (!state.enabled || isWhatsAppTerminal()) return { ok: false, error: 'WhatsApp is not enabled.', reason: 'feature_off' };
   if (!req.phoneE164) return { ok: false, error: 'Phone number required.', reason: 'no_phone' };
   if (state.state !== 'connected' || !state.socket) {
     return { ok: false, error: 'Flo is not connected to WhatsApp.', reason: 'not_connected' };
   }
   const socket = state.socket;
   const jid = await resolveJid(req.phoneE164, socket, signal);
-  if (state.shuttingDown) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+  if (isWhatsAppTerminal()) return { ok: false, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
   if (!jid) {
     return { ok: false, error: 'This phone is not registered on WhatsApp.', reason: 'not_on_whatsapp' };
   }
@@ -999,13 +1008,15 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
   }
 
   const shutdownFailure = (): SendResult => {
-    try {
-      updateMessageRow(messageId, {
-        status: 'failed',
-        error: 'WhatsApp is shutting down.',
-        timestamp_field: 'failed_at',
-      });
-    } catch { }
+    if (!whatsappTerminalCleanup) {
+      try {
+        updateMessageRow(messageId, {
+          status: 'failed',
+          error: 'WhatsApp is shutting down.',
+          timestamp_field: 'failed_at',
+        });
+      } catch { }
+    }
     return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
   };
 
@@ -1016,15 +1027,15 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
       } catch { /* best-effort */ }
     }
     await abortable(() => socket.presenceSubscribe(jid), signal).catch(() => {});
-    if (state.shuttingDown || signal.aborted) return shutdownFailure();
+    if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     await abortable(() => socket.sendPresenceUpdate('composing', jid), signal).catch(() => {});
-    if (state.shuttingDown || signal.aborted) return shutdownFailure();
+    if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     updateMessageRow(messageId, { status: 'typing', timestamp_field: 'typing_at' });
     await abortableDelay(randomDelayMs(req.body), signal);
     await abortable(() => socket.sendPresenceUpdate('paused', jid), signal).catch(() => {});
-    if (state.shuttingDown || signal.aborted) return shutdownFailure();
+    if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     const sent = await abortable(() => socket.sendMessage(jid, { text: req.body }), signal);
-    if (state.shuttingDown || signal.aborted) return shutdownFailure();
+    if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     // sendMessage() only resolves when Baileys hands the payload to its
     // local queue — not when WhatsApp's servers ACK it. Don't claim 'sent'
     // yet; the messages.update handler sets status='sent' + sent_at when
@@ -1051,7 +1062,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     }
     return { ok: true, messageId };
   } catch (err: any) {
-    if (state.shuttingDown || signal.aborted) return shutdownFailure();
+    if (isWhatsAppTerminal() || signal.aborted) return shutdownFailure();
     updateMessageRow(messageId, {
       status: 'failed',
       error: err?.message ?? 'Send failed',
@@ -1195,8 +1206,10 @@ export function shutdown(): Promise<void> {
     try { socket.end(undefined); } catch { /* ignore */ }
   }
   whatsappShutdownPromise = waitForWhatsAppWork().finally(() => {
-    if (state.socket === socket) state.socket = null;
-    if (inFlightWhatsAppWork.size === 0) shutdownSocket = null;
+    if (inFlightWhatsAppWork.size === 0) {
+      if (state.socket === socket) state.socket = null;
+      shutdownSocket = null;
+    }
   });
   return whatsappShutdownPromise;
 }

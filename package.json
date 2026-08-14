@@ -15,7 +15,7 @@
     "dev:frontend": "cd frontend && npm run dev",
     "build": "tsc && node scripts/copy-runtime-assets.cjs",
     "lint:backend": "eslint main/",
-    "lint": "npm run lint:backend && cd frontend && npm run lint",
+    "lint": "npm run lint:backend && npm --prefix frontend run lint",
     "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop npm run build",
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",

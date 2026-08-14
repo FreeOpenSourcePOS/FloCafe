@@ -33,9 +33,9 @@ const MOCK_HISTORY: HistoryOrder[] = [
     special_instructions: null, created_by: 1, created_at: hoursAgo(2),
     table: { id: 'tbl-04', name: '4', capacity: 4, status: 'occupied', kitchen_station_id: null, floor: null, section: null, is_active: true },
     items: [
-      { id: 1, order_id: 981, product_id: 1, product_name: 'Margherita Pizza', product_sku: null, unit_price: 350, quantity: 2, subtotal: 700, tax_amount: 35, total: 735, addons: null, special_instructions: null, status: 'served' },
-      { id: 2, order_id: 981, product_id: 2, product_name: 'Garlic Bread', product_sku: null, unit_price: 150, quantity: 1, subtotal: 150, tax_amount: 7.5, total: 157.5, addons: null, special_instructions: null, status: 'served' },
-      { id: 3, order_id: 981, product_id: 3, product_name: 'Cold Coffee', product_sku: null, unit_price: 40, quantity: 1, subtotal: 40, tax_amount: 2, total: 42, addons: null, special_instructions: null, status: 'served' },
+      { id: 1, order_id: 981, product_id: '1', product_name: 'Margherita Pizza', product_sku: null, unit_price: 350, quantity: 2, subtotal: 700, tax_amount: 35, total: 735, addons: null, special_instructions: null, status: 'served' },
+      { id: 2, order_id: 981, product_id: '2', product_name: 'Garlic Bread', product_sku: null, unit_price: 150, quantity: 1, subtotal: 150, tax_amount: 7.5, total: 157.5, addons: null, special_instructions: null, status: 'served' },
+      { id: 3, order_id: 981, product_id: '3', product_name: 'Cold Coffee', product_sku: null, unit_price: 40, quantity: 1, subtotal: 40, tax_amount: 2, total: 42, addons: null, special_instructions: null, status: 'served' },
     ],
     bill: {
       id: 501, bill_number: 'B-0501', order_id: 981, subtotal: 890, tax_amount: 44.5,
@@ -50,10 +50,10 @@ const MOCK_HISTORY: HistoryOrder[] = [
     discount_amount: 0, delivery_charge: 0, total: 504, guest_count: null,
     special_instructions: null, created_by: 1, created_at: hoursAgo(5),
     items: [
-      { id: 4, order_id: 976, product_id: 4, product_name: 'Chicken Biryani', product_sku: null, unit_price: 280, quantity: 1, subtotal: 280, tax_amount: 14, total: 294, addons: null, special_instructions: null, status: 'cancelled' },
-      { id: 5, order_id: 976, product_id: 5, product_name: 'Raita', product_sku: null, unit_price: 60, quantity: 1, subtotal: 60, tax_amount: 3, total: 63, addons: null, special_instructions: null, status: 'cancelled' },
-      { id: 6, order_id: 976, product_id: 6, product_name: 'Gulab Jamun', product_sku: null, unit_price: 90, quantity: 1, subtotal: 90, tax_amount: 4.5, total: 94.5, addons: null, special_instructions: null, status: 'cancelled' },
-      { id: 7, order_id: 976, product_id: 7, product_name: 'Papad', product_sku: null, unit_price: 30, quantity: 1, subtotal: 30, tax_amount: 1.5, total: 31.5, addons: null, special_instructions: null, status: 'cancelled' },
+      { id: 4, order_id: 976, product_id: '4', product_name: 'Chicken Biryani', product_sku: null, unit_price: 280, quantity: 1, subtotal: 280, tax_amount: 14, total: 294, addons: null, special_instructions: null, status: 'cancelled' },
+      { id: 5, order_id: 976, product_id: '5', product_name: 'Raita', product_sku: null, unit_price: 60, quantity: 1, subtotal: 60, tax_amount: 3, total: 63, addons: null, special_instructions: null, status: 'cancelled' },
+      { id: 6, order_id: 976, product_id: '6', product_name: 'Gulab Jamun', product_sku: null, unit_price: 90, quantity: 1, subtotal: 90, tax_amount: 4.5, total: 94.5, addons: null, special_instructions: null, status: 'cancelled' },
+      { id: 7, order_id: 976, product_id: '7', product_name: 'Papad', product_sku: null, unit_price: 30, quantity: 1, subtotal: 30, tax_amount: 1.5, total: 31.5, addons: null, special_instructions: null, status: 'cancelled' },
     ],
     bill: {
       id: 496, bill_number: 'B-0496', order_id: 976, subtotal: 480, tax_amount: 24,
@@ -68,10 +68,10 @@ const MOCK_HISTORY: HistoryOrder[] = [
     special_instructions: null, created_by: 1, created_at: hoursAgo(9),
     table: { id: 'tbl-09', name: '9', capacity: 6, status: 'occupied', kitchen_station_id: null, floor: null, section: null, is_active: true },
     items: [
-      { id: 8, order_id: 970, product_id: 8, product_name: 'Paneer Tikka', product_sku: null, unit_price: 240, quantity: 2, subtotal: 480, tax_amount: 24, total: 504, addons: null, special_instructions: null, status: 'served' },
-      { id: 9, order_id: 970, product_id: 9, product_name: 'Dal Makhani', product_sku: null, unit_price: 220, quantity: 2, subtotal: 440, tax_amount: 22, total: 462, addons: null, special_instructions: null, status: 'served' },
-      { id: 10, order_id: 970, product_id: 10, product_name: 'Butter Naan', product_sku: null, unit_price: 45, quantity: 4, subtotal: 180, tax_amount: 9, total: 189, addons: null, special_instructions: null, status: 'served' },
-      { id: 11, order_id: 970, product_id: 11, product_name: 'Jeera Rice', product_sku: null, unit_price: 140, quantity: 1, subtotal: 140, tax_amount: 7, total: 147, addons: null, special_instructions: null, status: 'served' },
+      { id: 8, order_id: 970, product_id: '8', product_name: 'Paneer Tikka', product_sku: null, unit_price: 240, quantity: 2, subtotal: 480, tax_amount: 24, total: 504, addons: null, special_instructions: null, status: 'served' },
+      { id: 9, order_id: 970, product_id: '9', product_name: 'Dal Makhani', product_sku: null, unit_price: 220, quantity: 2, subtotal: 440, tax_amount: 22, total: 462, addons: null, special_instructions: null, status: 'served' },
+      { id: 10, order_id: 970, product_id: '10', product_name: 'Butter Naan', product_sku: null, unit_price: 45, quantity: 4, subtotal: 180, tax_amount: 9, total: 189, addons: null, special_instructions: null, status: 'served' },
+      { id: 11, order_id: 970, product_id: '11', product_name: 'Jeera Rice', product_sku: null, unit_price: 140, quantity: 1, subtotal: 140, tax_amount: 7, total: 147, addons: null, special_instructions: null, status: 'served' },
     ],
     bill: {
       id: 490, bill_number: 'B-0490', order_id: 970, subtotal: 1240, tax_amount: 62,
@@ -87,8 +87,8 @@ const MOCK_HISTORY: HistoryOrder[] = [
     discount_amount: 0, delivery_charge: 40, total: 418, guest_count: null,
     special_instructions: null, created_by: 1, created_at: hoursAgo(26),
     items: [
-      { id: 12, order_id: 964, product_id: 12, product_name: 'Veg Hakka Noodles', product_sku: null, unit_price: 200, quantity: 1, subtotal: 200, tax_amount: 10, total: 210, addons: null, special_instructions: null, status: 'served' },
-      { id: 13, order_id: 964, product_id: 13, product_name: 'Spring Rolls', product_sku: null, unit_price: 160, quantity: 1, subtotal: 160, tax_amount: 8, total: 168, addons: null, special_instructions: null, status: 'served' },
+      { id: 12, order_id: 964, product_id: '12', product_name: 'Veg Hakka Noodles', product_sku: null, unit_price: 200, quantity: 1, subtotal: 200, tax_amount: 10, total: 210, addons: null, special_instructions: null, status: 'served' },
+      { id: 13, order_id: 964, product_id: '13', product_name: 'Spring Rolls', product_sku: null, unit_price: 160, quantity: 1, subtotal: 160, tax_amount: 8, total: 168, addons: null, special_instructions: null, status: 'served' },
     ],
     bill: {
       id: 484, bill_number: 'B-0484', order_id: 964, subtotal: 360, tax_amount: 18,

@@ -154,7 +154,7 @@ export default function OrdersPage() {
   // Add Item modal states
   const [products, setProducts] = useState<Product[]>([]);
   const [productSearch, setProductSearch] = useState('');
-  const [selectedItems, setSelectedItems] = useState<{ product_id: number; product_name: string; quantity: number; special_instructions: string }[]>([]);
+  const [selectedItems, setSelectedItems] = useState<{ product_id: string; product_name: string; quantity: number; special_instructions: string }[]>([]);
   const [addingItems, setAddingItems] = useState(false);
   const addItemsAttemptRef = useRef<AppendAttempt | null>(null);
   const appendAttemptStorageRef = useRef<AppendAttemptStorage | null>(null);
@@ -745,16 +745,16 @@ export default function OrdersPage() {
     });
   };
 
-  const handleRemoveFromSelection = (productId: number) => {
+  const handleRemoveFromSelection = (productId: string) => {
     setSelectedItems(prev => prev.filter(i => i.product_id !== productId));
   };
 
-  const handleUpdateSelectionQty = (productId: number, quantity: number) => {
+  const handleUpdateSelectionQty = (productId: string, quantity: number) => {
     if (quantity < 1) return;
     setSelectedItems(prev => prev.map(i => i.product_id === productId ? { ...i, quantity } : i));
   };
 
-  const handleUpdateSelectionNotes = (productId: number, notes: string) => {
+  const handleUpdateSelectionNotes = (productId: string, notes: string) => {
     setSelectedItems(prev => prev.map(i => i.product_id === productId ? { ...i, special_instructions: notes } : i));
   };
 

@@ -4,6 +4,22 @@ import { requireRole } from '../middleware/security';
 
 const router = Router();
 
+function serializeCategory(category: any): any {
+  if (!category) return category;
+  return {
+    ...category,
+    is_active: Boolean(category.is_active),
+    children: Array.isArray(category.children) ? category.children.map(serializeCategory) : category.children,
+    products: Array.isArray(category.products)
+      ? category.products.map((product: any) => ({
+          ...product,
+          is_active: Boolean(product.is_active),
+          track_inventory: Boolean(product.track_inventory),
+        }))
+      : category.products,
+  };
+}
+
 router.get('/', (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -40,7 +56,7 @@ router.get('/', (req: Request, res: Response) => {
       }
     }
 
-    const categoriesWithChildren = categories.map((cat) => ({
+    const categoriesWithChildren = categories.map((cat) => serializeCategory({
       ...cat,
       children: childRowsByParent.get(cat.id) || [],
     }));
@@ -63,7 +79,7 @@ router.get('/:id', (req: Request, res: Response) => {
     const children = db.prepare('SELECT * FROM categories WHERE parent_id = ? AND deleted_at IS NULL ORDER BY sort_order, name').all(req.params.id);
     const products = db.prepare('SELECT * FROM products WHERE category_id = ? AND deleted_at IS NULL').all(req.params.id);
 
-    res.json({ category: { ...category, children, products } });
+    res.json({ category: serializeCategory({ ...category, children, products }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -88,7 +104,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     `).run(id, name, slug, description || null, parent_id || null, sort_order || 0, is_active !== false ? 1 : 0, color || null, icon || null, now(), now());
 
     const category = db.prepare('SELECT * FROM categories WHERE id = ?').get(id);
-    res.status(201).json({ category });
+    res.status(201).json({ category: serializeCategory(category) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -118,7 +134,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     `).run(name, slug, description, parent_id, sort_order, activeInt, color, icon, now(), req.params.id);
 
     const updated = db.prepare('SELECT * FROM categories WHERE id = ?').get(req.params.id);
-    res.json({ category: updated });
+    res.json({ category: serializeCategory(updated) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

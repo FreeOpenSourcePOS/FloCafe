@@ -70,7 +70,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
     {
       id: 1,
       order_id: 1,
-      product_id: 1,
+      product_id: '1',
       product_name: 'Chicken Biryani',
       product_sku: 'BIR-001',
       unit_price: 180,
@@ -87,7 +87,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
     {
       id: 2,
       order_id: 1,
-      product_id: 2,
+      product_id: '2',
       product_name: 'Tandoori Roti',
       product_sku: 'ROT-001',
       unit_price: 30,
@@ -102,7 +102,7 @@ export function createTestOrder(overrides?: Partial<Order>): Order {
     {
       id: 3,
       order_id: 1,
-      product_id: 3,
+      product_id: '3',
       product_name: 'Masala Papad',
       product_sku: 'PAP-001',
       unit_price: 50,

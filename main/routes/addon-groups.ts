@@ -8,6 +8,30 @@ const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exemp
 
 const router = Router();
 
+function toBoolean(value: unknown): boolean {
+  return value === true || value === 1;
+}
+
+function serializeAddon(addon: any): any {
+  if (!addon) return addon;
+  return {
+    ...addon,
+    is_active: toBoolean(addon.is_active),
+    inherit_parent_tax_category: toBoolean(addon.inherit_parent_tax_category),
+  };
+}
+
+function serializeAddonGroup(group: any): any {
+  if (!group) return group;
+  return {
+    ...group,
+    is_required: toBoolean(group.is_required),
+    allow_multiple_quantities: toBoolean(group.allow_multiple_quantities),
+    is_active: toBoolean(group.is_active),
+    addons: Array.isArray(group.addons) ? group.addons.map(serializeAddon) : group.addons,
+  };
+}
+
 function invalidTaxBehavior(addons: any[] | undefined): string | null {
   if (!Array.isArray(addons)) return null;
   for (const addon of addons) {
@@ -69,7 +93,7 @@ router.get('/', (req: Request, res: Response) => {
 
     const groupsWithAddons = groups.map((group: any) => {
       const addons = db.prepare('SELECT * FROM addons WHERE addon_group_id = ? AND is_active = 1 ORDER BY sort_order, name').all(group.id);
-      return { ...group, addons };
+      return serializeAddonGroup({ ...group, addons });
     });
 
     res.json({ addon_groups: groupsWithAddons });
@@ -88,7 +112,7 @@ router.get('/:id', (req: Request, res: Response) => {
     }
 
     const addons = db.prepare('SELECT * FROM addons WHERE addon_group_id = ? ORDER BY sort_order, name').all(req.params.id);
-    res.json({ addon_group: { ...group, addons } });
+    res.json({ addon_group: serializeAddonGroup({ ...(group as any), addons }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -150,7 +174,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       };
     });
 
-    res.status(201).json({ addon_group: Object.assign({}, group, { addons: groupAddons }) });
+    res.status(201).json({ addon_group: serializeAddonGroup(Object.assign({}, group, { addons: groupAddons })) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -225,7 +249,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       };
     });
 
-    res.json({ addon_group: Object.assign({}, updated, { addons: updatedAddons }) });
+    res.json({ addon_group: serializeAddonGroup(Object.assign({}, updated, { addons: updatedAddons })) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -284,7 +308,7 @@ router.post('/:groupId/addons', requireRole('owner', 'manager'), (req: Request, 
     );
 
     const addon = db.prepare('SELECT * FROM addons WHERE id = ?').get(addonId);
-    res.status(201).json({ addon });
+    res.status(201).json({ addon: serializeAddon(addon) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -339,7 +363,7 @@ router.put('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req: R
     }
 
     const updated = db.prepare('SELECT * FROM addons WHERE id = ?').get(req.params.addonId);
-    res.json({ addon: updated });
+    res.json({ addon: serializeAddon(updated) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

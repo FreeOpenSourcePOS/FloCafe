@@ -164,7 +164,7 @@ async function runTests() {
   });
 
   assertEqual(createGroupRes.status, 201, 'POST /api/addon-groups created group');
-  assertEqual(createGroupRes.body.addon_group.allow_multiple_quantities, 1, 'Group allow_multiple_quantities stored as 1');
+  assertEqual(createGroupRes.body.addon_group.allow_multiple_quantities, true, 'Group allow_multiple_quantities returns true');
 
   const groupId = createGroupRes.body.addon_group.id;
   const addonShotId = createGroupRes.body.addon_group.addons[0].id;
@@ -175,7 +175,7 @@ async function runTests() {
     allow_multiple_quantities: false,
   });
   assertEqual(updateGroupRes.status, 200, 'PUT /api/addon-groups updated group');
-  assertEqual(updateGroupRes.body.addon_group.allow_multiple_quantities, 0, 'Group allow_multiple_quantities updated to 0');
+  assertEqual(updateGroupRes.body.addon_group.allow_multiple_quantities, false, 'Group allow_multiple_quantities returns false after update');
 
   // Reset allow_multiple_quantities to true
   await makeRequest(app, 'PUT', `/api/addon-groups/${groupId}`, { allow_multiple_quantities: true });

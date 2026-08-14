@@ -84,7 +84,7 @@ export default function POSPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [tables, setTables] = useState<Table[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [mobileCartOpen, setMobileCartOpen] = useState(false);

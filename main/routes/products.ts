@@ -215,6 +215,47 @@ const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exemp
 
 const router = Router();
 
+function toBoolean(value: unknown): boolean {
+  return value === true || value === 1;
+}
+
+function serializeCategory(category: any): any {
+  if (!category) return category;
+  return { ...category, is_active: toBoolean(category.is_active) };
+}
+
+function serializeAddon(addon: any): any {
+  if (!addon) return addon;
+  return {
+    ...addon,
+    is_active: toBoolean(addon.is_active),
+    inherit_parent_tax_category: toBoolean(addon.inherit_parent_tax_category),
+  };
+}
+
+function serializeAddonGroup(group: any): any {
+  if (!group) return group;
+  return {
+    ...group,
+    is_required: toBoolean(group.is_required),
+    allow_multiple_quantities: toBoolean(group.allow_multiple_quantities),
+    is_active: toBoolean(group.is_active),
+    addons: Array.isArray(group.addons) ? group.addons.map(serializeAddon) : group.addons,
+  };
+}
+
+function serializeProduct(product: any): any {
+  if (!product) return product;
+  return {
+    ...product,
+    is_active: toBoolean(product.is_active),
+    track_inventory: toBoolean(product.track_inventory),
+    has_image: toBoolean(product.has_image),
+    category: serializeCategory(product.category),
+    addon_groups: Array.isArray(product.addon_groups) ? product.addon_groups.map(serializeAddonGroup) : product.addon_groups,
+  };
+}
+
 const PRODUCT_NUMERIC_FIELDS = [
   ['price', 0, Number.POSITIVE_INFINITY],
   ['cost_price', 0, Number.POSITIVE_INFINITY],
@@ -349,12 +390,12 @@ router.get('/', (req: Request, res: Response) => {
 
     const productsWithRelations = (products as any[]).map((product: any) => {
       const rel = relations.get(product.id) || { category: null, addon_groups: [] };
-      return {
+      return serializeProduct({
         ...product,
         tags: parseTags(product.tags),
         category: rel.category,
         addon_groups: rel.addon_groups,
-      };
+      });
     });
 
     res.json({ products: productsWithRelations });
@@ -438,7 +479,7 @@ router.get('/:id', (req: Request, res: Response) => {
     const relations = loadProductRelationsBatch(db, [product as any]);
     const rel = relations.get((product as any).id) || { category: null, addon_groups: [] };
 
-    res.json({ product: { ...(product as any), tags: parseTags((product as any).tags), category: rel.category, addonGroups: rel.addon_groups } });
+    res.json({ product: serializeProduct({ ...(product as any), tags: parseTags((product as any).tags), category: rel.category, addon_groups: rel.addon_groups }) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -651,7 +692,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     insertProduct();
 
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(id);
-    res.status(201).json({ product });
+    res.status(201).json({ product: serializeProduct(product) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -774,7 +815,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     updateProduct();
 
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
-    res.json({ product: updated });
+    res.json({ product: serializeProduct(updated) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -833,7 +874,7 @@ router.post('/:id/stock', requireRole('owner', 'manager'), (req: Request, res: R
       return res.status(400).json({ error: action === 'decrease' ? 'Insufficient stock' : 'Product not found' });
     }
     const updated = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id);
-    res.json({ product: updated });
+    res.json({ product: serializeProduct(updated) });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });

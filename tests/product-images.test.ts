@@ -240,12 +240,12 @@ async function main() {
 
     const prodWithImage = products.find((p: any) => p.id === 'prod-1');
     assert(prodWithImage, 'D3: Found prod-1');
-    assertEqual(prodWithImage.has_image, 1, 'D4: has_image is 1 for product with image');
+    assertEqual(prodWithImage.has_image, true, 'D4: has_image is true for product with image');
     assertEqual(prodWithImage.image_url, undefined, 'D5: image_url not in response (stripped)');
 
     const prodWithoutImage = products.find((p: any) => p.id === 'prod-no-img');
     assert(prodWithoutImage, 'D6: Found prod-no-img');
-    assertEqual(prodWithoutImage.has_image, 0, 'D7: has_image is 0 for product without image');
+    assertEqual(prodWithoutImage.has_image, false, 'D7: has_image is false for product without image');
 
     // ── E) POST /fetch-url — CORS proxy ────────────────────────────────────
     console.log('\n─── E) POST /fetch-url (validation only) ───');

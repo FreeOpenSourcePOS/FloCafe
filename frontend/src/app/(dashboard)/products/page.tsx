@@ -85,7 +85,7 @@ export default function ProductsPage() {
     track_inventory: false, stock_quantity: '0', low_stock_threshold: '5', is_active: true,
     tags: [] as string[],
     customTag: '',
-    addon_group_ids: [] as (number | string)[],
+    addon_group_ids: [] as string[],
     image_url: null as string | null,
   });
   const [imageTouched, setImageTouched] = useState(false);
@@ -95,7 +95,7 @@ export default function ProductsPage() {
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [csvResult, setCsvResult] = useState<Record<string, unknown> | null>(null);
   const [csvUploading, setCsvUploading] = useState(false);
-  const [catDeleteModal, setCatDeleteModal] = useState<{ open: boolean; id: number | null; name: string; productCount: number }>({ open: false, id: null, name: '', productCount: 0 });
+  const [catDeleteModal, setCatDeleteModal] = useState<{ open: boolean; id: string | null; name: string; productCount: number }>({ open: false, id: null, name: '', productCount: 0 });
   const [catReassignTo, setCatReassignTo] = useState<string>('');
 
   const [taxCategories, setTaxCategories] = useState<{ id: string; label: string; rate_percent?: number | null; rate_label?: string | null }[]>([]);
@@ -321,7 +321,7 @@ export default function ProductsPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!await confirm(t('products.deleteConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
       await api.delete(`/products/${id}`);
@@ -363,7 +363,7 @@ export default function ProductsPage() {
     }
   };
 
-  const handleCategoryDelete = async (id: number, name: string) => {
+  const handleCategoryDelete = async (id: string, name: string) => {
     const productCount = products.filter(p => p.category_id === id).length;
     if (productCount > 0) {
       setCatReassignTo('');

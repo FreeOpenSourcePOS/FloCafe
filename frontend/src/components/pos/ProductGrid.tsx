@@ -44,8 +44,8 @@ function normalizeBarcode(value: string | null | undefined) {
 interface Props {
   categories: Category[];
   products: Product[];
-  selectedCategory: number | null;
-  setSelectedCategory: (id: number | null) => void;
+  selectedCategory: string | null;
+  setSelectedCategory: (id: string | null) => void;
   search: string;
   setSearch: (s: string) => void;
   currency: string;

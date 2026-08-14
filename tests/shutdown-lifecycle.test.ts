@@ -300,6 +300,35 @@ async function testStandaloneStartupCancellation(): Promise<void> {
   assert.deepEqual(events, ['database', 'prepare', 'main'], 'shutdown between startup awaits prevents later listeners');
 }
 
+async function testDatabaseImportShutdownCancellation(): Promise<void> {
+  const child = spawn(process.execPath, [path.join(__dirname, 'database-import-shutdown-child.cjs')], {
+    cwd: path.resolve(__dirname, '..'),
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let output = '';
+  child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+  child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString(); });
+  try {
+    const [code, signal] = await new Promise<[number | null, NodeJS.Signals | null]>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`database import cancellation child timed out: ${output}`)), 20_000);
+      child.once('error', (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      child.once('exit', (exitCode, exitSignal) => {
+        clearTimeout(timer);
+        resolve([exitCode, exitSignal]);
+      });
+    });
+    assert.equal(signal, null, `database import cancellation child exited by signal: ${output}`);
+    assert.equal(code, 0, `database import cancellation regression failed: ${output}`);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  }
+}
+
 async function testPendingHttpListenIsCancelled(): Promise<void> {
   const server = http.createServer((_request, response) => response.end('ok'));
   server.listen(0, '127.0.0.1');
@@ -690,6 +719,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
   await testStartupEntrypoint(true);
   await testStandaloneDevServerShutdown();
   await testStandaloneStartupCancellation();
+  await testDatabaseImportShutdownCancellation();
   console.log('phase owned servers');
   await testOwnedServerStopEntrypoints();
   console.log('Shutdown lifecycle tests passed.');

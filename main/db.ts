@@ -53,6 +53,10 @@ function createMaintenanceAbortError(): Error & { code: string } {
   return error;
 }
 
+export function throwIfDatabaseMaintenanceAborted(signal: AbortSignal): void {
+  if (signal.aborted) throw createMaintenanceAbortError();
+}
+
 function createDatabaseShutdownError(): Error & { code: string } {
   const error = new Error('Database access is closed during shutdown') as Error & { code: string };
   error.code = 'ERR_SHUTDOWN_ABORTED';
@@ -547,8 +551,8 @@ function recoverInterruptedDatabaseReplacement(dbPath: string, backupDir: string
   }
 }
 
-export function initDatabase(recoverInterruptedReplacement = true): void {
-  if (databaseShutdownRequested) throw createDatabaseShutdownError();
+export function initDatabase(recoverInterruptedReplacement = true, allowDuringShutdown = false): void {
+  if (databaseShutdownRequested && !allowDuringShutdown) throw createDatabaseShutdownError();
   const dbPath = getDbPath();
   const backupDir = getBackupDir();
 
@@ -869,6 +873,7 @@ export function closeDatabase(): void {
 
 export async function createBackupUnlocked(targetPath?: string, signal?: AbortSignal): Promise<{ path: string; schemaVersion: number }> {
   // Internal callers must already hold withDatabaseMaintenanceLock().
+  if (signal?.aborted) throw createMaintenanceAbortError();
   console.log('[DB] createBackup: Starting...');
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const uniqueSuffix = crypto.randomBytes(4).toString('hex');
@@ -1001,13 +1006,14 @@ function removeDatabaseFiles(dbPath: string): string[] {
 export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }> {
   return withDatabaseMaintenanceLock(async (signal) => {
     const { path: backupPath } = await createBackupUnlocked(undefined, signal);
-    if (signal.aborted) throw createMaintenanceAbortError();
+    throwIfDatabaseMaintenanceAborted(signal);
     const dbPath = getDbPath();
     const baselineForeignKeyViolations = getForeignKeyViolationKeys(getDatabase());
     const recoveryPath = path.join(getBackupDir(), `flo-reset-recovery-${crypto.randomBytes(8).toString('hex')}.db`);
     const journalPath = recoveryPath.replace(/\.db$/, '.json');
     let replacementCompleted = false;
     let recoveryCompleted = false;
+    let replacementStarted = false;
 
     try {
       fs.copyFileSync(backupPath, recoveryPath);
@@ -1016,17 +1022,23 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
         phase: 'prepared', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
       });
+      throwIfDatabaseMaintenanceAborted(signal);
+      replacementStarted = true;
       closeDatabase();
+      throwIfDatabaseMaintenanceAborted(signal);
       const failures = removeDatabaseFiles(dbPath);
       if (failures.length > 0) {
         throw new Error(`Could not remove database files: ${failures.join(', ')}`);
       }
-      initDatabase(false);
+      throwIfDatabaseMaintenanceAborted(signal);
+      initDatabase(false, true);
+      throwIfDatabaseMaintenanceAborted(signal);
       getDatabase().pragma('wal_checkpoint(TRUNCATE)');
       syncFile(dbPath);
       if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
         throw new Error('Could not durably commit reset database');
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       writeReplacementJournal(journalPath, {
         phase: 'committed', recoveryPath, dbPath,
         baselineForeignKeyViolations: [...baselineForeignKeyViolations],
@@ -1036,6 +1048,10 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
     } catch (error: any) {
       // Reopen the pre-wipe snapshot so a partial filesystem failure cannot
       // leave the process serving an empty or closed database.
+      if (!replacementStarted) {
+        removeReplacementArtifacts(journalPath, recoveryPath);
+        throw error;
+      }
       try {
         closeDatabase();
         removeDatabaseFiles(dbPath);
@@ -1044,7 +1060,7 @@ export async function resetDatabaseWithBackup(): Promise<{ backupPath: string }>
         if (!syncDirectory(path.dirname(dbPath)) && process.platform !== 'win32') {
           throw new Error('Could not durably recover reset database');
         }
-        initDatabase(false);
+        initDatabase(false, true);
         recoveryCompleted = true;
       } catch (recoveryError: any) {
         throw new Error(

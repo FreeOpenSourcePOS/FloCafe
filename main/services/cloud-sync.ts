@@ -268,6 +268,7 @@ class CloudSyncService {
   private cloudDeletionInProgress = false;
   private cloudNetworkOperations = 0;
   private cloudNetworkIdleWaiters: (() => void)[] = [];
+  private relayCommandPromises = new Set<Promise<unknown>>();
   private shutdownPromise: Promise<void> | null = null;
   private shutdownRequested = false;
 
@@ -342,7 +343,8 @@ class CloudSyncService {
     this.stop();
     const activeFlushes = [this.outboxFlushPromise, this.supportFlushPromise, this.diagnosticsFlushPromise]
       .filter((promise): promise is Promise<void> => promise !== null);
-    this.shutdownPromise = Promise.allSettled(activeFlushes)
+    const activeRelayCommands = [...this.relayCommandPromises];
+    this.shutdownPromise = Promise.allSettled([...activeFlushes, ...activeRelayCommands])
       .then(() => this.waitForCloudNetworkIdle())
       .then(() => undefined);
     return this.shutdownPromise;
@@ -1200,7 +1202,7 @@ class CloudSyncService {
   /** Same as executeCommand, but for a command pushed over the relay socket — result goes back as a frame, not a POST. */
   private async executeRelayCommand(command: CloudCommand) {
     return withDatabaseRequest(async () => {
-    if (this.cloudDeletionInProgress) return;
+    if (this.cloudDeletionInProgress || this.shutdownRequested) return;
     let body: Record<string, unknown>;
     try {
       const result = this.runCommand(command);
@@ -1208,10 +1210,17 @@ class CloudSyncService {
     } catch (err) {
       body = { version: 1, correlation_id: command.correlation_id || command.id, ok: false, error: (err as Error).message, completed_at: new Date().toISOString() };
     }
-    if (!this.cloudDeletionInProgress && this.relaySocket?.readyState === WebSocket.OPEN) {
+    if (!this.cloudDeletionInProgress && !this.shutdownRequested && this.relaySocket?.readyState === WebSocket.OPEN) {
       this.relaySocket.send(JSON.stringify({ type: 'result', id: command.id, ...body }));
     }
     });
+  }
+
+  private trackRelayCommand(command: Promise<unknown>): void {
+    let tracked: Promise<unknown>;
+    tracked = command.finally(() => this.relayCommandPromises.delete(tracked));
+    this.relayCommandPromises.add(tracked);
+    this.runBackground(tracked, 'relay command');
   }
 
   /**
@@ -1360,12 +1369,12 @@ class CloudSyncService {
       const envelope = frame.payload && typeof frame.payload === 'object' ? frame.payload : {};
       const commandPayload = envelope.version === 1 && envelope.payload && typeof envelope.payload === 'object'
         ? envelope.payload : envelope;
-      this.runBackground(this.executeRelayCommand({
+      this.trackRelayCommand(this.executeRelayCommand({
         id: frame.id,
         type: frame.cmd,
         payload: commandPayload,
         correlation_id: typeof envelope.correlation_id === 'string' ? envelope.correlation_id : frame.id,
-      }), 'relay command');
+      }));
     } else if (frame?.type === 'heartbeat_ack') {
       this.applyFeatures(frame.features);
     }

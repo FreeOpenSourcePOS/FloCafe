@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import Database from 'better-sqlite3';
-import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, withTxn, withDatabaseMaintenanceLock } from '../db';
+import { captureKitchenStationSecurityState, captureKdsEnabledSetting, captureRestoreProtectedSettings, captureUserSecurityState, captureUserStationSecurityState, getDatabase, getDbPath, createBackup, createBackupUnlocked, getCurrentSchemaVersion, getForeignKeyViolationKeys, isSafeIdentifier, mergeKdsEnabledSetting, mergeRestoreProtectedSettings, mergeUserSecurityState, mergeUserStationSecurityState, throwIfDatabaseMaintenanceAborted, withTxn, withDatabaseMaintenanceLock } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { clearJWTSecretCache } from './auth';
@@ -108,8 +108,9 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
 router.post('/import', requireRole('owner'),
   (req: Request, res: Response, next: () => void) => (req.body?.overwrite ? requireMasterPin(req, res, next) : next()),
   asyncHandler(async (req: Request, res: Response) => {
-  return withDatabaseMaintenanceLock(async () => {
+  return withDatabaseMaintenanceLock(async (signal) => {
     try {
+    throwIfDatabaseMaintenanceAborted(signal);
     const { data, overwrite } = req.body;
 
     if (!data || !data.data || typeof data.data !== 'object') {
@@ -182,7 +183,8 @@ router.post('/import', requireRole('owner'),
       });
     }
 
-    const { path: backupPath } = await createBackupUnlocked();
+    const { path: backupPath } = await createBackupUnlocked(undefined, signal);
+    throwIfDatabaseMaintenanceAborted(signal);
     const hasVersionMismatch = importSchemaVersion !== getCurrentSchemaVersion();
 
     if (hasVersionMismatch) {
@@ -193,9 +195,11 @@ router.post('/import', requireRole('owner'),
     db.pragma('foreign_keys = OFF');
 
     try {
+      throwIfDatabaseMaintenanceAborted(signal);
       db.exec('BEGIN IMMEDIATE');
       try {
       for (const tableName of importedTables) {
+        throwIfDatabaseMaintenanceAborted(signal);
         if (EXPORT_EXCLUDE_TABLES.has(tableName)) continue;
         // Validate table name to prevent SQL injection
         if (!isSafeIdentifier(tableName)) {
@@ -247,6 +251,7 @@ router.post('/import', requireRole('owner'),
         );
         
         for (const row of rows) {
+          throwIfDatabaseMaintenanceAborted(signal);
           // Exported secret fields are deliberately redacted. Never import the
           // marker itself as a real credential (which would make it known).
           if (
@@ -280,6 +285,7 @@ router.post('/import', requireRole('owner'),
       if (newForeignKeyViolations.length > 0) {
         throw new Error(`Import would introduce ${newForeignKeyViolations.length} new foreign-key violation(s)`);
       }
+      throwIfDatabaseMaintenanceAborted(signal);
       db.exec('COMMIT');
       clearUserAuthCache();
       clearInMemoryRevokedTokens();

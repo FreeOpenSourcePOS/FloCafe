@@ -381,8 +381,11 @@ export class CloudSyncService {
     }
   }
 
-  private withDatabaseRequest<T>(operation: () => T | Promise<T>): Promise<T> {
-    return withDatabaseRequest(operation, this.shutdownController.signal);
+  private withDatabaseRequest<T>(operation: () => T | Promise<T>, requestSignal?: AbortSignal): Promise<T> {
+    const signal = requestSignal
+      ? AbortSignal.any([this.shutdownController.signal, requestSignal])
+      : this.shutdownController.signal;
+    return withDatabaseRequest(operation, signal);
   }
 
   private teardownRelay() {
@@ -557,7 +560,7 @@ export class CloudSyncService {
       }
       throw err;
     }
-    });
+    }, signal);
   }
 
   async testConnection(signal?: AbortSignal): Promise<Record<string, unknown>> {
@@ -707,7 +710,7 @@ export class CloudSyncService {
     this.stop();
     this.settings = this.loadSettings(false);
     return responseData;
-    }).catch((error) => {
+    }, signal).catch((error) => {
       if (!this.shutdownRequested) {
         this.upsertSettings({
           cloud_deletion_status: 'failed', cloud_deletion_outcome: deletionOutcome,
@@ -765,7 +768,7 @@ export class CloudSyncService {
       this.settings = this.loadSettings(false);
     }
     return data;
-    }).catch((error) => {
+    }, options.signal).catch((error) => {
       if (!this.cloudDeletionInProgress && !this.shutdownRequested) {
         this.upsertSettings({
           cloud_deletion_status: 'failed', cloud_deletion_outcome: 'unknown',
@@ -798,7 +801,7 @@ export class CloudSyncService {
       cloud_deletion_outcome: '',
     });
     return { status: typeof data.status === 'string' ? data.status : 'cancelled' };
-    });
+    }, signal);
   }
 
   /**
@@ -824,7 +827,8 @@ export class CloudSyncService {
   }
 
   /** Queue a support request durably; the caller can be offline. */
-  async queueSupportTicket(input: SupportTicketInput): Promise<{ queued: boolean; client_ticket_id: string }> {
+  async queueSupportTicket(input: SupportTicketInput, signal?: AbortSignal): Promise<{ queued: boolean; client_ticket_id: string }> {
+    throwIfRequestAborted(signal);
     if (this.cloudDeletionInProgress || this.shutdownRequested) return { queued: false, client_ticket_id: input.client_ticket_id };
     const payload = {
       client_ticket_id: input.client_ticket_id,
@@ -839,6 +843,7 @@ export class CloudSyncService {
       diagnostics: input.diagnostics,
     };
     return this.withDatabaseRequest(async () => {
+      throwIfRequestAborted(signal);
       if (this.cloudDeletionInProgress || this.shutdownRequested) return { queued: false, client_ticket_id: input.client_ticket_id };
       const db = getDatabase();
       const timestamp = now();
@@ -849,7 +854,7 @@ export class CloudSyncService {
       `).run(input.client_ticket_id, JSON.stringify(payload), timestamp, timestamp);
       this.runBackground(this.flushSupportTicketOutbox(), 'support outbox flush');
       return { queued: true, client_ticket_id: input.client_ticket_id };
-    });
+    }, signal);
   }
 
   private flushSupportTicketOutbox(): Promise<void> {

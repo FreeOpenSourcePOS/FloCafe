@@ -125,7 +125,7 @@ async function main(): Promise<void> {
     let shutdownSettled = false;
     void shutdownPromise.then(() => { shutdownSettled = true; }, () => { shutdownSettled = true; });
     await new Promise((resolve) => setImmediate(resolve));
-    assert(sendSettled, 'shutdown cancels the send wrapper before raw WhatsApp work settles');
+    assert(!sendSettled, 'shutdown joins the send wrapper until raw WhatsApp work settles');
     assert(!shutdownSettled, 'shutdown remains pending while underlying WhatsApp work is active');
     releasePendingPresence();
     const cancelled = await sendPromise;

@@ -629,13 +629,22 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     }));
     for (let attempt = 0; attempt < 20 && !isDatabaseMaintenanceActive(); attempt++) await delay(1);
     assert.equal(isDatabaseMaintenanceActive(), true, 'database maintenance starts before CloudSync queues work');
-    queuedCloudSync.reportDiagnostic({
-      event_id: 'shutdown-lifecycle-cloud-queue',
+    const queuedRequest = new AbortController();
+    const queuedCloudWork = queuedCloudSync.queueSupportTicket({
+      client_ticket_id: 'shutdown-lifecycle-cloud-queue',
+      subject: 'shutdown test',
+      message: 'cancel queued support work',
+      severity: 'normal',
       event_code: 'shutdown.test',
-      severity: 'info',
-      occurred_at: new Date().toISOString(),
-      metadata: { test: true },
-    });
+      diagnostics: { test: true },
+    }, queuedRequest.signal);
+    await delay(10);
+    queuedRequest.abort();
+    await assert.rejects(
+      queuedCloudWork,
+      (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED',
+      'CloudSync-owned queued request work observes the request cancellation',
+    );
     try {
       const queuedCloudShutdown = queuedCloudSync.shutdown();
       const queuedCloudShutdownSettled = await Promise.race([
@@ -648,7 +657,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
       await queuedMaintenance;
     }
     assert.equal(
-      db.prepare('SELECT 1 FROM store_diagnostics_outbox WHERE event_id = ?').get('shutdown-lifecycle-cloud-queue'),
+      db.prepare('SELECT 1 FROM support_ticket_outbox WHERE client_ticket_id = ?').get('shutdown-lifecycle-cloud-queue'),
       undefined,
       'cancelled CloudSync work does not write after shutdown',
     );

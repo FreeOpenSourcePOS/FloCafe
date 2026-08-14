@@ -5,6 +5,7 @@ import { requireRole } from '../middleware/security';
 import { asyncHandler } from '../middleware/async-handler';
 import { cloudSync } from '../services/cloud-sync';
 import { getDatabase } from '../db';
+import { getHttpRequestSignal } from '../shutdown';
 
 const router = Router();
 
@@ -125,7 +126,7 @@ router.post('/', requireRole(...supportRoles), asyncHandler(async (req: Request,
     contact_email: contactEmail || undefined,
     contact_phone: String(body.contact_phone || profile.contact_phone).trim().slice(0, 50) || undefined,
     diagnostics,
-  });
+  }, getHttpRequestSignal(req));
   res.status(queued.queued ? 202 : 503).json({
     ...queued,
     status: queued.queued ? 'queued' : 'unavailable',

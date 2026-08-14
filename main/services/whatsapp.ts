@@ -167,15 +167,28 @@ function abortable<T>(operationFactory: () => Promise<T>, signal: AbortSignal, c
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     let aborted = false;
+    let joinTimeout: NodeJS.Timeout | undefined;
     let onAbort = (): void => {};
-    const cleanup = (): void => signal.removeEventListener('abort', onAbort);
+    const cleanup = (): void => {
+      signal.removeEventListener('abort', onAbort);
+      if (joinTimeout) clearTimeout(joinTimeout);
+    };
     onAbort = (): void => {
       if (settled || aborted) return;
       aborted = true;
-      cleanup();
       cancel();
-      settled = true;
-      reject(createWhatsAppAbortError());
+      const settleCancellation = (): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(createWhatsAppAbortError());
+      };
+      if (!state.shuttingDown) {
+        settleCancellation();
+        return;
+      }
+      joinTimeout = setTimeout(settleCancellation, SHUTDOWN_TIMEOUT_MS);
+      void operation.then(settleCancellation, settleCancellation);
     };
     signal.addEventListener('abort', onAbort, { once: true });
     operation.then(

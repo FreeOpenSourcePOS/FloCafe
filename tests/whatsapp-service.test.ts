@@ -1,22 +1,49 @@
 /**
  * whatsapp-service.test.ts
  *
- * Smoke test that verifies the service module's public API surface is intact.
- * If a future refactor drops or renames one of these exports, this test goes
- * red. Pattern: assert the wiring surface (did we accidentally remove the
- * entry points?) without mocking the internals.
- *
- * Behavioral coverage (rate gates, content filter, LID translation, etc.)
- * needs an Electron runtime or a deep mock — out of scope here. The schema
- * test covers the data layer, this covers the wiring layer.
+ * Smoke test for the service module's public API and shutdown persistence.
  */
 
-// Stub the electron module before importing the service (which uses `app`).
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import Module from 'node:module';
-const realResolve = (Module as any)._resolveFilename;
-(Module as any)._resolveFilename = function (request: string, ...rest: any[]) {
-  if (request === 'electron') return require.resolve('./_electron-stub.cjs');
-  return realResolve.call(this, request, ...rest);
+const realLoad = (Module as any)._load;
+
+const eventHandlers = new Map<string, (value: any) => void>();
+let presenceStarted!: () => void;
+const presenceStartedPromise = new Promise<void>((resolve) => { presenceStarted = resolve; });
+const pendingPresence = new Promise<void>(() => {});
+const fakeSocket = {
+  ev: { on: (event: string, handler: (value: any) => void) => { eventHandlers.set(event, handler); } },
+  onWhatsApp: async () => [{ exists: true, jid: '15555550100@s.whatsapp.net' }],
+  presenceSubscribe: async () => { presenceStarted(); return pendingPresence; },
+  sendPresenceUpdate: async () => {},
+  sendMessage: async () => ({ key: { id: 'shutdown-test-message' } }),
+  end: () => {},
+};
+const fakeBaileys = {
+  fetchLatestWaWebVersion: async () => ({ version: [2, 3000, 1] }),
+  useMultiFileAuthState: async () => ({ state: {}, saveCreds: () => {} }),
+  makeWASocket: () => fakeSocket,
+  Browsers: { macOS: () => ({}) },
+  proto: { Message: { create: () => ({}) } },
+};
+
+(Module as any)._load = function (request: string, ...rest: any[]) {
+  if (request === 'electron') {
+    const testDir = path.join(os.tmpdir(), 'flo-whatsapp-shutdown-test');
+    return {
+      app: { getPath: () => testDir, getVersion: () => 'test', isPackaged: true },
+      safeStorage: {
+        isEncryptionAvailable: () => true,
+        encryptString: (value: string) => Buffer.from(value),
+        decryptString: (value: Buffer) => value.toString(),
+      },
+    };
+  }
+  if (request === '../baileys-loader.cjs') return { loadBaileys: async () => fakeBaileys };
+  return realLoad.call(this, request, ...rest);
 };
 
 const whatsapp = require('../main/services/whatsapp');
@@ -69,6 +96,43 @@ async function main(): Promise<void> {
   assert(result.ok === false, 'sendMessage returns ok=false when feature is off');
   assert(result.reason === 'feature_off', `sendMessage reason is 'feature_off' (got ${result.reason})`);
 
+  const testDir = path.join(os.tmpdir(), 'flo-whatsapp-shutdown-test');
+  const originalFetch = globalThis.fetch;
+  const { initDatabase, getDatabase, closeDatabase } = require('../main/db');
+  initDatabase();
+  globalThis.fetch = (() => Promise.reject(new Error('offline test network'))) as typeof fetch;
+  try {
+    await whatsapp.enable('shutdown-test-user');
+    await whatsapp.connectWithQr();
+    eventHandlers.get('connection.update')?.({ connection: 'open' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    const sendPromise = whatsapp.sendMessage({
+      phoneE164: '+15555550100',
+      body: 'shutdown cancellation test',
+      billId: null,
+      customerId: null,
+      kind: 'manual_reply',
+      userId: null,
+    });
+    await presenceStartedPromise;
+    const shutdownPromise = whatsapp.shutdown();
+    const cancelled = await sendPromise;
+    await shutdownPromise;
+    const row = getDatabase().prepare(`
+      SELECT status, error, failed_at FROM whatsapp_messages
+      WHERE direction = 'outbound' AND body = ?
+      ORDER BY id DESC LIMIT 1
+    `).get('shutdown cancellation test') as { status: string; error: string; failed_at: string | null };
+    assert(cancelled.ok === false && cancelled.reason === 'send_failed', 'shutdown-cancelled send returns send_failed');
+    assert(row.status === 'failed', 'shutdown-cancelled send persists a failed status');
+    assert(row.error === 'WhatsApp is shutting down.' && row.failed_at !== null, 'shutdown-cancelled send records its failure details');
+  } finally {
+    globalThis.fetch = originalFetch;
+    closeDatabase();
+    fs.rmSync(testDir, { recursive: true, force: true });
+  }
+
   if (failures.length > 0) {
     console.error(`\n${failures.length} assertions failed.`);
     process.exit(1);
@@ -78,6 +142,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((err) => {
+  (Module as any)._load = realLoad;
   console.error('Test crashed:', err);
   process.exit(1);
 });

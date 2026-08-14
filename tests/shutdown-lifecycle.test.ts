@@ -9,6 +9,7 @@ import { once } from 'node:events';
 import { WebSocket } from 'ws';
 import {
   closeServerResources,
+  cancelHttpShutdownWork,
   createExitCodeAwareShutdown,
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -560,6 +561,7 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
     const {
       initDatabase,
       closeDatabase,
+      getDatabase,
       beginDatabaseShutdown,
       waitForDatabaseRequests,
       withDatabaseRequest,
@@ -643,6 +645,49 @@ async function testOwnedServerStopEntrypoints(): Promise<void> {
         request.once('error', reject);
       }),
     ]);
+
+    const db = getDatabase();
+    const serverAppUserId = 'server-app-shutdown-user';
+    db.prepare(`
+      INSERT OR REPLACE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+    `).run(serverAppUserId, 'Server App Test User', 'server-app-shutdown@example.com', 'test', 'owner', new Date().toISOString(), new Date().toISOString());
+    const { getJWTSecret } = await import('../main/routes/auth');
+    const jwt = require('jsonwebtoken');
+    const token = jwt.sign({ userId: serverAppUserId, email: 'server-app-shutdown@example.com', role: 'owner' }, getJWTSecret());
+    const originalFetch = globalThis.fetch;
+    let fetchStarted!: () => void;
+    const fetchStartedPromise = new Promise<void>((resolve) => { fetchStarted = resolve; });
+    globalThis.fetch = ((...args: any[]) => new Promise((_resolve, reject) => {
+      const signal = args[1]?.signal as AbortSignal | undefined;
+      const rejectAborted = () => {
+        const error = new Error('forwarded request aborted');
+        error.name = 'AbortError';
+        reject(error);
+      };
+      fetchStarted();
+      if (signal?.aborted) rejectAborted();
+      else signal?.addEventListener('abort', rejectAborted, { once: true });
+    })) as typeof fetch;
+    try {
+      const forwardedResponse = new Promise<number>((resolve, reject) => {
+        const forwardedRequest = http.get({
+          host: '127.0.0.1',
+          port: serverApp.getServerAppPort(),
+          path: '/api/categories',
+          headers: { Authorization: `Bearer ${token}` },
+        }, (response) => {
+          response.resume();
+          response.once('end', () => resolve(response.statusCode ?? 0));
+        });
+        forwardedRequest.once('error', reject);
+      });
+      await fetchStartedPromise;
+      cancelHttpShutdownWork();
+      assert.equal(await forwardedResponse, 503, 'aborted Server App forwarding completes its HTTP response');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
 
     const firstMainStop = mainServer.stopServer();
     assert.strictEqual(firstMainStop, mainServer.stopServer(), 'main stop is idempotent while draining');

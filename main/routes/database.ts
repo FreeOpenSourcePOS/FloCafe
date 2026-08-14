@@ -330,7 +330,7 @@ function getTableColumns(db: Database.Database, tableName: string): string[] {
 
 router.post('/backup', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   try {
-    const { path: backupPath, schemaVersion } = await createBackup();
+    const { path: backupPath, schemaVersion } = await createBackup(undefined, getHttpRequestSignal(req));
     res.json({ 
       success: true, 
       path: backupPath,
@@ -343,7 +343,7 @@ router.post('/backup', requireRole('owner'), requireMasterPin, asyncHandler(asyn
   }
 }));
 
-router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(async (_req: Request, res: Response) => {
+router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   let tempDir: string | null = null;
   try {
     const dbPath = getDbPath();
@@ -354,7 +354,7 @@ router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(asy
 
     // Download a clean checkpointed backup rather than streaming the live WAL
     // file. The temporary snapshot is independent of later restore/reset work.
-    await createBackup(snapshotPath);
+    await createBackup(snapshotPath, getHttpRequestSignal(req));
     res.download(snapshotPath, filename, (error) => {
       try { if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); } catch { }
       if (error) console.error('[DB Download] Stream error:', error);

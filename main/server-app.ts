@@ -121,7 +121,11 @@ async function forwardToMainApiImpl(req: Request, res: Response, targetPath: str
     res.type(upstream.headers.get('content-type') || 'application/json');
     res.send(text);
   } catch (error: any) {
-    if (getHttpRequestSignal(req)?.aborted) return;
+    if (getHttpRequestSignal(req)?.aborted) {
+      if (!res.headersSent) res.status(503).end();
+      else if (!res.writableEnded) res.destroy();
+      return;
+    }
     console.error('[Server App] Main API forward failed:', error);
     res.status(502).json({ error: 'Could not reach the local POS API' });
   }

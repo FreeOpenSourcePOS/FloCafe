@@ -922,6 +922,17 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     return { ok: false, error: err.message ?? 'Failed to record message.', reason: 'send_failed' };
   }
 
+  const shutdownFailure = (): SendResult => {
+    try {
+      updateMessageRow(messageId, {
+        status: 'failed',
+        error: 'WhatsApp is shutting down.',
+        timestamp_field: 'failed_at',
+      });
+    } catch { }
+    return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+  };
+
   try {
     if (resolvedKind === 'manual_reply') {
       try {
@@ -929,15 +940,15 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
       } catch { /* best-effort */ }
     }
     await abortable(socket.presenceSubscribe(jid), signal).catch(() => {});
-    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    if (state.shuttingDown || signal.aborted) return shutdownFailure();
     await abortable(socket.sendPresenceUpdate('composing', jid), signal).catch(() => {});
-    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    if (state.shuttingDown || signal.aborted) return shutdownFailure();
     updateMessageRow(messageId, { status: 'typing', timestamp_field: 'typing_at' });
     await abortable(new Promise<void>((resolve) => setTimeout(resolve, randomDelayMs(req.body))), signal);
     await abortable(socket.sendPresenceUpdate('paused', jid), signal).catch(() => {});
-    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    if (state.shuttingDown || signal.aborted) return shutdownFailure();
     const sent = await abortable(socket.sendMessage(jid, { text: req.body }), signal);
-    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    if (state.shuttingDown || signal.aborted) return shutdownFailure();
     // sendMessage() only resolves when Baileys hands the payload to its
     // local queue — not when WhatsApp's servers ACK it. Don't claim 'sent'
     // yet; the messages.update handler sets status='sent' + sent_at when
@@ -964,7 +975,7 @@ async function sendMessageInternal(req: QueuedSend, signal: AbortSignal): Promis
     }
     return { ok: true, messageId };
   } catch (err: any) {
-    if (state.shuttingDown) return { ok: false, messageId, error: 'WhatsApp is shutting down.', reason: 'send_failed' };
+    if (state.shuttingDown || signal.aborted) return shutdownFailure();
     updateMessageRow(messageId, {
       status: 'failed',
       error: err?.message ?? 'Send failed',

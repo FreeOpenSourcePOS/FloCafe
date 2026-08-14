@@ -61,6 +61,13 @@ function createDriveShutdownError(label: string, timedOut = false): Error & { co
   return error;
 }
 
+function isExpectedShutdownCancellation(error: unknown): boolean {
+  const candidate = error as { code?: unknown; name?: unknown } | null;
+  return candidate?.code === 'ERR_SHUTDOWN_ABORTED'
+    || candidate?.code === 'ABORT_ERR'
+    || candidate?.name === 'AbortError';
+}
+
 function waitForDriveOperation<T>(operation: Promise<T>, signal: AbortSignal | undefined, timeoutMs: number, label: string): Promise<T> {
   let timeout: NodeJS.Timeout | undefined;
   let onAbort: (() => void) | undefined;
@@ -196,7 +203,11 @@ class GoogleDriveService {
       }, SHUTDOWN_TIMEOUT_MS);
       backup.then(
         () => { clearTimeout(timeout); resolve(); },
-        (error) => { clearTimeout(timeout); reject(error); },
+        (error) => {
+          clearTimeout(timeout);
+          if (this.stopping && isExpectedShutdownCancellation(error)) resolve();
+          else reject(error);
+        },
       );
     });
     return this.stopPromise;
@@ -339,13 +350,14 @@ class GoogleDriveService {
   }
 
   /** Manual "Back up to Drive now" action, and the scheduled path. Reuses createBackup() — no second export path. */
-  async backupNow(): Promise<GoogleDriveStatus> {
+  async backupNow(signal?: AbortSignal): Promise<GoogleDriveStatus> {
     if (this.stopping) throw new Error('Google Drive is stopping');
     if (this.backingUp) return this.getStatus();
     this.backingUp = true;
     const abortController = new AbortController();
     this.backupAbortController = abortController;
-    const operation = this.runBackup(abortController.signal);
+    const operationSignal = signal ? AbortSignal.any([signal, abortController.signal]) : abortController.signal;
+    const operation = this.runBackup(operationSignal);
     this.backupPromise = operation;
     try {
       return await operation;

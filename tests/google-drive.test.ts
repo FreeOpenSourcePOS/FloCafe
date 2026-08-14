@@ -132,6 +132,29 @@ function main() {
   assert.equal(status.connected, true, 'connected once a token file is present');
   console.log('   ✓ getStatus() reports connected once a token file exists');
 
+  const requestAbort = new AbortController();
+  requestAbort.abort();
+  await assert.rejects(
+    gd.googleDrive.backupNow(requestAbort.signal),
+    (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED',
+    'backupNow observes an already-aborted request signal',
+  );
+
+  const originalRunBackup = (gd.googleDrive as any).runBackup;
+  let rejectBackup!: (error: Error & { code: string }) => void;
+  (gd.googleDrive as any).runBackup = () => new Promise((_resolve: unknown, reject: typeof rejectBackup) => {
+    rejectBackup = reject;
+  });
+  const activeBackup = gd.googleDrive.backupNow();
+  await new Promise((resolve) => setImmediate(resolve));
+  const stopPromise = gd.googleDrive.stop();
+  const shutdownCancellation = Object.assign(new Error('backup cancelled'), { code: 'ERR_SHUTDOWN_ABORTED' });
+  rejectBackup(shutdownCancellation);
+  await stopPromise;
+  await assert.rejects(activeBackup, (error: any) => error?.code === 'ERR_SHUTDOWN_ABORTED');
+  (gd.googleDrive as any).runBackup = originalRunBackup;
+  console.log('   ✓ stop() treats expected backup cancellation as successful cleanup');
+
   const rawTokenFile = fs.readFileSync(tokenPath, 'utf8');
   assert.ok(!rawTokenFile.includes('flo-backup'), 'sanity: file is the token blob, not something else');
   assert.ok(rawTokenFile.includes('fake-refresh-token'), 'mock encryption is identity — real safeStorage would actually encrypt this in production');

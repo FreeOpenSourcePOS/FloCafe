@@ -670,7 +670,11 @@ router.post('/google-drive/connect', requireRole('owner'), asyncHandler(async (r
     res.json(status);
   } catch (error: any) {
     console.error('[API] Google Drive connection failed:', error);
-    if (getHttpRequestSignal(req)?.aborted) return;
+    if (getHttpRequestSignal(req)?.aborted) {
+      if (!res.headersSent) res.status(503).end();
+      else if (!res.writableEnded) res.destroy();
+      return;
+    }
     res.status(502).json({ error: 'Google Drive connection failed' });
   }
 }));
@@ -685,12 +689,17 @@ router.post('/google-drive/disconnect', requireRole('owner'), asyncHandler(async
   }
 }));
 
-router.post('/google-drive/backup-now', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
+router.post('/google-drive/backup-now', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
   try {
-    const status = await googleDrive.backupNow();
+    const status = await trackHttpRequestWork(req, googleDrive.backupNow(getHttpRequestSignal(req)));
     res.json(status);
   } catch (error: any) {
     console.error('[API] Google Drive backup failed:', error);
+    if (getHttpRequestSignal(req)?.aborted) {
+      if (!res.headersSent) res.status(503).end();
+      else if (!res.writableEnded) res.destroy();
+      return;
+    }
     res.status(502).json({ error: 'Google Drive backup failed' });
   }
 }));

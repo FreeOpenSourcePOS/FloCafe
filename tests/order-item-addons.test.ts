@@ -6,7 +6,8 @@
  * order_items.addons JSON column, which stays the read-path source of
  * truth for now). Also verifies:
  *  - an addon_id that doesn't match any row in `addons` (deleted/unknown)
- *    falls back to NULL instead of aborting order creation via FK violation
+ *    is rejected with 400 (GHSA-jmxx-39wh-4cjx: add-ons must resolve to an
+ *    active catalog add-on linked to the product)
  *  - the v25 migration backfills pre-existing JSON-only order_items
  *
  * Usage: node tests/run-electron-node-test.cjs tests/order-item-addons.test.ts
@@ -131,8 +132,11 @@ async function main() {
   db.prepare(
     `INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES (?, ?, ?, ?, ?)`
   ).run('addon-real-sugar', 'ag-norm', 'Extra Sugar', 5, 1);
+  db.prepare(
+    `INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)`
+  ).run('prod-addon-norm', 'ag-norm');
   // Deliberately no row for 'addon-deleted-lemon' — simulates an addon that
-  // existed when the cart was built but was deleted before the order posted.
+  // was deleted after the cart was built. The order API now rejects it.
 
   const app = express();
   app.use(express.json());
@@ -173,7 +177,6 @@ async function main() {
             quantity: 1,
             addons: [
               { id: 'addon-real-sugar', name: 'Extra Sugar', price: 5 },
-              { id: 'addon-deleted-lemon', name: 'Lemon Slice', price: 3 },
             ],
           }],
         }),
@@ -184,12 +187,26 @@ async function main() {
       const itemId = (db.prepare('SELECT id FROM order_items WHERE order_id = ?').get(orderId) as any).id;
       const rows = db.prepare('SELECT * FROM order_item_addons WHERE order_item_id = ? ORDER BY id').all(itemId) as any[];
 
-      assertEqual(rows.length, 2, 'both selected addons were snapshotted into order_item_addons');
-      assertEqual(rows[0]?.addon_name, 'Extra Sugar', 'first addon name matches');
-      assertEqual(rows[0]?.price, 5, 'first addon price matches');
+      assertEqual(rows.length, 1, 'the selected addon was snapshotted into order_item_addons');
+      assertEqual(rows[0]?.addon_name, 'Extra Sugar', 'addon name matches');
+      assertEqual(rows[0]?.price, 5, 'addon price matches');
       assertEqual(rows[0]?.addon_id, 'addon-real-sugar', 'addon with a valid catalog id keeps the FK link');
-      assertEqual(rows[1]?.addon_name, 'Lemon Slice', 'second addon name matches (name/price preserved even without a catalog link)');
-      assertEqual(rows[1]?.addon_id, null, 'addon with no matching catalog row falls back to NULL addon_id instead of failing the FK');
+
+      // GHSA-jmxx-39wh-4cjx: an unknown/deleted add-on must be rejected, not
+      // silently persisted with a NULL FK.
+      const unknownRes = await request(baseUrl, '/api/orders', {
+        method: 'POST',
+        headers: { Authorization: authHeader },
+        body: JSON.stringify({
+          type: 'takeaway',
+          items: [{
+            product_id: 'prod-addon-norm',
+            quantity: 1,
+            addons: [{ id: 'addon-deleted-lemon', name: 'Lemon Slice', price: 3 }],
+          }],
+        }),
+      });
+      assertEqual(unknownRes.status, 400, `unknown add-on is rejected (got ${unknownRes.status}, ${JSON.stringify(unknownRes.data)})`);
 
       const columns = db.prepare("PRAGMA table_info(order_items)").all().map((c: any) => c.name);
       assert(!columns.includes('addons'), 'order_items.addons column no longer exists — order_item_addons is the only store (issue #125)');

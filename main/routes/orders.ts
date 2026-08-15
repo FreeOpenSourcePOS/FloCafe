@@ -96,36 +96,60 @@ function syncCustomerTagCounts(db: any, customerId: string, items: { product_id:
     .run(JSON.stringify(counts), now(), customerId);
 }
 
-function validateItemAddonGroupLimits(db: ReturnType<typeof getDatabase>, addons: any[] | null | undefined): void {
-  if (!addons || !Array.isArray(addons) || addons.length === 0) return;
+/**
+ * Resolves and validates a submitted order item's add-ons against the catalog
+ * (GHSA-jmxx-39wh-4cjx). Client-supplied name/price are never trusted: every
+ * add-on must resolve by ID to an active catalog add-on whose group is linked
+ * to the product (via addon_group_product). Returns the canonical add-on list
+ * (catalog id/name/price + client quantity) used for both subtotal and the
+ * order_item_addons snapshot.
+ */
+function resolveItemAddons(
+  db: ReturnType<typeof getDatabase>,
+  productId: string,
+  addons: any[] | null | undefined,
+): { id: string; name: string; price: number; quantity: number }[] {
+  if (!addons || !Array.isArray(addons) || addons.length === 0) return [];
 
-  for (const addon of addons) {
-    if (!addon) continue;
-    if (addon.quantity !== undefined) {
-      if (typeof addon.quantity !== 'number' || !Number.isInteger(addon.quantity) || addon.quantity <= 0) {
-        throw new Error(`Invalid add-on quantity for ${addon.name || 'addon'}: must be a positive integer`);
-      }
-    }
-  }
+  const linkedGroupIds = new Set(
+    (db.prepare('SELECT addon_group_id FROM addon_group_product WHERE product_id = ?').all(productId) as { addon_group_id: string }[])
+      .map((row) => row.addon_group_id),
+  );
 
+  const resolved: { id: string; name: string; price: number; quantity: number }[] = [];
   const groupSelections = new Map<string, { totalQty: number; hasMultiQty: boolean }>();
 
   for (const addon of addons) {
     if (!addon) continue;
-    let groupId: string | null = addon.addon_group_id || null;
-    if (!groupId && addon.id) {
-      const dbAddon = db.prepare('SELECT addon_group_id FROM addons WHERE id = ?').get(addon.id) as { addon_group_id: string } | undefined;
-      if (dbAddon) groupId = dbAddon.addon_group_id;
+    if (!addon.id || typeof addon.id !== 'string') {
+      throw new Error('Each add-on must reference a valid catalog add-on ID');
+    }
+    const catalog = db.prepare('SELECT * FROM addons WHERE id = ?').get(addon.id) as
+      | { id: string; addon_group_id: string; name: string; price: number; is_active: number }
+      | undefined;
+    if (!catalog) {
+      throw new Error(`Add-on "${addon.id}" was not found`);
+    }
+    if (catalog.is_active !== 1) {
+      throw new Error(`Add-on "${catalog.name}" is not available`);
+    }
+    if (!linkedGroupIds.has(catalog.addon_group_id)) {
+      throw new Error(`Add-on "${catalog.name}" is not available for this product`);
     }
 
-    if (groupId) {
-      const qty = Math.max(1, Math.floor(addon.quantity || 1));
-      const current = groupSelections.get(groupId) || { totalQty: 0, hasMultiQty: false };
-      groupSelections.set(groupId, {
-        totalQty: current.totalQty + qty,
-        hasMultiQty: current.hasMultiQty || qty > 1,
-      });
+    const quantity = addon.quantity ?? 1;
+    if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity <= 0) {
+      throw new Error(`Invalid add-on quantity for "${catalog.name}": must be a positive integer`);
     }
+
+    resolved.push({ id: catalog.id, name: catalog.name, price: Number(catalog.price) || 0, quantity });
+
+    const qty = Math.max(1, Math.floor(quantity));
+    const current = groupSelections.get(catalog.addon_group_id) || { totalQty: 0, hasMultiQty: false };
+    groupSelections.set(catalog.addon_group_id, {
+      totalQty: current.totalQty + qty,
+      hasMultiQty: current.hasMultiQty || qty > 1,
+    });
   }
 
   for (const [groupId, selection] of groupSelections.entries()) {
@@ -144,6 +168,8 @@ function validateItemAddonGroupLimits(db: ReturnType<typeof getDatabase>, addons
       throw new Error(`Selection for group "${group.name}" requires at least ${group.min_selection} item(s)`);
     }
   }
+
+  return resolved;
 }
 
 router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
@@ -378,7 +404,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       validateOrderNotes(db, special_instructions);
       for (const item of items) {
         validateItemNotes(db, item.special_instructions);
-        validateItemAddonGroupLimits(db, item.addons);
+        item.addons = resolveItemAddons(db, item.product_id, item.addons);
       }
     } catch (err: any) {
       return res.status(400).json({ error: err.message });
@@ -662,7 +688,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       try {
         for (const item of items) {
           validateItemNotes(db, item.special_instructions);
-          validateItemAddonGroupLimits(db, item.addons);
+          item.addons = resolveItemAddons(db, item.product_id, item.addons);
         }
         if (special_instructions !== undefined) {
           validateOrderNotes(db, special_instructions);

@@ -65,7 +65,7 @@
     "test:bills-print-api": "ts-node --transpile-only -P tests/tsconfig.json tests/bills-print-api.test.ts",
     "test:cancel-override": "node tests/run-electron-node-test.cjs tests/cancel-override.test.ts && node tests/run-electron-node-test.cjs tests/manager-pin-rate-limit-bypass.test.ts",
     "test:kitchen-addons": "node tests/run-electron-node-test.cjs tests/kitchen-addons-parsing.test.ts",
-    "test:order-item-addons": "node tests/run-electron-node-test.cjs tests/order-item-addons.test.ts",
+    "test:order-item-addons": "node tests/run-electron-node-test.cjs tests/order-item-addons.test.ts && node tests/run-electron-node-test.cjs tests/addon-price-integrity.test.ts",
     "test:issue-125-addon-reads": "node tests/run-electron-node-test.cjs tests/issue-125-addon-read-paths.test.ts",
     "test:windows-country-code-crash": "node tests/run-electron-node-test.cjs tests/issue-windows-country-code-crash.test.ts",
     "test:reports-insights": "node tests/run-electron-node-test.cjs tests/reports-insights.test.ts",

@@ -50,6 +50,7 @@ async function main() {
   seedProduct(db, 'prod-125', 'cat-125', 'Tea', 50);
   db.prepare(`INSERT INTO addon_groups (id, name) VALUES ('ag-125', 'Extras')`).run();
   db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES ('addon-125-sugar', 'ag-125', 'Extra Sugar', 5, 1)`).run();
+  db.prepare(`INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('prod-125', 'ag-125')`).run();
 
   const app = createApp({
     '/api/orders': orderRoutes,

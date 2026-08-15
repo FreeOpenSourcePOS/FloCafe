@@ -1,7 +1,7 @@
 import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock, withDatabaseRequest } from './db';
+import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock, withDatabaseRequest, isManagedBackupFile } from './db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache } from './middleware/security';
 import { getLocalIP } from './server';
 import { clearJWTSecretCache } from './routes/auth';
@@ -93,6 +93,8 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
         backupPath = result.filePaths[0];
       } else if (!fs.existsSync(backupPath)) {
         return { success: false, error: 'Backup file no longer exists' };
+      } else if (!isManagedBackupFile(backupPath)) {
+        return { success: false, error: 'Restore source must be a Flo-managed backup file' };
       }
 
       const backupVersion = getSchemaVersionFromBackup(backupPath);

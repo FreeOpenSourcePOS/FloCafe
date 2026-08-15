@@ -56,7 +56,7 @@
     "test:orders-authz": "node tests/run-electron-node-test.cjs tests/orders-authz.test.ts",
     "test:authz-phase3": "node tests/run-electron-node-test.cjs tests/authz-matrix-phase3.test.ts",
     "test:customer-auth": "node tests/run-electron-node-test.cjs tests/customer-auth.test.ts",
-    "test:backup": "ts-node --transpile-only -P tests/tsconfig.json tests/backup-restore.test.ts && node tests/run-electron-node-test.cjs tests/backup-restore-production.test.ts",
+    "test:backup": "ts-node --transpile-only -P tests/tsconfig.json tests/backup-restore.test.ts && node tests/run-electron-node-test.cjs tests/backup-restore-production.test.ts && node tests/run-electron-node-test.cjs tests/restore-managed-path.test.ts",
     "test:recovery-cloud": "node tests/run-electron-node-test.cjs tests/recovery-legacy-fk.test.ts && node tests/run-electron-node-test.cjs tests/cloud-deletion-recovery.test.ts",
     "test:cloud-account-status": "node tests/run-electron-node-test.cjs tests/cloud-account-status.test.ts",
     "test:printer": "ts-node --transpile-only -P tests/tsconfig.json tests/printer.test.ts",

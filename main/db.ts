@@ -972,7 +972,18 @@ export async function createBackupUnlocked(targetPath?: string, signal?: AbortSi
         fs.renameSync(stagedTargetPath, finalPath);
       }
       syncDirectory(path.dirname(finalPath));
-      fs.unlinkSync(tempPath);
+      // On Windows, the WAL checkpoint can hold the temp file open briefly
+      // after backupDb.close(), causing EBUSY/EPERM. The file is already
+      // fully copied to finalPath, so silently ignore that specific error
+      // and let the OS clean it up. Re-throw anything else.
+      try {
+        fs.unlinkSync(tempPath);
+      } catch (unlinkErr: any) {
+        if (process.platform !== 'win32' || !['EBUSY', 'EPERM'].includes(unlinkErr?.code)) {
+          throw unlinkErr;
+        }
+        console.warn('[DB] Could not remove temp backup file (Windows file lock); will be cleaned up on exit:', unlinkErr.message);
+      }
     }
     for (const sidecar of [`${finalPath}-wal`, `${finalPath}-shm`]) {
       try { if (pathEntryExists(sidecar)) fs.unlinkSync(sidecar); } catch { }

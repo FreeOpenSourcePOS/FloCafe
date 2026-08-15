@@ -4,7 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
 import { initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError } from './db';
-import { startServer, stopServer, getLocalIP, isServerRunning } from './server';
+import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
 import { cloudSync } from './services/cloud-sync';
 import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry';
 import { googleDrive } from './services/google-drive';
@@ -177,7 +177,6 @@ let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
-const PORT = parseInt(process.env.PORT || '3001', 10);
 
 let gotSingleInstanceLock = false;
 
@@ -240,12 +239,12 @@ function createWindow(): void {
 
   // Always load from the embedded Express server (serves static Next.js export).
   // This avoids file:// protocol issues and keeps dev/prod behaviour identical.
-  mainWindow.loadURL(`http://localhost:${PORT}`);
+  mainWindow.loadURL(`http://localhost:${getServerPort()}`);
 
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page).
   // External URLs are sent to the system browser instead.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    const isLocal = isAllowedLocalWindowUrl(url, PORT, getLocalIP());
+    const isLocal = isAllowedLocalWindowUrl(url, getServerPort(), getLocalIP());
     if (isLocal) {
       return {
         action: 'allow',
@@ -420,12 +419,12 @@ function startMdns(): void {
     bonjour.publish({
       name: 'Flo',
       type: 'http',
-      port: PORT,
+      port: getServerPort(),
       host: 'flo',   // resolves as flo.local on the LAN
       txt: { version: app.getVersion(), kds: `/kds`, kds_port: String(getKdsPort()), server_app: '/server-standalone', server_app_port: String(getServerAppPort()) },
     });
     const ip = getLocalIP();
-    console.log(`[mDNS] Advertising flo.local:${PORT}  (IP fallback: http://${ip}:${PORT})`);
+    console.log(`[mDNS] Advertising flo.local:${getServerPort()}  (IP fallback: http://${ip}:${getServerPort()})`);
     console.log(`[mDNS] KDS available at http://flo.local:${getKdsPort()}  (IP fallback: http://${ip}:${getKdsPort()})`);
     console.log(`[mDNS] Server App available at http://flo.local:${getServerAppPort()}  (IP fallback: http://${ip}:${getServerAppPort()})`);
   } catch (err) {
@@ -595,7 +594,7 @@ function showAbout(): void {
       'A self-hosted, offline-first Point of Sale system.',
       'Your data stays yours.',
       '',
-      `POS URL: http://flo.local:${PORT}`,
+      `POS URL: http://flo.local:${getServerPort()}`,
       `KDS URL: http://flo.local:${kdsPort}`,
       `Server App URL: http://flo.local:${serverAppPort}`,
       '',
@@ -675,7 +674,7 @@ async function initialize(): Promise<void> {
           rss: Math.round(mem.rss / 1024 / 1024),
         },
         uptime: process.uptime(),
-        port: PORT,
+        port: getServerPort(),
       };
     });
 

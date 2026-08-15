@@ -45,7 +45,7 @@
     "test:kds-contract": "node tests/run-electron-node-test.cjs tests/kds-contract.test.ts",
     "test:kds-frontend-conflict": "ts-node --transpile-only -P tests/tsconfig.json tests/kds-frontend-conflict.test.ts",
     "test:e2e": "npm run build && npm run build:frontend && cd frontend && npx playwright install chromium && npx playwright test",
-    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts",
+    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts",
     "test:windows-uninstaller": "node tests/run-windows-uninstaller-tests.cjs",
     "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts",
     "test:static-routes": "node tests/run-electron-node-test.cjs tests/static-route-resolution.test.ts",

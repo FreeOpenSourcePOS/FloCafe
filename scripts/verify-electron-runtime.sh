@@ -47,10 +47,28 @@ if [ -z "$APP" ]; then
   fail "$ELECTRON_DIR is installed but no dist/*.app bundle was found — the download is incomplete or corrupted."
 fi
 
-QUARANTINE=$(xattr -p com.apple.quarantine "$APP" 2>/dev/null || true)
+QUARANTINE_STDERR=$(mktemp)
+set +e
+QUARANTINE=$(xattr -p com.apple.quarantine "$APP" 2>"$QUARANTINE_STDERR")
+xattr_status=$?
+set -e
+
 if [ -n "$QUARANTINE" ]; then
+  rm -f "$QUARANTINE_STDERR"
   fail "$APP is marked com.apple.quarantine ($QUARANTINE). A plain npm install shouldn't set this — something in the download path tagged it, and combined with Electron's ad-hoc dev signature this is exactly what triggers the 'Electron has been blocked' dialog."
 fi
+
+# Only the documented "attribute absent" result (exit 1 with "No such xattr")
+# is an acceptable clean state. Any other failure must not be treated as clean
+# (GHSA-wjr9-g33j-w22x).
+if [ "$xattr_status" -ne 0 ]; then
+  if [ "$xattr_status" -ne 1 ] || ! grep -qi 'no such xattr' "$QUARANTINE_STDERR"; then
+    XATTR_ERR=$(cat "$QUARANTINE_STDERR")
+    rm -f "$QUARANTINE_STDERR"
+    fail "could not read the quarantine attribute of $APP: ${XATTR_ERR:-unexpected xattr failure}"
+  fi
+fi
+rm -f "$QUARANTINE_STDERR"
 
 if ! codesign -dv "$APP" >/dev/null 2>&1; then
   fail "$APP has no code signature at all (expected an ad-hoc dev signature) — the binary is likely corrupted."

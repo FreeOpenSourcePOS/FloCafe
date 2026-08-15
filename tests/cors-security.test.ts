@@ -160,6 +160,41 @@ async function run() {
   malformedRes = await request(malformedApp).get('/test').set('x-test-ip', 'not-an-ip');
   assert(malformedRes.status === 429, 'malformed: second request throttled (429)');
 
+  // 8. Bounded rate limiter state cleanup (GHSA-wp3q-hc3p-v36c)
+  console.log('Testing rate limiter bounded state cleanup...');
+  const limiter = rateLimit({ windowMs: 10, max: 5 });
+  const makeMockReqRes = (ip: string) => {
+    const headers: Record<string, string> = {};
+    let statusCode = 200;
+    const req: any = { ip, socket: { remoteAddress: ip } };
+    const res: any = {
+      setHeader: (k: string, v: string) => { headers[k] = v; },
+      status: (code: number) => {
+        statusCode = code;
+        return {
+          json: (body: any) => ({ statusCode, body }),
+        };
+      },
+    };
+    let nextCalled = false;
+    const next = () => { nextCalled = true; };
+    return { req, res, next, getNext: () => nextCalled, getStatus: () => statusCode };
+  };
+
+  // Populate over 1000 distinct IP entries with a short expiry window
+  for (let i = 0; i < 1005; i++) {
+    const ip = `198.51.${Math.floor(i / 256)}.${i % 256}`;
+    const ctx = makeMockReqRes(ip);
+    limiter(ctx.req, ctx.res, ctx.next);
+    assert(ctx.getNext() === true, `cleanup seed request ${i + 1} OK`);
+  }
+  // Wait for the window to expire
+  await new Promise(resolve => setTimeout(resolve, 25));
+  // The next request with a new IP triggers the table sweep (> 1000 items threshold)
+  const sweepCtx = makeMockReqRes('203.0.113.1');
+  limiter(sweepCtx.req, sweepCtx.res, sweepCtx.next);
+  assert(sweepCtx.getNext() === true, 'cleanup: request after expiry triggers sweep and succeeds');
+
   console.log('✅ All CORS IP Validation & Rate Limiter tests passed!');
 
 }

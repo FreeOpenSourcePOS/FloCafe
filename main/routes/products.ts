@@ -272,6 +272,10 @@ const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exemp
 
 const router = Router();
 
+function hasOwn(body: Record<string, unknown>, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(body, field);
+}
+
 function toBoolean(value: unknown): boolean {
   return value === true || value === 1;
 }
@@ -364,6 +368,27 @@ function normalizeBarcode(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
   const trimmed = raw.trim();
   return trimmed || null;
+}
+
+function normalizeNullableString(raw: unknown): string | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'string') return String(raw);
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
+
+function normalizeRequiredName(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  return trimmed || null;
+}
+
+function validateCategoryId(db: any, categoryId: unknown): string | null {
+  if (categoryId === null || categoryId === undefined || categoryId === '') return null;
+  if (typeof categoryId !== 'string') return 'category_id must be a string or null';
+  const category = db.prepare('SELECT id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1').get(categoryId);
+  if (!category) return 'Category not found or inactive';
+  return null;
 }
 
 function validateAddonGroupIds(db: any, rawIds: unknown): { ids?: string[]; error?: string } {
@@ -684,8 +709,9 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
+    const productName = normalizeRequiredName(name);
 
-    if (!name || price === undefined) {
+    if (!productName || price === undefined) {
       return res.status(400).json({ error: 'Name and price are required' });
     }
     const numericError = validateProductNumericFields(req.body, true);
@@ -712,6 +738,10 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
     }
 
     const db = getDatabase();
+    const categoryError = validateCategoryId(db, category_id);
+    if (categoryError) {
+      return res.status(400).json({ error: categoryError });
+    }
 
     // A barcode scan must resolve to exactly one product — unlike sku, which
     // is informational only, a duplicate barcode would make scanning ambiguous.
@@ -740,10 +770,10 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
           is_active, image_url, sort_order, cb_percent, tags, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        id, category_id || null, name, sku || null, normalizedBarcode, description || null, price, cost_price || 0,
-        'none', 0, tax_category_id || null, tax_behavior || 'country_default',
+        id, normalizeNullableString(category_id), productName, normalizeNullableString(sku), normalizedBarcode, normalizeNullableString(description), price, cost_price || 0,
+        'none', 0, normalizeNullableString(tax_category_id), tax_behavior || 'country_default',
         track_inventory ? 1 : 0, stock_quantity || 0, low_stock_threshold || 0,
-        is_active !== false ? 1 : 0, image_url || null,
+        is_active !== false ? 1 : 0, normalizeNullableString(image_url),
         sort_order || 0, cb_percent !== undefined ? cb_percent : null, JSON.stringify(tags || []),
         now(), now()
       );
@@ -779,6 +809,11 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
       low_stock_threshold, is_active, image_url, sort_order, cb_percent, tags, addon_group_ids
     } = req.body;
     const normalizedBarcode = normalizeBarcode(barcode);
+    const hasName = hasOwn(req.body, 'name');
+    const productName = hasName ? normalizeRequiredName(name) : null;
+    if (hasName && !productName) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
 
     const numericError = validateProductNumericFields(req.body, false);
     if (numericError) return res.status(400).json({ error: numericError });
@@ -795,6 +830,12 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const taxCategoryError = validateTaxCategoryId(tax_category_id);
     if (taxCategoryError) {
       return res.status(400).json({ error: taxCategoryError });
+    }
+    if (hasOwn(req.body, 'category_id')) {
+      const categoryError = validateCategoryId(db, category_id);
+      if (categoryError) {
+        return res.status(400).json({ error: categoryError });
+      }
     }
 
     // Validate image_url at write time (server-side security boundary)
@@ -819,6 +860,12 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const hasImageUrl = 'image_url' in req.body;
     const hasTaxCategoryId = 'tax_category_id' in req.body;
     const hasCbPercent = 'cb_percent' in req.body;
+    const hasCategoryId = hasOwn(req.body, 'category_id');
+    const hasSku = hasOwn(req.body, 'sku');
+    const hasBarcode = hasOwn(req.body, 'barcode');
+    const hasDescription = hasOwn(req.body, 'description');
+    const hasCostPrice = hasOwn(req.body, 'cost_price');
+    const hasTags = hasOwn(req.body, 'tags');
 
     const addonGroupValidation = validateAddonGroupIds(db, addon_group_ids);
     if (addonGroupValidation.error) {
@@ -830,13 +877,13 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     const updateProduct = db.transaction(() => {
       db.prepare(`
         UPDATE products SET
-          category_id = COALESCE(@category_id, category_id),
-          name = COALESCE(@name, name),
-          sku = COALESCE(@sku, sku),
-          barcode = COALESCE(@barcode, barcode),
-          description = COALESCE(@description, description),
+          category_id = CASE WHEN @has_category_id = 1 THEN @category_id ELSE category_id END,
+          name = CASE WHEN @has_name = 1 THEN @name ELSE name END,
+          sku = CASE WHEN @has_sku = 1 THEN @sku ELSE sku END,
+          barcode = CASE WHEN @has_barcode = 1 THEN @barcode ELSE barcode END,
+          description = CASE WHEN @has_description = 1 THEN @description ELSE description END,
           price = COALESCE(@price, price),
-          cost = COALESCE(@cost, cost),
+          cost = CASE WHEN @has_cost = 1 THEN @cost ELSE cost END,
           tax_type = 'none',
           tax_rate = 0,
           tax_category_id = CASE WHEN @has_tax_category_id = 1 THEN @tax_category_id ELSE tax_category_id END,
@@ -848,22 +895,37 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
           image_url = CASE WHEN @has_image_url = 1 THEN @image_url ELSE image_url END,
           sort_order = COALESCE(@sort_order, sort_order),
           cb_percent = CASE WHEN @has_cb_percent = 1 THEN @cb_percent ELSE cb_percent END,
-          tags = COALESCE(@tags, tags),
+          tags = CASE WHEN @has_tags = 1 THEN @tags ELSE tags END,
           updated_at = @updated_at
         WHERE id = @id
       `).run({
-        category_id, name, sku, barcode: normalizedBarcode, description, price, cost: cost_price,
-        tax_category_id, tax_behavior,
+        has_category_id: hasCategoryId ? 1 : 0,
+        category_id: normalizeNullableString(category_id),
+        has_name: hasName ? 1 : 0,
+        name: productName,
+        has_sku: hasSku ? 1 : 0,
+        sku: normalizeNullableString(sku),
+        has_barcode: hasBarcode ? 1 : 0,
+        barcode: normalizedBarcode,
+        has_description: hasDescription ? 1 : 0,
+        description: normalizeNullableString(description),
+        price: price ?? null,
+        has_cost: hasCostPrice ? 1 : 0,
+        cost: cost_price ?? null,
+        tax_category_id: normalizeNullableString(tax_category_id),
+        tax_behavior: tax_behavior ?? null,
         has_tax_category_id: hasTaxCategoryId ? 1 : 0,
-        track_inventory: track_inventory ? 1 : track_inventory === 0 ? 0 : null,
-        stock_quantity, low_stock_threshold,
+        track_inventory: track_inventory ? 1 : track_inventory === 0 || track_inventory === false ? 0 : null,
+        stock_quantity: stock_quantity ?? null,
+        low_stock_threshold: low_stock_threshold ?? null,
         is_active: is_active !== undefined ? (is_active ? 1 : 0) : null,
         has_image_url: hasImageUrl ? 1 : 0,
-        image_url: hasImageUrl ? image_url : null,
-        sort_order,
+        image_url: hasImageUrl ? normalizeNullableString(image_url) : null,
+        sort_order: sort_order ?? null,
         has_cb_percent: hasCbPercent ? 1 : 0,
         cb_percent: hasCbPercent ? cb_percent : null,
-        tags: tags ? JSON.stringify(tags) : null,
+        has_tags: hasTags ? 1 : 0,
+        tags: hasTags ? JSON.stringify(tags || []) : null,
         updated_at: now(),
         id: req.params.id
       });

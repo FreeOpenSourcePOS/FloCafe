@@ -1180,6 +1180,33 @@ export function deleteBackup(fileName: string): void {
   fs.unlinkSync(fullPath);
 }
 
+/**
+ * Returns true when `candidatePath` resolves (symlinks followed) to a regular
+ * file inside the managed backups/ directory that matches the naming scheme
+ * used by createBackup()/listBackups(). Renderer-initiated restores (Backup
+ * History, #120) must pass this boundary so a compromised renderer cannot
+ * point the restore IPC at an arbitrary database file on disk.
+ */
+export function isManagedBackupFile(candidatePath: string): boolean {
+  if (typeof candidatePath !== 'string' || !candidatePath) return false;
+  let resolved: string;
+  let backupDir: string;
+  try {
+    resolved = fs.realpathSync(candidatePath);
+    backupDir = fs.realpathSync(getBackupDir());
+  } catch {
+    return false;
+  }
+  if (!resolved.startsWith(backupDir + path.sep)) return false;
+  const fileName = path.basename(resolved);
+  if (!fileName.startsWith('flo-backup-') || !fileName.endsWith('.db')) return false;
+  try {
+    return fs.statSync(resolved).isFile();
+  } catch {
+    return false;
+  }
+}
+
 function getSchemaDefinitions(dbInstance: Database.Database): Map<string, string> {
   const rows = dbInstance.prepare(`
     SELECT type, name, sql

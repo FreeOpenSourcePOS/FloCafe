@@ -323,7 +323,7 @@ List orders.
           "product_name": "Cheeseburger",
           "quantity": 2,
           "status": "pending",
-          "addons": [{ "name": "Extra Cheese", "price": 20 }],
+          "addons": [{ "id": "addon-1", "name": "Extra Cheese", "price": 20, "quantity": 1 }],
           "special_instructions": "No onions"
         }
       ],
@@ -340,6 +340,8 @@ Create new order.
 
 **Headers:** `Authorization: Bearer <token>`
 
+Order item `addons` reference catalog add-ons by `id`. Each add-on must be active and linked to the product's add-on group. Add-on name and price are resolved from the catalog (client-supplied names and prices are ignored). Quantity defaults to `1` when omitted and must be a positive integer.
+
 **Request:**
 ```json
 {
@@ -350,7 +352,7 @@ Create new order.
     {
       "product_id": "prod-1",
       "quantity": 2,
-      "addons": [{ "addon_id": "addon-1", "price": 20 }],
+      "addons": [{ "id": "addon-1", "quantity": 1 }],
       "special_instructions": "No onions"
     }
   ]
@@ -508,7 +510,7 @@ For a retry-safe append, send an `Idempotency-Key` header containing 1–128 pri
     {
       "product_id": "prod-1",
       "quantity": 2,
-      "addons": [{ "id": "addon-1", "name": "Extra cheese", "price": 20, "quantity": 1 }],
+      "addons": [{ "id": "addon-1", "quantity": 1 }],
       "special_instructions": "No onions"
     }
   ],

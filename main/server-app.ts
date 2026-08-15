@@ -11,6 +11,7 @@ import { getJWTSecret } from './routes/auth';
 import { authRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, revokeToken } from './middleware/security';
 import { getServerPort } from './server';
 import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, setServerAppPort } from './server-app-state';
+import { API_JSON_BODY_LIMIT } from './http-limits';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
@@ -139,7 +140,16 @@ export function startServerApp(): Promise<void> {
     const app: Express = express();
 
     app.use(cors(corsOptions));
-    app.use(express.json());
+    app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
+    app.use((error: any, _req: Request, res: Response, next: NextFunction) => {
+      if (error?.type === 'entity.too.large') {
+        res.status(413).json({
+          error: `Request body is too large. JSON imports are limited to ${API_JSON_BODY_LIMIT}; use Backup/Restore for full database migration.`,
+        });
+        return;
+      }
+      next(error);
+    });
     app.use((req: Request, _res: Response, next: NextFunction) => {
       if (req.body === undefined) req.body = {};
       next();

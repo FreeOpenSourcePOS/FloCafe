@@ -3827,9 +3827,9 @@ export default function SettingsPage() {
             </div>
 
             {/* Database Backup */}
-            <div className="bg-white rounded-xl border border-gray-100 p-6">
+            <div className="bg-white rounded-xl border border-blue-100 bg-blue-50/30 p-6">
               <div className="flex items-center gap-2 mb-4">
-                <FileText size={20} className="text-gray-500" />
+                <Database size={20} className="text-blue-600" />
                 <h2 className="font-semibold text-gray-900">{t('settings.createBackup')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-4">

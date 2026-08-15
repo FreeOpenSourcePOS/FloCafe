@@ -13,6 +13,7 @@ import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive
 import { setupKdsWebSocket } from './services/kds';
 import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
+import { API_JSON_BODY_LIMIT } from './http-limits';
 
 let server: http.Server | null = null;
 let app: Express;
@@ -150,7 +151,16 @@ export function startServer(): Promise<void> {
     app = express();
 
     app.use(cors(corsOptions));
-    app.use(express.json());
+    app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
+    app.use((error: any, _req: Request, res: Response, next: NextFunction) => {
+      if (error?.type === 'entity.too.large') {
+        res.status(413).json({
+          error: `Request body is too large. JSON imports are limited to ${API_JSON_BODY_LIMIT}; use Backup/Restore for full database migration.`,
+        });
+        return;
+      }
+      next(error);
+    });
     // body-parser 2.x (bundled with Express 5) leaves req.body undefined
     // instead of {} when a request has no parseable body -- restore the
     // old default so route handlers can destructure req.body directly.

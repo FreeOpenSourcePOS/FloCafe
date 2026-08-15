@@ -35,6 +35,7 @@ const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
 const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
+const USER_ROLES = new Set(['owner', 'manager', 'cashier', 'waiter', 'chef']);
 
 router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
   try {
@@ -144,14 +145,20 @@ router.post('/import', requireRole('owner'),
     }
 
     // Exported user rows intentionally omit password/pin hashes. Preserve
-    // existing destination accounts, but reject imports whose business rows
-    // reference users that cannot exist after those redacted rows are skipped.
+    // existing destination accounts, and create inactive placeholders for
+    // redacted exported users so historical rows keep valid staff references.
     const importedUserRows = Array.isArray(importData.users) ? importData.users : [];
     const credentialedUserIds = new Set(
       importedUserRows
         .filter((row) => typeof row?.password === 'string' && row.password.length > 0)
         .map((row) => String(row.id)),
     );
+    const redactedUserIds = new Set(
+      importedUserRows
+        .filter((row) => row && typeof row === 'object' && row.id != null && !credentialedUserIds.has(String(row.id)))
+        .map((row) => String(row.id)),
+    );
+    const importProvidedUserIds = new Set([...credentialedUserIds, ...redactedUserIds]);
     const existingUserIds = new Set(
       (db.prepare('SELECT id FROM users').all() as { id: string }[]).map((row) => String(row.id)),
     );
@@ -168,7 +175,7 @@ router.post('/import', requireRole('owner'),
           const value = row[column];
           if (value != null && String(value) !== '') {
             const userId = String(value);
-            if (!existingUserIds.has(userId) && !credentialedUserIds.has(userId)) unresolvedUserIds.add(userId);
+            if (!existingUserIds.has(userId) && !importProvidedUserIds.has(userId)) unresolvedUserIds.add(userId);
           }
         }
       }
@@ -176,12 +183,12 @@ router.post('/import', requireRole('owner'),
     const importedWhatsappActivator = importedTables.includes('settings') && Array.isArray(importData.settings)
       ? importData.settings.find((row) => row?.key === 'whatsapp_activated_by_user_id')?.value
       : null;
-    if (importedWhatsappActivator && !existingUserIds.has(String(importedWhatsappActivator)) && !credentialedUserIds.has(String(importedWhatsappActivator))) {
+    if (importedWhatsappActivator && !existingUserIds.has(String(importedWhatsappActivator)) && !importProvidedUserIds.has(String(importedWhatsappActivator))) {
       unresolvedUserIds.add(String(importedWhatsappActivator));
     }
     if (unresolvedUserIds.size > 0) {
       return res.status(400).json({
-        error: 'Import contains rows linked to redacted user accounts that are not present on this install. Set up matching staff accounts first.',
+        error: 'Import contains rows linked to user accounts that are not present in this export or this install. Set up matching staff accounts first.',
       });
     }
 
@@ -281,6 +288,11 @@ router.post('/import', requireRole('owner'),
         console.log(`[DB Import] ${tableName}: ${rows.length} rows (${commonCols.length} columns)`);
       }
       
+      const placeholderUsersCreated = restoreRedactedUserPlaceholders(db, importedUserRows, existingUserIds);
+      if (placeholderUsersCreated > 0) {
+        console.log(`[DB Import] Created ${placeholderUsersCreated} inactive placeholder user(s) for redacted exported accounts`);
+      }
+
       mergeUserSecurityState(db, preservedUserSecurity);
       mergeUserStationSecurityState(db, preservedUserStations, preservedUserSecurity.map((row) => row.id), preservedStationSecurity);
       mergeKdsEnabledSetting(db, preservedKdsEnabled);
@@ -314,7 +326,8 @@ router.post('/import', requireRole('owner'),
         backup: backupPath,
         schemaVersionMismatch: hasVersionMismatch,
         importedSchemaVersion: importSchemaVersion,
-        currentSchemaVersion: getCurrentSchemaVersion()
+        currentSchemaVersion: getCurrentSchemaVersion(),
+        placeholderUsersCreated,
       });
       } catch (err: any) {
         try { db.exec('ROLLBACK'); } catch { }
@@ -329,6 +342,71 @@ router.post('/import', requireRole('owner'),
     }
   }, getHttpRequestSignal(req));
 }));
+
+function restoreRedactedUserPlaceholders(
+  db: Database.Database,
+  importedUserRows: any[],
+  existingUserIds: Set<string>,
+): number {
+  if (importedUserRows.length === 0) return 0;
+
+  const currentCols = getTableColumns(db, 'users');
+  const insertableCols = [
+    'id',
+    'name',
+    'email',
+    'password',
+    'role',
+    'category_ids',
+    'is_active',
+    'terms_accepted_at',
+    'tokens_valid_after',
+    'station_assignments_configured',
+    'created_at',
+    'updated_at',
+  ].filter((column) => currentCols.includes(column));
+  if (!insertableCols.includes('id') || !insertableCols.includes('password')) return 0;
+
+  const colList = insertableCols.join(', ');
+  const placeholders = insertableCols.map(() => '?').join(', ');
+  const insertStmt = db.prepare(`INSERT OR IGNORE INTO users (${colList}) VALUES (${placeholders})`);
+  let created = 0;
+
+  for (const row of importedUserRows) {
+    if (!row || typeof row !== 'object') continue;
+    if (typeof row.password === 'string' && row.password.length > 0) continue;
+
+    const id = row.id == null ? '' : String(row.id);
+    if (!id || existingUserIds.has(id)) continue;
+
+    const timestamp = typeof row.updated_at === 'string' && row.updated_at
+      ? row.updated_at
+      : new Date().toISOString();
+    const role = USER_ROLES.has(String(row.role)) ? String(row.role) : 'cashier';
+    const values: Record<string, unknown> = {
+      id,
+      name: typeof row.name === 'string' && row.name.trim() ? row.name : `Imported staff ${id}`,
+      email: null,
+      password: `disabled-redacted-import-${id}`,
+      role,
+      category_ids: typeof row.category_ids === 'string' ? row.category_ids : null,
+      is_active: 0,
+      terms_accepted_at: null,
+      tokens_valid_after: null,
+      station_assignments_configured: 0,
+      created_at: typeof row.created_at === 'string' && row.created_at ? row.created_at : timestamp,
+      updated_at: timestamp,
+    };
+
+    const info = insertStmt.run(...insertableCols.map((column) => values[column] ?? null));
+    if (info.changes > 0) {
+      existingUserIds.add(id);
+      created += 1;
+    }
+  }
+
+  return created;
+}
 
 function getTableColumns(db: Database.Database, tableName: string): string[] {
   if (!isSafeIdentifier(tableName)) {

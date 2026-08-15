@@ -38,6 +38,7 @@ process.env.JWT_SECRET = 'test-secret-for-db-tools-api';
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
+const { API_JSON_BODY_LIMIT } = require('../main/http-limits');
 const { initDatabase, getDatabase, closeDatabase, getCurrentSchemaVersion, MIGRATIONS, now } = require('../main/db');
 const { getJWTSecret } = require('../main/routes/auth');
 const { authRoutes } = require('../main/routes/auth');
@@ -81,7 +82,7 @@ const app = express();
 let stalledDownloadStarted!: () => void;
 const stalledDownloadStartedPromise = new Promise<void>((resolve) => { stalledDownloadStarted = resolve; });
 let stalledDownloadDestroyed = false;
-app.use(express.json());
+app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
 app.use((req: any, res: any, next: any) => {
   if (!req.path.startsWith('/api')) { next(); return; }
   if (req.path.startsWith('/api/auth')) { next(); return; }
@@ -176,7 +177,30 @@ async function runTests() {
     },
   });
   assert(unresolvedUserImport.status === 400, `imports with unresolved redacted user references are rejected (got ${unresolvedUserImport.status})`);
-  assert(unresolvedUserImport.body.error?.includes('redacted user'), 'unresolved user import explains the required staff setup');
+  assert(unresolvedUserImport.body.error?.includes('user accounts'), 'unresolved user import explains the required staff setup');
+
+  const redactedUserImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [],
+        categories: [],
+        products: [],
+        users: [{ id: 'redacted-user-1', name: 'Imported Redacted User', role: 'waiter', is_active: 1 }],
+        orders: [{ id: 1001, order_number: 'ORD-REDACTED-USER-001', user_id: 'redacted-user-1' }],
+      },
+    },
+  });
+  assert(redactedUserImport.status === 200, `redacted exported users are restored as placeholders (got ${redactedUserImport.status}, ${JSON.stringify(redactedUserImport.body)})`);
+  assert(redactedUserImport.body.placeholderUsersCreated === 1, 'import reports one placeholder user created');
+  const placeholderUser = db.prepare("SELECT name, role, is_active, password, email FROM users WHERE id = 'redacted-user-1'").get() as { name: string; role: string; is_active: number; password: string; email: string | null } | undefined;
+  assert(placeholderUser?.name === 'Imported Redacted User', 'placeholder user preserves display name');
+  assert(placeholderUser?.role === 'waiter', 'placeholder user preserves role');
+  assert(placeholderUser?.is_active === 0, 'placeholder user is inactive');
+  assert(placeholderUser?.email == null, 'placeholder user does not reserve the exported email');
+  assert(placeholderUser?.password !== '[REDACTED]', 'placeholder user does not use the redaction marker as a password');
 
   // Redacted export fields must never become literal credentials on import.
   db.prepare("INSERT OR IGNORE INTO categories (id, name, sort_order) VALUES ('stale-import-category', 'Stale', 99)").run();
@@ -201,6 +225,21 @@ async function runTests() {
     (jwtSecretAfter?.value ?? null) === (jwtSecretBefore?.value ?? null),
     'redacted jwt_secret is preserved during import',
   );
+
+  const largeJsonImport = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+    master_pin: '1234',
+    overwrite: true,
+    data: {
+      schema_version: String(getCurrentSchemaVersion()),
+      data: {
+        settings: [{ key: 'json_large_import_probe', value: 'x'.repeat(2 * 1024 * 1024), updated_at: now() }],
+        categories: [],
+        products: [],
+        users: [],
+      },
+    },
+  });
+  assert(largeJsonImport.status === 200, `multi-megabyte JSON imports are accepted (got ${largeJsonImport.status}, ${JSON.stringify(largeJsonImport.body).slice(0, 200)})`);
 
   // ── Test 2: health-check is owner-gated, not PIN-gated ──────────────────
   console.log('\nTest 2: GET /db-tools/health-check');

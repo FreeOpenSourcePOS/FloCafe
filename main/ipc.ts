@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock, withDatabaseRequest } from './db';
@@ -37,6 +37,28 @@ function maskSetting(key: string, value: string): string {
   if (key === 'cloud_last_error') return value ? 'Cloud service request failed' : '';
   if (!SENSITIVE_SETTING_KEYS.has(key)) return value;
   return value ? `****${value.slice(-4)}` : '';
+}
+
+/**
+ * The only window permitted to invoke privileged IPC is the main POS renderer,
+ * which the embedded server serves from localhost/127.0.0.1. The KDS window is
+ * LAN-served HTTP content and must not reach these handlers, so non-PIN-gated
+ * handlers verify the sender's origin before doing anything.
+ */
+function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
+  try {
+    const url = event.sender?.getURL?.() ?? '';
+    return url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
+  } catch {
+    return false;
+  }
+}
+
+function handle(channel: string, listener: (...args: any[]) => any): void {
+  ipcMain.handle(channel, (event: Electron.IpcMainInvokeEvent, ...args: any[]) => {
+    if (!isTrustedSender(event)) return { error: 'Unauthorized sender' };
+    return listener(event, ...args);
+  });
 }
 
 export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
@@ -163,7 +185,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   });
 
   // DB health check / master PIN / initialize (menu + tray triggered)
-  ipcMain.handle('db-health-check', async () => {
+  handle('db-health-check', async () => {
     return withDatabaseRequest(async () => {
     try {
       return runHealthCheck();
@@ -173,7 +195,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     });
   });
 
-  ipcMain.handle('db-apply-safe-fixes', async (event, findingIds?: string[]) => {
+  handle('db-apply-safe-fixes', async (event, findingIds?: string[]) => {
     return withDatabaseRequest(async () => {
     try {
       return applySafeFixes(findingIds);
@@ -183,7 +205,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     });
   });
 
-  ipcMain.handle('master-pin-status', async () => {
+  handle('master-pin-status', async () => {
     return { available: isMasterPinAvailable(), isSet: isMasterPinSet() };
   });
 
@@ -207,7 +229,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   });
 
   // Settings
-  ipcMain.handle('get-settings', async () => {
+  handle('get-settings', async () => {
     return withDatabaseRequest(async () => {
     try {
       const db = getDatabase();
@@ -223,7 +245,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     });
   });
 
-  ipcMain.handle('set-setting', async (event, key: string, value: string) => {
+  handle('set-setting', async (event, key: string, value: string) => {
     return withDatabaseRequest(async () => {
     try {
       if (typeof key !== 'string' || typeof value !== 'string' || value.length > 10_000) {
@@ -243,7 +265,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   });
 
   // WhatsApp status snapshot for renderer polling on app focus
-  ipcMain.handle('whatsapp-get-status', async () => withDatabaseRequest(async () => {
+  handle('whatsapp-get-status', async () => withDatabaseRequest(async () => {
     try {
       return getWhatsAppStatus();
     } catch (err: any) {
@@ -255,7 +277,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   let activeKdsWindow: BrowserWindow | null = null;
 
   // KDS info
-  ipcMain.handle('get-kds-info', async () => {
+  handle('get-kds-info', async () => {
     const localIP = getLocalIP();
     const port = getKdsPort();
     return {
@@ -267,19 +289,24 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   });
 
   // Window management
-  ipcMain.handle('open-kds-window', async () => {
+  handle('open-kds-window', async () => {
     if (activeKdsWindow && !activeKdsWindow.isDestroyed()) {
       activeKdsWindow.focus();
       return;
     }
 
     const port = getKdsPort();
+    const localIP = getLocalIP();
+    const kdsOrigin = `http://${localIP}:${port}`;
+
     activeKdsWindow = new BrowserWindow({
       width: 1200,
       height: 800,
       title: 'Flo - Kitchen Display',
       webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
+        // The KDS page is LAN-served HTTP and uses only the HTTP API +
+        // WebSocket, so it must not receive the privileged POS renderer
+        // bridge (preload.js). See GHSA-jmmq-fjg5-g6px.
         contextIsolation: true,
         nodeIntegration: false,
       },
@@ -289,11 +316,24 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
       activeKdsWindow = null;
     });
 
-    const localIP = getLocalIP();
-    activeKdsWindow.loadURL(`http://${localIP}:${port}/kds`);
+    // Confine the KDS window to its own origin and deny new windows so a
+    // modified or unexpected document cannot navigate away and reach other
+    // local services or content.
+    activeKdsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+    activeKdsWindow.webContents.on('will-navigate', (event, url) => {
+      let allowed = false;
+      try {
+        allowed = new URL(url).origin === kdsOrigin;
+      } catch {
+        allowed = false;
+      }
+      if (!allowed) event.preventDefault();
+    });
+
+    activeKdsWindow.loadURL(`${kdsOrigin}/kds`);
   });
 
-  ipcMain.handle('get-app-info', async () => {
+  handle('get-app-info', async () => {
     return {
       version: app.getVersion(),
       name: app.getName(),
@@ -304,7 +344,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   });
 
   // Printers
-  ipcMain.handle('get-printers', async () => {
+  handle('get-printers', async () => {
     return withDatabaseRequest(async () => {
     try {
       const db = getDatabase();
@@ -316,7 +356,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     });
   });
 
-  ipcMain.handle('save-printer', async (event, printer: any) => {
+  handle('save-printer', async (event, printer: any) => {
     return withDatabaseRequest(async () => {
     try {
       // Validate printer name — reject names with shell metacharacters (command injection defense)
@@ -349,7 +389,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   });
 
   // Reports
-  ipcMain.handle('get-daily-summary', async () => {
+  handle('get-daily-summary', async () => {
     return withDatabaseRequest(async () => {
     try {
       const db = getDatabase();

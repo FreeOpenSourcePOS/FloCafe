@@ -20,8 +20,21 @@ const DEFAULT_WINDOW_MS = 60 * 1000; // 1 minute
 const DEFAULT_MAX = 100;
 
 /**
+ * Canonicalizes an IP address for rate-limit bucketing so that equivalent
+ * address forms share one budget (GHSA-wp3q-hc3p-v36c):
+ *   - IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is the same host as `a.b.c.d`.
+ *   - Hex case is normalized (IPv6 addresses are case-insensitive).
+ * Returns the address unchanged (lowercased) when it is not a recognized form.
+ */
+function normalizeIpForRateLimit(ip: string): string {
+  const lower = ip.toLowerCase();
+  return lower.startsWith('::ffff:') ? lower.substring(7) : lower;
+}
+
+/**
  * Simple in-memory rate limiter for the local Express API.
- * Uses IP address as the key. Designed for a single-tenant desktop app.
+ * Uses the canonicalized IP address as the key. Designed for a single-tenant
+ * desktop app.
  */
 export function rateLimit(options: RateLimitOptions = {}) {
   const windowMs = options.windowMs ?? DEFAULT_WINDOW_MS;
@@ -31,17 +44,24 @@ export function rateLimit(options: RateLimitOptions = {}) {
   const requests = new Map<string, RateLimitRecord>();
 
   return (req: Request, res: Response, next: NextFunction) => {
-    let ip = req.ip || req.socket.remoteAddress || 'unknown';
+    const rawIp = req.ip || req.socket.remoteAddress || 'unknown';
     const now = Date.now();
+    const ip = normalizeIpForRateLimit(rawIp);
 
-    // Normalize IPv4-mapped IPv6 address (e.g. ::ffff:127.0.0.1 -> 127.0.0.1)
-    const normalizedIp = ip.startsWith('::ffff:') ? ip.substring(7) : ip;
+    // Bound the in-memory table. Sweep expired entries once it grows past a
+    // threshold so abandoned client keys cannot accumulate without limit in a
+    // long-running process (GHSA-wp3q-hc3p-v36c).
+    if (requests.size > 1000) {
+      for (const [key, value] of requests.entries()) {
+        if (value.resetAt <= now) requests.delete(key);
+      }
+    }
 
     // Bypass rate limit for local / private / Tailscale IPs (general API traffic).
     // Auth endpoints opt out of this bypass via bypassPrivateIp: false so that
     // LAN-based brute-force against /api/auth/login is still throttled.
     const bypassPrivateIp = options.bypassPrivateIp !== false;
-    if (bypassPrivateIp && isAllowedPrivateIp(normalizedIp)) {
+    if (bypassPrivateIp && isAllowedPrivateIp(ip)) {
       return next();
     }
 
@@ -324,8 +344,19 @@ import * as net from 'net';
  * Checks if the given IP address is a private, local, or Tailscale IP.
  */
 export function isAllowedPrivateIp(ip: string): boolean {
-  if (!net.isIP(ip)) return false; 
-  if (ip === '::1') return true;
+  const version = net.isIP(ip);
+  if (!version) return false;
+
+  // IPv6 (GHSA-wp3q-hc3p-v36c): only the loopback address is treated as local.
+  // IPv4-mapped IPv6 (`::ffff:a.b.c.d`) is normalized to IPv4 so it shares the
+  // same decision as its embedded address. Link-local (fe80::/10), unique-local
+  // (fc00::/7), and other reserved IPv6 ranges are intentionally NOT exempt —
+  // they are rate-limited like any other address.
+  if (version === 6) {
+    if (ip === '::1') return true;
+    const mapped = ip.toLowerCase().match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    return mapped ? isAllowedPrivateIp(mapped[1]) : false;
+  }
 
   const parts = ip.split('.').map(Number);
   if (parts.length !== 4) return false;

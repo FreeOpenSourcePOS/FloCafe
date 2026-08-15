@@ -109,6 +109,92 @@ async function run() {
   authRes = await request(authLoopbackApp).get('/test');
   assert(authRes.status === 429, 'Auth: loopback third request rate-limited when bypass disabled (vuln-0003)');
 
+  // 7. Equivalent IP forms share one rate-limit bucket (GHSA-wp3q-hc3p-v36c)
+  console.log('Testing equivalent IP-form bucket sharing...');
+
+  // A limiter whose client IP is taken per-request from a header, so one app
+  // instance sees different address forms (simulates proxy-derived addresses).
+  const createRotatingIpApp = (maxRequests: number, extraOptions?: Record<string, any>) => {
+    const app = express();
+    app.use((req, _res, next) => {
+      const headerIp = req.get('x-test-ip');
+      if (headerIp) {
+        Object.defineProperty(req, 'ip', { get: () => headerIp, configurable: true });
+      }
+      next();
+    });
+    app.use(rateLimit({ windowMs: 60 * 1000, max: maxRequests, ...(extraOptions || {}) }));
+    app.get('/test', (_req, res) => res.status(200).json({ ok: true }));
+    return app;
+  };
+
+  // Public IPv4 and its IPv4-mapped IPv6 form must share a single budget:
+  // two allowed requests total, not two per form.
+  const sharedBucketApp = createRotatingIpApp(2);
+  let sharedRes = await request(sharedBucketApp).get('/test').set('x-test-ip', '8.8.8.8');
+  assert(sharedRes.status === 200, 'shared bucket: plain IPv4 first request OK');
+  sharedRes = await request(sharedBucketApp).get('/test').set('x-test-ip', '::ffff:8.8.8.8');
+  assert(sharedRes.status === 200, 'shared bucket: mapped IPv6 second request OK');
+  sharedRes = await request(sharedBucketApp).get('/test').set('x-test-ip', '8.8.8.8');
+  assert(sharedRes.status === 429, 'shared bucket: third request across equivalent forms throttled (429)');
+
+  // Uppercase-mapped form must canonicalize to the same bucket as lowercase/plain.
+  const caseBucketApp = createRotatingIpApp(1);
+  let caseRes = await request(caseBucketApp).get('/test').set('x-test-ip', '::FFFF:8.8.8.8');
+  assert(caseRes.status === 200, 'case bucket: uppercase mapped first request OK');
+  caseRes = await request(caseBucketApp).get('/test').set('x-test-ip', '8.8.8.8');
+  assert(caseRes.status === 429, 'case bucket: plain IPv4 shares the same budget (429)');
+
+  // IPv4-mapped private IPv6 must still be recognized as private and bypass.
+  assert(isAllowedPrivateIp('::ffff:192.168.1.100') === true, 'Should allow mapped private IPv6');
+  assert(isAllowedPrivateIp('::ffff:127.0.0.1') === true, 'Should allow mapped loopback IPv6');
+  assert(isAllowedPrivateIp('::ffff:8.8.8.8') === false, 'Should reject mapped public IPv6');
+
+  // Malformed / non-IP / reserved IPv6 must not bypass and must not crash.
+  assert(isAllowedPrivateIp('::ffff:999.999.999.999') === false, 'Should reject malformed mapped IPv6');
+  assert(isAllowedPrivateIp('fe80::1') === false, 'Should reject link-local IPv6');
+  assert(isAllowedPrivateIp('fc00::1') === false, 'Should reject unique-local IPv6');
+  const malformedApp = createRotatingIpApp(1);
+  let malformedRes = await request(malformedApp).get('/test').set('x-test-ip', 'not-an-ip');
+  assert(malformedRes.status === 200, 'malformed: first request handled (not bypassed)');
+  malformedRes = await request(malformedApp).get('/test').set('x-test-ip', 'not-an-ip');
+  assert(malformedRes.status === 429, 'malformed: second request throttled (429)');
+
+  // 8. Bounded rate limiter state cleanup (GHSA-wp3q-hc3p-v36c)
+  console.log('Testing rate limiter bounded state cleanup...');
+  const limiter = rateLimit({ windowMs: 10, max: 5 });
+  const makeMockReqRes = (ip: string) => {
+    const headers: Record<string, string> = {};
+    let statusCode = 200;
+    const req: any = { ip, socket: { remoteAddress: ip } };
+    const res: any = {
+      setHeader: (k: string, v: string) => { headers[k] = v; },
+      status: (code: number) => {
+        statusCode = code;
+        return {
+          json: (body: any) => ({ statusCode, body }),
+        };
+      },
+    };
+    let nextCalled = false;
+    const next = () => { nextCalled = true; };
+    return { req, res, next, getNext: () => nextCalled, getStatus: () => statusCode };
+  };
+
+  // Populate over 1000 distinct IP entries with a short expiry window
+  for (let i = 0; i < 1005; i++) {
+    const ip = `198.51.${Math.floor(i / 256)}.${i % 256}`;
+    const ctx = makeMockReqRes(ip);
+    limiter(ctx.req, ctx.res, ctx.next);
+    assert(ctx.getNext() === true, `cleanup seed request ${i + 1} OK`);
+  }
+  // Wait for the window to expire
+  await new Promise(resolve => setTimeout(resolve, 25));
+  // The next request with a new IP triggers the table sweep (> 1000 items threshold)
+  const sweepCtx = makeMockReqRes('203.0.113.1');
+  limiter(sweepCtx.req, sweepCtx.res, sweepCtx.next);
+  assert(sweepCtx.getNext() === true, 'cleanup: request after expiry triggers sweep and succeeds');
+
   console.log('✅ All CORS IP Validation & Rate Limiter tests passed!');
 
 }

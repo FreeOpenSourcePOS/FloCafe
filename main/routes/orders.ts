@@ -59,6 +59,15 @@ const PIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
 export function checkPinRateLimit(key: string): boolean {
   const now = Date.now();
+  // Bound the in-memory table. Sweep expired entries once it grows past a
+  // threshold so abandoned keys cannot accumulate without limit
+  // (GHSA-9jjq-2fmw-x3mw). The keys are per-client/per-action, so the map is
+  // naturally small, but this keeps a long-running process from drifting.
+  if (pinAttempts.size > 500) {
+    for (const [k, v] of pinAttempts.entries()) {
+      if (now > v.resetAt) pinAttempts.delete(k);
+    }
+  }
   const entry = pinAttempts.get(key);
   if (!entry || now > entry.resetAt) {
     pinAttempts.set(key, { count: 1, resetAt: now + PIN_WINDOW_MS });
@@ -915,7 +924,10 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
         }
 
         const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-        const rateLimitKey = `pin:${clientIp}:${req.params.id}`;
+        // Key is per-client/per-action, deliberately NOT per-order: a caller
+        // must not get a fresh attempt window by rotating order identifiers
+        // (GHSA-9jjq-2fmw-x3mw).
+        const rateLimitKey = `pin:${clientIp}:order-cancel`;
         if (!checkPinRateLimit(rateLimitKey)) {
           throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
         }

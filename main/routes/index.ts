@@ -342,7 +342,10 @@ export function registerRoutes(app: Express): void {
           }
 
           const clientIp = req.ip || req.socket.remoteAddress || 'unknown';
-          const rateLimitKey = `pin:${clientIp}:item-void:${itemId}`;
+          // Key is per-client/per-action, deliberately NOT per-item: a caller
+          // must not get a fresh attempt window by rotating item identifiers
+          // (GHSA-9jjq-2fmw-x3mw).
+          const rateLimitKey = `pin:${clientIp}:item-void`;
           if (!checkPinRateLimit(rateLimitKey)) {
             throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
           }

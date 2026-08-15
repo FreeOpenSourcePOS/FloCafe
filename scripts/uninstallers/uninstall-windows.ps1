@@ -472,6 +472,68 @@ function Invoke-RegistryRemoval($entry) {
   return $true
 }
 
+function Test-FloUninstallerIsTrusted {
+  param(
+    [string]$UninstallerExe,
+    [string]$InstallLocation
+  )
+
+  # Never launch a registry-selected executable unless it is actually part of
+  # Flo Cafe: it must be named like an NSIS uninstaller and live either under a
+  # known install root or directly inside the registry entry's own install
+  # directory. Existence alone is not identity (GHSA-42p9-xf35-xfmp).
+  if ([string]::IsNullOrWhiteSpace($UninstallerExe)) { return $false }
+
+  $fullExe = $UninstallerExe
+  $exeName = $UninstallerExe
+  $exeDir = $null
+  try {
+    $fullExe = [System.IO.Path]::GetFullPath($UninstallerExe)
+    $exeName = [System.IO.Path]::GetFileName($fullExe)
+    $exeDir = [System.IO.Path]::GetDirectoryName($fullExe)
+  } catch {
+    return $false
+  }
+
+  # NSIS/electron-builder uninstallers are named "Uninstall <App>.exe" or
+  # "unins*.exe" (and legacy fixtures use "uninstall.exe").
+  if ($exeName -notmatch '^unins.*\.exe$') { return $false }
+
+  $roots = New-Object 'System.Collections.Generic.List[string]'
+  if (-not [string]::IsNullOrWhiteSpace([string]$env:LOCALAPPDATA)) {
+    [void]$roots.Add((Join-Path $env:LOCALAPPDATA "Programs\$($script:AppName)"))
+    [void]$roots.Add((Join-Path $env:LOCALAPPDATA 'Programs\flo-desktop'))
+  }
+  if (-not [string]::IsNullOrWhiteSpace([string]$env:ProgramFiles)) {
+    [void]$roots.Add((Join-Path $env:ProgramFiles $script:AppName))
+  }
+  if (-not [string]::IsNullOrWhiteSpace([string]${env:ProgramFiles(x86)})) {
+    [void]$roots.Add((Join-Path ${env:ProgramFiles(x86)} $script:AppName))
+  }
+
+  foreach ($root in $roots) {
+    if ($exeDir -ieq $root -or $exeDir.StartsWith($root + '\', [System.StringComparison]::OrdinalIgnoreCase)) {
+      return $true
+    }
+  }
+
+  # Custom install: accept the uninstaller only when it sits directly inside the
+  # registry entry's own install directory -- never an arbitrary path.
+  if (-not [string]::IsNullOrWhiteSpace($InstallLocation)) {
+    $installDir = $InstallLocation
+    try {
+      $installDir = [System.IO.Path]::GetFullPath($InstallLocation).TrimEnd('\')
+    } catch {
+      $installDir = $null
+    }
+    if (-not [string]::IsNullOrWhiteSpace($installDir) -and $exeDir -ieq $installDir) {
+      return $true
+    }
+  }
+
+  return $false
+}
+
 function Invoke-FloCafeUninstall {
   param(
     [switch]$PurgeData,
@@ -573,7 +635,9 @@ function Invoke-FloCafeUninstall {
         }
       }
 
-      if ($uninstallerExe -and $uninstallerExists) {
+      if ($uninstallerExe -and $uninstallerExists -and -not (Test-FloUninstallerIsTrusted -UninstallerExe $uninstallerExe -InstallLocation $entryInstallLocation)) {
+        Write-Warn "refusing to run an unverified executable at `"$uninstallerExe`" -- it is not a known Flo Cafe install location; falling back to manual cleanup"
+      } elseif ($uninstallerExe -and $uninstallerExists) {
         Write-Step "Running the app's own uninstaller silently..."
         # /S first, then whatever came from the registry (e.g. /D=C:\Program Files\Flo Cafe):
         # NSIS requires /D=<path> to be the LAST parameter and takes everything after

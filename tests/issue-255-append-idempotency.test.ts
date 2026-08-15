@@ -48,6 +48,9 @@ async function main() {
   seedCategory(db, 'cat-255', 'Issue 255 menu');
   seedProduct(db, 'prod-255-base', 'cat-255', 'Issue 255 base', 100);
   seedProduct(db, '001', 'cat-255', 'Issue 255 append', 25);
+  db.prepare(`INSERT INTO addon_groups (id, name) VALUES ('ag-255', 'Extras')`).run();
+  db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES ('addon-255-extra', 'ag-255', 'Extra 001', 3, 1)`).run();
+  db.prepare(`INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('001', 'ag-255')`).run();
   const app = createApp({ '/api/orders': orderRoutes });
   const { baseUrl, server } = await startServer(app);
 
@@ -63,7 +66,7 @@ async function main() {
       items: [{
         product_id: '001',
         quantity: 1,
-        addons: [{ id: '001', name: 'Extra 001', price: 3, quantity: 1 }],
+        addons: [{ id: 'addon-255-extra', name: 'Extra 001', price: 3, quantity: 1 }],
         special_instructions: 'response-loss fixture',
       }],
       special_instructions: 'append note',

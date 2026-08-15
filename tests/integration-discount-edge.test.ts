@@ -46,6 +46,9 @@ async function main() {
   seedProduct(db, 'prod-edge-1', 'cat-edge', 'Pizza', 500);
   seedProduct(db, 'prod-edge-2', 'cat-edge', 'Pasta', 500);
   seedProduct(db, 'prod-edge-3', 'cat-edge', 'Burger', 400);
+  db.prepare(`INSERT INTO addon_groups (id, name) VALUES ('ag-edge', 'Extras')`).run();
+  db.prepare(`INSERT INTO addons (id, addon_group_id, name, price, is_active) VALUES ('addon-edge-cheese', 'ag-edge', 'Extra Cheese', 100, 1)`).run();
+  db.prepare(`INSERT INTO addon_group_product (product_id, addon_group_id) VALUES ('prod-edge-3', 'ag-edge')`).run();
   db.prepare(`
     INSERT INTO settings (key, value, updated_at) VALUES (?, ?, datetime('now'))
     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
@@ -169,7 +172,7 @@ async function main() {
         items: [{
           product_id: 'prod-edge-3',
           quantity: 1,
-          addons: [{ name: 'Extra Cheese', price: 100 }],
+          addons: [{ id: 'addon-edge-cheese', quantity: 1 }],
         }],
       },
       headers: authHeader,

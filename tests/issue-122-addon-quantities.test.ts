@@ -170,6 +170,10 @@ async function runTests() {
   const addonShotId = createGroupRes.body.addon_group.addons[0].id;
   const addonSyrupId = createGroupRes.body.addon_group.addons[1].id;
 
+  // Link the group to the product so order add-ons resolve against the catalog
+  // (GHSA-jmxx-39wh-4cjx: add-ons must resolve to a group linked to the product).
+  db.prepare(`INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)`).run(prodId, groupId);
+
   // Update group toggle to false
   const updateGroupRes = await makeRequest(app, 'PUT', `/api/addon-groups/${groupId}`, {
     allow_multiple_quantities: false,
@@ -236,19 +240,19 @@ async function runTests() {
   console.log('\n4. Invalid Addon Quantity Rejection');
   const invalidZero = await makeRequest(app, 'POST', '/api/orders', {
     type: 'dine_in',
-    items: [{ product_id: prodId, quantity: 1, addons: [{ name: 'Shot', price: 1, quantity: 0 }] }],
+    items: [{ product_id: prodId, quantity: 1, addons: [{ id: addonShotId, quantity: 0 }] }],
   });
   assertEqual(invalidZero.status, 400, 'Zero addon quantity rejected');
 
   const invalidNegative = await makeRequest(app, 'POST', '/api/orders', {
     type: 'dine_in',
-    items: [{ product_id: prodId, quantity: 1, addons: [{ name: 'Shot', price: 1, quantity: -2 }] }],
+    items: [{ product_id: prodId, quantity: 1, addons: [{ id: addonShotId, quantity: -2 }] }],
   });
   assertEqual(invalidNegative.status, 400, 'Negative addon quantity rejected');
 
   const invalidFractional = await makeRequest(app, 'POST', '/api/orders', {
     type: 'dine_in',
-    items: [{ product_id: prodId, quantity: 1, addons: [{ name: 'Shot', price: 1, quantity: 1.5 }] }],
+    items: [{ product_id: prodId, quantity: 1, addons: [{ id: addonShotId, quantity: 1.5 }] }],
   });
   assertEqual(invalidFractional.status, 400, 'Fractional addon quantity rejected');
 
@@ -261,6 +265,7 @@ async function runTests() {
   });
   const disallowGroupId = disallowGroupRes.body.addon_group.id;
   const disallowAddonId = disallowGroupRes.body.addon_group.addons[0].id;
+  db.prepare(`INSERT INTO addon_group_product (product_id, addon_group_id) VALUES (?, ?)`).run(prodId, disallowGroupId);
 
   const invalidMultiRes = await makeRequest(app, 'POST', '/api/orders', {
     type: 'dine_in',

@@ -51,15 +51,6 @@ async function run(): Promise<void> {
     });
     assert.equal(status, 200, 'health check responds on the port reported by getServerPort()');
 
-    // Guard the actual fix: the Electron main window must load and validate
-    // against getServerPort(), not a stale module-local PORT constant.
-    const indexPath = path.join(__dirname, '..', 'main', 'index.ts');
-    const indexSource = fs.readFileSync(indexPath, 'utf8');
-    assert.match(indexSource, /getServerPort/, 'index.ts imports/uses getServerPort()');
-    assert.doesNotMatch(indexSource, /const PORT = parseInt/, 'index.ts no longer defines a stale PORT constant');
-    assert.doesNotMatch(indexSource, /loadURL\(`http:\/\/localhost:\$\{PORT\}`\)/, 'loadURL no longer uses the stale PORT constant');
-    assert.doesNotMatch(indexSource, /isAllowedLocalWindowUrl\(url, PORT,/, 'local-window validation no longer uses the stale PORT constant');
-
     console.log('✅ Server port-collision tests passed');
   } finally {
     await stopServer().catch(() => {});

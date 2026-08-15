@@ -160,7 +160,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       DisplayName     = 'Flo Cafe'
       PSChildName     = 'FloCafe'
       PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
-      InstallLocation = ''
+      InstallLocation = 'C:\Flo Cafe'
       UninstallString = '"C:\Flo Cafe\uninstall.exe"'
     }
     $child = [pscustomobject]@{ Id = 9901; ExitCode = 0 }
@@ -221,7 +221,7 @@ Describe 'Flo Cafe Windows uninstaller' {
       DisplayName     = 'Flo Cafe'
       PSChildName     = 'FloCafe'
       PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
-      InstallLocation = ''
+      InstallLocation = 'C:\Flo Cafe'
       UninstallString = '"C:\Flo Cafe\uninstall.exe"'
     }
     $child = [pscustomobject]@{ Id = 9899 }
@@ -428,5 +428,30 @@ Describe 'Flo Cafe Windows uninstaller' {
     ($state.ProcessedRegistryPaths -contains $testEntries[0].PSPath) | Should -BeTrue
     ($state.ProcessedRegistryPaths -contains $testEntries[1].PSPath) | Should -BeTrue
     $result.Issues.Count | Should -Be 0
+  }
+
+  It 'does not launch an uninstaller outside a known install location' {
+    $outsideExe = 'C:\Users\attacker\uninstall.exe'
+    $entry = [pscustomobject]@{
+      DisplayName     = 'Flo Cafe'
+      PSChildName     = 'FloCafe'
+      PSPath          = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\FloCafe'
+      InstallLocation = 'C:\Program Files\Flo Cafe'
+      UninstallString = "`"$outsideExe`""
+    }
+
+    Mock Get-Process { @() }
+    Mock Get-ItemProperty { @($entry) }
+    Mock Test-Path {
+      return ($LiteralPath -eq $outsideExe)
+    }
+    Mock Start-Process {}
+    Mock Remove-Item {}
+    Mock Invoke-RegistryRemoval { $true }
+
+    $result = Invoke-FloCafeUninstall
+
+    $result.Complete | Should -BeTrue
+    Should -Invoke Start-Process -Times 0 -Exactly
   }
 }

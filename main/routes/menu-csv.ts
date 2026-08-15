@@ -191,7 +191,15 @@ function csvImportErrorResponse(res: Response, error: unknown): Response {
 function toCsvRow(fields: (string | number | null | undefined)[]): string {
   return fields
     .map((f) => {
-      const s = String(f ?? '');
+      let s = String(f ?? '');
+      // Neutralize spreadsheet formula injection (CWE-1236 / GHSA-vrxh-633p-fhgm):
+      // a cell beginning with = + - @ would be evaluated as a formula by Excel
+      // or LibreOffice when the export is opened. Prefix with a single quote so
+      // the cell is treated as literal text. Numeric fields are exempt so
+      // legitimate negative numbers are not mangled.
+      if (typeof f !== 'number' && /^[=+\-@]/.test(s)) {
+        s = "'" + s;
+      }
       return s.includes(',') || s.includes('"') || s.includes('\n') || s.includes('\r')
         ? '"' + s.replace(/"/g, '""') + '"'
         : s;

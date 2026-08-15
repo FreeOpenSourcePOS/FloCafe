@@ -2,6 +2,29 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.2.0] - 2026-08-15
+
+### Added
+- Added the Customer Display experience for showing order and payment status on a dedicated screen.
+- Added configurable invoice numbering settings with upgrade-safe defaults and focused regression coverage.
+- Added the Iran country profile and Persian/Farsi runtime foundation, including translation bundle plumbing and HTML language/direction metadata.
+- Added the Morocco country profile with MAD currency support.
+- Added paginated bill-history APIs for large order histories.
+
+### Changed
+- Catalog listing now batches child-category loading and normalizes catalog API contracts for stable string IDs and boolean flags.
+- POS cart identity and append retries are now collision-safe and idempotent across retry paths.
+- Shutdown, database recovery, and Windows uninstall flows now report partial or graceful outcomes more consistently.
+
+### Fixed
+- Category writes now trim and require non-empty names, validate active parents, reject self/ancestor cycles, and handle child categories explicitly during deletion or reassignment.
+- Product, category, and add-on catalog updates now distinguish omitted fields from explicit `null`, so nullable fields can be intentionally cleared.
+- Product add-on links are validated before writes, preventing duplicate, inactive, or unknown add-on group references from partially mutating products.
+- Barcode lookups, disabled discount-type visibility, split-check tax attribution, order cancellation, held-order restore, and menu CSV imports now behave deterministically across edge cases.
+- Phone-number validation, normalization, clearing, and repair are unified across backend routes and frontend views.
+- Receipt currency symbols are derived correctly for printer output.
+- Database import/export migrations preserve clearer failure and repair behavior.
+
 ## [3.0.5] - 2026-08-12
 
 ### Added

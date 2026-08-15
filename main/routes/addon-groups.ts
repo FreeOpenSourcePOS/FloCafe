@@ -8,6 +8,10 @@ const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exemp
 
 const router = Router();
 
+function hasOwn(body: Record<string, unknown>, field: string): boolean {
+  return Object.prototype.hasOwnProperty.call(body, field);
+}
+
 function toBoolean(value: unknown): boolean {
   return value === true || value === 1;
 }
@@ -210,7 +214,8 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
     }
 
     const reqName = name ?? null;
-    const reqDesc = description ?? null;
+    const hasDescription = hasOwn(req.body, 'description');
+    const reqDesc = description === undefined || description === null || description === '' ? null : description;
     const reqReq = is_required === undefined ? null : (is_required ? 1 : 0);
     const reqMin = min_selection ?? null;
     const reqMax = max_selection ?? null;
@@ -220,12 +225,12 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
     const { updated, updatedAddons } = withTxn(() => {
       db.prepare(`
-        UPDATE addon_groups SET name = COALESCE(?, name), description = COALESCE(?, description),
+        UPDATE addon_groups SET name = COALESCE(?, name), description = CASE WHEN ? = 1 THEN ? ELSE description END,
           is_required = COALESCE(?, is_required), min_selection = COALESCE(?, min_selection),
           max_selection = COALESCE(?, max_selection), allow_multiple_quantities = COALESCE(?, allow_multiple_quantities),
           sort_order = COALESCE(?, sort_order), is_active = COALESCE(?, is_active), updated_at = ?
         WHERE id = ?
-      `).run(reqName, reqDesc, reqReq, reqMin, reqMax, reqAllowMult, reqSort, reqActive, now(), req.params.id);
+      `).run(reqName, hasDescription ? 1 : 0, reqDesc, reqReq, reqMin, reqMax, reqAllowMult, reqSort, reqActive, now(), req.params.id);
 
       if (Array.isArray(addons)) {
         db.prepare('DELETE FROM addons WHERE addon_group_id = ?').run(req.params.id);

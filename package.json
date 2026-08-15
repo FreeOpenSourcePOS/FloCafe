@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "3.0.5",
+  "version": "3.2.0",
   "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
     "node": ">=22.12.0"
@@ -95,6 +95,7 @@
     "test:issue-133-kds-kot-toggles": "node tests/run-electron-node-test.cjs tests/issue-133-kds-kot-toggles.test.ts",
     "test:issue-137-barcode": "node tests/run-electron-node-test.cjs tests/issue-137-barcode.test.ts",
     "test:issue-244-product-addon-links": "node tests/run-electron-node-test.cjs tests/issue-244-product-addon-links.test.ts",
+    "test:issue-247-catalog-invariants": "node tests/run-electron-node-test.cjs tests/issue-247-catalog-invariants.test.ts",
     "test:issue-250-catalog-perf": "node tests/run-electron-node-test.cjs tests/issue-250-catalog-perf.test.ts",
     "test:issue-258-bill-pagination": "node tests/run-electron-node-test.cjs tests/issue-258-bill-pagination.test.ts",
     "test:issue-265-morocco-profile": "node tests/run-electron-node-test.cjs tests/issue-265-morocco-profile.test.ts",
@@ -181,6 +182,7 @@
     "electron-log": "^5.4.4",
     "electron-updater": "^6.8.9",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
     "googleapis": "^173.0.0",
     "jsonwebtoken": "^9.0.2",
     "libphonenumber-js": "^1.13.10",

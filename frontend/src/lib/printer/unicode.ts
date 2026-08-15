@@ -34,6 +34,7 @@ export const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₵': 'Gh',
   '₡': 'Cr',
   '₲': 'Pg',
+  'Kč': 'Kc', // Czech Koruna
 };
 
 export function normalizeCurrencyToAscii(text: string): string {

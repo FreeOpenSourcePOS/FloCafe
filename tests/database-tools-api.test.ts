@@ -297,10 +297,30 @@ async function runTests() {
     db.prepare("INSERT OR IGNORE INTO categories (id, name, sort_order) VALUES ('ghsa-sentinel', 'Sentinel', 999)").run();
     const sentinelCount = () => (db.prepare("SELECT COUNT(*) AS c FROM categories WHERE id = 'ghsa-sentinel'").get() as { c: number }).c;
 
+    // GET /api/db-tools/master-pin/status exposes live schemaVersion alongside availability
+    const pinStatus = await request(app).get('/api/db-tools/master-pin/status').set('Authorization', `Bearer ${ownerToken}`);
+    assert(pinStatus.status === 200, `master-pin status returns 200 (got ${pinStatus.status})`);
+    assert(pinStatus.body.available === true, 'master-pin status reports available: true');
+    assert(pinStatus.body.isSet === true, 'master-pin status reports isSet: true');
+    assert(pinStatus.body.schemaVersion === currentVersion, `master-pin status includes live schemaVersion (got ${pinStatus.body.schemaVersion}, expected ${currentVersion})`);
+
     // Mismatched (future) schema version, no PIN → rejected and DB unchanged.
     const futureNoPin = await importWithoutPin({ schema_version: String(currentVersion + 1), data: emptyPayload });
     assert(futureNoPin.status === 403, `future schema_version import without a PIN is rejected (got ${futureNoPin.status})`);
     assert(sentinelCount() === 1, 'rejected schema-mismatch import leaves the database unchanged');
+
+    // Mismatched schema version with wrong PIN → rejected and DB unchanged.
+    const mismatchedWrongPin = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+      overwrite: false,
+      master_pin: '0000',
+      data: { schema_version: String(currentVersion + 1), data: emptyPayload },
+    });
+    assert(mismatchedWrongPin.status === 403, `mismatched schema_version with wrong PIN is rejected (got ${mismatchedWrongPin.status})`);
+    assert(sentinelCount() === 1, 'rejected wrong-PIN schema-mismatch import leaves the database unchanged');
+
+    // Fresh install (schema version 0), no PIN → rejected.
+    const freshZeroNoPin = await importWithoutPin({ schema_version: '0', data: emptyPayload });
+    assert(freshZeroNoPin.status === 403, `fresh schema_version 0 import without a PIN is rejected (got ${freshZeroNoPin.status})`);
 
     // Old (upgrade-path) schema version, no PIN → rejected.
     const oldNoPin = await importWithoutPin({ schema_version: String(currentVersion - 1), data: emptyPayload });

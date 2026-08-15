@@ -63,8 +63,9 @@ fi
 # (GHSA-wjr9-g33j-w22x).
 if [ "$xattr_status" -ne 0 ]; then
   if [ "$xattr_status" -ne 1 ] || ! grep -qi 'no such xattr' "$QUARANTINE_STDERR"; then
+    XATTR_ERR=$(cat "$QUARANTINE_STDERR")
     rm -f "$QUARANTINE_STDERR"
-    fail "could not read the quarantine attribute of $APP: $(cat "$QUARANTINE_STDERR")"
+    fail "could not read the quarantine attribute of $APP: ${XATTR_ERR:-unexpected xattr failure}"
   fi
 fi
 rm -f "$QUARANTINE_STDERR"

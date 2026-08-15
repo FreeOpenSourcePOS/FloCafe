@@ -37,6 +37,15 @@ const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
 const USER_ROLES = new Set(['owner', 'manager', 'cashier', 'waiter', 'chef']);
 
+// Parses an import file's schema_version exactly as the import handler does.
+// A missing or malformed value collapses to -1 (and an omitted version to 0),
+// which always counts as a mismatch against the live schema — and therefore as
+// a destructive, delete-and-replace import that needs Master PIN confirmation.
+function parseImportSchemaVersion(value: unknown): number {
+  const raw = String(value ?? '0');
+  return /^(?:0|[1-9]\d*)$/.test(raw) ? Number(raw) : -1;
+}
+
 router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
@@ -109,7 +118,20 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
 });
 
 router.post('/import', requireRole('owner'),
-  (req: Request, res: Response, next: () => void) => (req.body?.overwrite ? requireMasterPin(req, res, next) : next()),
+  (req: Request, res: Response, next: () => void) => {
+    // A schema-mismatch import reaches the same delete-and-replace path as an
+    // explicit overwrite (the `overwrite || hasVersionMismatch` branch below),
+    // so it must require the same Master PIN confirmation. Gate on both
+    // triggers so an owner cannot bypass the destructive-operation confirmation
+    // by submitting a deliberately mismatched or malformed schema_version
+    // (GHSA-xxv4-gm82-4639).
+    const body = req.body as { overwrite?: unknown; data?: Record<string, unknown> } | undefined;
+    const overwrite = Boolean(body?.overwrite);
+    const schemaVersionMismatch = body?.data && typeof body.data === 'object'
+      ? parseImportSchemaVersion(body.data.schema_version) !== getCurrentSchemaVersion()
+      : false;
+    return (overwrite || schemaVersionMismatch) ? requireMasterPin(req, res, next) : next();
+  },
   asyncHandler(async (req: Request, res: Response) => {
   return withDatabaseMaintenanceLock(async (signal) => {
     try {
@@ -129,10 +151,12 @@ router.post('/import', requireRole('owner'),
     const preservedKdsEnabled = captureKdsEnabledSetting(db);
     const preservedProtectedSettings = captureRestoreProtectedSettings(db);
     const importData = data.data as Record<string, any[]>;
-    const importSchemaVersionRaw = String(data.schema_version ?? '0');
-    const importSchemaVersion = /^(?:0|[1-9]\d*)$/.test(importSchemaVersionRaw)
-      ? Number(importSchemaVersionRaw)
-      : -1;
+    const importSchemaVersion = parseImportSchemaVersion(data.schema_version);
+    const hasVersionMismatch = importSchemaVersion !== getCurrentSchemaVersion();
+
+    if (hasVersionMismatch) {
+      console.log(`[DB Import] Version mismatch: import v${importSchemaVersion} vs current v${getCurrentSchemaVersion()}. Using data-only merge.`);
+    }
 
     const requiredTables = ['settings', 'categories', 'products', 'users'];
     const importedTables = Object.keys(importData);
@@ -194,11 +218,6 @@ router.post('/import', requireRole('owner'),
 
     const { path: backupPath } = await createBackupUnlocked(undefined, signal);
     throwIfDatabaseMaintenanceAborted(signal);
-    const hasVersionMismatch = importSchemaVersion !== getCurrentSchemaVersion();
-
-    if (hasVersionMismatch) {
-      console.log(`[DB Import] Version mismatch: import v${importSchemaVersion} vs current v${getCurrentSchemaVersion()}. Using data-only merge.`);
-    }
 
     const previousForeignKeys = Number(db.pragma('foreign_keys', { simple: true })) === 1;
     db.pragma('foreign_keys = OFF');

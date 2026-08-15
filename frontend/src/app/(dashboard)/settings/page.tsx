@@ -290,7 +290,7 @@ export default function SettingsPage() {
   // ?tab=/?action= deep-link params directly (lazy init, once at mount) instead of being set
   // by the mount effect below — that effect now only owns the actual async fetches.
   const [activeTab, setActiveTab] = useState(() => searchParams?.get('tab') || 'store');
-  const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean }>({ available: false, isSet: false });
+  const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean; schemaVersion: number | null }>({ available: false, isSet: false, schemaVersion: null });
   const [healthCheckOpen, setHealthCheckOpen] = useState(() => searchParams?.get('action') === 'health-check');
   const [healthReport, setHealthReport] = useState<HealthCheckReport | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
@@ -4079,7 +4079,16 @@ export default function SettingsPage() {
 
                       const overwrite = await confirm(t('settings.importOverwriteConfirm'), { confirmLabel: t('settings.replaceAll') });
 
-                      if (overwrite && masterPinStatus.available) {
+                      // A schema-mismatch import takes the same destructive
+                      // delete-and-replace path as an overwrite, so it needs the
+                      // same Master PIN confirmation (GHSA-xxv4-gm82-4639).
+                      const rawImportVersion = String(data.schema_version ?? '');
+                      const importVersion = /^(?:0|[1-9]\d*)$/.test(rawImportVersion) ? Number(rawImportVersion) : null;
+                      const schemaMismatch = masterPinStatus.schemaVersion != null
+                        && (importVersion === null || importVersion !== masterPinStatus.schemaVersion);
+                      const destructive = overwrite || schemaMismatch;
+
+                      if (destructive && masterPinStatus.available) {
                         if (!masterPinStatus.isSet) {
                           toast.error(t('settings.masterPinRequiredForReplace'));
                           return;

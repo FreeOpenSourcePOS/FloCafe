@@ -286,6 +286,74 @@ async function runTests() {
     assert(entry.kind === 'manual', 'a backup created via POST /db/backup is classified as manual, not auto');
   }
 
+  // ── Test 3c: schema-mismatch import requires the Master PIN (GHSA-xxv4-gm82-4639) ──
+  console.log('\nTest 3c: POST /db/import destructive path is master-PIN gated');
+  {
+    const currentVersion = getCurrentSchemaVersion();
+    const emptyPayload = { settings: [], categories: [], products: [], users: [] };
+    const importWithoutPin = (payload: Record<string, unknown>) =>
+      request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({ overwrite: false, data: payload });
+
+    db.prepare("INSERT OR IGNORE INTO categories (id, name, sort_order) VALUES ('ghsa-sentinel', 'Sentinel', 999)").run();
+    const sentinelCount = () => (db.prepare("SELECT COUNT(*) AS c FROM categories WHERE id = 'ghsa-sentinel'").get() as { c: number }).c;
+
+    // GET /api/db-tools/master-pin/status exposes live schemaVersion alongside availability
+    const pinStatus = await request(app).get('/api/db-tools/master-pin/status').set('Authorization', `Bearer ${ownerToken}`);
+    assert(pinStatus.status === 200, `master-pin status returns 200 (got ${pinStatus.status})`);
+    assert(pinStatus.body.available === true, 'master-pin status reports available: true');
+    assert(pinStatus.body.isSet === true, 'master-pin status reports isSet: true');
+    assert(pinStatus.body.schemaVersion === currentVersion, `master-pin status includes live schemaVersion (got ${pinStatus.body.schemaVersion}, expected ${currentVersion})`);
+
+    // Mismatched (future) schema version, no PIN → rejected and DB unchanged.
+    const futureNoPin = await importWithoutPin({ schema_version: String(currentVersion + 1), data: emptyPayload });
+    assert(futureNoPin.status === 403, `future schema_version import without a PIN is rejected (got ${futureNoPin.status})`);
+    assert(sentinelCount() === 1, 'rejected schema-mismatch import leaves the database unchanged');
+
+    // Mismatched schema version with wrong PIN → rejected and DB unchanged.
+    const mismatchedWrongPin = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+      overwrite: false,
+      master_pin: '0000',
+      data: { schema_version: String(currentVersion + 1), data: emptyPayload },
+    });
+    assert(mismatchedWrongPin.status === 403, `mismatched schema_version with wrong PIN is rejected (got ${mismatchedWrongPin.status})`);
+    assert(sentinelCount() === 1, 'rejected wrong-PIN schema-mismatch import leaves the database unchanged');
+
+    // Fresh install (schema version 0), no PIN → rejected.
+    const freshZeroNoPin = await importWithoutPin({ schema_version: '0', data: emptyPayload });
+    assert(freshZeroNoPin.status === 403, `fresh schema_version 0 import without a PIN is rejected (got ${freshZeroNoPin.status})`);
+
+    // Old (upgrade-path) schema version, no PIN → rejected.
+    const oldNoPin = await importWithoutPin({ schema_version: String(currentVersion - 1), data: emptyPayload });
+    assert(oldNoPin.status === 403, `old-schema (upgrade-path) import without a PIN is rejected (got ${oldNoPin.status})`);
+
+    // Malformed schema version, no PIN → treated as destructive and rejected.
+    const malformedNoPin = await importWithoutPin({ schema_version: 'not-a-version', data: emptyPayload });
+    assert(malformedNoPin.status === 403, `malformed schema_version import without a PIN is rejected (got ${malformedNoPin.status})`);
+
+    // Omitted schema version, no PIN → defaults to 0 (a mismatch) and is rejected.
+    const omittedNoPin = await importWithoutPin({ data: emptyPayload });
+    assert(omittedNoPin.status === 403, `omitted schema_version import without a PIN is rejected (got ${omittedNoPin.status})`);
+
+    // Mismatched schema version with the correct PIN → allowed.
+    const mismatchedWithPin = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+      overwrite: false,
+      master_pin: '1234',
+      data: { schema_version: String(currentVersion + 1), data: emptyPayload },
+    });
+    assert(mismatchedWithPin.status === 200, `schema-mismatch import with the correct PIN succeeds (got ${mismatchedWithPin.status}, ${JSON.stringify(mismatchedWithPin.body)})`);
+
+    // Matching schema version, no overwrite, no PIN → non-destructive merge, allowed.
+    const matchingNoPin = await importWithoutPin({ schema_version: String(currentVersion), data: emptyPayload });
+    assert(matchingNoPin.status === 200, `matching-schema import without overwrite needs no PIN (got ${matchingNoPin.status})`);
+
+    // Matching schema version + explicit overwrite, no PIN → still rejected.
+    const matchingOverwriteNoPin = await request(app).post('/api/db/import').set('Authorization', `Bearer ${ownerToken}`).send({
+      overwrite: true,
+      data: { schema_version: String(currentVersion), data: emptyPayload },
+    });
+    assert(matchingOverwriteNoPin.status === 403, `matching-schema overwrite import without a PIN is still rejected (got ${matchingOverwriteNoPin.status})`);
+  }
+
   // ── Test 4: POST /db-tools/initialize ────────────────────────────────────
   console.log('\nTest 4: POST /db-tools/initialize');
   {

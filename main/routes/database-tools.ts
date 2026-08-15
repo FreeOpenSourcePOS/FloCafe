@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { resetDatabaseWithBackup, listBackups, deleteBackup } from '../db';
+import { resetDatabaseWithBackup, listBackups, deleteBackup, getCurrentSchemaVersion } from '../db';
 import { clearInMemoryRevokedTokens, clearUserAuthCache, requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { asyncHandler } from '../middleware/async-handler';
@@ -55,7 +55,7 @@ router.post('/backups/:fileName/delete', requireRole('owner'), requireMasterPin,
 });
 
 router.get('/master-pin/status', requireRole('owner'), (_req: Request, res: Response) => {
-  res.json({ available: isMasterPinAvailable(), isSet: isMasterPinSet() });
+  res.json({ available: isMasterPinAvailable(), isSet: isMasterPinSet(), schemaVersion: getCurrentSchemaVersion() });
 });
 
 router.post('/master-pin/reset', requireRole('owner'), (req: Request, res: Response) => {

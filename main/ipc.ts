@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app, BrowserWindow, shell } from 'electron';
+import { ipcMain, dialog, app, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock, withDatabaseRequest } from './db';

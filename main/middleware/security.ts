@@ -251,8 +251,12 @@ export function isTokenRevoked(token: string): boolean {
       'SELECT 1 AS revoked FROM revoked_tokens WHERE token_hash = ? AND expires_at > ?',
     ).get(hashRevokedToken(token), nowMs) as { revoked: number } | undefined;
     return row?.revoked === 1;
-  } catch {
-    return false;
+  } catch (error) {
+    // Fail closed. A revocation-store failure (missing table, locked DB,
+    // closed DB, or any query error) must deny, not silently allow, a token
+    // that may have been revoked (GHSA-ppjh-gjj8-7f63).
+    console.error('[Auth] Token revocation lookup failed; rejecting token:', error);
+    return true;
   }
 }
 

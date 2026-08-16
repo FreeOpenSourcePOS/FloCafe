@@ -1212,8 +1212,8 @@ export function deleteBackup(fileName: string): void {
     throw invalidName();
   }
   const backupDir = getBackupDir();
-  const fullPath = path.join(backupDir, fileName);
-  if (path.dirname(fullPath) !== backupDir) {
+  const fullPath = resolveContainedPath(backupDir, fileName);
+  if (!fullPath || path.dirname(fullPath) !== path.resolve(backupDir)) {
     throw invalidName();
   }
   if (!fs.existsSync(fullPath)) {

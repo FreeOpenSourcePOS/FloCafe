@@ -28,8 +28,12 @@ export function resolveContainedPath(root: string, ...segments: string[]): strin
   if (resolved === resolvedRoot) {
     return resolvedRoot;
   }
-  if (resolved.startsWith(rootWithSep)) {
-    return resolved;
+  if (!resolved.startsWith(rootWithSep)) {
+    return null;
   }
-  return null;
+  const rel = path.relative(resolvedRoot, resolved);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    return null;
+  }
+  return resolved;
 }

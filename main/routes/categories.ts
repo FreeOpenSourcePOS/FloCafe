@@ -57,57 +57,6 @@ function isDescendantCategory(db: ReturnType<typeof getDatabase>, categoryId: st
   return false;
 }
 
-function hasOwn(body: Record<string, unknown>, field: string): boolean {
-  return Object.prototype.hasOwnProperty.call(body, field);
-}
-
-function normalizeOptionalString(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (typeof value !== 'string') return String(value);
-  const trimmed = value.trim();
-  return trimmed || null;
-}
-
-function normalizeCategoryName(value: unknown): string | null {
-  if (typeof value !== 'string') return null;
-  const trimmed = value.trim();
-  return trimmed || null;
-}
-
-function slugForName(name: string): string {
-  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-}
-
-function validateParentCategory(db: ReturnType<typeof getDatabase>, parentId: unknown, categoryId?: string): string | null {
-  if (parentId === null || parentId === undefined || parentId === '') return null;
-  if (typeof parentId !== 'string') return 'parent_id must be a string or null';
-  if (categoryId && parentId === categoryId) return 'Category cannot be its own parent';
-
-  let current = db.prepare('SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL AND is_active = 1').get(parentId) as any;
-  if (!current) return 'Parent category not found or inactive';
-
-  const seen = new Set<string>();
-  while (current?.parent_id) {
-    if (categoryId && current.parent_id === categoryId) return 'Category parent cannot create a cycle';
-    if (seen.has(current.parent_id)) return 'Category tree already contains a cycle';
-    seen.add(current.parent_id);
-    current = db.prepare('SELECT id, parent_id FROM categories WHERE id = ? AND deleted_at IS NULL').get(current.parent_id) as any;
-  }
-  return null;
-}
-
-function isDescendantCategory(db: ReturnType<typeof getDatabase>, categoryId: string, possibleDescendantId: string): boolean {
-  let current = db.prepare('SELECT parent_id FROM categories WHERE id = ? AND deleted_at IS NULL').get(possibleDescendantId) as any;
-  const seen = new Set<string>();
-  while (current?.parent_id) {
-    if (current.parent_id === categoryId) return true;
-    if (seen.has(current.parent_id)) return false;
-    seen.add(current.parent_id);
-    current = db.prepare('SELECT parent_id FROM categories WHERE id = ? AND deleted_at IS NULL').get(current.parent_id) as any;
-  }
-  return false;
-}
-
 function serializeCategory(category: any): any {
   if (!category) return category;
   return {

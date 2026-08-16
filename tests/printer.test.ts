@@ -291,24 +291,20 @@ console.log('\n✅ Test 4: Classic receipt template');
   console.log(visiblePreview(buf, 48));
 }
 
-console.log('\n✅ Test 5: Detailed tax invoice template');
+console.log('\n✅ Test 5: Tax-specific labels fall back to the default template');
 {
   const buf = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'detailed', 48, true);
   const text = buf.toString('utf8');
 
-  assert('renders TAX INVOICE header', text.includes('TAX INVOICE'));
-  assert('renders business name in uppercase', text.includes('FLO TEST CAFE'));
-  assert('renders Tax A line', text.includes('Tax A'));
-  assert('renders Tax B line', text.includes('Tax B'));
-  assert('renders GRAND TOTAL', text.includes('GRAND TOTAL'));
-  assert('renders tax registration number', text.includes('TAXID-0001'));
+  assert('legacy detailed label renders the default classic receipt', text.includes('Invoice #:'));
+  assert('legacy detailed label does not render the GST-style tax invoice', !text.includes('TAX INVOICE'));
   assert('renders non-configurable FloPOS footer', text.includes('Powered by FloPOS') && text.includes('https://flopos.com'));
 
-  console.log('\n   — Rendered detailed —');
+  console.log('\n   — Rendered detailed fallback —');
   console.log(visiblePreview(buf, 48));
 }
 
-console.log('\n✅ Test 5b: Template labels normalize to backend templates');
+console.log('\n✅ Test 5b: Template labels normalize to built-in backend templates');
 {
   const classic = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Classic', 48, true).toString('utf8');
   const compact = formatReceipt(fixtureOrder, fixtureBill, fixtureBusiness, 'Compact', 48, true).toString('utf8');
@@ -316,13 +312,13 @@ console.log('\n✅ Test 5b: Template labels normalize to backend templates');
 
   assert('Classic label renders classic template', classic.includes('Invoice #:'));
   assert('Compact label renders compact template', compact.includes('Bill #:'));
-  assert('Detailed (Tax) label renders detailed template', detailed.includes('TAX INVOICE'));
-  assert('all three templates produce distinct output', new Set([classic, compact, detailed]).size === 3);
+  assert('Detailed (Tax) label falls back to classic until supplied by a tax pack/plugin', detailed.includes('Invoice #:') && !detailed.includes('TAX INVOICE'));
+  assert('only classic and compact are distinct built-ins', new Set([classic, compact, detailed]).size === 2);
 }
 
 console.log('\n✅ Test 5bb: Custom footer is rendered by every backend template');
 {
-  for (const template of ['compact', 'classic', 'detailed']) {
+  for (const template of ['compact', 'classic']) {
     const text = formatReceipt(fixtureOrder, fixtureBill, {
       ...fixtureBusiness,
       footer_note: 'Please visit us again',
@@ -331,7 +327,7 @@ console.log('\n✅ Test 5bb: Custom footer is rendered by every backend template
   }
 }
 
-console.log('\n✅ Test 5c: Detailed receipt resolves mixed legacy + categorized tax');
+console.log('\n✅ Test 5c: Built-in receipt resolves mixed legacy + categorized tax');
 {
   const mixedOrder = {
     ...fixtureOrder,
@@ -361,8 +357,8 @@ console.log('\n✅ Test 5c: Detailed receipt resolves mixed legacy + categorized
       { title: 'Local Levy', rate: 1, amount: 0.7 },
     ]),
   };
-  const thaiBusiness = { ...fixtureBusiness, country: 'TH' };
-  const text = formatReceipt(mixedOrder, mixedBill, thaiBusiness, 'detailed', 48, true).toString('utf8');
+  const thaiBusiness = { ...fixtureBusiness, country: 'TH', show_tax_breakdown: true };
+  const text = formatReceipt(mixedOrder, mixedBill, thaiBusiness, 'classic', 48, true).toString('utf8');
 
   assert('renders categorized VAT component and rate', text.includes('VAT @7%'));
   assert('renders legacy Local Levy component and rate', text.includes('Local Levy @1%'));
@@ -389,7 +385,7 @@ console.log('\n✅ Test 5d: Bill content toggles are optional and never block pr
     show_table_number: false,
   };
 
-  for (const template of ['compact', 'classic', 'detailed']) {
+  for (const template of ['compact', 'classic']) {
     const hidden = formatReceipt(fixtureOrder, fixtureBill, hiddenBusiness, template, 48, true);
     const text = hidden.toString('utf8');
     assert(`${template}: hidden optional fields stay hidden`,
@@ -470,17 +466,6 @@ console.log('\n✅ Test 8: Edge cases');
   assert('renders zero total', emptyText.includes('₹0.00'));
   assert('omits tax label when tax amount and breakdown are empty', !emptyText.split('\n').some((line) => line.trimStart().startsWith('Tax')));
   assert('omits tax identifier when tax amount and breakdown are empty', !emptyText.includes('TAXID-0001'));
-
-  const detailedNoTaxText = formatReceipt(
-    emptyOrder,
-    emptyBill,
-    fixtureBusiness,
-    'detailed',
-    48,
-    true,
-  ).toString('utf8');
-  assert('zero-tax detailed receipt is an invoice, not a tax invoice', detailedNoTaxText.includes('INVOICE') && !detailedNoTaxText.includes('TAX INVOICE'));
-  assert('zero-tax detailed receipt omits tax identifier', !detailedNoTaxText.includes('TAXID-0001'));
 
   const noDiscountBill = { ...fixtureBill, discount_amount: 0 };
   const buf2 = formatReceipt(fixtureOrder, noDiscountBill, fixtureBusiness, 'compact', 48, true);

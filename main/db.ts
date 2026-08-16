@@ -3860,6 +3860,70 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       insertSettingIfMissing('invoice_financial_year_start_day', '1');
     },
   },
+  {
+    version: 69,
+    name: 'installed_plugin_print_templates',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS installed_print_templates (
+          template_id TEXT PRIMARY KEY,
+          pack_id TEXT NOT NULL,
+          pack_version_id TEXT NOT NULL,
+          country TEXT NOT NULL,
+          jurisdiction TEXT NOT NULL,
+          display_name TEXT NOT NULL,
+          paper_widths_json TEXT NOT NULL,
+          renderer_json TEXT NOT NULL,
+          template_payload_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'installed',
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_installed_print_templates_pack_version
+          ON installed_print_templates(pack_version_id);
+      `);
+    },
+  },
+  {
+    version: 70,
+    name: 'rename_waiter_role_to_server',
+    up: () => {
+      db.exec(`
+        PRAGMA foreign_keys = OFF;
+        CREATE TABLE users_role_server_migration (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          email TEXT UNIQUE,
+          password TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'cashier'
+            CHECK (role IN ('owner', 'manager', 'cashier', 'server', 'chef')),
+          pin TEXT,
+          pin_hash TEXT,
+          category_ids TEXT,
+          is_active INTEGER DEFAULT 1,
+          terms_accepted_at TEXT,
+          tokens_valid_after TEXT DEFAULT NULL,
+          station_assignments_configured INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO users_role_server_migration (
+          id, name, email, password, role, pin, pin_hash, category_ids, is_active,
+          terms_accepted_at, tokens_valid_after, station_assignments_configured,
+          created_at, updated_at
+        )
+        SELECT
+          id, name, email, password,
+          CASE WHEN role = 'waiter' THEN 'server' ELSE role END,
+          pin, pin_hash, category_ids, is_active,
+          terms_accepted_at, tokens_valid_after, station_assignments_configured,
+          created_at, updated_at
+        FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_role_server_migration RENAME TO users;
+        PRAGMA foreign_keys = ON;
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4130,7 +4194,7 @@ function createSchema(): void {
     );
 
     -- ── Users (authentication + roles) ──────────────────────────────────
-    -- Roles: owner, manager, cashier, waiter, chef
+    -- Roles: owner, manager, cashier, server, chef
     -- KDS is operated by the chef role.
 
     CREATE TABLE IF NOT EXISTS users (
@@ -4139,7 +4203,7 @@ function createSchema(): void {
       email TEXT UNIQUE,
       password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'cashier'
-        CHECK (role IN ('owner', 'manager', 'cashier', 'waiter', 'chef')),
+        CHECK (role IN ('owner', 'manager', 'cashier', 'server', 'chef')),
       pin TEXT,
       pin_hash TEXT,
       category_ids TEXT,
@@ -4348,6 +4412,20 @@ function createSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS installed_print_templates (
+      template_id TEXT PRIMARY KEY,
+      pack_id TEXT NOT NULL,
+      pack_version_id TEXT NOT NULL,
+      country TEXT NOT NULL,
+      jurisdiction TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      paper_widths_json TEXT NOT NULL,
+      renderer_json TEXT NOT NULL,
+      template_payload_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'installed',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS tax_config_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action TEXT NOT NULL,
@@ -4372,6 +4450,7 @@ function createSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_tax_categories_pack_version ON tax_categories(pack_version_id);
     CREATE INDEX IF NOT EXISTS idx_tax_rules_pack_version ON tax_rules(pack_version_id);
     CREATE INDEX IF NOT EXISTS idx_tax_overrides_pack_version ON tax_overrides(pack_version_id);
+    CREATE INDEX IF NOT EXISTS idx_installed_print_templates_pack_version ON installed_print_templates(pack_version_id);
   `);
 }
 
@@ -4444,6 +4523,20 @@ function createTaxPackSchema(): void {
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS installed_print_templates (
+      template_id TEXT PRIMARY KEY,
+      pack_id TEXT NOT NULL,
+      pack_version_id TEXT NOT NULL,
+      country TEXT NOT NULL,
+      jurisdiction TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      paper_widths_json TEXT NOT NULL,
+      renderer_json TEXT NOT NULL,
+      template_payload_json TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'installed',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS tax_config_audit (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       action TEXT NOT NULL,
@@ -4459,6 +4552,7 @@ function createTaxPackSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_tax_categories_pack_version ON tax_categories(pack_version_id);
     CREATE INDEX IF NOT EXISTS idx_tax_rules_pack_version ON tax_rules(pack_version_id);
     CREATE INDEX IF NOT EXISTS idx_tax_overrides_pack_version ON tax_overrides(pack_version_id);
+    CREATE INDEX IF NOT EXISTS idx_installed_print_templates_pack_version ON installed_print_templates(pack_version_id);
   `);
 }
 

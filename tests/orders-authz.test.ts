@@ -52,7 +52,7 @@ async function main() {
   const db = initTestDb();
   const managerAuth = seedUser(db, 'manager-authz', 'manager', '1234');
   const cashierAuth = seedUser(db, 'cashier-authz', 'cashier');
-  const waiterAuth = seedUser(db, 'waiter-authz', 'waiter');
+  const waiterAuth = seedUser(db, 'server-authz', 'server');
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('authz-category', 'Authz', 1)`).run();
   db.prepare(`INSERT INTO products (id, category_id, name, price, is_active, sort_order)
     VALUES ('authz-product', 'authz-category', 'Authz item', 100, 1, 1)`).run();
@@ -76,8 +76,8 @@ async function main() {
     });
     assertEqual(cashierStatus.status, 200, 'cashier can advance an order to preparing');
 
-    for (const [role, auth] of [['cashier', cashierAuth], ['waiter', waiterAuth]] as const) {
-      const order = seedOrderWithItem(db, role.toUpperCase(), role === 'waiter' ? 'waiter-authz' : 'cashier-authz');
+    for (const [role, auth] of [['cashier', cashierAuth], ['server', waiterAuth]] as const) {
+      const order = seedOrderWithItem(db, role.toUpperCase(), role === 'server' ? 'server-authz' : 'cashier-authz');
       const response = await api(baseUrl, `/api/orders/${order.orderId}/items/${order.itemId}/cancel`, {
         method: 'PATCH', body: { override_pin: '1234' }, headers: auth,
       });
@@ -85,20 +85,20 @@ async function main() {
       assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(order.itemId) as any).status, 'voided', `${role} void marks the original item voided`);
     }
 
-    const waiterOwnOrder = seedOrderWithItem(db, 'WAITER-OWN', 'waiter-authz');
+    const waiterOwnOrder = seedOrderWithItem(db, 'WAITER-OWN', 'server-authz');
     const waiterCanAdvance = await api(baseUrl, `/api/orders/${waiterOwnOrder.orderId}/status`, {
       method: 'PATCH', body: { status: 'preparing' }, headers: waiterAuth,
     });
-    assertEqual(waiterCanAdvance.status, 200, 'waiter can advance their own order');
+    assertEqual(waiterCanAdvance.status, 200, 'server can advance their own order');
     const otherOrder = seedOrderWithItem(db, 'WAITER-OTHER', 'cashier-authz');
     const waiterOtherStatus = await api(baseUrl, `/api/orders/${otherOrder.orderId}/status`, {
       method: 'PATCH', body: { status: 'cancelled', override_pin: '1234' }, headers: waiterAuth,
     });
-    assertEqual(waiterOtherStatus.status, 403, 'waiter cannot cancel another user\'s order');
+    assertEqual(waiterOtherStatus.status, 403, 'server cannot cancel another user\'s order');
     const waiterOtherItem = await api(baseUrl, `/api/orders/${otherOrder.orderId}/items/${otherOrder.itemId}/cancel`, {
       method: 'PATCH', body: { override_pin: '1234' }, headers: waiterAuth,
     });
-    assertEqual(waiterOtherItem.status, 403, 'waiter cannot void another user\'s item');
+    assertEqual(waiterOtherItem.status, 403, 'server cannot void another user\'s item');
 
     const invalidPinOrder = seedOrderWithItem(db, 'INVALID-PIN', 'cashier-authz');
     const invalidPin = await api(baseUrl, `/api/orders/${invalidPinOrder.orderId}/items/${invalidPinOrder.itemId}/cancel`, {

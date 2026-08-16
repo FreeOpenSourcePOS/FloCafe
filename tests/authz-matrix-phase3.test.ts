@@ -111,7 +111,7 @@ async function main() {
   const owner = seedUser(db, 'p3-owner', 'owner');
   const manager = seedUser(db, 'p3-manager', 'manager');
   const cashier = seedUser(db, 'p3-cashier', 'cashier');
-  const waiter = seedUser(db, 'p3-waiter', 'waiter');
+  const server = seedUser(db, 'p3-server', 'server');
   const chef = seedUser(db, 'p3-chef', 'chef');
   const deactivated = seedUser(db, 'p3-deactivated', 'manager', 1); // will deactivate in DB later
 
@@ -152,7 +152,7 @@ async function main() {
   ];
 
   for (const route of ownerOnlyRoutes) {
-    for (const user of [manager, cashier, waiter, chef]) {
+    for (const user of [manager, cashier, server, chef]) {
       const res = await (request(app) as any)[route.method](route.path).set(user.headers);
       assertEqual(res.status, 403, `${user.id} denied 403 on owner-only route ${route.path}`);
     }
@@ -167,7 +167,7 @@ async function main() {
   ];
 
   for (const route of managerOrOwnerRoutes) {
-    for (const user of [cashier, waiter, chef]) {
+    for (const user of [cashier, server, chef]) {
       const res = await (request(app) as any)[route.method](route.path).set(user.headers).send(route.body || {});
       assertEqual(res.status, 403, `${user.id} denied 403 on manager/owner route ${route.path}`);
     }

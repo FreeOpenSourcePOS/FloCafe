@@ -21,25 +21,25 @@ import { WebSocket } from 'ws';
 
 function createMessageQueue(ws: WebSocket) {
   const messages: any[] = [];
-  const waiters: Array<{ type: string; resolve: (message: any) => void }> = [];
+  const servers: Array<{ type: string; resolve: (message: any) => void }> = [];
   ws.on('message', (raw: WebSocket.RawData) => {
     const message = JSON.parse(raw.toString());
-    const waiterIndex = waiters.findIndex((waiter) => waiter.type === message.type);
-    if (waiterIndex >= 0) return waiters.splice(waiterIndex, 1)[0].resolve(message);
+    const waiterIndex = servers.findIndex((server) => server.type === message.type);
+    if (waiterIndex >= 0) return servers.splice(waiterIndex, 1)[0].resolve(message);
     messages.push(message);
   });
   return (type: string): Promise<any> => {
     const messageIndex = messages.findIndex((message) => message.type === type);
     if (messageIndex >= 0) return Promise.resolve(messages.splice(messageIndex, 1)[0]);
     return new Promise((resolve, reject) => {
-      const waiter = { type, resolve: (_message: any) => {} };
+      const server = { type, resolve: (_message: any) => {} };
       const timeout = setTimeout(() => {
-        const index = waiters.indexOf(waiter);
-        if (index >= 0) waiters.splice(index, 1);
+        const index = servers.indexOf(server);
+        if (index >= 0) servers.splice(index, 1);
         reject(new Error(`Timed out waiting for ${type}`));
       }, 5000);
-      waiter.resolve = (message: any) => { clearTimeout(timeout); resolve(message); };
-      waiters.push(waiter);
+      server.resolve = (message: any) => { clearTimeout(timeout); resolve(message); };
+      servers.push(server);
     });
   };
 }
@@ -62,7 +62,7 @@ async function run() {
     const bcrypt = require('bcryptjs');
     const hashedPass = bcrypt.hashSync('KitchenPass123!', 10);
 
-    // Seed kitchen staff (chef) and non-kitchen staff (waiter)
+    // Seed kitchen staff (chef) and non-kitchen staff (server)
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
       VALUES ('user-chef-1', 'Chef User', 'chef@flo.local', ?, 'chef', 1)
@@ -112,7 +112,7 @@ async function run() {
 
     db.prepare(`
       INSERT INTO users (id, name, email, password, role, is_active)
-      VALUES ('user-waiter-1', 'Waiter User', 'waiter@flo.local', ?, 'waiter', 1)
+      VALUES ('user-server-1', 'Server User', 'server@flo.local', ?, 'server', 1)
     `).run(hashedPass);
 
     // 1. Missing credentials returns 400
@@ -125,10 +125,10 @@ async function run() {
       .send({ email: 'chef@flo.local', password: 'wrong' });
     assert(res2.status === 401, 'Should return 401 for invalid password');
 
-    // 3. Non-kitchen staff role (waiter) returns 403 Forbidden
+    // 3. Non-kitchen staff role (server) returns 403 Forbidden
     const res3 = await request(`http://127.0.0.1:${port}`)
       .post('/api/auth/login')
-      .send({ email: 'waiter@flo.local', password: 'KitchenPass123!' });
+      .send({ email: 'server@flo.local', password: 'KitchenPass123!' });
     assert(res3.status === 403, 'Should deny access (403) to non-kitchen roles');
 
     // 4. Kitchen staff role (chef) succeeds

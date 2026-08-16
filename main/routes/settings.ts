@@ -10,6 +10,7 @@ import { getCountryByCode, getCurrencySymbol } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates } from '../services/print-templates';
 
 const router = Router();
 
@@ -135,7 +136,7 @@ function taxShape(s: Record<string, string>) {
 
 // ── Specific routes (must come BEFORE /:key wildcard) ─────────────────────
 
-router.get('/business', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/business', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json(businessShape(s));
@@ -202,7 +203,7 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
   }
 });
 
-router.get('/tax', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/tax', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json(taxShape(s));
@@ -250,7 +251,7 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
   }
 });
 
-router.get('/loyalty', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/loyalty', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json({
@@ -293,7 +294,7 @@ router.put('/loyalty', requireRole('owner', 'manager'), (req: Request, res: Resp
 
 // ─── Discount settings ──────────────────────────────────────────────────────
 
-router.get('/discount', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/discount', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json({
@@ -416,7 +417,7 @@ function parseBoundedInt(value: unknown, min: number, max: number, fallback: num
   return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
-router.get('/order-numbering', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/order-numbering', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json(orderNumberingShape(s));
@@ -784,7 +785,7 @@ function isAllowedWildcardKey(key: string): boolean {
   return ALLOWED_WILDCARD_KEYS.has(key) || /^tax_plugin_request:[A-Z]{2}$/.test(key);
 }
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json({ settings: publicSettingsShape(s) });
@@ -794,7 +795,37 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (r
   }
 });
 
-router.get('/:key', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/bill-templates', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+  try {
+    const plugins = listInstalledPrintTemplates().map((template) => {
+      let storedWidths: string[] = [];
+      try {
+        const parsed = JSON.parse(template.paper_widths_json);
+        storedWidths = Array.isArray(parsed) ? parsed.filter((width) => typeof width === 'string') : [];
+      } catch { /* Ignore malformed rows; install validation owns the contract. */ }
+      const paperColumns = storedWidths
+        .map((width) => /^cols-(\d+)$/.exec(width)?.[1])
+        .filter((width): width is string => !!width)
+        .map((width) => Number(width));
+      return {
+        id: template.template_id,
+        displayName: template.display_name,
+        country: template.country,
+        jurisdiction: template.jurisdiction,
+        paperColumns,
+        status: template.status,
+        packId: template.pack_id,
+        packVersionId: template.pack_version_id,
+      };
+    });
+    res.json({ core: [...CORE_BILL_TEMPLATES], plugins });
+  } catch (error: any) {
+    console.error("[API] Internal error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+router.get('/:key', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     if (SENSITIVE_SETTING_KEYS.has(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting is sensitive and cannot be read directly' });
@@ -824,6 +855,9 @@ router.put('/:key', requireRole('owner', 'manager'), (req: Request, res: Respons
     const { value } = req.body;
     if (value === undefined) {
       return res.status(400).json({ error: 'Value is required' });
+    }
+    if (req.params.key === 'bill_template' && !isAvailableBillTemplate(String(value))) {
+      return res.status(400).json({ error: 'Unsupported bill template' });
     }
     const db = getDatabase();
 

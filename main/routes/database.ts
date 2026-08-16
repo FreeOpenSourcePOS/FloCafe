@@ -35,7 +35,7 @@ const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
 const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
-const USER_ROLES = new Set(['owner', 'manager', 'cashier', 'waiter', 'chef']);
+const USER_ROLES = new Set(['owner', 'manager', 'cashier', 'server', 'chef']);
 
 // Parses an import file's schema_version exactly as the import handler does.
 // A missing or malformed value collapses to -1 (and an omitted version to 0),

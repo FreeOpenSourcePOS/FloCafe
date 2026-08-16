@@ -67,7 +67,7 @@ async function main() {
   const managerAuth = seedUser(db, 'manager-145', 'manager');
   seedUser(db, 'manager-target-145', 'manager');
   seedUser(db, 'cashier-target-145', 'cashier', '');
-  seedUser(db, 'waiter-target-145', 'waiter', '');
+  seedUser(db, 'server-target-145', 'server', '');
   seedUser(db, 'chef-target-145', 'chef', '');
 
   const app = createApp({ '/api/staff': staffRoutes });
@@ -105,7 +105,7 @@ async function main() {
 
   console.log('\n── Manager operational-staff access ───────────────────────────');
   const managerCreated: Record<string, string> = {};
-  for (const role of ['cashier', 'waiter', 'chef']) {
+  for (const role of ['cashier', 'server', 'chef']) {
     result = await request(app).post('/api/staff').set(managerAuth).send({
       name: `Managed ${role}`, email: `managed-${role}@test.local`, password: 'StrongPass1', role,
     });
@@ -114,7 +114,7 @@ async function main() {
     assert(!('pin_hash' in result.body.staff), `create ${role} response does not expose pin_hash`);
   }
 
-  for (const role of ['cashier', 'waiter', 'chef']) {
+  for (const role of ['cashier', 'server', 'chef']) {
     result = await request(app).put(`/api/staff/${managerCreated[role]}`).set(managerAuth).send({
       name: `Updated ${role}`, role,
     });
@@ -134,8 +134,8 @@ async function main() {
     assertEqual(result.status, 400, `PIN ${pin} is rejected unless it is 4-6 numeric digits`);
   }
 
-  result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ role: 'waiter' });
-  assertEqual(result.status, 200, 'owner can demote a manager to waiter');
+  result = await request(app).put('/api/staff/manager-target-145').set(ownerAuth).send({ role: 'server' });
+  assertEqual(result.status, 200, 'owner can demote a manager to server');
   assertEqual(result.body.staff.has_pin, 0, 'demoting to an operational role clears has_pin');
   const demoted = db.prepare('SELECT pin_hash FROM users WHERE id = ?').get('manager-target-145') as any;
   assertEqual(demoted.pin_hash, null, 'demoting to an operational role clears pin_hash');

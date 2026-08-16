@@ -7,7 +7,6 @@ import { printerService, type PrinterStatus, type PrinterInfo, type PrintMode } 
 import {
   buildClassicReceiptBytes,
   buildCompactReceiptBytes,
-  buildDetailedReceiptBytes,
   type ReceiptOptions,
 } from '@/lib/printer/receipt-encoder';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -164,8 +163,6 @@ export const usePrinterStore = create<PrinterState>()(
           let bytes: Uint8Array;
           if (billTemplate === 'compact') {
             bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, warnings);
-          } else if (billTemplate === 'detailed') {
-            bytes = buildDetailedReceiptBytes(bill, tenant, builderOpts, warnings);
           } else {
             bytes = buildClassicReceiptBytes(bill, tenant, builderOpts, warnings);
           }

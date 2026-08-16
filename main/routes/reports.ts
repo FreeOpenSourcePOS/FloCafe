@@ -443,7 +443,7 @@ router.get('/insights', requireRole('owner', 'manager'), (req: Request, res: Res
     `).get(windowStart) as { avgMinutes: number | null; sampleSize: number };
 
     // Top staff by revenue — covers whoever creates orders (owner/manager/
-    // cashier/waiter, per POST /orders' own role gate), i.e. "best cashier".
+    // cashier/server, per POST /orders' own role gate), i.e. "best cashier".
     const topStaff = db.prepare(`
       SELECT u.id as user_id, u.name, u.role,
         COALESCE(SUM(o.total), 0) as revenue,

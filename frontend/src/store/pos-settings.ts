@@ -4,7 +4,8 @@ import type { Language } from '@/lib/i18n';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
-export type BillTemplate = 'classic' | 'compact' | 'detailed';
+export type CoreBillTemplate = 'classic' | 'compact';
+export type BillTemplate = CoreBillTemplate | (string & {});
 
 export interface PosSettingsState {
   showProductImages: boolean;

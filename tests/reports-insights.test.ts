@@ -94,15 +94,15 @@ async function main() {
   const cashierId = 'cashier-insights';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
     .run(cashierId, 'Top Cashier', 'cashier-insights@test.local', bcrypt.hashSync('pw', 10), 'cashier', now(), now());
-  const waiterId = 'waiter-insights';
+  const waiterId = 'server-insights';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
-    .run(waiterId, 'Waiter', 'waiter-insights@test.local', bcrypt.hashSync('pw', 10), 'waiter', now(), now());
+    .run(waiterId, 'Server', 'server-insights@test.local', bcrypt.hashSync('pw', 10), 'server', now(), now());
   // Dedicated to the hour/day bucketing fixtures below, kept separate from
-  // cashier/waiter so its order count doesn't skew the top-staff-by-revenue
+  // cashier/server so its order count doesn't skew the top-staff-by-revenue
   // assertions (its orders are zero-value — only their created_at matters).
   const bucketUserId = 'bucket-fixtures-insights';
   db.prepare(`INSERT INTO users (id, name, email, password, role, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, ?, ?)`)
-    .run(bucketUserId, 'Bucket Fixtures', 'bucket-insights@test.local', bcrypt.hashSync('pw', 10), 'waiter', now(), now());
+    .run(bucketUserId, 'Bucket Fixtures', 'bucket-insights@test.local', bcrypt.hashSync('pw', 10), 'server', now(), now());
 
   // Keep rolling-window fixtures safely within the insights query window,
   // while placing them on Wed–Sat at Kolkata hours that cannot affect the
@@ -164,7 +164,7 @@ async function main() {
     VALUES (?, ?, 'takeaway', 'completed', 50, 50, ?, ?, ?, ?)
   `).run('ORD-PREP-2', waiterId, prepTwoCreatedAt, prepTwoCreatedAt, prepTwoCreatedAt, new Date(new Date(prepTwoCreatedAt).getTime() + 20 * 60 * 1000).toISOString());
 
-  // ── Seed top-staff orders: cashier earns more than waiter ────────────
+  // ── Seed top-staff orders: cashier earns more than server ────────────
   db.prepare(`
     INSERT INTO orders (order_number, user_id, type, status, subtotal, total, created_at, updated_at)
     VALUES (?, ?, 'takeaway', 'completed', 500, 500, ?, ?)
@@ -242,13 +242,13 @@ async function main() {
   app.use('/api/reports', reportRoutes);
 
   const ownerToken = jwt.sign({ userId: ownerId, email: 'owner-insights@test.local', role: 'owner' }, getJWTSecret(), { expiresIn: '1h' });
-  const waiterToken = jwt.sign({ userId: waiterId, email: 'waiter-insights@test.local', role: 'waiter' }, getJWTSecret(), { expiresIn: '1h' });
+  const waiterToken = jwt.sign({ userId: waiterId, email: 'server-insights@test.local', role: 'server' }, getJWTSecret(), { expiresIn: '1h' });
 
   try {
     console.log('\n1. Role gating');
     {
       const forbidden = await request(app).get('/api/reports/insights').set('Authorization', `Bearer ${waiterToken}`);
-      assertEqual(forbidden.status, 403, `waiter is forbidden (got ${forbidden.status})`);
+      assertEqual(forbidden.status, 403, `server is forbidden (got ${forbidden.status})`);
     }
 
     console.log('\n2. GET /api/reports/insights?days=90');
@@ -262,11 +262,11 @@ async function main() {
     console.log('\n4. Avg prep time');
     assertEqual(body.avgPrepTimeMinutes, 15, 'avg prep time is (10+20)/2 = 15 minutes');
 
-    console.log('\n5. Top staff (cancelled order excluded, cashier ranks above waiter)');
+    console.log('\n5. Top staff (cancelled order excluded, cashier ranks above server)');
     assertEqual(body.topStaff?.[0]?.user_id, cashierId, 'cashier is #1 by revenue');
     assertEqual(body.topStaff?.[0]?.revenue, 550, 'cashier revenue is 500 (ORD-STAFF-CASHIER) + 50 (ORD-PREP-1) = 550');
-    assertEqual(body.topStaff?.[1]?.user_id, waiterId, 'waiter is #2 by revenue');
-    assertEqual(body.topStaff?.[1]?.revenue, 100, 'waiter revenue is 50 (ORD-STAFF-WAITER) + 50 (ORD-PREP-2) = 100');
+    assertEqual(body.topStaff?.[1]?.user_id, waiterId, 'server is #2 by revenue');
+    assertEqual(body.topStaff?.[1]?.revenue, 100, 'server revenue is 50 (ORD-STAFF-WAITER) + 50 (ORD-PREP-2) = 100');
     const cancelledCounted = (body.topStaff ?? []).some((s: any) => s.revenue >= 99999);
     assert(!cancelledCounted, 'the cancelled order revenue (99999) is excluded from top staff');
 

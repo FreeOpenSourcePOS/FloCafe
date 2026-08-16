@@ -172,7 +172,7 @@ function resolveItemAddons(
   return resolved;
 }
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.get('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const db = getDatabase();
@@ -218,7 +218,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
       wheres.push('table_id = ?');
       params.push(req.query.table_id);
     }
-    if (user.role === 'waiter') {
+    if (user.role === 'server') {
       wheres.push('user_id = ?');
       params.push(user.userId);
     }
@@ -341,7 +341,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   });
 }
 
-router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.get('/:id', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const db = getDatabase();
@@ -349,8 +349,8 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
-    if (user.role === 'waiter' && (order as any).user_id !== user.userId) {
-      return res.status(403).json({ error: 'Waiters can only view their own orders' });
+    if (user.role === 'server' && (order as any).user_id !== user.userId) {
+      return res.status(403).json({ error: 'Servers can only view their own orders' });
     }
 
     // #208: collapse the per-order N+1 (5 queries: items/addons/table/customer/bill/loyalty)
@@ -364,7 +364,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
   }
 });
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = body;
@@ -376,8 +376,8 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
     // Always the authenticated caller, never client-supplied — trusting a
     // client-sent user_id would let staff spoof order attribution, and the
     // frontend has in fact never sent one, so every order got user_id=NULL.
-    // That silently broke waiters' own order visibility (GET /orders scopes
-    // waiters to `user_id = <their id>`, which NULL can never match) and any
+    // That silently broke servers' own order visibility (GET /orders scopes
+    // servers to `user_id = <their id>`, which NULL can never match) and any
     // per-staff sales attribution.
     const authenticatedUserId = (req as any).user.userId;
 
@@ -612,7 +612,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
   }
 });
 
-router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const body = req.body || {};
@@ -629,8 +629,8 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
     }
 
     const authUser = (req as any).user;
-    if (authUser?.role === 'waiter' && order.user_id !== authUser.userId) {
-      return res.status(403).json({ error: 'Waiters can only modify their own orders' });
+    if (authUser?.role === 'server' && order.user_id !== authUser.userId) {
+      return res.status(403).json({ error: 'Servers can only modify their own orders' });
     }
 
     // Replay before any mutable-order guard. A response-loss retry must return
@@ -666,8 +666,8 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
       if (!currentOrder) {
         throw Object.assign(new Error('Order not found'), { statusCode: 404 });
       }
-      if (authUser?.role === 'waiter' && currentOrder.user_id !== authUser.userId) {
-        throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
+      if (authUser?.role === 'server' && currentOrder.user_id !== authUser.userId) {
+        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
       }
 
       // Re-check idempotency under the transaction lock in case the early
@@ -868,7 +868,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'waiter'), 
   }
 });
 
-router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', 'waiter'), (req: Request, res: Response) => {
+router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', 'server'), (req: Request, res: Response) => {
   try {
     const { status, reason, override_pin, free_table } = req.body;
 
@@ -904,11 +904,11 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
       const currentUser = authUser?.userId
         ? db.prepare('SELECT role, is_active FROM users WHERE id = ?').get(authUser.userId) as { role: string; is_active: number } | undefined
         : undefined;
-      if (!currentUser || currentUser.is_active !== 1 || !['owner', 'manager', 'cashier', 'chef', 'waiter'].includes(currentUser.role)) {
+      if (!currentUser || currentUser.is_active !== 1 || !['owner', 'manager', 'cashier', 'chef', 'server'].includes(currentUser.role)) {
         throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
       }
-      if (currentUser.role === 'waiter' && String(currentOrder.user_id) !== String(authUser.userId)) {
-        throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
+      if (currentUser.role === 'server' && String(currentOrder.user_id) !== String(authUser.userId)) {
+        throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
       }
 
       if (currentOrder.status === status) {
@@ -1090,7 +1090,7 @@ router.patch('/:id/customer', requireRole('owner', 'manager'), (req: Request, re
   }
 });
 
-router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const nowStr = now();

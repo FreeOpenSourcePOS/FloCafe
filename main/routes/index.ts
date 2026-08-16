@@ -193,7 +193,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Legacy/flat customer search endpoint (frontend uses this)
-  app.get('/api/customers-search', requireRole('owner', 'manager', 'cashier', 'waiter'), (req, res) => {
+  app.get('/api/customers-search', requireRole('owner', 'manager', 'cashier', 'server'), (req, res) => {
     try {
       const { q } = req.query;
       if (!q || String(q).length < 2) {
@@ -222,7 +222,7 @@ export function registerRoutes(app: Express): void {
   });
 
   // CRM lookup endpoint (frontend uses this)
-  app.get('/api/crm/lookup', requireRole('owner', 'manager', 'cashier', 'waiter'), (req, res) => {
+  app.get('/api/crm/lookup', requireRole('owner', 'manager', 'cashier', 'server'), (req, res) => {
     try {
       const { phone, country_code } = req.query;
       if (!phone) {
@@ -285,8 +285,8 @@ export function registerRoutes(app: Express): void {
           throw Object.assign(new Error('Authentication required'), { statusCode: 403 });
         }
         const userRole = actor.role;
-        if (userRole === 'waiter' && String(currentOrder.user_id) !== actorId) {
-          throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
+        if (userRole === 'server' && String(currentOrder.user_id) !== actorId) {
+          throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
         }
 
         // A repeated request against an already terminal item is an
@@ -332,7 +332,7 @@ export function registerRoutes(app: Express): void {
         // line so the removal stays visible on the bill.
         const isItemVoid = ['preparing', 'ready'].includes(currentItem.status);
         const isPrivilegedRole = ['owner', 'manager'].includes(userRole);
-        const canUseOverride = ['cashier', 'waiter'].includes(userRole) && isItemVoid;
+        const canUseOverride = ['cashier', 'server'].includes(userRole) && isItemVoid;
         if (!isPrivilegedRole && !canUseOverride) {
           throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
         }

@@ -35,7 +35,7 @@ router.get('/merge-history', requireRole('owner', 'manager'), (_req, res) => {
   res.json({ merges: getDatabase().prepare('SELECT * FROM payment_method_merges ORDER BY merged_at DESC, id DESC LIMIT 30').all() });
 });
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter', 'chef'), (req: Request, res: Response) => {
+router.get('/', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   const includeInactive = req.query.include_inactive === 'true' && ['owner', 'manager'].includes((req as any).user.role);
   res.json({ payment_methods: list(includeInactive) });
 });

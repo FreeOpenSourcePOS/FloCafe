@@ -108,7 +108,7 @@ function parseStoredHeldOrder(row: HeldOrderRow): Record<string, unknown> | null
   }
 }
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.get('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const rows = db.prepare('SELECT * FROM held_orders ORDER BY updated_at DESC').all() as HeldOrderRow[];
@@ -129,7 +129,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
   }
 });
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let input;
@@ -172,7 +172,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
   }
 });
 
-router.delete('/:tableId', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.delete('/:tableId', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const tableId = req.params.tableId;
     const expectedHeldOrderId = typeof req.query.heldOrderId === 'string' && req.query.heldOrderId.length > 0

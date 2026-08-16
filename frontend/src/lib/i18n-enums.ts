@@ -22,7 +22,7 @@ export const ROLE_LABEL_KEYS: Record<string, string> = {
   manager: 'staff.roleManager',
   cashier: 'staff.roleCashier',
   chef: 'staff.roleChef',
-  waiter: 'staff.roleWaiter',
+  server: 'staff.roleServer',
 };
 
 /** Order-level status → label. */

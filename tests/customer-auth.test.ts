@@ -64,7 +64,7 @@ async function main() {
   const ownerAuth   = makeToken('owner-auth-001',   'owner',   'owner@auth.test');
   const managerAuth = makeToken('mgr-auth-001',     'manager', 'manager@auth.test');
   const cashierAuth = makeToken('cashier-auth-001', 'cashier', 'cashier@auth.test');
-  const waiterAuth  = makeToken('waiter-auth-001',  'waiter',  'waiter@auth.test');
+  const waiterAuth  = makeToken('server-auth-001',  'server',  'server@auth.test');
   const chefAuth    = makeToken('chef-auth-001',    'chef',    'chef@auth.test');
 
   const app = createApp({ '/api/customers': customerRoutes });
@@ -87,9 +87,9 @@ async function main() {
     assertEqual(res.status, 401, `No token → ${method} ${url} returns 401`);
   }
 
-  console.log('\n── 2. Read endpoints: cashier + waiter allowed ──────────────');
+  console.log('\n── 2. Read endpoints: cashier + server allowed ──────────────');
 
-  for (const [label, auth] of [['cashier', cashierAuth], ['waiter', waiterAuth]]) {
+  for (const [label, auth] of [['cashier', cashierAuth], ['server', waiterAuth]]) {
     const listRes = await request(app).get('/api/customers/').set(auth as any);
     assertEqual(listRes.status, 200, `${label} can GET /api/customers/`);
 
@@ -100,13 +100,13 @@ async function main() {
     assertEqual(walletRes.status, 200, `${label} can GET /api/customers/:id/wallet`);
   }
 
-  console.log('\n── 3. Write endpoints: waiter cannot PUT ──');
+  console.log('\n── 3. Write endpoints: server cannot PUT ──');
 
   const waiterPutRes = await request(app)
     .put(`/api/customers/${custId}`)
     .set(waiterAuth as any)
     .send({ name: 'Modified' });
-  assertEqual(waiterPutRes.status, 403, 'waiter cannot PUT /api/customers/:id');
+  assertEqual(waiterPutRes.status, 403, 'server cannot PUT /api/customers/:id');
 
   console.log('\n── 4. Write endpoints: cashier, manager + owner allowed to PUT ──');
 

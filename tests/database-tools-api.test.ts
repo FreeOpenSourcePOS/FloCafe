@@ -188,7 +188,7 @@ async function runTests() {
         settings: [],
         categories: [],
         products: [],
-        users: [{ id: 'redacted-user-1', name: 'Imported Redacted User', role: 'waiter', is_active: 1 }],
+        users: [{ id: 'redacted-user-1', name: 'Imported Redacted User', role: 'server', is_active: 1 }],
         orders: [{ id: 1001, order_number: 'ORD-REDACTED-USER-001', user_id: 'redacted-user-1' }],
       },
     },
@@ -197,7 +197,7 @@ async function runTests() {
   assert(redactedUserImport.body.placeholderUsersCreated === 1, 'import reports one placeholder user created');
   const placeholderUser = db.prepare("SELECT name, role, is_active, password, email FROM users WHERE id = 'redacted-user-1'").get() as { name: string; role: string; is_active: number; password: string; email: string | null } | undefined;
   assert(placeholderUser?.name === 'Imported Redacted User', 'placeholder user preserves display name');
-  assert(placeholderUser?.role === 'waiter', 'placeholder user preserves role');
+  assert(placeholderUser?.role === 'server', 'placeholder user preserves role');
   assert(placeholderUser?.is_active === 0, 'placeholder user is inactive');
   assert(placeholderUser?.email == null, 'placeholder user does not reserve the exported email');
   assert(placeholderUser?.password !== '[REDACTED]', 'placeholder user does not use the redaction marker as a password');

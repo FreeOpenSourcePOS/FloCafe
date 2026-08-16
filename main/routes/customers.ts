@@ -14,6 +14,26 @@ export function parseCustomer(c: any): any {
 
 const router = Router();
 
+function invalidPhonePredicate(alias = ''): string {
+  const prefix = alias ? `${alias}.` : '';
+  return `${prefix}is_active = 1 AND ${prefix}phone IS NOT NULL AND ${prefix}phone != '' AND ${prefix}phone != '+' || ${prefix}phone_digits`;
+}
+
+function findCustomerByCanonicalOrLegacyPhone(db: ReturnType<typeof getDatabase>, finalPhone: string, originalPhone: string): any {
+  const canonicalDigits = stripPhoneDigits(finalPhone);
+  const legacyDigits = stripPhoneDigits(originalPhone);
+  const candidates = Array.from(new Set([canonicalDigits, legacyDigits].filter(Boolean)));
+
+  if (candidates.length === 0) return null;
+  return db.prepare(`
+    SELECT *
+    FROM customers
+    WHERE phone_digits IN (${candidates.map(() => '?').join(',')})
+    ORDER BY is_active DESC, created_at ASC, id ASC
+    LIMIT 1
+  `).get(...candidates);
+}
+
 export function getWalletBalance(customerId: string | number | null): number {
   if (!customerId) return 0;
   const db = getDatabase();
@@ -49,9 +69,7 @@ router.post('/admin/repair-phones', requireRole('owner', 'manager'), (req: Reque
     const customers = db.prepare(`
       SELECT id, phone, country_code
       FROM customers
-      WHERE is_active = 1
-      AND phone IS NOT NULL AND phone != ''
-      AND phone != '+' || phone_digits
+      WHERE ${invalidPhonePredicate()}
     `).all() as Array<{ id: string; phone: string; country_code: string | null }>;
 
     let normalizedCount = 0;
@@ -87,15 +105,13 @@ router.post('/admin/repair-phones', requireRole('owner', 'manager'), (req: Reque
   }
 });
 
-router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const result = db.prepare(`
       SELECT COUNT(*) as count 
       FROM customers 
-      WHERE is_active = 1 
-      AND phone IS NOT NULL AND phone != '' 
-      AND phone != '+' || phone_digits
+      WHERE ${invalidPhonePredicate()}
     `).get() as { count: number };
     
     res.json({ invalidPhonesCount: result.count });
@@ -105,7 +121,7 @@ router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'waiter'), (req
   }
 });
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.get('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     // #208: the previous version ran 4 correlated subqueries per customer
@@ -155,7 +171,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
     }
 
     if (req.query.filter === 'invalid_phones') {
-      query += " AND c.phone IS NOT NULL AND c.phone != '' AND c.phone != '+' || c.phone_digits";
+      query += ` AND (${invalidPhonePredicate('c')})`;
     }
 
     const sortField = (req.query.sort as string) || 'name';
@@ -200,7 +216,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Requ
   }
 });
 
-router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.get('/:id', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const customerRaw = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
@@ -225,7 +241,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: R
   }
 });
 
-router.get('/:id/wallet', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.get('/:id/wallet', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const customerId = req.params.id as string;
@@ -246,7 +262,7 @@ router.get('/:id/wallet', requireRole('owner', 'manager', 'cashier', 'waiter'), 
   }
 });
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const { phone, name, email, address, notes, country_code } = req.body;
 
@@ -256,7 +272,8 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
 
     const db = getDatabase();
 
-    let finalPhone = phone ? String(phone).trim() : null;
+    const originalPhone = phone ? String(phone).trim() : '';
+    let finalPhone = originalPhone || null;
     let finalCountryCode = country_code ? String(country_code).trim() : null;
 
     if (finalPhone) {
@@ -268,21 +285,22 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Req
       finalPhone = parsed.e164;
       finalCountryCode = parsed.countryCode;
 
-      const phoneDigits = stripPhoneDigits(finalPhone);
-      const existing = db.prepare('SELECT * FROM customers WHERE phone_digits = ?').get(phoneDigits) as any;
+      const existing = findCustomerByCanonicalOrLegacyPhone(db, finalPhone, originalPhone);
       if (existing) {
         if (existing.is_active === 0) {
           db.prepare(`
             UPDATE customers SET
+              phone = ?,
               name = ?,
               email = ?,
-              country_code = COALESCE(NULLIF(?, ''), country_code),
+              country_code = ?,
               address = ?,
               notes = ?,
               is_active = 1,
               updated_at = ?
             WHERE id = ?
           `).run(
+            finalPhone,
             String(name).trim(),
             email ? String(email).trim() : null,
             finalCountryCode,

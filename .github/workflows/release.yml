@@ -185,12 +185,14 @@ jobs:
         # Snap Store keeps multiple per-arch revisions under one snap name.
         # The credentials check is at runtime, not in `if:` — GitHub Actions
         # rejects `secrets` in `if:` expressions (unrecognized named-value).
+        # A missing credential is a release failure, not a skipped channel:
+        # if this job runs, Snap publishing was requested.
         env:
           SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
         run: |
           if [ -z "$SNAPCRAFT_STORE_CREDENTIALS" ]; then
-            echo "::warning::SNAPCRAFT_STORE_CREDENTIALS not set — skipping snap publish for ${{ matrix.arch }}"
-            exit 0
+            echo "::error::SNAPCRAFT_STORE_CREDENTIALS not set — refusing to silently skip requested Snap Store publish for ${{ matrix.arch }}"
+            exit 1
           fi
           SNAP_NAME="flocafe"
           SNAP=$(ls release/*.snap | head -1)
@@ -402,7 +404,12 @@ jobs:
           }
 
       - name: Build Windows
-        run: npm run build:frontend && npm run build && npx electron-builder --win --publish never
+        # Builds both the direct-download NSIS installer and the Microsoft Store
+        # AppX packages. Partner Center's "MSIX or PWA app" flow accepts appx/msix
+        # packages, and electron-builder's Store target is still named appx. The
+        # package.json target list keeps NSIS x64-only while building AppX for
+        # x64 and arm64, so Windows on Arm devices keep native Store coverage.
+        run: npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
@@ -420,10 +427,75 @@ jobs:
         run: |
           if (-not (Test-Path release\latest.yml)) { Write-Error "release\latest.yml is missing — Windows auto-update would be broken for this release"; exit 1 }
           if (-not (Get-ChildItem release\*.exe.blockmap -ErrorAction SilentlyContinue)) { Write-Error "no .exe.blockmap in release\ — Windows auto-update would be broken for this release"; exit 1 }
+          $appxFiles = @(Get-ChildItem release\*.appx -ErrorAction SilentlyContinue)
+          if ($appxFiles.Count -eq 0) { Write-Error "no .appx in release\ — Microsoft Store submission package is missing"; exit 1 }
+
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $architectures = @{}
+          foreach ($appx in $appxFiles) {
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($appx.FullName)
+            try {
+              $entry = $zip.GetEntry("AppxManifest.xml")
+              if ($null -eq $entry) { Write-Error "AppxManifest.xml is missing from $($appx.Name)"; exit 1 }
+              $reader = New-Object System.IO.StreamReader($entry.Open())
+              try {
+                $manifest = $reader.ReadToEnd()
+              } finally {
+                $reader.Dispose()
+              }
+            } finally {
+              $zip.Dispose()
+            }
+            if ($manifest -notmatch 'ProcessorArchitecture="([^"]+)"') {
+              Write-Error "ProcessorArchitecture is missing from AppxManifest.xml in $($appx.Name)"
+              exit 1
+            }
+            $architectures[$Matches[1]] = $true
+          }
+          foreach ($requiredArch in @("x64", "arm64")) {
+            if (-not $architectures.ContainsKey($requiredArch)) {
+              Write-Error "Missing $requiredArch AppX package — Microsoft Store release would not cover all supported Windows architectures"
+              exit 1
+            }
+          }
 
       - name: Upload Windows assets to GitHub release
         run: |
           $VERSION = node -p "require('./package.json').version"
-          gh release upload "$VERSION" (Get-ChildItem release\*.exe, release\*.exe.blockmap, release\latest.yml | Select-Object -ExpandProperty FullName) --repo "${{ github.repository }}" --clobber
+          gh release upload "$VERSION" (Get-ChildItem release\*.exe, release\*.exe.blockmap, release\*.appx, release\latest.yml | Select-Object -ExpandProperty FullName) --repo "${{ github.repository }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+
+      - name: Setup Microsoft Store Developer CLI
+        uses: microsoft/microsoft-store-apppublisher@v1.1
+
+      - name: Publish Windows AppX packages to Microsoft Store
+        shell: pwsh
+        env:
+          AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
+          AZURE_AD_APPLICATION_CLIENT_ID: ${{ secrets.AZURE_AD_APPLICATION_CLIENT_ID }}
+          AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
+          SELLER_ID: ${{ secrets.SELLER_ID }}
+          MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
+        run: |
+          $missing = @()
+          foreach ($name in @("AZURE_AD_TENANT_ID", "AZURE_AD_APPLICATION_CLIENT_ID", "AZURE_AD_APPLICATION_SECRET", "SELLER_ID", "MICROSOFT_STORE_PRODUCT_ID")) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              $missing += $name
+            }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Error "Missing Microsoft Store configuration: $($missing -join ', ')"
+            exit 1
+          }
+
+          msstore reconfigure `
+            --tenantId "$env:AZURE_AD_TENANT_ID" `
+            --sellerId "$env:SELLER_ID" `
+            --clientId "$env:AZURE_AD_APPLICATION_CLIENT_ID" `
+            --clientSecret "$env:AZURE_AD_APPLICATION_SECRET"
+
+          # The Store CLI accepts the app/project path and discovers the package
+          # candidates from the release directory for Electron projects; appId
+          # keeps CI non-interactive.
+          msstore publish "${{ github.workspace }}\release" --appId "$env:MICROSOFT_STORE_PRODUCT_ID"

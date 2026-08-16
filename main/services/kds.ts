@@ -185,6 +185,10 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
   activeWebSocketServers += 1;
   if (!heartbeat) {
     heartbeat = setInterval(() => {
+      // The voided-item expiry marker is a global value, not per-client —
+      // compute it once per tick instead of repeating the query for every
+      // connected kitchen terminal.
+      const sharedExpiredVoidMarker = getExpiredVoidMarker();
       clients.forEach((client, ws) => {
         if (isDatabaseMaintenanceActive()) {
           closeKdsClient(client, 'Database maintenance in progress');
@@ -198,7 +202,7 @@ export function setupKdsWebSocket(wss: WebSocketServer): void {
           closeKdsClient(client, 'Session expired or revoked');
           return;
         }
-        const expiredVoidMarker = client.userId ? getExpiredVoidMarker() : null;
+        const expiredVoidMarker = client.userId ? sharedExpiredVoidMarker : null;
         let snapshotSent = false;
         const permissionRefreshNeeded = client.categoryIdsChanged || client.stationIdsChanged;
         const expiryRefreshNeeded = expiredVoidMarker !== null && expiredVoidMarker !== client.lastExpiredVoidMarker;
@@ -622,6 +626,9 @@ function broadcastOrderUpdate(): void {
     clients.forEach((client) => closeKdsClient(client, 'KDS is disabled'));
     return;
   }
+  // The voided-item expiry marker is global, not per-client — compute it once
+  // and share it across every client in this broadcast.
+  const sharedExpiredVoidMarker = getExpiredVoidMarker();
   clients.forEach((client) => {
     if (!isKdsClientAuthorized(client)) {
       closeKdsClient(client, 'Session expired or revoked');
@@ -632,7 +639,7 @@ function broadcastOrderUpdate(): void {
       sendActiveOrders(client.ws, client.categoryIds, client.stationIds, client.role === 'chef' || client.categoryIds.length > 0 || client.stationIds.length > 0);
       client.categoryIdsChanged = false;
       client.stationIdsChanged = false;
-      client.lastExpiredVoidMarker = getExpiredVoidMarker();
+      client.lastExpiredVoidMarker = sharedExpiredVoidMarker;
     } catch (err) {
       console.error('[KDS] Broadcast error for client:', err);
     }

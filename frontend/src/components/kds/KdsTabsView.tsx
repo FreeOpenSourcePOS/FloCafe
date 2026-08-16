@@ -1,7 +1,8 @@
 'use client';
 
 import { ChevronRight, Clock } from 'lucide-react';
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { ElapsedTime } from '@/components/kds/ElapsedTime';
 import { KdsItemModal } from '@/components/kds/KdsItemModal';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -14,7 +15,6 @@ import {
 } from '@/hooks/useKdsConnection';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useI18n } from '@/hooks/useI18n';
-import { parseDbTimestamp } from '@/lib/utils';
 
 export interface KdsTabsViewProps {
   orders: KdsOrder[];
@@ -36,25 +36,6 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
     : null;
 
   const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[s].labelKey);
-
-  // Ticks once a second so the elapsed-time display below stays live.
-  const [, setClockTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setClockTick((v) => v + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const timeSince = useCallback((dateStr: string) => {
-    const timestamp = parseDbTimestamp(dateStr).getTime();
-    if (!Number.isFinite(timestamp)) return '—';
-    const totalSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const mm = String(minutes).padStart(2, '0');
-    const ss = String(seconds).padStart(2, '0');
-    return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
-  }, []);
 
   const filteredOrders = orders
     .map((order) => ({
@@ -116,7 +97,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                 </div>
                 <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
                   <Clock size={12} />
-                  {timeSince(order.created_at)}
+                  <ElapsedTime dateStr={order.created_at} />
                 </div>
               </div>
 

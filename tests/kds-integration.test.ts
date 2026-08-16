@@ -189,6 +189,23 @@ async function run() {
     assert(categoriesRes.status === 200, 'Standalone categories request succeeds');
     assert(categoriesRes.body.categories.every((category: any) => category.id === 'kds-category'), 'Station-only chef receives only permitted categories');
 
+    // Query-count regression (#226): the standalone poll must fetch order
+    // items in a single IN(...) query, not one query per active order.
+    const originalPrepare = db.prepare.bind(db) as typeof db.prepare;
+    let batchedItemQueries = 0;
+    (db as any).prepare = (sql: string, ...rest: unknown[]) => {
+      if (typeof sql === 'string' && /FROM order_items oi/.test(sql) && /oi\.order_id IN/.test(sql)) {
+        batchedItemQueries += 1;
+      }
+      return (originalPrepare as any)(sql, ...rest);
+    };
+    const qcOrders = await request(`http://127.0.0.1:${port}`)
+      .get('/api/kds/orders')
+      .set('Authorization', `Bearer ${token}`);
+    assert(qcOrders.status === 200, 'Query-count KDS orders request returns 200');
+    assert(batchedItemQueries === 1, `standalone KDS poll batches item lookups into one query (got ${batchedItemQueries})`);
+    (db as any).prepare = originalPrepare;
+
     // 7. The real WebSocket channel authenticates and receives mutation broadcasts.
     const ws = new WebSocket(`ws://127.0.0.1:${port}/kds`);
     const nextMessage = createMessageQueue(ws);

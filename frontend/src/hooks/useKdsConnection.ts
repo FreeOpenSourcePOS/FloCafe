@@ -6,6 +6,15 @@ import type { AxiosInstance } from 'axios';
 import { useI18n } from '@/hooks/useI18n';
 import { useConfirm } from '@/hooks/use-confirm';
 
+// Bounded exponential backoff for KDS WebSocket reconnects: 1s, 2s, 4s, ...
+// capping at 30s so a prolonged outage doesn't hammer the server while a brief
+// blip still reconnects promptly.
+const KDS_RECONNECT_BASE_MS = 1000;
+const KDS_RECONNECT_MAX_MS = 30000;
+function kdsReconnectDelay(attempt: number): number {
+  return Math.min(KDS_RECONNECT_MAX_MS, KDS_RECONNECT_BASE_MS * (2 ** attempt));
+}
+
 // 'voided' is a terminal, locked status a manager sets via the Orders page
 // PIN flow (issue #150) — it is never a target of the normal advance/revert
 // flow below, so it's deliberately excluded from STATUS_ORDER.
@@ -210,6 +219,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const restInitialFetchRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const restRequestSequenceRef = useRef(0);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptRef = useRef(0);
   const sessionGenerationRef = useRef(0);
   const updatingIdsRef = useRef(new Set<number>());
   // Holds the latest tryWebSocket so its own reconnect timer can call it recursively without
@@ -463,19 +473,21 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setLoading(false);
         if (!authenticated) {
           if (retryDuringMaintenance) {
+            const delay = kdsReconnectDelay(reconnectAttemptRef.current++);
             reconnectTimerRef.current = setTimeout(() => {
               if (generation === sessionGenerationRef.current && window.localStorage.getItem('token') === token) {
                 tryWebSocketRef.current(token, true);
               }
-            }, 3000);
+            }, delay);
           }
           return;
         }
+        const delay = kdsReconnectDelay(reconnectAttemptRef.current++);
         reconnectTimerRef.current = setTimeout(() => {
           if (wsRef.current === ws && generation === sessionGenerationRef.current) {
             tryWebSocketRef.current(token);
           }
-        }, 3000);
+        }, delay);
       };
 
       ws.onerror = () => {
@@ -488,6 +500,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           const msg: WsMessage = JSON.parse(event.data);
           if (msg.type === 'auth_success' && msg.user) {
             authenticated = true;
+            reconnectAttemptRef.current = 0;
             // A REST fallback request may still be in flight when the socket
             // authenticates. Invalidate it before accepting the snapshot so a
             // late REST response cannot overwrite newer WebSocket state.
@@ -525,11 +538,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
             if (invalidSession) window.localStorage.removeItem('token');
             if (temporaryUnavailable) {
               setLoading(true);
+              const delay = kdsReconnectDelay(reconnectAttemptRef.current++);
               reconnectTimerRef.current = setTimeout(() => {
                 if (generation + 1 === sessionGenerationRef.current && window.localStorage.getItem('token') === token) {
                   tryWebSocketRef.current(token, true);
                 }
-              }, 1500);
+              }, delay);
             }
             ws.close();
             setLoading(temporaryUnavailable);

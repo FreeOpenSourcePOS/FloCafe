@@ -324,19 +324,39 @@ export function startKdsServer(): Promise<void> {
           allowedProductIds = new Set(productRows.map((p) => p.id));
         }
 
-        const ordersWithItems = orders.map((order: any) => {
+        // Batch item and addon fetches across all active orders (issue #226)
+        // instead of running one items query and one addons pass per order.
+        const orderIds = (orders as any[]).map((o: any) => o.id);
+        const itemsByOrder: Record<string, any[]> = {};
+        if (orderIds.length > 0) {
+          const placeholders = orderIds.map(() => '?').join(',');
           const rawItems = db.prepare(`
             SELECT oi.*, p.category_id
             FROM order_items oi LEFT JOIN products p ON p.id = oi.product_id
-            WHERE oi.order_id = ?
-          `).all(order.id) as any[];
-          // #150: hide the void reversal line (bill adjustment, not a kitchen
-          // item) and age voided items off the board after their grace period.
-          const visibleItems = rawItems.filter((i) => i.status !== 'void_adjustment'
-            && !['completed', 'cancelled'].includes(i.status)
-            && (i.status !== 'voided' || isVoidedItemKdsVisible(i.voided_at))
-            && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, i.category_id, order.kitchen_station_id ? stationScope?.categoryIdsByStation[String(order.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation));
-          let items = attachEffectiveAddons(db, visibleItems.map(parseItemJson) as any[]);
+            WHERE oi.order_id IN (${placeholders}) ORDER BY oi.order_id, oi.id
+          `).all(...orderIds) as any[];
+          for (const item of rawItems) {
+            if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
+            itemsByOrder[item.order_id].push(item);
+          }
+        }
+
+        // #150: hide the void reversal line (bill adjustment, not a kitchen
+        // item) and age voided items off the board after their grace period.
+        const isVisibleItem = (item: any, order: any) => item.status !== 'void_adjustment'
+          && !['completed', 'cancelled'].includes(item.status)
+          && (item.status !== 'voided' || isVoidedItemKdsVisible(item.voided_at))
+          && isKdsStationItemAllowed(stationIds, stationRoutingCategoryIds, order.kitchen_station_id, item.category_id, order.kitchen_station_id ? stationScope?.categoryIdsByStation[String(order.kitchen_station_id)] : undefined, stationScope.hasUnrestrictedStation);
+
+        const allVisibleItems = (orders as any[])
+          .flatMap((order: any) => (itemsByOrder[order.id] || []).filter((item: any) => isVisibleItem(item, order)));
+        const itemsWithAddons = attachEffectiveAddons(db, allVisibleItems.map(parseItemJson) as any[]);
+        const addonsByItemId = new Map(itemsWithAddons.map((item: any) => [item.id, item]));
+
+        const ordersWithItems = (orders as any[]).map((order: any) => {
+          let items = (itemsByOrder[order.id] || [])
+            .filter((item: any) => isVisibleItem(item, order))
+            .map((item: any) => addonsByItemId.get(item.id) || item);
 
           // Filter by category if provided
           if (allowedProductIds) {

@@ -3,8 +3,9 @@
 import { PointerActivationConstraints, PointerSensor } from '@dnd-kit/dom';
 import { DragDropProvider, useDraggable, type DragEndEvent } from '@dnd-kit/react';
 import { Clock } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import toast from 'react-hot-toast';
+import { ElapsedTime } from '@/components/kds/ElapsedTime';
 import { KdsColumn } from '@/components/kds/KdsColumn';
 import { KdsItemModal } from '@/components/kds/KdsItemModal';
 import { Badge } from '@/components/ui/badge';
@@ -20,7 +21,6 @@ import {
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useI18n } from '@/hooks/useI18n';
 import { useConfirm } from '@/hooks/use-confirm';
-import { parseDbTimestamp } from '@/lib/utils';
 
 export interface KdsKanbanBoardProps {
   orders: KdsOrder[];
@@ -125,25 +125,6 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     }
   }
 
-  // Ticks once a second so the elapsed-time display below stays live.
-  const [, setClockTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setClockTick((v) => v + 1), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const timeSince = (dateStr: string) => {
-    const timestamp = parseDbTimestamp(dateStr).getTime();
-    if (!Number.isFinite(timestamp)) return '—';
-    const totalSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    const mm = String(minutes).padStart(2, '0');
-    const ss = String(seconds).padStart(2, '0');
-    return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
-  };
-
   return (
     <div className="flex-1 min-h-0 flex flex-col">
       <DragDropProvider
@@ -168,7 +149,6 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
                     status={status}
                     items={items}
                     updating={updating}
-                    timeSince={timeSince}
                     onItemOpen={(item) => setModalItem({ item, orderNumber: order.order_number })}
                   />
                 ))}
@@ -208,14 +188,12 @@ function KanbanOrderCard({
   status,
   items,
   updating,
-  timeSince,
   onItemOpen,
 }: {
   order: KdsOrder;
   status: KitchenStatus;
   items: KdsOrderItem[];
   updating: number | null;
-  timeSince: (dateStr: string) => string;
   onItemOpen: (item: KdsOrderItem) => void;
 }) {
   const { t } = useI18n();
@@ -250,7 +228,7 @@ function KanbanOrderCard({
           </div>
           <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
             <Clock size={12} />
-            {timeSince(order.created_at)}
+            <ElapsedTime dateStr={order.created_at} />
           </div>
         </div>
 

@@ -812,8 +812,16 @@ router.post('/ensure-country', requireRole('owner', 'manager'), asyncHandler(asy
 // 2.5%) that all apply together whenever that category is selected; see
 // resolveTaxCategory/calculateRawLine in services/tax-engine.ts, which
 // already sums every matching rule's component with no changes needed here.
-function slugifyTaxId(label: string, used: Set<string>, fallback: string): string {
-  let base = String(label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+export function slugifyTaxId(label: string, used: Set<string>, fallback: string): string {
+  // Strip leading/trailing underscores with a single linear scan instead of an
+  // underscore regex like /^_+|_+$/g (or its unanchored /_+$/ form), which
+  // backtracks super-linearly on `_`-heavy input (CodeQL js/polynomial-redos).
+  let base = String(label || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  let start = 0;
+  while (start < base.length && base[start] === '_') start += 1;
+  let end = base.length;
+  while (end > start && base[end - 1] === '_') end -= 1;
+  base = base.slice(start, end);
   if (!base) base = fallback;
   let candidate = base;
   let suffix = 2;

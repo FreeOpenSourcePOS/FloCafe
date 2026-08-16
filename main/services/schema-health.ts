@@ -124,7 +124,10 @@ function sameColumnList(a: string[], b: string[]): boolean {
 }
 
 function fkSignature(fk: ForeignKeyDef): string {
-  return `${fk.from}->${fk.table}.${fk.to}`;
+  // Include the referential actions so a table whose only difference is its
+  // ON DELETE/ON UPDATE cascade behavior is reported instead of passing as
+  // identical. Delete behavior directly affects data safety.
+  return `${fk.from}->${fk.table}.${fk.to}:${fk.onDelete}:${fk.onUpdate}`;
 }
 
 function sameForeignKeys(a: ForeignKeyDef[], b: ForeignKeyDef[]): boolean {
@@ -264,8 +267,8 @@ function diffSchemas(live: DbSchemaSnapshot, ideal: DbSchemaSnapshot): HealthFin
         risk: 'manual_review',
         autoApplicable: false,
         description: `Foreign keys on "${tableName}" differ from the expected schema. SQLite can't add or alter constraints on an existing table without a full rebuild — review manually.`,
-        currentState: liveTable.foreignKeys.map((f) => `${f.from} → ${f.table}.${f.to}`).join(', ') || 'none',
-        idealState: idealTable.foreignKeys.map((f) => `${f.from} → ${f.table}.${f.to}`).join(', ') || 'none',
+        currentState: liveTable.foreignKeys.map((f) => `${f.from} → ${f.table}.${f.to} (ON DELETE ${f.onDelete}, ON UPDATE ${f.onUpdate})`).join(', ') || 'none',
+        idealState: idealTable.foreignKeys.map((f) => `${f.from} → ${f.table}.${f.to} (ON DELETE ${f.onDelete}, ON UPDATE ${f.onUpdate})`).join(', ') || 'none',
       });
     }
   }
@@ -328,22 +331,42 @@ export function applySafeFixes(findingIds?: string[]): ApplySafeFixesResult {
     f.autoApplicable && f.risk === 'safe' && (!findingIds || findingIds.includes(f.id))
   );
 
-  for (const finding of targets) {
-    const identifiersSafe = isSafeIdentifier(finding.table)
-      && (!finding.column || isSafeIdentifier(finding.column))
-      && (!finding.index || isSafeIdentifier(finding.index));
+  if (targets.length === 0) return result;
 
-    if (!identifiersSafe || !finding.suggestedDdl) {
-      result.skipped.push(finding.id);
-      continue;
+  // Apply the whole batch inside one transaction so a failure partway through
+  // cannot leave a partially repaired schema behind. SQLite DDL is
+  // transactional, so CREATE TABLE / CREATE INDEX / ALTER TABLE all roll back
+  // together if any single fix fails.
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const finding of targets) {
+      const identifiersSafe = isSafeIdentifier(finding.table)
+        && (!finding.column || isSafeIdentifier(finding.column))
+        && (!finding.index || isSafeIdentifier(finding.index));
+
+      if (!identifiersSafe || !finding.suggestedDdl) {
+        result.skipped.push(finding.id);
+        continue;
+      }
+
+      try {
+        db.exec(finding.suggestedDdl);
+        result.applied.push(finding.id);
+      } catch (error: any) {
+        result.errors.push({ id: finding.id, error: error.message });
+      }
     }
 
-    try {
-      db.exec(finding.suggestedDdl);
-      result.applied.push(finding.id);
-    } catch (error: any) {
-      result.errors.push({ id: finding.id, error: error.message });
+    if (result.errors.length > 0) {
+      db.exec('ROLLBACK');
+      result.applied = [];
+    } else {
+      db.exec('COMMIT');
     }
+  } catch (error: any) {
+    try { db.exec('ROLLBACK'); } catch { }
+    result.applied = [];
+    result.errors.push({ id: 'transaction', error: error.message });
   }
 
   return result;

@@ -22,8 +22,12 @@ router.get('/health-check', requireRole('owner'), (_req: Request, res: Response)
 
 router.post('/apply-safe-fixes', requireRole('owner'), (req: Request, res: Response) => {
   try {
-    const { findingIds } = req.body as { findingIds?: string[] };
-    res.json(applySafeFixes(findingIds));
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { findingIds?: unknown };
+    const { findingIds } = body;
+    if (findingIds !== undefined && (!Array.isArray(findingIds) || findingIds.some((id) => typeof id !== 'string'))) {
+      return res.status(400).json({ error: 'findingIds must be an array of finding id strings' });
+    }
+    res.json(applySafeFixes(findingIds as string[] | undefined));
   } catch (error: any) {
     console.error('[DB Tools] apply-safe-fixes error:', error);
     res.status(500).json({ error: 'Applying fixes failed' });
@@ -50,7 +54,13 @@ router.post('/backups/:fileName/delete', requireRole('owner'), requireMasterPin,
     res.json({ success: true });
   } catch (error: any) {
     console.error('[DB Tools] delete backup error:', error);
-    res.status(400).json({ error: 'Deleting backup failed' });
+    if (error?.code === 'ERR_INVALID_BACKUP_NAME') {
+      return res.status(400).json({ error: 'Invalid backup file name' });
+    }
+    if (error?.code === 'ERR_BACKUP_NOT_FOUND') {
+      return res.status(404).json({ error: 'Backup not found' });
+    }
+    res.status(500).json({ error: 'Deleting backup failed' });
   }
 });
 

@@ -117,8 +117,52 @@ jobs:
         env:
           NEXT_TELEMETRY_DISABLED: 1
 
-      - name: Core test suite (Includes smoke & kds integration)
-        run: npm test
+  # 4b. Linux Core Test Suite (sharded)
+  # `npm test` runs ~90 suites serially (~3.5 min) and dominated the PR critical
+  # path. Run the same suites as two round-robin shards on separate runners —
+  # they run in parallel with the build/lint job above, cutting merge-ready time
+  # instead of just the job's own wall time. Shards MUST be separate runners:
+  # several auth suites interfere when run concurrently on one machine.
+  linux-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules
+        run: npx @electron/rebuild -f -w better-sqlite3
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Payment method split checks (npm pretest)
+        if: matrix.shard == 0
+        run: bash tests/run-test.sh npm run test:payment-methods-split
+
+      - name: Core test suite (shard ${{ matrix.shard }})
+        # The suite list is derived from package.json's "test" script at run
+        # time, so shard coverage cannot drift from a hand-maintained list.
+        run: |
+          SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs
 
   # 5. Playwright E2E
   e2e-playwright:

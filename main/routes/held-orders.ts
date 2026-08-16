@@ -1,10 +1,13 @@
 import { Router, Request, Response } from 'express';
+import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { randomUUID } from 'crypto';
 import { validateItemNotes, validateOrderNotes } from './orders-validation';
 
 const router = Router();
+const heldOrderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const heldOrderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 
 const TABLE_STATUS_HELD = 'held';
 const TABLE_STATUS_AVAILABLE = 'available';
@@ -108,7 +111,7 @@ function parseStoredHeldOrder(row: HeldOrderRow): Record<string, unknown> | null
   }
 }
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/', heldOrderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const rows = db.prepare('SELECT * FROM held_orders ORDER BY updated_at DESC').all() as HeldOrderRow[];
@@ -129,7 +132,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Requ
   }
 });
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/', heldOrderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let input;
@@ -172,7 +175,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Req
   }
 });
 
-router.delete('/:tableId', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.delete('/:tableId', heldOrderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const tableId = req.params.tableId;
     const expectedHeldOrderId = typeof req.query.heldOrderId === 'string' && req.query.heldOrderId.length > 0

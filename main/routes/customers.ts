@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDatabase, now, getSettingValue } from '../db';
 import { requireRole } from '../middleware/security';
@@ -13,6 +14,8 @@ export function parseCustomer(c: any): any {
 }
 
 const router = Router();
+const customerReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const customerWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 
 function invalidPhonePredicate(alias = ''): string {
   const prefix = alias ? `${alias}.` : '';
@@ -51,7 +54,7 @@ export function getWalletBalance(customerId: string | number | null): number {
 }
 
 // Cleanup endpoint: delete all customers with null IDs - must be before /:id
-router.delete('/admin/cleanup', requireRole('owner'), (req: Request, res: Response) => {
+router.delete('/admin/cleanup', customerWriteRateLimit, requireRole('owner'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const result = db.prepare("DELETE FROM customers WHERE id IS NULL").run();
@@ -62,7 +65,7 @@ router.delete('/admin/cleanup', requireRole('owner'), (req: Request, res: Respon
   }
 });
 
-router.post('/admin/repair-phones', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/admin/repair-phones', customerWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const tenantCountry = getSettingValue('country') || 'IN';
@@ -105,7 +108,7 @@ router.post('/admin/repair-phones', requireRole('owner', 'manager'), (req: Reque
   }
 });
 
-router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/alerts', customerReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const result = db.prepare(`
@@ -121,7 +124,7 @@ router.get('/alerts', requireRole('owner', 'manager', 'cashier', 'server'), (req
   }
 });
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/', customerReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     // #208: the previous version ran 4 correlated subqueries per customer
@@ -216,7 +219,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Requ
   }
 });
 
-router.get('/:id', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/:id', customerReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const customerRaw = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
@@ -241,7 +244,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'server'), (req: R
   }
 });
 
-router.get('/:id/wallet', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/:id/wallet', customerReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const customerId = req.params.id as string;
@@ -262,7 +265,7 @@ router.get('/:id/wallet', requireRole('owner', 'manager', 'cashier', 'server'), 
   }
 });
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/', customerWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const { phone, name, email, address, notes, country_code } = req.body;
 
@@ -342,7 +345,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Req
   }
 });
 
-router.put('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.put('/:id', customerWriteRateLimit, requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
   try {
     const {
       phone, name, email, address, notes, country_code

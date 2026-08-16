@@ -13,8 +13,11 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
+import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
+const orderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const orderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
 
 function orderIdempotencyKey(req: Request): string | null {
@@ -172,7 +175,7 @@ function resolveItemAddons(
   return resolved;
 }
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const db = getDatabase();
@@ -341,7 +344,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   });
 }
 
-router.get('/:id', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/:id', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const db = getDatabase();
@@ -364,7 +367,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier', 'server'), (req: R
   }
 });
 
-router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = body;
@@ -612,7 +615,7 @@ router.post('/', requireRole('owner', 'manager', 'cashier', 'server'), (req: Req
   }
 });
 
-router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const body = req.body || {};
@@ -868,7 +871,7 @@ router.post('/:id/items', requireRole('owner', 'manager', 'cashier', 'server'), 
   }
 });
 
-router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', 'server'), (req: Request, res: Response) => {
+router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'chef', 'server'), (req: Request, res: Response) => {
   try {
     const { status, reason, override_pin, free_table } = req.body;
 
@@ -1046,7 +1049,7 @@ router.patch('/:id/status', requireRole('owner', 'manager', 'cashier', 'chef', '
   }
 });
 
-router.patch('/:id/customer', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.patch('/:id/customer', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1090,7 +1093,7 @@ router.patch('/:id/customer', requireRole('owner', 'manager'), (req: Request, re
   }
 });
 
-router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const nowStr = now();
@@ -1133,7 +1136,7 @@ router.patch('/:id/convert-to-takeaway', requireRole('owner', 'manager', 'cashie
   }
 });
 
-router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1334,7 +1337,7 @@ router.patch('/:id/discount', requireRole('owner', 'manager'), (req: Request, re
   }
 });
 
-router.patch('/:id/items/:itemId/discount', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;

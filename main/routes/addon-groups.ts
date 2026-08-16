@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, withTxn, getSettingValue } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
@@ -7,6 +8,8 @@ import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/ta
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
 
 const router = Router();
+const addonGroupReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const addonGroupWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 
 type FieldErrors = Record<string, string[]>;
 
@@ -137,7 +140,7 @@ function wouldBreakMinSelection(db: ReturnType<typeof getDatabase>, groupId: str
   return null;
 }
 
-router.get('/', (req: Request, res: Response) => {
+router.get('/', addonGroupReadRateLimit, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const groups = db.prepare('SELECT * FROM addon_groups WHERE is_active = 1 ORDER BY sort_order, name').all();
@@ -154,7 +157,7 @@ router.get('/', (req: Request, res: Response) => {
   }
 });
 
-router.get('/:id', (req: Request, res: Response) => {
+router.get('/:id', addonGroupReadRateLimit, (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.id);
@@ -170,7 +173,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const { name, description, is_required, min_selection, max_selection, allow_multiple_quantities, sort_order, addons } = req.body;
 
@@ -249,7 +252,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
   }
 });
 
-router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:id', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.id);
@@ -367,7 +370,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
   }
 });
 
-router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.delete('/:id', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.id);
@@ -387,7 +390,7 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
 });
 
 // Addon management within a group
-router.post('/:groupId/addons', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:groupId/addons', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const { name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order } = req.body;
 
@@ -440,7 +443,7 @@ router.post('/:groupId/addons', requireRole('owner', 'manager'), (req: Request, 
   }
 });
 
-router.put('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const { name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order } = req.body;
 
@@ -506,7 +509,7 @@ router.put('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req: R
   }
 });
 
-router.delete('/:groupId/addons/:addonId', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.delete('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.groupId);

@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now } from '../db';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { googleDrive } from '../services/google-drive';
@@ -13,6 +14,8 @@ import { normalizeOptionalPhone } from '../lib/phone';
 import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates } from '../services/print-templates';
 
 const router = Router();
+const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const settingsWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -825,7 +828,7 @@ router.get('/bill-templates', requireRole('owner', 'manager'), (_req: Request, r
   }
 });
 
-router.get('/:key', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
+router.get('/:key', settingsReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
   try {
     if (SENSITIVE_SETTING_KEYS.has(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting is sensitive and cannot be read directly' });
@@ -847,7 +850,7 @@ router.get('/:key', requireRole('owner', 'manager', 'cashier', 'server', 'chef')
   }
 });
 
-router.put('/:key', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
   try {
     if (!isAllowedWildcardKey(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting cannot be updated via wildcard route' });

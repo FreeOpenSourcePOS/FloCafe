@@ -151,6 +151,53 @@ function main() {
   assert.ok(report.findings.some((f: any) => f.id === 'extra_column:products.__test_extra_col'),
     'extra column finding persists — applySafeFixes never removes columns');
   console.log('   ✓ applySafeFixes() never touches manual_review findings');
+
+  // ── Foreign-key ON DELETE/ON UPDATE actions are compared ────────────────
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    const addonRow = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='order_item_addons'").get() as { sql: string };
+    assert.ok(addonRow?.sql, 'order_item_addons has a CREATE TABLE statement to rebuild');
+    const modified = addonRow.sql.replace(
+      'REFERENCES order_items(id) ON DELETE CASCADE',
+      'REFERENCES order_items(id) ON DELETE RESTRICT',
+    );
+    assert.notEqual(modified, addonRow.sql, 'the FK action replacement actually changed the DDL');
+    db.exec('ALTER TABLE order_item_addons RENAME TO order_item_addons_old');
+    db.exec(modified);
+    db.exec('INSERT INTO order_item_addons SELECT * FROM order_item_addons_old');
+    db.exec('DROP TABLE order_item_addons_old');
+  } finally {
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+  report = runHealthCheck();
+  const fkFinding = report.findings.find((f: any) => f.id === 'foreign_key_mismatch:order_item_addons');
+  assert.ok(fkFinding, 'an ON DELETE action difference is reported as a foreign_key_mismatch');
+  assert.match(fkFinding.currentState, /RESTRICT/, 'current state surfaces the live ON DELETE action');
+  assert.match(fkFinding.idealState, /CASCADE/, 'ideal state surfaces the expected ON DELETE action');
+  console.log('   ✓ foreign-key ON DELETE/ON UPDATE actions are compared');
+
+  // ── applySafeFixes is atomic: a failed fix rolls back the whole batch ──
+  db.exec('DROP TABLE IF EXISTS held_orders');
+  db.exec('DROP INDEX IF EXISTS idx_customers_phone_digits_unique');
+  // phone_digits is a VIRTUAL generated column, so seed duplicate phones and
+  // let the generated digits collide to make the unique index rebuild fail.
+  db.prepare("INSERT INTO customers (id, name, phone) VALUES ('atomic-a', 'Atomic A', '+1 555 000 1111')").run();
+  db.prepare("INSERT INTO customers (id, name, phone) VALUES ('atomic-b', 'Atomic B', '+1 555 000 1111')").run();
+
+  const atomicResult = applySafeFixes([
+    'missing_table:held_orders',
+    'missing_index:customers.idx_customers_phone_digits_unique',
+  ]);
+  assert.ok(
+    atomicResult.errors.some((e: any) => e.id === 'missing_index:customers.idx_customers_phone_digits_unique'),
+    'the duplicate-data unique index fix fails',
+  );
+  assert.equal(atomicResult.applied.length, 0, 'no fix is reported applied when the batch rolls back');
+  assert.ok(
+    !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='held_orders'").get(),
+    'held_orders is NOT left behind when a later fix fails (batch rolled back)',
+  );
+  console.log('   ✓ applySafeFixes() rolls back the whole batch when any fix fails');
 }
 
 try {

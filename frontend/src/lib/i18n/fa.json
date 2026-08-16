@@ -1137,6 +1137,8 @@
   "kds.viewTabs": "زبانه‌ها",
   "kds.emptyColumn": "—",
   "kds.wsConnected": "WebSocket پیوند داده شد",
+  "kds.skipStageTitle": "پرش از یک مرحله؟",
+  "kds.skipStageMessage": "این کالا به وضعیت {status} تغییر می‌کند و مراحل میانی نادیده گرفته می‌شوند.",
   "nav.collapse": "جمع کردن",
   "nav.confirmLogout": "آیا از خروج مطمئن هستید؟",
   "nav.heapLabel": "حافظه: ",

@@ -19,6 +19,7 @@ import {
 } from '@/hooks/useKdsConnection';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useI18n } from '@/hooks/useI18n';
+import { useConfirm } from '@/hooks/use-confirm';
 import { parseDbTimestamp } from '@/lib/utils';
 
 export interface KdsKanbanBoardProps {
@@ -51,6 +52,8 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
   const resolvedModalItem = modalItem
     ? { ...modalItem, item: orders.flatMap((order) => order.items || []).find((item) => item.id === modalItem.item.id) || modalItem.item }
     : null;
+  const { t } = useI18n();
+  const { confirm, ConfirmDialog } = useConfirm();
 
   // Group by status, then by order. Default rendering matches the tabs view:
   // one card per order, with the order header and a list of items in that status.
@@ -97,8 +100,24 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     if (!event.operation.target || !sourceData || !targetData) return;
     if (sourceData.fromStatus === targetData.status) return;
 
+    const sourceIdx = STATUS_ORDER.indexOf(sourceData.fromStatus as BoardStatus);
+    const targetIdx = STATUS_ORDER.indexOf(targetData.status as BoardStatus);
+    // A forward drag that jumps over one or more stages (e.g. preparing →
+    // served) can accidentally complete an order, so require an explicit
+    // confirmation before committing (issue #301). Backward and single-step
+    // moves stay one-touch.
+    const skipsStage = sourceIdx >= 0 && targetIdx > sourceIdx + 1;
+    if (skipsStage) {
+      const targetLabel = t(STATUS_CONFIG[targetData.status].labelKey);
+      const proceed = await confirm(
+        t('kds.skipStageMessage', { status: targetLabel }),
+        { title: t('kds.skipStageTitle'), confirmLabel: t('kds.markAs', { status: targetLabel }) },
+      );
+      if (!proceed) return;
+    }
+
     const results = await Promise.all(sourceData.itemIds.map((id) =>
-      updateItemStatus(id, targetData.status, { silent: true, expectedStatus: sourceData.fromStatus }),
+      updateItemStatus(id, targetData.status, { silent: !skipsStage, expectedStatus: sourceData.fromStatus }),
     ));
     const failed = results.filter((result) => !result).length;
     if (failed > 0) {
@@ -165,6 +184,8 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
           )}
         </div>
       </DragDropProvider>
+
+      {ConfirmDialog}
 
       {resolvedModalItem && (
         <KdsItemModal

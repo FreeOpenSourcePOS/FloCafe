@@ -334,9 +334,17 @@ router.post('/import', requireRole('owner'),
       }
       throwIfDatabaseMaintenanceAborted(signal);
       db.exec('COMMIT');
-      clearUserAuthCache();
-      clearInMemoryRevokedTokens();
-      clearJWTSecretCache();
+      try {
+        clearUserAuthCache();
+        clearInMemoryRevokedTokens();
+        clearJWTSecretCache();
+      } catch (cacheError: any) {
+        // The import is already committed above. A failure to clear the
+        // in-memory auth/revocation caches must not be reported as a failed
+        // import — that would encourage an operator to retry an already-
+        // committed import. Log it and still report success.
+        console.error('[DB Import] Post-commit cache cleanup failed:', cacheError);
+      }
       res.json({ 
         success: true, 
         message: hasVersionMismatch 

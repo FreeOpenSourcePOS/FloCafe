@@ -6,6 +6,7 @@ import {
   databaseMaintenanceMiddleware,
   registerDatabaseMaintenanceStartListener,
   withDatabaseMaintenanceLock,
+  withDatabaseRequest,
 } from '../main/db';
 
 function delay(ms: number): Promise<void> {
@@ -126,6 +127,18 @@ async function run() {
   const routeResponse = await request(routeApp).post('/api/db/backup').timeout({ response: 500 });
   assert.equal(routeResponse.status, 200, 'maintenance route completes through the production middleware');
   assert.deepEqual(routeResponse.body, { reached: true });
+
+  // ── Maintenance drain is bounded: a stuck active request fails fast ────
+  let releaseActive!: () => void;
+  const hold = new Promise<void>((resolve) => { releaseActive = resolve; });
+  const activeRequest = withDatabaseRequest(() => hold);
+  await delay(1); // let the active-request counter observe the held request
+  await assert.rejects(
+    withDatabaseMaintenanceLock(async () => 'never-runs', undefined, 30),
+    /timed out after 30ms waiting for active requests to drain/,
+  );
+  releaseActive();
+  await activeRequest;
 
   console.log('✅ Database maintenance lock tests passed');
 }

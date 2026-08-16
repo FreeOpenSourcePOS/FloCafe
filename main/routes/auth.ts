@@ -123,8 +123,13 @@ export function parseCategoryIds(value: unknown): string[] {
   }
 }
 
-function isValidEmail(email: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+// RFC 5321 caps a mailbox at 254 octets. Bound the length before applying the
+// email regex so an attacker-supplied email cannot drive `[^\s@]+` backtracking
+// into super-linear time (CodeQL js/polynomial-redos).
+export const MAX_EMAIL_LENGTH = 254;
+
+export function isValidEmail(email: string): boolean {
+  return email.length <= MAX_EMAIL_LENGTH && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<string, unknown>): void {

@@ -1136,6 +1136,8 @@
   "kds.viewTabs": "Abas",
   "kds.emptyColumn": "—",
   "kds.wsConnected": "WebSocket conectado",
+  "kds.skipStageTitle": "Pular uma etapa?",
+  "kds.skipStageMessage": "Isso marcará o item como {status} e pulará as etapas intermediárias.",
   "nav.collapse": "Recolher",
   "nav.confirmLogout": "Tem certeza de que deseja sair?",
   "nav.heapLabel": "Heap: ",

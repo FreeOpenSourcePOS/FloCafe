@@ -1137,6 +1137,8 @@
   "kds.viewTabs": "Tabs",
   "kds.emptyColumn": "—",
   "kds.wsConnected": "WebSocket connected",
+  "kds.skipStageTitle": "Skip a stage?",
+  "kds.skipStageMessage": "This will mark the item as {status} and skip the stages in between.",
   "nav.collapse": "Collapse",
   "nav.confirmLogout": "Are you sure you want to log out?",
   "nav.heapLabel": "Heap: ",

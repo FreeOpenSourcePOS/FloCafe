@@ -12,6 +12,7 @@ import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
 import { buildCspHeader } from './csp';
+import { resolveContainedPath } from './lib/path-containment';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -531,8 +532,8 @@ export function startKdsServer(): Promise<void> {
             const originalPath = req.path;
             const rewritten = rewriteNextExportPath(originalPath);
             if (rewritten !== originalPath) {
-              const fullPath = path.join(staticDir, rewritten);
-              if (fs.existsSync(fullPath)) {
+              const fullPath = resolveContainedPath(staticDir, rewritten);
+              if (fullPath && fs.existsSync(fullPath)) {
                 req.url = rewritten;
               }
             }
@@ -551,9 +552,8 @@ export function startKdsServer(): Promise<void> {
       // SPA fallback - serve the standalone KDS for any unmatched routes
       app.get('/*splat', (req: Request, res: Response) => {
         // Try to serve the specific route first
-        const staticRoot = path.resolve(staticDir);
-        const routePath = path.resolve(staticRoot, `.${req.path}`, 'index.html');
-        if (routePath.startsWith(`${staticRoot}${path.sep}`) && fs.existsSync(routePath)) {
+        const routePath = resolveContainedPath(staticDir, `.${req.path}`, 'index.html');
+        if (routePath && fs.existsSync(routePath)) {
           res.sendFile(routePath, { dotfiles: 'allow' });
         } else {
           res.sendFile(path.join(staticDir, 'kds-standalone', 'index.html'), { dotfiles: 'allow' });

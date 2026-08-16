@@ -15,6 +15,7 @@ import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
+import { resolveContainedPath } from './lib/path-containment';
 
 let server: http.Server | null = null;
 let app: Express;
@@ -140,7 +141,8 @@ export function resolveStaticPage(frontendDir: string, reqPath: string): string 
   if (!/^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/.test(route)) {
     return path.join(frontendDir, 'index.html');
   }
-  const candidate = path.join(frontendDir, route, 'index.html');
+  const candidate = resolveContainedPath(frontendDir, route, 'index.html');
+  if (!candidate) return path.join(frontendDir, 'index.html');
   return fs.existsSync(candidate) ? candidate : path.join(frontendDir, 'index.html');
 }
 
@@ -217,8 +219,8 @@ export function startServer(): Promise<void> {
             const originalPath = req.path;
             const rewritten = rewriteNextExportPath(originalPath);
             if (rewritten !== originalPath) {
-              const fullPath = path.join(frontendDir, rewritten);
-              if (fs.existsSync(fullPath)) {
+              const fullPath = resolveContainedPath(frontendDir, rewritten);
+              if (fullPath && fs.existsSync(fullPath)) {
                 req.url = rewritten;
               }
             }

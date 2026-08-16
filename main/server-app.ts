@@ -13,6 +13,7 @@ import { getServerPort } from './server';
 import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, setServerAppPort } from './server-app-state';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
+import { resolveContainedPath } from './lib/path-containment';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
@@ -256,8 +257,11 @@ export function startServerApp(): Promise<void> {
         app.use((req: Request, _res: Response, next: NextFunction) => {
           if (req.path.includes('__next.')) {
             const rewritten = rewriteNextExportPath(req.path);
-            if (rewritten !== req.path && fs.existsSync(path.join(staticDir, rewritten))) {
-              req.url = rewritten;
+            if (rewritten !== req.path) {
+              const fullPath = resolveContainedPath(staticDir, rewritten);
+              if (fullPath && fs.existsSync(fullPath)) {
+                req.url = rewritten;
+              }
             }
           }
           next();
@@ -266,9 +270,8 @@ export function startServerApp(): Promise<void> {
       app.use(express.static(staticDir, { index: false }));
       app.get('/', (_req: Request, res: Response) => res.redirect('/server-standalone'));
       app.get('/*splat', (req: Request, res: Response) => {
-        const staticRoot = path.resolve(staticDir);
-        const routePath = path.resolve(staticRoot, `.${req.path}`, 'index.html');
-        if (routePath.startsWith(`${staticRoot}${path.sep}`) && fs.existsSync(routePath)) {
+        const routePath = resolveContainedPath(staticDir, `.${req.path}`, 'index.html');
+        if (routePath && fs.existsSync(routePath)) {
           res.sendFile(routePath);
         } else {
           res.sendFile(path.join(staticDir, 'server-standalone', 'index.html'));

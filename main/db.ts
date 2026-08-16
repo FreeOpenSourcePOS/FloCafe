@@ -8,6 +8,7 @@ import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
+import { resolveContainedPath } from './lib/path-containment';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -1176,11 +1177,12 @@ export function listBackups(): { fileName: string; path: string; sizeBytes: numb
 
   return fs.readdirSync(backupDir)
     .filter((fileName) => fileName.startsWith('flo-backup-') && fileName.endsWith('.db'))
-    .filter((fileName) => {
-      try { return fs.lstatSync(path.join(backupDir, fileName)).isFile(); } catch { return false; }
+    .map((fileName) => ({ fileName, fullPath: resolveContainedPath(backupDir, fileName) }))
+    .filter((entry): entry is { fileName: string; fullPath: string } => {
+      if (!entry.fullPath) return false;
+      try { return fs.lstatSync(entry.fullPath).isFile(); } catch { return false; }
     })
-    .map((fileName) => {
-      const fullPath = path.join(backupDir, fileName);
+    .map(({ fileName, fullPath }) => {
       const stat = fs.statSync(fullPath);
       return {
         fileName,

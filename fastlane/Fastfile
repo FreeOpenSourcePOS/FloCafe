@@ -1,0 +1,62 @@
+default_platform(:mac)
+
+def env_bool(name, default)
+  value = ENV[name]
+  return default if value.nil? || value.strip.empty?
+
+  %w[1 true yes on].include?(value.strip.downcase)
+end
+
+def env_string(name, default)
+  value = ENV[name]
+  return default if value.nil? || value.strip.empty?
+
+  value
+end
+
+platform :mac do
+  desc "Build and publish the Mac App Store package through App Store Connect"
+  lane :publish_mas do
+    version = sh("node -p \"require('./package.json').version\"", log: false).strip
+    notes_path = ENV.fetch("MAS_RELEASE_NOTES_PATH", "release/mas-release-notes.txt")
+    notes = File.read(notes_path).strip
+
+    UI.user_error!("Mac App Store release notes are empty: #{notes_path}") if notes.empty?
+    UI.user_error!("Mac App Store release notes exceed Apple's 4,000 character limit") if notes.length > 4000
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("APPLE_API_KEY_ID"),
+      issuer_id: ENV.fetch("APPLE_API_ISSUER"),
+      key_content: ENV.fetch("APPLE_API_KEY"),
+      is_key_content_base64: true,
+      duration: 1200
+    )
+
+    sh("npm run build:mas") unless env_bool("SKIP_MAS_BUILD", false)
+
+    pkg = Dir["release/*.pkg"].max_by { |path| File.mtime(path) }
+    UI.user_error!("No Mac App Store .pkg was produced in release/") if pkg.nil?
+
+    deliver(
+      api_key: api_key,
+      app_identifier: env_string("MAS_APP_IDENTIFIER", "com.flo.desktop"),
+      platform: "osx",
+      app_version: version,
+      pkg: pkg,
+      release_notes: {
+        env_string("MAS_RELEASE_LOCALE", "en-US") => notes
+      },
+      submit_for_review: env_bool("MAS_SUBMIT_FOR_REVIEW", true),
+      automatic_release: env_bool("MAS_AUTOMATIC_RELEASE", true),
+      force: true,
+      skip_screenshots: true,
+      precheck_include_in_app_purchases: false,
+      run_precheck_before_submit: false,
+      submission_information: {
+        export_compliance_uses_encryption: false,
+        content_rights_contains_third_party_content: false,
+        content_rights_has_rights: true
+      }
+    )
+  end
+end

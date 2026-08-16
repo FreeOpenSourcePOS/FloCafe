@@ -1,0 +1,93 @@
+name: Publish Mac App Store
+
+on:
+  workflow_dispatch:
+    inputs:
+      submit_for_review:
+        description: Submit the uploaded build for App Review
+        required: true
+        type: boolean
+        default: true
+      automatic_release:
+        description: Release automatically after Apple approves the version
+        required: true
+        type: boolean
+        default: true
+      release_notes:
+        description: Optional App Store "What's New" text. Blank uses CHANGELOG.md for package.json version.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-mas-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish-mas:
+    runs-on: [self-hosted, macOS]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - uses: ruby/setup-ruby@0481980f17b760ef6bca5e8c55809102a0af1e5a # v1.263.0
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+
+      - name: Verify Mac App Store credentials
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          missing=()
+          [ -z "$CSC_LINK" ] && missing+=("MAC_CERTS")
+          [ -z "$CSC_KEY_PASSWORD" ] && missing+=("MAC_CERTS_PASSWORD")
+          [ -z "$APPLE_API_KEY" ] && missing+=("APPLE_API_KEY")
+          [ -z "$APPLE_API_KEY_ID" ] && missing+=("APPLE_API_KEY_ID")
+          [ -z "$APPLE_API_ISSUER" ] && missing+=("APPLE_API_ISSUER")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secret(s) for Mac App Store publishing: ${missing[*]}"
+            exit 1
+          fi
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Verify Electron dev runtime
+        run: npm run verify:electron
+
+      - name: Prepare Mac App Store release notes
+        env:
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          if [ -n "$RELEASE_NOTES" ]; then
+            mkdir -p release
+            printf '%s\n' "$RELEASE_NOTES" > release/mas-release-notes.txt
+          else
+            scripts/mas-release-notes.sh
+          fi
+
+      - name: Publish to Mac App Store
+        env:
+          CSC_LINK: ${{ secrets.MAC_CERTS }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID || 'BKDY677XJA' }}
+          MAS_APP_IDENTIFIER: ${{ vars.MAS_APP_IDENTIFIER || 'com.flo.desktop' }}
+          MAS_RELEASE_LOCALE: ${{ vars.MAS_RELEASE_LOCALE || 'en-US' }}
+          MAS_SUBMIT_FOR_REVIEW: ${{ inputs.submit_for_review }}
+          MAS_AUTOMATIC_RELEASE: ${{ inputs.automatic_release }}
+          MAS_RELEASE_NOTES_PATH: release/mas-release-notes.txt
+        run: bundle exec fastlane mac publish_mas

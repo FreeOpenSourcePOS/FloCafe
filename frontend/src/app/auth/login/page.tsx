@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
+import { useState, useEffect, Suspense, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getLandingPage } from '@/components/layout/AuthGuard';
-import { useAuthStore } from '@/store/auth';
+import { useAuthStore, StorageUnavailableError } from '@/store/auth';
+import { parseLoginFailure } from '@/lib/login-errors';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -61,20 +62,15 @@ function LoginContent() {
     }
   }, [selectTenant, t]);
 
-  const autoSelectAttempted = useRef(false);
-
   useEffect(() => {
-    let active = true;
+    // Single-tenant sessions are already auto-selected by the auth store —
+    // login() and loadFromStorage() set currentTenant when tenants.length === 1.
+    // Deliberately no auto-select here: it raced manual selection through
+    // selectTenant() and the shared loading flag for one login attempt (#229).
     if (user && currentTenant) {
       router.push(getLandingPage());
-    } else if (user && tenants.length === 1 && !autoSelectAttempted.current) {
-      autoSelectAttempted.current = true;
-      selectTenant(tenants[0].id)
-        .catch(() => { if (active) toast.error(t('auth.selectBusinessFailed')); })
-        .finally(() => { if (active) setLoading(false); });
     }
-    return () => { active = false; };
-  }, [user, tenants, currentTenant, router, selectTenant, t]);
+  }, [user, currentTenant, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,32 +80,36 @@ function LoginContent() {
       await login(email, password, rememberMe);
       toast.success(t('auth.signInSuccess'));
     } catch (err: unknown) {
-      const error = err as { response?: { status?: number; data?: { error?: string; attempts_remaining?: number; lockout_minutes?: number } } };
-      const status = error.response?.status;
-      const data = error.response?.data;
-
-      if (status === 401) {
-        const remaining = data?.attempts_remaining;
-        if (remaining === 0) {
-          // Just got locked out
-          const mins = data?.lockout_minutes ?? 15;
-          setLoginError(t('auth.lockedOut').replace('{minutes}', String(mins)));
-        } else if (typeof remaining === 'number' && remaining < 4) {
-          // Warn only when getting close (≤ 4 remaining to avoid noise on first attempt)
-          setLoginError(
-            t('auth.invalidCredentials') + ' ' +
-            t('auth.attemptsRemaining').replace('{count}', String(remaining))
-          );
-        } else {
-          setLoginError(t('auth.invalidCredentials'));
-        }
-      } else if (status === 429) {
-        // Middleware-level lockout (authRateLimit window exhausted)
-        const msg = data?.error || t('auth.lockedOut').replace('{minutes}', '15');
-        setLoginError(msg);
+      if (err instanceof StorageUnavailableError) {
+        // Server login succeeded but the session could not be persisted.
+        setLoginError(t('auth.storageUnavailable'));
       } else {
-        const msg = data?.error || t('auth.loginFailed');
-        setDbError(msg);
+        const failure = parseLoginFailure(err);
+        if (failure.status === 401) {
+          const remaining = failure.attemptsRemaining;
+          if (remaining === 0) {
+            // Just got locked out
+            const mins = failure.lockoutMinutes ?? 15;
+            setLoginError(t('auth.lockedOut').replace('{minutes}', String(mins)));
+          } else if (typeof remaining === 'number' && remaining < 4) {
+            // Warn only when getting close (≤ 4 remaining to avoid noise on first attempt)
+            setLoginError(
+              t('auth.invalidCredentials') + ' ' +
+              t('auth.attemptsRemaining').replace('{count}', String(remaining))
+            );
+          } else {
+            setLoginError(t('auth.invalidCredentials'));
+          }
+        } else if (failure.status === 429) {
+          // Middleware-level lockout (authRateLimit window exhausted)
+          setLoginError(failure.message || t('auth.lockedOut').replace('{minutes}', '15'));
+        } else if (failure.status === undefined) {
+          // No HTTP response at all: the server was unreachable (network).
+          setLoginError(t('auth.connectionFailed'));
+        } else {
+          // Other server-side failures belong under the database/setup banner.
+          setDbError(failure.message || t('auth.loginFailed'));
+        }
       }
     } finally {
       setLoading(false);

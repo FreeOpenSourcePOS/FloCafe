@@ -21,21 +21,38 @@ interface AuthState {
   loading: boolean;
 
   login: (email: string, password: string, rememberMe?: boolean) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
   selectTenant: (tenantId: number) => Promise<void>;
   logout: () => void;
   loadFromStorage: () => void;
   updateCurrentTenant: (updates: Partial<Tenant>) => void;
 }
 
-interface RegisterData {
-  name: string;
-  email: string;
-  password: string;
-  password_confirmation: string;
-  business_name: string;
-  business_type: string;
-  country: string;
+/**
+ * Thrown when the browser refuses to persist the session token/tenant after the
+ * server has already authenticated the user (issue #229). Distinct from a
+ * network error so the login UI can show the right recovery message instead of
+ * silently leaving a server-authenticated-but-unpersisted session.
+ */
+export class StorageUnavailableError extends Error {
+  constructor() {
+    super('Browser storage is unavailable');
+    this.name = 'StorageUnavailableError';
+  }
+}
+
+/**
+ * Persists the session token (and optional tenant). `localStorage` can throw
+ * in private browsing, when storage is disabled, or at quota — the write is
+ * what keeps the user signed in across reloads, so a failure here must surface
+ * instead of leaving the renderer logged out after a successful server login.
+ */
+function persistSession(token: string, tenant: Tenant | null): void {
+  try {
+    localStorage.setItem('token', token);
+    if (tenant) localStorage.setItem('tenant', JSON.stringify(tenant));
+  } catch {
+    throw new StorageUnavailableError();
+  }
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -47,10 +64,9 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   login: async (email: string, password: string, rememberMe = false) => {
     const { data } = await api.post('/auth/login', { email, password, rememberMe });
-    localStorage.setItem('token', data.access_token);
     const tenants: Tenant[] = data.tenants;
     const currentTenant = tenants.length === 1 ? tenants[0] : null;
-    if (currentTenant) localStorage.setItem('tenant', JSON.stringify(currentTenant));
+    persistSession(data.access_token, currentTenant);
     set({
       user: data.user,
       token: data.access_token,
@@ -60,24 +76,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     syncTenantLanguage(currentTenant);
   },
 
-  register: async (registerData: RegisterData) => {
-    const { data } = await api.post('/auth/register', registerData);
-    localStorage.setItem('token', data.access_token);
-    const tenant: Tenant = data.tenant;
-    localStorage.setItem('tenant', JSON.stringify(tenant));
-    set({
-      user: data.user,
-      token: data.access_token,
-      tenants: [tenant],
-      currentTenant: tenant,
-    });
-    syncTenantLanguage(tenant);
-  },
-
   selectTenant: async (tenantId: number) => {
     const { data } = await api.post('/auth/tenants/select', { tenant_id: tenantId });
-    localStorage.setItem('token', data.access_token);
-    localStorage.setItem('tenant', JSON.stringify(data.tenant));
+    persistSession(data.access_token, data.tenant);
     set({
       token: data.access_token,
       currentTenant: data.tenant,

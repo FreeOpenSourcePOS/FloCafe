@@ -10,7 +10,7 @@ import { closeServerResources, createShutdownCancellationError, installHttpShutd
 import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isDatabaseMaintenanceActive, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isKdsEnabled, isVoidedItemKdsVisible, KDS_VOIDED_ITEM_VISIBILITY_MS, projectKdsItem, projectKdsOrder } from './db';
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
-import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
+import { rateLimit, authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
 
@@ -527,7 +527,7 @@ export function startKdsServer(): Promise<void> {
       // __next.!KGRhc2hib2FyZCk.products.__PAGE__.txt) instead of nested
       // directories. This rewrite is only needed when the app runs on Windows.
       if (process.platform === 'win32') {
-        app.use((req: Request, res: Response, next: NextFunction) => {
+        app.use(staticRouteRateLimit(), (req: Request, res: Response, next: NextFunction) => {
           if (req.path.includes('__next.')) {
             const originalPath = req.path;
             const rewritten = rewriteNextExportPath(originalPath);
@@ -550,7 +550,7 @@ export function startKdsServer(): Promise<void> {
       });
 
       // SPA fallback - serve the standalone KDS for any unmatched routes
-      app.get('/*splat', (req: Request, res: Response) => {
+      app.get('/*splat', staticRouteRateLimit(), (req: Request, res: Response) => {
         // Try to serve the specific route first
         const routePath = resolveContainedPath(staticDir, `.${req.path}`, 'index.html');
         if (routePath && fs.existsSync(routePath)) {

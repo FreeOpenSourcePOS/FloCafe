@@ -11,7 +11,7 @@ import { registerRoutes } from './routes';
 import { getJWTSecret } from './routes/auth';
 import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
-import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
+import { rateLimit, staticRouteRateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
@@ -214,7 +214,7 @@ export function startServer(): Promise<void> {
       // __next.!KGRhc2hib2FyZCk.products.__PAGE__.txt) instead of nested
       // directories. This rewrite is only needed when the app runs on Windows.
       if (process.platform === 'win32') {
-        app.use((req: Request, res: Response, next: NextFunction) => {
+        app.use(staticRouteRateLimit(), (req: Request, res: Response, next: NextFunction) => {
           if (req.path.includes('__next.')) {
             const originalPath = req.path;
             const rewritten = rewriteNextExportPath(originalPath);
@@ -234,7 +234,7 @@ export function startServer(): Promise<void> {
       // Serve each Next.js static route's own index. Returning the root export
       // for /whatsapp (or any direct link/refresh) runs app/page.tsx and sends
       // the user to Dashboard instead of the requested page.
-      app.get(/^(?!\/api|\/kds).*$/, (req: Request, res: Response) => {
+      app.get(/^(?!\/api|\/kds).*$/, staticRouteRateLimit(), (req: Request, res: Response) => {
         res.sendFile(resolveStaticPage(frontendDir, req.path), { dotfiles: 'allow' });
       });
     } else {

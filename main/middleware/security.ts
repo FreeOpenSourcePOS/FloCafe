@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import expressRateLimit from 'express-rate-limit';
 import { createHash } from 'node:crypto';
 import { getDatabase, isKdsEnabled, now, parseDbTimestamp } from '../db';
 
@@ -106,6 +107,24 @@ export function authRateLimit() {
     max: 10,
     message: 'Too many authentication attempts. Please try again later.',
     bypassPrivateIp: false,
+  });
+}
+
+/**
+ * Shared rate limiter for static/SPA file serving. Static assets are public
+ * and cheap, but the SPA fallback performs a filesystem read per request, so a
+ * generous limit bounds external clients without throttling LAN clients (KDS,
+ * Server App, recovery) — mirroring the private-IP convenience of rateLimit().
+ * Uses express-rate-limit (rather than the in-memory rateLimit above) so CodeQL
+ * recognizes the route as rate-limited (js/missing-rate-limiting).
+ */
+export function staticRouteRateLimit(options: { windowMs?: number; limit?: number } = {}) {
+  return expressRateLimit({
+    windowMs: options.windowMs ?? 60 * 1000,
+    limit: options.limit ?? 600,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
   });
 }
 

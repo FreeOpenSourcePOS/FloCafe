@@ -14,8 +14,8 @@
  * printer.
  */
 
-// Every ASCII fallback is exactly 2 characters, so the currency slot in a
-// monospace receipt line is always 2 columns wide, unicode or not.
+// Currency fallbacks are kept to two or three ASCII characters so receipt
+// amount columns remain bounded for common symbols and ISO-style tokens.
 export const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₹': 'Rs', // Indian Rupee
   '₨': 'Rs', // Rupee sign
@@ -45,8 +45,9 @@ export function normalizeCurrencyToAscii(text: string): string {
 }
 
 /**
- * Pads a resolved currency symbol to a fixed 2-character slot so amount
- * columns line up whether the symbol is 1 or 2 characters wide.
+ * Pads a resolved currency symbol to a fixed 2-character slot when it is
+ * shorter than two characters. Three-character fallbacks such as IRR remain
+ * unchanged.
  */
 export function padCurrencyPrefix(prefix: string): string {
   return prefix.length >= 2 ? prefix : ' '.repeat(2 - prefix.length) + prefix;

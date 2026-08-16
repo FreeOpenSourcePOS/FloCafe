@@ -181,11 +181,38 @@ export const usePrinterStore = create<PrinterState>()(
         try {
           const {
             printerUseUnicode, printerTrimDecimals, printerPaperSize,
-            billTaxRegistrationNumber, billAddress, billPhone,
+            billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
             billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
           } = usePosSettingsStore.getState();
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
+
+          if (get().printMethod === 'browser') {
+            // Browser / A4 print path: render real HTML instead of decoding
+            // raw ESC/POS bytes (which would strip Persian digits/ریال to
+            // printer ASCII). Mirrors the printBill browser path.
+            const { printWebBill } = await import('@/lib/printer/web-print');
+            printWebBill(bill, tenant, {
+              paperSize: printerPaperSize,
+              includeTaxId: billShowTaxId,
+              taxRegistrationNumber: billShowTaxId
+                ? (opts?.taxRegistrationNumber || billTaxRegistrationNumber || undefined)
+                : undefined,
+              address: billShowAddress ? (opts?.address || billAddress || undefined) : undefined,
+              phone: billShowPhone ? (opts?.phone || billPhone || undefined) : undefined,
+              footerNote: billFooterMessage || undefined,
+              businessName: tenant.business_name,
+              showBusinessName: billShowName,
+              showTaxBreakdown: billShowTaxBreakdown,
+              showCustomerName: billShowCustomerName,
+              showCustomerPhone: billShowCustomerPhone,
+              showTableNumber: billShowTableNumber,
+              useUnicode: printerUseUnicode,
+              trimDecimals: printerTrimDecimals,
+            });
+            return [];
+          }
+
           const warnings: PrintWarning[] = [];
           const bytes = buildTaxBillBytes(bill, tenant, {
             ...opts,
@@ -202,16 +229,10 @@ export const usePrinterStore = create<PrinterState>()(
             showTableNumber: billShowTableNumber,
             useUnicode: printerUseUnicode,
             trimDecimals: printerTrimDecimals,
+            rawEscPos: true,
           }, warnings);
           set({ lastPrintedBytes: bytes });
-
-          if (get().printMethod === 'escpos') {
-            await printerService.print(bytes);
-          } else {
-            const paperWidth = get().paperWidth || 80;
-            const html = `<html><body style="font-family:monospace;white-space:pre;padding:10px;">${new TextDecoder().decode(bytes)}</body></html>`;
-            await printerService.printViaBrowser(html, paperWidth);
-          }
+          await printerService.print(bytes);
           return warnings;
         } catch (err) {
           set({ lastError: (err as Error).message });

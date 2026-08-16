@@ -336,6 +336,11 @@ exit 0
   assert.ok(pretestStep, 'linux-tests must include payment method split pretest step');
   assert.strictEqual(pretestStep.if, 'matrix.shard == 0', 'Payment method split check must run only on shard 0');
 
+  const frontendDepsStep = steps.find((s: any) => s.name?.includes('Install frontend dependencies'));
+  assert.ok(frontendDepsStep, 'linux-tests must include frontend dependencies installation step');
+  assert.strictEqual(frontendDepsStep['working-directory'], 'frontend');
+  assert.strictEqual(frontendDepsStep.run, 'npm ci');
+
   const shardStep = steps.find((s: any) => s.name?.includes('Core test suite (shard'));
   assert.ok(shardStep, 'linux-tests must include Core test suite shard step');
   assert.match(shardStep.run, /SHARD_TOTAL=2\s+SHARD_INDEX=\${{\s*matrix\.shard\s*}}\s+node\s+scripts\/ci\/run-test-shard\.cjs/);

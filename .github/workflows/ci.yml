@@ -140,12 +140,19 @@ jobs:
         with:
           node-version: '22'
           cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
       - name: Rebuild native modules
         run: npx @electron/rebuild -f -w better-sqlite3
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
 
       - name: Payment method split checks (npm pretest)
         if: matrix.shard == 0

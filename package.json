@@ -53,7 +53,7 @@
     "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts",
     "test:windows-uninstaller": "node tests/run-windows-uninstaller-tests.cjs",
     "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts",
-    "test:static-routes": "node tests/run-electron-node-test.cjs tests/static-route-resolution.test.ts",
+    "test:static-routes": "ts-node --transpile-only -P tests/tsconfig.json tests/path-containment.test.ts && node tests/run-electron-node-test.cjs tests/static-route-resolution.test.ts",
     "test:notes-validation": "ts-node --transpile-only -P tests/tsconfig.json tests/order-notes-validation.test.ts",
     "test:first-run": "node tests/run-electron-node-test.cjs tests/first-run-setup.test.ts && node tests/run-electron-node-test.cjs tests/setup-failure-recovery.test.ts",
     "test:security": "node tests/run-electron-node-test.cjs tests/security-hardening.test.ts",

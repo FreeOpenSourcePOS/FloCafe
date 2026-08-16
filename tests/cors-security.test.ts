@@ -1,4 +1,4 @@
-import { isAllowedPrivateIp, rateLimit } from '../main/middleware/security';
+import { isAllowedPrivateIp, rateLimit, staticRouteRateLimit } from '../main/middleware/security';
 import express from 'express';
 import request from 'supertest';
 
@@ -194,6 +194,36 @@ async function run() {
   const sweepCtx = makeMockReqRes('203.0.113.1');
   limiter(sweepCtx.req, sweepCtx.res, sweepCtx.next);
   assert(sweepCtx.getNext() === true, 'cleanup: request after expiry triggers sweep and succeeds');
+
+  // 9. Static/SPA route rate limiter (express-rate-limit + private-IP skip)
+  console.log('Testing static route rate limiter...');
+  const createStaticRouteApp = (limit: number) => {
+    const app = express();
+    app.use((req, _res, next) => {
+      const headerIp = req.get('x-test-ip');
+      if (headerIp) {
+        Object.defineProperty(req, 'ip', { get: () => headerIp, configurable: true });
+      }
+      next();
+    });
+    app.use(staticRouteRateLimit({ windowMs: 60 * 1000, limit }));
+    app.get('/*splat', (_req, res) => res.status(200).send('ok'));
+    return app;
+  };
+
+  const staticPublicApp = createStaticRouteApp(2);
+  let staticRes = await request(staticPublicApp).get('/page').set('x-test-ip', '8.8.8.8');
+  assert(staticRes.status === 200, 'static: public IP first request OK');
+  staticRes = await request(staticPublicApp).get('/page').set('x-test-ip', '8.8.8.8');
+  assert(staticRes.status === 200, 'static: public IP second request OK');
+  staticRes = await request(staticPublicApp).get('/page').set('x-test-ip', '8.8.8.8');
+  assert(staticRes.status === 429, 'static: public IP third request throttled (429)');
+
+  const staticPrivateApp = createStaticRouteApp(2);
+  for (let i = 0; i < 5; i++) {
+    staticRes = await request(staticPrivateApp).get('/page').set('x-test-ip', '192.168.1.100');
+    assert(staticRes.status === 200, `static: private IP request ${i + 1} bypasses rate limiting`);
+  }
 
   console.log('✅ All CORS IP Validation & Rate Limiter tests passed!');
 

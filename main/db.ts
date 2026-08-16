@@ -69,6 +69,20 @@ function createDatabaseShutdownTimeoutError(): Error & { code: string } {
   return error;
 }
 
+/**
+ * A maintenance operation (backup/import/restore/initialize) must not wait
+ * forever for in-flight database requests to drain — a stuck request would
+ * otherwise hold the maintenance lock indefinitely. Bound the drain and fail
+ * the maintenance operation with an explicit, retryable error.
+ */
+export const MAINTENANCE_DRAIN_TIMEOUT_MS = SHUTDOWN_TIMEOUT_MS;
+
+function createMaintenanceDrainTimeoutError(timeoutMs: number): Error & { code: string } {
+  const error = new Error(`Database maintenance timed out after ${timeoutMs}ms waiting for active requests to drain`) as Error & { code: string };
+  error.code = 'ERR_MAINTENANCE_DRAIN_TIMEOUT';
+  return error;
+}
+
 export function beginDatabaseShutdown(): void {
   databaseShutdownRequested = true;
   databaseShutdownController.abort();
@@ -78,18 +92,39 @@ function getMaintenanceSignal(signal?: AbortSignal): AbortSignal {
   return signal ? AbortSignal.any([signal, databaseShutdownController.signal]) : databaseShutdownController.signal;
 }
 
-function waitForActiveDatabaseRequests(signal: AbortSignal): Promise<void> {
+function waitForActiveDatabaseRequests(signal: AbortSignal, timeoutMs?: number): Promise<void> {
   if (activeDatabaseRequests === 0) return Promise.resolve();
   return new Promise<void>((resolve, reject) => {
-    const finish = () => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const cleanup = () => {
       signal.removeEventListener('abort', onAbort);
+      if (timeout !== undefined) clearTimeout(timeout);
+    };
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
       resolve();
     };
     const onAbort = () => {
+      if (settled) return;
+      settled = true;
       const index = maintenanceDrainWaiters.indexOf(finish);
       if (index >= 0) maintenanceDrainWaiters.splice(index, 1);
+      cleanup();
       reject(createMaintenanceAbortError());
     };
+    if (timeoutMs !== undefined) {
+      timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        const index = maintenanceDrainWaiters.indexOf(finish);
+        if (index >= 0) maintenanceDrainWaiters.splice(index, 1);
+        cleanup();
+        reject(createMaintenanceDrainTimeoutError(timeoutMs));
+      }, timeoutMs);
+    }
     if (signal.aborted) {
       onAbort();
       return;
@@ -203,7 +238,7 @@ export function databaseMaintenanceMiddleware(req: Request, res: Response, next:
   next();
 }
 
-export function withDatabaseMaintenanceLock<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal?: AbortSignal): Promise<T> {
+export function withDatabaseMaintenanceLock<T>(operation: (signal: AbortSignal) => T | Promise<T>, signal?: AbortSignal, timeoutMs?: number): Promise<T> {
   if (databaseShutdownRequested) return Promise.reject(createMaintenanceAbortError());
   const maintenanceSignal = getMaintenanceSignal(signal);
   const previous = databaseMaintenanceTail;
@@ -223,7 +258,7 @@ export function withDatabaseMaintenanceLock<T>(operation: (signal: AbortSignal) 
       // middleware above. Any remaining active requests were already in flight
       // before maintenance began and must drain first.
       if (activeDatabaseRequests > 0) {
-        await waitForActiveDatabaseRequests(maintenanceSignal);
+        await waitForActiveDatabaseRequests(maintenanceSignal, timeoutMs ?? MAINTENANCE_DRAIN_TIMEOUT_MS);
       }
       if (maintenanceSignal.aborted || databaseShutdownRequested) throw createMaintenanceAbortError();
       return await operation(maintenanceSignal);
@@ -1166,16 +1201,23 @@ export function listBackups(): { fileName: string; path: string; sizeBytes: numb
  * `../../flo.db`) can't escape the backups folder or delete the live DB.
  */
 export function deleteBackup(fileName: string): void {
+  const invalidName = () => {
+    const error = new Error('Invalid backup file name') as Error & { code: string };
+    error.code = 'ERR_INVALID_BACKUP_NAME';
+    return error;
+  };
   if (!/^flo-backup-[\w.-]+\.db$/.test(fileName)) {
-    throw new Error('Invalid backup file name');
+    throw invalidName();
   }
   const backupDir = getBackupDir();
   const fullPath = path.join(backupDir, fileName);
   if (path.dirname(fullPath) !== backupDir) {
-    throw new Error('Invalid backup file name');
+    throw invalidName();
   }
   if (!fs.existsSync(fullPath)) {
-    throw new Error('Backup not found');
+    const error = new Error('Backup not found') as Error & { code: string };
+    error.code = 'ERR_BACKUP_NOT_FOUND';
+    throw error;
   }
   fs.unlinkSync(fullPath);
 }
@@ -1857,6 +1899,7 @@ export function restoreBackup(backupPath: string, forceDirect: boolean = false, 
         throw new Error(
           `Direct restore failed: ${error?.message || 'unknown error'}; ` +
           `live database recovery failed: ${recoveryError?.message || 'unknown error'}`,
+          { cause: recoveryError },
         );
       }
       throw error;
@@ -4611,14 +4654,16 @@ function getNextSequence(name: string, date: string): number {
           INSERT INTO sequences (name, date, current_value) VALUES (?, ?, 1)
         `).run(name, date);
         return 1;
-      } catch {
-        // Another concurrent insert won the race, try update again
+      } catch (insertError) {
+        // Another concurrent insert won the race, try update again. Preserve
+        // the original insert error so a genuinely stuck sequence row is
+        // diagnosable rather than replaced by a bare retry message.
         const retry = db.prepare(`
           UPDATE sequences SET current_value = current_value + 1
           WHERE name = ? AND date = ?
         `).run(name, date);
         if (retry.changes === 0) {
-          throw new Error(`Failed to generate sequence for ${name}`);
+          throw new Error(`Failed to generate sequence for ${name}`, { cause: insertError });
         }
       }
     }

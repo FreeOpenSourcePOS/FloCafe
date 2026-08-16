@@ -286,6 +286,42 @@ async function runTests() {
     assert(entry.kind === 'manual', 'a backup created via POST /db/backup is classified as manual, not auto');
   }
 
+  // ── Test 3b2: POST /db-tools/apply-safe-fixes validates its payload ─────
+  console.log('\nTest 3b2: POST /db-tools/apply-safe-fixes payload validation');
+  {
+    const nonArray = await request(app).post('/api/db-tools/apply-safe-fixes').set('Authorization', `Bearer ${ownerToken}`)
+      .send({ findingIds: 'not-an-array' });
+    assert(nonArray.status === 400, `non-array findingIds is rejected (got ${nonArray.status})`);
+    assert(nonArray.body.error?.includes('findingIds'), 'the error explains the findingIds shape requirement');
+
+    const nonStringElement = await request(app).post('/api/db-tools/apply-safe-fixes').set('Authorization', `Bearer ${ownerToken}`)
+      .send({ findingIds: [123] });
+    assert(nonStringElement.status === 400, `non-string findingIds element is rejected (got ${nonStringElement.status})`);
+
+    const emptyArray = await request(app).post('/api/db-tools/apply-safe-fixes').set('Authorization', `Bearer ${ownerToken}`)
+      .send({ findingIds: [] });
+    assert(emptyArray.status === 200, `empty findingIds array is accepted (got ${emptyArray.status})`);
+  }
+
+  // ── Test 3b3: POST /db-tools/backups/:fileName/delete maps failures to accurate status codes ──
+  console.log('\nTest 3b3: POST /db-tools/backups/:fileName/delete status codes');
+  {
+    const invalidName = await request(app).post('/api/db-tools/backups/not-a-backup.txt/delete')
+      .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '1234' });
+    assert(invalidName.status === 400, `invalid backup name returns 400 (got ${invalidName.status})`);
+
+    const notFound = await request(app).post('/api/db-tools/backups/flo-backup-missing-00000000.db/delete')
+      .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '1234' });
+    assert(notFound.status === 404, `missing backup returns 404 (got ${notFound.status})`);
+
+    const list = await request(app).get('/api/db-tools/backups').set('Authorization', `Bearer ${ownerToken}`);
+    const fileName = list.body.backups[0]?.fileName;
+    assert(typeof fileName === 'string', 'a backup exists to delete');
+    const okDelete = await request(app).post(`/api/db-tools/backups/${encodeURIComponent(fileName)}/delete`)
+      .set('Authorization', `Bearer ${ownerToken}`).send({ master_pin: '1234' });
+    assert(okDelete.status === 200, `deleting an existing backup returns 200 (got ${okDelete.status})`);
+  }
+
   // ── Test 3c: schema-mismatch import requires the Master PIN (GHSA-xxv4-gm82-4639) ──
   console.log('\nTest 3c: POST /db/import destructive path is master-PIN gated');
   {

@@ -46,6 +46,9 @@ function run() {
   assert.equal(slugifyTaxId('  Beverage  ', new Set(), 'fallback'), 'beverage', 'trims and lowercases');
   assert.equal(slugifyTaxId('___', new Set(), 'fallback'), 'fallback', 'all-underscore falls back');
   assert.equal(slugifyTaxId('a_b', new Set(), 'fallback'), 'a_b', 'keeps an internal separator');
+  assert.equal(slugifyTaxId('_foo_', new Set(), 'fallback'), 'foo', 'strips leading and trailing underscores');
+  assert.equal(slugifyTaxId('foo_', new Set(), 'fallback'), 'foo', 'strips a trailing underscore');
+  assert.equal(slugifyTaxId('_foo', new Set(), 'fallback'), 'foo', 'strips a leading underscore');
   // The super-linear input shape (`a` + "_"*N + `b`) collapses to one separator
   // before the trim, and must complete without quadratic backtracking.
   assert.equal(

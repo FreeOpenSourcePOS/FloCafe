@@ -18,13 +18,18 @@ import * as path from 'path';
  */
 export function resolveContainedPath(root: string, ...segments: string[]): string | null {
   const resolvedRoot = path.resolve(root);
+  const rootWithSep = resolvedRoot.endsWith(path.sep) ? resolvedRoot : resolvedRoot + path.sep;
   // path.join (unlike path.resolve) does not discard earlier segments when a
   // later segment is absolute, so an absolute attacker segment is treated as a
   // sub-path of root rather than silently winning. It also normalizes `..`.
   const joined = path.join(resolvedRoot, ...segments);
   const resolved = path.resolve(joined);
-  if (resolved !== resolvedRoot && !resolved.startsWith(resolvedRoot + path.sep)) {
-    return null;
+
+  if (resolved === resolvedRoot) {
+    return resolvedRoot;
   }
-  return resolved;
+  if (resolved.startsWith(rootWithSep)) {
+    return resolved;
+  }
+  return null;
 }

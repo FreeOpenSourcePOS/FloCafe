@@ -46,3 +46,16 @@ test('resolveContainedPath treats an absolute later segment as a sub-path, not a
 test('resolveContainedPath with no segments returns the resolved root', () => {
   assert.equal(resolveContainedPath(root), path.resolve(root));
 });
+
+test('resolveContainedPath handles root with trailing separator correctly', () => {
+  const rootWithSlash = `${path.resolve(root)}${path.sep}`;
+  assert.equal(
+    resolveContainedPath(rootWithSlash, 'a', 'index.html'),
+    path.resolve(root, 'a', 'index.html'),
+  );
+  assert.equal(resolveContainedPath(rootWithSlash, '..', 'outside'), null);
+});
+
+test('resolveContainedPath rejects path traversal via encoded or backslash characters on POSIX', () => {
+  assert.equal(resolveContainedPath(root, 'a/../../outside'), null);
+});

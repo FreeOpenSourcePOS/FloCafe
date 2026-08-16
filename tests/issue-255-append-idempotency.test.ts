@@ -30,13 +30,13 @@ const {
 const { orderRoutes } = require('../main/routes/orders');
 const { getJWTSecret } = require('../main/routes/auth');
 
-function seedWaiterUser(db: any) {
-  const userId = 'waiter-255';
+function seedServerUser(db: any) {
+  const userId = 'server-255';
   db.prepare(`
     INSERT OR IGNORE INTO users (id, name, email, password, role, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 'waiter', 1, ?, ?)
-  `).run(userId, 'Issue 255 Waiter', 'waiter-255@test.local', bcrypt.hashSync('testpass123', 10), now(), now());
-  const token = jwt.sign({ userId, email: 'waiter-255@test.local', role: 'waiter' }, getJWTSecret(), { expiresIn: '1h' });
+    VALUES (?, ?, ?, ?, 'server', 1, ?, ?)
+  `).run(userId, 'Issue 255 Server', 'server-255@test.local', bcrypt.hashSync('testpass123', 10), now(), now());
+  const token = jwt.sign({ userId, email: 'server-255@test.local', role: 'server' }, getJWTSecret(), { expiresIn: '1h' });
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -44,7 +44,7 @@ async function main() {
   console.log('Issue #255 append idempotency contract');
   const db = initTestDb();
   const { authHeader } = seedOwnerUser(db);
-  const waiterAuth = seedWaiterUser(db);
+  const serverAuth = seedServerUser(db);
   seedCategory(db, 'cat-255', 'Issue 255 menu');
   seedProduct(db, 'prod-255-base', 'cat-255', 'Issue 255 base', 100);
   seedProduct(db, '001', 'cat-255', 'Issue 255 append', 25);
@@ -86,10 +86,10 @@ async function main() {
     const unauthorizedReplay = await api(baseUrl, `/api/orders/${orderId}/items`, {
       method: 'POST',
       body: appendBody,
-      headers: { ...waiterAuth, 'Idempotency-Key': 'issue-255-append-retry' },
+      headers: { ...serverAuth, 'Idempotency-Key': 'issue-255-append-retry' },
     });
     const countAfterUnauthorized = db.prepare('SELECT COUNT(*) AS count FROM order_items WHERE order_id = ?').get(orderId) as { count: number };
-    assertEqual(unauthorizedReplay.status, 403, 'a waiter cannot replay a legacy append record for another owner\'s order');
+    assertEqual(unauthorizedReplay.status, 403, 'a server cannot replay a legacy append record for another owner\'s order');
     assertEqual(countAfterUnauthorized.count, countAfterCommit.count, 'unauthorized replay does not expose or mutate the order');
 
     const whitespaceOrder = await api(baseUrl, '/api/orders', {

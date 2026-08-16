@@ -67,11 +67,13 @@ async function main() {
     assertEqual(billContentDefaults.bill_show_customer_name, 'true', 'fresh database shows customer name by default');
     assertEqual(billContentDefaults.bill_show_customer_phone, 'true', 'fresh database shows customer number by default');
     assertEqual(billContentDefaults.bill_show_table_number, 'true', 'fresh database shows table number by default');
-    const saveTemplate = await api(baseUrl, '/api/settings/bill_template', { method: 'PUT', body: { value: 'detailed' }, headers: authHeader });
+    const rejectDetailedTemplate = await api(baseUrl, '/api/settings/bill_template', { method: 'PUT', body: { value: 'detailed' }, headers: authHeader });
+    assertEqual(rejectDetailedTemplate.status, 400, 'tax-specific bill templates cannot be saved as built-ins');
+    const saveTemplate = await api(baseUrl, '/api/settings/bill_template', { method: 'PUT', body: { value: 'compact' }, headers: authHeader });
     const saveFooter = await api(baseUrl, '/api/settings/bill_footer_message', { method: 'PUT', body: { value: 'Please visit us again' }, headers: authHeader });
     assertEqual(saveTemplate.status, 200, 'bill template setting can be saved for backend invoice printing');
     assertEqual(saveFooter.status, 200, 'bill footer setting can be saved for backend invoice printing');
-    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value, 'detailed', 'backend printer reads the persisted template choice');
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value, 'compact', 'backend printer reads the persisted template choice');
     assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any).value, 'Please visit us again', 'backend printer reads the persisted footer message');
     const printerColumns = db.prepare('PRAGMA table_info(printers)').all().map((column: any) => column.name);
     assert(!printerColumns.includes('usb_device_path'), 'fresh printer schema does not keep ignored USB device path column');

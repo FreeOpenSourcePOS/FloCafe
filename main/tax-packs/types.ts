@@ -61,3 +61,32 @@ export interface CountryPack {
   taxRounding: TaxRounding;
   payableRounding: PayableRounding;
 }
+
+export interface PluginPrintTemplate {
+  id: string;
+  displayName: string;
+  country: string;
+  jurisdiction: string;
+  paperColumns: number[];
+  renderer: {
+    id: string;
+    version: number;
+  };
+  templatePayload?: unknown;
+  payload?: unknown;
+}
+
+export interface CountryTaxPackPluginArtifact {
+  schemaVersion: 1;
+  artifactType: 'country-tax-pack-plugin';
+  id: string;
+  displayName: string;
+  publisher: string;
+  version: string;
+  country: string;
+  jurisdiction: string;
+  publishedAt: string;
+  minFloVersion: string;
+  taxPack: CountryPack;
+  printTemplates?: PluginPrintTemplate[];
+}

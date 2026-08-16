@@ -1,7 +1,7 @@
 /**
  * /api/staff  — alias for /api/users, kept for frontend compatibility.
  * All user records live in the `users` table.
- * Roles: owner | manager | cashier | waiter | chef
+ * Roles: owner | manager | cashier | server | chef
  * The chef role is used by KDS displays.
  */
 import { Router, Request, Response } from 'express';
@@ -12,7 +12,7 @@ import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache }
 
 const router = Router();
 
-const OPERATIONAL_ROLES = ['cashier', 'waiter', 'chef'];
+const OPERATIONAL_ROLES = ['cashier', 'server', 'chef'];
 const VALID_ROLES = ['owner', 'manager', ...OPERATIONAL_ROLES];
 const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
 

@@ -79,7 +79,7 @@ async function main() {
   const ownerAuth   = seedUser(db, 'security-owner',   'owner',   'security-owner@test.local');
   const managerAuth = seedUser(db, 'security-manager', 'manager', 'security-manager@test.local');
   const cashierAuth = seedUser(db, 'security-cashier', 'cashier', 'security-cashier@test.local');
-  const waiterAuth  = seedUser(db, 'security-waiter',  'waiter',  'security-waiter@test.local');
+  const waiterAuth  = seedUser(db, 'security-server',  'server',  'security-server@test.local');
   const chefAuth    = seedUser(db, 'security-chef',    'chef',    'security-chef@test.local', ['cat-security']);
 
   db.prepare(`
@@ -127,7 +127,7 @@ async function main() {
   assertEqual(cashierKitchen.status, 403, 'cashier cannot access kitchen orders (vuln-0004)');
 
   const waiterKitchen = await request(app).get('/api/kitchen/orders').set(waiterAuth);
-  assertEqual(waiterKitchen.status, 403, 'waiter cannot access kitchen orders (vuln-0004)');
+  assertEqual(waiterKitchen.status, 403, 'server cannot access kitchen orders (vuln-0004)');
 
   const chefKitchen = await request(app).get('/api/kitchen/orders').set(chefAuth);
   assertEqual(chefKitchen.status, 200, 'chef can access kitchen orders');
@@ -247,7 +247,7 @@ async function main() {
   const ownerOrdersRes = await request(app).get('/api/orders/').set(ownerAuth);
   assertEqual(ownerOrdersRes.status, 200, 'owner can access /api/orders/');
 
-  // Seed two orders: one by waiter, one by manager
+  // Seed two orders: one by server, one by manager
   // But wait, we need to create orders through the API to ensure they are created correctly
   const prodId = 'test-prod-1';
   db.prepare("INSERT OR REPLACE INTO products (id, name, price, stock_quantity, tax_type) VALUES (?, 'Test', 100, 10, 'exclusive')").run(prodId);
@@ -258,47 +258,47 @@ async function main() {
   const managerOrderId = managerOrderRes.body.order.id;
 
   const waiterOrderRes = await request(app).post('/api/orders/').set(waiterAuth).send({
-    type: 'dine_in', user_id: 'security-waiter', items: [{ product_id: prodId, quantity: 1 }]
+    type: 'dine_in', user_id: 'security-server', items: [{ product_id: prodId, quantity: 1 }]
   });
   const waiterOrderId = waiterOrderRes.body.order.id;
 
-  // 3. Waiter fetching /api/orders/ should ONLY see their own order
+  // 3. Server fetching /api/orders/ should ONLY see their own order
   const waiterListRes = await request(app).get('/api/orders/').set(waiterAuth);
-  assertEqual(waiterListRes.status, 200, 'waiter can access /api/orders/');
+  assertEqual(waiterListRes.status, 200, 'server can access /api/orders/');
   const waiterSeenIds = waiterListRes.body.orders.map((o: any) => o.id);
-  assert(waiterSeenIds.includes(waiterOrderId), 'waiter sees their own order');
-  assert(!waiterSeenIds.includes(managerOrderId), 'waiter does NOT see manager order (vuln-0007 IDOR)');
+  assert(waiterSeenIds.includes(waiterOrderId), 'server sees their own order');
+  assert(!waiterSeenIds.includes(managerOrderId), 'server does NOT see manager order (vuln-0007 IDOR)');
 
-  // 4. Waiter fetching /api/orders/:id for manager's order should return 403
+  // 4. Server fetching /api/orders/:id for manager's order should return 403
   const waiterGetManagerOrder = await request(app).get(`/api/orders/${managerOrderId}`).set(waiterAuth);
-  assertEqual(waiterGetManagerOrder.status, 403, 'waiter gets 403 for other user order (vuln-0007)');
+  assertEqual(waiterGetManagerOrder.status, 403, 'server gets 403 for other user order (vuln-0007)');
 
-  // 5. Waiter fetching /api/orders/:id for their own order should return 200
+  // 5. Server fetching /api/orders/:id for their own order should return 200
   const waiterGetOwnOrder = await request(app).get(`/api/orders/${waiterOrderId}`).set(waiterAuth);
-  assertEqual(waiterGetOwnOrder.status, 200, 'waiter gets 200 for their own order');
+  assertEqual(waiterGetOwnOrder.status, 200, 'server gets 200 for their own order');
 
   // ── user_id attribution: the real POS frontend never sends user_id — it
   // must come from the authenticated session, not the request body. Without
-  // this, every order gets user_id=NULL and a waiter can never see any order
-  // they place (the /api/orders/ list scopes waiters to `user_id = <their
+  // this, every order gets user_id=NULL and a server can never see any order
+  // they place (the /api/orders/ list scopes servers to `user_id = <their
   // id>`, which NULL never matches).
   const noBodyUserIdRes = await request(app).post('/api/orders/').set(waiterAuth).send({
     type: 'dine_in', items: [{ product_id: prodId, quantity: 1 }]
   });
-  assertEqual(noBodyUserIdRes.status, 201, 'waiter can create an order without sending user_id');
+  assertEqual(noBodyUserIdRes.status, 201, 'server can create an order without sending user_id');
   const noBodyUserIdOrderId = noBodyUserIdRes.body.order.id;
-  assertEqual(noBodyUserIdRes.body.order.user_id, 'security-waiter', 'order is attributed to the authenticated waiter, not left NULL');
+  assertEqual(noBodyUserIdRes.body.order.user_id, 'security-server', 'order is attributed to the authenticated server, not left NULL');
 
   const waiterSeesOwnUnattributedOrder = await request(app).get('/api/orders/').set(waiterAuth);
   const seenAfterCreate = waiterSeesOwnUnattributedOrder.body.orders.map((o: any) => o.id);
-  assert(seenAfterCreate.includes(noBodyUserIdOrderId), 'the order the waiter just placed (no user_id in the request) shows up in their own order list');
+  assert(seenAfterCreate.includes(noBodyUserIdOrderId), 'the order the server just placed (no user_id in the request) shows up in their own order list');
 
   // A spoofed user_id in the body must be ignored — attribution always comes
   // from the session, never the client.
   const spoofedUserIdRes = await request(app).post('/api/orders/').set(waiterAuth).send({
     type: 'dine_in', user_id: 'security-owner', items: [{ product_id: prodId, quantity: 1 }]
   });
-  assertEqual(spoofedUserIdRes.body.order.user_id, 'security-waiter', 'a client-supplied user_id is ignored — the order is still attributed to the real authenticated caller');
+  assertEqual(spoofedUserIdRes.body.order.user_id, 'security-server', 'a client-supplied user_id is ignored — the order is still attributed to the real authenticated caller');
 
   const results = getResults();
   if (results.failed > 0) {

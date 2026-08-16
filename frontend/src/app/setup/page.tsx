@@ -30,6 +30,20 @@ const SERVICE_MODELS: Array<{ value: ServiceModel }> = [
 // Mirrors main/services/cloud-sync.ts DEFAULT_CLOUD_SERVER_URL — kept in sync
 // manually since the frontend can't import backend TS modules directly.
 const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const SUSPECT_EMAIL_TLDS = new Set(['example', 'invalid', 'lcaol', 'local', 'localhost', 'test']);
+
+function isValidOwnerEmail(email: string): boolean {
+  return EMAIL_PATTERN.test(email);
+}
+
+function hasSuspectEmailDomain(email: string): boolean {
+  if (!isValidOwnerEmail(email)) return false;
+  const domain = email.split('@').pop()?.toLowerCase() || '';
+  const labels = domain.split('.');
+  const tld = labels[labels.length - 1] || '';
+  return SUSPECT_EMAIL_TLDS.has(tld);
+}
 
 export default function SetupPage() {
   const { logout } = useAuthStore();
@@ -57,6 +71,10 @@ export default function SetupPage() {
   const [marketing, setMarketing] = useState(false);
   const passwordsEntered = form.password.length > 0 && form.confirmPassword.length > 0;
   const passwordsMatch = !passwordsEntered || form.password === form.confirmPassword;
+  const ownerEmail = form.email.trim().toLowerCase();
+  const ownerEmailEntered = ownerEmail.length > 0;
+  const ownerEmailInvalid = ownerEmailEntered && !isValidOwnerEmail(ownerEmail);
+  const ownerEmailWarning = ownerEmailEntered && !ownerEmailInvalid && hasSuspectEmailDomain(ownerEmail);
 
   const [masterPinAvailable, setMasterPinAvailable] = useState<boolean | null>(null);
   const [masterPin, setMasterPin] = useState('');
@@ -126,6 +144,10 @@ export default function SetupPage() {
   const validateOwner = () => {
     if (!form.name.trim() || !form.email.trim() || !form.password) {
       toast.error(t('setup.errorNameRequired'));
+      return false;
+    }
+    if (!isValidOwnerEmail(form.email.trim())) {
+      toast.error(t('setup.errorInvalidEmail'));
       return false;
     }
     if (!isPasswordValid(form.password)) {
@@ -441,8 +463,19 @@ export default function SetupPage() {
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
                       placeholder={t('setup.ownerEmailPlaceholder')}
+                      aria-invalid={ownerEmailInvalid}
                       required
                     />
+                    {ownerEmailInvalid && (
+                      <p className="text-xs font-medium text-red-600">
+                        {t('setup.errorInvalidEmail')}
+                      </p>
+                    )}
+                    {ownerEmailWarning && (
+                      <p className="text-xs font-medium text-orange-600">
+                        {t('setup.ownerEmailDomainWarning')}
+                      </p>
+                    )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
@@ -560,7 +593,7 @@ export default function SetupPage() {
                   </div>
 
 
-                  <Button type="submit" disabled={!passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
+                  <Button type="submit" disabled={ownerEmailInvalid || !passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
                     {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </form>

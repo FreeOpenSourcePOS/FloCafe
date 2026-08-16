@@ -18,6 +18,7 @@ export default function AddonGroupsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingGroup, setEditingGroup] = useState<AddonGroup | null>(null);
   const [expandedGroup, setExpandedGroup] = useState<number | string | null>(null);
+  const [mutating, setMutating] = useState(false);
 
   // Group form
   const [form, setForm] = useState({
@@ -77,6 +78,7 @@ export default function AddonGroupsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (mutating) return;
     const minVal = Number(form.min_selection);
     const maxVal = Number(form.max_selection);
     if (minVal > maxVal) {
@@ -89,6 +91,7 @@ export default function AddonGroupsPage() {
       return;
     }
     try {
+      setMutating(true);
       const payload = {
         ...form,
         min_selection: minVal,
@@ -105,24 +108,32 @@ export default function AddonGroupsPage() {
       fetchGroups();
     } catch (err: unknown) {
       toast.error(extractErrorMessage(err, t('common.failedToSave')));
+    } finally {
+      setMutating(false);
     }
   };
 
   const handleDeleteGroup = async (id: number | string) => {
+    if (mutating) return;
     if (!await confirm(t('addonGroups.deleteGroupConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
+      setMutating(true);
       await api.delete(`/addon-groups/${id}`);
       toast.success(t('addonGroups.groupDeleted'));
       fetchGroups();
     } catch {
       toast.error(t('common.failedToDelete'));
+    } finally {
+      setMutating(false);
     }
   };
 
   // Addon CRUD
   const handleAddAddon = async (groupId: number | string) => {
+    if (mutating) return;
     if (!addonForm.name.trim()) return;
     try {
+      setMutating(true);
       await api.post(`/addon-groups/${groupId}/addons`, {
         name: addonForm.name,
         price: Number(addonForm.price),
@@ -133,12 +144,16 @@ export default function AddonGroupsPage() {
       fetchGroups();
     } catch {
       toast.error(t('addonGroups.failedToAddAddon'));
+    } finally {
+      setMutating(false);
     }
   };
 
   const handleUpdateAddon = async () => {
+    if (mutating) return;
     if (!editingAddon || !addonForm.name.trim()) return;
     try {
+      setMutating(true);
       await api.put(`/addon-groups/${editingAddon.groupId}/addons/${editingAddon.addon.id}`, {
         name: addonForm.name,
         price: Number(addonForm.price),
@@ -149,17 +164,23 @@ export default function AddonGroupsPage() {
       fetchGroups();
     } catch {
       toast.error(t('addonGroups.failedToUpdateAddon'));
+    } finally {
+      setMutating(false);
     }
   };
 
   const handleDeleteAddon = async (groupId: number | string, addonId: number | string) => {
+    if (mutating) return;
     if (!await confirm(t('addonGroups.deleteAddonConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
     try {
+      setMutating(true);
       await api.delete(`/addon-groups/${groupId}/addons/${addonId}`);
       toast.success(t('addonGroups.addonDeleted'));
       fetchGroups();
     } catch (err: unknown) {
       toast.error(extractErrorMessage(err, t('addonGroups.failedToDeleteAddon')));
+    } finally {
+      setMutating(false);
     }
   };
 
@@ -211,10 +232,10 @@ export default function AddonGroupsPage() {
                   </div>
                 </button>
                 <div className="flex gap-2">
-                  <button onClick={() => openEdit(group)} className="p-1.5 text-gray-400 hover:text-brand">
+                  <button onClick={() => openEdit(group)} disabled={mutating} className="p-1.5 text-gray-400 hover:text-brand disabled:opacity-50">
                     <Pencil size={16} />
                   </button>
-                  <button onClick={() => handleDeleteGroup(group.id)} className="p-1.5 text-gray-400 hover:text-red-600">
+                  <button onClick={() => handleDeleteGroup(group.id)} disabled={mutating} className="p-1.5 text-gray-400 hover:text-red-600 disabled:opacity-50">
                     <Trash2 size={16} />
                   </button>
                 </div>
@@ -238,7 +259,7 @@ export default function AddonGroupsPage() {
                               <input type="number" step="0.01" value={addonForm.price} onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })} onWheel={(e) => e.currentTarget.blur()}
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-brand" />
                             </label>
-                            <button onClick={handleUpdateAddon} className="text-xs text-brand font-medium hover:underline">{t('common.save')}</button>
+                            <button onClick={handleUpdateAddon} disabled={mutating} className="text-xs text-brand font-medium hover:underline disabled:opacity-50">{t('common.save')}</button>
                             <button onClick={() => { setEditingAddon(null); setAddonForm({ name: '', price: '0' }); }} className="text-xs text-gray-400 hover:underline">{t('tables.cancel')}</button>
                           </div>
                         ) : (
@@ -249,9 +270,9 @@ export default function AddonGroupsPage() {
                                 {Number(addon.price) === 0 ? t('pos.free') : fmt(Number(addon.price))}
                               </span>
                               <button onClick={() => { setEditingAddon({ groupId: group.id, addon }); setAddonForm({ name: addon.name, price: String(addon.price) }); }}
-                                className="p-1 text-gray-400 hover:text-brand"><Pencil size={14} /></button>
+                                disabled={mutating} className="p-1 text-gray-400 hover:text-brand disabled:opacity-50"><Pencil size={14} /></button>
                               <button onClick={() => handleDeleteAddon(group.id, addon.id)}
-                                className="p-1 text-gray-400 hover:text-red-600"><Trash2 size={14} /></button>
+                                disabled={mutating} className="p-1 text-gray-400 hover:text-red-600 disabled:opacity-50"><Trash2 size={14} /></button>
                             </div>
                           </>
                         )}
@@ -275,8 +296,8 @@ export default function AddonGroupsPage() {
                           onWheel={(e) => e.currentTarget.blur()}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       </label>
-                      <button onClick={() => handleAddAddon(group.id)}
-                        className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover">{t('products.addButton')}</button>
+                      <button onClick={() => handleAddAddon(group.id)} disabled={mutating}
+                        className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover disabled:opacity-50">{t('products.addButton')}</button>
                       <button onClick={() => { setAddingAddonTo(null); setAddonForm({ name: '', price: '0' }); }}
                         className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
                     </div>
@@ -339,7 +360,7 @@ export default function AddonGroupsPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
               </div>
-              <Button type="submit" className="w-full">
+              <Button type="submit" disabled={mutating} className="w-full">
                 {editingGroup ? t('products.update') : t('products.create')}
               </Button>
             </form>

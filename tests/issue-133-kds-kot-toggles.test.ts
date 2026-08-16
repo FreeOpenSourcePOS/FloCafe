@@ -67,7 +67,7 @@ async function main() {
   const db = initTestDb();
   const ownerAuth = seedUser(db, 'issue133-owner', 'owner', 'issue133-owner@test.local');
   const cashierAuth = seedUser(db, 'issue133-cashier', 'cashier', 'issue133-cashier@test.local');
-  const waiterAuth = seedUser(db, 'issue133-waiter', 'waiter', 'issue133-waiter@test.local');
+  const waiterAuth = seedUser(db, 'issue133-server', 'server', 'issue133-server@test.local');
   const chefAuth = seedUser(db, 'issue133-chef', 'chef', 'issue133-chef@test.local');
 
   const app = createApp({
@@ -110,12 +110,12 @@ async function main() {
     assertEqual(
       (await request(app).post('/api/printers/print-bill').set(waiterAuth).send({ billId: 999999 })).status,
       403,
-      'waiter remains forbidden from POST /api/printers/print-bill',
+      'server remains forbidden from POST /api/printers/print-bill',
     );
     assertEqual(
       (await request(app).post('/api/printers/print-kot').set(waiterAuth).send({ orderId: 999999 })).status,
       403,
-      'waiter remains forbidden from POST /api/printers/print-kot',
+      'server remains forbidden from POST /api/printers/print-kot',
     );
     assertEqual(
       (await request(app).post('/api/printers/print-bill').send({ billId: 999999 })).status,

@@ -14,6 +14,7 @@ const router = Router();
 // Printer name must contain only safe characters (no shell metacharacters)
 const PRINTER_NAME_REGEX = /^[a-zA-Z0-9 _\-\.]+$/;
 const CONNECTION_TYPES = ['network', 'usb', 'webusb'] as const;
+const PRINTER_COLUMN_WIDTHS = ['cols-32', 'cols-36', 'cols-40', 'cols-42', 'cols-44', 'cols-48'] as const;
 
 function isValidPort(port: unknown): port is number {
   return typeof port === 'number' && Number.isInteger(port) && port >= 1 && port <= 65535;
@@ -31,6 +32,9 @@ function validatePrinterFields(body: any, existing?: any): string | null {
   }
   if (body.is_default !== undefined && typeof body.is_default !== 'boolean') {
     return 'is_default must be a boolean';
+  }
+  if (body.paper_width !== undefined && !PRINTER_COLUMN_WIDTHS.includes(body.paper_width)) {
+    return 'paper_width must be cols-32, cols-36, cols-40, cols-42, cols-44, or cols-48';
   }
 
   const connectionType = body.connection_type !== undefined ? body.connection_type : existing?.connection_type;

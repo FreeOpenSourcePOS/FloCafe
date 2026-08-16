@@ -69,22 +69,6 @@ Cash             99
 -----------
   Thank you!`;
 
-const DETAILED_PREVIEW = `  [STORE NAME]
-Tax ID: XXXXX
-  TAX INVOICE
------------
-Bill#1   1 Jan 24
-Cust: John
------------
-Item   Qty Rate Amt
-Burger   1  99  99
------------
-Subtotal (excl.)  93
-State Tax @3%      3
-Local Tax @3%      3
-===============
-TOTAL            99`;
-
 function formatBackupSize(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '';
   if (bytes < 1024) return `${bytes} B`;
@@ -94,14 +78,16 @@ function formatBackupSize(bytes: number): string {
 
 interface TemplateCard {
   id: BillTemplate;
-  nameKey: string;
+  nameKey?: string;
+  displayName?: string;
   preview: string;
+  source: 'core' | 'plugin';
+  description?: string;
 }
 
 const TEMPLATE_CARDS: TemplateCard[] = [
-  { id: 'classic', nameKey: 'settings.billTemplateClassicName', preview: CLASSIC_PREVIEW },
-  { id: 'compact', nameKey: 'settings.billTemplateCompactName', preview: COMPACT_PREVIEW },
-  { id: 'detailed', nameKey: 'settings.billTemplateDetailedName', preview: DETAILED_PREVIEW },
+  { id: 'classic', nameKey: 'settings.billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core' },
+  { id: 'compact', nameKey: 'settings.billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core' },
 ];
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -1127,6 +1113,7 @@ export default function SettingsPage() {
   });
   const [billForm, setBillForm] = useState<BillTemplateForm>(initBillTemplate);
   const [savedBillForm, setSavedBillForm] = useState<BillTemplateForm>(initBillTemplate);
+  const [billTemplateCards, setBillTemplateCards] = useState<TemplateCard[]>(TEMPLATE_CARDS);
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
@@ -1490,13 +1477,28 @@ export default function SettingsPage() {
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
     Promise.all([
+      api.get('/settings/bill-templates').catch(() => null),
       api.get('/settings/bill_template').catch(() => null),
       api.get('/settings/bill_footer_message').catch(() => null),
-    ]).then(([templateResponse, footerResponse]) => {
+    ]).then(([templatesResponse, templateResponse, footerResponse]) => {
+      const pluginCards: TemplateCard[] = (templatesResponse?.data?.plugins || []).map((template: {
+        id: string;
+        displayName: string;
+        country: string;
+        paperColumns: number[];
+      }) => ({
+        id: template.id,
+        displayName: template.displayName,
+        preview: `  ${template.displayName}\n-----------\nTax invoice\n${template.country} · ${template.paperColumns.join('/')} cols\n-----------\nTOTAL`,
+        source: 'plugin' as const,
+        description: `${template.country} tax template · ${template.paperColumns.join(', ')} columns`,
+      }));
+      const availableTemplateIds = new Set([...TEMPLATE_CARDS, ...pluginCards].map((card) => card.id));
+      setBillTemplateCards([...TEMPLATE_CARDS, ...pluginCards]);
       const storedTemplate = templateResponse?.data.setting?.value;
-      const billTemplate: BillTemplate = ['classic', 'compact', 'detailed'].includes(storedTemplate)
+      const billTemplate: BillTemplate = availableTemplateIds.has(storedTemplate)
         ? storedTemplate as BillTemplate
-        : posSettings.billTemplate;
+        : 'classic';
       const billFooterMessage = footerResponse?.data.setting?.value ?? posSettings.billFooterMessage;
       const loadedBillForm = { billTemplate, billFooterMessage };
       posSettings.setBillTemplate(billTemplate);
@@ -2988,7 +2990,7 @@ export default function SettingsPage() {
                   <h2 className="font-semibold text-gray-900">{t('settings.tablesideOrdering', { defaultValue: 'Tableside Ordering' })}</h2>
                 </div>
                 <p className="text-sm text-gray-500 mb-5">
-                  {t('settings.serverAppPairingHint', { defaultValue: 'Pair waiters’ phones or tablets on your local network. They can punch table orders and see compact kitchen status icons.' })}
+                  {t('settings.serverAppPairingHint', { defaultValue: 'Pair servers’ phones or tablets on your local network. They can punch table orders and see compact kitchen status icons.' })}
                 </p>
 
                 {serverAppInfoLoading && (
@@ -3759,23 +3761,25 @@ export default function SettingsPage() {
                 <h2 className="font-semibold text-gray-900">{t('settings.billTemplate')}</h2>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                {TEMPLATE_CARDS.map((card) => {
+                {billTemplateCards.map((card) => {
                   const isSelected = billForm.billTemplate === card.id;
                   return (
                     <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id }))}
                       className={`text-left rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}>
-                      <p className="font-semibold text-gray-900 mb-2">{t(card.nameKey)}</p>
+                      <p className="font-semibold text-gray-900 mb-2">
+                        {card.nameKey ? t(card.nameKey) : card.displayName}
+                      </p>
                       <pre className="font-mono text-[9px] leading-tight text-gray-600 bg-gray-50 p-2 rounded overflow-hidden mb-3 whitespace-pre">
                         {card.preview}
                       </pre>
                       <p className="text-xs text-gray-500">
-                        {card.id === 'classic'
-                          ? t('settings.billTemplateClassicDesc')
-                          : card.id === 'compact'
-                            ? t('settings.billTemplateCompactDesc')
-                            : t('settings.billTemplateDetailedDesc')}
+                        {card.source === 'plugin'
+                          ? card.description
+                          : card.id === 'classic'
+                            ? t('settings.billTemplateClassicDesc')
+                            : t('settings.billTemplateCompactDesc')}
                       </p>
                     </button>
                   );

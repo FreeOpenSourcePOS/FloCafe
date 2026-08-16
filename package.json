@@ -21,7 +21,7 @@
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",
     "verify:electron": "node scripts/verify-electron-runtime.cjs",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
-    "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx --config.npmRebuild=false",
+    "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx --x64 --arm64 --config.npmRebuild=false",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",
     "build:mas": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac mas --universal",
     "build:mas-dev": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac masDev",
@@ -100,6 +100,7 @@
     "test:issue-133-kds-kot-toggles": "node tests/run-electron-node-test.cjs tests/issue-133-kds-kot-toggles.test.ts",
     "test:issue-137-barcode": "node tests/run-electron-node-test.cjs tests/issue-137-barcode.test.ts",
     "test:issue-244-product-addon-links": "node tests/run-electron-node-test.cjs tests/issue-244-product-addon-links.test.ts",
+    "test:issue-245-246-addon-groups": "node tests/run-electron-node-test.cjs tests/issue-245-246-addon-groups.test.ts",
     "test:issue-247-catalog-invariants": "node tests/run-electron-node-test.cjs tests/issue-247-catalog-invariants.test.ts",
     "test:issue-250-catalog-perf": "node tests/run-electron-node-test.cjs tests/issue-250-catalog-perf.test.ts",
     "test:issue-258-bill-pagination": "node tests/run-electron-node-test.cjs tests/issue-258-bill-pagination.test.ts",
@@ -116,6 +117,7 @@
     "test:google-drive": "node tests/run-electron-node-test.cjs tests/google-drive.test.ts",
     "test:database-tools-api": "node tests/run-electron-node-test.cjs tests/database-tools-api.test.ts && node tests/run-electron-node-test.cjs tests/database-maintenance-lock.test.ts",
     "test:issue-127-password-recovery": "node tests/run-electron-node-test.cjs tests/issue-127-password-recovery.test.ts",
+    "test:server-app-server-role": "node tests/run-electron-node-test.cjs tests/server-app-server-role.test.ts",
     "test:customer-soft-reactivate-bindings": "ts-node --transpile-only -P tests/tsconfig.json tests/customer-soft-reactivate-bindings.test.ts",
     "test:customer-phone-search": "node tests/run-electron-node-test.cjs tests/customer-phone-search.test.ts",
     "test:customer-pagination": "node tests/run-electron-node-test.cjs tests/customer-pagination.test.ts",
@@ -233,6 +235,13 @@
           "target": "nsis",
           "arch": [
             "x64"
+          ]
+        },
+        {
+          "target": "appx",
+          "arch": [
+            "x64",
+            "arm64"
           ]
         }
       ],

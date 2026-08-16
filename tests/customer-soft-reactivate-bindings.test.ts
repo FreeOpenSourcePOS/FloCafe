@@ -26,16 +26,21 @@ const { initTestDb, closeDatabase, seedOwnerUser, api, assertEqual, assert, getR
 const { customerRoutes } = require('../main/routes/customers');
 
 async function main() {
-  console.log('Regression: customer soft-reactivate binding count');
+  console.log('Regression: customer soft-reactivate identity and phone filters');
   console.log('='.repeat(50));
 
   const db = initTestDb();
   const { authHeader } = seedOwnerUser(db);
+  db.prepare("INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('country', 'IN', datetime('now'))").run();
 
   db.prepare(`
     INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
     VALUES (?, ?, ?, ?, 0, datetime('now'), datetime('now'))
   `).run('cust-soft-1', 'Old Name', '9876543210', '+91');
+  db.prepare(`
+    INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 0, datetime('now'), datetime('now'))
+  `).run('cust-soft-2', 'Canonical Old Name', '+919988776655', '+91');
 
   const before = db.prepare("SELECT * FROM customers WHERE id = 'cust-soft-1'").get();
   assertEqual(before.is_active, 0, 'precondition: row starts soft-deleted');
@@ -45,9 +50,9 @@ async function main() {
   const { baseUrl } = await startServer(app);
 
   try {
-    // Re-POST with same phone + new country_code + new address. This must
-    // (a) not throw a binding error, (b) reactivate the row, (c) update
-    // country_code, (d) NOT silently overwrite country_code with address.
+    // Re-POST with same legacy national phone + new address. This must
+    // (a) not throw a binding error, (b) reactivate the row, (c) canonicalize
+    // phone/country_code, and (d) NOT silently overwrite country_code with address.
     const res = await api(baseUrl + '/api', '/customers', {
       method: 'POST',
       headers: authHeader,
@@ -61,14 +66,61 @@ async function main() {
     });
 
     assertEqual(res.status, 201, `POST reactivates soft-deleted customer (no binding error); got ${res.status} ${JSON.stringify(res.data)}`);
+    assertEqual(res.data.customer.id, 'cust-soft-1', 'legacy national phone reactivation preserves customer ID');
 
     const after = db.prepare("SELECT * FROM customers WHERE id = 'cust-soft-1'").get();
     assertEqual(after.is_active, 1, 'row reactivated');
+    assertEqual(after.phone, '+919876543210', 'legacy national phone canonicalized on reactivation');
     assertEqual(after.name, 'New Name', 'name updated');
     assertEqual(after.email, 'new@example.com', 'email updated');
     assertEqual(after.address, '123 Fake St', 'address updated to its own column, not country_code');
-    assertEqual(after.country_code, '+54', 'country_code updated to Argentina dial code (not silently overwritten)');
+    assertEqual(after.country_code, '+91', 'country_code follows parsed phone, not contradictory request body');
     assert(after.country_code !== after.address, 'country_code and address columns hold different values');
+
+    const canonicalRes = await api(baseUrl + '/api', '/customers', {
+      method: 'POST',
+      headers: authHeader,
+      body: {
+        name: 'Canonical New Name',
+        phone: '9988776655',
+        email: 'canonical@example.com',
+        address: '456 Test Ave',
+      },
+    });
+
+    assertEqual(canonicalRes.status, 201, `POST reactivates canonical soft-deleted customer; got ${canonicalRes.status} ${JSON.stringify(canonicalRes.data)}`);
+    assertEqual(canonicalRes.data.customer.id, 'cust-soft-2', 'canonical phone reactivation preserves customer ID');
+
+    const canonicalAfter = db.prepare("SELECT * FROM customers WHERE id = 'cust-soft-2'").get();
+    assertEqual(canonicalAfter.is_active, 1, 'canonical row reactivated');
+    assertEqual(canonicalAfter.phone, '+919988776655', 'canonical row keeps normalized phone');
+    assertEqual(canonicalAfter.country_code, '+91', 'canonical row keeps parsed country code');
+
+    db.prepare(`
+      INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `).run('cust-invalid-active', 'Active Invalid', '1234567890', '+91', 1);
+    db.prepare(`
+      INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `).run('cust-invalid-inactive', 'Inactive Invalid', '2222222222', '+91', 0);
+    db.prepare(`
+      INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `).run('cust-valid-active', 'Active Valid', '+919999999999', '+91', 1);
+
+    const alerts = await api(baseUrl + '/api', '/customers/alerts', {
+      headers: authHeader,
+    });
+    assertEqual(alerts.status, 200, 'alerts endpoint returns successfully');
+    assertEqual(alerts.data.invalidPhonesCount, 1, 'invalid-phone alert counts only active malformed rows');
+
+    const invalidList = await api(baseUrl + '/api', '/customers?filter=invalid_phones', {
+      headers: authHeader,
+    });
+    assertEqual(invalidList.status, 200, 'invalid phone list returns successfully');
+    assertEqual(invalidList.data.data.length, 1, 'invalid-phone filter returns only active malformed rows');
+    assertEqual(invalidList.data.data[0].id, 'cust-invalid-active', 'invalid-phone filter excludes inactive malformed rows');
 
     console.log('\n[DB] Database closed');
     closeDatabase();

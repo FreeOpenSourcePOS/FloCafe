@@ -42,6 +42,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 import QRCode from 'qrcode';
 import { asyncHandler } from '../middleware/async-handler';
+import expressRateLimit from 'express-rate-limit';
 
 // "Cloud POS is not registered" (thrown synchronously by cloud-sync.ts's
 // signedFetch, no network call even attempted) means this store was never
@@ -63,6 +64,9 @@ function mobilePairingErrorMessage(error: any): string {
   }
   return error?.message || 'Could not reach FloAdmin';
 }
+
+const inlineCustomerLookupRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
+const inlineOrderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 
 export function registerRoutes(app: Express): void {
   // Auth routes
@@ -193,7 +197,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Legacy/flat customer search endpoint (frontend uses this)
-  app.get('/api/customers-search', requireRole('owner', 'manager', 'cashier', 'waiter'), (req, res) => {
+  app.get('/api/customers-search', inlineCustomerLookupRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req, res) => {
     try {
       const { q } = req.query;
       if (!q || String(q).length < 2) {
@@ -222,7 +226,7 @@ export function registerRoutes(app: Express): void {
   });
 
   // CRM lookup endpoint (frontend uses this)
-  app.get('/api/crm/lookup', requireRole('owner', 'manager', 'cashier', 'waiter'), (req, res) => {
+  app.get('/api/crm/lookup', inlineCustomerLookupRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req, res) => {
     try {
       const { phone, country_code } = req.query;
       if (!phone) {
@@ -249,9 +253,10 @@ export function registerRoutes(app: Express): void {
   });
 
   // Cancel or void an order item (frontend calls this)
-  app.patch('/api/orders/:orderId/items/:itemId/cancel', (req, res) => {
+  app.patch('/api/orders/:orderId/items/:itemId/cancel', inlineOrderWriteRateLimit, (req, res) => {
     try {
-      const { orderId, itemId } = req.params;
+      const orderId = String(req.params.orderId);
+      const itemId = String(req.params.itemId);
       const { override_pin } = req.body;
 
       // requireAuth (main/server.ts) already verified the token and attached
@@ -285,8 +290,8 @@ export function registerRoutes(app: Express): void {
           throw Object.assign(new Error('Authentication required'), { statusCode: 403 });
         }
         const userRole = actor.role;
-        if (userRole === 'waiter' && String(currentOrder.user_id) !== actorId) {
-          throw Object.assign(new Error('Waiters can only modify their own orders'), { statusCode: 403 });
+        if (userRole === 'server' && String(currentOrder.user_id) !== actorId) {
+          throw Object.assign(new Error('Servers can only modify their own orders'), { statusCode: 403 });
         }
 
         // A repeated request against an already terminal item is an
@@ -332,7 +337,7 @@ export function registerRoutes(app: Express): void {
         // line so the removal stays visible on the bill.
         const isItemVoid = ['preparing', 'ready'].includes(currentItem.status);
         const isPrivilegedRole = ['owner', 'manager'].includes(userRole);
-        const canUseOverride = ['cashier', 'waiter'].includes(userRole) && isItemVoid;
+        const canUseOverride = ['cashier', 'server'].includes(userRole) && isItemVoid;
         if (!isPrivilegedRole && !canUseOverride) {
           throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
         }

@@ -47,6 +47,10 @@ const {
 const {
   taxPackSha256,
 } = require('../main/tax-packs/catalog');
+const {
+  escPosToText,
+  formatReceipt,
+} = require('../main/printers/thermal');
 const { LEGACY_TRUSTED_PACK_DIGESTS } = require('../main/routes/tax-packs');
 const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
@@ -512,6 +516,275 @@ async function main() {
     `).get(installed.versionId);
     assertEqual(installAudit.action, 'install_downloaded_pack', 'download installation is audited');
     assertEqual(installAudit.actor_user_id, owner.userId, 'install audit identifies the owner');
+    assertEqual(
+      db.prepare('SELECT COUNT(*) AS count FROM installed_print_templates WHERE pack_version_id = ?')
+        .get(installed.versionId).count,
+      0,
+      'plain legacy CountryPack installs without plugin print templates',
+    );
+
+    const gstPrintTemplate = {
+      id: 'in.gst.tax-invoice.v1',
+      displayName: 'India GST Tax Invoice',
+      country: 'IN',
+      jurisdiction: '*',
+      paperColumns: [32, 36, 40, 42, 44, 48],
+      renderer: {
+        id: 'flocafe-thermal-receipt-template',
+        version: 1,
+      },
+      templatePayload: {
+        format: 'escpos-line-template-v1',
+        widthProfiles: [32, 36, 40, 42, 44, 48].map((columns) => ({
+          columns,
+          layout: {
+            lineItems: {
+              gap: 1,
+              columns: [
+                { key: 'item', label: 'ITEM', width: columns <= 36 ? columns - 14 : columns - 20, align: 'left', wrap: true, maxLines: 2 },
+                { key: 'quantity', label: 'QTY', width: columns <= 36 ? 3 : 4, align: 'right' },
+                ...(columns >= 40 ? [{ key: 'rate', label: 'RATE', width: 7, align: 'right' }] : []),
+                { key: 'amount', label: columns <= 32 ? 'AMT' : 'AMOUNT', width: columns <= 32 ? 9 : 10, align: 'right' },
+              ],
+              detailLines: ['addons', 'specialInstructions'],
+            },
+            taxSummary: {
+              labelWidth: columns - 10,
+              amountWidth: 9,
+            },
+          },
+        })),
+        header: {
+          businessNameTransform: 'uppercase',
+          taxTitleWhenTaxPresent: 'TAX INVOICE',
+          titleWhenTaxAbsent: 'INVOICE',
+        },
+        fields: {
+          taxRegistrationNumberLabel: 'GSTIN',
+        },
+        lineItems: {
+          includeAddons: true,
+          includeSpecialInstructions: true,
+        },
+        totals: {
+          showSubtotal: true,
+          showDiscount: 'when_non_zero',
+          showTaxRegistrationNumber: 'when_tax_present_or_enabled',
+          grandTotalLabel: 'GRAND TOTAL',
+        },
+        footer: {
+          useConfiguredFooterNote: true,
+          defaultMessage: 'Thank you for your business!',
+          includePoweredByFloPOS: true,
+        },
+      },
+    };
+    const wrappedPack = {
+      ...testIndiaPack,
+      version: '1.3.0',
+      publishedAt: '2026-08-01',
+    };
+    const wrappedArtifact = {
+      schemaVersion: 1,
+      artifactType: 'country-tax-pack-plugin',
+      id: 'tax-pack-test-legacy-in-pack',
+      displayName: 'Test India GST plugin',
+      publisher: wrappedPack.publisher,
+      version: wrappedPack.version,
+      country: wrappedPack.country,
+      jurisdiction: wrappedPack.jurisdiction,
+      publishedAt: wrappedPack.publishedAt,
+      minFloVersion: wrappedPack.minFloVersion,
+      taxPack: wrappedPack,
+      printTemplates: [gstPrintTemplate],
+    };
+    const wrappedArtifactJson = JSON.stringify(wrappedArtifact, null, 2);
+    const wrappedSignature = sign(
+      null,
+      Buffer.from(wrappedArtifactJson, 'utf8'),
+      privateKey,
+    ).toString('base64');
+    const wrappedTag = 'tax-pack-test-legacy-in-pack-v1.3.0';
+    const wrappedBase = `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${wrappedTag}`;
+    const wrappedEntry = {
+      id: wrappedPack.id,
+      publisher: wrappedPack.publisher,
+      country: wrappedPack.country,
+      jurisdiction: wrappedPack.jurisdiction,
+      version: wrappedPack.version,
+      publishedAt: wrappedPack.publishedAt,
+      minFloVersion: wrappedPack.minFloVersion,
+      downloadUrl: `${wrappedBase}/test-legacy-in-pack-v1.3.0.json`,
+      signatureUrl: `${wrappedBase}/test-legacy-in-pack-v1.3.0.json.sig`,
+      digest: taxPackSha256(wrappedArtifactJson),
+    };
+    const wrappedFetch = async (input: string | URL | Request) => new Response(
+      String(input) === wrappedEntry.downloadUrl ? wrappedArtifactJson : wrappedSignature,
+      { status: 200 },
+    );
+    const wrappedInstalled = await installCatalogEntry(wrappedEntry, {
+      actorUserId: owner.userId,
+      fetchImpl: wrappedFetch,
+      publicKey,
+    });
+    assertEqual(wrappedInstalled.version, '1.3.0', 'wrapped plugin artifact installs its tax pack');
+    const wrappedStoredVersion = db.prepare(
+      'SELECT pack_json, digest, signature, status FROM country_pack_versions WHERE id = ?'
+    ).get(wrappedInstalled.versionId);
+    assertEqual(
+      JSON.parse(wrappedStoredVersion.pack_json).id,
+      wrappedPack.id,
+      'wrapped artifact persists the inner CountryPack JSON',
+    );
+    assertEqual(wrappedStoredVersion.digest, wrappedEntry.digest, 'wrapped artifact digest is persisted');
+    assertEqual(wrappedStoredVersion.signature, wrappedSignature, 'wrapped artifact signature is persisted');
+    assertEqual(wrappedStoredVersion.status, 'installed', 'wrapped artifact install does not auto-activate');
+    const templateRow = db.prepare(
+      'SELECT * FROM installed_print_templates WHERE template_id = ?'
+    ).get('in.gst.tax-invoice.v1');
+    assert(!!templateRow, 'wrapped artifact persists print template metadata');
+    assertEqual(templateRow.pack_version_id, wrappedInstalled.versionId, 'template is keyed to the installed pack version');
+    assertEqual(templateRow.display_name, 'India GST Tax Invoice', 'template display name is persisted');
+    assertEqual(JSON.parse(templateRow.paper_widths_json).join(','), 'cols-32,cols-36,cols-40,cols-42,cols-44,cols-48', 'template printable columns are persisted');
+    assertEqual(JSON.parse(templateRow.renderer_json).id, 'flocafe-thermal-receipt-template', 'template renderer metadata is persisted');
+
+    const templateListRes = await api(baseUrl, '/api/settings/bill-templates', {
+      headers: manager.authHeader,
+    });
+    assertEqual(templateListRes.status, 200, 'manager can list available bill templates');
+    assertEqual(templateListRes.data.core.join(','), 'classic,compact', 'core exposes only generic built-in templates');
+    const pluginTemplate = templateListRes.data.plugins.find((entry: any) => entry.id === 'in.gst.tax-invoice.v1');
+    assert(!!pluginTemplate, 'installed plugin template is exposed to settings');
+    assertEqual(pluginTemplate.displayName, 'India GST Tax Invoice', 'settings exposes plugin template display name');
+    assertEqual(pluginTemplate.paperColumns.join(','), '32,36,40,42,44,48', 'settings exposes plugin template printable columns');
+
+    const rejectUnknownTemplate = await api(baseUrl, '/api/settings/bill_template', {
+      method: 'PUT',
+      body: { value: 'in.gst.missing-template' },
+      headers: owner.authHeader,
+    });
+    assertEqual(rejectUnknownTemplate.status, 400, 'settings rejects uninstalled plugin template ids');
+    const acceptPluginTemplate = await api(baseUrl, '/api/settings/bill_template', {
+      method: 'PUT',
+      body: { value: 'in.gst.tax-invoice.v1' },
+      headers: owner.authHeader,
+    });
+    assertEqual(acceptPluginTemplate.status, 200, 'settings accepts installed plugin template ids');
+
+    const pluginReceipt = escPosToText(formatReceipt(
+      {
+        order_number: 'ORD-GST-1',
+        created_at: '2026-08-01T10:30:00.000Z',
+        table: { name: 'T1' },
+        items: [{
+          product_name: 'Masala Chai',
+          quantity: 2,
+          total: 210,
+          tax_breakdown: [
+            { title: 'CGST', rate: 2.5, amount: 5 },
+            { title: 'SGST', rate: 2.5, amount: 5 },
+          ],
+        }],
+      },
+      {
+        bill_number: 'BILL-GST-1',
+        subtotal: 200,
+        discount_amount: 0,
+        tax_amount: 10,
+        total: 210,
+        payment_details: [{ method: 'cash', amount: 210 }],
+      },
+      {
+        name: 'Flo Test Cafe',
+        address: 'Mumbai',
+        phone: '9999999999',
+        country: 'IN',
+        currency_symbol: '₹',
+        taxRegistrationNumber: '27ABCDE1234F1Z5',
+        show_tax_id: true,
+        show_tax_breakdown: true,
+      },
+      'in.gst.tax-invoice.v1',
+      48,
+      true,
+    ));
+    assert(pluginReceipt.includes('TAX INVOICE'), 'installed GST plugin template renders a tax invoice title');
+    assert(pluginReceipt.includes('ITEM'), 'installed GST plugin template renders the plugin item-table layout');
+    assert(pluginReceipt.includes('GSTIN: 27ABCDE1234F1Z5'), 'installed GST plugin template renders GSTIN');
+    assert(pluginReceipt.includes('CGST @2.5%'), 'installed GST plugin template renders tax components');
+    assert(pluginReceipt.includes('GRAND TOTAL'), 'installed GST plugin template renders plugin grand total label');
+
+    const widthProfileWarnings: any[] = [];
+    const exactWidthReceipt = escPosToText(formatReceipt(
+      {
+        order_number: 'ORD-GST-EXACT',
+        created_at: '2026-08-01T10:30:00.000Z',
+        items: [{ product_name: 'Exact Width Tea', quantity: 1, total: 100 }],
+      },
+      { bill_number: 'BILL-GST-EXACT', subtotal: 95, tax_amount: 5, total: 100 },
+      { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹', show_tax_breakdown: true },
+      'in.gst.tax-invoice.v1',
+      42,
+      true,
+      false,
+      'full',
+      widthProfileWarnings,
+    ));
+    assert(exactWidthReceipt.includes('TAX INVOICE'), 'plugin renderer supports an exact 42-column profile');
+    assertEqual(widthProfileWarnings.length, 0, 'exact plugin width profile does not warn');
+
+    const smallerWidthReceipt = escPosToText(formatReceipt(
+      {
+        order_number: 'ORD-GST-SMALLER',
+        created_at: '2026-08-01T10:30:00.000Z',
+        items: [{ product_name: 'Nearest Smaller Width Tea', quantity: 1, total: 100 }],
+      },
+      { bill_number: 'BILL-GST-SMALLER', subtotal: 95, tax_amount: 5, total: 100 },
+      { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹', show_tax_breakdown: true },
+      'in.gst.tax-invoice.v1',
+      46,
+      true,
+    ));
+    assert(smallerWidthReceipt.includes('-'.repeat(44)), 'plugin renderer uses nearest smaller width profile instead of squeezing 48 columns');
+
+    for (const columns of [32, 36, 40, 42, 44, 48]) {
+      const receipt = escPosToText(formatReceipt(
+        {
+          order_number: `ORD-GST-${columns}`,
+          created_at: '2026-08-01T10:30:00.000Z',
+          items: [{ product_name: 'Long Named Width Profile Tea', quantity: 1, total: 100 }],
+        },
+        { bill_number: `BILL-GST-${columns}`, subtotal: 95, tax_amount: 5, total: 100 },
+        { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹', show_tax_breakdown: true },
+        'in.gst.tax-invoice.v1',
+        columns,
+        true,
+      ));
+      const contentLines = receipt.split('\n').filter((line) => line.length > 0);
+      assert(contentLines.every((line) => line.length <= columns), `plugin renderer keeps ${columns}-column profile within printable width`);
+    }
+
+    db.prepare("UPDATE country_pack_versions SET status = 'revoked' WHERE id = ?").run(wrappedInstalled.versionId);
+    const rejectRevokedTemplate = await api(baseUrl, '/api/settings/bill_template', {
+      method: 'PUT',
+      body: { value: 'in.gst.tax-invoice.v1' },
+      headers: owner.authHeader,
+    });
+    assertEqual(rejectRevokedTemplate.status, 400, 'settings rejects plugin templates from unusable versions');
+    const fallbackReceipt = escPosToText(formatReceipt(
+      {
+        order_number: 'ORD-GST-2',
+        created_at: '2026-08-01T10:30:00.000Z',
+        items: [{ product_name: 'Plain Tea', quantity: 1, total: 100 }],
+      },
+      { bill_number: 'BILL-GST-2', subtotal: 100, tax_amount: 0, total: 100 },
+      { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹' },
+      'in.gst.tax-invoice.v1',
+      48,
+      true,
+    ));
+    assert(!fallbackReceipt.includes('TAX INVOICE'), 'unusable plugin template falls back to a core receipt renderer');
+    assert(fallbackReceipt.includes('TOTAL'), 'fallback core receipt remains printable');
 
     // Regression: the activation vector check must never be keyed off a
     // hardcoded list of known pack ids -- a genuinely new pack (a real

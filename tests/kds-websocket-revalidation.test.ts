@@ -32,25 +32,25 @@ const { assert, assertEqual } = require('./helpers/test-setup');
 
 function createMessageQueue(ws: WebSocket) {
   const messages: any[] = [];
-  const waiters: Array<{ type: string; resolve: (message: any) => void }> = [];
+  const servers: Array<{ type: string; resolve: (message: any) => void }> = [];
   ws.on('message', (raw: WebSocket.RawData) => {
     const message = JSON.parse(raw.toString());
-    const waiterIndex = waiters.findIndex((waiter) => waiter.type === message.type);
-    if (waiterIndex >= 0) return waiters.splice(waiterIndex, 1)[0].resolve(message);
+    const waiterIndex = servers.findIndex((server) => server.type === message.type);
+    if (waiterIndex >= 0) return servers.splice(waiterIndex, 1)[0].resolve(message);
     messages.push(message);
   });
   return (type: string): Promise<any> => {
     const messageIndex = messages.findIndex((message) => message.type === type);
     if (messageIndex >= 0) return Promise.resolve(messages.splice(messageIndex, 1)[0]);
     return new Promise((resolve, reject) => {
-      const waiter = { type, resolve: (_message: any) => {} };
+      const server = { type, resolve: (_message: any) => {} };
       const timeout = setTimeout(() => {
-        const index = waiters.indexOf(waiter);
-        if (index >= 0) waiters.splice(index, 1);
+        const index = servers.indexOf(server);
+        if (index >= 0) servers.splice(index, 1);
         reject(new Error(`Timed out waiting for ${type}`));
       }, 10000);
-      waiter.resolve = (message: any) => { clearTimeout(timeout); resolve(message); };
-      waiters.push(waiter);
+      server.resolve = (message: any) => { clearTimeout(timeout); resolve(message); };
+      servers.push(server);
     });
   };
 }

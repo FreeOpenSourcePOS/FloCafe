@@ -37,6 +37,22 @@ function run() {
     'win build target must include "nsis" — electron-updater\'s Windows auto-update relies on ' +
     'the NSIS installer + latest.yml'
   );
+  assert.equal(
+    pkg.scripts?.['build:appx'],
+    'npm run build:frontend && npm run build && electron-builder --win appx --x64 --arm64 --config.npmRebuild=false',
+    'build:appx must remain available for local x64+arm64 Microsoft Store package builds without requiring a native rebuild'
+  );
+  assert.ok(build?.appx?.identityName, 'build.appx.identityName must be set for Microsoft Store package identity');
+  assert.ok(build?.appx?.publisher, 'build.appx.publisher must be set for Microsoft Store package identity');
+
+  const appxTarget = winTargets.find((target: string) => target === 'appx');
+  assert.ok(appxTarget, 'win build target must include "appx" for Microsoft Store packages');
+  const winTargetConfigs = (build?.win?.target || []) as Array<{ target: string; arch?: string[] }>;
+  const appxConfig = winTargetConfigs.find((target) => target.target === 'appx');
+  assert.ok(
+    appxConfig?.arch?.includes('arm64'),
+    'win appx target must include arm64 so Windows on Arm Store users get a native package'
+  );
 
   // ── Linux snap: Path B (snapcraft, core24) shape ────────────────
   assert.ok(
@@ -159,10 +175,16 @@ function run() {
     'declaring arm64 in build.linux.target is not enough without a runner, and the wrong label ' +
     '(e.g. ubuntu-24.04-arm64) leaves the job stuck queued forever with no matching runner.'
   );
+  const snapPublishStep = linuxJob.split(/^\s*- name: Publish snap to Snap Store/m)[1]?.split(/^\s*- name:/m)[0] || '';
   assert.ok(
-    /matrix\.arch\s*==\s*['"]x64['"]/.test(linuxJob),
-    "snap-to-snap-store publish must be gated on matrix.arch == 'x64' — the snap target's " +
-    'arch list is x64-only and the arm64 entry would otherwise fail to find the .snap.'
+    !/matrix\.arch\s*==/.test(snapPublishStep),
+    'Snap Store publication must not be x64-gated; the release matrix publishes x64 and arm64 snap revisions.'
+  );
+  assert.ok(
+    snapPublishStep.includes('SNAPCRAFT_STORE_CREDENTIALS not set') &&
+    !/SNAPCRAFT_STORE_CREDENTIALS not set[^\n]*skipping snap publish/.test(snapPublishStep) &&
+    /SNAPCRAFT_STORE_CREDENTIALS not set[\s\S]{0,240}exit 1/.test(snapPublishStep),
+    'Snap Store publication must fail closed when SNAPCRAFT_STORE_CREDENTIALS is missing.'
   );
 
   const macJob = workflow.split(/^\s*release-mac:/m)[1]?.split(/^\s*release-windows:/m)[0] || '';
@@ -173,6 +195,43 @@ function run() {
   const winJob = workflow.split(/^\s*release-windows:/m)[1] || '';
   assert.ok(winJob.includes('latest.yml'), 'release-windows job must upload latest.yml');
   assert.ok(winJob.includes('.exe.blockmap'), 'release-windows job must upload the .exe.blockmap');
+  assert.ok(
+    /electron-builder --win --publish never --config\.npmRebuild=false/.test(winJob),
+    'release-windows job must build Windows targets from package.json so AppX x64+arm64 config is honored'
+  );
+  assert.ok(
+    /release\\\*\.appx/.test(winJob),
+    'release-windows job must verify and upload the .appx Microsoft Store package'
+  );
+  assert.ok(
+    winJob.includes('ProcessorArchitecture="([^"]+)"') &&
+    winJob.includes('@("x64", "arm64")'),
+    'release-windows job must inspect AppX manifests and require both x64 and arm64 packages'
+  );
+  assert.ok(
+    winJob.includes('microsoft/microsoft-store-apppublisher@v1.1'),
+    'release-windows job must install the official Microsoft Store Developer CLI action'
+  );
+  for (const required of [
+    'AZURE_AD_TENANT_ID',
+    'AZURE_AD_APPLICATION_CLIENT_ID',
+    'AZURE_AD_APPLICATION_SECRET',
+    'SELLER_ID',
+    'MICROSOFT_STORE_PRODUCT_ID',
+  ]) {
+    assert.ok(
+      winJob.includes(required),
+      `release-windows job must require ${required} for Microsoft Store publishing`
+    );
+  }
+  assert.ok(
+    /msstore reconfigure[\s\S]+--tenantId[\s\S]+--sellerId[\s\S]+--clientId[\s\S]+--clientSecret/.test(winJob),
+    'release-windows job must configure msstore with Partner Center credentials'
+  );
+  assert.ok(
+    /msstore publish "\$\{\{ github\.workspace \}\}\\release" --appId "\$env:MICROSOFT_STORE_PRODUCT_ID"/.test(winJob),
+    'release-windows job must publish the built AppX packages to the configured Microsoft Store product'
+  );
 
   console.log('✅ Release config + workflow integrity checks passed');
 }

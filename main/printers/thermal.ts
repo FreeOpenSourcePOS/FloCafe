@@ -8,6 +8,7 @@ import { getDatabase, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
+import { loadInstalledPrintTemplate } from '../services/print-templates';
 import { correlationId, type FloErrorCode } from '../errors';
 import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
@@ -87,6 +88,7 @@ const PRINTER_DETECTION_TIMEOUT_MS = 10_000;
 
 const RECEIPT_BRANDING_NAME = 'Powered by FloPOS';
 const RECEIPT_BRANDING_URL = 'https://flopos.com';
+export type PrinterColumnWidth = 36 | 42 | 48;
 
 export interface PrinterInfo {
   name: string;
@@ -805,15 +807,17 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
 
-  const tpl = normalizeReceiptTemplate(template);
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
+  const pluginTemplate = loadInstalledPrintTemplate(String(template || ''));
+  if (pluginTemplate) {
+    return renderPluginReceipt(pluginTemplate, order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
+  }
+  const tpl = normalizeReceiptTemplate(template);
 
   try {
     switch (tpl) {
       case 'classic':
         return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
-      case 'detailed':
-        return formatDetailedReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
       default:
         return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
     }
@@ -823,11 +827,159 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   }
 }
 
-function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' | 'detailed' {
+function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' {
   const normalized = String(template || 'classic').toLowerCase().replace(/[^a-z]/g, '');
   if (normalized.includes('compact') || normalized.includes('minimal')) return 'compact';
-  if (normalized.includes('detailed') || normalized.includes('gst') || normalized.includes('tax')) return 'detailed';
   return 'classic';
+}
+
+function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTemplate>, order: any, bill: any, biz: any, cols: number, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[]): Buffer {
+  if (!template) return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
+  const renderer = parseJson(template.renderer_json, {}) as { id?: string; version?: number };
+  const payload = parseJson(template.template_payload_json, {}) as any;
+  if (renderer.id !== 'flocafe-thermal-receipt-template'
+    || renderer.version !== 1
+    || payload.format !== 'escpos-line-template-v1') {
+    throw new Error(`Unsupported receipt plugin renderer for template ${template.template_id}`);
+  }
+  const profile = selectTemplateWidthProfile(payload, cols, warnings);
+  return renderEscposLineTemplateV1(payload, profile, order, bill, biz, useUnicode, isReprint, cutMode, warnings);
+}
+
+function parseJson(raw: string, fallback: unknown): unknown {
+  try { return JSON.parse(raw); } catch { return fallback; }
+}
+
+function selectTemplateWidthProfile(payload: any, printerColumns: number, warnings?: PrintWarning[]): { columns: number; layout: any } {
+  const profiles = collectTemplateWidthProfiles(payload);
+  const exact = profiles.find((profile) => profile.columns === printerColumns);
+  if (exact) return exact;
+  const smaller = profiles.filter((profile) => profile.columns < printerColumns).sort((a, b) => b.columns - a.columns)[0];
+  if (smaller) return smaller;
+
+  warnings?.push({
+    field: 'bill_template_width',
+    text: String(printerColumns),
+    message: `Template has no ${printerColumns}-column profile; rendered with the printer width instead of squeezing a wider profile.`,
+  });
+  return { columns: printerColumns, layout: {} };
+}
+
+function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; layout: any }> {
+  if (!Array.isArray(payload?.widthProfiles)) return [];
+  return payload.widthProfiles
+    .map((profile: any) => ({
+      columns: Number(profile?.columns),
+      layout: profile?.layout && typeof profile.layout === 'object' ? profile.layout : {},
+    }))
+    .filter((profile: { columns: number }) => Number.isInteger(profile.columns) && profile.columns >= 32 && profile.columns <= 48)
+    .sort((a: { columns: number }, b: { columns: number }) => a.columns - b.columns);
+}
+
+function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[]): Buffer {
+  const lines: string[] = [];
+  const cols = profile.columns;
+  const layout = profile.layout || {};
+  const date = parseDbTimestamp(order.created_at);
+  const bar = '='.repeat(cols);
+  const dash = '-'.repeat(cols);
+  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
+  const trimDecimals = biz.trim_decimals === true;
+  const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
+  const configuredTaxLabel = String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID');
+  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
+  const hasTax = Number(bill.tax_amount) !== 0
+    || taxComponents.some((component) => component.amount !== 0);
+  const title = hasTax
+    ? String(payload?.header?.taxTitleWhenTaxPresent || 'TAX INVOICE')
+    : String(payload?.header?.titleWhenTaxAbsent || 'INVOICE');
+  const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
+
+  lines.push('{INIT}');
+  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  if (biz.show_name !== false && biz.name) {
+    const name = payload?.header?.businessNameTransform === 'uppercase'
+      ? String(biz.name).toUpperCase()
+      : String(biz.name);
+    lines.push('{STORE_NAME}{CENTER}{BOLD}' + name + '{/BOLD}{/CENTER}');
+  }
+  lines.push(bar);
+  lines.push(`{CENTER}${title}{/CENTER}`);
+  lines.push(bar);
+  lines.push('Invoice #: ' + (bill.bill_number || order.order_number));
+  lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
+  lines.push('Time: ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
+  if (biz.show_table_number !== false && order.table?.name) lines.push('Table: ' + order.table.name);
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push('Customer: ' + biz.customer_name);
+  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('Customer No: ' + biz.customer_phone);
+  lines.push(dash);
+  lines.push(pluginItemHeader(layout, cols));
+  lines.push(dash);
+
+  if (order.items) {
+    for (const item of order.items) {
+      lines.push(...pluginItemRows(item, layout, cols, prefix, locale, trimDecimals));
+      if (pluginDetailLines(layout).includes('addons')) {
+        for (const addon of parseAddons(item.addons)) {
+          pushWrapped(lines, '  + ' + addon.name + (addon.price ? ' ' + formatCurrency(addon.price, prefix, locale, trimDecimals) : ''), cols);
+        }
+      }
+      if (pluginDetailLines(layout).includes('specialInstructions') && item.special_instructions) {
+        pushWrapped(lines, '  Note: ' + item.special_instructions, cols);
+      }
+    }
+  }
+
+  lines.push(dash);
+  if (payload?.totals?.showSubtotal !== false) {
+    lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - 8));
+  }
+  if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
+    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - 8));
+  }
+  if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
+    for (const tax of taxComponents) {
+      if (tax.amount === 0) continue;
+      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
+      lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals), layout, cols));
+    }
+  } else if (Number(bill.tax_amount) !== 0) {
+    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols - 3));
+  }
+  lines.push(bar);
+  const totalLabel = String(payload?.totals?.grandTotalLabel || 'TOTAL');
+  lines.push('{BOLD}' + totalLabel + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - totalLabel.length) + '{/BOLD}');
+
+  if (bill.payment_details) {
+    lines.push(dash);
+    try {
+      const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
+      if (payments && Array.isArray(payments)) {
+        for (const payment of payments) {
+          if (payment && payment.method) {
+            const methodLabel = truncate(String(payment.method), cols - 12);
+            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale, trimDecimals), cols - methodLabel.length));
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn('[Printer] Failed to parse payment details JSON:', err.message);
+    }
+  }
+
+  lines.push(bar);
+  if (biz.show_address !== false && biz.address) pushWrapped(lines, 'Address: ' + biz.address, cols);
+  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, 'Phone: ' + biz.phone, cols);
+  const showTaxRegistration = payload?.totals?.showTaxRegistrationNumber === 'when_tax_present_or_enabled'
+    ? (hasTax || biz.show_tax_id === true)
+    : biz.show_tax_id === true;
+  if (showTaxRegistration && biz.taxRegistrationNumber) pushWrapped(lines, configuredTaxLabel + ': ' + biz.taxRegistrationNumber, cols);
+  if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
+  else lines.push('{CENTER}' + String(payload?.footer?.defaultMessage || 'Thank you!') + '{/CENTER}');
+  if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
+  lines.push('{CUT}');
+
+  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
 }
 
 function appendPoweredByFooter(lines: string[]): void {
@@ -1044,101 +1196,158 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   return buildEscPos(lines, useUnicode, { cutMode }, warnings);
 }
 
-function formatDetailedReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
-  const lines: string[] = [];
-  const date = parseDbTimestamp(order.created_at);
+type PluginColumnAlign = 'left' | 'right' | 'center';
+type PluginLineColumn = {
+  key?: string;
+  label?: string;
+  width?: number;
+  align?: PluginColumnAlign;
+  wrap?: boolean;
+  maxLines?: number;
+  ellipsis?: boolean;
+};
 
-  const bar = '='.repeat(cols);
-  const dash = '-'.repeat(cols);
+function pluginLineItemColumns(layout: any, cols: number): PluginLineColumn[] {
+  const configured = layout?.lineItems?.columns;
+  if (Array.isArray(configured) && configured.length > 0) {
+    const columns = configured
+      .map((column: any) => ({
+        key: typeof column?.key === 'string' ? column.key : undefined,
+        label: typeof column?.label === 'string' ? column.label : undefined,
+        width: Number(column?.width),
+        align: column?.align === 'right' || column?.align === 'center' ? column.align : 'left',
+        wrap: column?.wrap === true,
+        maxLines: Number.isInteger(column?.maxLines) && column.maxLines > 0 ? column.maxLines : undefined,
+        ellipsis: column?.ellipsis !== false,
+      }))
+      .filter((column: PluginLineColumn) => column.key && Number.isInteger(column.width) && Number(column.width) > 0);
+    if (columns.length > 0) return columns;
+  }
+  return [
+    { key: 'item', label: 'Item', width: itemNameWidth(cols, 10), align: 'left', wrap: true, maxLines: 2, ellipsis: true },
+    { key: 'quantity', label: 'Qty', width: 4, align: 'left' },
+    { key: 'amount', label: 'Amount', width: 10, align: 'right' },
+  ];
+}
 
-  const itemNameLen = itemNameWidth(cols, 10);
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
-  const trimDecimals = biz.trim_decimals === true;
-  const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
-  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
-  const hasTax = Number(bill.tax_amount) !== 0
-    || taxComponents.some((component) => component.amount !== 0);
+function pluginLineGap(layout: any): number {
+  const gap = Number(layout?.lineItems?.gap);
+  return Number.isInteger(gap) && gap >= 0 && gap <= 4 ? gap : 0;
+}
 
-  const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
+function pluginDetailLines(layout: any): string[] {
+  const detailLines = layout?.lineItems?.detailLines;
+  if (!Array.isArray(detailLines)) return ['addons', 'specialInstructions'];
+  return detailLines.filter((line: unknown) => typeof line === 'string');
+}
 
-  lines.push('{INIT}');
-  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + String(biz.name).toUpperCase() + '{/BOLD}{/CENTER}');
-  lines.push(bar);
-  lines.push(`{CENTER}${hasTax ? 'TAX INVOICE' : 'INVOICE'}{/CENTER}`);
-  lines.push(bar);
-  lines.push('Invoice #: ' + (bill.bill_number || order.order_number));
-  lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
-  lines.push('Time: ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  if (biz.show_table_number !== false && order.table?.name) lines.push('Table: ' + order.table.name);
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push('Customer: ' + biz.customer_name);
-  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('Customer No: ' + biz.customer_phone);
-  lines.push(dash);
-  lines.push(itemHeader(itemNameLen, 10));
-  lines.push(dash);
+function pluginItemHeader(layout: any, cols: number): string {
+  return composePluginColumns(
+    pluginLineItemColumns(layout, cols).map((column) => ({
+      ...column,
+      value: column.label || column.key || '',
+    })),
+    pluginLineGap(layout),
+    cols,
+  );
+}
 
-  if (order.items) {
-    for (const item of order.items) {
-      lines.push(itemRow(item, itemNameLen, 10, prefix, locale, trimDecimals));
-
-      const addons = parseAddons(item.addons);
-      for (const addon of addons) {
-        lines.push(addonRow(addon, itemNameLen, 10, cols, prefix, locale, trimDecimals));
-      }
-      if (item.special_instructions) {
-        lines.push('  Note: ' + truncate(item.special_instructions, cols - 8));
-      }
+function pluginItemRows(item: any, layout: any, cols: number, prefix: string, locale: string, trimDecimals: boolean): string[] {
+  const columns = pluginLineItemColumns(layout, cols);
+  const gap = pluginLineGap(layout);
+  const values = columns.map((column) => ({
+    ...column,
+    value: pluginItemColumnValue(column.key || '', item, prefix, locale, trimDecimals),
+  }));
+  const wrappedValues = values.map((column) => {
+    if (!column.wrap) return [truncateCell(column.value, Number(column.width), column.ellipsis !== false)];
+    const maxLines = column.maxLines || 2;
+    const wrapped = wrapText(column.value, Number(column.width));
+    const limited = wrapped.slice(0, maxLines);
+    if (wrapped.length > maxLines && limited.length > 0 && column.ellipsis !== false) {
+      limited[limited.length - 1] = truncateCell(limited[limited.length - 1], Number(column.width), true);
     }
+    return limited.length > 0 ? limited : [''];
+  });
+  const lineCount = Math.max(1, ...wrappedValues.map((value) => value.length));
+  const rows: string[] = [];
+  for (let index = 0; index < lineCount; index++) {
+    rows.push(composePluginColumns(values.map((column, columnIndex) => ({
+      ...column,
+      value: wrappedValues[columnIndex][index] || '',
+    })), gap, cols));
   }
+  return rows;
+}
 
-  lines.push(dash);
-  lines.push('Subtotal' + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - 8));
-  if (bill.discount_amount > 0) {
-    lines.push('Discount' + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - 8));
-  }
-
-  if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
-    for (const tax of taxComponents) {
-      if (tax.amount === 0) continue;
-      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      const label = truncate(rawLabel, cols - 12);
-      lines.push(label + rightAlign(formatCurrency(tax.amount, prefix, locale, trimDecimals), cols - label.length));
+function pluginItemColumnValue(key: string, item: any, prefix: string, locale: string, trimDecimals: boolean): string {
+  switch (key) {
+    case 'item':
+      return String(item.product_name || '');
+    case 'quantity':
+      return String(item.quantity ?? '');
+    case 'rate': {
+      const quantity = Number(item.quantity) || 0;
+      const rate = Number(item.unit_price ?? item.price ?? (quantity ? Number(item.total) / quantity : 0));
+      return formatCurrency(rate, prefix, locale, trimDecimals);
     }
-  } else if (bill.tax_amount) {
-    lines.push('Tax' + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols - 3));
+    case 'taxRate':
+      return pluginItemTaxRate(item);
+    case 'amount':
+      return formatCurrency(item.total, prefix, locale, trimDecimals);
+    default:
+      return '';
   }
+}
 
-  lines.push(bar);
-  lines.push('{BOLD}GRAND TOTAL' + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - 12) + '{/BOLD}');
-
-  if (bill.payment_details) {
-    lines.push(dash);
-    try {
-      const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
-      if (payments && Array.isArray(payments)) {
-        for (const payment of payments) {
-          if (payment && payment.method) {
-            const methodLabel = truncate(String(payment.method), cols - 12);
-            lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale, trimDecimals), cols - methodLabel.length));
-          }
-        }
-      }
-    } catch (err: any) {
-      console.warn('[Printer] Failed to parse payment details JSON:', err.message);
-    }
+function pluginItemTaxRate(item: any): string {
+  const rates = new Set<string>();
+  const breakdown = Array.isArray(item.tax_breakdown) ? item.tax_breakdown : [];
+  for (const component of breakdown) {
+    if (component?.rate !== null && component?.rate !== undefined) rates.add(String(component.rate));
   }
+  return [...rates].join('+');
+}
 
-  lines.push(bar);
-  if (biz.show_address !== false && biz.address) pushWrapped(lines, 'Address: ' + biz.address, cols);
-  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, 'Phone: ' + biz.phone, cols);
-  if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
-  if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
-  else lines.push('{CENTER}Thank you for your business!{/CENTER}');
-  appendPoweredByFooter(lines);
-  lines.push('{CUT}');
+function pluginSummaryRow(label: string, amount: string, layout: any, cols: number): string {
+  const labelWidth = Number(layout?.taxSummary?.labelWidth);
+  const amountWidth = Number(layout?.taxSummary?.amountWidth);
+  if (Number.isInteger(labelWidth) && Number.isInteger(amountWidth) && labelWidth > 0 && amountWidth > 0) {
+    return composePluginColumns([
+      { value: label, width: labelWidth, align: 'left', ellipsis: true },
+      { value: amount, width: amountWidth, align: 'right', ellipsis: true },
+    ], Math.max(0, cols - labelWidth - amountWidth), cols);
+  }
+  const safeLabel = truncate(label, cols - 12);
+  return safeLabel + rightAlign(amount, cols - safeLabel.length);
+}
 
-  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
+function composePluginColumns(columns: Array<PluginLineColumn & { value: string }>, gap: number, cols: number): string {
+  const separator = ' '.repeat(gap);
+  const line = columns.map((column) => alignCell(
+    truncateCell(column.value, Number(column.width), column.ellipsis !== false),
+    Number(column.width),
+    column.align || 'left',
+  )).join(separator);
+  return truncateCell(line, cols, false).padEnd(Math.min(cols, line.length));
+}
+
+function alignCell(value: string, width: number, align: PluginColumnAlign): string {
+  const text = truncateCell(value, width, true);
+  if (align === 'right') return text.padStart(width);
+  if (align === 'center') {
+    const left = Math.floor((width - text.length) / 2);
+    return ' '.repeat(Math.max(0, left)) + text.padEnd(Math.max(0, width - left));
+  }
+  return text.padEnd(width);
+}
+
+function truncateCell(text: string, length: number, ellipsis: boolean): string {
+  const value = String(text || '');
+  if (length <= 0) return '';
+  if (value.length <= length) return value;
+  if (!ellipsis || length <= 2) return value.slice(0, length);
+  return value.slice(0, length - 2) + '..';
 }
 
 // Item row layout: [ name (nameLen) ][ qty (4) ][ amount right-aligned (amtLen) ].

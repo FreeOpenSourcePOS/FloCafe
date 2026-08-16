@@ -19,6 +19,7 @@ let stopPromise: Promise<void> | null = null;
 let startReject: ((error: Error) => void) | null = null;
 let stopping = false;
 const SERVER_APP_PORT = getDefaultServerAppPort();
+const SERVER_APP_ALLOWED_ROLES = new Set(['server']);
 
 type ServerAppUser = {
   userId: string;
@@ -77,7 +78,7 @@ function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
     if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
       return res.status(401).json({ error: 'Invalid token' });
     }
-    if (!['waiter', 'manager', 'owner'].includes(user.role)) {
+    if (!SERVER_APP_ALLOWED_ROLES.has(user.role)) {
       return res.status(403).json({ error: 'Access denied. Only service staff allowed.' });
     }
 
@@ -205,7 +206,7 @@ export function startServerApp(): Promise<void> {
         if (!user || !passwordMatches) {
           return res.status(401).json({ error: 'Invalid credentials' });
         }
-        if (!['waiter', 'manager', 'owner'].includes(user.role)) {
+        if (!SERVER_APP_ALLOWED_ROLES.has(user.role)) {
           return res.status(403).json({ error: 'Access denied. Only service staff allowed.' });
         }
 

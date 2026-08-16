@@ -212,7 +212,7 @@ router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, r
   }
 });
 
-router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'waiter'), (req: Request, res: Response) => {
+router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
   try {
     const sourceTableId = req.params.id as string;
     const { target_table_id, order_id } = req.body;

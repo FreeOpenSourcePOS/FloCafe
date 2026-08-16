@@ -8,13 +8,13 @@ import { Plus, X, Edit, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import type { Staff } from '@/lib/types';
 import { useI18n } from '@/hooks/useI18n';
 
-const VALID_ROLES = ['owner', 'manager', 'cashier', 'waiter', 'chef'];
+const VALID_ROLES = ['owner', 'manager', 'cashier', 'server', 'chef'];
 
 const roleColorKey: Record<string, string> = {
   owner: 'staff.roleOwner',
   manager: 'staff.roleManager',
   cashier: 'staff.roleCashier',
-  waiter: 'staff.roleWaiter',
+  server: 'staff.roleServer',
   chef: 'staff.roleChef',
 };
 
@@ -22,7 +22,7 @@ const roleColors: Record<string, string> = {
   owner: 'bg-red-100 text-red-800',
   manager: 'bg-purple-100 text-purple-800',
   cashier: 'bg-blue-100 text-blue-800',
-  waiter: 'bg-green-100 text-green-800',
+  server: 'bg-green-100 text-green-800',
   chef: 'bg-orange-100 text-orange-800',
 };
 
@@ -39,7 +39,7 @@ export default function StaffPage() {
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'waiter',
+    role: 'server',
     pin: '',
   });
   const [newPassword, setNewPassword] = useState('');
@@ -69,7 +69,7 @@ export default function StaffPage() {
 
   const openAdd = () => {
     setEditingStaff(null);
-    setForm({ name: '', email: '', password: '', confirmPassword: '', role: 'waiter', pin: '' });
+    setForm({ name: '', email: '', password: '', confirmPassword: '', role: 'server', pin: '' });
     setShowPassword(false);
     setShowPin(false);
     setShowForm(true);

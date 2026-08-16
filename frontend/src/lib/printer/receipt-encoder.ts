@@ -4,10 +4,9 @@
  * Converts a Flo POS Bill (+ its nested Order) into raw ESC/POS bytes
  * using `@point-of-sale/receipt-printer-encoder`.
  *
- * Three templates are available:
+ * Two core receipt templates are available:
  *   buildClassicReceiptBytes  — rich legacy-style (default)
  *   buildCompactReceiptBytes  — minimal, fast
- *   buildDetailedReceiptBytes — detailed tax invoice
  *
  * `buildReceiptBytes` is kept as a re-export of the classic builder
  * for backward compatibility.
@@ -431,7 +430,9 @@ export function buildCompactReceiptBytes(
 }
 
 // ---------------------------------------------------------------------------
-// Detailed tax template
+// Legacy detailed tax encoder. Tax-specific templates are no longer exposed
+// as core bill templates; future country-specific templates should come from
+// the active tax pack/plugin contract instead.
 // ---------------------------------------------------------------------------
 
 export function buildDetailedReceiptBytes(

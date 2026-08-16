@@ -73,7 +73,7 @@ function buildSystemDiagnostics(req: Request, category: string) {
   };
 }
 
-const supportRoles = ['owner', 'manager', 'cashier', 'waiter', 'chef'] as const;
+const supportRoles = ['owner', 'manager', 'cashier', 'server', 'chef'] as const;
 
 router.get('/profile', requireRole(...supportRoles), (req: Request, res: Response) => {
   const profile = supportProfile(req);

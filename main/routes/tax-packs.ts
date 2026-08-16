@@ -4,7 +4,7 @@ import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue, now, upsertSettings, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { TaxEngine } from '../services/tax-engine';
-import type { CountryPack, TaxBehavior, TaxCategory, TaxRule } from '../tax-packs/types';
+import type { CountryPack, PluginPrintTemplate, TaxBehavior, TaxCategory, TaxRule } from '../tax-packs/types';
 import { BUNDLED_COUNTRY_PACKS } from '../tax-packs/bundled';
 import {
   downloadAndVerifyTaxPack,
@@ -97,11 +97,22 @@ function activateInstalledPack(pack: PackRow, version: VersionRow, actorId: stri
     db.prepare(`UPDATE country_packs SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ?`)
       .run(version.id, now(), pack.id);
     db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(version.id);
+    db.prepare(`
+      UPDATE installed_print_templates
+      SET status = 'installed'
+      WHERE pack_id IN (SELECT id FROM country_packs WHERE country = ?)
+    `).run(pack.country);
+    db.prepare(`UPDATE installed_print_templates SET status = 'active' WHERE pack_version_id = ?`).run(version.id);
     audit('activate_pack', actorId, pack.id, version.id, null, { previousVersionId, automatic: true });
   });
 }
 
-function persistPackArtifacts(version: VersionRow, definition: CountryPack, installedAt: string): void {
+function persistPackArtifacts(
+  version: VersionRow,
+  definition: CountryPack,
+  installedAt: string,
+  printTemplates: PluginPrintTemplate[] = [],
+): void {
   const db = getDatabase();
   db.prepare(`
     INSERT INTO country_pack_versions (
@@ -141,6 +152,27 @@ function persistPackArtifacts(version: VersionRow, definition: CountryPack, inst
       rule.rate || null, rule.amount || null, rule.appliesPer || null,
       JSON.stringify(rule.baseRuleIds || []),
       JSON.stringify(rule),
+      installedAt,
+    );
+  }
+  const insertTemplate = db.prepare(`
+    INSERT OR REPLACE INTO installed_print_templates (
+      template_id, pack_id, pack_version_id, country, jurisdiction, display_name,
+      paper_widths_json, renderer_json, template_payload_json, status, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const template of printTemplates) {
+    insertTemplate.run(
+      template.id,
+      version.pack_id,
+      version.id,
+      template.country,
+      template.jurisdiction,
+      template.displayName,
+      JSON.stringify(template.paperColumns.map((width) => `cols-${width}`)),
+      JSON.stringify(template.renderer),
+      JSON.stringify(template.templatePayload ?? template.payload),
+      version.status === 'active' ? 'active' : 'installed',
       installedAt,
     );
   }
@@ -370,6 +402,11 @@ export function validationChecklist(
     return { valid: false, checks: [{ id: 1, passed: false, message: 'Pack JSON is invalid' }] };
   }
 
+  const manifest = parseJson(version.manifest_json, {}) as Record<string, unknown>;
+  const signedArtifactJson = typeof manifest.signedArtifactJson === 'string'
+    ? manifest.signedArtifactJson
+    : version.pack_json;
+
   add(1, pack.schemaVersion === 1 && version.schema_version === 1, 'Supported manifest and schema version');
   add(2, Boolean(pack.id && pack.publisher && /^([A-Z]{2}|\*)$/.test(pack.country)
     && pack.jurisdiction), 'Valid pack identity, publisher, country, and jurisdiction scope');
@@ -381,7 +418,7 @@ export function validationChecklist(
   'Valid, internally consistent version and effective-date range');
   add(4, semverAtLeast(APP_VERSION, pack.minFloVersion),
     `FloCafe ${APP_VERSION} satisfies minimum compatible version ${pack.minFloVersion}`);
-  add(5, version.digest === createHash('sha256').update(version.pack_json).digest('hex'), 'Stored artifact digest matches');
+  add(5, version.digest === createHash('sha256').update(signedArtifactJson).digest('hex'), 'Stored artifact digest matches');
   const bundledDefinition = BUNDLED_PACKS_BY_ID.get(pack.id);
   const legacyTrustedDigest = LEGACY_TRUSTED_PACK_DIGESTS[pack.id];
   const trustedArtifact = pack.publisher === 'local'
@@ -390,7 +427,7 @@ export function validationChecklist(
       (bundledDefinition && JSON.stringify(bundledDefinition) === JSON.stringify(pack))
       || (version.signature === null && legacyTrustedDigest
         && createHash('sha256').update(JSON.stringify(pack), 'utf8').digest('hex') === legacyTrustedDigest)
-      || (version.signature && verifyTaxPackSignature(version.pack_json, version.signature, publicKey)),
+      || (version.signature && verifyTaxPackSignature(signedArtifactJson, version.signature, publicKey)),
     );
   add(6, trustedArtifact, pack.publisher === 'local'
     ? 'Synthetic local pack does not require a signature'
@@ -579,7 +616,11 @@ export async function installCatalogEntry(
     pack_id: artifact.pack.id,
     version: artifact.pack.version,
     schema_version: artifact.pack.schemaVersion,
-    manifest_json: JSON.stringify(entry),
+    manifest_json: JSON.stringify(
+      artifact.artifactJson === artifact.packJson
+        ? entry
+        : { ...entry, signedArtifactJson: artifact.artifactJson },
+    ),
     pack_json: artifact.packJson,
     digest: entry.digest,
     signature: artifact.signature,
@@ -622,7 +663,7 @@ export async function installCatalogEntry(
     if (versionExists) {
       throw Object.assign(new Error('This tax pack version is already installed'), { statusCode: 409 });
     }
-    persistPackArtifacts(version, artifact.pack, installedAt);
+    persistPackArtifacts(version, artifact.pack, installedAt, artifact.printTemplates);
     audit('install_downloaded_pack', options.actorUserId, artifact.pack.id, versionId, null, {
       source: 'github_release',
       version: artifact.pack.version,
@@ -1266,6 +1307,12 @@ router.post('/:packId/versions/:versionId/activate', requireRole('owner'), (req:
         UPDATE country_packs SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ?
       `).run(version.id, now(), pack.id);
       db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(version.id);
+      db.prepare(`
+        UPDATE installed_print_templates
+        SET status = 'installed'
+        WHERE pack_id IN (SELECT id FROM country_packs WHERE country = ?)
+      `).run(pack.country);
+      db.prepare(`UPDATE installed_print_templates SET status = 'active' WHERE pack_version_id = ?`).run(version.id);
       audit('activate_pack', actorUserId(req), pack.id, version.id, null, { previousVersionId });
     });
     res.json({ changed: true, active_version_id: version.id, validation });
@@ -1302,6 +1349,8 @@ router.post('/:packId/rollback', requireRole('owner'), (req: Request, res: Respo
       db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(target.id);
       db.prepare(`UPDATE country_packs SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ?`)
         .run(target.id, now(), pack.id);
+      db.prepare(`UPDATE installed_print_templates SET status = 'installed' WHERE pack_id = ?`).run(pack.id);
+      db.prepare(`UPDATE installed_print_templates SET status = 'active' WHERE pack_version_id = ?`).run(target.id);
       audit('rollback_pack', actorUserId(req), pack.id, target.id, null, {
         previousVersionId,
         rollbackVersionId: target.id,

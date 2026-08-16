@@ -1,5 +1,5 @@
 import { createHash, verify, type KeyLike } from 'crypto';
-import type { CountryPack } from './types';
+import type { CountryPack, CountryTaxPackPluginArtifact, PluginPrintTemplate } from './types';
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from './trusted-signing-key';
 
 const RELEASES_API_URL = 'https://api.github.com/repos/FreeOpenSourcePOS/FloCafe-Plugins/releases';
@@ -39,7 +39,9 @@ export interface VerifiedTaxPackArtifact {
   entry: TaxPackCatalogEntry;
   pack: CountryPack;
   packJson: string;
+  artifactJson: string;
   signature: string;
+  printTemplates: PluginPrintTemplate[];
 }
 
 interface GitHubReleaseAsset {
@@ -199,6 +201,77 @@ function decodeSignature(value: string): Buffer {
   return signature;
 }
 
+function validPluginPrintTemplate(value: unknown): value is PluginPrintTemplate {
+  if (!value || typeof value !== 'object') return false;
+  const template = value as Record<string, unknown>;
+  const renderer = template.renderer as Record<string, unknown> | undefined;
+  const payload = Object.prototype.hasOwnProperty.call(template, 'templatePayload')
+    ? template.templatePayload
+    : template.payload;
+  const paperColumns = Array.isArray(template.paperColumns) ? template.paperColumns : [];
+  const hasPaperColumns = paperColumns.length > 0
+    && paperColumns.every((width) => Number.isInteger(width) && [32, 36, 40, 42, 44, 48].includes(width as number));
+  const payloadObject = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const payloadProfiles = Array.isArray(payloadObject.widthProfiles) ? payloadObject.widthProfiles : [];
+  const hasMatchingProfiles = payloadObject.format === 'escpos-line-template-v1'
+    && payloadProfiles.length > 0
+    && paperColumns.every((width) => payloadProfiles.some((profile) => {
+      if (!profile || typeof profile !== 'object') return false;
+      return (profile as Record<string, unknown>).columns === width;
+    }));
+  return typeof template.id === 'string' && /^[a-z0-9][a-z0-9._-]*$/.test(template.id)
+    && typeof template.displayName === 'string' && template.displayName.trim().length > 0
+    && typeof template.country === 'string' && /^([A-Z]{2}|\*)$/.test(template.country)
+    && typeof template.jurisdiction === 'string' && template.jurisdiction.length > 0
+    && hasPaperColumns
+    && hasMatchingProfiles
+    && !!renderer
+    && typeof renderer.id === 'string'
+    && typeof renderer.version === 'number'
+    && Number.isInteger(renderer.version)
+    && renderer.version > 0
+    && payload !== undefined;
+}
+
+function normalizePluginPrintTemplate(template: PluginPrintTemplate): PluginPrintTemplate {
+  return {
+    ...template,
+    paperColumns: [...new Set(template.paperColumns)].sort((a, b) => a - b),
+    templatePayload: template.templatePayload ?? template.payload,
+  };
+}
+
+function parseSignedArtifact(rawJson: string): { pack: CountryPack; packJson: string; printTemplates: PluginPrintTemplate[] } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawJson);
+  } catch {
+    throw new Error('Tax pack JSON is invalid');
+  }
+  if (!parsed || typeof parsed !== 'object') throw new Error('Tax pack JSON is invalid');
+  const candidate = parsed as Record<string, unknown>;
+  if (candidate.artifactType === 'country-tax-pack-plugin') {
+    const artifact = candidate as unknown as CountryTaxPackPluginArtifact;
+    if (artifact.schemaVersion !== 1 || !artifact.taxPack || typeof artifact.taxPack !== 'object') {
+      throw new Error('Tax pack plugin artifact is invalid');
+    }
+    const printTemplates = artifact.printTemplates || [];
+    if (!Array.isArray(printTemplates) || !printTemplates.every(validPluginPrintTemplate)) {
+      throw new Error('Tax pack plugin artifact contains an invalid print template');
+    }
+    return {
+      pack: artifact.taxPack,
+      packJson: JSON.stringify(artifact.taxPack),
+      printTemplates: printTemplates.map(normalizePluginPrintTemplate),
+    };
+  }
+  return {
+    pack: parsed as CountryPack,
+    packJson: rawJson,
+    printTemplates: [],
+  };
+}
+
 export function verifyTaxPackSignature(
   packJson: string,
   signature: string,
@@ -231,12 +304,8 @@ export async function downloadAndVerifyTaxPack(
     throw new Error('Tax pack signature verification failed');
   }
 
-  let pack: CountryPack;
-  try {
-    pack = JSON.parse(packJson) as CountryPack;
-  } catch {
-    throw new Error('Tax pack JSON is invalid');
-  }
+  const artifact = parseSignedArtifact(packJson);
+  const pack = artifact.pack;
   if (pack.id !== entry.id
     || pack.version !== entry.version
     || pack.publisher !== entry.publisher
@@ -252,7 +321,9 @@ export async function downloadAndVerifyTaxPack(
   return {
     entry,
     pack,
-    packJson,
+    packJson: artifact.packJson,
+    artifactJson: packJson,
     signature: signature.trim(),
+    printTemplates: artifact.printTemplates,
   };
 }

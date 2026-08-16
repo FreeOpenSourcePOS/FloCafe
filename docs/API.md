@@ -41,30 +41,6 @@ Authenticate user and receive JWT token.
   "error": "Invalid credentials"
 }
 ```
-
----
-
-### POST `/api/auth/register`
-Register new user (owner/admin only).
-
-**Request:**
-```json
-{
-  "name": "John Doe",
-  "email": "john@flo.local",
-  "password": "securepassword",
-  "role": "cashier"
-}
-```
-
-**Response (201):**
-```json
-{
-  "message": "User created",
-  "user_id": "user-xxx"
-}
-```
-
 ---
 
 ## User Management

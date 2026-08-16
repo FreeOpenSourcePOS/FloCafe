@@ -44,6 +44,8 @@
   "auth.signInSuccess": "¡Inicio de sesión exitoso!",
   "auth.signInTitle": "Iniciá sesión para administrar tu negocio",
   "auth.signingIn": "Iniciando sesión...",
+  "auth.connectionFailed": "No se pudo conectar con el servidor. Verificá tu conexión e intentalo de nuevo.",
+  "auth.storageUnavailable": "No se pudo guardar tu sesión. Tu navegador puede estar bloqueando el almacenamiento (modo privado o cookies deshabilitadas).",
   "common.add": "Agregar",
   "common.cancel": "Cancelar",
   "common.close": "Cerrar",

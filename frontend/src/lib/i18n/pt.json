@@ -44,6 +44,8 @@
   "auth.signInSuccess": "Login realizado com sucesso!",
   "auth.signInTitle": "Entre para gerenciar sua empresa",
   "auth.signingIn": "Entrando...",
+  "auth.connectionFailed": "Não foi possível alcançar o servidor. Verifique sua conexão e tente novamente.",
+  "auth.storageUnavailable": "Não foi possível salvar sua sessão. Seu navegador pode estar bloqueando o armazenamento (modo anônimo ou cookies desativados).",
   "common.add": "Adicionar",
   "common.cancel": "Cancelar",
   "common.close": "Fechar",

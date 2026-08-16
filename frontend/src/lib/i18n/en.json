@@ -44,6 +44,8 @@
   "auth.signInSuccess": "Login successful!",
   "auth.signInTitle": "Sign in to manage your business",
   "auth.signingIn": "Signing in...",
+  "auth.connectionFailed": "Could not reach the server. Check your connection and try again.",
+  "auth.storageUnavailable": "Could not save your session. Your browser may be blocking storage (private mode or disabled cookies).",
   "common.add": "Add",
   "common.cancel": "Cancel",
   "common.close": "Close",

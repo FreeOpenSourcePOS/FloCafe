@@ -1138,6 +1138,8 @@
   "kds.viewTabs": "Pestañas",
   "kds.emptyColumn": "—",
   "kds.wsConnected": "WebSocket conectado",
+  "kds.skipStageTitle": "¿Saltar una etapa?",
+  "kds.skipStageMessage": "Esto marcará el ítem como {status} y saltará las etapas intermedias.",
   "nav.collapse": "Contraer",
   "nav.confirmLogout": "¿Estás seguro de que quieres cerrar la sesión?",
   "nav.heapLabel": "Memoria: ",

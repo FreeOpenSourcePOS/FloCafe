@@ -11,6 +11,7 @@ import { databaseMaintenanceMiddleware, getDatabase, getKdsStationCategoryIds, g
 import { setupKdsWebSocket, notifyKdsUpdate } from './services/kds';
 import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
+import { buildCspHeader } from './csp';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -84,6 +85,11 @@ export function startKdsServer(): Promise<void> {
     const app: Express = express();
 
     app.use(cors(corsOptions));
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', buildCspHeader(req));
+      next();
+    });
     app.use(express.json());
     // body-parser 2.x (bundled with Express 5) leaves req.body undefined
     // instead of {} when a request has no parseable body -- restore the

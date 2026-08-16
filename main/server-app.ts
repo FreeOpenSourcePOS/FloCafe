@@ -12,6 +12,7 @@ import { authRateLimit, corsOptions, isTokenRevoked, isTokenStale, rateLimit, re
 import { getServerPort } from './server';
 import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, setServerAppPort } from './server-app-state';
 import { API_JSON_BODY_LIMIT } from './http-limits';
+import { buildCspHeader } from './csp';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
@@ -140,6 +141,11 @@ export function startServerApp(): Promise<void> {
     const app: Express = express();
 
     app.use(cors(corsOptions));
+    app.use((req: Request, res: Response, next: NextFunction) => {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', buildCspHeader(req));
+      next();
+    });
     app.use(express.json({ limit: API_JSON_BODY_LIMIT }));
     app.use((error: any, _req: Request, res: Response, next: NextFunction) => {
       if (error?.type === 'entity.too.large') {

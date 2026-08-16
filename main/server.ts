@@ -14,6 +14,7 @@ import { setupKdsWebSocket } from './services/kds';
 import { rateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 import { API_JSON_BODY_LIMIT } from './http-limits';
+import { buildCspHeader } from './csp';
 
 let server: http.Server | null = null;
 let app: Express;
@@ -176,17 +177,9 @@ export function startServer(): Promise<void> {
     // ── Content Security Policy ────────────────────────────────────────
     // Blocks eval() and remote code. 'unsafe-inline' is required for
     // Next.js RSC hydration scripts and Tailwind-generated style tags.
-    app.use((_req: Request, res: Response, next: NextFunction) => {
+    app.use((req: Request, res: Response, next: NextFunction) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.setHeader('Content-Security-Policy',
-        "default-src 'self'; " +
-        "script-src 'self' 'unsafe-inline'; " +
-        "style-src 'self' 'unsafe-inline'; " +
-        "img-src 'self' data:; " +
-        "font-src 'self' data:; " +
-        "connect-src 'self' http://localhost:3000 http://localhost:3001 http://localhost:3002 http://localhost:3003 ws://localhost:3001 ws://localhost:3002; " +
-        "frame-ancestors 'none'"
-      );
+      res.setHeader('Content-Security-Policy', buildCspHeader(req));
       next();
     });
 

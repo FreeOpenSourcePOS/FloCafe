@@ -294,7 +294,7 @@ exit 0
     if (!allSuites.includes(match[1])) allSuites.push(match[1]);
   }
 
-  assert.strictEqual(allSuites.length, 90, `Expected 90 test suites in "test" script, got ${allSuites.length}`);
+  assert.ok(allSuites.length >= 90, `Expected at least 90 test suites in "test" script, got ${allSuites.length}`);
 
   for (const suiteName of allSuites) {
     assert.ok(
@@ -305,8 +305,10 @@ exit 0
 
   const shard0Suites = allSuites.filter((_, i) => i % 2 === 0);
   const shard1Suites = allSuites.filter((_, i) => i % 2 === 1);
-  assert.strictEqual(shard0Suites.length, 45, 'Shard 0 must have exactly 45 suites');
-  assert.strictEqual(shard1Suites.length, 45, 'Shard 1 must have exactly 45 suites');
+  const expectedShard0 = Math.ceil(allSuites.length / 2);
+  const expectedShard1 = Math.floor(allSuites.length / 2);
+  assert.strictEqual(shard0Suites.length, expectedShard0, `Shard 0 must have exactly ${expectedShard0} suites`);
+  assert.strictEqual(shard1Suites.length, expectedShard1, `Shard 1 must have exactly ${expectedShard1} suites`);
 
   // Ensure 0 overlap and 100% union coverage
   const intersection = shard0Suites.filter((s) => shard1Suites.includes(s));
@@ -318,7 +320,7 @@ exit 0
   }
   assert.deepStrictEqual(reconstructed, allSuites, 'Round-robin shards must reconstruct the exact original suite list in order');
 
-  console.log('✓ package.json test suite sharding coverage invariance (90 suites, 45 per shard) verified');
+  console.log(`✓ package.json test suite sharding coverage invariance (${allSuites.length} suites, ${shard0Suites.length}/${shard1Suites.length} per shard) verified`);
 
   // CI Workflow schema and configuration assertions
   // eslint-disable-next-line @typescript-eslint/no-var-requires

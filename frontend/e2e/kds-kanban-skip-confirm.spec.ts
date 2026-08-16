@@ -1,7 +1,4 @@
 import { test, expect, type Locator } from '@playwright/test';
-import path from 'path';
-
-const EVIDENCE_DIR = '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M04C9425M4HQACRQR7J9VQ0X';
 
 test('KDS kanban requires confirmation when skipping preparation stages', async ({ page }) => {
   // Set generous desktop viewport
@@ -62,14 +59,8 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cardIn(waitingCol)).toBeVisible();
   await expect(cardIn(waitingCol)).not.toHaveClass(/pointer-events-none/);
 
-  // Capture screenshot: Initial Waiting state
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '01-kds-kanban-initial-waiting.png'),
-    fullPage: true,
-  });
-
   // Helper for dnd-kit pointer drag and drop from card header
-  const dragCard = async (sourceCard: Locator, targetColumn: Locator, desc: string = '') => {
+  const dragCard = async (sourceCard: Locator, targetColumn: Locator, desc = '') => {
     console.log(`\n[Drag] ${desc}`);
     await expect(sourceCard).toBeVisible();
     await expect(sourceCard).not.toHaveClass(/pointer-events-none/);
@@ -95,7 +86,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   };
 
   // -------------------------------------------------------------
-  // Test Step A: Single-step forward move (Waiting -> Preparing)
+  // Step A: Single-step forward move (Waiting -> Preparing)
   // Single-step moves stay one-touch: NO confirmation dialog shown
   // -------------------------------------------------------------
   await dragCard(cardIn(waitingCol), preparingCol, 'Waiting -> Preparing (single-step)');
@@ -105,13 +96,8 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cardIn(preparingCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(waitingCol)).toHaveCount(0);
 
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '02-kds-kanban-single-step-preparing.png'),
-    fullPage: true,
-  });
-
   // ---------------------------------------------------------------------
-  // Test Step B: Multi-step forward move (Preparing -> Delivered, skipping Ready)
+  // Step B: Multi-step forward move (Preparing -> Delivered, skipping Ready)
   // Accidental completion protection: MUST require explicit confirmation
   // ---------------------------------------------------------------------
   await dragCard(cardIn(preparingCol), deliveredCol, 'Preparing -> Delivered (skips Ready)');
@@ -124,14 +110,8 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cancelBtn).toBeVisible();
   await expect(confirmDeliveredBtn).toBeVisible();
 
-  // Capture screenshot: Skip stage confirmation modal
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '03-kds-kanban-skip-stage-modal.png'),
-    fullPage: true,
-  });
-
   // ---------------------------------------------------------------------
-  // Test Step C: Cancel confirmation -> card remains in Preparing
+  // Step C: Cancel confirmation -> card remains in Preparing
   // ---------------------------------------------------------------------
   await cancelBtn.click();
   await expect(dialogTitle).toHaveCount(0);
@@ -140,7 +120,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cardIn(deliveredCol)).toHaveCount(0);
 
   // ---------------------------------------------------------------------
-  // Test Step D: Drag again and Confirm -> card commits transition to Delivered
+  // Step D: Drag again and Confirm -> card commits transition to Delivered
   // ---------------------------------------------------------------------
   await dragCard(cardIn(preparingCol), deliveredCol, 'Preparing -> Delivered (confirm)');
   await expect(dialogTitle).toBeVisible();
@@ -151,14 +131,8 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cardIn(deliveredCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(preparingCol)).toHaveCount(0);
 
-  // Capture screenshot: Delivered state
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '04-kds-kanban-delivered-after-confirm.png'),
-    fullPage: true,
-  });
-
   // ---------------------------------------------------------------------
-  // Test Step E: Backward drag (Delivered -> Preparing)
+  // Step E: Backward drag (Delivered -> Preparing)
   // Backward moves stay one-touch: NO confirmation dialog
   // ---------------------------------------------------------------------
   await dragCard(cardIn(deliveredCol), preparingCol, 'Delivered -> Preparing (backward)');
@@ -167,13 +141,8 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cardIn(preparingCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(deliveredCol)).toHaveCount(0);
 
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '05-kds-kanban-backward-drag-no-modal.png'),
-    fullPage: true,
-  });
-
   // ---------------------------------------------------------------------
-  // Test Step F: Backward drag to Waiting, then skip drag from Waiting -> Ready (skipping Preparing)
+  // Step F: Backward drag to Waiting, then skip drag Waiting -> Ready (skipping Preparing)
   // ---------------------------------------------------------------------
   await dragCard(cardIn(preparingCol), waitingCol, 'Preparing -> Waiting (backward)');
   await expect(cardIn(waitingCol)).toBeVisible();
@@ -185,19 +154,9 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   const confirmReadyBtn = page.getByRole('button', { name: 'Mark as Ready' });
   await expect(confirmReadyBtn).toBeVisible();
 
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '06-kds-kanban-skip-to-ready-modal.png'),
-    fullPage: true,
-  });
-
   await confirmReadyBtn.click();
   await expect(dialogTitle).toHaveCount(0);
   await expect(cardIn(readyCol)).toBeVisible();
   await expect(cardIn(readyCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(waitingCol)).toHaveCount(0);
-
-  await page.screenshot({
-    path: path.join(EVIDENCE_DIR, '07-kds-kanban-ready-after-confirm.png'),
-    fullPage: true,
-  });
 });

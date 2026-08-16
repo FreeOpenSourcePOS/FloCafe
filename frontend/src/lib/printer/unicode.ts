@@ -34,6 +34,7 @@ export const CURRENCY_ASCII_MAP: Record<string, string> = {
   '₵': 'Gh',
   '₡': 'Cr',
   '₲': 'Pg',
+  'Kč': 'Kc', // Czech Koruna
 };
 
 export function normalizeCurrencyToAscii(text: string): string {
@@ -46,8 +47,10 @@ export function normalizeCurrencyToAscii(text: string): string {
 
 /**
  * Pads a resolved currency symbol to a fixed 2-character slot so amount
- * columns line up whether the symbol is 1 or 2 characters wide.
+ * columns line up whether the symbol is 1 or 2 characters wide, and keeps
+ * the Czech receipt currency ASCII even when Unicode printing is enabled.
  */
 export function padCurrencyPrefix(prefix: string): string {
-  return prefix.length >= 2 ? prefix : ' '.repeat(2 - prefix.length) + prefix;
+  const normalized = prefix.replaceAll('Kč', 'Kc');
+  return normalized.length >= 2 ? normalized : ' '.repeat(2 - normalized.length) + normalized;
 }

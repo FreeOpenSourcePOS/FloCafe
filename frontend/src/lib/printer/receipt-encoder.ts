@@ -95,45 +95,121 @@ function maskPhoneOnReceipt(phone: string): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Column widths for 4-column item tables.
+ * Minimum column widths for 4-column item tables.
  * Layout: [name, qty, rate, amount]
  */
-function col4Widths(cols: number): [number, number, number, number] {
+type Col4Widths = [number, number, number, number];
+
+function col4Widths(cols: number): Col4Widths {
   if (cols >= 48) return [20, 4, 11, 13];
-  // 32 cols: 14 + 3 + 7 + 8 = 32
   return [14, 3, 7, 8];
 }
 
-function col4Header(cols: number): string {
-  const [w0, w1, w2, w3] = col4Widths(cols);
-  const item = ' Item'.padEnd(w0);
+function resolveCol4Widths(
+  cols: number,
+  items: Array<{ unit_price?: number | string; total?: number | string }>,
+  currency: string,
+  locale: string,
+  trimDecimals: boolean,
+): Col4Widths {
+  const [, qtyWidth, minimumRateWidth, minimumAmountWidth] = col4Widths(cols);
+  let rateWidth = minimumRateWidth;
+  let amountWidth = minimumAmountWidth;
+
+  for (const item of items) {
+    rateWidth = Math.max(rateWidth, formatAmount(item.unit_price ?? 0, currency, locale, trimDecimals).length);
+    amountWidth = Math.max(amountWidth, formatAmount(item.total ?? 0, currency, locale, trimDecimals).length);
+  }
+
+  const valueBudget = cols - qtyWidth - 4;
+  if (rateWidth + amountWidth > valueBudget) {
+    amountWidth = Math.min(amountWidth, valueBudget - minimumRateWidth);
+    rateWidth = valueBudget - amountWidth;
+  }
+
+  const nameWidth = cols - qtyWidth - rateWidth - amountWidth;
+  return [nameWidth, qtyWidth, rateWidth, amountWidth];
+}
+
+function col4Header(widths: Col4Widths): string {
+  const [w0, w1, w2, w3] = widths;
+  const item = 'Item'.padEnd(w0);
   const qty = 'Qty'.padStart(w1);
   const rate = 'Rate'.padStart(w2);
   const amt = 'Amt'.padStart(w3);
   return item + qty + rate + amt;
 }
 
-function col4Row(
+function col4Rows(
   name: string,
   qty: number,
   rate: number | string,
   amount: number | string,
   currency: string,
-  cols: number,
+  widths: Col4Widths,
   locale: string,
   trimDecimals: boolean = false
-): string {
-  const [w0, w1, w2, w3] = col4Widths(cols);
-  const nameStr = truncate(name, w0).padEnd(w0);
-  const qtyStr = String(qty).padStart(w1);
-  const rateStr = formatAmount(rate, currency, locale, trimDecimals).padStart(w2);
-  const amtStr = formatAmount(amount, currency, locale, trimDecimals).padStart(w3);
-  return nameStr + qtyStr + rateStr + amtStr;
+): string[] {
+  const [nameWidth, qtyWidth, rateWidth, amountWidth] = widths;
+  const rateStr = formatAmount(rate, currency, locale, trimDecimals);
+  const amtStr = formatAmount(amount, currency, locale, trimDecimals);
+  const qtyStr = String(qty);
+
+  if (qtyStr.length > qtyWidth || rateStr.length > rateWidth || amtStr.length > amountWidth) {
+    const itemWidth = Math.max(1, widths[0] + widths[1] - 1, colsForCol4(widths) - qtyStr.length - 1);
+    const itemLine = truncate(name, itemWidth).padEnd(itemWidth) + ' ' + qtyStr;
+    return [
+      itemLine,
+      ...fitLabeledValue('Rate', rateStr, colsForCol4(widths)),
+      ...fitLabeledValue('Amount', amtStr, colsForCol4(widths)),
+    ];
+  }
+
+  const nameColumn = truncate(name, nameWidth).padEnd(nameWidth);
+  const qtyColumn = qtyStr.padStart(qtyWidth);
+  return [nameColumn + qtyColumn + rateStr.padStart(rateWidth) + amtStr.padStart(amountWidth)];
+}
+
+function colsForCol4(widths: Col4Widths): number {
+  return widths.reduce((total, width) => total + width, 0);
+}
+
+function fitLabeledValue(label: string, value: string, cols: number): string[] {
+  const prefix = `${label}: `;
+  const valueWidth = Math.max(1, cols - prefix.length);
+  const lines: string[] = [];
+  for (let offset = 0; offset < value.length; offset += valueWidth) {
+    const chunk = value.slice(offset, offset + valueWidth);
+    lines.push(offset === 0 ? prefix + chunk : chunk);
+  }
+  return lines.length > 0 ? lines : [prefix];
 }
 
 // ---------------------------------------------------------------------------
 // Classic template
 // ---------------------------------------------------------------------------
+
+function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean): string {
+  // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS
+  // printers cannot shape that token, so normalize this known currency even
+  // when the caller requests Unicode. Preserve the existing useUnicode
+  // behavior for every other currency value.
+  const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
+  return padCurrencyPrefix(
+    useUnicode ? normalizedCurrency : normalizeCurrencyToAscii(normalizedCurrency),
+  );
+}
+
+function getSafeLatnLocale(locale: string | undefined): string {
+  if (!locale) return 'en-US-u-nu-latn';
+  if (/-nu-[a-z0-9]+/i.test(locale)) {
+    return locale.replace(/-nu-[a-z0-9]+/i, '-nu-latn');
+  }
+  if (locale.includes('-u-')) {
+    return `${locale}-nu-latn`;
+  }
+  return `${locale}-u-nu-latn`;
+}
 
 export function buildClassicReceiptBytes(
   bill: Bill,
@@ -159,11 +235,12 @@ export function buildClassicReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
+  const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
   const taxComponents = resolveTaxComponents(bill);
+  const col4Layout = resolveCol4Widths(cols, order?.items ?? [], currency, locale, trimDecimals);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -198,17 +275,15 @@ export function buildClassicReceiptBytes(
     .rule({ style: 'single' });
 
   // 4-column header
-  enc.text(col4Header(cols)).newline();
+  enc.text(col4Header(col4Layout)).newline();
   enc.rule({ style: 'single' });
 
   // Line items
   const items = order?.items ?? [];
   for (const item of items) {
-    safePrinterText(
-      enc,
-      col4Row(item.product_name, item.quantity, item.unit_price, item.total, currency, cols, locale, trimDecimals),
-      warnings
-    ).newline();
+    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
+      safePrinterText(enc, row, warnings).newline();
+    }
 
     // Addons
     if (item.addons && item.addons.length > 0) {
@@ -328,7 +403,7 @@ export function buildCompactReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
+  const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
@@ -458,11 +533,12 @@ export function buildDetailedReceiptBytes(
   } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
+  const currency = resolveEncoderCurrency(rawCurrency, useUnicode);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
   const taxComponents = resolveTaxComponents(bill);
+  const col4Layout = resolveCol4Widths(cols, order?.items ?? [], currency, locale, trimDecimals);
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
@@ -519,16 +595,14 @@ export function buildDetailedReceiptBytes(
   enc.rule({ style: 'single' });
 
   // 4-column items header
-  enc.text(col4Header(cols)).newline();
+  enc.text(col4Header(col4Layout)).newline();
 
   // Line items
   const items = order?.items ?? [];
   for (const item of items) {
-    safePrinterText(
-      enc,
-      col4Row(item.product_name, item.quantity, item.unit_price, item.total, currency, cols, locale, trimDecimals),
-      warnings
-    ).newline();
+    for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
+      safePrinterText(enc, row, warnings).newline();
+    }
 
     if (item.addons && item.addons.length > 0) {
       for (const addon of item.addons) {
@@ -627,10 +701,12 @@ function formatAmount(value: number | string, currency: string, locale: string, 
   const amount = Number(value);
   const numeric = Number.isFinite(amount) ? amount : 0;
   const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
-  return `${currency}${numeric.toLocaleString(locale, {
+  const safeLocale = getSafeLatnLocale(locale);
+  const formattedNum = numeric.toLocaleString(safeLocale, {
     minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
     maximumFractionDigits: 2,
-  })}`;
+  }).replace(/[\u00A0\u202F]/g, ' ');
+  return `${currency}${formattedNum}`;
 }
 
 function capitalize(str: string): string {

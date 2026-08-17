@@ -19,6 +19,7 @@ import {
   classifyPrintFailure,
 } from '../main/printers/thermal';
 import { matchSupportedPrinterProfile } from '../main/printers/profiles';
+import { getCountryByCode, getCurrencySymbol } from '../main/countries';
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -36,6 +37,47 @@ function assert(label: string, cond: boolean, detail?: string) {
     console.log(`   ✗ ${label}${detail ? ` — ${detail}` : ''}`);
     failed++;
     failures.push(label + (detail ? ` — ${detail}` : ''));
+  }
+}
+
+/**
+ * Load frontend TypeScript modules without changing their production aliases.
+ * ts-node transpiles these files, but Node does not apply tsconfig `paths` at
+ * runtime, so the hook is scoped to the require operation and then restored.
+ */
+function loadFrontendPrinterModules(): {
+  receiptEncoder: typeof import('../frontend/src/lib/printer/receipt-encoder');
+  taxBillEncoder: typeof import('../frontend/src/lib/printer/tax-bill-encoder');
+  unicode: typeof import('../frontend/src/lib/printer/unicode');
+  warnings: typeof import('../frontend/src/lib/printer/warnings');
+  webPrint: typeof import('../frontend/src/lib/printer/web-print');
+} {
+  const path = require('path') as typeof import('path');
+  const moduleApi = require('module') as {
+    _resolveFilename: (...args: any[]) => string;
+  };
+  const originalResolveFilename = moduleApi._resolveFilename;
+
+  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+    let resolvedRequest = request;
+    if (request === '@countries') {
+      resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
+    } else if (request.startsWith('@/')) {
+      resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    }
+    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  try {
+    return {
+      receiptEncoder: require('../frontend/src/lib/printer/receipt-encoder'),
+      taxBillEncoder: require('../frontend/src/lib/printer/tax-bill-encoder'),
+      unicode: require('../frontend/src/lib/printer/unicode'),
+      warnings: require('../frontend/src/lib/printer/warnings'),
+      webPrint: require('../frontend/src/lib/printer/web-print'),
+    };
+  } finally {
+    moduleApi._resolveFilename = originalResolveFilename;
   }
 }
 
@@ -75,6 +117,48 @@ function visiblePreview(buf: Buffer, cols: number): string {
   if (line.length) out.push(Buffer.from(line).toString('utf8'));
   const divider = '─'.repeat(Math.max(cols, 20));
   return divider + '\n' + out.join('\n') + '\n' + divider;
+}
+
+function visibleRawPrinterLines(data: Uint8Array): string[] {
+  const bytes = Buffer.from(data);
+  const lines: string[] = [];
+  let line = '';
+
+  const flush = () => {
+    lines.push(line);
+    line = '';
+  };
+
+  for (let i = 0; i < bytes.length; i++) {
+    const byte = bytes[i];
+    if (byte === LF) {
+      flush();
+      continue;
+    }
+    if (byte === 0x0d) continue;
+
+    if (byte === ESC) {
+      const command = bytes[++i];
+      if (command === 0x70) i += 3;
+      else if (command !== 0x40) i += 1;
+      continue;
+    }
+    if (byte === GS) {
+      const command = bytes[++i];
+      if (command === 0x4c || command === 0x57) i += 2;
+      else if (command === 0x56 && (bytes[i + 1] === 0x41 || bytes[i + 1] === 0x42)) i += 2;
+      else i += 1;
+      continue;
+    }
+    if (byte === 0x1c) {
+      i += 1;
+      continue;
+    }
+    if (byte >= 0x20) line += String.fromCharCode(byte);
+  }
+
+  if (line) flush();
+  return lines;
 }
 
 const fixtureOrder = {
@@ -494,7 +578,252 @@ console.log('\n✅ Test 10: Print failure telemetry classification');
   assert('does not expose unknown detail as a new telemetry class', classifyPrintFailure('some vendor-specific failure') === 'unknown');
 }
 
-console.log('\n✅ Test 11: Detect connected printers (hardware discovery)');
+console.log('\n✅ Test 11: IR country thermal receipt financial-line preservation & currency safety');
+{
+  const realIrCurrencySymbol = getCurrencySymbol('IRR', getCountryByCode('IR')?.locale ?? 'fa-IR');
+  assert('real production IR setup produces ریال currency symbol', realIrCurrencySymbol === 'ریال');
+
+  const irBusiness = {
+    name: 'Flo Cafe Tehran',
+    country: 'IR',
+    currency: 'IRR',
+    currency_symbol: realIrCurrencySymbol,
+    address: 'Tehran',
+    phone: '+989123456789',
+    taxRegistrationNumber: '1234567890',
+  };
+
+  const irOrder = {
+    order_number: 'ORD-IR-001',
+    created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+    items: [
+      { product_name: 'Espresso', quantity: 2, unit_price: 50000, total: 100000 },
+    ],
+  };
+
+  const irBill = {
+    bill_number: 'INV-IR-001',
+    subtotal: 100000,
+    discount_amount: 10000,
+    tax_amount: 9000,
+    total: 99000,
+    payment_details: [{ method: 'Cash', amount: 99000 }],
+  };
+
+  // 1. Backend thermal formatter tests with real production currency symbol ('ریال')
+  for (const template of ['compact', 'classic'] as const) { // backend 'detailed' template no longer exists on main
+    for (const useUnicode of [false, true]) {
+      const warnings: Array<{ field: string; text: string; message: string }> = [];
+      const buf = formatReceipt(irOrder, irBill, irBusiness, template, 48, useUnicode, false, 'full', warnings);
+      const text = buf.toString('utf8');
+
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves item line`, text.includes('Espresso'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves item amount`, text.includes('IRR100,000.00'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Subtotal line`, text.includes('Subtotal'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Subtotal amount`, text.includes('IRR100,000.00'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Discount line`, text.includes('Discount'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Discount amount`, text.includes('IRR10,000.00'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Tax line`, text.includes('Tax'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Tax amount`, text.includes('IRR9,000.00'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves TOTAL line`, text.includes('TOTAL') || text.includes('GRAND TOTAL'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves TOTAL amount`, text.includes('IRR99,000.00'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Payment line`, text.includes('Cash'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] preserves Payment amount`, text.includes('IRR99,000.00'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] leaves zero warnings for numeric lines`, warnings.length === 0);
+    }
+  }
+
+  // IRR is three ASCII characters, so also verify the narrow raw layout does
+  // not wrap or clip financial item rows.
+  for (const template of ['compact', 'classic'] as const) { // backend 'detailed' template no longer exists on main
+    for (const useUnicode of [false, true]) {
+      const narrowWarnings: Array<{ field: string; text: string; message: string }> = [];
+      const narrow = formatReceipt(irOrder, irBill, irBusiness, template, 32, useUnicode, false, 'full', narrowWarnings);
+      const visibleLines = visiblePreview(narrow, 32).split('\n').slice(1, -1);
+      const overlongLines = visibleLines.filter((line) => line.length > 32);
+      assert(`[backend IR ${template} unicode=${useUnicode}] keeps 32-column lines within width`, overlongLines.length === 0, overlongLines.join(' | '));
+      assert(`[backend IR ${template} unicode=${useUnicode}] keeps narrow IRR amount`, narrow.toString('utf8').includes('IRR100,000.00'));
+      assert(`[backend IR ${template} unicode=${useUnicode}] has no narrow-layout warnings`, narrowWarnings.length === 0);
+    }
+  }
+
+  const wideIrOrder = {
+    ...irOrder,
+    items: [{ product_name: 'Espresso', quantity: 1, unit_price: 500000000, total: 1000000000 }],
+  };
+  const wideIrBill = {
+    ...irBill,
+    subtotal: 1000000000,
+    discount_amount: 0,
+    tax_amount: 0,
+    total: 1000000000,
+    payment_details: [{ method: 'Cash', amount: 1000000000 }],
+  };
+  for (const template of ['compact', 'classic'] as const) { // backend 'detailed' template no longer exists on main
+    const wide = formatReceipt(wideIrOrder, wideIrBill, irBusiness, template, 32, false, false, 'full', []);
+    const wideLines = visiblePreview(wide, 32).split('\n').slice(1, -1);
+    const overlongWideLines = wideLines.filter((line) => line.length > 32);
+    assert(`[backend IR ${template}] keeps very wide IRR rows within 32 columns`, overlongWideLines.length === 0, overlongWideLines.join(' | '));
+    assert(`[backend IR ${template}] preserves very wide IRR amount`, wide.toString('utf8').includes('IRR1,000,000,000.00'));
+  }
+
+  const extremeIrOrder = {
+    ...irOrder,
+    items: [{ product_name: 'Espresso', quantity: 1, unit_price: 50000000000000, total: 100000000000000 }],
+  };
+  const extremeIrBill = {
+    ...irBill,
+    subtotal: 100000000000000,
+    discount_amount: 0,
+    tax_amount: 0,
+    total: 100000000000000,
+    payment_details: [{ method: 'Cash', amount: 100000000000000 }],
+  };
+  for (const template of ['compact', 'classic'] as const) { // backend 'detailed' template no longer exists on main
+    const extreme = formatReceipt(extremeIrOrder, extremeIrBill, irBusiness, template, 32, false, false, 'full', []);
+    const extremeLines = visiblePreview(extreme, 32).split('\n').slice(1, -1);
+    assert(`[backend IR ${template}] keeps extreme IRR rows within 32 columns`, extremeLines.every((line) => line.length <= 32));
+    assert(`[backend IR ${template}] preserves extreme IRR amount`, extreme.toString('utf8').includes('IRR100,000,000,000,000.00'));
+  }
+
+  // Unsupported free-form Persian text warning contract test (backend)
+  const persianTextBusiness = { ...irBusiness, name: 'کافه فلو تهران' };
+  const backendWarnings: Array<{ field: string; text: string; message: string }> = [];
+  formatReceipt(irOrder, irBill, persianTextBusiness, 'compact', 48, false, false, 'full', backendWarnings);
+  assert('backend free-form Persian text emits unsupported character warning', backendWarnings.some((w) => w.text.includes('کافه')));
+
+  // 2. Frontend raw ESC/POS encoder tests
+  const frontendModules = loadFrontendPrinterModules();
+  const {
+    buildClassicReceiptBytes,
+    buildCompactReceiptBytes,
+    buildDetailedReceiptBytes,
+  } = frontendModules.receiptEncoder;
+  const { buildTaxBillBytes } = frontendModules.taxBillEncoder;
+  const { normalizeCurrencyToAscii } = frontendModules.unicode;
+  const { hasUnsupportedPrinterChars } = frontendModules.warnings;
+  const { generateBillHtml } = frontendModules.webPrint;
+
+  const frontendTenant = {
+    business_name: 'Flo Cafe Tehran',
+    country: 'IR',
+    currency: 'IRR',
+  };
+
+  const frontendBill = {
+    id: 'b1',
+    bill_number: 'INV-IR-001',
+    order: irOrder,
+    subtotal: 100000,
+    discount_amount: 10000,
+    tax_amount: 9000,
+    total: 99000,
+    payment_details: [{ method: 'Cash', amount: 99000 }],
+  };
+
+  const encoders = [
+    { name: 'compact', fn: (b: any, t: any, o: any, w: any) => buildCompactReceiptBytes(b, t, o, w) },
+    { name: 'classic', fn: (b: any, t: any, o: any, w: any) => buildClassicReceiptBytes(b, t, o, w) },
+    { name: 'detailed', fn: (b: any, t: any, o: any, w: any) => buildDetailedReceiptBytes(b, t, o, w) },
+    { name: 'tax-bill', fn: (b: any, t: any, o: any, w: any) => buildTaxBillBytes(b, t, o, w) },
+  ];
+
+  // These are the existing financial-line contracts of the four frontend
+  // templates. Compact intentionally omits Subtotal, while detailed uses a
+  // subtotal label but does not print a separate Discount line.
+  const expectedLabels: Record<string, string[]> = {
+    compact: ['Discount', 'Tax', 'TOTAL', 'Cash'],
+    classic: ['Subtotal', 'Discount', 'Tax', 'TOTAL', 'Cash'],
+    detailed: ['Subtotal (excl. tax)', 'Tax', 'TOTAL', 'Cash'],
+    'tax-bill': ['Subtotal', 'Discount', 'Total Tax', 'TOTAL', 'Cash'],
+  };
+  const expectedAmounts: Record<string, string[]> = {
+    compact: ['IRR100,000.00', 'IRR10,000.00', 'IRR9,000.00', 'IRR99,000.00'],
+    classic: ['IRR100,000.00', 'IRR10,000.00', 'IRR9,000.00', 'IRR99,000.00'],
+    detailed: ['IRR100,000.00', 'IRR9,000.00', 'IRR99,000.00'],
+    'tax-bill': ['IRR100,000.00', 'IRR10,000.00', 'IRR9,000.00', 'IRR99,000.00'],
+  };
+
+  for (const enc of encoders) {
+    for (const useUnicode of [false, true]) {
+      const warnings: Array<{ field: string; text: string; message: string }> = [];
+      const bytes = enc.fn(frontendBill, frontendTenant, { useUnicode }, warnings);
+      const text = Buffer.from(bytes).toString('utf8');
+
+      assert(`[frontend ${enc.name} unicode=${useUnicode}] preserves item line`, text.includes('Espresso'));
+      assert(`[frontend ${enc.name} unicode=${useUnicode}] preserves item amount`, text.includes('IRR100,000.00'));
+      for (const label of expectedLabels[enc.name]) {
+        assert(`[frontend ${enc.name} unicode=${useUnicode}] preserves ${label} line`, text.includes(label));
+      }
+      for (const amount of expectedAmounts[enc.name]) {
+        assert(`[frontend ${enc.name} unicode=${useUnicode}] preserves ${amount}`, text.includes(amount));
+      }
+      assert(`[frontend ${enc.name} unicode=${useUnicode}] leaves zero warnings for numeric lines`, warnings.length === 0);
+    }
+  }
+
+  // The frontend classic template also needs to keep the three-character IRR
+  // prefix inside the 58mm (42-column) raw layout.
+  for (const useUnicode of [false, true]) {
+    const narrowWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const narrow = buildClassicReceiptBytes(
+      frontendBill,
+      frontendTenant,
+      { paperWidth: 58, useUnicode },
+      narrowWarnings,
+    );
+    const visibleLines = visibleRawPrinterLines(narrow);
+    const financialLines = visibleLines.filter((line) => line.includes('IRR') || line.includes('Espresso'));
+    const overlongLines = financialLines.filter((line) => line.length > 42);
+    const headerLine = visibleLines.find((line) => line.includes('Item') && line.includes('Amt'));
+    const itemLine = visibleLines.find((line) => line.includes('Espresso'));
+    assert(`[frontend classic unicode=${useUnicode}] keeps 58mm financial lines within width`, overlongLines.length === 0, overlongLines.join(' | '));
+    assert(`[frontend classic unicode=${useUnicode}] aligns 58mm header and item widths`, !!headerLine && !!itemLine && headerLine.length === itemLine.length, `${headerLine?.length ?? 0}/${itemLine?.length ?? 0}`);
+    assert(`[frontend classic unicode=${useUnicode}] keeps narrow IRR amount`, Buffer.from(narrow).toString('utf8').includes('IRR100,000.00'));
+    assert(`[frontend classic unicode=${useUnicode}] has no narrow-layout warnings`, narrowWarnings.length === 0);
+  }
+
+  const wideFrontendBill = {
+    ...frontendBill,
+    order: {
+      ...frontendBill.order,
+      items: [{ product_name: 'Espresso', quantity: 1, unit_price: 500000000, total: 1000000000 }],
+    },
+    subtotal: 1000000000,
+    discount_amount: 0,
+    tax_amount: 0,
+    total: 1000000000,
+    payment_details: [{ method: 'Cash', amount: 1000000000 }],
+  };
+  for (const build of [buildClassicReceiptBytes, buildDetailedReceiptBytes]) {
+    const wide = build(wideFrontendBill as any, frontendTenant, { paperWidth: 58 }, []);
+    const wideLines = visibleRawPrinterLines(wide).filter((line) => line.includes('IRR') || line.includes('Espresso'));
+    assert('frontend wide IRR rows stay within 42 columns', wideLines.every((line) => line.length <= 42));
+    assert('frontend wide IRR amount remains intact', Buffer.from(wide).toString('utf8').includes('IRR1,000,000,000.00'));
+  }
+
+  const browserHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
+  assert('browser printing preserves the Persian Rial symbol', browserHtml.includes('ریال') && !browserHtml.includes('IRR'));
+  assert('shared currency normalization leaves the Persian Rial symbol unchanged', normalizeCurrencyToAscii('ریال') === 'ریال');
+  const browserTaxHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
+  assert('browser tax-bill printing preserves Persian Rial output', browserTaxHtml.includes('ریال') && !browserTaxHtml.includes('IRR'));
+  assert('browser tax-bill printing preserves Persian numeric output', /[۰-۹]/.test(browserTaxHtml));
+
+  // Unsupported free-form Persian text warning contract test (frontend)
+  const persianTenant = { ...frontendTenant, business_name: 'کافه فلو تهران' };
+  const frontendWarnings: any[] = [];
+  buildCompactReceiptBytes(frontendBill as any, persianTenant, { useUnicode: false }, frontendWarnings);
+  assert('frontend free-form Persian text emits unsupported character warning', frontendWarnings.some((w: any) => w.text.includes('کافه')));
+
+  // 3. Currency normalization and unsupported character guard unit tests
+  assert('hasUnsupportedPrinterChars("ریال") remains true before currency normalization', hasUnsupportedPrinterChars('ریال') === true);
+  assert('hasUnsupportedPrinterChars("﷼") remains true', hasUnsupportedPrinterChars('﷼') === true);
+  assert('hasUnsupportedPrinterChars("یار") remains true', hasUnsupportedPrinterChars('یار') === true);
+  assert('hasUnsupportedPrinterChars("کافه") remains true', hasUnsupportedPrinterChars('کافه') === true);
+  assert('hasUnsupportedPrinterChars("IRR100,000.00") is false', hasUnsupportedPrinterChars('IRR100,000.00') === false);
+}
+
+console.log('\n✅ Test 12: Detect connected printers (hardware discovery)');
 (async () => {
   try {
     const cancelledDetection = new AbortController();

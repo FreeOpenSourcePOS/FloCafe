@@ -40,6 +40,8 @@ export interface TaxBillOptions {
   stateCode?: string;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
   useUnicode?: boolean;
+  /** Use raw ESC/POS-safe currency and Latin-digit formatting; false preserves locale formatting. Default: true. */
+  rawEscPos?: boolean;
   /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
   trimDecimals?: boolean;
 }
@@ -70,6 +72,31 @@ function maskPhoneOnReceipt(phone: string): string {
 /**
  * Build a detailed tax bill byte array from a Bill object.
  */
+function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean, rawEscPos: boolean): string {
+  if (!rawEscPos) {
+    return padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
+  }
+  // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS
+  // printers cannot shape that token, so normalize this known currency even
+  // when the caller requests Unicode. Preserve the existing useUnicode
+  // behavior for every other currency value.
+  const normalizedCurrency = rawCurrency === 'ریال' ? 'IRR' : rawCurrency;
+  return padCurrencyPrefix(
+    useUnicode ? normalizedCurrency : normalizeCurrencyToAscii(normalizedCurrency),
+  );
+}
+
+function getSafeLatnLocale(locale: string | undefined): string {
+  if (!locale) return 'en-US-u-nu-latn';
+  if (/-nu-[a-z0-9]+/i.test(locale)) {
+    return locale.replace(/-nu-[a-z0-9]+/i, '-nu-latn');
+  }
+  if (locale.includes('-u-')) {
+    return `${locale}-nu-latn`;
+  }
+  return `${locale}-u-nu-latn`;
+}
+
 export function buildTaxBillBytes(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
@@ -89,11 +116,13 @@ export function buildTaxBillBytes(
     showTableNumber = true,
     useUnicode = false,
     trimDecimals = false,
+    rawEscPos = true,
   } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = padCurrencyPrefix(useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency));
+  const currency = resolveEncoderCurrency(rawCurrency, useUnicode, rawEscPos);
   const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const amountLocale = rawEscPos ? getSafeLatnLocale(locale) : locale;
   const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
   const order = bill.order;
   const taxComponents = resolveTaxComponents(bill);
@@ -148,7 +177,7 @@ export function buildTaxBillBytes(
   for (const item of items) {
     const line = `${item.product_name}`;
 
-    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, locale, trimDecimals), cols), warnings).newline();
+    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos), cols), warnings).newline();
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
@@ -162,7 +191,7 @@ export function buildTaxBillBytes(
         const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
         const addonLine = `   + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
         const addonPrice = addon.price && Number(addon.price) > 0
-          ? formatAmount(Number(addon.price) * qty * item.quantity, currency, locale, trimDecimals)
+          ? formatAmount(Number(addon.price) * qty * item.quantity, currency, amountLocale, trimDecimals, rawEscPos)
           : '';
         safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings).newline();
       }
@@ -176,7 +205,7 @@ export function buildTaxBillBytes(
     enc.text('Tax Details:').newline();
     for (const component of taxComponents) {
       enc.text(
-        padRow(formatTaxComponentLabel(component), formatAmount(component.amount, currency, locale, trimDecimals), cols),
+        padRow(formatTaxComponentLabel(component), formatAmount(component.amount, currency, amountLocale, trimDecimals, rawEscPos), cols),
       ).newline();
     }
   }
@@ -185,23 +214,23 @@ export function buildTaxBillBytes(
   enc.rule({ style: 'single' });
 
   const totals: [string, string][] = [
-    ['Subtotal', formatAmount(bill.subtotal, currency, locale, trimDecimals)],
+    ['Subtotal', formatAmount(bill.subtotal, currency, amountLocale, trimDecimals, rawEscPos)],
   ];
 
   if (Number(bill.discount_amount) > 0) {
-    totals.push(['Discount', `-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}`]);
+    totals.push(['Discount', `-${formatAmount(bill.discount_amount, currency, amountLocale, trimDecimals, rawEscPos)}`]);
   }
 
   if (Number(bill.tax_amount) > 0) {
-    totals.push(['Total Tax', formatAmount(bill.tax_amount, currency, locale, trimDecimals)]);
+    totals.push(['Total Tax', formatAmount(bill.tax_amount, currency, amountLocale, trimDecimals, rawEscPos)]);
   }
 
   if (Number(bill.service_charge) > 0) {
-    totals.push(['Service Chg', formatAmount(bill.service_charge, currency, locale, trimDecimals)]);
+    totals.push(['Service Chg', formatAmount(bill.service_charge, currency, amountLocale, trimDecimals, rawEscPos)]);
   }
 
   if (Number(bill.delivery_charge) > 0) {
-    totals.push(['Delivery', formatAmount(bill.delivery_charge, currency, locale, trimDecimals)]);
+    totals.push(['Delivery', formatAmount(bill.delivery_charge, currency, amountLocale, trimDecimals, rawEscPos)]);
   }
 
   for (const [label, value] of totals) {
@@ -209,7 +238,7 @@ export function buildTaxBillBytes(
   }
 
   enc.rule({ style: 'double' });
-  enc.bold(true).width(2).text(padRow('TOTAL', formatAmount(bill.total, currency, locale, trimDecimals), cols)).width(1);
+  enc.bold(true).width(2).text(padRow('TOTAL', formatAmount(bill.total, currency, amountLocale, trimDecimals, rawEscPos), cols)).width(1);
   enc.bold(false).newline();
 
   // ── Payment Details ───────────────────────────────────────────────────────
@@ -217,7 +246,7 @@ export function buildTaxBillBytes(
     enc.newline();
     enc.text('Payments:').newline();
     for (const p of bill.payment_details) {
-      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, locale, trimDecimals), cols)).newline();
+      enc.text(padRow(capitalize(p.method), formatAmount(p.amount, currency, amountLocale, trimDecimals, rawEscPos), cols)).newline();
     }
   }
 
@@ -251,14 +280,16 @@ function truncate(str: string, max: number): string {
   return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
-function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false): string {
+function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false, rawEscPos: boolean = true): string {
   const amount = Number(value);
   const numeric = Number.isFinite(amount) ? amount : 0;
   const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
-  return `${currency}${numeric.toLocaleString(locale, {
+  const formattedNum = numeric.toLocaleString(locale, {
     minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
     maximumFractionDigits: 2,
-  })}`;
+  });
+  const normalizedNum = rawEscPos ? formattedNum.replace(/[\u00A0\u202F]/g, ' ') : formattedNum;
+  return `${currency}${normalizedNum}`;
 }
 
 function capitalize(str: string): string {

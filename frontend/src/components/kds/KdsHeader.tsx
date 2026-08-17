@@ -36,7 +36,7 @@ export function KdsHeader({
             {userName} ({userRole})
           </p>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ms-auto flex items-center gap-2">
           {connectionMode === 'websocket' ? (
             <span title={t('kds.wsConnected')}>
               <Wifi size={16} className="text-green-500" />
@@ -55,7 +55,7 @@ export function KdsHeader({
               : t('kds.connectionConnecting')}
           </span>
 
-          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 ml-2" role="tablist">
+          <div className="flex items-center bg-gray-100 rounded-lg p-0.5 ms-2" role="tablist">
             <button
               onClick={() => onChangeView('tabs')}
               aria-pressed={viewMode === 'tabs'}
@@ -82,7 +82,7 @@ export function KdsHeader({
 
           <button
             onClick={onLogout}
-            className="min-w-11 min-h-11 p-2 hover:bg-gray-100 rounded-lg text-gray-500 ml-2"
+            className="min-w-11 min-h-11 p-2 hover:bg-gray-100 rounded-lg text-gray-500 ms-2"
             title={t('nav.logout')}
           >
             <LogOut size={20} />

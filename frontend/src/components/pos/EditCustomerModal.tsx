@@ -47,13 +47,8 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
       onSaved(data.customer);
       toast.success(t('pos.customerUpdated', { defaultValue: 'Customer updated' }));
       onClose();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string; message?: string } } };
-      toast.error(
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        t('pos.customerUpdateFailed', { defaultValue: 'Failed to update customer' })
-      );
+    } catch {
+      toast.error(t('pos.customerUpdateFailed', { defaultValue: 'Failed to update customer' }));
     } finally {
       setSaving(false);
     }
@@ -88,6 +83,7 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
               onChange={(e) => setPhone(e.target.value)}
               placeholder={dialCode}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              dir="ltr"
             />
           </div>
         </div>

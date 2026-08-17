@@ -15,6 +15,7 @@ import {
 } from '@/hooks/useKdsConnection';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 
 export interface KdsTabsViewProps {
   orders: KdsOrder[];
@@ -84,7 +85,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
             >
               <div className="flex justify-between items-center mb-3 gap-2">
                 <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                  <span className="font-bold text-base shrink-0">#{order.order_number}</span>
+                  <Ltr as="span" className="font-bold text-base shrink-0">#{order.order_number}</Ltr>
                   <Badge
                     variant="outline"
                     className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
@@ -97,7 +98,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                 </div>
                 <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
                   <Clock size={12} />
-                  <ElapsedTime dateStr={order.created_at} />
+                  <Ltr><ElapsedTime dateStr={order.created_at} /></Ltr>
                 </div>
               </div>
 
@@ -119,7 +120,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                     <button
                       key={item.id}
                       onClick={() => setModalItem({ item, orderNumber: order.order_number })}
-                      className={`w-full text-left rounded-xl border-2 ${config.border} ${config.bg} px-3 py-2.5 transition-all active:scale-95 hover:brightness-95`}
+                      className={`w-full text-start rounded-xl border-2 ${config.border} ${config.bg} px-3 py-2.5 transition-all active:scale-95 hover:brightness-95`}
                     >
                       <div className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${config.color}`} />
@@ -127,10 +128,10 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                         <span className={`text-lg font-semibold flex-1 truncate ${isVoided ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                           {item.product_name}
                         </span>
-                        <ChevronRight size={14} className="text-gray-400 shrink-0" />
+                        <ChevronRight size={14} className="text-gray-400 shrink-0 rtl-flip" />
                       </div>
                       {item.addons && item.addons.length > 0 && (
-                        <div className="ml-[26px] flex flex-wrap gap-1 mt-1">
+                        <div className="ms-[26px] flex flex-wrap gap-1 mt-1">
                           {item.addons.map((addon, i) => (
                             <span
                               key={`${addon.id ?? addon.name}-${i}`}
@@ -142,7 +143,7 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                         </div>
                       )}
                       {item.special_instructions && (
-                        <p className="ml-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
+                        <p className="ms-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
                           {`"${item.special_instructions}"`}
                         </p>
                       )}

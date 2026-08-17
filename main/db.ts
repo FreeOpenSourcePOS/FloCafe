@@ -3926,6 +3926,28 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 71,
+    name: 'repair_durable_token_revocations',
+    up: () => {
+      // v55 ("durable_token_revocations") and the v55 GSTIN-rename migration
+      // that shipped in release 2.9.0 briefly collided on the same version
+      // number during a branch merge. Any database that reached v55 while
+      // running 2.9.0 has user_version >= 55 without ever having created
+      // this table, so the real v55 body silently never ran for it. Re-run
+      // it here, idempotently, so both those databases and any that already
+      // have the table (fresh installs, unaffected upgrades) end up correct.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS revoked_tokens (
+          token_hash TEXT PRIMARY KEY,
+          expires_at INTEGER NOT NULL,
+          revoked_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires_at
+          ON revoked_tokens(expires_at);
+      `);
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

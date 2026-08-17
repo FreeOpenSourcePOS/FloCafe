@@ -28,6 +28,7 @@ import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
@@ -263,14 +264,14 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
-      const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');
+      const msg = err instanceof Error ? err.message : 'print failed';
       const code = `print.kot.${msg.toLowerCase().includes('spool') ? 'spooler_timeout' : 'failed'}`;
       setSupportError({
         code,
-        message: msg,
+        message: t('pos.kotPrintFailed'),
         payload: { event_code: code, message: msg, category: 'printer', diagnostics: { order_id: order.id, stage: 'kot_print' } },
       });
-      toast.error(`${t('pos.kotPrintFailed')}: ${msg}`);
+      toast.error(t('pos.kotPrintFailed'));
     }
   };
 
@@ -284,19 +285,15 @@ export default function POSPage() {
     if (!force && !autoPrintBill) return;
 
     try {
-      const printWarnings = await printBill(bill, {
-        business_name: currentTenant.business_name,
-        currency,
-        country: currentTenant.country,
-      });
+      const printWarnings = await printBill(bill, currentTenant);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       // Non-fatal: print failure should not block the checkout flow.
-      const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');
+      const msg = err instanceof Error ? err.message : 'print failed';
       const code = 'print.receipt.failed';
       setSupportError({
         code,
-        message: msg,
+        message: t('pos.receiptPrintFailed'),
         payload: { event_code: code, message: msg, category: 'printer', diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
       });
       toast.error(t('pos.receiptPrintFailed'));
@@ -343,9 +340,8 @@ export default function POSPage() {
       // recovery was in flight. A reload starts empty; any current UI is newer.
       toast.success(t('pos.itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }));
       refreshTables();
-    }).catch((err: unknown) => {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('pos.addItemsFailed'));
+    }).catch(() => {
+      toast.error(t('pos.addItemsFailed'));
     });
   // The recovery runs once per authenticated renderer and intentionally uses
   // the persisted attempt rather than the transient cart state.
@@ -531,9 +527,8 @@ export default function POSPage() {
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string; error?: string } } };
-      toast.error(error.response?.data?.message || error.response?.data?.error || t('pos.placeOrderFailed'));
+    } catch {
+      toast.error(t('pos.placeOrderFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -709,9 +704,10 @@ export default function POSPage() {
         : 0;
 
       if (paidBill.payment_status !== 'paid') {
-        throw new Error(t('pos.paymentIncomplete', {
+        toast.error(t('pos.paymentIncomplete', {
           amount: currencyFmt(Number(paidBill.balance) || 0),
         }));
+        return;
       }
 
       const successMsg = pointsEarned > 0
@@ -735,9 +731,8 @@ export default function POSPage() {
       await printKotIfEnabled(orderData.order);
 
       await printBillForTenant(paidBill, isPrepaidCheckout);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string; error?: string } }; message?: string };
-      toast.error(error.response?.data?.message || error.response?.data?.error || error.message || t('pos.processOrderFailed'));
+    } catch {
+      toast.error(t('pos.processOrderFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -807,9 +802,8 @@ export default function POSPage() {
       setShowTablePicker(false);
       toast.success(t('pos.orderHeld', { tableName }));
       await refreshTables();
-    } catch (err: unknown) {
-      const e = err as Error;
-      toast.error(e.message || t('pos.holdOrderFailed'));
+    } catch {
+      toast.error(t('pos.holdOrderFailed'));
     }
   };
 
@@ -864,9 +858,8 @@ export default function POSPage() {
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('pos.addItemsFailed'));
+    } catch {
+      toast.error(t('pos.addItemsFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -902,13 +895,13 @@ export default function POSPage() {
   return (
     <>
       {supportError && (
-        <div className="fixed bottom-4 left-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-white p-4 shadow-xl">
+        <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-white p-4 shadow-xl">
           {sentTicketId ? (
             <>
               <p className="font-semibold text-red-800">{t('support.requestQueued')}</p>
               {delivery.status === 'delivered' && delivery.supportCode ? (
                 <>
-                  <p className="mt-1 text-sm font-semibold text-gray-800">{t('support.supportCode')}: <span className="font-mono">{delivery.supportCode}</span></p>
+                  <p className="mt-1 text-sm font-semibold text-gray-800">{t('support.supportCode')}: <Ltr as="span" className="font-mono">{delivery.supportCode}</Ltr></p>
                   <p className="mt-0.5 text-xs text-gray-500">{t('support.supportCodeHint')}</p>
                 </>
               ) : (
@@ -917,21 +910,21 @@ export default function POSPage() {
                 </p>
               )}
               <div className="mt-3">
-                <button className="rounded border px-3 py-2 text-sm" onClick={() => { setSupportError(null); setSentTicketId(null); }}>Dismiss</button>
+                <button className="rounded border px-3 py-2 text-sm" onClick={() => { setSupportError(null); setSentTicketId(null); }}>{t('support.dismiss')}</button>
               </div>
             </>
           ) : (
             <>
-              <p className="font-semibold text-red-800">Printing failed</p>
+              <p className="font-semibold text-red-800">{t('pos.printingFailed')}</p>
               <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
               <details className="mt-2 text-xs text-gray-500">
                 <summary className="cursor-pointer">{t('support.showPayload')}</summary>
-                <pre className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(
+                <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(
                   diagnosticsPreview
                     ? { ...supportError.payload, diagnostics: { ...(supportError.payload.diagnostics as Record<string, unknown> | undefined), ...diagnosticsPreview } }
                     : supportError.payload,
                   null, 2,
-                )}</pre>
+                )}</Ltr>
               </details>
               <div className="mt-3 flex gap-2">
                 <button
@@ -939,20 +932,20 @@ export default function POSPage() {
                   onClick={async () => {
                     const clientTicketId = crypto.randomUUID();
                     try {
-                      const response = await api.post('/support-ticket', {
+                      await api.post('/support-ticket', {
                         ...supportError.payload,
                         subject: 'FloCafe printing problem',
                         correlation_id: crypto.randomUUID(),
                         client_ticket_id: clientTicketId,
                       });
-                      toast.success(response.data.message || 'Queued — will send when online');
+                      toast.success(t('support.queued'));
                       setSentTicketId(clientTicketId);
                     } catch {
-                      toast.error('Could not queue the support request');
+                      toast.error(t('pos.supportRequestQueueFailed'));
                     }
                   }}
-                >Get help</button>
-                <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>Dismiss</button>
+                >{t('support.getHelp')}</button>
+                <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>{t('support.dismiss')}</button>
               </div>
             </>
           )}
@@ -986,10 +979,10 @@ export default function POSPage() {
       {/* Mobile: Floating Cart Button + Bottom Sheet — outside flex container */}
       <Drawer open={mobileCartOpen} onOpenChange={setMobileCartOpen}>
         <DrawerTrigger asChild>
-          <button className="fixed bottom-5 right-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg flex items-center justify-center hover:bg-brand-hover transition-colors md:hidden">
+          <button className="fixed bottom-5 end-5 z-40 w-14 h-14 bg-brand text-white rounded-full shadow-lg flex items-center justify-center hover:bg-brand-hover transition-colors md:hidden">
             <ShoppingCart size={22} />
             {itemCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
+              <span className="absolute -top-0.5 -end-0.5 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold">
                 {itemCount}
               </span>
             )}

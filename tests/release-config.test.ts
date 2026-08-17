@@ -204,13 +204,25 @@ function run() {
     'release-windows job must verify and upload the .appx Microsoft Store package'
   );
   assert.ok(
-    winJob.includes('ProcessorArchitecture="([^"]+)"') &&
+    // Quote-agnostic: electron-builder emits some AppX Identity attributes
+    // (e.g. Publisher) with single quotes and others with double quotes —
+    // both are valid XML — so this must not lock in one quote style. The
+    // doubled '' is PowerShell's single-quoted-string escape for a literal '.
+    winJob.includes(`ProcessorArchitecture=["'']([^"'']+)["'']`) &&
     winJob.includes('@("x64", "arm64")'),
     'release-windows job must inspect AppX manifests and require both x64 and arm64 packages'
   );
   assert.ok(
-    winJob.includes('microsoft/microsoft-store-apppublisher@v1.1'),
-    'release-windows job must install the official Microsoft Store Developer CLI action'
+    winJob.includes('microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0'),
+    'release-windows job must install the official Microsoft Store Developer CLI action pinned by commit SHA'
+  );
+  assert.ok(
+    (winJob.match(/if: github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/'\)/g) || []).length >= 2,
+    'the Store CLI setup and publish steps must be gated to tag pushes so workflow_dispatch can never reach Partner Center'
+  );
+  assert.ok(
+    /msstore reconfigure[\s\S]+?if \(\$LASTEXITCODE -ne 0\)/.test(winJob),
+    'release-windows job must check msstore reconfigure exit code — a failing native CLI call does not fail a pwsh step on its own'
   );
   for (const required of [
     'AZURE_AD_TENANT_ID',
@@ -229,8 +241,10 @@ function run() {
     'release-windows job must configure msstore with Partner Center credentials'
   );
   assert.ok(
-    /msstore publish "\$\{\{ github\.workspace \}\}\\release" --appId "\$env:MICROSOFT_STORE_PRODUCT_ID"/.test(winJob),
-    'release-windows job must publish the built AppX packages to the configured Microsoft Store product'
+    /\$publishArgs = @\("\$\{\{ github\.workspace \}\}\\release", '--appId', "\$env:MICROSOFT_STORE_PRODUCT_ID"\)/.test(winJob) &&
+    /msstore publish @publishArgs/.test(winJob) &&
+    /if \(\$LASTEXITCODE -ne 0\) \{ throw "Microsoft Store publish failed/.test(winJob),
+    'release-windows job must publish the built AppX packages to the configured Microsoft Store product and check the exit code'
   );
 
   console.log('✅ Release config + workflow integrity checks passed');

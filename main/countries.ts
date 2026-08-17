@@ -6,6 +6,17 @@ export interface TaxIdFormat {
   description: string;
 }
 
+/**
+ * Which locale display preferences a country supports. The Settings UI only
+ * renders these controls when a country's profile declares them, so
+ * region-specific options never appear (or bloat) other regions' UI.
+ */
+export interface CountryLocaleOptions {
+  currencyDisplay?: ('rial' | 'toman' | 'toman_short')[];
+  digits?: ('locale' | 'latin')[];
+  calendar?: ('locale' | 'persian' | 'gregorian')[];
+}
+
 export interface Country {
   code: string;
   name: string;
@@ -20,6 +31,8 @@ export interface Country {
   // for countries we haven't verified a format for; unset means no format
   // is enforced, never "reject everything".
   taxIdFormat?: TaxIdFormat;
+  // Locale display preferences available for this country (undefined = none).
+  localeOptions?: CountryLocaleOptions;
 }
 
 const dn = new Intl.DisplayNames(['en'], { type: 'region' });
@@ -31,6 +44,7 @@ interface Row {
   taxIdLabel?: string;
   taxName?: string;
   taxIdFormat?: TaxIdFormat;
+  localeOptions?: CountryLocaleOptions;
 }
 
 const SUPPORTED: Record<string, Row> = {
@@ -74,7 +88,12 @@ const SUPPORTED: Record<string, Row> = {
   EG: { locale: 'ar-EG', currency: 'EGP', tz: 'Africa/Cairo',                    taxIdLabel: 'TIN',   taxName: 'VAT' },
   IL: { locale: 'he-IL', currency: 'ILS', tz: 'Asia/Jerusalem',                                                      taxName: 'VAT' },
   TR: { locale: 'tr-TR', currency: 'TRY', tz: 'Europe/Istanbul',                 taxIdLabel: 'VKN',   taxName: 'KDV' },
-  IR: { locale: 'fa-IR', currency: 'IRR', tz: 'Asia/Tehran',                     taxIdLabel: 'Economic Code', taxName: 'VAT' },
+  IR: { locale: 'fa-IR', currency: 'IRR', tz: 'Asia/Tehran',                     taxIdLabel: 'Economic Code', taxName: 'VAT',
+    localeOptions: {
+      currencyDisplay: ['rial', 'toman', 'toman_short'],
+      digits: ['locale', 'latin'],
+      calendar: ['locale', 'persian', 'gregorian'],
+    } },
 };
 
 function build(code: string): Country {
@@ -89,6 +108,7 @@ function build(code: string): Country {
     taxIdLabel: r.taxIdLabel,
     taxName: r.taxName,
     taxIdFormat: r.taxIdFormat,
+    localeOptions: r.localeOptions,
   };
 }
 
@@ -118,6 +138,41 @@ export const getCurrencySymbol = (currency: string, locale = 'en-US'): string =>
   }
 };
 
+/**
+ * Iran/Persian display preferences. Storage is never affected: monetary
+ * values are always persisted in the tenant's currency code (IRR for Iran,
+ * i.e. Rial) and these options only change how values are *rendered*.
+ *
+ * - `currencyDisplay`: `rial` (default) renders the stored unit verbatim;
+ *   `toman` divides by 10 (1 Toman = 10 Rial) and suffixes `تومان`;
+ *   `toman_short` divides by 10 and suffixes `ت`/`T` (Persian/Latin digits).
+ * - `digits`: `locale` (default) follows the locale's native digits
+ *   (Persian for `fa-IR`); `latin` forces Western digits.
+ * - `calendar`: `locale` (default) follows the locale's calendar (Shamsi for
+ *   `fa-IR`); `persian` forces Shamsi; `gregorian` forces Gregorian.
+ *
+ * Toman conversion is display-only: product/payment inputs remain in the
+ * stored unit (Rial) so no existing database value is ever reinterpreted.
+ */
+export type CurrencyDisplay = 'rial' | 'toman' | 'toman_short';
+export type DigitMode = 'locale' | 'latin';
+export type CalendarMode = 'locale' | 'persian' | 'gregorian';
+
+export interface LocalePreferences {
+  currencyDisplay?: CurrencyDisplay;
+  digits?: DigitMode;
+  calendar?: CalendarMode;
+}
+
+const IRAN_CURRENCY = 'IRR';
+const TOMAN_PER_RIAL = 10;
+
+const normalizePreferences = (prefs?: LocalePreferences): Required<LocalePreferences> => ({
+  currencyDisplay: prefs?.currencyDisplay ?? 'rial',
+  digits: prefs?.digits ?? 'locale',
+  calendar: prefs?.calendar ?? 'locale',
+});
+
 export const formatCurrency = (amount: number, currency: string, locale = 'en-US'): string => {
   if (!currency) return amount.toFixed(2);
   try {
@@ -127,11 +182,113 @@ export const formatCurrency = (amount: number, currency: string, locale = 'en-US
   }
 };
 
+/**
+ * Currency display with the Iran `currencyDisplay`/`digits` preferences
+ * applied. Non-IRR currencies and the `rial` mode behave like
+ * `formatCurrency` (plus the optional Latin-digit override).
+ */
+export const formatMoney = (
+  amount: number,
+  currency: string,
+  locale = 'en-US',
+  prefs?: LocalePreferences,
+): string => {
+  const { currencyDisplay, digits } = normalizePreferences(prefs);
+  const numberingSystem = digits === 'latin' ? 'latn' : undefined;
+
+  if (currency === IRAN_CURRENCY && currencyDisplay !== 'rial') {
+    // 1 Toman = 10 Rial; divide for display only, never for storage.
+    const toman = amount / TOMAN_PER_RIAL;
+    if (currencyDisplay === 'toman') {
+      return `${formatNumber(toman, locale, numberingSystem)} تومان`;
+    }
+    // toman_short — colloquial shorthand, Persian/Latin suffix by digit mode.
+    return `${formatNumber(toman, locale, numberingSystem)}${digits === 'latin' ? 'T' : 'ت'}`;
+  }
+
+  if (!currency) return formatNumber(amount, locale, numberingSystem);
+  try {
+    return new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+      numberingSystem,
+    }).format(amount);
+  } catch {
+    return `${currency} ${formatNumber(amount, locale, numberingSystem)}`;
+  }
+};
+
 export const formatCurrencyForTenant = (
   amount: number,
   countryCode: string | undefined,
   currency: string,
-): string => formatCurrency(amount, currency, getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US');
+  prefs?: LocalePreferences,
+): string => formatMoney(amount, currency, getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US', prefs);
+
+/**
+ * Formats a plain (non-currency) number using the given locale's digits and
+ * grouping (e.g. `1234.5` → `۱٬۲۳۴٫۵` in `fa-IR`). Used for counts, points,
+ * and other bare numbers so they follow the tenant locale instead of the
+ * browser's default locale.
+ */
+export const formatNumber = (value: number, locale = 'en-US', numberingSystem?: string): string => {
+  try {
+    return new Intl.NumberFormat(locale, numberingSystem ? { numberingSystem } : undefined).format(value);
+  } catch {
+    return String(value);
+  }
+};
+
+/**
+ * Formats a plain number using the tenant's country locale and digit
+ * preference. Mirrors `formatCurrencyForTenant` for non-monetary values.
+ */
+export const formatNumberForTenant = (
+  value: number,
+  countryCode: string | undefined,
+  prefs?: LocalePreferences,
+): string => {
+  const { digits } = normalizePreferences(prefs);
+  return formatNumber(
+    value,
+    getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US',
+    digits === 'latin' ? 'latn' : undefined,
+  );
+};
+
+function calendarOption(calendar: CalendarMode): 'gregory' | 'persian' | undefined {
+  if (calendar === 'gregorian') return 'gregory';
+  if (calendar === 'persian') return 'persian';
+  return undefined;
+}
+
+/**
+ * Formats a date with the tenant's locale, timezone, and calendar/digit
+ * preferences. Dates are stored as UTC timestamps; this is display-only.
+ */
+export const formatDateForTenant = (
+  date: Date,
+  countryCode: string | undefined,
+  timezone: string,
+  prefs?: LocalePreferences,
+  options: Intl.DateTimeFormatOptions = {},
+): string => {
+  const { digits, calendar } = normalizePreferences(prefs);
+  const locale = getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US';
+  const numberingSystem = digits === 'latin' ? 'latn' : undefined;
+  const calendarValue = calendarOption(calendar);
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      timeZone: timezone,
+      ...(numberingSystem ? { numberingSystem } : {}),
+      ...(calendarValue ? { calendar: calendarValue } : {}),
+      ...options,
+    }).format(date);
+  } catch {
+    return date.toISOString();
+  }
+};
 
 export const countryName = (code: string): string => dn.of(code.toUpperCase()) ?? code;
 

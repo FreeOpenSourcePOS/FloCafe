@@ -21,6 +21,7 @@ import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
@@ -258,9 +259,8 @@ export default function OrdersPage() {
       addItemsAttemptRef.current = null;
       toast.success(t('orders.itemsAdded', { count: pendingAttempt!.items.length }));
       fetchOrders();
-    }).catch((err: unknown) => {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.addItemsFailed'));
+    }).catch(() => {
+      toast.error(t('orders.addItemsFailed'));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);
@@ -436,9 +436,8 @@ export default function OrdersPage() {
       setLinkCustomerSearch('');
       setLinkCustomerResults([]);
       fetchOrders();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('orders.linkCustomerFailed'));
+    } catch {
+      toast.error(t('orders.linkCustomerFailed'));
     } finally {
       setLinkingCustomer(false);
     }
@@ -496,9 +495,8 @@ export default function OrdersPage() {
     try {
       const { data } = await api.post('/bills/generate', { order_id: orderId });
       setPaymentBill(data.bill);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('orders.generateBillFailed'));
+    } catch {
+      toast.error(t('orders.generateBillFailed'));
     } finally {
       setGeneratingBill(null);
     }
@@ -518,8 +516,12 @@ export default function OrdersPage() {
           latestBill,
           {
             business_name: currentTenant?.business_name || t('common.businessNameFallback'),
-            currency,
+            currency: currentTenant?.currency || 'INR',
             country: currentTenant?.country || 'IN',
+            timezone: currentTenant?.timezone || 'UTC',
+            currency_display: currentTenant?.currency_display,
+            number_digits: currentTenant?.number_digits,
+            calendar: currentTenant?.calendar,
           },
           { isReprint: false }
         );
@@ -547,8 +549,12 @@ export default function OrdersPage() {
         latestBill,
         {
           business_name: currentTenant?.business_name || t('common.businessNameFallback'),
-          currency,
+          currency: currentTenant?.currency || 'INR',
           country: currentTenant?.country || 'IN',
+          timezone: currentTenant?.timezone || 'UTC',
+          currency_display: currentTenant?.currency_display,
+          number_digits: currentTenant?.number_digits,
+          calendar: currentTenant?.calendar,
         },
         { isReprint }
       );
@@ -556,9 +562,8 @@ export default function OrdersPage() {
       toast.success(isReprint ? t('orders.printReceiptReprint') : t('orders.printReceipt'));
       showPrintWarningsToast(printWarnings);
       fetchPrintHistory(billId);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'check printer connection';
-      toast.error(`${t('orders.printReceiptFailed')}: ${msg}`);
+    } catch {
+      toast.error(t('orders.printReceiptFailed'));
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);
@@ -587,9 +592,8 @@ export default function OrdersPage() {
       link.click();
       URL.revokeObjectURL(url);
       toast.success(t('orders.printPreviewDownloaded'));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('orders.printPreviewFailed');
-      toast.error(`${t('orders.printPreviewFailed')}: ${message}`);
+    } catch {
+      toast.error(t('orders.printPreviewFailed'));
     } finally {
       setPreviewingBillId(null);
     }
@@ -605,9 +609,8 @@ export default function OrdersPage() {
       await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: t('orders.removedByManager') });
       toast.success(t('orders.itemRemoved'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.removeItemFailed'));
+    } catch {
+      toast.error(t('orders.removeItemFailed'));
     }
   };
 
@@ -622,9 +625,8 @@ export default function OrdersPage() {
       toast.success(t('orders.itemVoided'));
       setVoidItemModal(null);
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.voidItemFailed'));
+    } catch {
+      toast.error(t('orders.voidItemFailed'));
     } finally {
       setVoidingItem(false);
     }
@@ -636,9 +638,8 @@ export default function OrdersPage() {
       await api.patch(`/orders/${orderId}/items/${itemId}/restore`);
       toast.success(t('orders.itemRestored'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.restoreItemFailed'));
+    } catch {
+      toast.error(t('orders.restoreItemFailed'));
     }
   };
 
@@ -717,9 +718,8 @@ export default function OrdersPage() {
       });
       toast.success(t('orders.discountApplied'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.discountFailed'));
+    } catch {
+      toast.error(t('orders.discountFailed'));
     } finally {
       setDiscountModal(null);
       setDiscountPin('');
@@ -738,9 +738,8 @@ export default function OrdersPage() {
       await api.patch(`/orders/${order.id}/convert-to-takeaway`);
       toast.success(t('orders.orderConvertedTakeaway'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.convertOrderFailed'));
+    } catch {
+      toast.error(t('orders.convertOrderFailed'));
     } finally {
       setConvertingOrderId(null);
     }
@@ -812,9 +811,8 @@ export default function OrdersPage() {
       toast.success(t('orders.itemsAdded', { count: selectedItems.length }));
       openAddItemsModal(null);
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.addItemsFailed'));
+    } catch {
+      toast.error(t('orders.addItemsFailed'));
     } finally {
       setAddingItems(false);
     }
@@ -833,9 +831,8 @@ export default function OrdersPage() {
       });
       toast.success(t('orders.orderCancelled'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.cancelOrderFailed'));
+    } catch {
+      toast.error(t('orders.cancelOrderFailed'));
     } finally {
       setCancellingOrderId(null);
       setCancelModal(null);
@@ -882,13 +879,13 @@ export default function OrdersPage() {
       <div className="flex flex-wrap items-center gap-3 mb-4">
         {/* Search by order number */}
         <div className="relative flex-1 min-w-[200px]">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             placeholder={t('orders.search')}
             value={filters.search}
             onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
-            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white"
+            className="w-full ps-9 pe-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white"
           />
         </div>
 
@@ -1033,7 +1030,7 @@ export default function OrdersPage() {
                 {/* Top bar: order id/status on the left, payment badge + reprint on the right */}
                 <div className="flex items-center justify-between gap-2 px-4 py-3 bg-gray-50 border-b border-gray-100">
                   <div className="flex items-center gap-2 flex-wrap min-w-0">
-                    <span className="font-bold text-gray-900">#{order.order_number}</span>
+                    <span className="font-bold text-gray-900">#<Ltr>{order.order_number}</Ltr></span>
                     {(() => { const badge = orderStatusBadge[order.status]; return badge ? (
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>{t(badge.labelKey)}</span>
                     ) : null; })()}
@@ -1091,7 +1088,7 @@ export default function OrdersPage() {
                       <User size={14} className="text-blue-600 shrink-0" />
                       <span className="text-sm font-medium text-blue-800 truncate">{order.customer.name}</span>
                       {order.customer.phone && (
-                        <span className="text-xs text-blue-600 shrink-0">{order.customer.phone}</span>
+                        <span className="text-xs text-blue-600 shrink-0"><Ltr>{order.customer.phone}</Ltr></span>
                       )}
                     </div>
                     <button
@@ -1144,12 +1141,12 @@ export default function OrdersPage() {
                             key={customer.id}
                             onClick={() => handleLinkCustomer(order.id, String(customer.id))}
                             disabled={linkingCustomer}
-                            className="w-full flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-left disabled:opacity-50"
+                            className="w-full flex items-center justify-between px-3 py-2 bg-white rounded-lg border border-gray-200 hover:border-blue-300 hover:bg-blue-50 transition-colors text-start disabled:opacity-50"
                           >
                             <div>
                               <span className="text-sm font-medium text-gray-900">{customer.name}</span>
                               {customer.phone && (
-                                <span className="text-xs text-gray-500 ml-2">{customer.phone}</span>
+                                <span className="text-xs text-gray-500 ms-2"><Ltr>{customer.phone}</Ltr></span>
                               )}
                             </div>
                             {linkingCustomer && <span className="text-xs text-gray-400">{t('orders.linking')}</span>}
@@ -1201,7 +1198,7 @@ export default function OrdersPage() {
                             </div>
                           </div>
                           {item.addons && item.addons.length > 0 && (
-                            <div className="pl-4 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
+                            <div className="ps-4 mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5">
                               {item.addons.map((addon, idx) => (
                                 <span key={addon.id ?? `${item.id}-${idx}`} className="text-xs text-gray-400">
                                   + {addon.name}{(addon.quantity || 1) > 1 ? ` ×${addon.quantity}` : ''}{addon.price ? ` (${fmt(Number(addon.price) * (addon.quantity || 1))})` : ''}
@@ -1277,12 +1274,12 @@ export default function OrdersPage() {
                         }}
                         className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
                       >
-                        {printHistoryExpanded[order.bill!.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        {printHistoryExpanded[order.bill!.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} className="rtl-flip" />}
                         {t('orders.printHistory')}
                       </button>
 
                       {printHistoryExpanded[order.bill!.id] && (
-                        <div className="mt-2 pl-4 space-y-1">
+                        <div className="mt-2 ps-4 space-y-1">
                           {printHistory[order.bill!.id].map((print, index) => (
                             <div key={print.id} className="text-xs text-gray-500">
                               {index + 1}. {t('orders.printHistoryEntry', { printedType: print.print_type === 'reprint' ? t('orders.reprint') : t('orders.printed'), user: print.user_name, time: formatDateTime(print.printed_at) })}
@@ -1303,7 +1300,7 @@ export default function OrdersPage() {
                         size="sm"
                         className="flex-1 justify-center"
                       >
-                        <CreditCard size={14} className="mr-1.5" />
+                        <CreditCard size={14} className="me-1.5" />
                         {generatingBill === order.id ? t('orders.generating') : t('orders.checkout')}
                       </Button>
                     )}
@@ -1314,7 +1311,7 @@ export default function OrdersPage() {
                         size="sm"
                         className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
                       >
-                        <Plus size={14} className="mr-1.5" />
+                        <Plus size={14} className="me-1.5" />
                         {t('orders.addItem')}
                       </Button>
                     )}
@@ -1326,7 +1323,7 @@ export default function OrdersPage() {
                         size="sm"
                         className="flex-1 justify-center border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                       >
-                        <ShoppingBag size={14} className="mr-1.5" />
+                        <ShoppingBag size={14} className="me-1.5" />
                         {convertingOrderId === order.id ? t('orders.converting') : t('orders.convertToTakeaway')}
                       </Button>
                     )}
@@ -1343,9 +1340,9 @@ export default function OrdersPage() {
                         }`}
                       >
                         {order.status === 'pending' ? (
-                          <XCircle size={14} className="mr-1.5" />
+                          <XCircle size={14} className="me-1.5" />
                         ) : (
-                          <Lock size={14} className="mr-1.5" />
+                          <Lock size={14} className="me-1.5" />
                         )}
                         {cancellingOrderId === order.id ? t('orders.cancelling') : t('common.cancel')}
                       </Button>
@@ -1406,7 +1403,7 @@ export default function OrdersPage() {
                 onClick={() => handlePrint(confirmPrintBillId)}
                 disabled={printingBillId === confirmPrintBillId}
               >
-                <Printer size={14} className="mr-1.5" />
+                <Printer size={14} className="me-1.5" />
                 {printingBillId === confirmPrintBillId
                   ? t('orders.printing')
                   : (printHistory[confirmPrintBillId]?.length ?? 0) > 0
@@ -1422,7 +1419,7 @@ export default function OrdersPage() {
       {cancelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('orders.cancel')} #{cancelModal.order.order_number}</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('orders.cancel')} #<Ltr>{cancelModal.order.order_number}</Ltr></h2>
 
             <div className="space-y-4">
               <div>
@@ -1578,7 +1575,7 @@ placeholder={t('orders.managerPin')}
                   {discountModal.type === 'percentage' ? t('orders.discountPercentageLabel') : t('orders.discountAmountLabel')}
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
                     {discountModal.type === 'percentage' ? '%' : currency}
                   </span>
                   <input
@@ -1589,7 +1586,7 @@ placeholder={t('orders.managerPin')}
                     value={discountModal.value || ''}
                     onChange={(e) => updateDiscountModal({ value: Number(e.target.value) })}
                     placeholder={discountModal.type === 'percentage' ? '0' : '0.00'}
-                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                    className="w-full ps-8 pe-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                   />
                 </div>
               </div>
@@ -1622,7 +1619,7 @@ placeholder={t('orders.managerPin')}
                   <span className="text-purple-600">
                     {t('common.discount')}
                     {discountModal.type === 'percentage' && discountModal.value > 0 && (
-                      <span className="text-gray-400 ml-1">{t('orders.percentOnSubtotal', { value: discountModal.value })}</span>
+                      <span className="text-gray-400 ms-1">{t('orders.percentOnSubtotal', { value: discountModal.value })}</span>
                     )}
                   </span>
                   <span className="text-purple-600">
@@ -1674,7 +1671,7 @@ placeholder={t('orders.managerPin')}
                 disabled={discountModal.value <= 0}
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >
-                <Percent size={14} className="mr-1.5" />
+                <Percent size={14} className="me-1.5" />
                 {t('orders.applyDiscount')}
               </Button>
             </div>
@@ -1686,17 +1683,17 @@ placeholder={t('orders.managerPin')}
       {addItemsOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('orders.addItems')} #{addItemsOrder.order_number}</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('orders.addItems')} #<Ltr>{addItemsOrder.order_number}</Ltr></h2>
 
             {/* Search */}
             <div className="relative mb-3">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder={t('orders.searchMenu')}
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full ps-9 pe-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
             </div>
 
@@ -1708,12 +1705,12 @@ placeholder={t('orders.managerPin')}
                   <button
                     key={product.id}
                     onClick={() => handleAddItemToSelection(product)}
-                    className="w-full flex items-center justify-between px-3 py-2 hover:bg-green-50 text-left border-b border-gray-50 last:border-0 transition-colors"
+                    className="w-full flex items-center justify-between px-3 py-2 hover:bg-green-50 text-start border-b border-gray-50 last:border-0 transition-colors"
                   >
                     <div>
                       <span className="text-sm font-medium text-gray-900">{product.name}</span>
                       {product.price && (
-                        <span className="text-xs text-gray-500 ml-2">{fmt(Number(product.price))}</span>
+                        <span className="text-xs text-gray-500 ms-2">{fmt(Number(product.price))}</span>
                       )}
                     </div>
                     <Plus size={14} className="text-green-500" />
@@ -1779,7 +1776,7 @@ placeholder={t('orders.managerPin')}
                 disabled={selectedItems.length === 0 || addingItems}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
-                <Plus size={14} className="mr-1.5" />
+                <Plus size={14} className="me-1.5" />
                 {addingItems ? t('orders.adding') : t('orders.addItemsCount', { count: selectedItems.length })}
               </Button>
             </div>

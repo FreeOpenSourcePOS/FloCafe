@@ -11,6 +11,7 @@ import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import toast from 'react-hot-toast';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useFormatNumber } from '@/hooks/useFormatNumber';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -57,6 +58,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const customer = cart.customer;
   const { t } = useI18n();
   const currencyFmt = useFormatCurrency();
+  const fmtNum = useFormatNumber();
 
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -335,8 +337,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                 )}
               </div>
               {customer && (
-                <div className="text-right ml-4 shrink-0">
-                  <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center mb-1 ml-auto">
+                <div className="text-end ms-4 shrink-0">
+                  <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center mb-1 ms-auto">
                     <User size={16} className="text-white/70" />
                   </div>
                   <p className="text-sm font-semibold text-white leading-tight">{customer.name}</p>
@@ -353,7 +355,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                 <span className="text-gray-700 font-medium">{t('pos.loyalty')}</span>
                 <span className="font-semibold text-gray-700">
                   {walletBalance !== null
-                    ? t('pos.pointsApproxValue', { count: walletBalance, value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) })
+                    ? t('pos.pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) })
                     : '…'}
                 </span>
               </div>
@@ -362,7 +364,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
           {/* Discount */}
           <div className="rounded-xl border border-gray-200 overflow-hidden">
-            <button type="button" onClick={() => setDiscountOpen((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-left">
+            <button type="button" onClick={() => setDiscountOpen((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-start">
               <span className="text-sm font-medium text-gray-700">
                 {preview?.discountAmount ? `${t('pos.discount')}: -${currencyFmt(preview.discountAmount)}` : t('pos.applyDiscount')}
               </span>
@@ -391,7 +393,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                   )}
                 </div>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                  <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
                     {discountType === 'percentage' ? '%' : currency}
                   </span>
                   <input
@@ -402,7 +404,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     min="0"
                     max={discountType === 'percentage' ? 100 : preview?.subtotal ?? undefined}
                     step={discountType === 'percentage' ? 1 : 0.01}
-                    className="w-full pl-8 pr-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
+                    className="w-full ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
                   />
                 </div>
                 <input
@@ -445,18 +447,18 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               const Icon = builtIn?.icon;
               const active = (parseFloat(payment.amount) || 0) > 0;
               return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex h-11">
-                <button type="button" title={label} onClick={() => allocateRemainingTo(idx)} className={`w-36 shrink-0 rounded-l-xl border px-3 flex items-center gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand hover:text-brand'}`}>
+                <button type="button" title={label} onClick={() => allocateRemainingTo(idx)} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold transition-colors ${active ? 'bg-brand text-white border-brand' : 'bg-gray-50 text-gray-700 border-gray-200 hover:border-brand hover:text-brand'}`}>
                   {Icon && <Icon size={15} />}
                   <span className="truncate">{label}</span>
                 </button>
-                <div className="flex flex-1 items-center border border-l-0 border-gray-200 rounded-r-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
-                  <span className="pl-3 text-gray-400 text-xs">{currency}</span>
+                <div className="flex flex-1 items-center border border-s-0 border-gray-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
+                  <span className="ps-3 text-gray-400 text-xs">{currency}</span>
                   <input
                     type="number"
                     value={payment.amount}
                     onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                     placeholder="0.00"
-                    className="min-w-0 flex-1 px-2 py-2 text-right text-sm font-semibold outline-none rounded-r-xl"
+                    className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl"
                     step="0.01"
                     min="0"
                   />
@@ -504,11 +506,11 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                   const maxWallet = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
                   const due = Math.min(maxWallet, Math.max(0, remaining - allocatedElsewhere));
                   setWalletAmount(due > 0 ? due.toFixed(2) : '');
-                }} className={`w-36 shrink-0 rounded-l-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200'}`}>
+                }} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200'}`}>
                   <Wallet size={15} /><span className="truncate">{t('pos.loyaltyWallet')}</span>
                 </button>
-                <div className="flex flex-1 items-center border border-l-0 border-purple-200 rounded-r-xl bg-white focus-within:ring-2 focus-within:ring-purple-400">
-                  <span className="pl-3 text-gray-400 text-xs">{currency}</span>
+                <div className="flex flex-1 items-center border border-s-0 border-purple-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-purple-400">
+                  <span className="ps-3 text-gray-400 text-xs">{currency}</span>
                   <input
                     type="number"
                     value={walletAmount}
@@ -520,14 +522,14 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     }}
                     placeholder="0.00"
                     disabled={walletBalance <= 0}
-                    className="min-w-0 flex-1 px-2 py-2 text-right text-sm font-semibold outline-none rounded-r-xl disabled:bg-gray-50"
+                    className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl disabled:bg-gray-50"
                     step="0.01"
                     min="0"
                     max={Math.min(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE), remaining)}
                   />
                 </div>
               </div>
-              <p className="px-1 text-[11px] text-gray-400 text-right">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
+              <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
             </div>
           )}
         </div>

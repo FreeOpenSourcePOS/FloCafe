@@ -77,24 +77,23 @@ export default function RecoverAccessPage() {
     } catch (err: unknown) {
       const error = err as { response?: { status?: number; data?: { error?: string } } };
       const status = error.response?.status;
-      const serverMessage = error.response?.data?.error;
 
       if (status === 503) {
         // Honest fallback: no cloud/email recovery tier exists yet in this
         // build, so don't pretend one is available — see #127/#128.
         setFormError(t('auth.recoverPinUnavailable'));
       } else if (status === 409) {
-        setFormError(serverMessage || t('auth.recoverErrorGeneric'));
+        setFormError(t('auth.recoverErrorGeneric'));
       } else if (status === 429) {
-        setFormError(serverMessage || t('auth.recoverRateLimited'));
+        setFormError(t('auth.recoverRateLimited'));
       } else if (status === 403) {
         setFormError(t('auth.recoverWrongPin'));
       } else if (status === 404) {
         setFormError(t('auth.recoverNoOwner'));
       } else if (status === 400) {
-        setFormError(serverMessage || t('auth.recoverErrorGeneric'));
+        setFormError(t('auth.recoverErrorGeneric'));
       } else {
-        setFormError(serverMessage || t('auth.recoverErrorGeneric'));
+        setFormError(t('auth.recoverErrorGeneric'));
       }
     } finally {
       setLoading(false);
@@ -108,7 +107,7 @@ export default function RecoverAccessPage() {
           onClick={() => router.push('/auth/login')}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
         >
-          <ArrowLeft className="w-4 h-4" /> {t('auth.recoverBackToLogin')}
+          <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('auth.recoverBackToLogin')}
         </button>
 
         <div className="text-center mb-6">
@@ -138,6 +137,7 @@ export default function RecoverAccessPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={t('auth.emailPlaceholder')}
+                  dir="ltr"
                   required
                 />
               </div>
@@ -155,13 +155,13 @@ export default function RecoverAccessPage() {
                     value={masterPin}
                     onChange={(e) => setMasterPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
                     placeholder="••••"
-                    className="text-center text-lg tracking-[0.5em] pr-10"
+                    className="text-center text-lg tracking-[0.5em] pe-10"
                     required
                   />
                   <button
                     type="button"
                     onClick={() => setShowPin(!showPin)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                    className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                     tabIndex={-1}
                   >
                     {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -180,13 +180,13 @@ export default function RecoverAccessPage() {
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder={t('auth.recoverNewPasswordPlaceholder')}
-                      className="pr-10"
+                      className="pe-10"
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                      className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                       tabIndex={-1}
                     >
                       {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

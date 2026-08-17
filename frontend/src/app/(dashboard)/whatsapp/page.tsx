@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import api from '@/lib/api';
+import { apiErrorText } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { parseDbTimestamp } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -20,6 +20,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { formatDate, formatTime } from '@/lib/printer/format-date';
 import { dialCodeFor, parsePhone } from '@/lib/phone';
+import { Ltr } from '@/components/layout/Ltr';
 
 interface WhatsAppStatus {
   enabled: boolean;
@@ -30,20 +31,9 @@ interface WhatsAppStatus {
   cooldownUntil: string | null;
 }
 
-/** Show a backend error as a toast. Prefer the i18n reason code over the raw English fallback. */
+/** Show a backend error as a localized toast, mapping `whatsapp.apiError.<reason>` and never surfacing raw English. */
 function toastApiError(err: unknown, fallback: string, t: (k: string, p?: Record<string, string | number>) => string): void {
-  const axiosErr = err as { response?: { data?: { error?: string; reason?: string } } };
-  const reason = axiosErr?.response?.data?.reason;
-  if (reason) {
-    const key = `whatsapp.apiError.${reason}`;
-    const translated = t(key);
-    // t() falls back to the key itself when missing — only use it if we actually have a translation.
-    if (translated !== key) {
-      toast.error(translated);
-      return;
-    }
-  }
-  toast.error(axiosErr?.response?.data?.error ?? fallback);
+  toast.error(apiErrorText(err, fallback, t, 'whatsapp.apiError'));
 }
 
 interface SentMessage {
@@ -111,7 +101,7 @@ function StatusStepper({ status, t }: { status: string; t: (k: string) => string
           />
         );
       })}
-      {failed && <span className="ml-1 text-xs text-destructive">{t('whatsapp.status.failed')}</span>}
+      {failed && <span className="ms-1 text-xs text-destructive">{t('whatsapp.status.failed')}</span>}
     </div>
   );
 }
@@ -406,7 +396,7 @@ export default function WhatsAppPage() {
         {status && (
           <Badge variant={status.state === 'connected' ? 'default' : status.state === 'cooldown' ? 'destructive' : 'secondary'}>
             {stateLabel(status.state)}
-            {status.connectedPhone ? ` · ${status.connectedPhone}` : ''}
+            {status.connectedPhone ? <> · <Ltr>{status.connectedPhone}</Ltr></> : null}
           </Badge>
         )}
       </div>
@@ -489,6 +479,7 @@ export default function WhatsAppPage() {
                               onChange={(e) => setPairingPhone(e.target.value)}
                               placeholder={t('whatsapp.connect.pairingPhonePlaceholder', { dialCode: dialCode || '+CC' })}
                               inputMode="tel"
+                              dir="ltr"
                             />
                           </div>
                           <Button onClick={connectPairing} variant="outline" className="w-full">
@@ -516,7 +507,7 @@ export default function WhatsAppPage() {
                       <div className="space-y-2">
                         <p className="text-sm text-muted-foreground">{t('whatsapp.connect.pairingInstruction')}</p>
                         {pairingCode ? (
-                          <div className="text-3xl font-mono tracking-widest p-4 rounded-md bg-muted inline-block">{pairingCode}</div>
+                          <Ltr as="div" className="text-3xl font-mono tracking-widest p-4 rounded-md bg-muted inline-block">{pairingCode}</Ltr>
                         ) : (
                           <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> {t('whatsapp.connect.pairingWaiting')}</div>
                         )}
@@ -534,7 +525,7 @@ export default function WhatsAppPage() {
                             className="inline-flex items-center gap-1 font-mono font-semibold hover:underline cursor-pointer"
                             title={t('whatsapp.inbox.copyPhone')}
                           >
-                            {status.connectedPhone}
+                            <Ltr>{status.connectedPhone}</Ltr>
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-2">
@@ -589,7 +580,7 @@ export default function WhatsAppPage() {
                     <div className="flex items-center gap-2 text-green-700">
                       <CheckCircle2 className="size-5" />
                       <span>{t('whatsapp.connect.connectedAs')}</span>
-                      <strong className="font-mono">{status.connectedPhone}</strong>
+                      <Ltr as="strong" className="font-mono">{status.connectedPhone}</Ltr>
                     </div>
                   </CardContent>
                 </Card>
@@ -610,6 +601,7 @@ export default function WhatsAppPage() {
                           onChange={(e) => setBlockPhone(e.target.value)}
                           placeholder={t('whatsapp.blocklist.phonePlaceholder', { dialCode: dialCode || '+CC' })}
                           inputMode="tel"
+                          dir="ltr"
                         />
                       </div>
                       <div className="flex-1 min-w-[180px]">
@@ -633,9 +625,9 @@ export default function WhatsAppPage() {
                         <TableBody>
                           {blocklist.map((b) => (
                             <TableRow key={b.phone_e164}>
-                              <TableCell className="font-mono text-sm">{b.phone_e164}</TableCell>
+                              <TableCell className="font-mono text-sm"><Ltr>{b.phone_e164}</Ltr></TableCell>
                               <TableCell className="text-sm text-gray-600">{b.reason ?? '—'}</TableCell>
-                              <TableCell className="text-sm text-gray-600">{parseDbTimestamp(b.blocked_at).toLocaleString()}</TableCell>
+                              <TableCell className="text-sm text-gray-600">{fmt(b.blocked_at)}</TableCell>
                               <TableCell><Button size="sm" variant="ghost" onClick={() => removeBlock(b.phone_e164)}>{t('whatsapp.blocklist.removeCta')}</Button></TableCell>
                             </TableRow>
                           ))}
@@ -684,7 +676,7 @@ export default function WhatsAppPage() {
                             className="hover:text-foreground transition-colors cursor-pointer"
                             title={t('whatsapp.inbox.copyPhone')}
                           >
-                            {m.phone_e164}
+                            <Ltr>{m.phone_e164}</Ltr>
                           </button>
                         </TableCell>
                         <TableCell className="text-xs">{t(`whatsapp.kind.${m.kind}`)}</TableCell>
@@ -752,7 +744,7 @@ export default function WhatsAppPage() {
                               title={t('whatsapp.inbox.copyPhone')}
                             >
                               <Copy className="size-3 opacity-0 group-hover:opacity-100" />
-                              {m.phone_e164}
+                              <Ltr>{m.phone_e164}</Ltr>
                             </button>
                           </TableCell>
                           <TableCell className="text-sm whitespace-pre-line break-words max-w-md">{m.body}</TableCell>

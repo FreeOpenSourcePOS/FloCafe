@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useI18n } from '@/hooks/useI18n';
+import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
 import { useSupportDiagnosticsPreview } from '@/hooks/useSupportDiagnosticsPreview';
 
@@ -30,6 +31,7 @@ const EMPTY_PROFILE: SupportProfile = {
 
 export default function SupportPage() {
   const { t } = useI18n();
+  const fmtNum = useFormatNumber();
   const [profile, setProfile] = useState<SupportProfile>(EMPTY_PROFILE);
   const [category, setCategory] = useState('general');
   const [severity, setSeverity] = useState('normal');
@@ -67,10 +69,9 @@ export default function SupportPage() {
       setSubmittedId(data.client_ticket_id || '');
       setSubject('');
       setMessage('');
-      toast.success(data.message || t('support.queued'));
-    } catch (error) {
-      const apiError = error as { response?: { data?: { error?: string } } };
-      toast.error(apiError.response?.data?.error || t('support.submitFailed'));
+      toast.success(t('support.queued'));
+    } catch {
+      toast.error(t('support.submitFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -144,7 +145,7 @@ export default function SupportPage() {
             <div className="space-y-2">
               <Label htmlFor="support-message">{t('support.description')}</Label>
               <textarea id="support-message" value={message} onChange={(e) => setMessage(e.target.value)} maxLength={20000} rows={10} className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" placeholder={t('support.descriptionPlaceholder')} required />
-              <p className="text-right text-xs text-muted-foreground">{message.length.toLocaleString()} / 20,000</p>
+              <p className="text-right text-xs text-muted-foreground">{fmtNum(message.length)} / 20,000</p>
             </div>
             <Button type="submit" disabled={loading || submitting || !subject.trim() || !message.trim()} className="w-full sm:w-auto">
               {submitting ? <Loader2 className="animate-spin" /> : <LifeBuoy />}{submitting ? t('support.submitting') : t('support.submit')}

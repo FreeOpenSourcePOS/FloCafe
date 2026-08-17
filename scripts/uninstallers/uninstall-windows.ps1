@@ -302,13 +302,15 @@ function Wait-ForProcessIdsExit($ids, $timeoutSeconds) {
 function Wait-ForChildUninstallerExit($process, $timeoutSeconds) {
   $deadline = [DateTime]::UtcNow.AddSeconds($timeoutSeconds)
   do {
-    if (-not (Update-ChildUninstallerProcessTree $deadline)) { return $false }
     $remainingMilliseconds = ($deadline - [DateTime]::UtcNow).TotalMilliseconds
     if ($remainingMilliseconds -le 0) { break }
+    $snapshotDeadline = [DateTime]::UtcNow.AddSeconds($script:AppForceCloseTimeoutSeconds)
+    if (-not (Update-ChildUninstallerProcessTree $snapshotDeadline)) { return $false }
     $waitMilliseconds = [Math]::Max(1, [Math]::Min(250, [int]$remainingMilliseconds))
     try {
       if ([bool]$process.WaitForExit($waitMilliseconds)) {
-        if (-not (Update-ChildUninstallerProcessTree $deadline)) { return $false }
+        $postExitDeadline = [DateTime]::UtcNow.AddSeconds($script:AppForceCloseTimeoutSeconds)
+        if (-not (Update-ChildUninstallerProcessTree $postExitDeadline)) { return $false }
         return $true
       }
     } catch {

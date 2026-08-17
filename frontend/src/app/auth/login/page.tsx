@@ -102,13 +102,13 @@ function LoginContent() {
           }
         } else if (failure.status === 429) {
           // Middleware-level lockout (authRateLimit window exhausted)
-          setLoginError(failure.message || t('auth.lockedOut').replace('{minutes}', '15'));
+          setLoginError(t('auth.lockedOut').replace('{minutes}', '15'));
         } else if (failure.status === undefined) {
           // No HTTP response at all: the server was unreachable (network).
           setLoginError(t('auth.connectionFailed'));
         } else {
           // Other server-side failures belong under the database/setup banner.
-          setDbError(failure.message || t('auth.loginFailed'));
+          setDbError(t('auth.loginFailed'));
         }
       }
     } finally {
@@ -134,7 +134,7 @@ function LoginContent() {
                     key={tenant.id}
                     onClick={() => handleTenantSelect(tenant.id)}
                     disabled={loading}
-                    className="w-full text-left p-4 border rounded-lg hover:border-primary hover:bg-accent transition-colors group"
+                    className="w-full text-start p-4 border rounded-lg hover:border-primary hover:bg-accent transition-colors group"
                   >
                     <div className="font-semibold group-hover:text-primary">{tenant.business_name}</div>
                     <div className="text-sm text-muted-foreground mt-0.5">{t(BUSINESS_TYPE_LABEL_KEYS[tenant.business_type ?? ''] ?? tenant.business_type ?? '')} &middot; {t(ROLE_LABEL_KEYS[tenant.role ?? ''] ?? tenant.role ?? '')}</div>
@@ -165,16 +165,16 @@ function LoginContent() {
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="email">{t('auth.email')}</Label>
-                <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('auth.emailPlaceholder')} required />
+                <Input id="email" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder={t('auth.emailPlaceholder')} dir="ltr" required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">{t('auth.password')}</Label>
                 <div className="relative">
-                  <Input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('auth.passwordPlaceholder')} className="pr-10" required />
+                  <Input id="password" type={showPassword ? 'text' : 'password'} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder={t('auth.passwordPlaceholder')} className="pe-10" required />
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                    className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                     tabIndex={-1}
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}

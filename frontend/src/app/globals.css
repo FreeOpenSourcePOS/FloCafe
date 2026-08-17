@@ -180,3 +180,23 @@ body {
     animation: none;
   }
 }
+
+/* ── RTL / direction foundation (Batch C, Refs #241) ──────────────────────────
+ * Shared building blocks for Persian RTL UI. Persian stays hidden from user
+ * language selectors; these rules only take effect once the document is
+ * `dir="rtl"` (set by HtmlLangSync / KdsHtmlLang).
+ *
+ * - `.ltr-island` keeps content that is naturally LTR (emails, URLs, IP
+ *   addresses, pairing/technical codes, numeric identifiers, paths, version
+ *   strings) left-to-right with bidi isolation so it stays readable and
+ *   copy/paste preserves the correct order inside RTL pages.
+ * - `.rtl-flip` mirrors directional icons (chevrons, arrows) in RTL documents.
+ */
+.ltr-island {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}

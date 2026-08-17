@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { COUNTRIES, countryName } from '@/lib/countries';
+import { COUNTRIES, countryName, getCountryByCode, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -22,8 +22,10 @@ import { InitializeDatabaseDialog } from '@/components/settings/InitializeDataba
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
+import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import type { HealthCheckReport } from '@/types/electron';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
@@ -97,7 +99,8 @@ function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) =>
       onClick={() => onChange(!value)}
       className={`relative w-11 h-6 rounded-full transition-colors shrink-0 ${value ? 'bg-brand' : 'bg-gray-300'}`}
     >
-      <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-5' : 'translate-x-0'}`} />
+      {/* start-0.5 + rtl:-translate-x-5 keeps the knob at the inline-start and slides it toward the inline-end in both directions. */}
+      <span className={`absolute top-0.5 start-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${value ? 'translate-x-5 rtl:-translate-x-5' : 'translate-x-0'}`} />
     </button>
   );
 }
@@ -133,15 +136,15 @@ function SettingsNavItem({
     <button
       onClick={() => onClick(value)}
       className={[
-        'flex items-center w-full min-w-0 text-left text-sm rounded-md py-1.5 transition-colors',
-        indent ? 'pl-5 pr-2 border-l-2 ml-1 text-xs md:ml-0' : 'px-3',
+        'flex items-center w-full min-w-0 text-start text-sm rounded-md py-1.5 transition-colors',
+        indent ? 'ps-5 pe-2 border-s-2 ms-1 text-xs md:ms-0' : 'px-3',
         isActive
           ? 'bg-brand/10 text-brand font-semibold' + (indent ? ' border-brand' : '')
           : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900' + (indent ? ' border-transparent' : ''),
       ].join(' ')}
     >
       <span className="min-w-0 truncate">{label}</span>
-      {attention && <span className="ml-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white" aria-label="Action required">1</span>}
+      {attention && <span className="ms-auto rounded-full bg-red-500 px-1.5 py-0.5 text-[10px] font-bold text-white" aria-label="Action required">1</span>}
     </button>
   );
 }
@@ -189,7 +192,7 @@ function KdsDefaultViewCard() {
         <button
           type="button"
           onClick={() => setView('tabs')}
-          className={`text-left rounded-lg border-2 px-4 py-3 transition ${
+          className={`text-start rounded-lg border-2 px-4 py-3 transition ${
             view === 'tabs'
               ? 'border-brand bg-brand/5'
               : 'border-gray-200 hover:border-gray-300'
@@ -199,12 +202,12 @@ function KdsDefaultViewCard() {
             <input type="radio" readOnly checked={view === 'tabs'} className="text-brand" />
             <span className="font-medium text-gray-900">{t('settings.kdsDefaultViewTabs')}</span>
           </div>
-          <p className="text-xs text-gray-500 ml-6">{t('settings.kdsDefaultViewTabsHint')}</p>
+          <p className="text-xs text-gray-500 ms-6">{t('settings.kdsDefaultViewTabsHint')}</p>
         </button>
         <button
           type="button"
           onClick={() => setView('kanban')}
-          className={`text-left rounded-lg border-2 px-4 py-3 transition ${
+          className={`text-start rounded-lg border-2 px-4 py-3 transition ${
             view === 'kanban'
               ? 'border-brand bg-brand/5'
               : 'border-gray-200 hover:border-gray-300'
@@ -214,7 +217,7 @@ function KdsDefaultViewCard() {
             <input type="radio" readOnly checked={view === 'kanban'} className="text-brand" />
             <span className="font-medium text-gray-900">{t('settings.kdsDefaultViewKanban')}</span>
           </div>
-          <p className="text-xs text-gray-500 ml-6">{t('settings.kdsDefaultViewKanbanHint')}</p>
+          <p className="text-xs text-gray-500 ms-6">{t('settings.kdsDefaultViewKanbanHint')}</p>
         </button>
       </div>
 
@@ -407,11 +410,10 @@ export default function SettingsPage() {
   const runImport = async (data: ImportPayload, overwrite: boolean, master_pin?: string) => {
     try {
       const response = await api.post('/db/import', { data, overwrite, master_pin });
-      if (response.data.success) toast.success(response.data.message);
+      if (response.data.success) toast.success(t('settings.importSuccess'));
       return { success: true };
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      const message = error.response?.data?.error || t('settings.importFailed');
+    } catch {
+      const message = t('settings.importFailed');
       toast.error(message);
       return { success: false, error: message };
     }
@@ -427,9 +429,8 @@ export default function SettingsPage() {
         toast.success(t('settings.masterPinSaved'));
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.savePinFailed') };
+      } catch {
+        return { success: false, error: t('settings.savePinFailed') };
       }
     }
 
@@ -440,9 +441,8 @@ export default function SettingsPage() {
         setPinGate(null);
         fetchBackups();
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.backupFailedGeneric') };
+      } catch {
+        return { success: false, error: t('settings.backupFailedGeneric') };
       }
     }
 
@@ -488,39 +488,36 @@ export default function SettingsPage() {
         setPinGate(null);
         fetchBackups();
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.backupDeleteFailed') };
+      } catch {
+        return { success: false, error: t('settings.backupDeleteFailed') };
       }
     }
 
     if (pinGate.mode === 'delete-cloud') {
       try {
         await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
-        toast.success('Cloud deletion request submitted for manual review. Cloud services have been stopped on this device.');
+        toast.success(t('settings.cloudDeletionSubmitted'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
+      } catch {
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Cloud data deletion failed' };
+        return { success: false, error: t('settings.cloudDeletionFailed') };
       }
     }
 
     if (pinGate.mode === 'cancel-cloud-deletion') {
       try {
         await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
-        toast.success('Cloud deletion request cancelled. Cloud services remain off until you explicitly re-enable them.');
+        toast.success(t('settings.cloudDeletionCancelled'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Could not cancel deletion request' };
+      } catch {
+        return { success: false, error: t('settings.cloudDeletionCancelFailed') };
       }
     }
 
@@ -619,9 +616,8 @@ export default function SettingsPage() {
         await api.post(`/db-tools/backups/${encodeURIComponent(backup.fileName)}/delete`, {});
         toast.success(t('settings.backupDeleted'));
         fetchBackups();
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        toast.error(error.response?.data?.error || t('settings.backupDeleteFailed'));
+      } catch {
+        toast.error(t('settings.backupDeleteFailed'));
       }
       return;
     }
@@ -632,9 +628,8 @@ export default function SettingsPage() {
     try {
       const { data } = await api.post('/db-tools/initialize', { master_pin: pin, confirmation_phrase: 'INITIALIZE' });
       return { success: true, backupPath: data.backupPath };
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      return { success: false, error: error.response?.data?.error || t('settings.initializeFailedGeneric') };
+    } catch {
+      return { success: false, error: t('settings.initializeFailedGeneric') };
     }
   };
 
@@ -816,9 +811,8 @@ export default function SettingsPage() {
       toast.success(t('settings.printerQuickAdded', { name: p.name }));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.printerAddFailed'));
+    } catch {
+      toast.error(t('settings.printerAddFailed'));
     } finally {
       setAddingDetectedName(null);
     }
@@ -896,9 +890,8 @@ export default function SettingsPage() {
     try {
       await api.post(`/printers/${printer.id}/test`);
       toast.success(t('settings.testPrintSent'));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.testPrintFailed'));
+    } catch {
+      toast.error(t('settings.testPrintFailed'));
     } finally {
       setTestingPrinterId(null);
     }
@@ -993,9 +986,8 @@ export default function SettingsPage() {
       toast.success(editingStationId ? t('settings.stationUpdated') : t('settings.stationSaved'));
       setShowStationForm(false);
       fetchStations();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.stationSaveFailed'));
+    } catch {
+      toast.error(t('settings.stationSaveFailed'));
     } finally {
       setSavingStation(false);
     }
@@ -1007,9 +999,8 @@ export default function SettingsPage() {
       await api.delete(`/kitchen-stations/${id}`);
       toast.success(t('settings.stationDeleted'));
       fetchStations();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.stationDeleteFailed'));
+    } catch {
+      toast.error(t('settings.stationDeleteFailed'));
     }
   };
 
@@ -1133,12 +1124,18 @@ export default function SettingsPage() {
     tablesRequired: boolean;
     taxRegistered: boolean;
     taxRegistrationNumber: string; businessAddress: string; businessPhone: string; instagramHandle: string;
+    currencyDisplay: CurrencyDisplay;
+    numberDigits: DigitMode;
+    calendar: CalendarMode;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
+    currencyDisplay: 'rial',
+    numberDigits: 'locale',
+    calendar: 'locale',
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
@@ -1204,9 +1201,9 @@ export default function SettingsPage() {
       await api.get('/settings/cloud/delete-data/status');
       await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
       notifyCloudAccountStatusChanged();
-      toast.success('Cloud deletion status refreshed');
+      toast.success(t('settings.cloudDeletionStatusRefreshed'));
     } catch {
-      toast.error('Could not refresh cloud deletion status');
+      toast.error(t('settings.cloudDeletionStatusRefreshFailed'));
     } finally {
       setRefreshingDeletionStatus(false);
     }
@@ -1302,6 +1299,9 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
+        currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
+        numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
+        calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1575,6 +1575,9 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
+        currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
+        numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
+        calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1668,9 +1671,8 @@ export default function SettingsPage() {
       if (res.data.cloud_registration_status === 'registered') {
         toast.success(t('settings.cloudRegistrationSuccess'));
       }
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.cloudRegistrationFailed'));
+    } catch {
+      toast.error(t('settings.cloudRegistrationFailed'));
     } finally {
       setRegisteringCloud(false);
     }
@@ -1711,9 +1713,8 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveConnectedSuccess'));
       fetchBackups();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveConnectFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveConnectFailed'));
     } finally {
       setConnectingGoogleDrive(false);
     }
@@ -1730,9 +1731,8 @@ export default function SettingsPage() {
       const res = await api.post('/settings/google-drive/disconnect');
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveDisconnectedSuccess'));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveDisconnectFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveDisconnectFailed'));
     } finally {
       setDisconnectingGoogleDrive(false);
     }
@@ -1745,9 +1745,8 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveBackupSuccess'));
       fetchBackups();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveBackupFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveBackupFailed'));
       fetchGoogleDriveStatus();
     } finally {
       setBackingUpGoogleDrive(false);
@@ -1761,10 +1760,9 @@ export default function SettingsPage() {
     try {
       const res = await api.put('/settings/google-drive', patch);
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
+    } catch {
       setGoogleDriveStatus(previous);
-      toast.error(error.response?.data?.error || t('settings.googleDriveSavePreferencesFailed'));
+      toast.error(t('settings.googleDriveSavePreferencesFailed'));
     } finally {
       setSavingGoogleDrivePrefs(false);
     }
@@ -1904,6 +1902,9 @@ export default function SettingsPage() {
         business_address: form.businessAddress,
         business_phone: normalizedBusinessPhone,
         instagram_handle: form.instagramHandle,
+        currency_display: form.currencyDisplay,
+        number_digits: form.numberDigits,
+        calendar: form.calendar,
       });
       if (savedBusiness.countryCode !== form.countryCode) {
         const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
@@ -1927,9 +1928,9 @@ export default function SettingsPage() {
                 diagnostics: { country: form.countryCode },
               }).catch(() => {});
               await api.put('/settings/taxes_enabled', { value: 'false' }).catch(() => {});
-              toast.error(`Tax support for ${form.countryCode} is not available yet. We requested the plugin and will build it soon. Taxes are now off.`);
+              toast.error(t('settings.taxSupportUnavailable', { country: form.countryCode }));
             } else {
-              toast.error('The country was saved, but its tax plugin could not be installed. Taxes remain enabled until it is resolved.');
+              toast.error(t('settings.countrySavedTaxPluginFailed'));
             }
           }
         }
@@ -1942,11 +1943,11 @@ export default function SettingsPage() {
       posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
-      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode });
+      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
       if (!silent) toast.success(t('settings.storeSaved'));
     } catch (err) {
       if (!silent) {
-        const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('settings.saveFailed');
+        const message = t('settings.saveFailed');
         toast.error(message);
       }
       throw err;
@@ -2018,12 +2019,9 @@ export default function SettingsPage() {
       setPairingUnavailable(false);
       toast.success(t('settings.pairingCodeRotated'));
       loadPairedDevices();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      // Surface the backend's actual reason (e.g. "this POS hasn't been
-      // claimed in FloAdmin yet") instead of a one-size-fits-all message —
-      // "not registered" and "FloAdmin unreachable" need different next steps.
-      toast.error(error.response?.data?.error || t('settings.pairingCodeFailed'));
+    } catch {
+      // Show a localized failure; the specific backend reason stays in logs.
+      toast.error(t('settings.pairingCodeFailed'));
     } finally {
       setRotatingCode(false);
     }
@@ -2093,7 +2091,7 @@ export default function SettingsPage() {
             <h1 className="text-2xl font-bold text-gray-900">{t('settings.title')}</h1>
           </div>
 
-           <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible border-b md:border-b-0 md:border-r border-gray-200 pb-2 md:pb-0 md:pr-2">
+           <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible border-b md:border-b-0 md:border-e border-gray-200 pb-2 md:pb-0 md:pe-2">
 
             {/* General group */}
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-gray-100">
@@ -2154,7 +2152,7 @@ export default function SettingsPage() {
                 <Building2 size={20} className="text-gray-500" />
                 <h2 className="font-semibold text-gray-900">{t('settings.storeDetails')}</h2>
                 {!isAdmin && (
-                  <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
+                  <span className="ms-auto flex items-center gap-1 text-xs text-gray-400">
                     <Lock size={12} /> {t('settings.adminOnly')}
                   </span>
                 )}
@@ -2208,6 +2206,7 @@ export default function SettingsPage() {
                         placeholder={t('settings.timezoneAutoFilled')}
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-gray-50" 
                         readOnly
+                        dir="ltr"
                       />
                       <input 
                         type="text" 
@@ -2216,6 +2215,7 @@ export default function SettingsPage() {
                         placeholder={t('settings.currencyAutoFilled')}
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-gray-50" 
                         readOnly
+                        dir="ltr"
                       />
                     </div>
                   ) : (
@@ -2224,14 +2224,27 @@ export default function SettingsPage() {
                         {form.countryCode ? countryName(form.countryCode) : '—'}
                       </p>
                       <p className="font-medium text-gray-900">
-                        {form.timezone || '—'}
+                        <Ltr>{form.timezone || '—'}</Ltr>
                       </p>
                       <p className="font-medium text-gray-900">
-                        {form.currency || '—'}
+                        <Ltr>{form.currency || '—'}</Ltr>
                       </p>
                     </div>
                   )}
                 </div>
+                <LocalePreferencesPanel
+                  options={getCountryByCode(form.countryCode)?.localeOptions}
+                  currencyDisplay={form.currencyDisplay}
+                  digits={form.numberDigits}
+                  calendar={form.calendar}
+                  isAdmin={isAdmin}
+                  onChange={(patch) => setForm((p) => ({
+                    ...p,
+                    ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
+                    ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
+                    ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
+                  }))}
+                />
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.billingType')}</label>
                   {isAdmin ? (
@@ -2281,9 +2294,9 @@ export default function SettingsPage() {
                     {isAdmin ? (
                       <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
                         placeholder={t('settings.taxIdPlaceholder')}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                     ) : (
-                      <p className="font-medium text-gray-900">{form.taxRegistrationNumber || '—'}</p>
+                      <p className="font-medium text-gray-900"><Ltr>{form.taxRegistrationNumber || '—'}</Ltr></p>
                     )}
                   </div>
                 ) : <div className="hidden md:block" />}
@@ -2292,9 +2305,9 @@ export default function SettingsPage() {
                   {isAdmin ? (
                     <input type="text" value={form.businessPhone} onChange={(e) => setForm((p) => ({ ...p, businessPhone: e.target.value }))}
                       placeholder={t('settings.phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1', defaultValue: '+1 555 000 0000' })}
-                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                      className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                   ) : (
-                    <p className="font-medium text-gray-900">{form.businessPhone || '—'}</p>
+                    <p className="font-medium text-gray-900"><Ltr>{form.businessPhone || '—'}</Ltr></p>
                   )}
                 </div>
                 <div className="md:col-span-2">
@@ -2332,7 +2345,7 @@ export default function SettingsPage() {
                 <Hash size={20} className="text-gray-500" />
                 <h2 className="font-semibold text-gray-900">{t('settings.orderNumberFormat', { defaultValue: 'Number Formats' })}</h2>
                 {!isAdmin && (
-                  <span className="ml-auto flex items-center gap-1 text-xs text-gray-400">
+                  <span className="ms-auto flex items-center gap-1 text-xs text-gray-400">
                     <Lock size={12} /> {t('settings.adminOnly')}
                   </span>
                 )}
@@ -2358,11 +2371,11 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.orderNumberPreview', { defaultValue: 'Preview' })}</label>
                   <p className="font-mono font-medium text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
-                    {[
+                    <Ltr>{[
                       orderNumberForm.prefix,
                       orderNumberForm.includeDate ? new Date().toISOString().slice(0, 10).replace(/-/g, '') : '',
                       '0001',
-                    ].filter(Boolean).join('-')}
+                    ].filter(Boolean).join('-')}</Ltr>
                   </p>
                 </div>
               </div>
@@ -2411,7 +2424,7 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-sm text-gray-500 mb-1">{t('settings.invoiceNumberPreview', { defaultValue: 'Preview' })}</label>
                     <p className="font-mono font-medium text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
-                      {[
+                      <Ltr>{[
                         orderNumberForm.invoicePrefix,
                         orderNumberForm.invoiceIncludePeriod ? invoicePreviewSegment(
                           orderNumberForm.invoiceResetPeriod,
@@ -2419,7 +2432,7 @@ export default function SettingsPage() {
                           orderNumberForm.invoiceFinancialYearStartDay,
                         ) : '',
                         '0001',
-                      ].filter(Boolean).join('-')}
+                      ].filter(Boolean).join('-')}</Ltr>
                     </p>
                   </div>
                   <div>
@@ -2621,9 +2634,9 @@ export default function SettingsPage() {
                                 <QrCode size={40} className="text-gray-400" />
                               </div>
                             )}
-                            <a href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
+                            <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
                               {ipInfo.url}
-                            </a>
+                            </Ltr>
                           </div>
                         ))}
                       </div>
@@ -2631,9 +2644,9 @@ export default function SettingsPage() {
                         <div className="flex items-start gap-3">
                           <div className="flex-1">
                             <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('settings.appleDevices')}</p>
-                            <a href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
+                            <Ltr as="a" href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
                               {posInfo.mdns_url}
-                            </a>
+                            </Ltr>
                             <p className="text-xs text-blue-600 mt-2">
                               {t('settings.appleDevicesHint')}
                             </p>
@@ -2655,15 +2668,15 @@ export default function SettingsPage() {
                       <div className="flex-1 space-y-4">
                         <div>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.directIp')}</p>
-                          <a href={posInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
+                          <Ltr as="a" href={posInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
                             {posInfo.ip_url}
-                          </a>
+                          </Ltr>
                         </div>
                         <div>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.mdnsAlwaysStable')}</p>
-                          <a href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
+                          <Ltr as="a" href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
                             {posInfo.mdns_url}
-                          </a>
+                          </Ltr>
                         </div>
                       </div>
                     </div>
@@ -2755,9 +2768,9 @@ export default function SettingsPage() {
                                 <QrCode size={40} className="text-gray-400" />
                               </div>
                             )}
-                            <a href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
+                            <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
                               {ipInfo.url}
-                            </a>
+                            </Ltr>
                           </div>
                         ))}
                       </div>
@@ -2765,9 +2778,9 @@ export default function SettingsPage() {
                         <div className="flex items-start gap-3">
                           <div className="flex-1">
                             <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('settings.appleDevices')}</p>
-                            <a href={kdsInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
+                            <Ltr as="a" href={kdsInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
                               {kdsInfo.mdns_url}
-                            </a>
+                            </Ltr>
                             <p className="text-xs text-blue-600 mt-2">
                               {t('settings.appleDevicesHint')}
                             </p>
@@ -2789,15 +2802,15 @@ export default function SettingsPage() {
                       <div className="flex-1 space-y-4">
                         <div>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.directIp')}</p>
-                          <a href={kdsInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
+                          <Ltr as="a" href={kdsInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
                             {kdsInfo.ip_url}
-                          </a>
+                          </Ltr>
                         </div>
                         <div>
                           <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.mdnsAlwaysStable')}</p>
-                          <a href={kdsInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
+                          <Ltr as="a" href={kdsInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
                             {kdsInfo.mdns_url}
-                          </a>
+                          </Ltr>
                         </div>
                       </div>
                     </div>
@@ -3016,17 +3029,17 @@ export default function SettingsPage() {
                                   <QrCode size={40} className="text-gray-400" />
                                 </div>
                               )}
-                              <a href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
+                              <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
                                 {ipInfo.url}
-                              </a>
+                              </Ltr>
                             </div>
                           ))}
                         </div>
                         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                           <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('settings.appleDevices')}</p>
-                          <a href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
+                          <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
                             {serverAppInfo.mdns_url}
-                          </a>
+                          </Ltr>
                           <p className="text-xs text-blue-600 mt-2">{t('settings.appleDevicesHint')}</p>
                         </div>
                       </>
@@ -3044,15 +3057,15 @@ export default function SettingsPage() {
                         <div className="flex-1 space-y-4">
                           <div>
                             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.directIp')}</p>
-                            <a href={serverAppInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
+                            <Ltr as="a" href={serverAppInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
                               {serverAppInfo.ip_url}
-                            </a>
+                            </Ltr>
                           </div>
                           <div>
                             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.mdnsAlwaysStable')}</p>
-                            <a href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
+                            <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
                               {serverAppInfo.mdns_url}
-                            </a>
+                            </Ltr>
                           </div>
                         </div>
                       </div>
@@ -3106,7 +3119,7 @@ export default function SettingsPage() {
                     }`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      loyaltyEnabled ? 'translate-x-6' : 'translate-x-1'
+                      loyaltyEnabled ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
                     }`} />
                   </button>
                 </div>
@@ -3126,7 +3139,7 @@ export default function SettingsPage() {
                         value={globalCashbackPercent}
                         onChange={(e) => setGlobalCashbackPercent(e.target.value)}
                         placeholder="0"
-                        className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-right"
+                        className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand transition-shadow text-end"
                       />
                       <span className="text-gray-500 font-medium">%</span>
                     </div>
@@ -3218,7 +3231,7 @@ export default function SettingsPage() {
                     }`}
                   >
                     <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      discountRequiresApproval ? 'translate-x-6' : 'translate-x-1'
+                      discountRequiresApproval ? 'translate-x-6 rtl:-translate-x-6' : 'translate-x-1 rtl:-translate-x-1'
                     }`} />
                   </button>
                 </div>
@@ -3240,7 +3253,7 @@ export default function SettingsPage() {
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">{t('settings.email')}</p>
-                  <p className="font-medium text-gray-900">{user?.email}</p>
+                  <p className="font-medium text-gray-900"><Ltr>{user?.email}</Ltr></p>
                 </div>
                 <div>
                   <p className="text-sm text-gray-500">{t('settings.role')}</p>
@@ -3253,7 +3266,7 @@ export default function SettingsPage() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h2 className="font-semibold text-gray-900">Contact email</h2>
-                    <p className="mt-1 text-sm text-gray-600">{cloudAccountLoadFailed ? 'Unable to load cloud account status' : cloudAccountAvailable ? (cloudAccount?.email || user?.email || 'No cloud contact email') : 'Cloud account services are currently unavailable'}</p>
+                    <p className="mt-1 text-sm text-gray-600">{cloudAccountLoadFailed ? 'Unable to load cloud account status' : cloudAccountAvailable ? <Ltr>{cloudAccount?.email || user?.email || 'No cloud contact email'}</Ltr> : 'Cloud account services are currently unavailable'}</p>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!cloudAccountAvailable ? 'bg-gray-100 text-gray-600' : cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
                     {cloudAccountLoadFailed ? 'Status unavailable' : !cloudAccountAvailable ? 'Unavailable' : cloudAccount?.verified ? 'Verified' : 'Pending verification'}
@@ -3266,18 +3279,17 @@ export default function SettingsPage() {
                 {cloudAccountAvailable && !cloudAccount?.verified && (
                   <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
                     setCloudAccountBusy(true);
-                    try { await api.post('/settings/cloud/account/verification'); toast.success('Verification email queued'); await fetchCloudAccount(); }
-                    catch (err: unknown) {
-                      const error = err as { response?: { data?: { error?: string } } };
-                      toast.error(error.response?.data?.error || 'Could not send verification email');
+                    try { await api.post('/settings/cloud/account/verification'); toast.success(t('settings.verificationEmailQueued')); await fetchCloudAccount(); }
+                    catch {
+                      toast.error(t('settings.verificationEmailFailed'));
                     }
                     finally { setCloudAccountBusy(false); }
                   }}>{cloudAccountBusy ? 'Sending…' : 'Send verification email'}</Button>
                 )}
                 {cloudAccountAvailable && (
                   <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error(t('settings.couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error(t('settings.couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
                     <p className="text-xs text-gray-500">Essential service and security notices are separate from these optional subscriptions.</p>
                   </div>
                 )}
@@ -3331,7 +3343,7 @@ export default function SettingsPage() {
                 {cloudAccount?.deletion_request && (
                   <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' || cloudAccount.deletion_request.status === 'processing' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' || cloudAccount.deletion_request.status === 'completed' || cloudAccount.deletion_request.status === 'deleted' ? 'border-green-200 bg-green-50 text-green-800' : cloudAccount.deletion_request.status === 'failed' ? 'border-red-200 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
                     <p className="font-semibold">Deletion request: {cloudAccount.deletion_request.status}</p>
-                    {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs">{cloudAccount.deletion_request.id}</p>}
+                    {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs"><Ltr>{cloudAccount.deletion_request.id}</Ltr></p>}
                     {cloudAccount.deletion_request.decision_note && <p className="mt-2">{cloudAccount.deletion_request.decision_note}</p>}
                   </div>
                 )}
@@ -3355,15 +3367,15 @@ export default function SettingsPage() {
                       setDiagnosticsConsent(false);
                       await fetchCloudAccount();
                       notifyCloudAccountStatusChanged();
-                      toast.success('All cloud services and telemetry stopped');
+                      toast.success(t('settings.cloudAllStopped'));
                     }
-                    catch { toast.error('Could not stop cloud services'); }
-                  }}><CloudOff size={16} className="mr-2" />Stop all cloud services</Button>
+                    catch { toast.error(t('settings.cloudStopFailed')); }
+                  }}><CloudOff size={16} className="me-2" />Stop all cloud services</Button>
                   {!cloudDeletionFinal && <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'processing' || cloudAccount?.deletion_request?.status === 'approved' || cloudStatus.cloud_deletion_status === 'processing'} onClick={() => {
                     const phrase = window.prompt('This submits a deletion request to FloAdmin for manual review and immediately stops cloud services here. After approval, store-linked server data is permanently deleted. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
                     if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
-                    else if (phrase !== null) toast.error('Confirmation phrase did not match');
-                  }}><Trash2 size={16} className="mr-2" />Request cloud data deletion</Button>}
+                    else if (phrase !== null) toast.error(t('settings.confirmationPhraseMismatch'));
+                  }}><Trash2 size={16} className="me-2" />Request cloud data deletion</Button>}
                   {cloudDeletionNeedsAction && (
                     <>
                       <Button variant="outline" onClick={() => void refreshDeletionStatus()} disabled={refreshingDeletionStatus}>
@@ -3410,7 +3422,7 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     onClick={() => setInstalledPrintersOpen((open) => !open)}
-                    className="flex w-full items-center justify-between gap-3 border-y border-gray-100 py-3 text-left"
+                    className="flex w-full items-center justify-between gap-3 border-y border-gray-100 py-3 text-start"
                     aria-expanded={installedPrintersOpen}
                   >
                     <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -3446,7 +3458,7 @@ export default function SettingsPage() {
                               </div>
                               <p className="text-xs text-gray-500 mt-0.5 truncate">
                                 {p.make !== 'Unknown' ? `${p.make} ${p.model}` : p.model}
-                                {p.connectionType === 'network' && p.ipAddress ? ` · ${p.ipAddress}${p.port ? ':' + p.port : ''}` : ''}
+                                {p.connectionType === 'network' && p.ipAddress ? <> · <Ltr>{p.ipAddress}{p.port ? ':' + p.port : ''}</Ltr></> : ''}
                                 {p.paperWidth ? ` · ${printWidthLabel(p.paperWidth)}` : ''}
                                 {p.profileId ? ` · ${t('settings.printerSupportedProfile')}` : ''}
                               </p>
@@ -3496,7 +3508,7 @@ export default function SettingsPage() {
                         )}
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5">
-                        {p.connection_type === 'network' ? `${p.ip_address}:${p.port}` :
+                        {p.connection_type === 'network' ? <Ltr>{p.ip_address}:{p.port}</Ltr> :
                          p.connection_type === 'usb' ? t('settings.connectionUsb') :
                          t('settings.browserWebusb')}
                         {' · '}{printWidthLabel(p.paper_width)}
@@ -3559,7 +3571,7 @@ export default function SettingsPage() {
                         <input type="text" value={printerForm.ip_address}
                           onChange={(e) => setPrinterForm((p) => ({ ...p, ip_address: e.target.value }))}
                           placeholder={t('settings.ipAddressPlaceholder')}
-                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                       </div>
                       <div>
                         <label className="block text-xs text-gray-500 mb-1">{t('settings.port')}</label>
@@ -3765,7 +3777,7 @@ export default function SettingsPage() {
                   const isSelected = billForm.billTemplate === card.id;
                   return (
                     <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id }))}
-                      className={`text-left rounded-xl border-2 p-4 transition-all ${
+                      className={`text-start rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}>
                       <p className="font-semibold text-gray-900 mb-2">
@@ -3960,7 +3972,7 @@ export default function SettingsPage() {
                           {googleDriveStatus.connected ? t('settings.googleDriveConnected') : t('settings.googleDriveNotConnected')}
                         </p>
                         {googleDriveStatus.connected && googleDriveStatus.account_email && (
-                          <p className="text-xs text-gray-500">{t('settings.googleDriveAccount')}: {googleDriveStatus.account_email}</p>
+                          <p className="text-xs text-gray-500">{t('settings.googleDriveAccount')}: <Ltr>{googleDriveStatus.account_email}</Ltr></p>
                         )}
                       </div>
                     </div>
@@ -4377,7 +4389,7 @@ export default function SettingsPage() {
                       <div className="flex items-center gap-3 flex-1">
                       <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
                         <span className="font-mono text-2xl font-bold tracking-[0.3em] text-gray-900">
-                          {pairingCode.toUpperCase()}
+                          <Ltr>{pairingCode.toUpperCase()}</Ltr>
                         </span>
                       </div>
                       <button
@@ -4612,10 +4624,10 @@ export default function SettingsPage() {
                   </span>
                 </div>
                 {appVersion && (
-                  <p className="text-sm font-medium text-gray-900">{t('settings.version')}: {appVersion}</p>
+                  <p className="text-sm font-medium text-gray-900">{t('settings.version')}: <Ltr>{appVersion}</Ltr></p>
                 )}
                 {updateStatus.version && updateStatus.version !== appVersion && (
-                  <p className="text-sm text-gray-600 mt-1">Latest Available: {updateStatus.version}</p>
+                  <p className="text-sm text-gray-600 mt-1">Latest Available: <Ltr>{updateStatus.version}</Ltr></p>
                 )}
                 {updateStatus.percent !== undefined && (
                   <div className="mt-2">

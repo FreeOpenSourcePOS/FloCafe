@@ -56,9 +56,8 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       await heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
       toast.success(t('pos.orderHeldFor', { table: tableName }));
-    } catch (err: unknown) {
-      const e = err as Error;
-      toast.error(e.message || t('pos.holdOrderFailed'));
+    } catch {
+      toast.error(t('pos.holdOrderFailed'));
     }
   };
 
@@ -218,7 +217,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               maxLength={200}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
             />
-            <p className="text-xs text-gray-400 text-right mt-0.5">{cart.orderNotes.length}/200</p>
+            <p className="text-xs text-gray-400 text-end mt-0.5">{cart.orderNotes.length}/200</p>
           </div>
         )}
         <div className="flex justify-between mb-1 text-sm">
@@ -234,7 +233,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         <div className="flex gap-2">
           {canHold && (
             <Button variant="outline" onClick={handleHold} className="flex-1">
-              <Pause size={14} className="mr-1" /> {t('pos.holdButton')}
+              <Pause size={14} className="me-1" /> {t('pos.holdButton')}
             </Button>
           )}
           <Button

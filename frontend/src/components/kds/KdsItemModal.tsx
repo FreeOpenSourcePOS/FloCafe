@@ -111,7 +111,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
                   >
                     {statusLabel(s)}
                   </div>
-                  {i < STATUS_ORDER.length - 1 && <ChevronRight size={12} className="text-gray-300 shrink-0" />}
+                  {i < STATUS_ORDER.length - 1 && <ChevronRight size={12} className="text-gray-300 shrink-0 rtl-flip" />}
                 </div>
               );
             })}
@@ -140,7 +140,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
                   disabled={updating}
                   className="w-full py-4 rounded-2xl text-gray-600 text-base font-semibold border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
-                  <ChevronLeft size={18} />
+                  <ChevronLeft size={18} className="rtl-flip" />
                   {t('kds.backTo', { status: statusLabel(prev) })}
                 </button>
               )}

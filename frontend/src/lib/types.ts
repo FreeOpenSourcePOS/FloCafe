@@ -1,4 +1,5 @@
 import type { Language } from '@/lib/i18n';
+import type { CurrencyDisplay, DigitMode, CalendarMode } from '@/lib/countries';
 
 export interface User {
   id: number;
@@ -23,6 +24,11 @@ export interface Tenant {
   status: string;
   role?: string;
   language?: Language;
+  // Iran locale display preferences (Batch G, Refs #241). Display-only —
+  // stored amounts stay in the tenant currency (IRR/Rial for Iran).
+  currency_display?: CurrencyDisplay;
+  number_digits?: DigitMode;
+  calendar?: CalendarMode;
 }
 
 export interface Category {

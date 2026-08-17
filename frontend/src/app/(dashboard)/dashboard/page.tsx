@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet } from 'lucide-react';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { getCountryByCode } from '@/lib/countries';
@@ -316,7 +317,7 @@ export default function DashboardPage() {
                   {isToday ? t('dashboard.recentOrders') : t('dashboard.orders')}
                 </h2>
                 <Link href="/orders" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
-                  {t('dashboard.viewAll')} <ArrowRight size={12} />
+                  {t('dashboard.viewAll')} <ArrowRight size={12} className="rtl-flip" />
                 </Link>
               </div>
               {recentOrders.length === 0 ? (
@@ -331,7 +332,7 @@ export default function DashboardPage() {
                     >
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-gray-900">#{order.order_number}</span>
+                          <span className="text-sm font-medium text-gray-900">#<Ltr>{order.order_number}</Ltr></span>
                           <span className={`text-xs font-medium ${orderStatusColor[order.status] || 'text-gray-500'}`}>
                             {t(`orders.${order.status}` as 'orders.pending' | 'orders.preparing' | 'orders.ready' | 'orders.served' | 'orders.completed' | 'orders.cancelled')}
                           </span>
@@ -357,7 +358,7 @@ export default function DashboardPage() {
                   {t('dashboard.topProductsToday')}
                 </h2>
                 <Link href="/products" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
-                  {t('dashboard.viewAll')} <ArrowRight size={12} />
+                  {t('dashboard.viewAll')} <ArrowRight size={12} className="rtl-flip" />
                 </Link>
               </div>
               {topProducts.length === 0 ? (
@@ -389,7 +390,7 @@ export default function DashboardPage() {
                   {t('dashboard.topStaff')}
                 </h2>
                 <Link href="/staff" className="flex items-center gap-1 text-xs text-brand hover:text-brand-hover font-medium">
-                  {t('dashboard.viewAll')} <ArrowRight size={12} />
+                  {t('dashboard.viewAll')} <ArrowRight size={12} className="rtl-flip" />
                 </Link>
               </div>
               {(insights?.topStaff.length ?? 0) === 0 ? (

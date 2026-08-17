@@ -1,4 +1,26 @@
 export type Language = 'en' | 'es' | 'pt' | 'fa';
+export type LanguageDirection = 'ltr' | 'rtl';
+
+/**
+ * Text direction of each supported UI language, stored next to the language
+ * definitions. Persian (fa) is RTL; all other supported languages are LTR.
+ *
+ * Consumers resolve direction through {@link getLanguageDirection} instead of
+ * re-hardcoding `fa` (HtmlLangSync, KdsHtmlLang, DirectionalToaster, …), so
+ * adding another RTL language only requires updating this map.
+ */
+export const LANGUAGE_DIRECTION: Record<Language, LanguageDirection> = {
+  en: 'ltr',
+  es: 'ltr',
+  pt: 'ltr',
+  fa: 'rtl',
+};
+
+/** Returns the text direction of a UI language (defaults to `ltr`). */
+export function getLanguageDirection(lang: Language): LanguageDirection {
+  return LANGUAGE_DIRECTION[lang] ?? 'ltr';
+}
+
 import en from './i18n/en.json';
 import es from './i18n/es.json';
 import pt from './i18n/pt.json';
@@ -61,9 +83,13 @@ export function getBrowserLanguage(): Language {
 }
 
 /**
- * On mount, fetches the tenant's preferred language from `/api/kds/info`
- * and pushes it into the global `usePosSettingsStore`. Cross-origin tabs
- * (KDS standalone) inherit the language set on the dashboard.
+ * On mount, fetches the tenant's preferred language from a public info
+ * endpoint and pushes it into the global `usePosSettingsStore`. Cross-origin
+ * tabs (KDS standalone, Server App standalone) inherit the language set on
+ * the dashboard.
+ *
+ * `infoPath` defaults to `/api/kds/info` and can be pointed at the Server
+ * App's `/api/server-app/info`, which exposes the same `language` field.
  *
  * Idempotent: only sets language if the server actually returned one.
  * Best-effort: never throws, never blocks the UI.
@@ -71,11 +97,11 @@ export function getBrowserLanguage(): Language {
 import { useEffect } from 'react';
 import { usePosSettingsStore } from '@/store/pos-settings';
 
-export function useSyncServerLanguage(): void {
+export function useSyncServerLanguage(infoPath = '/api/kds/info'): void {
   const setLanguage = usePosSettingsStore((s) => s.setLanguage);
   useEffect(() => {
     let cancelled = false;
-    fetchServerInfo().then((info) => {
+    fetchServerInfo('', 1500, infoPath).then((info) => {
       if (cancelled) return;
       // Keep the existing tenant language when metadata is unavailable.
       if (info.language) setLanguage(info.language);
@@ -83,7 +109,7 @@ export function useSyncServerLanguage(): void {
     return () => {
       cancelled = true;
     };
-  }, [setLanguage]);
+  }, [setLanguage, infoPath]);
 }
 
 export type ServerInfo = {
@@ -93,16 +119,18 @@ export type ServerInfo = {
 };
 
 /**
- * Fetch the tenant's preferred language + KDS defaults from the public
- * KDS info endpoint. Never throws: on timeout/error returns empty info,
- * so callers fall back to local heuristics. 1500ms is generous for a LAN;
- * this must not block first paint of the login screen.
+ * Fetch the tenant's preferred language + KDS defaults from a public info
+ * endpoint (default `/api/kds/info`; the Server App uses
+ * `/api/server-app/info`, which exposes the same `language`/`country`
+ * fields). Never throws: on timeout/error returns empty info, so callers
+ * fall back to local heuristics. 1500ms is generous for a LAN; this must
+ * not block first paint of the login screen.
  */
-export async function fetchServerInfo(baseUrl = '', timeoutMs = 1500): Promise<ServerInfo> {
+export async function fetchServerInfo(baseUrl = '', timeoutMs = 1500, infoPath = '/api/kds/info'): Promise<ServerInfo> {
   const empty: ServerInfo = { language: null, country: null, kdsDefaultView: null };
   if (typeof window === 'undefined') return empty;
   try {
-    const res = await fetch(`${baseUrl}/api/kds/info`, {
+    const res = await fetch(`${baseUrl}${infoPath}`, {
       signal: AbortSignal.timeout(timeoutMs),
       cache: 'no-store',
     });

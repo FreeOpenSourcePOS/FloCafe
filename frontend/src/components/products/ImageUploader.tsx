@@ -38,11 +38,11 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
 
   const processFile = useCallback(async (file: File) => {
     if (file.size > MAX_RAW_FILE_SIZE) {
-      toast.error(`File too large (max ${MAX_RAW_FILE_SIZE / 1024 / 1024} MB)`);
+      toast.error(t('products.imageTooLarge', { size: MAX_RAW_FILE_SIZE / 1024 / 1024 }));
       return;
     }
     if (!file.type.startsWith('image/')) {
-      toast.error('Please select an image file');
+      toast.error(t('products.imageSelectFile'));
       return;
     }
 
@@ -55,10 +55,10 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       setZoom(1);
     };
     reader.onerror = () => {
-      toast.error('Failed to read image file');
+      toast.error(t('products.imageReadFailed'));
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [t]);
 
   const handleCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
     cropAreaRef.current = {
@@ -88,27 +88,26 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
 
       const dataUri = compressCroppedImage(img, { x, y, width, height });
       if (!dataUri) {
-        toast.error('Could not compress this image enough. Try a tighter crop or another image.');
+        toast.error(t('products.imageCompressFailed'));
         return;
       }
 
       onChange(dataUri);
       setMode('idle');
       setCropSrc(null);
-      toast.success('Image ready');
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : 'Failed to crop image';
-      toast.error(errorMsg);
+      toast.success(t('products.imageReady'));
+    } catch {
+      toast.error(t('products.imageCropFailed'));
       setMode('idle');
       setCropSrc(null);
     }
-  }, [cropSrc, onChange]);
+  }, [cropSrc, onChange, t]);
 
   const handleUrlFetch = useCallback(async () => {
     const trimmed = urlInput.trim();
     if (!trimmed) return;
     if (!trimmed.toLowerCase().startsWith('https://')) {
-      toast.error('Only HTTPS URLs are supported');
+      toast.error(t('products.imageHttpsOnly'));
       return;
     }
     setFetching(true);
@@ -118,7 +117,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       const dataUri = res.data.data;
 
       if (!dataUri) {
-        toast.error('Could not fetch image from URL');
+        toast.error(t('products.imageFetchFailed'));
         return;
       }
 
@@ -128,14 +127,12 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       setCrop({ x: 0, y: 0 });
       setZoom(1);
       setUrlInput('');
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      const msg = axiosErr.response?.data?.error || 'Failed to fetch image';
-      toast.error(msg);
+    } catch {
+      toast.error(t('products.imageFetchFailed'));
     } finally {
       setFetching(false);
     }
-  }, [urlInput]);
+  }, [urlInput, t]);
 
   const handleRemove = useCallback(() => {
     onChange(null);
@@ -213,6 +210,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
             onChange={(e) => setUrlInput(e.target.value)}
             placeholder="https://example.com/photo.jpg"
             className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-brand outline-none"
+            dir="ltr"
             onKeyDown={(e) => e.key === 'Enter' && handleUrlFetch()}
           />
           <button type="button"
@@ -247,7 +245,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
           <img src={previewUrl} alt="Product" className="w-full h-full object-cover" />
           <button type="button"
             onClick={handleRemove}
-            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+            className="absolute top-1 end-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
           >
             <X size={12} />
           </button>

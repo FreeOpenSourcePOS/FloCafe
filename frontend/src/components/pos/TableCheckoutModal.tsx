@@ -81,9 +81,8 @@ export default function TableCheckoutModal({
       }
       const { data } = await api.post('/bills/generate', { order_id: order.id });
       onPayment(data.bill);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('pos.generateBillFailed'));
+    } catch {
+      toast.error(t('pos.generateBillFailed'));
     } finally {
       setGenerating(false);
     }
@@ -95,9 +94,8 @@ export default function TableCheckoutModal({
     try {
       const bill = order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
       setSplitBill(bill);
-    } catch (error: unknown) {
-      const message = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
-      toast.error(message || t('pos.generateBillFailed'));
+    } catch {
+      toast.error(t('pos.generateBillFailed'));
     }
     finally { setGenerating(false); }
   };
@@ -107,9 +105,8 @@ export default function TableCheckoutModal({
     setAddingItems(true);
     try {
       await onAddCartToOrder(table, order);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string; error?: string } }; message?: string };
-      toast.error(error.response?.data?.message || error.response?.data?.error || error.message || t('pos.addItemsFailed'));
+    } catch {
+      toast.error(t('pos.addItemsFailed'));
     } finally {
       setAddingItems(false);
     }
@@ -178,7 +175,7 @@ export default function TableCheckoutModal({
                       <p className="text-xs text-gray-400 italic">{item.special_instructions}</p>
                     )}
                   </div>
-                  <span className="text-xs text-gray-600 ml-2 font-medium">
+                  <span className="text-xs text-gray-600 ms-2 font-medium">
                     {formatItemTotal(item.total, item.subtotal)}
                   </span>
                 </div>
@@ -211,7 +208,7 @@ export default function TableCheckoutModal({
           {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-gray-500">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pos.pay', { defaultValue: 'Pay' })}</Button>}</div>)}</div>}
 
           {/* Show different buttons based on cart state */}
-          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="mr-2" />{t('pos.splitCheck', { defaultValue: 'Split check' })}</Button>}
+          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('pos.splitCheck', { defaultValue: 'Split check' })}</Button>}
           {cartItemCount > 0 ? (
             // Cart has items - show "Add items to order" option
             <div className="space-y-2">
@@ -221,7 +218,7 @@ export default function TableCheckoutModal({
                 className="w-full"
                 size="lg"
               >
-                <ShoppingCart size={16} className="mr-2" />
+                <ShoppingCart size={16} className="me-2" />
                 {addingItems ? t('pos.adding') : t('pos.addToOrder', { count: cartItemCount })}
               </Button>
               <Button onClick={handleCheckout} variant="outline" className="w-full" disabled={generating}>

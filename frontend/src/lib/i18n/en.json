@@ -1748,5 +1748,18 @@
   "settings.cloudStopFailed": "Could not stop cloud services",
   "settings.confirmationPhraseMismatch": "Confirmation phrase did not match",
   "settings.taxSupportUnavailable": "Tax support for {country} is not available yet. We requested the plugin and will build it soon. Taxes are now off.",
-  "kds.itemsUpdateFailed": "{count, plural, one {# item could not be updated} other {# items could not be updated}}. The board was refreshed."
+  "kds.itemsUpdateFailed": "{count, plural, one {# item could not be updated} other {# items could not be updated}}. The board was refreshed.",
+  "settings.iranLocaleTitle": "Iran display preferences",
+  "settings.iranCurrencyDisplay": "Currency display",
+  "settings.iranCurrencyDisplayRial": "Rial (ریال)",
+  "settings.iranCurrencyDisplayToman": "Toman (تومان)",
+  "settings.iranCurrencyDisplayTomanShort": "Toman shorthand (ت)",
+  "settings.iranNumberDigits": "Digits",
+  "settings.iranNumberDigitsLocale": "Auto (Persian)",
+  "settings.iranNumberDigitsLatin": "Latin (0-9)",
+  "settings.iranCalendar": "Calendar",
+  "settings.iranCalendarLocale": "Auto (Shamsi)",
+  "settings.iranCalendarPersian": "Shamsi (Persian)",
+  "settings.iranCalendarGregorian": "Gregorian",
+  "settings.iranLocaleHint": "Display-only — amounts stay stored in Rial (IRR)."
 }

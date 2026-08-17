@@ -8,6 +8,6 @@ import { formatNumberForTenant } from '@/lib/countries';
  * browser's default locale.
  */
 export function useFormatNumber() {
-  const country = useAuthStore((s) => s.currentTenant?.country);
-  return (n: number) => formatNumberForTenant(n, country);
+  const tenant = useAuthStore((s) => s.currentTenant);
+  return (n: number) => formatNumberForTenant(n, tenant?.country, { digits: tenant?.number_digits });
 }

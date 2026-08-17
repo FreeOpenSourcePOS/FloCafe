@@ -1748,5 +1748,18 @@
   "settings.cloudStopFailed": "توقف خدمات ابری انجام نشد",
   "settings.confirmationPhraseMismatch": "عبارت تأیید مطابقت نداشت",
   "settings.taxSupportUnavailable": "پشتیبانی مالیاتی برای {country} هنوز در دسترس نیست. افزونه را درخواست کردیم و به‌زودی می‌سازیم. مالیات‌ها اکنون خاموش است.",
-  "kds.itemsUpdateFailed": "{count, plural, one {# کالا به‌روزرسانی نشد} other {# کالا به‌روزرسانی نشدند}}. تابلو بازخوانی شد."
+  "kds.itemsUpdateFailed": "{count, plural, one {# کالا به‌روزرسانی نشد} other {# کالا به‌روزرسانی نشدند}}. تابلو بازخوانی شد.",
+  "settings.iranLocaleTitle": "تنظیمات نمایش ایران",
+  "settings.iranCurrencyDisplay": "نمایش ارز",
+  "settings.iranCurrencyDisplayRial": "ریال",
+  "settings.iranCurrencyDisplayToman": "تومان",
+  "settings.iranCurrencyDisplayTomanShort": "تومان کوتاه (ت)",
+  "settings.iranNumberDigits": "ارقام",
+  "settings.iranNumberDigitsLocale": "خودکار (فارسی)",
+  "settings.iranNumberDigitsLatin": "لاتین (0-9)",
+  "settings.iranCalendar": "تقویم",
+  "settings.iranCalendarLocale": "خودکار (شمسی)",
+  "settings.iranCalendarPersian": "شمسی (فارسی)",
+  "settings.iranCalendarGregorian": "میلادی",
+  "settings.iranLocaleHint": "فقط نمایش — مبالغ همچنان به ریال (IRR) ذخیره می‌شوند."
 }

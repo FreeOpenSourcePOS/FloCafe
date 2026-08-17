@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { COUNTRIES, countryName } from '@/lib/countries';
+import { COUNTRIES, countryName, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -1135,12 +1135,18 @@ export default function SettingsPage() {
     tablesRequired: boolean;
     taxRegistered: boolean;
     taxRegistrationNumber: string; businessAddress: string; businessPhone: string; instagramHandle: string;
+    currencyDisplay: CurrencyDisplay;
+    numberDigits: DigitMode;
+    calendar: CalendarMode;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
+    currencyDisplay: 'rial',
+    numberDigits: 'locale',
+    calendar: 'locale',
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
@@ -1304,6 +1310,9 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
+        currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
+        numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
+        calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1577,6 +1586,9 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
+        currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
+        numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
+        calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1906,6 +1918,9 @@ export default function SettingsPage() {
         business_address: form.businessAddress,
         business_phone: normalizedBusinessPhone,
         instagram_handle: form.instagramHandle,
+        currency_display: form.currencyDisplay,
+        number_digits: form.numberDigits,
+        calendar: form.calendar,
       });
       if (savedBusiness.countryCode !== form.countryCode) {
         const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
@@ -1944,7 +1959,7 @@ export default function SettingsPage() {
       posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
-      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode });
+      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
       if (!silent) toast.success(t('settings.storeSaved'));
     } catch (err) {
       if (!silent) {
@@ -2236,6 +2251,61 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
+                {form.countryCode === 'IR' && (
+                  <div className="md:col-span-2 space-y-4 rounded-lg border border-gray-100 bg-gray-50/60 p-4">
+                    <p className="text-sm font-medium text-gray-700">{t('settings.iranLocaleTitle')}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranCurrencyDisplay')}</label>
+                        {isAdmin ? (
+                          <select
+                            value={form.currencyDisplay}
+                            onChange={(e) => setForm((p) => ({ ...p, currencyDisplay: e.target.value as CurrencyDisplay }))}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                          >
+                            <option value="rial">{t('settings.iranCurrencyDisplayRial')}</option>
+                            <option value="toman">{t('settings.iranCurrencyDisplayToman')}</option>
+                            <option value="toman_short">{t('settings.iranCurrencyDisplayTomanShort')}</option>
+                          </select>
+                        ) : (
+                          <p className="font-medium text-gray-900">{form.currencyDisplay === 'toman' ? t('settings.iranCurrencyDisplayToman') : form.currencyDisplay === 'toman_short' ? t('settings.iranCurrencyDisplayTomanShort') : t('settings.iranCurrencyDisplayRial')}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranNumberDigits')}</label>
+                        {isAdmin ? (
+                          <select
+                            value={form.numberDigits}
+                            onChange={(e) => setForm((p) => ({ ...p, numberDigits: e.target.value as DigitMode }))}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                          >
+                            <option value="locale">{t('settings.iranNumberDigitsLocale')}</option>
+                            <option value="latin">{t('settings.iranNumberDigitsLatin')}</option>
+                          </select>
+                        ) : (
+                          <p className="font-medium text-gray-900">{form.numberDigits === 'latin' ? t('settings.iranNumberDigitsLatin') : t('settings.iranNumberDigitsLocale')}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranCalendar')}</label>
+                        {isAdmin ? (
+                          <select
+                            value={form.calendar}
+                            onChange={(e) => setForm((p) => ({ ...p, calendar: e.target.value as CalendarMode }))}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                          >
+                            <option value="locale">{t('settings.iranCalendarLocale')}</option>
+                            <option value="persian">{t('settings.iranCalendarPersian')}</option>
+                            <option value="gregorian">{t('settings.iranCalendarGregorian')}</option>
+                          </select>
+                        ) : (
+                          <p className="font-medium text-gray-900">{form.calendar === 'persian' ? t('settings.iranCalendarPersian') : form.calendar === 'gregorian' ? t('settings.iranCalendarGregorian') : t('settings.iranCalendarLocale')}</p>
+                        )}
+                      </div>
+                    </div>
+                    <p className="text-xs text-gray-400">{t('settings.iranLocaleHint')}</p>
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.billingType')}</label>
                   {isAdmin ? (

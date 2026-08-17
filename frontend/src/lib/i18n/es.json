@@ -1748,5 +1748,18 @@
   "settings.cloudStopFailed": "No se pudieron detener los servicios en la nube",
   "settings.confirmationPhraseMismatch": "La frase de confirmación no coincide",
   "settings.taxSupportUnavailable": "El soporte de impuestos para {country} aún no está disponible. Solicitamos el plugin y lo construiremos pronto. Los impuestos ahora están desactivados.",
-  "kds.itemsUpdateFailed": "{count, plural, one {# artículo no se pudo actualizar} other {# artículos no se pudieron actualizar}}. Se actualizó el tablero."
+  "kds.itemsUpdateFailed": "{count, plural, one {# artículo no se pudo actualizar} other {# artículos no se pudieron actualizar}}. Se actualizó el tablero.",
+  "settings.iranLocaleTitle": "Preferencias de visualización de Irán",
+  "settings.iranCurrencyDisplay": "Visualización de moneda",
+  "settings.iranCurrencyDisplayRial": "Rial (ریال)",
+  "settings.iranCurrencyDisplayToman": "Toman (تومان)",
+  "settings.iranCurrencyDisplayTomanShort": "Toman abreviado (ت)",
+  "settings.iranNumberDigits": "Dígitos",
+  "settings.iranNumberDigitsLocale": "Auto (persa)",
+  "settings.iranNumberDigitsLatin": "Latino (0-9)",
+  "settings.iranCalendar": "Calendario",
+  "settings.iranCalendarLocale": "Auto (shamsí)",
+  "settings.iranCalendarPersian": "Shamsí (persa)",
+  "settings.iranCalendarGregorian": "Gregoriano",
+  "settings.iranLocaleHint": "Solo visualización: los importes se guardan en riales (IRR)."
 }

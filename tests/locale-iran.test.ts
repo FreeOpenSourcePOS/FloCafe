@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import {
   formatCurrency,
   formatCurrencyForTenant,
+  formatMoney,
   formatNumber,
   formatNumberForTenant,
+  formatDateForTenant,
   getCountryByCode,
 } from '../main/countries';
 
@@ -126,4 +128,60 @@ test('non-Iran tenants keep existing currency behavior', () => {
   assert.equal(formatCurrency(1234.5, 'USD', 'en-US'), '$1,234.50');
   assert.match(formatCurrency(1234.5, 'INR', 'en-IN'), /1,234\.50/);
   assert.match(formatCurrency(1234.5, 'ARS', 'es-AR'), /1\.234,50/);
+});
+
+test('formatMoney: IR Toman divides by 10 and suffixes تومان (display-only)', () => {
+  const out = formatMoney(6000000, 'IRR', 'fa-IR', { currencyDisplay: 'toman' });
+  assert.ok(out.includes('تومان'), `expected تومان, got: ${out}`);
+  // 6,000,000 stored Rial → 600,000 displayed Toman (never a stored mutation).
+  assert.equal(latinDigits(out), '600000');
+});
+
+test('formatMoney: IR Toman short uses Persian suffix by default', () => {
+  const out = formatMoney(6000000, 'IRR', 'fa-IR', { currencyDisplay: 'toman_short' });
+  assert.ok(out.endsWith('ت'), `expected Persian shorthand suffix, got: ${out}`);
+  assert.ok(!out.includes('تومان'), `expected no تومان word, got: ${out}`);
+  assert.equal(latinDigits(out), '600000');
+});
+
+test('formatMoney: IR Toman short uses Latin suffix with Latin digits', () => {
+  const out = formatMoney(6000000, 'IRR', 'fa-IR', { currencyDisplay: 'toman_short', digits: 'latin' });
+  assert.equal(out, '600,000T');
+});
+
+test('formatMoney: IR Rial mode with Latin digits keeps the Rial label', () => {
+  const out = formatMoney(6000000, 'IRR', 'fa-IR', { digits: 'latin' });
+  assert.ok(out.includes('ریال'), `expected ریال, got: ${out}`);
+  assert.match(out, /6,000,000/);
+});
+
+test('formatMoney: non-IRR currencies ignore currencyDisplay preferences', () => {
+  assert.equal(formatMoney(1234.5, 'USD', 'en-US', { currencyDisplay: 'toman' }), '$1,234.50');
+  const ars = formatMoney(1234.5, 'ARS', 'es-AR', { currencyDisplay: 'toman_short' });
+  assert.match(ars, /1\.234,50/);
+  assert.ok(!ars.includes('ت') && !ars.includes('تومان'), `expected no Toman token, got: ${ars}`);
+});
+
+test('formatNumberForTenant: IR Latin digits', () => {
+  assert.equal(formatNumberForTenant(1234, 'IR', { digits: 'latin' }), '1,234');
+  assert.equal(formatNumberForTenant(1234, 'IR'), formatNumberForTenant(1234, 'IR', { digits: 'locale' }));
+});
+
+test('formatDateForTenant: IR Gregorian calendar', () => {
+  const date = new Date(Date.UTC(2026, 7, 17, 12, 30, 0));
+  const out = formatDateForTenant(date, 'IR', 'Asia/Tehran', { calendar: 'gregorian' }, { year: 'numeric', month: 'short', day: 'numeric' });
+  assert.ok(out.includes('۲۰۲۶'), `expected Gregorian year 2026, got: ${out}`);
+});
+
+test('formatDateForTenant: IR Persian calendar with Latin digits', () => {
+  const date = new Date(Date.UTC(2026, 7, 17, 12, 30, 0));
+  const out = formatDateForTenant(date, 'IR', 'Asia/Tehran', { calendar: 'persian', digits: 'latin' }, { year: 'numeric', month: 'short', day: 'numeric' });
+  assert.ok(out.includes('1405'), `expected Shamsi year 1405, got: ${out}`);
+  assert.ok(out.includes('مرداد'), `expected Mordad month, got: ${out}`);
+});
+
+test('formatDateForTenant: non-Iran tenants stay Gregorian', () => {
+  const date = new Date(Date.UTC(2026, 7, 17, 12, 30, 0));
+  const out = formatDateForTenant(date, 'IN', 'Asia/Kolkata', {}, { year: 'numeric', month: 'short', day: 'numeric' });
+  assert.ok(out.includes('2026'), `expected Gregorian year 2026, got: ${out}`);
 });

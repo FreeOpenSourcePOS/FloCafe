@@ -84,7 +84,7 @@ export default function StatusBar() {
         <span className="hidden text-red-600 sm:inline">{error}</span>
       )}
 
-      <div className="ml-auto flex h-full items-center divide-x divide-border/70">
+      <div className="ms-auto flex h-full items-center divide-x divide-border/70">
         <div className="flex items-center gap-1.5 px-3" title={t('nav.portLabel')}>
           <Server size={13} className="text-muted-foreground/70" />
           <span className="hidden text-muted-foreground lg:inline">{t('nav.portLabel')}</span>

@@ -9,7 +9,8 @@
     "resolveJsonModule": true,
     "strict": false,
     "rootDir": "..",
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "react-jsx"
   },
   "include": ["../tests/**/*", "../main/**/*"]
 }

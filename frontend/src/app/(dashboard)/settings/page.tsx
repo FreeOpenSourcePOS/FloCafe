@@ -3020,9 +3020,9 @@ export default function SettingsPage() {
                                   <QrCode size={40} className="text-gray-400" />
                                 </div>
                               )}
-                              <a href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
+                              <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
                                 {ipInfo.url}
-                              </a>
+                              </Ltr>
                             </div>
                           ))}
                         </div>

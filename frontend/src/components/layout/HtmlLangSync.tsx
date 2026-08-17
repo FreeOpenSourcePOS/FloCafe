@@ -13,7 +13,7 @@ import { getLanguageDirection } from '@/lib/i18n';
  * readers always have the correct BCP 47 locale and text-direction cues,
  * even though the root layout is a static Next.js export.
  *
- * HtmlLangSync handles the main application document.
+ * HtmlLangSync handles the main application document and standalone layouts (such as Server App).
  * KDS performs equivalent synchronization separately through KdsHtmlLang.
  */
 export function HtmlLangSync() {

@@ -112,6 +112,7 @@ const FA_INTENTIONAL_IDENTICAL: ReadonlySet<string> = new Set([
   'settings.portPlaceholder', // example port
   'settings.registrationEmailPlaceholder', // example email
   'settings.registrationLastError', // pure placeholder: {error}
+  'serverApp.emailPlaceholder', // example email
   'settings.revflo', // brand
   'settings.tabOrderflow', // brand
   'whatsapp.connect.pairingPhonePlaceholder', // pure format: {dialCode}XXXXXXXXXX

@@ -82,6 +82,7 @@ src/
 │   │   ├── reports/        # Sales reports
 │   │   └── settings/       # App settings
 │   ├── kds-standalone/     # Standalone KDS mode
+│   ├── server-standalone/  # Standalone Server App (tableside ordering)
 │   └── setup/              # Initial setup wizard
 ├── components/             # React components
 │   ├── pos/                # POS-specific components

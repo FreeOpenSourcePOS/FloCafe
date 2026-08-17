@@ -33,7 +33,36 @@ const ROOT = path.join(__dirname, '..');
 const UI_DIR = path.join(ROOT, 'frontend/src/components/ui');
 const LAYOUT_DIR = path.join(ROOT, 'frontend/src/components/layout');
 const GLOBALS_CSS = path.join(ROOT, 'frontend/src/app/globals.css');
-const LTR_COMPONENT = path.join(LAYOUT_DIR, 'Ltr.tsx');
+const Module = require('module');
+const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
+
+function loadLtrComponent(): {
+  Ltr: any;
+  React: typeof import('react');
+  ReactDOMServer: typeof import('react-dom/server');
+} {
+  const moduleApi = require('module') as {
+    _resolveFilename: (...args: any[]) => string;
+  };
+  const originalResolveFilename = moduleApi._resolveFilename;
+
+  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+    let resolvedRequest = request;
+    if (request.startsWith('@/')) {
+      resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
+    }
+    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  try {
+    const React = frontendRequire('react');
+    const ReactDOMServer = frontendRequire('react-dom/server');
+    const { Ltr } = require('../frontend/src/components/layout/Ltr');
+    return { Ltr, React, ReactDOMServer };
+  } finally {
+    moduleApi._resolveFilename = originalResolveFilename;
+  }
+}
 
 /**
  * Physical directional utilities that must be converted to logical ones in
@@ -121,12 +150,56 @@ function run(): void {
   assert(/scaleX\(-1\)/.test(css), '.rtl-flip must mirror with scaleX(-1)');
   console.log('  ✓ globals.css defines .ltr-island and .rtl-flip');
 
-  // 3. The shared Ltr component renders dir="ltr" with the ltr-island class.
-  const ltrSrc = fs.readFileSync(LTR_COMPONENT, 'utf8');
-  assert(/['"]ltr-island['"]/.test(ltrSrc), 'Ltr component must use the ltr-island class');
-  assert(/dir="ltr"/.test(ltrSrc), 'Ltr component must render dir="ltr"');
-  assert(/export function Ltr/.test(ltrSrc), 'Ltr component must be exported');
-  console.log('  ✓ Ltr component renders dir="ltr" LTR islands');
+  // 3. The shared Ltr component renders dir="ltr" with the ltr-island class via React.
+  const { Ltr, React, ReactDOMServer } = loadLtrComponent();
+  assert(typeof Ltr === 'function', 'Ltr component must be exported as a function');
+
+  const defaultRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, null, 'user@example.com')
+  );
+  assert(
+    defaultRender === '<span dir="ltr" class="ltr-island">user@example.com</span>',
+    `Ltr must render default span with dir="ltr" and ltr-island class, got: ${defaultRender}`
+  );
+
+  const customClassRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, { className: 'font-mono text-sm' }, '192.168.1.1')
+  );
+  assert(
+    customClassRender === '<span dir="ltr" class="ltr-island font-mono text-sm">192.168.1.1</span>',
+    `Ltr must merge custom className with ltr-island class, got: ${customClassRender}`
+  );
+
+  const customTagRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, { as: 'div', className: 'text-xs' }, 'PAIR-1234')
+  );
+  assert(
+    customTagRender === '<div dir="ltr" class="ltr-island text-xs">PAIR-1234</div>',
+    `Ltr must support rendering as a custom element tag (as="div"), got: ${customTagRender}`
+  );
+
+  const propsRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, { id: 'email-link', 'data-testid': 'user-email', title: 'User Email' }, 'test@domain.com')
+  );
+  assert(
+    propsRender.includes('dir="ltr"') &&
+      propsRender.includes('class="ltr-island"') &&
+      propsRender.includes('id="email-link"') &&
+      propsRender.includes('data-testid="user-email"') &&
+      propsRender.includes('title="User Email"') &&
+      propsRender.includes('test@domain.com'),
+    `Ltr must forward HTML attributes and props to the rendered element, got: ${propsRender}`
+  );
+
+  const nestedRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, null, React.createElement('strong', null, 'nested'))
+  );
+  assert(
+    nestedRender === '<span dir="ltr" class="ltr-island"><strong>nested</strong></span>',
+    `Ltr must render nested children correctly, got: ${nestedRender}`
+  );
+
+  console.log('  ✓ Ltr component renders dir="ltr" LTR islands through React interface');
 
   console.log('\n✅ All RTL/LTR foundation checks passed.');
 }

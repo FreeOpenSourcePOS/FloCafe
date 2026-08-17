@@ -47,13 +47,8 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
       onSaved(data.customer);
       toast.success(t('pos.customerUpdated', { defaultValue: 'Customer updated' }));
       onClose();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string; message?: string } } };
-      toast.error(
-        error.response?.data?.error ||
-        error.response?.data?.message ||
-        t('pos.customerUpdateFailed', { defaultValue: 'Failed to update customer' })
-      );
+    } catch {
+      toast.error(t('pos.customerUpdateFailed', { defaultValue: 'Failed to update customer' }));
     } finally {
       setSaving(false);
     }

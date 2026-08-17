@@ -77,9 +77,8 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
       setQuery('');
       setResults([]);
       toast.success(t('pos.customerCreated'));
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { message?: string } } };
-      toast.error(e.response?.data?.message || t('pos.createCustomerFailed'));
+    } catch {
+      toast.error(t('pos.createCustomerFailed'));
     } finally {
       setCreating(false);
     }
@@ -301,9 +300,8 @@ export default function TablesPage() {
     try {
       await api.post(`/tables/${table.id}/${table.is_active ? 'deactivate' : 'reactivate'}`);
       fetchTables();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } } };
-      toast.error(e.response?.data?.error || t('tables.updateStatusFailed'));
+    } catch {
+      toast.error(t('tables.updateStatusFailed'));
     }
   };
 

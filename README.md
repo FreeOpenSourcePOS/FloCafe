@@ -139,7 +139,7 @@ If the app cannot start, do not delete the database first. Restore the latest ba
 
 ### Printers not printing
 
-1. Use Settings → Printers → **Test Print** first. As of 2.6.1 it shows the actual failure reason (offline, out of paper, cover open, a Windows driver error, a network timeout) instead of a generic message — read it, it usually tells you exactly what's wrong.
+1. Use Settings → Printers → **Test Print** first to verify printer connectivity.
 2. **Network printers:** confirm the printer's IP address hasn't changed (check your router's DHCP lease list or set a static IP/DHCP reservation) and that it's on the same network as the machine running FloCafe.
 3. **Windows USB printers, especially with the manufacturer's own driver installed:** FloCafe sends raw ESC/POS bytes directly to the Windows print queue, bypassing the driver, which only works if the queue's *Print Processor* is the default `winprint`/`RAW`. Manufacturer "official" driver packages (Epson APD, Star, etc.) are usually GDI drivers meant to render formatted pages, and can register their own print processor or reject/garble a raw byte stream. Two things to try, in order:
    - Right-click the printer in Windows → **Printer Properties → Advanced tab → Print Processor** → confirm it's `winprint` with datatype `RAW`.

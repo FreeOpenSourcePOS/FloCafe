@@ -77,24 +77,23 @@ export default function RecoverAccessPage() {
     } catch (err: unknown) {
       const error = err as { response?: { status?: number; data?: { error?: string } } };
       const status = error.response?.status;
-      const serverMessage = error.response?.data?.error;
 
       if (status === 503) {
         // Honest fallback: no cloud/email recovery tier exists yet in this
         // build, so don't pretend one is available — see #127/#128.
         setFormError(t('auth.recoverPinUnavailable'));
       } else if (status === 409) {
-        setFormError(serverMessage || t('auth.recoverErrorGeneric'));
+        setFormError(t('auth.recoverErrorGeneric'));
       } else if (status === 429) {
-        setFormError(serverMessage || t('auth.recoverRateLimited'));
+        setFormError(t('auth.recoverRateLimited'));
       } else if (status === 403) {
         setFormError(t('auth.recoverWrongPin'));
       } else if (status === 404) {
         setFormError(t('auth.recoverNoOwner'));
       } else if (status === 400) {
-        setFormError(serverMessage || t('auth.recoverErrorGeneric'));
+        setFormError(t('auth.recoverErrorGeneric'));
       } else {
-        setFormError(serverMessage || t('auth.recoverErrorGeneric'));
+        setFormError(t('auth.recoverErrorGeneric'));
       }
     } finally {
       setLoading(false);

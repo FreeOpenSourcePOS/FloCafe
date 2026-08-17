@@ -228,9 +228,8 @@ export default function SetupPage() {
         ...countryPayload,
       });
       completeSetup();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('setup.errorGeneric'));
+    } catch {
+      toast.error(t('setup.errorGeneric'));
     } finally {
       setLoading(false);
     }

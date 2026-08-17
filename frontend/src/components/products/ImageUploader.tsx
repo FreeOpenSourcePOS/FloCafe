@@ -96,9 +96,8 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       setMode('idle');
       setCropSrc(null);
       toast.success(t('products.imageReady'));
-    } catch (err: unknown) {
-      const errorMsg = err instanceof Error ? err.message : t('products.imageCropFailed');
-      toast.error(errorMsg);
+    } catch {
+      toast.error(t('products.imageCropFailed'));
       setMode('idle');
       setCropSrc(null);
     }
@@ -128,10 +127,8 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       setCrop({ x: 0, y: 0 });
       setZoom(1);
       setUrlInput('');
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      const msg = axiosErr.response?.data?.error || t('products.imageFetchFailed');
-      toast.error(msg);
+    } catch {
+      toast.error(t('products.imageFetchFailed'));
     } finally {
       setFetching(false);
     }

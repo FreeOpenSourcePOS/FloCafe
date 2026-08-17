@@ -86,10 +86,10 @@ export default function PrinterStatus() {
       if (usePrinterStore.getState().status === 'connected') {
         toast.success(t('pos.printerConnected'));
       } else if (usePrinterStore.getState().lastError) {
-        toast.error(usePrinterStore.getState().lastError!);
+        toast.error(t('pos.printerError'));
       }
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('pos.printerError'));
+    } catch {
+      toast.error(t('pos.printerError'));
     }
   };
 
@@ -97,8 +97,8 @@ export default function PrinterStatus() {
     try {
       await disconnect();
       toast(t('pos.printerDisconnected'));
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('pos.printerError'));
+    } catch {
+      toast.error(t('pos.printerError'));
     }
   };
 

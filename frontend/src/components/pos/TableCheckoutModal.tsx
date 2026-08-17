@@ -81,9 +81,8 @@ export default function TableCheckoutModal({
       }
       const { data } = await api.post('/bills/generate', { order_id: order.id });
       onPayment(data.bill);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('pos.generateBillFailed'));
+    } catch {
+      toast.error(t('pos.generateBillFailed'));
     } finally {
       setGenerating(false);
     }
@@ -95,9 +94,8 @@ export default function TableCheckoutModal({
     try {
       const bill = order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
       setSplitBill(bill);
-    } catch (error: unknown) {
-      const message = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
-      toast.error(message || t('pos.generateBillFailed'));
+    } catch {
+      toast.error(t('pos.generateBillFailed'));
     }
     finally { setGenerating(false); }
   };
@@ -107,9 +105,8 @@ export default function TableCheckoutModal({
     setAddingItems(true);
     try {
       await onAddCartToOrder(table, order);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string; error?: string } }; message?: string };
-      toast.error(error.response?.data?.message || error.response?.data?.error || error.message || t('pos.addItemsFailed'));
+    } catch {
+      toast.error(t('pos.addItemsFailed'));
     } finally {
       setAddingItems(false);
     }

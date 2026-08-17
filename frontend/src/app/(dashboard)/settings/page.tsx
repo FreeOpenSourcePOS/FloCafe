@@ -412,9 +412,8 @@ export default function SettingsPage() {
       const response = await api.post('/db/import', { data, overwrite, master_pin });
       if (response.data.success) toast.success(response.data.message);
       return { success: true };
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      const message = error.response?.data?.error || t('settings.importFailed');
+    } catch {
+      const message = t('settings.importFailed');
       toast.error(message);
       return { success: false, error: message };
     }
@@ -430,9 +429,8 @@ export default function SettingsPage() {
         toast.success(t('settings.masterPinSaved'));
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.savePinFailed') };
+      } catch {
+        return { success: false, error: t('settings.savePinFailed') };
       }
     }
 
@@ -443,9 +441,8 @@ export default function SettingsPage() {
         setPinGate(null);
         fetchBackups();
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.backupFailedGeneric') };
+      } catch {
+        return { success: false, error: t('settings.backupFailedGeneric') };
       }
     }
 
@@ -491,9 +488,8 @@ export default function SettingsPage() {
         setPinGate(null);
         fetchBackups();
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.backupDeleteFailed') };
+      } catch {
+        return { success: false, error: t('settings.backupDeleteFailed') };
       }
     }
 
@@ -505,11 +501,10 @@ export default function SettingsPage() {
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
+      } catch {
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Cloud data deletion failed' };
+        return { success: false, error: t('settings.cloudDeletionFailed') };
       }
     }
 
@@ -521,9 +516,8 @@ export default function SettingsPage() {
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Could not cancel deletion request' };
+      } catch {
+        return { success: false, error: t('settings.cloudDeletionCancelFailed') };
       }
     }
 
@@ -622,9 +616,8 @@ export default function SettingsPage() {
         await api.post(`/db-tools/backups/${encodeURIComponent(backup.fileName)}/delete`, {});
         toast.success(t('settings.backupDeleted'));
         fetchBackups();
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        toast.error(error.response?.data?.error || t('settings.backupDeleteFailed'));
+      } catch {
+        toast.error(t('settings.backupDeleteFailed'));
       }
       return;
     }
@@ -635,9 +628,8 @@ export default function SettingsPage() {
     try {
       const { data } = await api.post('/db-tools/initialize', { master_pin: pin, confirmation_phrase: 'INITIALIZE' });
       return { success: true, backupPath: data.backupPath };
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      return { success: false, error: error.response?.data?.error || t('settings.initializeFailedGeneric') };
+    } catch {
+      return { success: false, error: t('settings.initializeFailedGeneric') };
     }
   };
 
@@ -819,9 +811,8 @@ export default function SettingsPage() {
       toast.success(t('settings.printerQuickAdded', { name: p.name }));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.printerAddFailed'));
+    } catch {
+      toast.error(t('settings.printerAddFailed'));
     } finally {
       setAddingDetectedName(null);
     }
@@ -899,9 +890,8 @@ export default function SettingsPage() {
     try {
       await api.post(`/printers/${printer.id}/test`);
       toast.success(t('settings.testPrintSent'));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.testPrintFailed'));
+    } catch {
+      toast.error(t('settings.testPrintFailed'));
     } finally {
       setTestingPrinterId(null);
     }
@@ -996,9 +986,8 @@ export default function SettingsPage() {
       toast.success(editingStationId ? t('settings.stationUpdated') : t('settings.stationSaved'));
       setShowStationForm(false);
       fetchStations();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.stationSaveFailed'));
+    } catch {
+      toast.error(t('settings.stationSaveFailed'));
     } finally {
       setSavingStation(false);
     }
@@ -1010,9 +999,8 @@ export default function SettingsPage() {
       await api.delete(`/kitchen-stations/${id}`);
       toast.success(t('settings.stationDeleted'));
       fetchStations();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.stationDeleteFailed'));
+    } catch {
+      toast.error(t('settings.stationDeleteFailed'));
     }
   };
 
@@ -1683,9 +1671,8 @@ export default function SettingsPage() {
       if (res.data.cloud_registration_status === 'registered') {
         toast.success(t('settings.cloudRegistrationSuccess'));
       }
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.cloudRegistrationFailed'));
+    } catch {
+      toast.error(t('settings.cloudRegistrationFailed'));
     } finally {
       setRegisteringCloud(false);
     }
@@ -1726,9 +1713,8 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveConnectedSuccess'));
       fetchBackups();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveConnectFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveConnectFailed'));
     } finally {
       setConnectingGoogleDrive(false);
     }
@@ -1745,9 +1731,8 @@ export default function SettingsPage() {
       const res = await api.post('/settings/google-drive/disconnect');
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveDisconnectedSuccess'));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveDisconnectFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveDisconnectFailed'));
     } finally {
       setDisconnectingGoogleDrive(false);
     }
@@ -1760,9 +1745,8 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveBackupSuccess'));
       fetchBackups();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveBackupFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveBackupFailed'));
       fetchGoogleDriveStatus();
     } finally {
       setBackingUpGoogleDrive(false);
@@ -1776,10 +1760,9 @@ export default function SettingsPage() {
     try {
       const res = await api.put('/settings/google-drive', patch);
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
+    } catch {
       setGoogleDriveStatus(previous);
-      toast.error(error.response?.data?.error || t('settings.googleDriveSavePreferencesFailed'));
+      toast.error(t('settings.googleDriveSavePreferencesFailed'));
     } finally {
       setSavingGoogleDrivePrefs(false);
     }
@@ -1964,7 +1947,7 @@ export default function SettingsPage() {
       if (!silent) toast.success(t('settings.storeSaved'));
     } catch (err) {
       if (!silent) {
-        const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('settings.saveFailed');
+        const message = t('settings.saveFailed');
         toast.error(message);
       }
       throw err;
@@ -2036,12 +2019,9 @@ export default function SettingsPage() {
       setPairingUnavailable(false);
       toast.success(t('settings.pairingCodeRotated'));
       loadPairedDevices();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      // Surface the backend's actual reason (e.g. "this POS hasn't been
-      // claimed in FloAdmin yet") instead of a one-size-fits-all message —
-      // "not registered" and "FloAdmin unreachable" need different next steps.
-      toast.error(error.response?.data?.error || t('settings.pairingCodeFailed'));
+    } catch {
+      // Show a localized failure; the specific backend reason stays in logs.
+      toast.error(t('settings.pairingCodeFailed'));
     } finally {
       setRotatingCode(false);
     }
@@ -3300,9 +3280,8 @@ export default function SettingsPage() {
                   <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
                     setCloudAccountBusy(true);
                     try { await api.post('/settings/cloud/account/verification'); toast.success(t('settings.verificationEmailQueued')); await fetchCloudAccount(); }
-                    catch (err: unknown) {
-                      const error = err as { response?: { data?: { error?: string } } };
-                      toast.error(error.response?.data?.error || 'Could not send verification email');
+                    catch {
+                      toast.error(t('settings.verificationEmailFailed'));
                     }
                     finally { setCloudAccountBusy(false); }
                   }}>{cloudAccountBusy ? 'Sending…' : 'Send verification email'}</Button>

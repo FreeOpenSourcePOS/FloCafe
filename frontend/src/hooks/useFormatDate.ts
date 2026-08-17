@@ -15,10 +15,6 @@ export function useFormatDate() {
 
   const country = currentTenant?.country;
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const prefs = {
-    calendar: currentTenant?.calendar,
-    digits: currentTenant?.number_digits,
-  };
 
   const format = useCallback((
     date: string | Date | number | null | undefined,
@@ -27,7 +23,10 @@ export function useFormatDate() {
     if (!date) return '';
     const d = toDate(date);
     if (isNaN(d.getTime())) return String(date);
-    return formatDateForTenant(d, country, timeZone, prefs, options);
+    return formatDateForTenant(d, country, timeZone, {
+      calendar: currentTenant?.calendar,
+      digits: currentTenant?.number_digits,
+    }, options);
   }, [country, timeZone, currentTenant?.calendar, currentTenant?.number_digits]);
 
   const formatDate = useCallback((date?: string | Date | number | null, options?: Intl.DateTimeFormatOptions) =>

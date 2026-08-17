@@ -33,10 +33,7 @@ export default function AddonGroupsPage() {
 
   const fmt = useFormatCurrency();
 
-  const extractErrorMessage = (err: unknown, fallback: string) => {
-    const error = err as { response?: { data?: { errors?: Record<string, string[]> } } };
-    return error.response?.data?.errors ? Object.values(error.response.data.errors)[0]?.[0] : fallback;
-  };
+  const extractErrorMessage = (_err: unknown, fallback: string) => fallback;
 
   const fetchGroups = async () => {
     try {

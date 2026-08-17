@@ -216,10 +216,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       if (data.bill && onBillUpdate) {
         onBillUpdate(data.bill);
       }
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { error?: string; message?: string } } };
-      const msg = axiosErr.response?.data?.error || axiosErr.response?.data?.message || t('pos.failedToUpdateDiscount');
-      toast.error(msg);
+    } catch {
+      toast.error(t('pos.failedToUpdateDiscount'));
       // Clear the PIN on any failure (wrong PIN or rate-limited) so a stale/rejected
       // PIN doesn't sit in the field looking like it might still work on retry.
       setDiscountPin('');
@@ -303,9 +301,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         toast.success(t('pos.paymentRecorded'));
       }
       setJustPaid(true);
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } }; message?: string };
-      toast.error(axiosErr.response?.data?.error || axiosErr.message || t('pos.paymentFailed'));
+    } catch {
+      toast.error(t('pos.paymentFailed'));
     } finally {
       setProcessing(false);
     }

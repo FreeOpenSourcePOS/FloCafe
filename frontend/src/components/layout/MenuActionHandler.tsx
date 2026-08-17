@@ -22,11 +22,11 @@ export default function MenuActionHandler() {
       if (result.success) {
         toast.success(t('backup.savedTo', { path: result.path ?? '' }));
       } else if (result.error !== 'Cancelled') {
-        toast.error(t('backup.failedWith', { error: result.error ?? '' }));
+        toast.error(t('backup.failedWith', { error: t('common.somethingWrong') }));
       }
       return result;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('common.notAvailable');
+    } catch {
+      const message = t('common.somethingWrong');
       toast.error(t('backup.failedWith', { error: message }));
       return { success: false, error: message };
     } finally {
@@ -43,11 +43,11 @@ export default function MenuActionHandler() {
         toast.success(t('restore.success'));
         setTimeout(() => window.location.reload(), 1500);
       } else if (result.error !== 'Cancelled') {
-        toast.error(t('restore.failedWith', { error: result.error ?? '' }));
+        toast.error(t('restore.failedWith', { error: t('common.somethingWrong') }));
       }
       return result;
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('common.notAvailable');
+    } catch {
+      const message = t('common.somethingWrong');
       toast.error(t('restore.failedWith', { error: message }));
       return { success: false, error: message };
     }
@@ -79,8 +79,8 @@ export default function MenuActionHandler() {
       }
 
       setPendingPinAction(action);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('common.notAvailable');
+    } catch {
+      const message = t('common.somethingWrong');
       toast.error(t(action === 'backup' ? 'backup.failedWith' : 'restore.failedWith', { error: message }));
     }
   }

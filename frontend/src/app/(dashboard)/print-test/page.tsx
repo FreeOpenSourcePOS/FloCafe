@@ -75,7 +75,7 @@ export default function PrintTestPage() {
           // the browser-print path below never goes through the printKot()
           // choke point that enforces kot_printing_enabled (issue #133).
           if (!kotPrintingEnabled) {
-            toast.error(t('printTest.failedWithReason', { message: 'KOT disabled' }));
+            toast.error(t('printTest.failedWithReason', { message: t('printTest.kotDisabled') }));
             break;
           }
           if (printMethod === 'browser') {
@@ -100,8 +100,8 @@ export default function PrintTestPage() {
           toast.success(t('printTest.whatsappOpened'));
           break;
       }
-    } catch (err) {
-      toast.error(t('printTest.failedWithReason', { message: (err as Error).message }));
+    } catch {
+      toast.error(t('printTest.failedWithReason', { message: t('common.somethingWrong') }));
     } finally {
       setTesting(false);
     }

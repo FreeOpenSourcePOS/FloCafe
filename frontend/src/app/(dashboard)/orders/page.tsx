@@ -259,9 +259,8 @@ export default function OrdersPage() {
       addItemsAttemptRef.current = null;
       toast.success(t('orders.itemsAdded', { count: pendingAttempt!.items.length }));
       fetchOrders();
-    }).catch((err: unknown) => {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.addItemsFailed'));
+    }).catch(() => {
+      toast.error(t('orders.addItemsFailed'));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);
@@ -437,9 +436,8 @@ export default function OrdersPage() {
       setLinkCustomerSearch('');
       setLinkCustomerResults([]);
       fetchOrders();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('orders.linkCustomerFailed'));
+    } catch {
+      toast.error(t('orders.linkCustomerFailed'));
     } finally {
       setLinkingCustomer(false);
     }
@@ -497,9 +495,8 @@ export default function OrdersPage() {
     try {
       const { data } = await api.post('/bills/generate', { order_id: orderId });
       setPaymentBill(data.bill);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('orders.generateBillFailed'));
+    } catch {
+      toast.error(t('orders.generateBillFailed'));
     } finally {
       setGeneratingBill(null);
     }
@@ -557,9 +554,8 @@ export default function OrdersPage() {
       toast.success(isReprint ? t('orders.printReceiptReprint') : t('orders.printReceipt'));
       showPrintWarningsToast(printWarnings);
       fetchPrintHistory(billId);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'check printer connection';
-      toast.error(`${t('orders.printReceiptFailed')}: ${msg}`);
+    } catch {
+      toast.error(t('orders.printReceiptFailed'));
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);
@@ -588,9 +584,8 @@ export default function OrdersPage() {
       link.click();
       URL.revokeObjectURL(url);
       toast.success(t('orders.printPreviewDownloaded'));
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : t('orders.printPreviewFailed');
-      toast.error(`${t('orders.printPreviewFailed')}: ${message}`);
+    } catch {
+      toast.error(t('orders.printPreviewFailed'));
     } finally {
       setPreviewingBillId(null);
     }
@@ -606,9 +601,8 @@ export default function OrdersPage() {
       await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: t('orders.removedByManager') });
       toast.success(t('orders.itemRemoved'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.removeItemFailed'));
+    } catch {
+      toast.error(t('orders.removeItemFailed'));
     }
   };
 
@@ -623,9 +617,8 @@ export default function OrdersPage() {
       toast.success(t('orders.itemVoided'));
       setVoidItemModal(null);
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.voidItemFailed'));
+    } catch {
+      toast.error(t('orders.voidItemFailed'));
     } finally {
       setVoidingItem(false);
     }
@@ -637,9 +630,8 @@ export default function OrdersPage() {
       await api.patch(`/orders/${orderId}/items/${itemId}/restore`);
       toast.success(t('orders.itemRestored'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.restoreItemFailed'));
+    } catch {
+      toast.error(t('orders.restoreItemFailed'));
     }
   };
 
@@ -718,9 +710,8 @@ export default function OrdersPage() {
       });
       toast.success(t('orders.discountApplied'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.discountFailed'));
+    } catch {
+      toast.error(t('orders.discountFailed'));
     } finally {
       setDiscountModal(null);
       setDiscountPin('');
@@ -739,9 +730,8 @@ export default function OrdersPage() {
       await api.patch(`/orders/${order.id}/convert-to-takeaway`);
       toast.success(t('orders.orderConvertedTakeaway'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.convertOrderFailed'));
+    } catch {
+      toast.error(t('orders.convertOrderFailed'));
     } finally {
       setConvertingOrderId(null);
     }
@@ -813,9 +803,8 @@ export default function OrdersPage() {
       toast.success(t('orders.itemsAdded', { count: selectedItems.length }));
       openAddItemsModal(null);
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.addItemsFailed'));
+    } catch {
+      toast.error(t('orders.addItemsFailed'));
     } finally {
       setAddingItems(false);
     }
@@ -834,9 +823,8 @@ export default function OrdersPage() {
       });
       toast.success(t('orders.orderCancelled'));
       fetchOrders();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('orders.cancelOrderFailed'));
+    } catch {
+      toast.error(t('orders.cancelOrderFailed'));
     } finally {
       setCancellingOrderId(null);
       setCancelModal(null);

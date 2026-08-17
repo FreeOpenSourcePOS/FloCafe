@@ -53,9 +53,8 @@ export function SplitCheckModal({ bill, order, onClose, onSplit }: { bill: Bill;
       }));
       const { data } = await api.post(`/bills/${bill.id}/split-check`, { checks });
       onSplit(data.bills);
-    } catch (error: unknown) {
-      const message = (error as { response?: { data?: { error?: string } } }).response?.data?.error;
-      toast.error(message || t('pos.splitCheckFailed', { defaultValue: 'Unable to split check' }));
+    } catch {
+      toast.error(t('pos.splitCheckFailed', { defaultValue: 'Unable to split check' }));
     } finally { setSaving(false); }
   };
 

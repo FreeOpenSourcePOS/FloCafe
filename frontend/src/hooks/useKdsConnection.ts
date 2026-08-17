@@ -282,12 +282,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           updatingIdsRef.current.clear();
           setUpdating(null);
           setUser(null);
-          setLoginError(message);
+          setLoginError(t('kds.authFailed'));
           setConnectionMode(null);
         } else {
           // KDS can be re-enabled without changing the user's credentials;
           // keep polling rather than permanently blocking the session.
-          setLoginError(message);
+          setLoginError(t('kds.authFailed'));
           setConnectionMode('rest');
         }
         setOrders([]);
@@ -339,7 +339,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         const kdsDisabled = /kds is disabled/i.test(errorMessage);
         if (statusCode === 409) {
           await fetchOrdersRest();
-          if (!opts.silent) toast.error(errorMessage);
+          if (!opts.silent) toast.error(t('kds.failedToUpdateItem'));
           return false;
         }
         const authorizationFailure = /invalid|expired|revoked|authentication required|no active kitchen station|only chef|only kitchen staff|user account is not active|not authorized to update (this item|this station)/i.test(errorMessage);
@@ -364,7 +364,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           setConnected(false);
           setConnectionMode(null);
           setLoading(false);
-          setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
+          setLoginError(t('kds.authFailed'));
           return false;
         }
         if (kdsDisabled) {
@@ -606,11 +606,9 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
         setUser(loggedInUser);
         window.localStorage.setItem('token', token);
         tryWebSocket(token);
-      } catch (err: unknown) {
+      } catch {
         if (generation !== sessionGenerationRef.current) return;
-        const axiosErr = err as { response?: { data?: { error?: string } } };
-        const msg = axiosErr.response?.data?.error || t('kds.loginFailed');
-        setLoginError(msg);
+        setLoginError(t('kds.loginFailed'));
       } finally {
         if (generation === sessionGenerationRef.current) {
           setLoginLoading(false);
@@ -703,7 +701,7 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
           setCounts({});
           setConnected(false);
           setConnectionMode(null);
-          setLoginError(axiosError.response?.data?.error || t('kds.authFailed'));
+          setLoginError(t('kds.authFailed'));
         }
         setLoading(false);
       });

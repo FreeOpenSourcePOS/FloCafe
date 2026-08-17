@@ -119,9 +119,8 @@ export default function StaffPage() {
       }
       closeForm();
       fetchStaff();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('staff.failedToSave'));
+    } catch {
+      toast.error(t('staff.failedToSave'));
     }
   };
 
@@ -135,9 +134,8 @@ export default function StaffPage() {
       await api.put(`/staff/${resetPwStaff.id}`, { password: newPassword });
       toast.success(t('staff.resetPasswordToast'));
       closeResetPassword();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('staff.failedToReset'));
+    } catch {
+      toast.error(t('staff.failedToReset'));
     }
   };
 

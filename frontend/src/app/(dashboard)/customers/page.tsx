@@ -120,9 +120,8 @@ export default function CustomersPage() {
       }
       setShowForm(false);
       setRefreshKey((k) => k + 1);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('customer.saveFailed'));
+    } catch {
+      toast.error(t('customer.saveFailed'));
     }
   };
 

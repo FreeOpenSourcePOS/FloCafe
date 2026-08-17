@@ -56,9 +56,8 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
       await heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
       toast.success(t('pos.orderHeldFor', { table: tableName }));
-    } catch (err: unknown) {
-      const e = err as Error;
-      toast.error(e.message || t('pos.holdOrderFailed'));
+    } catch {
+      toast.error(t('pos.holdOrderFailed'));
     }
   };
 

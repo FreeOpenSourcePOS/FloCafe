@@ -70,9 +70,8 @@ export default function SupportPage() {
       setSubject('');
       setMessage('');
       toast.success(data.message || t('support.queued'));
-    } catch (error) {
-      const apiError = error as { response?: { data?: { error?: string } } };
-      toast.error(apiError.response?.data?.error || t('support.submitFailed'));
+    } catch {
+      toast.error(t('support.submitFailed'));
     } finally {
       setSubmitting(false);
     }

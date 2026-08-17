@@ -173,7 +173,7 @@ export async function sendBillViaFlo(
   } catch (err: unknown) {
     const axiosErr = err as { response?: { data?: { error?: string; reason?: string } } };
     const reason = axiosErr?.response?.data?.reason;
-    const msg = axiosErr?.response?.data?.error ?? t('whatsapp.send.failed');
+    const msg = t('whatsapp.send.failed');
     if (reason === 'not_connected') {
       toast.error(t('whatsapp.send.error.notConnected'));
     } else if (reason === 'not_on_whatsapp') {

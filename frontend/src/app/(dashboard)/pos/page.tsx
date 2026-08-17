@@ -271,7 +271,7 @@ export default function POSPage() {
         message: msg,
         payload: { event_code: code, message: msg, category: 'printer', diagnostics: { order_id: order.id, stage: 'kot_print' } },
       });
-      toast.error(`${t('pos.kotPrintFailed')}: ${msg}`);
+      toast.error(t('pos.kotPrintFailed'));
     }
   };
 
@@ -344,9 +344,8 @@ export default function POSPage() {
       // recovery was in flight. A reload starts empty; any current UI is newer.
       toast.success(t('pos.itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }));
       refreshTables();
-    }).catch((err: unknown) => {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('pos.addItemsFailed'));
+    }).catch(() => {
+      toast.error(t('pos.addItemsFailed'));
     });
   // The recovery runs once per authenticated renderer and intentionally uses
   // the persisted attempt rather than the transient cart state.
@@ -532,9 +531,8 @@ export default function POSPage() {
       await refreshTables();
 
       await printKotIfEnabled(orderForKot);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string; error?: string } } };
-      toast.error(error.response?.data?.message || error.response?.data?.error || t('pos.placeOrderFailed'));
+    } catch {
+      toast.error(t('pos.placeOrderFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -736,9 +734,8 @@ export default function POSPage() {
       await printKotIfEnabled(orderData.order);
 
       await printBillForTenant(paidBill, isPrepaidCheckout);
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string; error?: string } }; message?: string };
-      toast.error(error.response?.data?.message || error.response?.data?.error || error.message || t('pos.processOrderFailed'));
+    } catch {
+      toast.error(t('pos.processOrderFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -808,9 +805,8 @@ export default function POSPage() {
       setShowTablePicker(false);
       toast.success(t('pos.orderHeld', { tableName }));
       await refreshTables();
-    } catch (err: unknown) {
-      const e = err as Error;
-      toast.error(e.message || t('pos.holdOrderFailed'));
+    } catch {
+      toast.error(t('pos.holdOrderFailed'));
     }
   };
 
@@ -865,9 +861,8 @@ export default function POSPage() {
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('pos.addItemsFailed'));
+    } catch {
+      toast.error(t('pos.addItemsFailed'));
     } finally {
       setSubmitting(false);
     }

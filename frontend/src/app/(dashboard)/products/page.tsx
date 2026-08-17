@@ -195,9 +195,9 @@ export default function ProductsPage() {
       );
       const failedCount = results.filter((r) => r.status === 'rejected').length;
       if (failedCount > 0) {
-        toast.error(`Assigned category to ${results.length - failedCount} of ${results.length} products — ${failedCount} failed`);
+        toast.error(t('products.categoryAssignPartial', { assigned: results.length - failedCount, total: results.length, failed: failedCount }));
       } else {
-        toast.success(`Tax category assigned to ${results.length} product(s)`);
+        toast.success(t('products.categoryAssignSuccess', { count: results.length }));
       }
       setShowBulkTaxModal(false);
       fetchData();
@@ -271,7 +271,7 @@ export default function ProductsPage() {
     if (loyaltyEnabled && form.cb_percent !== '') {
       const parsed = Number(form.cb_percent);
       if (isNaN(parsed) || parsed < 0 || parsed > 100) {
-        toast.error('Please enter a valid loyalty cashback rate (0–100%)');
+        toast.error(t('products.invalidCashbackRate'));
         return;
       }
     }

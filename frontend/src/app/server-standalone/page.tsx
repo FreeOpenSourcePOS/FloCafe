@@ -8,6 +8,7 @@ import { parsePhone } from '@/lib/phone';
 import { useSyncServerLanguage } from '@/lib/i18n';
 import { useI18n } from '@/hooks/useI18n';
 import { Ltr } from '@/components/layout/Ltr';
+import { toastApiError } from '@/lib/api-error';
 
 type User = { id: string; name: string; email: string; role: string };
 type Category = { id: string; name: string };
@@ -45,14 +46,6 @@ function itemStatusIcon(status: string, t: (k: string) => string) {
 
 function money(value: number | string) {
   return Number(value || 0).toFixed(2);
-}
-
-function responseMessage(error: unknown, fallback: string) {
-  if (axios.isAxiosError(error)) {
-    const data = error.response?.data as { error?: string; message?: string } | undefined;
-    return data?.error || data?.message || fallback;
-  }
-  return fallback;
 }
 
 export default function ServerStandalonePage() {
@@ -178,7 +171,7 @@ export default function ServerStandalonePage() {
       localStorage.setItem(TOKEN_KEY, res.data.access_token);
       setUser(res.data.user);
     } catch (error: unknown) {
-      toast.error(responseMessage(error, t('serverApp.signInFailed')));
+      toastApiError(error, t('serverApp.signInFailed'), t);
     } finally {
       setLoginLoading(false);
     }
@@ -249,7 +242,7 @@ export default function ServerStandalonePage() {
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
       toast.success(t('serverApp.orderSent'));
     } catch (error: unknown) {
-      toast.error(responseMessage(error, t('serverApp.couldNotSendOrder')));
+      toastApiError(error, t('serverApp.couldNotSendOrder'), t);
     } finally {
       setSending(false);
     }

@@ -9,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, Search, X, Edit, Wallet, History, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { parseDbTimestamp } from '@/lib/utils';
 
 import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
@@ -17,6 +16,8 @@ import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useFormatDate } from '@/hooks/useFormatDate';
+import { useFormatNumber } from '@/hooks/useFormatNumber';
 
 function SortIcon({ field, sortField, sortOrder }: { field: string; sortField: string; sortOrder: 'asc' | 'desc' }) {
   if (sortField !== field) return <span className="text-gray-300 w-3 inline-block ms-1 opacity-0 group-hover:opacity-100 transition-opacity">↕</span>;
@@ -27,6 +28,8 @@ export default function CustomersPage() {
   const { currentTenant } = useAuthStore();
   const { t } = useI18n();
   const fmt = useFormatCurrency();
+  const { formatDate } = useFormatDate();
+  const fmtNum = useFormatNumber();
   const defaultCountry = currentTenant?.country || 'IN';
   const dialCode = dialCodeFor(defaultCountry) || '+91';
   const searchParams = useSearchParams();
@@ -60,11 +63,6 @@ export default function CustomersPage() {
     } finally {
       setLedgerLoading(false);
     }
-  };
-
-  const fmtDate = (d: string) => {
-    try { return parseDbTimestamp(d).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); }
-    catch { return d; }
   };
 
   useEffect(() => {
@@ -209,7 +207,7 @@ export default function CustomersPage() {
                   </div>
                 </td>
                 <td className="p-4 text-center text-sm text-gray-500 whitespace-nowrap">
-                  {c.last_visit_at ? fmtDate(c.last_visit_at) : '—'}
+                  {c.last_visit_at ? formatDate(c.last_visit_at) : '—'}
                 </td>
                 <td className="p-4 text-center text-sm">{c.visits_count}</td>
                 <td className="p-4 text-end font-medium">{fmt(Number(c.total_spent))}</td>
@@ -217,7 +215,7 @@ export default function CustomersPage() {
                   {Number(c.wallet_balance) > 0 ? (
                     <span className="inline-flex items-center gap-1 text-purple-700 font-semibold text-sm">
                       <Wallet size={13} />
-                      {Number(c.wallet_balance).toLocaleString()} {t('customer.ptsSuffix')}
+                      {fmtNum(Number(c.wallet_balance))} {t('customer.ptsSuffix')}
                     </span>
                   ) : (
                     <span className="text-gray-400 text-sm">—</span>
@@ -284,7 +282,7 @@ export default function CustomersPage() {
                       <tbody className="divide-y divide-gray-50">
                         {ledgerData.transactions.map((t: { id: number; type: string; amount: number; description: string; created_at: string; expires_at?: string }) => (
                           <tr key={t.id} className="hover:bg-gray-50">
-                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDate(t.created_at)}</td>
+                            <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDate(t.created_at)}</td>
                             <td className="px-4 py-3 text-gray-700">{t.description || '—'}</td>
                             <td className="px-4 py-3 text-end font-semibold whitespace-nowrap">
                               <span className={`inline-flex items-center gap-1 ${
@@ -297,7 +295,7 @@ export default function CustomersPage() {
                               </span>
                             </td>
                             <td className="px-4 py-3 text-end text-xs text-gray-400 whitespace-nowrap">
-                              {t.expires_at ? fmtDate(t.expires_at) : '—'}
+                              {t.expires_at ? formatDate(t.expires_at) : '—'}
                             </td>
                           </tr>
                         ))}

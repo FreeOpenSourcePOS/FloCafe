@@ -123,7 +123,7 @@ export default function PrintTestPage() {
     a.download = `bill-${printerPaperSize}-preview.html`;
     a.click();
     URL.revokeObjectURL(url);
-    toast.success('HTML downloaded');
+    toast.success(t('printTest.htmlDownloaded'));
   };
 
   const handleCopyWhatsappText = async () => {
@@ -132,7 +132,7 @@ export default function PrintTestPage() {
       walletBalance: 200,
     });
     await navigator.clipboard.writeText(message);
-    toast.success('WhatsApp message copied to clipboard');
+    toast.success(t('printTest.whatsappCopied'));
   };
 
   const testOptions: { value: TestMode; label: string; icon: React.ElementType }[] = [

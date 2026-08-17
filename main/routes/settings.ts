@@ -61,6 +61,10 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   bill_footer_message: '',
   printer_trim_decimals: 'false',
   split_checks_enabled: 'false',
+  // Iran locale display preferences (Batch G, Refs #241) — display-only.
+  currency_display: 'rial',
+  number_digits: 'locale',
+  calendar: 'locale',
 };
 
 function maskSetting(key: string, value: string): string {
@@ -83,6 +87,18 @@ function boolFlag(value: unknown): string | undefined {
     return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase()) ? 'true' : 'false';
   }
   return value ? 'true' : 'false';
+}
+
+const LOCALE_PREFERENCE_VALUES: Record<string, Set<string>> = {
+  currency_display: new Set(['rial', 'toman', 'toman_short']),
+  number_digits: new Set(['locale', 'latin']),
+  calendar: new Set(['locale', 'persian', 'gregorian']),
+};
+
+function validLocalePreference(key: string, value: unknown): boolean {
+  const allowed = LOCALE_PREFERENCE_VALUES[key];
+  if (!allowed) return true;
+  return typeof value === 'string' && allowed.has(value);
 }
 
 // cloud_sync_enabled/cloud_orders_enabled/cloud_reports_enabled/cloud_command_polling_enabled
@@ -124,6 +140,9 @@ function businessShape(s: Record<string, string>) {
     bill_show_customer_name: s.bill_show_customer_name !== 'false',
     bill_show_customer_phone: s.bill_show_customer_phone !== 'false',
     bill_show_table_number: s.bill_show_table_number !== 'false',
+    currency_display: s.currency_display || 'rial',
+    number_digits: s.number_digits || 'locale',
+    calendar: s.calendar || 'locale',
   };
 }
 
@@ -155,10 +174,16 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
-      bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number } = req.body;
+      bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
+      currency_display, number_digits, calendar } = req.body;
 
     if (!validBusinessLocation(timezone, currency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
+    }
+    for (const [key, value] of [['currency_display', currency_display], ['number_digits', number_digits], ['calendar', calendar]] as const) {
+      if (value !== undefined && !validLocalePreference(key, value)) {
+        return res.status(400).json({ error: `Invalid ${key} value` });
+      }
     }
 
     const db = getDatabase();
@@ -196,6 +221,7 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
+      currency_display, number_digits, calendar,
     });
     cloudSync.refreshRegistrationProfile();
 
@@ -782,6 +808,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
   'split_checks_enabled',
+  'currency_display', 'number_digits', 'calendar',
 ]);
 
 function isAllowedWildcardKey(key: string): boolean {
@@ -861,6 +888,9 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
     }
     if (req.params.key === 'bill_template' && !isAvailableBillTemplate(String(value))) {
       return res.status(400).json({ error: 'Unsupported bill template' });
+    }
+    if (!validLocalePreference(String(req.params.key), value)) {
+      return res.status(400).json({ error: `Invalid ${req.params.key} value` });
     }
     const db = getDatabase();
 

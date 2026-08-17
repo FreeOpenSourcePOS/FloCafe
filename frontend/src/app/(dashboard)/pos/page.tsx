@@ -949,7 +949,7 @@ export default function POSPage() {
                       toast.success(response.data.message || 'Queued — will send when online');
                       setSentTicketId(clientTicketId);
                     } catch {
-                      toast.error('Could not queue the support request');
+                      toast.error(t('pos.supportRequestQueueFailed'));
                     }
                   }}
                 >Get help</button>

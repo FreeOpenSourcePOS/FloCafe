@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import api from '@/lib/api';
+import { apiErrorText } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { parseDbTimestamp } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import {
@@ -31,20 +31,9 @@ interface WhatsAppStatus {
   cooldownUntil: string | null;
 }
 
-/** Show a backend error as a toast. Prefer the i18n reason code over the raw English fallback. */
+/** Show a backend error as a localized toast, mapping `whatsapp.apiError.<reason>` and never surfacing raw English. */
 function toastApiError(err: unknown, fallback: string, t: (k: string, p?: Record<string, string | number>) => string): void {
-  const axiosErr = err as { response?: { data?: { error?: string; reason?: string } } };
-  const reason = axiosErr?.response?.data?.reason;
-  if (reason) {
-    const key = `whatsapp.apiError.${reason}`;
-    const translated = t(key);
-    // t() falls back to the key itself when missing — only use it if we actually have a translation.
-    if (translated !== key) {
-      toast.error(translated);
-      return;
-    }
-  }
-  toast.error(axiosErr?.response?.data?.error ?? fallback);
+  toast.error(apiErrorText(err, fallback, t, 'whatsapp.apiError'));
 }
 
 interface SentMessage {
@@ -638,7 +627,7 @@ export default function WhatsAppPage() {
                             <TableRow key={b.phone_e164}>
                               <TableCell className="font-mono text-sm"><Ltr>{b.phone_e164}</Ltr></TableCell>
                               <TableCell className="text-sm text-gray-600">{b.reason ?? '—'}</TableCell>
-                              <TableCell className="text-sm text-gray-600">{parseDbTimestamp(b.blocked_at).toLocaleString()}</TableCell>
+                              <TableCell className="text-sm text-gray-600">{fmt(b.blocked_at)}</TableCell>
                               <TableCell><Button size="sm" variant="ghost" onClick={() => removeBlock(b.phone_e164)}>{t('whatsapp.blocklist.removeCta')}</Button></TableCell>
                             </TableRow>
                           ))}

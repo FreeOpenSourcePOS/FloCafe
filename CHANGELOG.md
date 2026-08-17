@@ -2,6 +2,21 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.2.1] - 2026-08-17
+
+### Added
+- Added full Persian (Farsi) RTL layout support across the Setup wizard, auth screens, Settings, Dashboard, POS, and shared UI components, with logical direction utilities and isolated LTR islands for technical values (order numbers, phone numbers, URLs, IDs).
+- Completed Persian translation coverage to full parity with English, including Iranian Economic Code terminology for tax identification fields.
+- Windows releases now build and publish x64 and arm64 Microsoft Store AppX packages automatically.
+
+### Fixed
+- Iranian Rial ESC/POS receipts now preserve raw financial lines and print within correct column bounds on 58mm and 80mm printers.
+- Hardened static file path resolution across the main, server-app, and KDS HTTP servers and backup listing against directory traversal.
+- Bounded email and tax-ID input validation to prevent ReDoS.
+
+### Changed
+- CI test suite now shards across two parallel runners to speed up merge-ready checks.
+
 ## [3.2.0] - 2026-08-15
 
 ### Added

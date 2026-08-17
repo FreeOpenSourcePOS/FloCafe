@@ -467,7 +467,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Setup Microsoft Store Developer CLI
-        uses: microsoft/microsoft-store-apppublisher@v1.1
+        uses: microsoft/microsoft-store-apppublisher@v1.4
 
       - name: Publish Windows AppX packages to Microsoft Store
         shell: pwsh

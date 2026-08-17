@@ -42,6 +42,7 @@ const { registerRoutes } = require('../main/routes/index');
 const { calculateConfiguredChargeTaxes } = require('../main/services/tax');
 const {
   installCatalogEntry,
+  reinstallPackVersion,
   validationChecklist,
 } = require('../main/routes/tax-packs');
 const {
@@ -763,6 +764,86 @@ async function main() {
       const contentLines = receipt.split('\n').filter((line) => line.length > 0);
       assert(contentLines.every((line) => line.length <= columns), `plugin renderer keeps ${columns}-column profile within printable width`);
     }
+
+    console.log('\n8b. Reinstalling a plugin repairs a missing billing template without changing its version');
+    db.prepare('DELETE FROM installed_print_templates WHERE pack_version_id = ?').run(wrappedInstalled.versionId);
+    assertEqual(
+      db.prepare('SELECT COUNT(*) AS count FROM installed_print_templates WHERE pack_version_id = ?')
+        .get(wrappedInstalled.versionId).count,
+      0,
+      'simulated desync: the billing template row is gone even though the pack version is still installed',
+    );
+    const missingTemplateRes = await api(baseUrl, '/api/settings/bill-templates', { headers: manager.authHeader });
+    assert(
+      !missingTemplateRes.data.plugins.some((entry: any) => entry.id === 'in.gst.tax-invoice.v1'),
+      'billing template is not exposed to settings while its row is missing',
+    );
+
+    const reinstallCatalog = {
+      schemaVersion: 1,
+      generatedAt: '2026-08-01T00:00:00.000Z',
+      packs: [wrappedEntry],
+    };
+    const reinstallCatalogUrl = `${wrappedBase}/reinstall-catalog.json`;
+    const reinstallReleasesUrl = 'https://api.github.com/repos/FreeOpenSourcePOS/FloCafe-Plugins/releases?per_page=100&page=1';
+    const reinstallFetch = async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === reinstallReleasesUrl) {
+        return new Response(JSON.stringify([{
+          tag_name: wrappedTag,
+          html_url: `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/tag/${wrappedTag}`,
+          draft: false,
+          assets: [{ name: 'catalog.json', browser_download_url: reinstallCatalogUrl }],
+        }]), { status: 200 });
+      }
+      if (url === reinstallCatalogUrl) return new Response(JSON.stringify(reinstallCatalog), { status: 200 });
+      if (url === wrappedEntry.downloadUrl) return new Response(wrappedArtifactJson, { status: 200 });
+      if (url === wrappedEntry.signatureUrl) return new Response(wrappedSignature, { status: 200 });
+      return new Response('', { status: 404 });
+    };
+    const reinstalled = await reinstallPackVersion(
+      wrappedInstalled.packId,
+      wrappedInstalled.versionId,
+      { actorUserId: owner.userId, fetchImpl: reinstallFetch, publicKey },
+    );
+    assertEqual(reinstalled.version, '1.3.0', 'reinstall keeps the same installed version, it does not upgrade');
+    assertEqual(reinstalled.templateCount, 1, 'reinstall reports the restored template count');
+    const repairedTemplateRow = db.prepare(
+      'SELECT * FROM installed_print_templates WHERE template_id = ?'
+    ).get('in.gst.tax-invoice.v1');
+    assert(!!repairedTemplateRow, 'reinstall re-creates the missing billing template row');
+    assertEqual(repairedTemplateRow.pack_version_id, wrappedInstalled.versionId, 'restored template is keyed to the same pack version');
+    const repairedChildren = db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM tax_categories WHERE pack_version_id = ?) AS categories,
+        (SELECT COUNT(*) FROM tax_rules WHERE pack_version_id = ?) AS rules
+    `).get(wrappedInstalled.versionId, wrappedInstalled.versionId);
+    assertEqual(repairedChildren.categories, wrappedPack.categories.length, 'reinstall does not duplicate categories');
+    assertEqual(repairedChildren.rules, wrappedPack.rules.length, 'reinstall does not duplicate rules');
+    const repairedTemplateListRes = await api(baseUrl, '/api/settings/bill-templates', { headers: manager.authHeader });
+    const repairedPluginTemplate = repairedTemplateListRes.data.plugins.find((entry: any) => entry.id === 'in.gst.tax-invoice.v1');
+    assert(!!repairedPluginTemplate, 'billing template is exposed to settings again after reinstall');
+    const reinstallAudit = db.prepare(`
+      SELECT action, actor_user_id FROM tax_config_audit
+      WHERE pack_version_id = ? AND action = 'reinstall_pack'
+    `).get(wrappedInstalled.versionId);
+    assert(!!reinstallAudit, 'reinstall is audited');
+    assertEqual(reinstallAudit.actor_user_id, owner.userId, 'reinstall audit identifies the acting user');
+
+    const genericPack = db.prepare(
+      "SELECT active_version_id FROM country_packs WHERE id = 'local-generic'"
+    ).get() as { active_version_id: string };
+    let manualReinstallRejected = false;
+    try {
+      await reinstallPackVersion('local-generic', genericPack.active_version_id, {
+        actorUserId: owner.userId,
+        fetchImpl: reinstallFetch,
+        publicKey,
+      });
+    } catch (error: any) {
+      manualReinstallRejected = error.statusCode === 400;
+    }
+    assert(manualReinstallRejected, 'reinstalling a local/manual pack is rejected, it has nothing to redownload');
 
     db.prepare("UPDATE country_pack_versions SET status = 'revoked' WHERE id = ?").run(wrappedInstalled.versionId);
     const rejectRevokedTemplate = await api(baseUrl, '/api/settings/bill_template', {

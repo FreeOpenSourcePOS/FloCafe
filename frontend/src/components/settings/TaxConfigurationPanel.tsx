@@ -259,6 +259,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [packUpdate, setPackUpdate] = useState<TaxPackUpdate | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [reinstallingPlugin, setReinstallingPlugin] = useState(false);
 
   const [manualStarter] = useState(() => {
     const category = newManualCategory('Standard');
@@ -535,6 +536,33 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       toast.error(apiMessage(error, 'Could not install the tax plugin update'));
     } finally {
       setInstallingUpdate(false);
+    }
+  }
+
+  // Re-downloads the currently-active plugin version in place and re-derives
+  // its categories, rules, and bundled billing template. For the case where a
+  // plugin shows as installed/active but its billing template never appeared
+  // under Printers > Bill Template (e.g. after a database restore) — the
+  // version number doesn't change, so the normal update flow has nothing to
+  // offer here.
+  async function reinstallPlugin() {
+    const packId = detail?.pack.id;
+    const versionId = detail?.active_version?.id;
+    if (!isOwner || !pluginUpdateApplicable || !packId || !versionId) return;
+    if (!window.confirm('Re-download this tax plugin and rebuild its categories, rules, and billing template? This will not change the installed version.')) {
+      return;
+    }
+    setReinstallingPlugin(true);
+    try {
+      await api.post(
+        `/tax-packs/${encodeURIComponent(packId)}/versions/${encodeURIComponent(versionId)}/reinstall`,
+      );
+      toast.success('Tax plugin reinstalled — its billing template should now appear under Printers > Bill Template');
+      await Promise.all([loadList(), loadAudit(), loadDetail(packId)]);
+    } catch (error) {
+      toast.error(apiMessage(error, 'Could not reinstall the tax plugin'));
+    } finally {
+      setReinstallingPlugin(false);
     }
   }
 
@@ -894,15 +922,29 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
               Tax plugin version <span className="font-mono font-medium">v{detail.active_version.version}</span>
               <span className="ms-1 text-gray-400">({detail.pack.trust_status})</span>
             </span>
-            <button
-              type="button"
-              onClick={() => void checkForPluginUpdates(true)}
-              disabled={checkingUpdate}
-              className="ms-auto flex items-center gap-1 font-medium text-brand disabled:opacity-50"
-            >
-              <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
-              {checkingUpdate ? 'Checking…' : 'Check for updates'}
-            </button>
+            <span className="ms-auto flex items-center gap-3">
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => void reinstallPlugin()}
+                  disabled={reinstallingPlugin}
+                  title="Re-download this plugin and rebuild its categories, rules, and billing template"
+                  className="flex items-center gap-1 font-medium text-gray-600 hover:text-gray-800 disabled:opacity-50"
+                >
+                  <Wrench size={13} className={reinstallingPlugin ? 'animate-spin' : ''} />
+                  {reinstallingPlugin ? 'Reinstalling…' : 'Reinstall plugin'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void checkForPluginUpdates(true)}
+                disabled={checkingUpdate}
+                className="flex items-center gap-1 font-medium text-brand disabled:opacity-50"
+              >
+                <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
+                {checkingUpdate ? 'Checking…' : 'Check for updates'}
+              </button>
+            </span>
           </div>
         )}
         {activePluginUpdate && (

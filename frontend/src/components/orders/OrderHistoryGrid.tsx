@@ -10,6 +10,7 @@ import { useAuthStore } from '@/store/auth';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import type { Order, OrderItem, Bill } from '@/lib/types';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 
 // --- Mock data ---------------------------------------------------------
@@ -121,7 +122,7 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
       <CardHeader className="px-4 pt-4 pb-3 border-b gap-1">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-base font-bold">#{order.order_number}</CardTitle>
+            <CardTitle className="text-base font-bold">#<Ltr>{order.order_number}</Ltr></CardTitle>
             <CardDescription>{formatDate(order.created_at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</CardDescription>
           </div>
           <Badge className={STATUS_BADGE[order.status] ?? ''} variant="outline">
@@ -141,8 +142,8 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
             <TableRow>
               <TableHead className="px-0">{t('printTest.item')}</TableHead>
               <TableHead className="px-0 text-center w-10">{t('printTest.qty')}</TableHead>
-              <TableHead className="px-0 text-right">{t('printTest.rate')}</TableHead>
-              <TableHead className="px-0 text-right">{t('printTest.amt')}</TableHead>
+              <TableHead className="px-0 text-end">{t('printTest.rate')}</TableHead>
+              <TableHead className="px-0 text-end">{t('printTest.amt')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -150,8 +151,8 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
               <TableRow key={item.id} className="hover:bg-transparent">
                 <TableCell className="px-0 py-1.5 text-sm">{item.product_name}</TableCell>
                 <TableCell className="px-0 py-1.5 text-sm text-center tabular-nums">{item.quantity}</TableCell>
-                <TableCell className="px-0 py-1.5 text-sm text-right tabular-nums">{fmt(item.unit_price)}</TableCell>
-                <TableCell className="px-0 py-1.5 text-sm text-right tabular-nums">{fmt(item.subtotal)}</TableCell>
+                <TableCell className="px-0 py-1.5 text-sm text-end tabular-nums">{fmt(item.unit_price)}</TableCell>
+                <TableCell className="px-0 py-1.5 text-sm text-end tabular-nums">{fmt(item.subtotal)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

@@ -35,19 +35,19 @@ export default function TaxBreakdown({ taxAmount, taxBreakdown, theme = 'dark' }
     <div>
       <button
         onClick={() => hasBreakdown && setExpanded(!expanded)}
-        className={`flex items-center gap-1 w-full text-left ${hasBreakdown ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
+        className={`flex items-center gap-1 w-full text-start ${hasBreakdown ? 'cursor-pointer hover:opacity-80' : 'cursor-default'}`}
       >
         {hasBreakdown && (
           expanded
             ? <ChevronDown size={12} className={theme === 'light' ? 'text-gray-400' : 'text-slate-400'} />
-            : <ChevronRight size={12} className={theme === 'light' ? 'text-gray-400' : 'text-slate-400'} />
+            : <ChevronRight size={12} className={`rtl-flip ${theme === 'light' ? 'text-gray-400' : 'text-slate-400'}`} />
         )}
         <span className={`text-xs ${theme === 'light' ? 'text-gray-500' : 'text-slate-300'}`}>{t('pos.tax')}</span>
         <span className="flex-1" />
         <span className={`text-xs ${theme === 'light' ? 'text-gray-500' : 'text-slate-300'}`}>{fmt(taxAmount)}</span>
       </button>
       {expanded && hasBreakdown && (
-        <div className="ml-4 mt-1 space-y-0.5">
+        <div className="ms-4 mt-1 space-y-0.5">
           {breakdownArray.map((line, i) => {
             const title = line?.title || 'Tax';
             const rate = typeof line?.rate === 'number' ? line.rate : 0;

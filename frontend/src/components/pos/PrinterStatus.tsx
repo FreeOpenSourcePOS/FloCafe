@@ -36,6 +36,7 @@ import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import type { PrinterStatus } from '@/lib/printer/PrinterService';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 
 const STATUS_CONFIG: Record<
   PrinterStatus,
@@ -137,7 +138,7 @@ export default function PrinterStatus() {
             <p className="capitalize">
               {hardwarePrinter.connection_type}
               {hardwarePrinter.connection_type === 'network' && hardwarePrinter.ip_address
-                ? ` · ${hardwarePrinter.ip_address}${hardwarePrinter.port ? ':' + hardwarePrinter.port : ''}`
+                ? <> · <Ltr>{hardwarePrinter.ip_address}{hardwarePrinter.port ? ':' + hardwarePrinter.port : ''}</Ltr></>
                 : ''}
               {hardwarePrinter.paper_width ? ` · ${hardwarePrinter.paper_width}` : ''}
             </p>
@@ -149,7 +150,7 @@ export default function PrinterStatus() {
             <p className="font-medium text-gray-700 truncate">
               {deviceInfo.productName ?? t('pos.printerUnknownDevice')}
             </p>
-            <p>{deviceInfo.manufacturerName ?? `VID:${deviceInfo.vendorId.toString(16).toUpperCase()}`}</p>
+            <p><Ltr>{deviceInfo.manufacturerName ?? `VID:${deviceInfo.vendorId.toString(16).toUpperCase()}`}</Ltr></p>
           </div>
         )}
 
@@ -169,7 +170,7 @@ export default function PrinterStatus() {
                 disabled={isConnecting}
                 className="text-sm cursor-pointer"
               >
-                <Printer size={14} className="mr-2" />
+                <Printer size={14} className="me-2" />
                 {isConnecting ? t('pos.printerConnecting') : t('pos.printerConnectUsb')}
               </DropdownMenuItem>
             )}
@@ -179,7 +180,7 @@ export default function PrinterStatus() {
                 onClick={handleDisconnect}
                 className="text-sm cursor-pointer text-red-600 focus:text-red-600"
               >
-                <Unplug size={14} className="mr-2" />
+                <Unplug size={14} className="me-2" />
 {t('pos.printerDisconnect')}
               </DropdownMenuItem>
             )}
@@ -198,7 +199,7 @@ export default function PrinterStatus() {
           onClick={() => router.push('/settings?tab=receipts-printers')}
           className="text-sm cursor-pointer"
         >
-          <Settings size={14} className="mr-2" />
+          <Settings size={14} className="me-2" />
           {t('pos.printerSettings')}
         </DropdownMenuItem>
       </DropdownMenuContent>

@@ -1,4 +1,26 @@
 export type Language = 'en' | 'es' | 'pt' | 'fa';
+export type LanguageDirection = 'ltr' | 'rtl';
+
+/**
+ * Text direction of each supported UI language, stored next to the language
+ * definitions. Persian (fa) is RTL; all other supported languages are LTR.
+ *
+ * Consumers resolve direction through {@link getLanguageDirection} instead of
+ * re-hardcoding `fa` (HtmlLangSync, KdsHtmlLang, DirectionalToaster, …), so
+ * adding another RTL language only requires updating this map.
+ */
+export const LANGUAGE_DIRECTION: Record<Language, LanguageDirection> = {
+  en: 'ltr',
+  es: 'ltr',
+  pt: 'ltr',
+  fa: 'rtl',
+};
+
+/** Returns the text direction of a UI language (defaults to `ltr`). */
+export function getLanguageDirection(lang: Language): LanguageDirection {
+  return LANGUAGE_DIRECTION[lang] ?? 'ltr';
+}
+
 import en from './i18n/en.json';
 import es from './i18n/es.json';
 import pt from './i18n/pt.json';

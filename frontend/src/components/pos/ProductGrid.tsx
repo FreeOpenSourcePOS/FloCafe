@@ -79,7 +79,7 @@ export default function ProductGrid({
     <div data-testid="pos-product-grid" className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
       <div className="shrink-0 mb-3">
         <div className="relative mb-2">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
           <input
             type="text"
             value={search}
@@ -97,7 +97,7 @@ export default function ProductGrid({
               }
             }}
             placeholder={t('pos.searchProducts')}
-            className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:border-brand outline-none transition-colors text-sm"
+            className="w-full ps-9 pe-4 py-2 bg-white border border-gray-200 rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
         </div>
         <div className="flex flex-wrap gap-2 pb-1">
@@ -148,23 +148,23 @@ export default function ProductGrid({
                 key={product.id}
                 data-testid="pos-product-card"
                 onClick={() => onProductClick(product)}
-                className="bg-white rounded-xl p-2.5 border border-gray-100 hover:border-brand/40 hover:shadow-md transition-all text-left relative group cursor-pointer overflow-hidden"
+                className="bg-white rounded-xl p-2.5 border border-gray-100 hover:border-brand/40 hover:shadow-md transition-all text-start relative group cursor-pointer overflow-hidden"
               >
                 {!!product.track_inventory && (
                   <>
                     {product.stock_quantity <= 0 ? (
-                      <span className="absolute top-2 left-2 bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-red-200 pointer-events-none">
+                      <span className="absolute top-2 start-2 bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-red-200 pointer-events-none">
                         {t('pos.outOfStock')}
                       </span>
                     ) : product.stock_quantity <= (product.low_stock_threshold || 0) ? (
-                      <span className="absolute top-2 left-2 bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-orange-200 pointer-events-none">
+                      <span className="absolute top-2 start-2 bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-orange-200 pointer-events-none">
                         {t('pos.lowStock')}
                       </span>
                     ) : null}
                   </>
                 )}
                 {inCartQty > 0 && (
-                  <span className="absolute top-0 right-0 bg-brand text-white text-xs w-6 h-6 rounded-bl-lg flex items-center justify-center font-bold z-10">
+                  <span className="absolute top-0 end-0 bg-brand text-white text-xs w-6 h-6 rounded-es-lg flex items-center justify-center font-bold z-10">
                     {inCartQty}
                   </span>
                 )}
@@ -194,7 +194,7 @@ export default function ProductGrid({
                     )}
 
                     {product.tags && product.tags.length > 0 && (
-                      <span className="absolute bottom-1.5 right-1.5 z-10">
+                      <span className="absolute bottom-1.5 end-1.5 z-10">
                         <TagBadge tag={product.tags[0]} />
                       </span>
                     )}

@@ -492,10 +492,10 @@ export default function ProductsPage() {
               </Button>
             )}
             <Button variant="outline" onClick={() => openCsvModal('products')}>
-              <FileSpreadsheet size={16} className="mr-1" /> CSV
+              <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
             <Button onClick={openCreate}>
-              <Plus size={16} className="mr-1" /> {t('products.addProduct')}
+              <Plus size={16} className="me-1" /> {t('products.addProduct')}
             </Button>
           </div>
 
@@ -504,15 +504,15 @@ export default function ProductsPage() {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnProduct')}</th>
-              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnCategory')}</th>
+              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnProduct')}</th>
+              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnCategory')}</th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">Add-ons</th>
-              <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnPrice')}</th>
-              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnTax')}</th>
-              {loyaltyEnabled && <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnCashback')}</th>}
+              <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnPrice')}</th>
+              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnTax')}</th>
+              {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnCashback')}</th>}
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnStock')}</th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnStatus')}</th>
-              <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnActions')}</th>
+              <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnActions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -576,7 +576,7 @@ export default function ProductsPage() {
                     <span className="text-gray-400 text-sm">—</span>
                   )}
                 </td>
-                <td className="p-4 text-right">
+                <td className="p-4 text-end">
                   <p className="font-medium">{fmt(Number(product.price))}</p>
                   {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">Cost: {fmt(Number(product.cost_price))}</p>}
                 </td>
@@ -620,7 +620,7 @@ export default function ProductsPage() {
                     <span className="text-[10px] text-amber-600 font-medium block mt-1">(Hidden on POS)</span>
                   )}
                 </td>
-                <td className="p-4 text-right">
+                <td className="p-4 text-end">
                   <div className="flex gap-2 justify-end">
                     {isOwnerOrManager && (
                       <>
@@ -655,7 +655,7 @@ export default function ProductsPage() {
             <div className="p-6 overflow-y-auto flex-1">
               <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldName')}<span className="text-red-500 ml-1">*</span></label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldName')}<span className="text-red-500 ms-1">*</span></label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
               </div>
@@ -677,7 +677,7 @@ export default function ProductsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldCategory')}<span className="text-red-500 ml-1">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldCategory')}<span className="text-red-500 ms-1">*</span></label>
                   <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required>
                     <option value="">{t('products.selectPlaceholder')}</option>
@@ -699,7 +699,7 @@ export default function ProductsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.priceLabel', { currency })}<span className="text-red-500 ml-1">*</span></label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.priceLabel', { currency })}<span className="text-red-500 ms-1">*</span></label>
                   <input type="number" step="0.01" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })}
                     onWheel={(e) => e.currentTarget.blur()}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
@@ -869,7 +869,7 @@ export default function ProductsPage() {
               {!!form.track_inventory && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldStock')}<span className="text-red-500 ml-1">*</span></label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldStock')}<span className="text-red-500 ms-1">*</span></label>
                     <input type="number" min="0" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                   </div>
@@ -895,20 +895,20 @@ export default function ProductsPage() {
         <>
           <div className="flex justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => openCsvModal('categories')}>
-              <FileSpreadsheet size={16} className="mr-1" /> CSV
+              <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
             <Button onClick={() => { resetCategoryForm(); setShowForm(true); }}>
-              <Plus size={16} className="mr-1" /> {t('products.addCategory')}
+              <Plus size={16} className="me-1" /> {t('products.addCategory')}
             </Button>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.categoryName')}</th>
-                  <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.categoryColor')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.categoryName')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.categoryColor')}</th>
                   <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnStatus')}</th>
-                  <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnActions')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -927,7 +927,7 @@ export default function ProductsPage() {
                           {cat.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="p-4 text-right">
+                      <td className="p-4 text-end">
                         <div className="flex gap-2 justify-end">
                           {isOwnerOrManager && (
                             <>
@@ -954,7 +954,7 @@ export default function ProductsPage() {
                 </div>
                 <form onSubmit={handleCategorySubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldName')}<span className="text-red-500 ml-1">*</span></label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldName')}<span className="text-red-500 ms-1">*</span></label>
                     <input type="text" value={categoryForm.name} onChange={(e) => setCategoryForm({ ...categoryForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                   </div>
                   <div>
@@ -985,21 +985,21 @@ export default function ProductsPage() {
         <>
           <div className="flex justify-end gap-2 mb-4">
             <Button variant="outline" onClick={() => openCsvModal('addons')}>
-              <FileSpreadsheet size={16} className="mr-1" /> CSV
+              <FileSpreadsheet size={16} className="me-1" /> CSV
             </Button>
             <Button onClick={() => { resetAddonForm(); setShowAddonModal(true); }}>
-              <Plus size={16} className="mr-1" /> {t('products.addAddonGroup')}
+              <Plus size={16} className="me-1" /> {t('products.addAddonGroup')}
             </Button>
           </div>
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase">{t('products.categoryName')}</th>
+                  <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.categoryName')}</th>
                   <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnRequired')}</th>
                   <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnSelection')}</th>
                   <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnAddons')}</th>
-                  <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnActions')}</th>
+                  <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnActions')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -1011,7 +1011,7 @@ export default function ProductsPage() {
                     </td>
                     <td className="p-4 text-center text-sm text-gray-600">{t('products.addonSelectionRange', { min: group.min_selection, max: group.max_selection })}</td>
                     <td className="p-4 text-center text-sm text-gray-600">{group.addons?.length || 0}</td>
-                    <td className="p-4 text-right">
+                    <td className="p-4 text-end">
                       <div className="flex gap-2 justify-end">
                         {isOwnerOrManager && (
                           <>
@@ -1038,7 +1038,7 @@ export default function ProductsPage() {
                 <div className="p-6 overflow-y-auto flex-1">
                   <form onSubmit={handleAddonGroupSubmit} className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldName')}<span className="text-red-500 ml-1">*</span></label>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.fieldName')}<span className="text-red-500 ms-1">*</span></label>
                     <input type="text" value={addonForm.name} onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })} className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
                   </div>
                   <div>

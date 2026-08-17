@@ -289,9 +289,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         // new request and must not reuse the completed request's hash.
         if (updatedBill) idempotencyKeyRef.current = null;
         if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
-        throw new Error(t('pos.paymentIncomplete', {
+        toast.error(t('pos.paymentIncomplete', {
           amount: currencyFmt(Number(updatedBill?.balance) || 0),
         }));
+        return;
       }
       const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
       setPointsEarned(earned);

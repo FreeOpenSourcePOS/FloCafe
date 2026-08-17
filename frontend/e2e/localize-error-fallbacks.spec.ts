@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 /**
  * End-to-End verification of localized error fallbacks (#241).
@@ -18,7 +19,7 @@ import * as fs from 'fs';
 const BASE = 'http://localhost:3001';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
-  '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M08KC186JQ29G9DS41MZFZH4';
+  path.join(os.tmpdir(), 'no-mistakes-evidence', '01M08KC186JQ29G9DS41MZFZH4');
 
 async function captureScreenshot(page: Page, filename: string): Promise<void> {
   try {
@@ -187,12 +188,13 @@ test.describe('Localized Error Fallbacks', () => {
     await captureScreenshot(page, 'error-recover-pin-fallback-fa.png');
   });
 
-  test('Settings error toasts render localized fallbacks in Persian', async ({ page }) => {
+  test('Authenticated screens error toasts render localized fallbacks (Settings, Print Test, POS)', async ({ page }) => {
     await loginAsOwner(page);
-    await setLanguage(page, 'fa');
 
     try {
-      // 1. Settings pairing code rotation error toast
+      // 1. Settings pairing code rotation error toast in Persian
+      await setLanguage(page, 'fa');
+
       await page.route('**/api/settings/rotate-pairing-code', (route) => {
         route.fulfill({
           status: 500,
@@ -229,43 +231,35 @@ test.describe('Localized Error Fallbacks', () => {
         await expect(page.locator('text=RAW_SMTP_SENDMAIL_FAILED')).not.toBeVisible();
         await captureScreenshot(page, 'error-settings-verification-email-fa.png');
       }
-    } finally {
+
+      // 3. Print test KOT disabled error toast in English and Persian
       await setLanguage(page, 'en');
-    }
-  });
+      await page.route('**/api/settings', (route) => {
+        if (route.request().method() === 'GET') {
+          route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({
+              kot_enabled: 'false',
+              kds_enabled: 'false',
+              language: 'en',
+            }),
+          });
+        } else {
+          route.continue();
+        }
+      });
 
-  test('Print test KOT disabled error toast renders in Persian and English', async ({ page }) => {
-    await loginAsOwner(page);
-
-    // 1. English print test KOT disabled
-    await setLanguage(page, 'en');
-    await page.route('**/api/settings', (route) => {
-      if (route.request().method() === 'GET') {
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            kot_enabled: 'false',
-            kds_enabled: 'false',
-            language: 'en',
-          }),
-        });
-      } else {
-        route.continue();
+      await page.goto(`${BASE}/print-test`);
+      const kotBtnEn = page.locator('button', { hasText: /KOT/ }).first();
+      if (await kotBtnEn.isVisible()) {
+        await kotBtnEn.click();
+        await expect(page.locator('text=KOT disabled')).toBeVisible({ timeout: 5000 });
+        await captureScreenshot(page, 'error-print-test-kot-disabled-en.png');
       }
-    });
 
-    await page.goto(`${BASE}/print-test`);
-    const kotBtnEn = page.locator('button', { hasText: /KOT/ }).first();
-    if (await kotBtnEn.isVisible()) {
-      await kotBtnEn.click();
-      await expect(page.locator('text=KOT disabled')).toBeVisible({ timeout: 5000 });
-      await captureScreenshot(page, 'error-print-test-kot-disabled-en.png');
-    }
-
-    // 2. Persian print test KOT disabled
-    await setLanguage(page, 'fa');
-    try {
+      // Persian print test KOT disabled
+      await setLanguage(page, 'fa');
       await page.route('**/api/settings', (route) => {
         if (route.request().method() === 'GET') {
           route.fulfill({
@@ -289,16 +283,8 @@ test.describe('Localized Error Fallbacks', () => {
         await expect(page.locator('text=KOT غیرفعال است')).toBeVisible({ timeout: 5000 });
         await captureScreenshot(page, 'error-print-test-kot-disabled-fa.png');
       }
-    } finally {
-      await setLanguage(page, 'en');
-    }
-  });
 
-  test('POS Hold Order error toast renders localized fallback without backend leak', async ({ page }) => {
-    await loginAsOwner(page);
-    await setLanguage(page, 'fa');
-
-    try {
+      // 4. POS Hold Order error toast
       await page.route('**/api/orders/hold', (route) => {
         route.fulfill({
           status: 500,

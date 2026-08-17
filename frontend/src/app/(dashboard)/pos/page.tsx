@@ -708,9 +708,10 @@ export default function POSPage() {
         : 0;
 
       if (paidBill.payment_status !== 'paid') {
-        throw new Error(t('pos.paymentIncomplete', {
+        toast.error(t('pos.paymentIncomplete', {
           amount: currencyFmt(Number(paidBill.balance) || 0),
         }));
+        return;
       }
 
       const successMsg = pointsEarned > 0

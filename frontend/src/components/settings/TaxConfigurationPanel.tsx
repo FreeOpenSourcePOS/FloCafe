@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Clock3,
+  Download,
   History,
   Lock,
   Plus,
@@ -99,6 +100,18 @@ type PackDetail = {
   rules: TaxRule[];
   overrides: TaxOverride[];
   targets: { products: OverrideTarget[]; addons: OverrideTarget[] };
+};
+
+type TaxPackUpdate = {
+  // The catalog's current id — pass this to catalog/install.
+  packId: string;
+  // The id actually installed for this store (may predate a catalog rename).
+  installedPackId: string;
+  country: string;
+  publisher: string;
+  currentVersion: string;
+  latestVersion: string;
+  entry: { version: string; publishedAt: string; minFloVersion: string };
 };
 
 type AuditRow = {
@@ -243,6 +256,10 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [taxesEnabled, setTaxesEnabled] = useState(false);
   const [pluginRequested, setPluginRequested] = useState(false);
   const [showAdvancedTools, setShowAdvancedTools] = useState(false);
+  const [packUpdate, setPackUpdate] = useState<TaxPackUpdate | null>(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [reinstallingPlugin, setReinstallingPlugin] = useState(false);
 
   const [manualStarter] = useState(() => {
     const category = newManualCategory('Standard');
@@ -434,6 +451,11 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   // actually activated (enableCountryTaxes / saveManualConfig / turnTaxesOff).
   const taxMode: 'off' | 'official' | 'manual' = !taxesEnabled ? 'off' : activePackPublisher === 'local' ? 'manual' : 'official';
   const manualBuilderVisible = manualBuilderOpen || taxMode === 'manual';
+  // Only meaningful while an official (non-local) pack is active — gate at
+  // render time rather than resetting packUpdate from an effect, so a stale
+  // result from a previously active pack never leaks into a different mode.
+  const pluginUpdateApplicable = taxMode === 'official' && detail?.pack.publisher !== 'local';
+  const activePluginUpdate = pluginUpdateApplicable ? packUpdate : null;
   // The segment control's *displayed* selection: opening the manual editor
   // is its own state even before anything is saved, so it must outrank
   // taxMode here — otherwise "Turn Off Tax" (or "Official") stays lit at the
@@ -450,6 +472,99 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     () => new Map((detail?.categories || []).map((category) => [category.category_id, category.label])),
     [detail?.categories],
   );
+
+  async function checkForPluginUpdates(announce: boolean) {
+    const packId = detail?.pack.id;
+    if (!pluginUpdateApplicable || !packId) {
+      if (announce) toast.error('No installed tax plugin to check for updates');
+      return;
+    }
+    setCheckingUpdate(true);
+    try {
+      const response = await api.get('/tax-packs/updates');
+      const updates = (response.data?.updates || []) as TaxPackUpdate[];
+      const match = updates.find((update) => update.installedPackId === packId) || null;
+      setPackUpdate(match);
+      if (announce) toast.success(match ? `Update available: v${match.latestVersion}` : 'Tax plugin is up to date');
+    } catch (error) {
+      if (announce) toast.error(apiMessage(error, 'Could not check for tax plugin updates'));
+    } finally {
+      setCheckingUpdate(false);
+    }
+  }
+
+  // Silent, best-effort check whenever the active official pack changes —
+  // e.g. right after the settings page loads. Never surfaces an error toast;
+  // a failed/offline check just leaves the update banner hidden.
+  useEffect(() => {
+    if (!pluginUpdateApplicable || !detail?.pack.id) return;
+    let cancelled = false;
+    const packId = detail.pack.id;
+    api.get('/tax-packs/updates')
+      .then((response) => {
+        if (cancelled) return;
+        const updates = (response.data?.updates || []) as TaxPackUpdate[];
+        setPackUpdate(updates.find((update) => update.installedPackId === packId) || null);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [pluginUpdateApplicable, detail?.pack.id]);
+
+  async function installPluginUpdate() {
+    const update = activePluginUpdate;
+    if (!update || !isOwner) return;
+    setInstallingUpdate(true);
+    try {
+      const installResponse = await api.post('/tax-packs/catalog/install', {
+        pack_id: update.packId,
+        version: update.latestVersion,
+      });
+      const installed = installResponse.data.installed as { packId: string; versionId: string };
+      await api.post(
+        `/tax-packs/${encodeURIComponent(installed.packId)}/versions/${encodeURIComponent(installed.versionId)}/activate`,
+      );
+      toast.success(`Tax plugin updated to v${update.latestVersion}`);
+      setPackUpdate(null);
+      // installed.packId can differ from the pack that was active before
+      // (e.g. a catalog rename, official-in -> official-india) — switch the
+      // selection explicitly rather than relying on loadList's "keep current
+      // selection if it still exists" default, which would keep showing the
+      // now-inactive old pack.
+      setSelectedPackId(installed.packId);
+      await Promise.all([loadList(), loadAudit(), loadDetail(installed.packId)]);
+    } catch (error) {
+      toast.error(apiMessage(error, 'Could not install the tax plugin update'));
+    } finally {
+      setInstallingUpdate(false);
+    }
+  }
+
+  // Re-downloads the currently-active plugin version in place and re-derives
+  // its categories, rules, and bundled billing template. For the case where a
+  // plugin shows as installed/active but its billing template never appeared
+  // under Printers > Bill Template (e.g. after a database restore) — the
+  // version number doesn't change, so the normal update flow has nothing to
+  // offer here.
+  async function reinstallPlugin() {
+    const packId = detail?.pack.id;
+    const versionId = detail?.active_version?.id;
+    if (!isOwner || !pluginUpdateApplicable || !packId || !versionId) return;
+    if (!window.confirm('Re-download this tax plugin and rebuild its categories, rules, and billing template? This will not change the installed version.')) {
+      return;
+    }
+    setReinstallingPlugin(true);
+    try {
+      await api.post(
+        `/tax-packs/${encodeURIComponent(packId)}/versions/${encodeURIComponent(versionId)}/reinstall`,
+      );
+      toast.success('Tax plugin reinstalled — its billing template should now appear under Printers > Bill Template');
+      await Promise.all([loadList(), loadAudit(), loadDetail(packId)]);
+    } catch (error) {
+      toast.error(apiMessage(error, 'Could not reinstall the tax plugin'));
+    } finally {
+      setReinstallingPlugin(false);
+    }
+  }
 
   function resetOverrideForm() {
     setEditingOverrideId(null);
@@ -800,6 +915,53 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
             from the FloCafe team and will build it soon. Taxes remain off until it is ready.
             {pluginRequested && ' Your request is queued for the team.'}
           </p>
+        )}
+        {taxMode === 'official' && detail?.active_version && detail.pack.publisher !== 'local' && (
+          <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-700">
+            <span>
+              Tax plugin version <span className="font-mono font-medium">v{detail.active_version.version}</span>
+              <span className="ms-1 text-gray-400">({detail.pack.trust_status})</span>
+            </span>
+            <span className="ms-auto flex items-center gap-3">
+              {isOwner && (
+                <button
+                  type="button"
+                  onClick={() => void reinstallPlugin()}
+                  disabled={reinstallingPlugin}
+                  title="Re-download this plugin and rebuild its categories, rules, and billing template"
+                  className="flex items-center gap-1 font-medium text-gray-600 hover:text-gray-800 disabled:opacity-50"
+                >
+                  <Wrench size={13} className={reinstallingPlugin ? 'animate-spin' : ''} />
+                  {reinstallingPlugin ? 'Reinstalling…' : 'Reinstall plugin'}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => void checkForPluginUpdates(true)}
+                disabled={checkingUpdate}
+                className="flex items-center gap-1 font-medium text-brand disabled:opacity-50"
+              >
+                <RefreshCw size={13} className={checkingUpdate ? 'animate-spin' : ''} />
+                {checkingUpdate ? 'Checking…' : 'Check for updates'}
+              </button>
+            </span>
+          </div>
+        )}
+        {activePluginUpdate && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-brand/30 bg-brand/5 px-3 py-2 text-sm">
+            <span className="flex items-center gap-1.5">
+              <Download size={14} className="text-brand" />
+              Plugin update available: <span className="font-mono font-medium">v{activePluginUpdate.latestVersion}</span>
+              <span className="text-gray-500">(current v{activePluginUpdate.currentVersion})</span>
+            </span>
+            {isOwner ? (
+              <Button size="sm" disabled={installingUpdate} onClick={() => void installPluginUpdate()}>
+                {installingUpdate ? 'Installing…' : 'Install & activate'}
+              </Button>
+            ) : (
+              <span className="text-xs text-gray-500">Ask an owner to install this update.</span>
+            )}
+          </div>
         )}
       </section>
 

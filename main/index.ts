@@ -3,7 +3,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
-import { initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError } from './db';
+import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError } from './db';
+import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/catalog';
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
 import { cloudSync } from './services/cloud-sync';
 import { telemetry, sendEvent as sendTelemetryEvent } from './services/telemetry';
@@ -168,6 +169,37 @@ function checkForUpdates(): void {
   } else {
     log.debug('[Update] Skipping update check in dev mode');
     mainWindow?.webContents.send('update-status', { status: 'dev-mode' });
+  }
+}
+
+// Separate from the app self-updater above: tax packs are the only plugin
+// type FloCafe currently supports, installed from the FloCafe-Plugins GitHub
+// Releases catalog rather than through electron-updater. This is a
+// best-effort, network-optional check — a store must keep working offline,
+// so a failure here only logs and never blocks startup.
+async function checkTaxPackUpdatesOnStartup(): Promise<void> {
+  try {
+    const remote = await fetchRemoteTaxPackCatalog();
+    const installedRows = getDatabase().prepare(`
+      SELECT pack.id AS pack_id, pack.country, pack.publisher, version.version
+      FROM country_packs AS pack
+      JOIN country_pack_versions AS version ON version.id = pack.active_version_id
+      WHERE pack.status = 'active'
+    `).all() as Array<{ pack_id: string; country: string; publisher: string; version: string }>;
+    const updates = computeTaxPackUpdates(
+      installedRows.map((row) => (
+        { packId: row.pack_id, country: row.country, publisher: row.publisher, version: row.version }
+      )),
+      remote.catalog,
+    );
+    if (updates.length > 0) {
+      const summary = updates.map((update) => `${update.packId} ${update.currentVersion} -> ${update.latestVersion}`).join(', ');
+      console.log(`[Tax Packs] ${updates.length} plugin update(s) available: ${summary}`);
+    } else {
+      console.log('[Tax Packs] Plugin update check: all installed tax packs are up to date');
+    }
+  } catch (error) {
+    console.warn('[Tax Packs] Startup plugin update check skipped (offline or catalog unavailable):', error);
   }
 }
 
@@ -689,6 +721,7 @@ async function initialize(): Promise<void> {
       setupAutoUpdater();
       setTimeout(() => checkForUpdates(), 5000);
     }
+    setTimeout(() => { void checkTaxPackUpdatesOnStartup(); }, 5000);
 
     console.log('[Flo] Ready!');
   } catch (error) {

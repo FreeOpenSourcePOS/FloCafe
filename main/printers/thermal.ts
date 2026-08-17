@@ -615,7 +615,7 @@ export async function printKOT(order: any, items: any[], stationName: string, us
     const tzOptions = biz?.timezone ? { timeZone: biz.timezone } : undefined;
 
     const warnings: PrintWarning[] = [];
-    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings);
+    const data = formatKOT(order, items, stationName, cols, useUnicode, profile.cutMode, locale, tzOptions, warnings, profile.arabicShaping ?? false);
     console.log('[Printer] KOT data length:', data.length, 'bytes');
     const dispatch = await dispatchPrint(printer, data, signal);
     return warnings.length > 0 ? { ...dispatch, warnings } : dispatch;
@@ -798,11 +798,11 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   const profile = resolvePrinterProfile(printer);
   const columns = getColumnsForPrinter(printer, profile);
   const warnings: PrintWarning[] = [];
-  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings);
+  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, profile.arabicShaping ?? false);
   return { printer, data, warnings, columns };
 }
 
-export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
+export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
   console.log('[Printer] formatReceipt - template:', template);
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
@@ -810,16 +810,16 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
   const pluginTemplate = loadInstalledPrintTemplate(String(template || ''));
   if (pluginTemplate) {
-    return renderPluginReceipt(pluginTemplate, order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
+    return renderPluginReceipt(pluginTemplate, order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping);
   }
   const tpl = normalizeReceiptTemplate(template);
 
   try {
     switch (tpl) {
       case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
+        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping);
       default:
-        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
+        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping);
     }
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
@@ -833,8 +833,8 @@ function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' {
   return 'classic';
 }
 
-function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTemplate>, order: any, bill: any, biz: any, cols: number, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[]): Buffer {
-  if (!template) return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings);
+function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTemplate>, order: any, bill: any, biz: any, cols: number, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
+  if (!template) return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping);
   const renderer = parseJson(template.renderer_json, {}) as { id?: string; version?: number };
   const payload = parseJson(template.template_payload_json, {}) as any;
   if (renderer.id !== 'flocafe-thermal-receipt-template'
@@ -843,7 +843,7 @@ function renderPluginReceipt(template: ReturnType<typeof loadInstalledPrintTempl
     throw new Error(`Unsupported receipt plugin renderer for template ${template.template_id}`);
   }
   const profile = selectTemplateWidthProfile(payload, cols, warnings);
-  return renderEscposLineTemplateV1(payload, profile, order, bill, biz, useUnicode, isReprint, cutMode, warnings);
+  return renderEscposLineTemplateV1(payload, profile, order, bill, biz, useUnicode, isReprint, cutMode, warnings, arabicShaping);
 }
 
 function parseJson(raw: string, fallback: unknown): unknown {
@@ -876,7 +876,7 @@ function collectTemplateWidthProfiles(payload: any): Array<{ columns: number; la
     .sort((a: { columns: number }, b: { columns: number }) => a.columns - b.columns);
 }
 
-function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[]): Buffer {
+function renderEscposLineTemplateV1(payload: any, profile: { columns: number; layout: any }, order: any, bill: any, biz: any, useUnicode: boolean, isReprint: boolean, cutMode: PrinterCutMode, warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
   const lines: string[] = [];
   const cols = profile.columns;
   const layout = profile.layout || {};
@@ -979,7 +979,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
 }
 
 function appendPoweredByFooter(lines: string[]): void {
@@ -987,7 +987,7 @@ function appendPoweredByFooter(lines: string[]): void {
   lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
 }
 
-function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
+function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
 
@@ -1076,10 +1076,10 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
 }
 
-function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[]): Buffer {
+function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
   const lines: string[] = [];
   const date = parseDbTimestamp(order.created_at);
 
@@ -1193,7 +1193,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
 }
 
 type PluginColumnAlign = 'left' | 'right' | 'center';
@@ -1502,7 +1502,7 @@ function pushCenteredWrapped(lines: string[], text: string, cols: number): void 
   for (const line of wrapText(text, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
-export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[]): Buffer {
+export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
   const lines: string[] = [];
   const bar = '='.repeat(cols);
 
@@ -1535,7 +1535,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   lines.push(bar);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
 }
 
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full'): Buffer {
@@ -1596,7 +1596,27 @@ function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
   return prefix.length >= 3 ? prefix : ' '.repeat(3 - prefix.length) + prefix;
 }
 
-export function buildEscPos(lines: string[], useUnicode: boolean = false, options: { cutMode?: PrinterCutMode } = {}, warnings?: PrintWarning[]): Buffer {
+// Arabic (incl. Persian) Unicode blocks: Arabic, Arabic Supplement, Arabic
+// Extended-A, Arabic Presentation Forms-A/B. These scripts require contextual
+// shaping and bidirectional ordering that generic ESC/POS firmware does not
+// implement — a printer profile must declare `arabicShaping` before they are
+// emitted as UTF-8 bytes.
+const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+
+function hasArabicScript(text: string): boolean {
+  return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
+}
+
+/** Precise warning that distinguishes Arabic shaping from generic unsupported chars. */
+function makeUnsupportedLineWarning(isStoreName: boolean, text: string): string {
+  const label = isStoreName ? 'Store name' : 'Receipt line';
+  const why = hasArabicScript(text)
+    ? 'it contains Persian/Arabic script and the printer does not declare Arabic shaping support'
+    : 'it contains unsupported characters';
+  return `${label} was not printed because ${why}: ${text}`;
+}
+
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
 
   const resetAllStyles = () => {
@@ -1636,15 +1656,23 @@ export function buildEscPos(lines: string[], useUnicode: boolean = false, option
     // render them reliably.
     const textWithoutSupportedCurrency = printableLine.replace(/[₹₨€£¥₩₺₫₪₽฿₱₴₦₵₡₲]/g, '');
     if (/[^\x00-\x7F]/.test(textWithoutSupportedCurrency)) {
-      if (warnings) {
-        const text = printableLine.trim();
-        warnings.push({
-          field: isStoreName ? 'store name' : 'receipt line',
-          text,
-          message: `${isStoreName ? 'Store name' : 'Receipt line'} was not printed because it contains unsupported characters: ${text}`,
-        });
+      // Allow Arabic/Persian script through only when the printer profile
+      // explicitly declares Arabic shaping support AND the line contains no
+      // other non-ASCII script. Otherwise skip it — never emit unshaped text.
+      const arabicOnly = options.arabicShaping === true
+        && hasArabicScript(printableLine)
+        && !/[^\x00-\x7F]/.test(printableLine.replace(ARABIC_SCRIPT_GLOBAL_RE, ''));
+      if (!arabicOnly) {
+        if (warnings) {
+          const text = printableLine.trim();
+          warnings.push({
+            field: isStoreName ? 'store name' : 'receipt line',
+            text,
+            message: makeUnsupportedLineWarning(isStoreName, text),
+          });
+        }
+        continue;
       }
-      continue;
     }
 
     let lineBold = line.includes('{BOLD}');

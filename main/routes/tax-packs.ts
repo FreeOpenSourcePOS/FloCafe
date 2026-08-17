@@ -126,6 +126,23 @@ function persistPackArtifacts(
     version.effective_from, version.effective_to, version.min_flo_version, version.published_at,
     installedAt,
   );
+  persistPackContent(version, definition, installedAt, printTemplates);
+}
+
+// Re-derivable content for a version row that already exists in
+// country_pack_versions: categories, rules, and bundled print templates.
+// Split out from persistPackArtifacts so reinstallPackVersion can clear and
+// re-run just this part for a version whose row is present but whose
+// dependent rows (most commonly installed_print_templates, e.g. after a
+// restored/desynced database) went missing without needing to fight the
+// (pack_id, version) UNIQUE constraint on country_pack_versions.
+function persistPackContent(
+  version: VersionRow,
+  definition: CountryPack,
+  installedAt: string,
+  printTemplates: PluginPrintTemplate[] = [],
+): void {
+  const db = getDatabase();
   const insertCategory = db.prepare(`
     INSERT INTO tax_categories (
       id, pack_version_id, category_id, label, default_behavior, definition_json, created_at
@@ -678,6 +695,64 @@ export async function installCatalogEntry(
     versionId,
     version: artifact.pack.version,
     validation,
+  };
+}
+
+export async function reinstallPackVersion(
+  packId: string,
+  versionId: string,
+  options: InstallCatalogEntryOptions,
+): Promise<{ packId: string; versionId: string; version: string; templateCount: number }> {
+  const db = getDatabase();
+  const pack = db.prepare('SELECT * FROM country_packs WHERE id = ?').get(packId) as PackRow | undefined;
+  const version = db.prepare(
+    'SELECT * FROM country_pack_versions WHERE id = ? AND pack_id = ?'
+  ).get(versionId, packId) as VersionRow | undefined;
+  if (!pack || !version) {
+    throw Object.assign(new Error('Installed tax pack version not found'), { statusCode: 404 });
+  }
+  if (pack.publisher === 'local') {
+    throw Object.assign(new Error('Manually-built tax configurations do not need reinstalling'), { statusCode: 400 });
+  }
+  const fetchImpl = options.fetchImpl || fetch;
+  const publicKey = options.publicKey || TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY;
+  const remote = await fetchRemoteTaxPackCatalog(fetchImpl, options.signal);
+  const entry = remote.catalog.packs.find(
+    (candidate) => candidate.id === pack.id && candidate.version === version.version,
+  );
+  if (!entry) {
+    throw Object.assign(
+      new Error('This tax plugin version is no longer available in the plugin catalog'),
+      { statusCode: 404 },
+    );
+  }
+  const artifact = await downloadAndVerifyTaxPack(entry, fetchImpl, publicKey, options.signal);
+  if (artifact.pack.id !== pack.id || artifact.pack.version !== version.version) {
+    throw Object.assign(new Error('Downloaded artifact does not match the installed pack version'), { statusCode: 409 });
+  }
+  const validation = validationChecklist(version, publicKey);
+  if (!validation.valid) {
+    throw Object.assign(new Error('Tax plugin failed reinstall validation'), { statusCode: 400, validation });
+  }
+  const installedAt = now();
+  withTxn(() => {
+    db.prepare('DELETE FROM tax_categories WHERE pack_version_id = ?').run(version.id);
+    db.prepare('DELETE FROM tax_rules WHERE pack_version_id = ?').run(version.id);
+    db.prepare('DELETE FROM installed_print_templates WHERE pack_version_id = ?').run(version.id);
+    persistPackContent(version, artifact.pack, installedAt, artifact.printTemplates);
+    audit('reinstall_pack', options.actorUserId, pack.id, version.id, null, {
+      source: 'github_release',
+      version: artifact.pack.version,
+      digest: entry.digest,
+      downloadUrl: entry.downloadUrl,
+      templateCount: artifact.printTemplates.length,
+    });
+  });
+  return {
+    packId: pack.id,
+    versionId: version.id,
+    version: version.version,
+    templateCount: artifact.printTemplates.length,
   };
 }
 
@@ -1352,6 +1427,29 @@ router.post('/:packId/versions/:versionId/activate', requireRole('owner'), (req:
     res.status(500).json({ error: 'Could not activate pack version' });
   }
 });
+
+// Re-downloads an already-installed version and re-derives its categories,
+// rules, and bundled print templates in place. Repairs a pack that shows as
+// installed/active but is missing dependent rows (most visibly, its billing
+// template not appearing under Printers > Bill Template) — e.g. after a
+// database restore or an interrupted prior install — without needing to
+// bump the version number, which the normal install path requires.
+router.post('/:packId/versions/:versionId/reinstall', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const requestSignal = getHttpRequestSignal(req);
+    const result = await reinstallPackVersion(String(req.params.packId), String(req.params.versionId), {
+      actorUserId: actorUserId(req),
+      signal: requestSignal,
+    });
+    res.json({ reinstalled: result });
+  } catch (error: any) {
+    const statusCode = error.statusCode || 502;
+    res.status(statusCode).json({
+      error: error.message || 'Could not reinstall tax plugin version',
+      ...(error.validation ? { validation: error.validation } : {}),
+    });
+  }
+}));
 
 router.post('/:packId/rollback', requireRole('owner'), (req: Request, res: Response) => {
   try {

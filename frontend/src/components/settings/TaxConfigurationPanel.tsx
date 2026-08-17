@@ -23,6 +23,7 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useI18n } from '@/hooks/useI18n';
+import { apiErrorText } from '@/lib/api-error';
 
 type PackSummary = {
   id: string;
@@ -194,9 +195,8 @@ const ACTION_LABELS: Record<string, string> = {
   reset_override: 'tax.actionResetOverride',
 };
 
-function apiMessage(error: unknown, fallback: string): string {
-  const candidate = error as { response?: { data?: { error?: string } } };
-  return candidate.response?.data?.error || fallback;
+function apiMessage(error: unknown, fallback: string, t: Translate): string {
+  return apiErrorText(error, fallback, t);
 }
 
 function taxModeSegmentClass(active: boolean): string {
@@ -383,7 +383,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         ...(selectedPackId ? [loadDetail(selectedPackId)] : []),
       ]);
     } catch (error) {
-      toast.error(apiMessage(error, t('tax.loadFailed')));
+      toast.error(apiMessage(error, t('tax.loadFailed'), t));
     } finally {
       setLoading(false);
     }
@@ -411,7 +411,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         if (packResponse.data.store_country) void loadManualDetail(packResponse.data.store_country, nextPacks);
       })
       .catch((error) => {
-        if (!cancelled) toast.error(apiMessage(error, t('tax.loadFailed')));
+        if (!cancelled) toast.error(apiMessage(error, t('tax.loadFailed'), t));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -455,7 +455,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         setCalculation(null);
       })
       .catch((error) => {
-        if (!cancelled) toast.error(apiMessage(error, t('tax.loadPackDetailsFailed')));
+        if (!cancelled) toast.error(apiMessage(error, t('tax.loadPackDetailsFailed'), t));
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -505,7 +505,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       setPackUpdate(match);
       if (announce) toast.success(match ? t('tax.updateAvailable', { version: match.latestVersion }) : t('tax.upToDate'));
     } catch (error) {
-      if (announce) toast.error(apiMessage(error, t('tax.checkUpdatesFailed')));
+      if (announce) toast.error(apiMessage(error, t('tax.checkUpdatesFailed'), t));
     } finally {
       setCheckingUpdate(false);
     }
@@ -551,7 +551,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       setSelectedPackId(installed.packId);
       await Promise.all([loadList(), loadAudit(), loadDetail(installed.packId)]);
     } catch (error) {
-      toast.error(apiMessage(error, t('tax.installUpdateFailed')));
+      toast.error(apiMessage(error, t('tax.installUpdateFailed'), t));
     } finally {
       setInstallingUpdate(false);
     }
@@ -578,7 +578,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       toast.success(t('tax.reinstalled'));
       await Promise.all([loadList(), loadAudit(), loadDetail(packId)]);
     } catch (error) {
-      toast.error(apiMessage(error, t('tax.reinstallFailed')));
+      toast.error(apiMessage(error, t('tax.reinstallFailed'), t));
     } finally {
       setReinstallingPlugin(false);
     }
@@ -621,7 +621,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       resetOverrideForm();
       await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
     } catch (error) {
-      toast.error(apiMessage(error, t('tax.overrideSaveFailed')));
+      toast.error(apiMessage(error, t('tax.overrideSaveFailed'), t));
     } finally {
       setSaving(false);
     }
@@ -636,7 +636,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       if (editingOverrideId === override.id) resetOverrideForm();
       await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
     } catch (error) {
-      toast.error(apiMessage(error, t('tax.overrideRemoveFailed')));
+      toast.error(apiMessage(error, t('tax.overrideRemoveFailed'), t));
     } finally {
       setSaving(false);
     }
@@ -667,7 +667,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       }
       await Promise.all([loadDetail(selectedPackId), loadList(), loadAudit()]);
     } catch (error) {
-      toast.error(apiMessage(error, t('tax.chargeSaveFailed')));
+      toast.error(apiMessage(error, t('tax.chargeSaveFailed'), t));
     } finally {
       setSaving(false);
     }
@@ -682,7 +682,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       setManualBuilderOpen(false);
       toast.success(t('tax.turnedOff'));
     } catch (error) {
-      toast.error(apiMessage(error, t('tax.turnOffFailed')));
+      toast.error(apiMessage(error, t('tax.turnOffFailed'), t));
     } finally {
       setSaving(false);
     }
@@ -723,7 +723,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         }
         return;
       }
-      toast.error(apiMessage(error, t('tax.enableFailed')));
+      toast.error(apiMessage(error, t('tax.enableFailed'), t));
     } finally {
       setEnablingTaxes(false);
     }
@@ -748,7 +748,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       setCalculation(response.data.calculation);
     } catch (error) {
       setCalculation(null);
-      toast.error(apiMessage(error, t('tax.calculateFailed')));
+      toast.error(apiMessage(error, t('tax.calculateFailed'), t));
     }
   }
 
@@ -845,7 +845,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         return;
       }
       const failedChecks = response?.data?.validation?.checks?.filter((check) => !check.passed).map((check) => check.message);
-      toast.error(failedChecks?.length ? failedChecks.join('; ') : apiMessage(error, t('tax.manualSaveFailed')));
+      toast.error(failedChecks?.length ? failedChecks.join('; ') : apiMessage(error, t('tax.manualSaveFailed'), t));
     } finally {
       setManualSaving(false);
     }

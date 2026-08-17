@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import api from '@/lib/api';
+import { apiErrorText } from '@/lib/api-error';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -30,20 +31,9 @@ interface WhatsAppStatus {
   cooldownUntil: string | null;
 }
 
-/** Show a backend error as a toast. Prefer the i18n reason code over the raw English fallback. */
+/** Show a backend error as a localized toast, mapping `whatsapp.apiError.<reason>` and never surfacing raw English. */
 function toastApiError(err: unknown, fallback: string, t: (k: string, p?: Record<string, string | number>) => string): void {
-  const axiosErr = err as { response?: { data?: { error?: string; reason?: string } } };
-  const reason = axiosErr?.response?.data?.reason;
-  if (reason) {
-    const key = `whatsapp.apiError.${reason}`;
-    const translated = t(key);
-    // t() falls back to the key itself when missing — only use it if we actually have a translation.
-    if (translated !== key) {
-      toast.error(translated);
-      return;
-    }
-  }
-  toast.error(axiosErr?.response?.data?.error ?? fallback);
+  toast.error(apiErrorText(err, fallback, t, 'whatsapp.apiError'));
 }
 
 interface SentMessage {

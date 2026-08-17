@@ -4,17 +4,35 @@
  * Thermal-width bill printing using the browser's native print dialog —
  * the fallback path for merchants without an ESC/POS hardware printer.
  * Generates HTML that can be printed silently or shown to user.
+ *
+ * Browser receipts are full HTML, not raw ESC/POS bytes, so they never apply
+ * the ASCII currency fallback or `ریال → IRR` downgrade used by the thermal
+ * encoders. They follow the tenant's locale preferences (currency display,
+ * digit mode, calendar) and the active UI language, and render RTL with
+ * isolated LTR islands for Persian (fa).
  */
 
 import type { Bill, Tenant } from '@/lib/types';
 import toast from 'react-hot-toast';
-import { normalizeCurrencyToAscii } from './unicode';
-import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
-import { formatDate } from './format-date';
+import {
+  getCountryByCode,
+  formatCurrencyForTenant,
+  formatNumberForTenant,
+  formatDateForTenant,
+} from '@/lib/countries';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
+import { t as translate, getLanguageDirection, type Language } from '@/lib/i18n';
+import { usePosSettingsStore } from '@/store/pos-settings';
+import { parseDbTimestamp } from '@/lib/utils';
 
 export type PaperSize = 'thermal58' | 'thermal80';
+
+/** The slice of a tenant a browser receipt needs to render locale-correctly. */
+export type ReceiptTenant = Pick<
+  Tenant,
+  'business_name' | 'currency' | 'country' | 'timezone' | 'currency_display' | 'number_digits' | 'calendar'
+>;
 
 /** Encodes HTML entity characters so database-sourced values can't inject markup/scripts into the bill print window. */
 function escapeHtml(value: unknown): string {
@@ -24,6 +42,11 @@ function escapeHtml(value: unknown): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+/** Wraps inherently-LTR content (bill numbers, phones, tax IDs) in a bidi-isolated LTR span. */
+function ltrSpan(value: unknown): string {
+  return `<span class="ltr" dir="ltr">${escapeHtml(value)}</span>`;
 }
 
 export interface WebPrintOptions {
@@ -39,11 +62,74 @@ export interface WebPrintOptions {
   showCustomerName?: boolean;
   showCustomerPhone?: boolean;
   showTableNumber?: boolean;
+  /** Ignored for browser receipts: HTML always renders Unicode currency symbols. */
   useUnicode?: boolean;
   /** Show a large "REPRINT" banner so a reprinted bill can't be mistaken for the original. */
   isReprint?: boolean;
   /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
   trimDecimals?: boolean;
+  /** UI language for receipt labels (defaults to the active store language). */
+  language?: Language;
+}
+
+/** Resolve the active UI language, falling back to `en` outside the client store. */
+function resolveLanguage(language?: Language): Language {
+  if (language) return language;
+  try {
+    return usePosSettingsStore.getState().language;
+  } catch {
+    return 'en';
+  }
+}
+
+/** Static receipt labels in the active UI language. */
+function receiptLabels(lang: Language) {
+  return {
+    billNumber: translate('receipt.billNumber', lang),
+    date: translate('receipt.date', lang),
+    table: translate('receipt.table', lang),
+    customer: translate('pos.customer', lang),
+    customerNo: translate('receipt.customerNo', lang),
+    phone: translate('receipt.phone', lang),
+    item: translate('receipt.item', lang),
+    qty: translate('receipt.qty', lang),
+    rate: translate('receipt.rate', lang),
+    amount: translate('receipt.amount', lang),
+    taxDetails: translate('receipt.taxDetails', lang),
+    subtotal: translate('pos.subtotal', lang),
+    discount: translate('pos.discount', lang),
+    totalTax: translate('receipt.totalTax', lang),
+    serviceCharge: translate('receipt.serviceCharge', lang),
+    deliveryCharge: translate('receipt.deliveryCharge', lang),
+    grandTotal: translate('receipt.grandTotal', lang),
+    payments: translate('receipt.payments', lang),
+    thankYou: translate('receipt.thankYou', lang),
+    taxIncluded: translate('receipt.taxIncluded', lang),
+    printBill: translate('receipt.printBill', lang),
+    reprint: translate('receipt.reprint', lang),
+  };
+}
+
+/**
+ * Tax-id label printed on the receipt. Country-profile labels are acronyms or
+ * proper nouns (GSTIN, CUIT, …) and stay as-is; Iran's "Economic Code" is
+ * localized so a Persian receipt doesn't show an English phrase.
+ */
+function resolveTaxIdLabel(country: string | undefined, lang: Language): string {
+  if (country?.toUpperCase() === 'IR') return translate('receipt.economicCode', lang);
+  return getCountryByCode(country ?? 'IN')?.taxIdLabel || 'Tax ID';
+}
+
+const PAYMENT_METHOD_KEYS: Record<string, string> = {
+  cash: 'pos.methodCash',
+  card: 'pos.methodCard',
+  wallet: 'pos.methodWallet',
+};
+
+function resolvePaymentMethodLabel(method: string, lang: Language): string {
+  const key = PAYMENT_METHOD_KEYS[method.toLowerCase()];
+  if (key) return translate(key, lang);
+  return method.charAt(0).toUpperCase() + method.slice(1);
 }
 
 /**
@@ -51,7 +137,7 @@ export interface WebPrintOptions {
  */
 export function printWebBill(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
+  tenant: ReceiptTenant,
   opts: WebPrintOptions = {}
 ): void {
   const html = generateBillHtml(bill, tenant, opts);
@@ -80,7 +166,7 @@ export function printWebBill(
  */
 export function generateBillHtml(
   bill: Bill,
-  tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
+  tenant: ReceiptTenant,
   opts: WebPrintOptions = {}
 ): string {
   const {
@@ -96,15 +182,15 @@ export function generateBillHtml(
     showCustomerName = true,
     showCustomerPhone = true,
     showTableNumber = true,
-    useUnicode = false,
     isReprint = false,
     trimDecimals = false,
   } = opts;
+
+  const lang = resolveLanguage(opts.language);
+  const dir = getLanguageDirection(lang);
+  const L = receiptLabels(lang);
   const displayName = showBusinessName ? (businessName ?? tenant.business_name) : '';
-  const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
-  const currency = useUnicode ? rawCurrency : normalizeCurrencyToAscii(rawCurrency);
-  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
-  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
+  const taxIdLabel = resolveTaxIdLabel(tenant.country, lang);
   const order = bill.order;
 
   const styles = getPaperStyles(paperSize);
@@ -113,13 +199,18 @@ export function generateBillHtml(
     || taxComponents.some((component) => Number(component.amount) !== 0);
 
   const items = order?.items ?? [];
+  const fmtAmount = (value: number | string) => formatAmount(value, tenant, trimDecimals);
+  const fmtQuantity = (value: number | string) => formatNumberForTenant(
+    Number(value) || 0,
+    tenant.country,
+    { digits: tenant.number_digits },
+  );
 
-  return `
-<!DOCTYPE html>
-<html>
+  return `<!DOCTYPE html>
+<html lang="${lang}" dir="${dir}">
 <head>
   <meta charset="utf-8">
-  <title>Bill #${escapeHtml(bill.bill_number)}</title>
+  <title>${L.billNumber} ${escapeHtml(bill.bill_number)}</title>
   <style>
     ${styles}
     @media print {
@@ -130,25 +221,25 @@ export function generateBillHtml(
 </head>
 <body>
   <div class="bill-container">
-    ${isReprint ? `<div class="reprint-banner">** REPRINT **</div>` : ''}
+    ${isReprint ? `<div class="reprint-banner">${escapeHtml(L.reprint)}</div>` : ''}
     <!-- Header -->
     <div class="header">
       ${displayName ? `<h1>${escapeHtml(displayName)}</h1>` : ''}
       ${address ? `<p>${escapeHtml(address).replace(/\n/g, '<br>')}</p>` : ''}
-      ${phone ? `<p>Ph: ${escapeHtml(phone)}</p>` : ''}
-      ${includeTaxId && taxRegistrationNumber ? `<p>${escapeHtml(taxIdLabel)}: ${escapeHtml(taxRegistrationNumber)}</p>` : ''}
+      ${phone ? `<p>${escapeHtml(L.phone)}: ${ltrSpan(phone)}</p>` : ''}
+      ${includeTaxId && taxRegistrationNumber ? `<p>${escapeHtml(taxIdLabel)}: ${ltrSpan(taxRegistrationNumber)}</p>` : ''}
     </div>
 
     <!-- Bill Details -->
     <div class="bill-details">
       <table>
         <tr>
-          <td><strong>Bill #:</strong> ${escapeHtml(bill.bill_number)}</td>
-          <td><strong>Date:</strong> ${formatDate(order?.created_at, locale)}</td>
+          <td><strong>${escapeHtml(L.billNumber)}</strong> ${ltrSpan(bill.bill_number)}</td>
+          <td class="text-end"><strong>${escapeHtml(L.date)}</strong> ${escapeHtml(formatReceiptDate(order?.created_at, tenant))}</td>
         </tr>
-        ${showTableNumber && order?.table?.name ? `<tr><td><strong>Table:</strong> ${escapeHtml(order.table.name)}</td><td></td></tr>` : ''}
-        ${showCustomerName && order?.customer?.name ? `<tr><td><strong>Customer:</strong> ${escapeHtml(order.customer.name)}</td><td></td></tr>` : ''}
-        ${showCustomerPhone && order?.customer?.phone ? `<tr><td><strong>Customer No:</strong> ${escapeHtml(order.customer.phone)}</td><td></td></tr>` : ''}
+        ${showTableNumber && order?.table?.name ? `<tr><td><strong>${escapeHtml(L.table)}</strong> ${escapeHtml(order.table.name)}</td><td></td></tr>` : ''}
+        ${showCustomerName && order?.customer?.name ? `<tr><td><strong>${escapeHtml(L.customer)}</strong> ${escapeHtml(order.customer.name)}</td><td></td></tr>` : ''}
+        ${showCustomerPhone && order?.customer?.phone ? `<tr><td><strong>${escapeHtml(L.customerNo)}</strong> ${ltrSpan(order.customer.phone)}</td><td></td></tr>` : ''}
       </table>
     </div>
 
@@ -156,10 +247,10 @@ export function generateBillHtml(
     <table class="items-table">
       <thead>
         <tr>
-          <th>Item</th>
-          <th class="text-right">Qty</th>
-          <th class="text-right">Rate</th>
-          <th class="text-right">Amount</th>
+          <th>${escapeHtml(L.item)}</th>
+          <th class="text-end">${escapeHtml(L.qty)}</th>
+          <th class="text-end">${escapeHtml(L.rate)}</th>
+          <th class="text-end">${escapeHtml(L.amount)}</th>
         </tr>
       </thead>
       <tbody>
@@ -167,12 +258,12 @@ export function generateBillHtml(
           <tr>
             <td>
               ${escapeHtml(item.product_name)}
-              ${item.addons && item.addons.length > 0 ? `<br><small class="text-muted">${item.addons.map(a => `+ ${escapeHtml(a.name)}${(a.quantity || 1) > 1 ? ` ×${a.quantity}` : ''}`).join(', ')}</small>` : ''}
+              ${item.addons && item.addons.length > 0 ? `<br><small class="text-muted">${item.addons.map(a => `+ ${escapeHtml(a.name)}${(a.quantity || 1) > 1 ? ` ×${escapeHtml(a.quantity)}` : ''}`).join(', ')}</small>` : ''}
               ${item.special_instructions ? `<br><small class="text-italic">${escapeHtml(item.special_instructions)}</small>` : ''}
             </td>
-            <td class="text-right">${item.quantity}</td>
-            <td class="text-right">${formatAmount(Number(item.unit_price), currency, locale, trimDecimals)}</td>
-            <td class="text-right">${formatAmount(item.total, currency, locale, trimDecimals)}</td>
+            <td class="text-end num">${fmtQuantity(item.quantity)}</td>
+            <td class="text-end num">${fmtAmount(Number(item.unit_price))}</td>
+            <td class="text-end num">${fmtAmount(item.total)}</td>
           </tr>
         `).join('')}
       </tbody>
@@ -182,11 +273,11 @@ export function generateBillHtml(
     ${showTaxBreakdown && taxComponents.length > 0 ? `
     <table class="tax-table">
       <thead>
-        <tr><th colspan="2">Tax Details</th></tr>
+        <tr><th colspan="2">${escapeHtml(L.taxDetails)}</th></tr>
       </thead>
       <tbody>
         ${taxComponents.map((component) => `
-          <tr><td>${escapeHtml(formatTaxComponentLabel(component))}</td><td class="text-right">${formatAmount(component.amount, currency, locale, trimDecimals)}</td></tr>
+          <tr><td>${escapeHtml(formatTaxComponentLabel(component))}</td><td class="text-end num">${fmtAmount(component.amount)}</td></tr>
         `).join('')}
       </tbody>
     </table>
@@ -194,23 +285,23 @@ export function generateBillHtml(
 
     <!-- Totals -->
     <table class="totals-table">
-      <tr><td>Subtotal</td><td class="text-right">${formatAmount(bill.subtotal, currency, locale, trimDecimals)}</td></tr>
-      ${Number(bill.discount_amount) > 0 ? `<tr><td>Discount</td><td class="text-right">-${formatAmount(bill.discount_amount, currency, locale, trimDecimals)}</td></tr>` : ''}
-      ${Number(bill.tax_amount) > 0 ? `<tr><td>Total Tax</td><td class="text-right">${formatAmount(bill.tax_amount, currency, locale, trimDecimals)}</td></tr>` : ''}
-      ${Number(bill.service_charge) > 0 ? `<tr><td>Service Charge</td><td class="text-right">${formatAmount(bill.service_charge, currency, locale, trimDecimals)}</td></tr>` : ''}
-      ${Number(bill.delivery_charge) > 0 ? `<tr><td>Delivery Charge</td><td class="text-right">${formatAmount(bill.delivery_charge, currency, locale, trimDecimals)}</td></tr>` : ''}
-      <tr class="total-row"><td><strong>Grand Total</strong></td><td class="text-right"><strong>${formatAmount(bill.total, currency, locale, trimDecimals)}</strong></td></tr>
+      <tr><td>${escapeHtml(L.subtotal)}</td><td class="text-end num">${fmtAmount(bill.subtotal)}</td></tr>
+      ${Number(bill.discount_amount) > 0 ? `<tr><td>${escapeHtml(L.discount)}</td><td class="text-end num">-${fmtAmount(bill.discount_amount)}</td></tr>` : ''}
+      ${Number(bill.tax_amount) > 0 ? `<tr><td>${escapeHtml(L.totalTax)}</td><td class="text-end num">${fmtAmount(bill.tax_amount)}</td></tr>` : ''}
+      ${Number(bill.service_charge) > 0 ? `<tr><td>${escapeHtml(L.serviceCharge)}</td><td class="text-end num">${fmtAmount(bill.service_charge)}</td></tr>` : ''}
+      ${Number(bill.delivery_charge) > 0 ? `<tr><td>${escapeHtml(L.deliveryCharge)}</td><td class="text-end num">${fmtAmount(bill.delivery_charge)}</td></tr>` : ''}
+      <tr class="total-row"><td><strong>${escapeHtml(L.grandTotal)}</strong></td><td class="text-end num"><strong>${fmtAmount(bill.total)}</strong></td></tr>
     </table>
 
     <!-- Payments -->
     ${bill.payment_details && bill.payment_details.length > 0 ? `
     <table class="payments-table">
       <thead>
-        <tr><th colspan="2">Payments</th></tr>
+        <tr><th colspan="2">${escapeHtml(L.payments)}</th></tr>
       </thead>
       <tbody>
         ${bill.payment_details.map(p => `
-          <tr><td>${capitalize(p.method)}</td><td class="text-right">${formatAmount(p.amount, currency, locale, trimDecimals)}</td></tr>
+          <tr><td>${escapeHtml(resolvePaymentMethodLabel(p.method, lang))}</td><td class="text-end num">${fmtAmount(p.amount)}</td></tr>
         `).join('')}
       </tbody>
     </table>
@@ -218,14 +309,14 @@ export function generateBillHtml(
 
     <!-- Footer -->
     <div class="footer">
-      ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : '<p>Thank you for your visit!</p>'}
-      ${hasTax ? '<p>Tax included where applicable</p>' : ''}
+      ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : `<p>${escapeHtml(L.thankYou)}</p>`}
+      ${hasTax ? `<p>${escapeHtml(L.taxIncluded)}</p>` : ''}
       <p class="powered-by">${escapeHtml(RECEIPT_BRANDING_NAME)}<br>${escapeHtml(RECEIPT_BRANDING_URL)}</p>
     </div>
   </div>
 
   <div class="no-print" style="text-align:center;margin-top:20px;">
-    <button onclick="window.print()" style="padding:10px 20px;font-size:16px;cursor:pointer;">Print Bill</button>
+    <button onclick="window.print()" style="padding:10px 20px;font-size:16px;cursor:pointer;">${escapeHtml(L.printBill)}</button>
   </div>
 </body>
 </html>
@@ -239,7 +330,7 @@ export function generateBillHtml(
 function getPaperStyles(size: PaperSize): string {
   const baseStyles = `
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #333; }
+    body { font-family: -apple-system, 'Segoe UI', Tahoma, 'Noto Naskh Arabic', 'Helvetica Neue', Arial, sans-serif; font-size: 12px; line-height: 1.4; color: #333; }
     .bill-container { max-width: 100%; margin: 0 auto; }
     .reprint-banner { text-align: center; font-size: 22px; font-weight: bold; letter-spacing: 2px; color: #c00; border: 3px solid #c00; padding: 6px; margin-bottom: 15px; }
     .header { text-align: center; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #ccc; }
@@ -247,17 +338,19 @@ function getPaperStyles(size: PaperSize): string {
     .bill-details { margin-bottom: 15px; }
     .bill-details table { width: 100%; }
     .items-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-    .items-table th, .items-table td { padding: 8px; border-bottom: 1px solid #eee; text-align: left; }
+    .items-table th, .items-table td { padding: 8px; border-bottom: 1px solid #eee; text-align: start; }
     .items-table th { background: #f5f5f5; font-weight: bold; }
-    .tax-table, .payments-table { width: 50%; margin-left: 50%; border-collapse: collapse; margin-bottom: 15px; }
+    .tax-table, .payments-table { width: 50%; margin-inline-start: 50%; border-collapse: collapse; margin-bottom: 15px; }
     .tax-table th, .tax-table td, .payments-table th, .payments-table td { padding: 6px 8px; }
-    .tax-table th, .payments-table th { background: #f9f9f9; text-align: left; }
+    .tax-table th, .payments-table th { background: #f9f9f9; text-align: start; }
     .totals-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
     .totals-table td { padding: 6px 8px; }
     .total-row { border-top: 2px solid #333; font-size: 16px; }
     .footer { text-align: center; margin-top: 30px; padding-top: 15px; border-top: 1px solid #ccc; }
     .powered-by { font-size: 10px; margin-top: 8px; color: #555; }
-    .text-right { text-align: right !important; }
+    .text-end { text-align: end !important; }
+    .num { unicode-bidi: isolate; white-space: nowrap; }
+    .ltr { direction: ltr; unicode-bidi: isolate; }
     .text-muted { color: #666; }
     .text-italic { font-style: italic; color: #888; }
   `;
@@ -279,16 +372,49 @@ function getPaperStyles(size: PaperSize): string {
   }
 }
 
-function formatAmount(value: number | string, currency: string, locale: string, trimDecimals: boolean = false): string {
-  const num = Number(value);
-  const numeric = Number.isNaN(num) ? 0 : num;
+/**
+ * Format an amount following the tenant's currency display (Iran rial/toman),
+ * digit mode, and `trimDecimals` preference. Browser output is always Unicode.
+ */
+function formatAmount(value: number | string, tenant: ReceiptTenant, trimDecimals = false): string {
+  const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
+  const prefs = { currencyDisplay: tenant.currency_display, digits: tenant.number_digits };
   const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
-  return `${currency}${numeric.toLocaleString(locale, {
-    minimumFractionDigits: trimDecimals && !hasDecimals ? 0 : 2,
-    maximumFractionDigits: 2,
-  })}`;
+
+  // trimDecimals hides trailing .00 only when there is no fractional part.
+  if (trimDecimals && !hasDecimals) {
+    const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+    const numberingSystem = tenant.number_digits === 'latin' ? 'latn' : undefined;
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: tenant.currency || 'INR',
+        currencyDisplay: 'narrowSymbol',
+        ...(numberingSystem ? { numberingSystem } : {}),
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+      }).format(numeric);
+    } catch {
+      return formatCurrencyForTenant(numeric, tenant.country, tenant.currency, prefs);
+    }
+  }
+
+  return formatCurrencyForTenant(numeric, tenant.country, tenant.currency, prefs);
 }
 
-function capitalize(str: string): string {
-  return str.charAt(0).toUpperCase() + str.slice(1);
+function formatReceiptDate(iso: string | undefined, tenant: ReceiptTenant): string {
+  if (!iso) return '';
+  try {
+    const d = parseDbTimestamp(iso);
+    if (isNaN(d.getTime())) return iso;
+    return formatDateForTenant(
+      d,
+      tenant.country,
+      tenant.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
+      { digits: tenant.number_digits, calendar: tenant.calendar },
+      { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+    );
+  } catch {
+    return iso;
+  }
 }

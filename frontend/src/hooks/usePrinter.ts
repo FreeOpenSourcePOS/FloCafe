@@ -21,6 +21,12 @@ export type { PrintWarning } from '@/lib/printer/warnings';
 type PrintModeType = 'receipt' | 'tax' | 'kot';
 type PaperWidth = 58 | 80;
 
+/** Tenant fields a browser/thermal receipt needs for locale-correct rendering. */
+type ReceiptTenant = Pick<
+  Tenant,
+  'business_name' | 'currency' | 'country' | 'timezone' | 'currency_display' | 'number_digits' | 'calendar'
+>;
+
 export interface HardwarePrinter {
   id: string;
   name: string;
@@ -43,8 +49,8 @@ interface PrinterState {
 
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
-  printBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
-  printTaxBill: (bill: Bill, tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
+  printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
+  printTaxBill: (bill: Bill, tenant: ReceiptTenant, opts?: TaxBillOptions) => Promise<PrintWarning[]>;
   printKot: (order: Order, opts?: KotOptions) => Promise<PrintWarning[]>;
   setPrintMode: (mode: PrintModeType) => void;
   setPaperWidth: (width: PaperWidth) => void;

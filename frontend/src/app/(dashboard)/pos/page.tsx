@@ -285,11 +285,7 @@ export default function POSPage() {
     if (!force && !autoPrintBill) return;
 
     try {
-      const printWarnings = await printBill(bill, {
-        business_name: currentTenant.business_name,
-        currency,
-        country: currentTenant.country,
-      });
+      const printWarnings = await printBill(bill, currentTenant);
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       // Non-fatal: print failure should not block the checkout flow.

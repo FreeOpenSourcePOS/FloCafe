@@ -1,0 +1,189 @@
+/**
+ * RTL/LTR Setup, Auth, and Settings regression test (Batch D, Refs #241).
+ *
+ * Builds on the shared direction foundation guarded by `rtl-foundation.test.ts`
+ * (Batch C) and extends the same guarantees to the Setup wizard, the auth
+ * screens (login / recover), and the Settings screens + dialogs:
+ *
+ *   1. These screens must not use physical left/right utilities for
+ *      content-flow layout (margin, padding, alignment, borders). The shared
+ *      logical equivalents (`ms/me/ps/pe/start/end/text-start/text-end/
+ *      border-s/border-e`) render identically in LTR and mirror under
+ *      `dir="rtl"`, so any remaining physical utility is a regression.
+ *
+ *      A small per-file allowlist covers genuinely physical cases: the
+ *      fixed "unsaved changes" save bar in Settings is horizontally
+ *      centered with `left-1/2 -translate-x-1/2`, which is physical
+ *      centering that stays centered in both directions.
+ *
+ *   2. Directional navigation arrows (`ArrowLeft` / `ArrowRight`) must carry
+ *      the shared `.rtl-flip` class so they mirror under `[dir="rtl"]`
+ *      (back/forward arrows point the correct way in Persian).
+ *
+ *   3. Naturally-LTR values (URLs, emails, pairing codes, version strings,
+ *      tax IDs, phone numbers, timezone/currency codes, technical
+ *      identifiers) must be isolated in `Ltr` islands (`<Ltr>` or the
+ *      `.ltr-island` class) so they stay readable inside RTL pages.
+ *
+ *   4. The shared `Ltr` component must keep rendering `dir="ltr"` with the
+ *      `.ltr-island` class through its polymorphic `as` prop (`a`, `code`),
+ *      which the Settings screens rely on for URL anchors and code values.
+ *
+ * Run: npm run test:rtl-setup-auth-settings
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+
+const ROOT = path.join(__dirname, '..');
+const Module = require('module');
+const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
+
+/** Batch D screen files that must use logical direction utilities. */
+const SCREEN_FILES = [
+  'frontend/src/app/setup/page.tsx',
+  'frontend/src/app/auth/login/page.tsx',
+  'frontend/src/app/auth/recover/page.tsx',
+  'frontend/src/app/(dashboard)/settings/page.tsx',
+  'frontend/src/components/settings/TaxConfigurationPanel.tsx',
+  'frontend/src/components/settings/PaymentMethodsSettings.tsx',
+  'frontend/src/components/settings/InitializeDatabaseDialog.tsx',
+  'frontend/src/components/settings/HealthCheckDialog.tsx',
+  'frontend/src/components/settings/MasterPinPrompt.tsx',
+  'frontend/src/components/settings/WhatsAppEnableCard.tsx',
+];
+
+/**
+ * Physical directional utilities that must be converted to logical ones in the
+ * batch screens. Same rule set as the shared foundation test.
+ */
+const PHYSICAL_UTIL_RE =
+  /\b(ml|mr|pl|pr|border-l|border-r|rounded-l|rounded-r|left|right)-[0-9a-zA-Z.]+|\btext-(left|right)\b/g;
+
+/**
+ * Per-file allowlist of physical utilities that are genuinely intentional.
+ * Each entry documents why it stays physical.
+ */
+const ALLOWLIST: Record<string, string[]> = {
+  'page.tsx': [
+    // Fixed "unsaved changes" save bar — physical horizontal centering
+    // (left-1/2 -translate-x-1/2) stays centered in both directions. The
+    // scanner captures the class prefix `left-1` from `left-1/2`.
+    'left-1',
+  ],
+};
+
+function loadLtrComponent(): {
+  Ltr: any;
+  React: typeof import('react');
+  ReactDOMServer: typeof import('react-dom/server');
+} {
+  const moduleApi = require('module') as {
+    _resolveFilename: (...args: any[]) => string;
+  };
+  const originalResolveFilename = moduleApi._resolveFilename;
+
+  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+    let resolvedRequest = request;
+    if (request.startsWith('@/')) {
+      resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
+    }
+    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  try {
+    const React = frontendRequire('react');
+    const ReactDOMServer = frontendRequire('react-dom/server');
+    const { Ltr } = require('../frontend/src/components/layout/Ltr');
+    return { Ltr, React, ReactDOMServer };
+  } finally {
+    moduleApi._resolveFilename = originalResolveFilename;
+  }
+}
+
+function assert(condition: boolean, msg: string): void {
+  if (!condition) throw new Error(`Assertion failed: ${msg}`);
+}
+
+function run(): void {
+  console.log('RTL/LTR Setup, Auth, and Settings checks:');
+
+  // 1. Batch screens use logical direction utilities (or are allowlisted).
+  let totalPhysical = 0;
+  for (const file of SCREEN_FILES) {
+    const src = fs.readFileSync(path.join(ROOT, file), 'utf8');
+    const matches = src.match(PHYSICAL_UTIL_RE) ?? [];
+    const allowed = ALLOWLIST[path.basename(file)] ?? [];
+    const violations = matches.filter((m) => !allowed.includes(m));
+    if (violations.length) {
+      console.error(`\nPhysical direction utilities in ${file}:`);
+      for (const v of violations) console.error(`  - ${v}`);
+      assert(false, `physical direction utilities remain in ${file}`);
+    }
+    totalPhysical += matches.length;
+  }
+  console.log(`  ✓ batch screens use logical direction utilities (${totalPhysical} allowlisted physical cases)`);
+
+  // 2. Directional navigation arrows carry `.rtl-flip`.
+  const arrowFiles = SCREEN_FILES.filter((f) => {
+    const src = fs.readFileSync(path.join(ROOT, f), 'utf8');
+    return /\bArrow(Left|Right)\b/.test(src);
+  });
+  for (const file of arrowFiles) {
+    const lines = fs.readFileSync(path.join(ROOT, file), 'utf8').split('\n');
+    lines.forEach((line, i) => {
+      // Only flag JSX usage (`<Arrow…`), not the lucide import statement.
+      if (/<Arrow(Left|Right)\b/.test(line) && !line.includes('rtl-flip')) {
+        assert(false, `${file}:${i + 1} uses a directional arrow without rtl-flip: ${line.trim()}`);
+      }
+    });
+  }
+  console.log(`  ✓ directional arrows carry rtl-flip (${arrowFiles.length} file(s) with arrows)`);
+
+  // 3. Settings surfaces isolate naturally-LTR values in Ltr islands.
+  const settingsSrc = fs.readFileSync(path.join(ROOT, 'frontend/src/app/(dashboard)/settings/page.tsx'), 'utf8');
+  assert(
+    /import \{ Ltr \} from '@\/components\/layout\/Ltr'/.test(settingsSrc),
+    'settings page must import the shared Ltr component'
+  );
+  assert((settingsSrc.match(/<Ltr\b/g) ?? []).length >= 10, 'settings page must use Ltr islands for naturally-LTR values');
+
+  const taxSrc = fs.readFileSync(path.join(ROOT, 'frontend/src/components/settings/TaxConfigurationPanel.tsx'), 'utf8');
+  assert(
+    /import \{ Ltr \} from '@\/components\/layout\/Ltr'/.test(taxSrc),
+    'TaxConfigurationPanel must import the shared Ltr component'
+  );
+  assert(/<Ltr\b/.test(taxSrc), 'TaxConfigurationPanel must use Ltr islands for technical identifiers');
+
+  // 4. The shared Ltr component renders dir="ltr" LTR islands through its
+  //    polymorphic `as` prop (a, code) used by Settings.
+  const { Ltr, React, ReactDOMServer } = loadLtrComponent();
+  assert(typeof Ltr === 'function', 'Ltr component must be exported as a function');
+
+  const anchorRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(
+      Ltr,
+      { as: 'a', href: 'http://192.168.1.5:3001', target: '_blank', rel: 'noopener noreferrer', className: 'block font-mono text-sm break-all' },
+      'http://192.168.1.5:3001'
+    )
+  );
+  assert(
+    anchorRender ===
+      '<a dir="ltr" class="ltr-island block font-mono text-sm break-all" href="http://192.168.1.5:3001" target="_blank" rel="noopener noreferrer">http://192.168.1.5:3001</a>',
+    `Ltr as="a" must render an anchor with dir="ltr" and ltr-island, got: ${anchorRender}`
+  );
+
+  const codeRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, { as: 'code', className: 'text-xs' }, 'cat_standard')
+  );
+  assert(
+    codeRender === '<code dir="ltr" class="ltr-island text-xs">cat_standard</code>',
+    `Ltr as="code" must render a code element with dir="ltr" and ltr-island, got: ${codeRender}`
+  );
+
+  console.log('  ✓ Ltr polymorphic rendering (as="a", as="code") verified through React interface');
+
+  console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');
+}
+
+run();

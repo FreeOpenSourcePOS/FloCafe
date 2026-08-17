@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Ltr } from '@/components/layout/Ltr';
 import { parseDbTimestamp } from '@/lib/utils';
 import {
   AlertTriangle,
@@ -838,7 +839,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
               </div>
               <div className="mt-2 space-y-2">
                 {category.components.map((component) => (
-                  <div key={component.key} className="flex items-center gap-2 pl-4">
+                  <div key={component.key} className="flex items-center gap-2 ps-4">
                     <input
                       value={component.label}
                       onChange={(event) => updateManualComponent(category.tempId, component.key, { label: event.target.value })}
@@ -862,7 +863,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                       value={component.value}
                       onChange={(event) => updateManualComponent(category.tempId, component.key, { value: event.target.value })}
                       disabled={!isOwner}
-                      className="w-24 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-right disabled:bg-gray-100"
+                      className="w-24 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-end disabled:bg-gray-100"
                     />
                     {isOwner && category.components.length > 1 && (
                       <button type="button" onClick={() => removeManualComponent(category.tempId, component.key)} className="p-1.5 text-gray-400 hover:text-red-600" title="Remove component">
@@ -872,7 +873,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                   </div>
                 ))}
                 {isOwner && (
-                  <button type="button" onClick={() => addManualComponent(category.tempId)} className="ml-4 flex items-center gap-1 text-xs font-medium text-brand">
+                  <button type="button" onClick={() => addManualComponent(category.tempId)} className="ms-4 flex items-center gap-1 text-xs font-medium text-brand">
                     <Plus size={12} /> Add component
                   </button>
                 )}
@@ -951,7 +952,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       <button
         type="button"
         onClick={() => setShowAdvancedTools((value) => !value)}
-        className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white p-5 text-left"
+        className="flex w-full items-center justify-between rounded-xl border border-gray-200 bg-white p-5 text-start"
       >
         <div>
           <h3 className="font-semibold text-gray-900">Advanced tax tools</h3>
@@ -986,11 +987,11 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                 <div className="mt-4 flex flex-wrap items-center gap-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-600">
                   <span>Effective {detail.active_version.effective_from}</span>
                   <span>Published {detail.active_version.published_at}</span>
-                  <span>{detail.active_version.definition.currency}</span>
+                  <span><Ltr>{detail.active_version.definition.currency}</Ltr></span>
                   <button
                     type="button"
                     onClick={() => setExpandedChecklist((value) => !value)}
-                    className="ml-auto flex items-center gap-1 font-medium text-brand"
+                    className="ms-auto flex items-center gap-1 font-medium text-brand"
                   >
                     {detail.active_version.validation.valid ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}
                     {detail.active_version.validation.valid
@@ -1025,7 +1026,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                     <div key={version.id} className="flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 text-sm">
                       <span>
                         v{version.version}
-                        <span className="ml-2 text-xs text-gray-400">{version.status}</span>
+                        <span className="ms-2 text-xs text-gray-400">{version.status}</span>
                       </span>
                       {active && <span className="text-xs font-medium text-emerald-700">Active</span>}
                     </div>
@@ -1169,17 +1170,17 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         )}
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[620px] text-left text-sm">
+          <table className="w-full min-w-[620px] text-start text-sm">
             <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
-              <tr><th className="py-2 pr-3">Target</th><th className="py-2 pr-3">Category</th><th className="py-2 pr-3">Updated</th><th className="py-2 text-right">Actions</th></tr>
+              <tr><th className="py-2 pe-3">Target</th><th className="py-2 pe-3">Category</th><th className="py-2 pe-3">Updated</th><th className="py-2 text-end">Actions</th></tr>
             </thead>
             <tbody>
               {detail?.overrides.map((override) => (
                 <tr key={override.id} className="border-b border-gray-50">
-                  <td className="py-3 pr-3"><span className="text-xs text-gray-400">{ENTITY_LABELS[override.entity_type]}</span><br />{override.entity_name || 'Store-wide'}</td>
-                  <td className="py-3 pr-3">{categoriesById.get(categoryIdOf(override)) || categoryIdOf(override)}</td>
-                  <td className="py-3 pr-3 text-xs text-gray-500">{dateTime(override.updated_at)}{override.created_by_name ? ` · ${override.created_by_name}` : ''}</td>
-                  <td className="py-3 text-right">
+                  <td className="py-3 pe-3"><span className="text-xs text-gray-400">{ENTITY_LABELS[override.entity_type]}</span><br />{override.entity_name || 'Store-wide'}</td>
+                  <td className="py-3 pe-3">{categoriesById.get(categoryIdOf(override)) || categoryIdOf(override)}</td>
+                  <td className="py-3 pe-3 text-xs text-gray-500">{dateTime(override.updated_at)}{override.created_by_name ? ` · ${override.created_by_name}` : ''}</td>
+                  <td className="py-3 text-end">
                     {isOwner ? (
                       <div className="flex justify-end gap-2">
                         {!CHARGE_TYPES.includes(override.entity_type) && (
@@ -1201,15 +1202,15 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         <h3 className="font-semibold text-gray-900">Pack reference</h3>
         <p className="mt-1 text-sm text-gray-500">Read-only categories and rules from the active installed JSON pack.</p>
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[680px] text-left text-sm">
+          <table className="w-full min-w-[680px] text-start text-sm">
             <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
-              <tr><th className="py-2 pr-3">Category</th><th className="py-2 pr-3">Default behavior</th><th className="py-2">Rules</th></tr>
+              <tr><th className="py-2 pe-3">Category</th><th className="py-2 pe-3">Default behavior</th><th className="py-2">Rules</th></tr>
             </thead>
             <tbody>
               {detail?.categories.map((category) => (
                 <tr key={category.category_id} className="border-b border-gray-50">
-                  <td className="py-3 pr-3"><span className="font-medium">{category.label}</span><br /><code className="text-xs text-gray-400">{category.category_id}</code></td>
-                  <td className="py-3 pr-3">{category.default_behavior || 'Pack default'}</td>
+                  <td className="py-3 pe-3"><span className="font-medium">{category.label}</span><br /><Ltr as="code" className="text-xs text-gray-400">{category.category_id}</Ltr></td>
+                  <td className="py-3 pe-3">{category.default_behavior || 'Pack default'}</td>
                   <td className="py-3 text-xs text-gray-600">{category.definition.ruleIds?.join(', ') || 'None'}</td>
                 </tr>
               ))}
@@ -1217,17 +1218,17 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
           </table>
         </div>
         <div className="mt-5 overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-sm">
+          <table className="w-full min-w-[760px] text-start text-sm">
             <thead className="border-b border-gray-100 text-xs uppercase text-gray-400">
-              <tr><th className="py-2 pr-3">Rule</th><th className="py-2 pr-3">Type</th><th className="py-2 pr-3">Value</th><th className="py-2 pr-3">Scope</th><th className="py-2">Depends on</th></tr>
+              <tr><th className="py-2 pe-3">Rule</th><th className="py-2 pe-3">Type</th><th className="py-2 pe-3">Value</th><th className="py-2 pe-3">Scope</th><th className="py-2">Depends on</th></tr>
             </thead>
             <tbody>
               {detail?.rules.map((rule) => (
                 <tr key={rule.rule_id} className="border-b border-gray-50">
-                  <td className="py-3 pr-3"><span className="font-medium">{rule.label}</span><br /><code className="text-xs text-gray-400">{rule.rule_id}</code></td>
-                  <td className="py-3 pr-3">{rule.calculation_type}</td>
-                  <td className="py-3 pr-3">{rule.rate !== null ? `${rule.rate}%` : rule.amount}</td>
-                  <td className="py-3 pr-3">{rule.applies_per}</td>
+                  <td className="py-3 pe-3"><span className="font-medium">{rule.label}</span><br /><Ltr as="code" className="text-xs text-gray-400">{rule.rule_id}</Ltr></td>
+                  <td className="py-3 pe-3">{rule.calculation_type}</td>
+                  <td className="py-3 pe-3">{rule.rate !== null ? `${rule.rate}%` : rule.amount}</td>
+                  <td className="py-3 pe-3">{rule.applies_per}</td>
                   <td className="py-3 text-xs text-gray-600">{rule.base_rule_ids.join(', ') || 'None'}</td>
                 </tr>
               ))}

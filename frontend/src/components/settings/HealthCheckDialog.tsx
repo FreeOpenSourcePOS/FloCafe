@@ -26,18 +26,18 @@ function FindingRow({ finding }: { finding: HealthFinding }) {
     <div className="rounded-lg border border-gray-100 p-3 text-sm">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <span className="font-mono text-gray-900">
+          <span className="font-mono text-gray-900 ltr-island">
             {finding.table}{finding.column ? `.${finding.column}` : ''}{finding.index !== undefined ? ` (index: ${finding.index})` : ''}
           </span>
           <p className="text-gray-500 mt-0.5">{finding.description}</p>
           {(finding.currentState || finding.idealState) && (
             <p className="text-xs text-gray-400 mt-1">
-              {finding.currentState && <>Current: <span className="font-mono">{finding.currentState}</span>&nbsp;&nbsp;</>}
-              {finding.idealState && <>Expected: <span className="font-mono">{finding.idealState}</span></>}
+              {finding.currentState && <>Current: <span className="font-mono ltr-island">{finding.currentState}</span>&nbsp;&nbsp;</>}
+              {finding.idealState && <>Expected: <span className="font-mono ltr-island">{finding.idealState}</span></>}
             </p>
           )}
           {finding.suggestedDdl && (
-            <code className="block mt-2 rounded bg-gray-50 px-2 py-1 text-xs text-gray-600 overflow-x-auto">
+            <code className="ltr-island block mt-2 rounded bg-gray-50 px-2 py-1 text-xs text-gray-600 overflow-x-auto">
               {finding.suggestedDdl}
             </code>
           )}

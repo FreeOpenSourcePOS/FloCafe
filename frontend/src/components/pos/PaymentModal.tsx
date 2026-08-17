@@ -13,6 +13,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { useI18n } from '@/hooks/useI18n';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
@@ -177,6 +178,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     : 0;
 
   const currencyFmt = useFormatCurrency();
+  const fmtNum = useFormatNumber();
 
   const handleApplyDiscount = async (customVal?: number) => {
     if (applyingDiscount) return;
@@ -431,7 +433,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 <span className="text-gray-700 font-medium">{t('pos.loyalty')}</span>
                 <span className="font-semibold text-gray-700">
                   {walletBalance !== null
-                    ? t('pos.pointsApproxValue', { count: walletBalance, value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
+                    ? t('pos.pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
                     : '…'}
                 </span>
               </div>
@@ -613,7 +615,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                   />
                 </div>
               </div>
-              <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
+              <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
             </div>
           )}
         </div>

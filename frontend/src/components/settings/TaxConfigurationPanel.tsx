@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Ltr } from '@/components/layout/Ltr';
-import { parseDbTimestamp } from '@/lib/utils';
 import {
   AlertTriangle,
   Calculator,
@@ -22,6 +21,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { useFormatDate } from '@/hooks/useFormatDate';
 
 type PackSummary = {
   id: string;
@@ -204,12 +204,6 @@ function taxModeSegmentClass(active: boolean): string {
   }`;
 }
 
-function dateTime(value: string): string {
-  // Backend timestamps are UTC space form — parse as UTC, not machine-local.
-  const date = parseDbTimestamp(value);
-  return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
 function categoryIdOf(override: TaxOverride): string {
   return override.value?.categoryId || '';
 }
@@ -235,6 +229,7 @@ function auditDescription(row: AuditRow): string {
 }
 
 export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
+  const { formatDateTime } = useFormatDate();
   const [packs, setPacks] = useState<PackSummary[]>([]);
   const [storeCountry, setStoreCountry] = useState('');
   const [selectedPackId, setSelectedPackId] = useState('');
@@ -1341,7 +1336,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
                 <tr key={override.id} className="border-b border-gray-50">
                   <td className="py-3 pe-3"><span className="text-xs text-gray-400">{ENTITY_LABELS[override.entity_type]}</span><br />{override.entity_name || 'Store-wide'}</td>
                   <td className="py-3 pe-3">{categoriesById.get(categoryIdOf(override)) || categoryIdOf(override)}</td>
-                  <td className="py-3 pe-3 text-xs text-gray-500">{dateTime(override.updated_at)}{override.created_by_name ? ` · ${override.created_by_name}` : ''}</td>
+                  <td className="py-3 pe-3 text-xs text-gray-500">{formatDateTime(override.updated_at)}{override.created_by_name ? ` · ${override.created_by_name}` : ''}</td>
                   <td className="py-3 text-end">
                     {isOwner ? (
                       <div className="flex justify-end gap-2">
@@ -1411,7 +1406,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-gray-800">{ACTION_LABELS[row.action] || row.action}</p>
                 {auditDescription(row) && <p className="truncate text-xs text-gray-600">{auditDescription(row)}</p>}
-                <p className="text-xs text-gray-500">{row.actor_name || (row.actor_user_id ? 'Unknown user' : 'System')} · {dateTime(row.created_at)}</p>
+                <p className="text-xs text-gray-500">{row.actor_name || (row.actor_user_id ? 'Unknown user' : 'System')} · {formatDateTime(row.created_at)}</p>
               </div>
             </div>
           ))}

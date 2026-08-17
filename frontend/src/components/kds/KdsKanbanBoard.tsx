@@ -122,7 +122,7 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     ));
     const failed = results.filter((result) => !result).length;
     if (failed > 0) {
-      toast.error(`${failed} item${failed === 1 ? '' : 's'} could not be updated. The board was refreshed.`);
+      toast.error(t('kds.itemsUpdateFailed', { count: failed }));
     }
   }
 

@@ -5,6 +5,8 @@ export {
   getCurrencySymbol,
   formatCurrency,
   formatCurrencyForTenant,
+  formatNumber,
+  formatNumberForTenant,
   countryName,
   type Country,
 } from '@countries';

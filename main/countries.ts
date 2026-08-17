@@ -133,6 +133,33 @@ export const formatCurrencyForTenant = (
   currency: string,
 ): string => formatCurrency(amount, currency, getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US');
 
+/**
+ * Formats a plain (non-currency) number using the given locale's digits and
+ * grouping (e.g. `1234.5` → `۱٬۲۳۴٫۵` in `fa-IR`). Used for counts, points,
+ * and other bare numbers so they follow the tenant locale instead of the
+ * browser's default locale.
+ */
+export const formatNumber = (value: number, locale = 'en-US'): string => {
+  try {
+    return new Intl.NumberFormat(locale).format(value);
+  } catch {
+    return String(value);
+  }
+};
+
+/**
+ * Formats a plain number using the tenant's country locale. Mirrors
+ * `formatCurrencyForTenant` for non-monetary values.
+ *
+ * Note on Iran: monetary values stay stored as raw IRR and are never
+ * converted to Toman. `formatCurrency`/`formatCurrencyForTenant` render the
+ * stored unit verbatim (Rial via `Intl` `fa-IR` → `ریال`, Persian digits,
+ * Shamsi calendar). Toman display and digit/calendar configurability are
+ * intentionally deferred until an explicit product decision.
+ */
+export const formatNumberForTenant = (value: number, countryCode: string | undefined): string =>
+  formatNumber(value, getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US');
+
 export const countryName = (code: string): string => dn.of(code.toUpperCase()) ?? code;
 
 export const DEFAULT_COUNTRY_PROFILE = {

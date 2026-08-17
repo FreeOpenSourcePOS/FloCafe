@@ -499,7 +499,7 @@ export default function SettingsPage() {
     if (pinGate.mode === 'delete-cloud') {
       try {
         await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
-        toast.success('Cloud deletion request submitted for manual review. Cloud services have been stopped on this device.');
+        toast.success(t('settings.cloudDeletionSubmitted'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
         setPinGate(null);
@@ -515,7 +515,7 @@ export default function SettingsPage() {
     if (pinGate.mode === 'cancel-cloud-deletion') {
       try {
         await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
-        toast.success('Cloud deletion request cancelled. Cloud services remain off until you explicitly re-enable them.');
+        toast.success(t('settings.cloudDeletionCancelled'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
         setPinGate(null);
@@ -1206,9 +1206,9 @@ export default function SettingsPage() {
       await api.get('/settings/cloud/delete-data/status');
       await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
       notifyCloudAccountStatusChanged();
-      toast.success('Cloud deletion status refreshed');
+      toast.success(t('settings.cloudDeletionStatusRefreshed'));
     } catch {
-      toast.error('Could not refresh cloud deletion status');
+      toast.error(t('settings.cloudDeletionStatusRefreshFailed'));
     } finally {
       setRefreshingDeletionStatus(false);
     }
@@ -1929,9 +1929,9 @@ export default function SettingsPage() {
                 diagnostics: { country: form.countryCode },
               }).catch(() => {});
               await api.put('/settings/taxes_enabled', { value: 'false' }).catch(() => {});
-              toast.error(`Tax support for ${form.countryCode} is not available yet. We requested the plugin and will build it soon. Taxes are now off.`);
+              toast.error(t('settings.taxSupportUnavailable', { country: form.countryCode }));
             } else {
-              toast.error('The country was saved, but its tax plugin could not be installed. Taxes remain enabled until it is resolved.');
+              toast.error(t('settings.countrySavedTaxPluginFailed'));
             }
           }
         }
@@ -3270,7 +3270,7 @@ export default function SettingsPage() {
                 {cloudAccountAvailable && !cloudAccount?.verified && (
                   <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
                     setCloudAccountBusy(true);
-                    try { await api.post('/settings/cloud/account/verification'); toast.success('Verification email queued'); await fetchCloudAccount(); }
+                    try { await api.post('/settings/cloud/account/verification'); toast.success(t('settings.verificationEmailQueued')); await fetchCloudAccount(); }
                     catch (err: unknown) {
                       const error = err as { response?: { data?: { error?: string } } };
                       toast.error(error.response?.data?.error || 'Could not send verification email');
@@ -3280,8 +3280,8 @@ export default function SettingsPage() {
                 )}
                 {cloudAccountAvailable && (
                   <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error(t('settings.couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error(t('settings.couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
                     <p className="text-xs text-gray-500">Essential service and security notices are separate from these optional subscriptions.</p>
                   </div>
                 )}
@@ -3359,14 +3359,14 @@ export default function SettingsPage() {
                       setDiagnosticsConsent(false);
                       await fetchCloudAccount();
                       notifyCloudAccountStatusChanged();
-                      toast.success('All cloud services and telemetry stopped');
+                      toast.success(t('settings.cloudAllStopped'));
                     }
-                    catch { toast.error('Could not stop cloud services'); }
+                    catch { toast.error(t('settings.cloudStopFailed')); }
                   }}><CloudOff size={16} className="me-2" />Stop all cloud services</Button>
                   {!cloudDeletionFinal && <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'processing' || cloudAccount?.deletion_request?.status === 'approved' || cloudStatus.cloud_deletion_status === 'processing'} onClick={() => {
                     const phrase = window.prompt('This submits a deletion request to FloAdmin for manual review and immediately stops cloud services here. After approval, store-linked server data is permanently deleted. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
                     if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
-                    else if (phrase !== null) toast.error('Confirmation phrase did not match');
+                    else if (phrase !== null) toast.error(t('settings.confirmationPhraseMismatch'));
                   }}><Trash2 size={16} className="me-2" />Request cloud data deletion</Button>}
                   {cloudDeletionNeedsAction && (
                     <>

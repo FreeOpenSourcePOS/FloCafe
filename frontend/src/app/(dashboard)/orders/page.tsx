@@ -516,8 +516,12 @@ export default function OrdersPage() {
           latestBill,
           {
             business_name: currentTenant?.business_name || t('common.businessNameFallback'),
-            currency,
+            currency: currentTenant?.currency || 'INR',
             country: currentTenant?.country || 'IN',
+            timezone: currentTenant?.timezone || 'UTC',
+            currency_display: currentTenant?.currency_display,
+            number_digits: currentTenant?.number_digits,
+            calendar: currentTenant?.calendar,
           },
           { isReprint: false }
         );
@@ -545,8 +549,12 @@ export default function OrdersPage() {
         latestBill,
         {
           business_name: currentTenant?.business_name || t('common.businessNameFallback'),
-          currency,
+          currency: currentTenant?.currency || 'INR',
           country: currentTenant?.country || 'IN',
+          timezone: currentTenant?.timezone || 'UTC',
+          currency_display: currentTenant?.currency_display,
+          number_digits: currentTenant?.number_digits,
+          calendar: currentTenant?.calendar,
         },
         { isReprint }
       );

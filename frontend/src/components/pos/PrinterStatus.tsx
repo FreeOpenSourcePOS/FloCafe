@@ -156,7 +156,7 @@ export default function PrinterStatus() {
 
         {lastError && (
           <div className="px-2 py-1.5 text-xs text-red-600 bg-red-50 rounded mx-1 my-1">
-            {lastError}
+            {t('pos.printerError')}
           </div>
         )}
 

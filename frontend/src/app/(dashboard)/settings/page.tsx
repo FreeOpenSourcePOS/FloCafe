@@ -410,7 +410,7 @@ export default function SettingsPage() {
   const runImport = async (data: ImportPayload, overwrite: boolean, master_pin?: string) => {
     try {
       const response = await api.post('/db/import', { data, overwrite, master_pin });
-      if (response.data.success) toast.success(response.data.message);
+      if (response.data.success) toast.success(t('settings.importSuccess'));
       return { success: true };
     } catch {
       const message = t('settings.importFailed');

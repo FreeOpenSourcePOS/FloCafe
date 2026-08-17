@@ -264,11 +264,11 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       console.error('[POS] KOT print failed:', err);
-      const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');
+      const msg = err instanceof Error ? err.message : 'print failed';
       const code = `print.kot.${msg.toLowerCase().includes('spool') ? 'spooler_timeout' : 'failed'}`;
       setSupportError({
         code,
-        message: msg,
+        message: t('pos.kotPrintFailed'),
         payload: { event_code: code, message: msg, category: 'printer', diagnostics: { order_id: order.id, stage: 'kot_print' } },
       });
       toast.error(t('pos.kotPrintFailed'));
@@ -289,11 +289,11 @@ export default function POSPage() {
       showPrintWarningsToast(printWarnings);
     } catch (err) {
       // Non-fatal: print failure should not block the checkout flow.
-      const msg = err instanceof Error ? err.message : t('common.checkPrinterConnection');
+      const msg = err instanceof Error ? err.message : 'print failed';
       const code = 'print.receipt.failed';
       setSupportError({
         code,
-        message: msg,
+        message: t('pos.receiptPrintFailed'),
         payload: { event_code: code, message: msg, category: 'printer', diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
       });
       toast.error(t('pos.receiptPrintFailed'));
@@ -910,12 +910,12 @@ export default function POSPage() {
                 </p>
               )}
               <div className="mt-3">
-                <button className="rounded border px-3 py-2 text-sm" onClick={() => { setSupportError(null); setSentTicketId(null); }}>Dismiss</button>
+                <button className="rounded border px-3 py-2 text-sm" onClick={() => { setSupportError(null); setSentTicketId(null); }}>{t('support.dismiss')}</button>
               </div>
             </>
           ) : (
             <>
-              <p className="font-semibold text-red-800">Printing failed</p>
+              <p className="font-semibold text-red-800">{t('pos.printingFailed')}</p>
               <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
               <details className="mt-2 text-xs text-gray-500">
                 <summary className="cursor-pointer">{t('support.showPayload')}</summary>
@@ -932,20 +932,20 @@ export default function POSPage() {
                   onClick={async () => {
                     const clientTicketId = crypto.randomUUID();
                     try {
-                      const response = await api.post('/support-ticket', {
+                      await api.post('/support-ticket', {
                         ...supportError.payload,
                         subject: 'FloCafe printing problem',
                         correlation_id: crypto.randomUUID(),
                         client_ticket_id: clientTicketId,
                       });
-                      toast.success(response.data.message || 'Queued — will send when online');
+                      toast.success(t('support.queued'));
                       setSentTicketId(clientTicketId);
                     } catch {
                       toast.error(t('pos.supportRequestQueueFailed'));
                     }
                   }}
-                >Get help</button>
-                <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>Dismiss</button>
+                >{t('support.getHelp')}</button>
+                <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>{t('support.dismiss')}</button>
               </div>
             </>
           )}

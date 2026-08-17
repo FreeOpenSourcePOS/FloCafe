@@ -33,6 +33,13 @@
  *      mapping; `ml-*` → `ms-*` remains correct for icons rendered AFTER
  *      their label, like sort/chevron icons.)
  *
+ *   4. DirectionalToaster dynamically adapts toast placement across RTL/LTR
+ *      languages (`top-left` for Persian, `top-right` for LTR languages).
+ *
+ *   5. The Ltr component isolates POS operational values (order numbers,
+ *      phone numbers, printer IP/VID, table identifiers, JSON payloads) with
+ *      `dir="ltr"` and bidi isolation.
+ *
  * Run: npm run test:rtl-dashboard-pos-common
  */
 
@@ -173,28 +180,39 @@ function run(): void {
   // 4. Executable DirectionalToaster position assertions across languages.
   const { DirectionalToaster, usePosSettingsStore, Ltr, React, ReactDOMServer } = loadComponents();
 
+  React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
+
+  function renderDirectionalToaster(): { position?: string; markup: string } {
+    let capturedProps: any;
+    function Probe() {
+      const elem = DirectionalToaster();
+      capturedProps = elem?.props;
+      return elem;
+    }
+    const markup = ReactDOMServer.renderToStaticMarkup(React.createElement(Probe));
+    return { position: capturedProps?.position, markup };
+  }
+
   usePosSettingsStore.getState().setLanguage('fa');
-  const renderedFa = DirectionalToaster();
+  const renderedFa = renderDirectionalToaster();
   assert(
-    renderedFa?.props?.position === 'top-left',
-    `DirectionalToaster must set position="top-left" (inline-end) for Persian (fa), got: ${renderedFa?.props?.position}`
+    renderedFa.position === 'top-left',
+    `DirectionalToaster must set position="top-left" (inline-end) for Persian (fa), got: ${renderedFa.position}`
   );
-  const faMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(DirectionalToaster));
   assert(
-    typeof faMarkup === 'string',
+    typeof renderedFa.markup === 'string' && renderedFa.markup.length > 0,
     'DirectionalToaster must render static markup for Persian'
   );
 
   for (const ltrLang of ['en', 'es', 'pt'] as const) {
     usePosSettingsStore.getState().setLanguage(ltrLang);
-    const renderedLtr = DirectionalToaster();
+    const renderedLtr = renderDirectionalToaster();
     assert(
-      renderedLtr?.props?.position === 'top-right',
-      `DirectionalToaster must set position="top-right" for ${ltrLang}, got: ${renderedLtr?.props?.position}`
+      renderedLtr.position === 'top-right',
+      `DirectionalToaster must set position="top-right" for ${ltrLang}, got: ${renderedLtr.position}`
     );
-    const ltrMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(DirectionalToaster));
     assert(
-      typeof ltrMarkup === 'string',
+      typeof renderedLtr.markup === 'string' && renderedLtr.markup.length > 0,
       `DirectionalToaster must render static markup for ${ltrLang}`
     );
   }

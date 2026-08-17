@@ -25,7 +25,7 @@ import * as fs from 'fs';
  * Each test also re-establishes an explicit English baseline so it does not
  * depend on the language any earlier spec left on the shared e2e server.
  *
- * All three screens are exercised in a SINGLE test with a single login: the
+ * All operational screens are exercised in a SINGLE test with a single login: the
  * shared e2e server's auth endpoint is rate-limited (10 login POSTs per 15
  * minutes per IP) and the rest of the suite already performs ~8 logins, so a
  * per-screen login would trip the limiter and break unrelated specs.
@@ -38,7 +38,7 @@ import * as fs from 'fs';
 const BASE = 'http://localhost:3001';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
-  '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M06TFQ2DPQQE7CME0SCKM8Y3';
+  '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M06ZR8QPAYE8HF2XV90DDKGY';
 
 async function captureScreenshot(page: Page, filename: string): Promise<void> {
   try {
@@ -127,6 +127,27 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     await expect(page.locator('h1')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'orders screen');
     await captureScreenshot(page, 'orders-rtl-fa.png');
+
+    // ── Persian (RTL) on the products screen ───────────────────────────────
+    await page.goto(`${BASE}/products`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('h1')).toBeVisible();
+    await assertNoHorizontalOverflow(page, 'products screen');
+    await captureScreenshot(page, 'products-rtl-fa.png');
+
+    // ── Persian (RTL) on the customers screen ──────────────────────────────
+    await page.goto(`${BASE}/customers`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('h1')).toBeVisible();
+    await assertNoHorizontalOverflow(page, 'customers screen');
+    await captureScreenshot(page, 'customers-rtl-fa.png');
+
+    // ── Persian (RTL) on the tables screen ─────────────────────────────────
+    await page.goto(`${BASE}/tables`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('h1')).toBeVisible();
+    await assertNoHorizontalOverflow(page, 'tables screen');
+    await captureScreenshot(page, 'tables-rtl-fa.png');
   } finally {
     // Restore English so the shared server does not leak Persian into other specs.
     await setLanguage(page, 'en');

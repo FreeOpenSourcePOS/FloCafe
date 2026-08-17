@@ -13,6 +13,7 @@ All notable changes to Flo Cafe are documented here. Dates are release dates, no
 - Iranian Rial ESC/POS receipts now preserve raw financial lines and print within correct column bounds on 58mm and 80mm printers.
 - Hardened static file path resolution across the main, server-app, and KDS HTTP servers and backup listing against directory traversal.
 - Bounded email and tax-ID input validation to prevent ReDoS.
+- Repaired databases that never created the `revoked_tokens` table because of a migration version-number collision shipped in release 2.9.0. Affected installs were failing every authenticated request closed; a new migration (v71) idempotently restores the table on upgrade.
 
 ### Changed
 - CI test suite now shards across two parallel runners to speed up merge-ready checks.

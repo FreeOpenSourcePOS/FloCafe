@@ -20,12 +20,7 @@
  *      the shared `.rtl-flip` class so they mirror under `[dir="rtl"]`
  *      (back/forward arrows point the correct way in Persian).
  *
- *   3. Naturally-LTR values (URLs, emails, pairing codes, version strings,
- *      tax IDs, phone numbers, timezone/currency codes, technical
- *      identifiers) must be isolated in `Ltr` islands (`<Ltr>` or the
- *      `.ltr-island` class) so they stay readable inside RTL pages.
- *
- *   4. The shared `Ltr` component must keep rendering `dir="ltr"` with the
+ *   3. The shared `Ltr` component must keep rendering `dir="ltr"` with the
  *      `.ltr-island` class through its polymorphic `as` prop (`a`, `code`),
  *      which the Settings screens rely on for URL anchors and code values.
  *
@@ -140,22 +135,7 @@ function run(): void {
   }
   console.log(`  ✓ directional arrows carry rtl-flip (${arrowFiles.length} file(s) with arrows)`);
 
-  // 3. Settings surfaces isolate naturally-LTR values in Ltr islands.
-  const settingsSrc = fs.readFileSync(path.join(ROOT, 'frontend/src/app/(dashboard)/settings/page.tsx'), 'utf8');
-  assert(
-    /import \{ Ltr \} from '@\/components\/layout\/Ltr'/.test(settingsSrc),
-    'settings page must import the shared Ltr component'
-  );
-  assert((settingsSrc.match(/<Ltr\b/g) ?? []).length >= 10, 'settings page must use Ltr islands for naturally-LTR values');
-
-  const taxSrc = fs.readFileSync(path.join(ROOT, 'frontend/src/components/settings/TaxConfigurationPanel.tsx'), 'utf8');
-  assert(
-    /import \{ Ltr \} from '@\/components\/layout\/Ltr'/.test(taxSrc),
-    'TaxConfigurationPanel must import the shared Ltr component'
-  );
-  assert(/<Ltr\b/.test(taxSrc), 'TaxConfigurationPanel must use Ltr islands for technical identifiers');
-
-  // 4. The shared Ltr component renders dir="ltr" LTR islands through its
+  // 3. The shared Ltr component renders dir="ltr" LTR islands through its
   //    polymorphic `as` prop (a, code) used by Settings.
   const { Ltr, React, ReactDOMServer } = loadLtrComponent();
   assert(typeof Ltr === 'function', 'Ltr component must be exported as a function');

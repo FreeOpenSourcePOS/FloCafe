@@ -2531,6 +2531,7 @@ export default function SettingsPage() {
                     <option value="en">{t('settings.languageEn')}</option>
                     <option value="es">{t('settings.languageEs')}</option>
                     <option value="pt">{t('settings.languagePt')}</option>
+                    <option value="fa">{t('settings.languageFa')}</option>
                   </select>
                 </div>
               </div>

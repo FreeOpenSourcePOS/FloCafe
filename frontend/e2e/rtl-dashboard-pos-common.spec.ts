@@ -7,10 +7,9 @@ import * as os from 'os';
  * Rendered RTL/LTR evidence for the Dashboard, POS, and common order flow
  * screens (Batch E, Refs #241).
  *
- * Persian (`fa`) is intentionally hidden from Setup/Settings language
- * selectors, so these tests drive the internal `fa` language through the
- * runtime plumbing (the server-side tenant language that login syncs) and
- * assert the rendered direction state on the core cashier screens:
+ * Persian (`fa`) is a user-selectable UI language (Batch J, Refs #241).
+ * These tests drive it through the server-side tenant language that login
+ * syncs and assert the rendered direction state on the core cashier screens:
  *
  *  - `<html dir="rtl">` is applied once the active language is Persian
  *    (HtmlLangSync), and stays `ltr` for English.

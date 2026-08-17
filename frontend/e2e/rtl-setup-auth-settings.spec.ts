@@ -7,9 +7,10 @@ import * as os from 'os';
  * Rendered RTL/LTR evidence for the Setup, Auth, and Settings screens
  * (Batch D, Refs #241).
  *
- * Persian (`fa`) is intentionally hidden from Setup/Settings language
- * selectors, so these tests drive the internal `fa` language through the
- * runtime plumbing and assert the rendered direction state:
+ * Persian (`fa`) is a user-selectable UI language (Batch J, Refs #241): the
+ * Setup wizard offers it to Persian-browser users, and Settings always lists
+ * it. These tests drive `fa` both through the user-facing selectors and the
+ * runtime plumbing, asserting the rendered direction state:
  *
  *  - `<html dir="rtl">` is applied once the active language is Persian
  *    (HtmlLangSync), and stays `ltr` for English.
@@ -132,7 +133,7 @@ test('recover password page is LTR in English and RTL in Persian with .rtl-flip 
   await captureScreenshot(page, 'auth-recover-rtl-fa.png');
 });
 
-test('setup wizard renders with logical navigation, .rtl-flip directional arrows, and hides Persian from language options', async ({ page }) => {
+test('setup wizard renders with logical navigation, .rtl-flip directional arrows, and English-only language options for an English browser', async ({ page }) => {
   await page.route('**/api/auth/setup/status', (route) => {
     route.fulfill({
       status: 200,
@@ -145,12 +146,13 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   await page.goto(`${BASE}/setup`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 
-  // Verify language options only include EN, ES, PT, not FA
+  // Verify language options: EN, ES, PT present; Persian surfaces only for
+  // Persian-browser users (asserted in the fa-locale test below).
   const languageButtons = page.locator('button', { hasText: /English|Inglés|Inglês/ });
   await expect(languageButtons.first()).toBeVisible();
   const allButtonsText = await page.locator('button').allInnerTexts();
   const hasPersianOption = allButtonsText.some((text) => text.includes('فارسی') || text.includes('FA'));
-  expect(hasPersianOption, 'Persian (fa) must remain hidden from setup language options').toBeFalsy();
+  expect(hasPersianOption, 'Persian (fa) is browser-relative: not offered to English-browser users').toBeFalsy();
 
   // Forward arrow has rtl-flip class
   const continueArrow = page.locator('button svg.rtl-flip').first();
@@ -184,6 +186,41 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   await captureScreenshot(page, 'setup-step3-owner-account-rtl-fa.png');
 });
 
+test.describe('setup with a Persian browser language', () => {
+  test.use({ locale: 'fa-IR' });
+
+  test('setup wizard offers Persian as a language option when the browser language is fa', async ({ page }) => {
+    await page.route('**/api/auth/setup/status', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ needsSetup: true, masterPinAvailable: true }),
+      });
+    });
+
+    await page.goto(`${BASE}/setup`);
+
+    // A fa browser locale surfaces the Persian option, labeled in Persian.
+    const persianOption = page.locator('button', { hasText: 'فارسی' }).first();
+    await expect(persianOption).toBeVisible();
+    await expect(persianOption).toContainText('FA');
+
+    // Persian is preselected (browser locale fa) and switching languages
+    // moves the selected state. Options re-render with localized labels, so
+    // target them by the constant language-code subtitle (EN/FA).
+    const englishOption = page.locator('button').filter({ has: page.getByText('EN', { exact: true }) });
+    await expect(englishOption).toBeVisible();
+    await englishOption.click();
+    await expect(englishOption).toHaveClass(/border-primary/);
+    const persianOptionAfterSwitch = page.locator('button').filter({ has: page.getByText('FA', { exact: true }) });
+    await expect(persianOptionAfterSwitch).not.toHaveClass(/border-primary/);
+    await persianOptionAfterSwitch.click();
+    await expect(persianOptionAfterSwitch).toHaveClass(/border-primary/);
+
+    await captureScreenshot(page, 'setup-step1-fa-locale-fa-option.png');
+  });
+});
+
 test('settings renders RTL without horizontal overflow, mirrors toggles and tabs, and isolates LTR data', async ({ page }) => {
   await loginAsManager(page);
   await setLanguage(page, 'fa');
@@ -194,7 +231,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.locator('nav')).toBeVisible();
 
-    // Verify language dropdown in Settings only has en, es, pt
+    // Verify language dropdown in Settings offers en, es, pt, and fa
     const languageSelect = page.locator('select').filter({ has: page.locator('option[value="en"]') }).first();
     await expect(languageSelect).toBeVisible();
     const options = await languageSelect.locator('option').all();
@@ -202,7 +239,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     expect(optionValues).toContain('en');
     expect(optionValues).toContain('es');
     expect(optionValues).toContain('pt');
-    expect(optionValues).not.toContain('fa');
+    expect(optionValues).toContain('fa');
 
     // Check document does not overflow horizontally in RTL
     const storeOverflow = await page.evaluate(() => ({

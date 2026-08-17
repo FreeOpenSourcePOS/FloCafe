@@ -430,6 +430,15 @@ jobs:
           $appxFiles = @(Get-ChildItem release\*.appx -ErrorAction SilentlyContinue)
           if ($appxFiles.Count -eq 0) { Write-Error "no .appx in release\ — Microsoft Store submission package is missing"; exit 1 }
 
+          # Identity/publisher must match Partner Center's listing exactly or
+          # Store submission is rejected; version must match package.json or
+          # a stale/wrong build could be silently submitted. Check both here,
+          # before anything is uploaded, rather than finding out from Partner
+          # Center after the fact.
+          $expectedIdentity = node -p "require('./package.json').build.appx.identityName"
+          $expectedPublisher = node -p "require('./package.json').build.appx.publisher"
+          $expectedVersion = "$(node -p "require('./package.json').version").0"
+
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $architectures = @{}
           foreach ($appx in $appxFiles) {
@@ -446,11 +455,32 @@ jobs:
             } finally {
               $zip.Dispose()
             }
-            if ($manifest -notmatch 'ProcessorArchitecture="([^"]+)"') {
+            # Scope attribute extraction to the <Identity> element itself —
+            # DisplayName/PublisherDisplayName elsewhere in the manifest also
+            # contain the substring 'Name="...\"', so matching against the
+            # whole manifest could grab the wrong attribute.
+            if ($manifest -notmatch '<Identity\s+([^>]+?)/?>') {
+              Write-Error "Identity element is missing from AppxManifest.xml in $($appx.Name)"
+              exit 1
+            }
+            $identityAttrs = $Matches[1]
+            if ($identityAttrs -notmatch 'ProcessorArchitecture="([^"]+)"') {
               Write-Error "ProcessorArchitecture is missing from AppxManifest.xml in $($appx.Name)"
               exit 1
             }
             $architectures[$Matches[1]] = $true
+            if ($identityAttrs -notmatch 'Name="([^"]+)"' -or $Matches[1] -ne $expectedIdentity) {
+              Write-Error "AppX identity in $($appx.Name) does not match expected '$expectedIdentity'"
+              exit 1
+            }
+            if ($identityAttrs -notmatch 'Publisher="([^"]+)"' -or $Matches[1] -ne $expectedPublisher) {
+              Write-Error "AppX publisher in $($appx.Name) does not match the configured Store publisher"
+              exit 1
+            }
+            if ($identityAttrs -notmatch 'Version="([^"]+)"' -or $Matches[1] -ne $expectedVersion) {
+              Write-Error "AppX version in $($appx.Name) does not match package.json version '$expectedVersion'"
+              exit 1
+            }
           }
           foreach ($requiredArch in @("x64", "arm64")) {
             if (-not $architectures.ContainsKey($requiredArch)) {
@@ -467,9 +497,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Setup Microsoft Store Developer CLI
-        uses: microsoft/microsoft-store-apppublisher@v1.1
+        # Tag-only: workflow_dispatch can run this job against arbitrary
+        # branch code, so it must never be allowed to reach Partner Center.
+        # Pinned to v1.4 by commit SHA rather than the mutable v1.1 tag
+        # (matches this repo's pinning convention for third-party actions).
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
 
       - name: Publish Windows AppX packages to Microsoft Store
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
         shell: pwsh
         env:
           AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
@@ -477,7 +513,19 @@ jobs:
           AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
           SELLER_ID: ${{ secrets.SELLER_ID }}
           MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
+          # Optional: set MSSTORE_NO_COMMIT=true (repo/environment variable)
+          # to leave a submission as a draft, or MSSTORE_FLIGHT_ID to submit
+          # to a Partner Center flight instead of production, for a
+          # dry-run validation. Remove both once validated.
+          MSSTORE_FLIGHT_ID: ${{ vars.MSSTORE_FLIGHT_ID }}
+          MSSTORE_NO_COMMIT: ${{ vars.MSSTORE_NO_COMMIT }}
         run: |
+          # msstore is a native CLI, not a PowerShell cmdlet — a failing call
+          # doesn't throw a terminating error or fail the step on its own, so
+          # without an explicit $LASTEXITCODE check this step reports success
+          # even when the Store submission itself failed.
+          $ErrorActionPreference = 'Stop'
+
           $missing = @()
           foreach ($name in @("AZURE_AD_TENANT_ID", "AZURE_AD_APPLICATION_CLIENT_ID", "AZURE_AD_APPLICATION_SECRET", "SELLER_ID", "MICROSOFT_STORE_PRODUCT_ID")) {
             if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
@@ -494,8 +542,17 @@ jobs:
             --sellerId "$env:SELLER_ID" `
             --clientId "$env:AZURE_AD_APPLICATION_CLIENT_ID" `
             --clientSecret "$env:AZURE_AD_APPLICATION_SECRET"
+          if ($LASTEXITCODE -ne 0) { throw "msstore reconfigure failed with exit code $LASTEXITCODE." }
 
           # The Store CLI accepts the app/project path and discovers the package
           # candidates from the release directory for Electron projects; appId
           # keeps CI non-interactive.
-          msstore publish "${{ github.workspace }}\release" --appId "$env:MICROSOFT_STORE_PRODUCT_ID"
+          $publishArgs = @("${{ github.workspace }}\release", '--appId', "$env:MICROSOFT_STORE_PRODUCT_ID")
+          if (-not [string]::IsNullOrWhiteSpace($env:MSSTORE_FLIGHT_ID)) {
+            $publishArgs += @('--flightId', $env:MSSTORE_FLIGHT_ID)
+          }
+          if ($env:MSSTORE_NO_COMMIT -eq 'true') {
+            $publishArgs += '--noCommit'
+          }
+          msstore publish @publishArgs
+          if ($LASTEXITCODE -ne 0) { throw "Microsoft Store publish failed with exit code $LASTEXITCODE." }

@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { COUNTRIES, countryName, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
+import { COUNTRIES, countryName, getCountryByCode, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -22,6 +22,7 @@ import { InitializeDatabaseDialog } from '@/components/settings/InitializeDataba
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
+import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import type { HealthCheckReport } from '@/types/electron';
 import { useI18n } from '@/hooks/useI18n';
 import { Ltr } from '@/components/layout/Ltr';
@@ -2251,61 +2252,19 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-                {form.countryCode === 'IR' && (
-                  <div className="md:col-span-2 space-y-4 rounded-lg border border-gray-100 bg-gray-50/60 p-4">
-                    <p className="text-sm font-medium text-gray-700">{t('settings.iranLocaleTitle')}</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranCurrencyDisplay')}</label>
-                        {isAdmin ? (
-                          <select
-                            value={form.currencyDisplay}
-                            onChange={(e) => setForm((p) => ({ ...p, currencyDisplay: e.target.value as CurrencyDisplay }))}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
-                          >
-                            <option value="rial">{t('settings.iranCurrencyDisplayRial')}</option>
-                            <option value="toman">{t('settings.iranCurrencyDisplayToman')}</option>
-                            <option value="toman_short">{t('settings.iranCurrencyDisplayTomanShort')}</option>
-                          </select>
-                        ) : (
-                          <p className="font-medium text-gray-900">{form.currencyDisplay === 'toman' ? t('settings.iranCurrencyDisplayToman') : form.currencyDisplay === 'toman_short' ? t('settings.iranCurrencyDisplayTomanShort') : t('settings.iranCurrencyDisplayRial')}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranNumberDigits')}</label>
-                        {isAdmin ? (
-                          <select
-                            value={form.numberDigits}
-                            onChange={(e) => setForm((p) => ({ ...p, numberDigits: e.target.value as DigitMode }))}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
-                          >
-                            <option value="locale">{t('settings.iranNumberDigitsLocale')}</option>
-                            <option value="latin">{t('settings.iranNumberDigitsLatin')}</option>
-                          </select>
-                        ) : (
-                          <p className="font-medium text-gray-900">{form.numberDigits === 'latin' ? t('settings.iranNumberDigitsLatin') : t('settings.iranNumberDigitsLocale')}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranCalendar')}</label>
-                        {isAdmin ? (
-                          <select
-                            value={form.calendar}
-                            onChange={(e) => setForm((p) => ({ ...p, calendar: e.target.value as CalendarMode }))}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
-                          >
-                            <option value="locale">{t('settings.iranCalendarLocale')}</option>
-                            <option value="persian">{t('settings.iranCalendarPersian')}</option>
-                            <option value="gregorian">{t('settings.iranCalendarGregorian')}</option>
-                          </select>
-                        ) : (
-                          <p className="font-medium text-gray-900">{form.calendar === 'persian' ? t('settings.iranCalendarPersian') : form.calendar === 'gregorian' ? t('settings.iranCalendarGregorian') : t('settings.iranCalendarLocale')}</p>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-400">{t('settings.iranLocaleHint')}</p>
-                  </div>
-                )}
+                <LocalePreferencesPanel
+                  options={getCountryByCode(form.countryCode)?.localeOptions}
+                  currencyDisplay={form.currencyDisplay}
+                  digits={form.numberDigits}
+                  calendar={form.calendar}
+                  isAdmin={isAdmin}
+                  onChange={(patch) => setForm((p) => ({
+                    ...p,
+                    ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
+                    ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
+                    ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
+                  }))}
+                />
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.billingType')}</label>
                   {isAdmin ? (

@@ -11,6 +11,7 @@ export {
   formatDateForTenant,
   countryName,
   type Country,
+  type CountryLocaleOptions,
   type LocalePreferences,
   type CurrencyDisplay,
   type DigitMode,

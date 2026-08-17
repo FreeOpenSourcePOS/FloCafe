@@ -40,6 +40,8 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const ROOT = path.join(__dirname, '..');
+const Module = require('module');
+const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
 
 /** Batch E screen files that must use logical direction utilities. */
 const SCREEN_FILES = [
@@ -81,6 +83,38 @@ const PHYSICAL_UTIL_RE =
  * listed here with a comment explaining why it stays physical.
  */
 const ALLOWLIST: Record<string, string[]> = {};
+
+function loadComponents(): {
+  DirectionalToaster: any;
+  usePosSettingsStore: any;
+  Ltr: any;
+  React: typeof import('react');
+  ReactDOMServer: typeof import('react-dom/server');
+} {
+  const moduleApi = require('module') as {
+    _resolveFilename: (...args: any[]) => string;
+  };
+  const originalResolveFilename = moduleApi._resolveFilename;
+
+  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+    let resolvedRequest = request;
+    if (request.startsWith('@/')) {
+      resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
+    }
+    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  try {
+    const React = frontendRequire('react');
+    const ReactDOMServer = frontendRequire('react-dom/server');
+    const { DirectionalToaster } = require('../frontend/src/components/layout/DirectionalToaster');
+    const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
+    const { Ltr } = require('../frontend/src/components/layout/Ltr');
+    return { DirectionalToaster, usePosSettingsStore, Ltr, React, ReactDOMServer };
+  } finally {
+    moduleApi._resolveFilename = originalResolveFilename;
+  }
+}
 
 function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
@@ -135,6 +169,86 @@ function run(): void {
     });
   }
   console.log('  ✓ icon-before-text gaps use me-* (inline-end), not ms-*');
+
+  // 4. Executable DirectionalToaster position assertions across languages.
+  const { DirectionalToaster, usePosSettingsStore, Ltr, React, ReactDOMServer } = loadComponents();
+
+  usePosSettingsStore.getState().setLanguage('fa');
+  const renderedFa = DirectionalToaster();
+  assert(
+    renderedFa?.props?.position === 'top-left',
+    `DirectionalToaster must set position="top-left" (inline-end) for Persian (fa), got: ${renderedFa?.props?.position}`
+  );
+  const faMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(DirectionalToaster));
+  assert(
+    typeof faMarkup === 'string',
+    'DirectionalToaster must render static markup for Persian'
+  );
+
+  for (const ltrLang of ['en', 'es', 'pt'] as const) {
+    usePosSettingsStore.getState().setLanguage(ltrLang);
+    const renderedLtr = DirectionalToaster();
+    assert(
+      renderedLtr?.props?.position === 'top-right',
+      `DirectionalToaster must set position="top-right" for ${ltrLang}, got: ${renderedLtr?.props?.position}`
+    );
+    const ltrMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(DirectionalToaster));
+    assert(
+      typeof ltrMarkup === 'string',
+      `DirectionalToaster must render static markup for ${ltrLang}`
+    );
+  }
+  console.log('  ✓ DirectionalToaster dynamically adapts toast placement across RTL/LTR languages');
+
+  // 5. Executable Ltr component rendering for POS/operational values.
+  const orderRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, { className: 'font-mono text-sm' }, '#ORD-2026-0042')
+  );
+  assert(
+    orderRender === '<span dir="ltr" class="ltr-island font-mono text-sm">#ORD-2026-0042</span>',
+    `Ltr must isolate order numbers with dir="ltr", got: ${orderRender}`
+  );
+
+  const phoneRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, null, '+98 21 1234 5678')
+  );
+  assert(
+    phoneRender === '<span dir="ltr" class="ltr-island">+98 21 1234 5678</span>',
+    `Ltr must isolate customer phone numbers with dir="ltr", got: ${phoneRender}`
+  );
+
+  const printerRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, { as: 'code', className: 'text-xs' }, '192.168.1.100:9100')
+  );
+  assert(
+    printerRender === '<code dir="ltr" class="ltr-island text-xs">192.168.1.100:9100</code>',
+    `Ltr must isolate printer IP/port endpoints, got: ${printerRender}`
+  );
+
+  const vidRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, null, 'VID:04B8')
+  );
+  assert(
+    vidRender === '<span dir="ltr" class="ltr-island">VID:04B8</span>',
+    `Ltr must isolate device VID values, got: ${vidRender}`
+  );
+
+  const tableRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, { as: 'span', className: 'px-1' }, 'TBL-4')
+  );
+  assert(
+    tableRender === '<span dir="ltr" class="ltr-island px-1">TBL-4</span>',
+    `Ltr must isolate table identifiers, got: ${tableRender}`
+  );
+
+  const jsonRender = ReactDOMServer.renderToStaticMarkup(
+    React.createElement(Ltr, { as: 'pre', className: 'text-xs font-mono' }, '{"table": 4, "guests": 2}')
+  );
+  assert(
+    jsonRender === '<pre dir="ltr" class="ltr-island text-xs font-mono">{&quot;table&quot;: 4, &quot;guests&quot;: 2}</pre>',
+    `Ltr must isolate technical JSON payloads, got: ${jsonRender}`
+  );
+  console.log('  ✓ Ltr component isolates POS operational values (order #, phone, IP, VID, table, JSON)');
 
   console.log('\n✅ All RTL/LTR Dashboard, POS, and common flow checks passed.');
 }

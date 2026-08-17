@@ -419,6 +419,35 @@ jobs:
           # (mirrors release-mac; see #168, electron-userland/electron-builder#7515).
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
+      - name: TEMP debug - dump AppX manifests
+        # Diagnostic only — investigating a 3.2.1 release-windows failure
+        # ("AppX publisher ... does not match the configured Store publisher"
+        # for the arm64 package). Remove once root-caused.
+        shell: pwsh
+        run: |
+          $expectedIdentity = node -p "require('./package.json').build.appx.identityName"
+          $expectedPublisher = node -p "require('./package.json').build.appx.publisher"
+          $expectedVersion = "$(node -p "require('./package.json').version").0"
+          Write-Host "expectedIdentity=$expectedIdentity"
+          Write-Host "expectedPublisher=$expectedPublisher"
+          Write-Host "expectedVersion=$expectedVersion"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $appxFiles = @(Get-ChildItem release\*.appx -ErrorAction SilentlyContinue)
+          foreach ($appx in $appxFiles) {
+            Write-Host "---- $($appx.Name) ----"
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($appx.FullName)
+            try {
+              $entry = $zip.GetEntry("AppxManifest.xml")
+              $reader = New-Object System.IO.StreamReader($entry.Open())
+              try { $manifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
+            } finally { $zip.Dispose() }
+            if ($manifest -match '<Identity\s+([^>]+?)/?>') {
+              Write-Host "Identity attrs: $($Matches[1])"
+            } else {
+              Write-Host "NO <Identity> MATCH FOUND"
+            }
+          }
+
       - name: Verify Windows release assets
         # Same class of bug as macOS's missing latest-mac.yml: electron-updater's
         # NSIS updater needs latest.yml + the installer's .blockmap to check for

@@ -256,6 +256,35 @@ console.log('\n✅ Test 1b: Unsupported receipt text is skipped with a warning')
   assert('reports the skipped store name', warnings.length === 1 && warnings[0].field === 'store name');
 }
 
+console.log('\n✅ Test 1b2: Arabic shaping capability gate');
+{
+  // Default (no capability): Persian is skipped with a precise warning.
+  const defaultWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const defaultBuf = buildEscPos(['{STORE_NAME}{CENTER}مطعم فلوس{/CENTER}', 'TOTAL        ₹100.00'], true, {}, defaultWarnings);
+  assert('without flag, Persian line is skipped', !defaultBuf.toString('utf8').includes('مطعم فلوس'));
+  assert('without flag, warning names Arabic shaping as the cause', defaultWarnings.length === 1 && /Arabic shaping|Persian\/Arabic/.test(defaultWarnings[0].message));
+
+  // Explicit capability: pure Persian lines are emitted as UTF-8 bytes.
+  const shapedWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const shapedBuf = buildEscPos(['{STORE_NAME}{CENTER}مطعم فلوس{/CENTER}', 'TOTAL        ₹100.00'], true, { arabicShaping: true }, shapedWarnings);
+  assert('with flag, Persian line is emitted', shapedBuf.toString('utf8').includes('مطعم فلوس'));
+  assert('with flag, pure Persian line emits no warning', shapedWarnings.length === 0);
+
+  // Mixed-script lines (Persian + Latin é) are still skipped even with the flag,
+  // so the flag cannot be used to emit unshapeable mixed text.
+  const mixedWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const mixedBuf = buildEscPos(['{CENTER}کافه Café{/CENTER}'], true, { arabicShaping: true }, mixedWarnings);
+  assert('mixed Persian+Latin line is skipped even with flag', !mixedBuf.toString('utf8').includes('کافه') && !mixedBuf.toString('utf8').includes('Café'));
+  assert('mixed-script line still emits a warning', mixedWarnings.length === 1);
+
+  // The full receipt path threads the flag into the encoder.
+  const persianBiz = { ...fixtureBusiness, name: 'کافه فلو تهران' };
+  const receiptWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const receipt = formatReceipt(fixtureOrder, fixtureBill, persianBiz, 'compact', 48, true, false, 'full', receiptWarnings, true);
+  assert('formatReceipt with arabicShaping prints the Persian business name', receipt.toString('utf8').includes('کافه فلو تهران'));
+  assert('formatReceipt with arabicShaping emits no unsupported warning', receiptWarnings.length === 0);
+}
+
 console.log('\n✅ Test 1c: ESC/POS output can be previewed without a printer');
 {
   const buf = buildEscPos(['{INIT}', '{CENTER}{BOLD}HEADER{/BOLD}{/CENTER}', 'Item       Rs63.00', '{CUT}']);
@@ -814,6 +843,7 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   const frontendWarnings: any[] = [];
   buildCompactReceiptBytes(frontendBill as any, persianTenant, { useUnicode: false }, frontendWarnings);
   assert('frontend free-form Persian text emits unsupported character warning', frontendWarnings.some((w: any) => w.text.includes('کافه')));
+  assert('frontend Persian warning names Arabic script as the cause', frontendWarnings.some((w: any) => /Persian\/Arabic script/.test(w.message)));
 
   // 3. Currency normalization and unsupported character guard unit tests
   assert('hasUnsupportedPrinterChars("ریال") remains true before currency normalization', hasUnsupportedPrinterChars('ریال') === true);

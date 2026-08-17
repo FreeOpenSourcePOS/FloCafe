@@ -44,6 +44,73 @@ export interface VerifiedTaxPackArtifact {
   printTemplates: PluginPrintTemplate[];
 }
 
+export interface InstalledTaxPackVersion {
+  packId: string;
+  country: string;
+  publisher: string;
+  version: string;
+}
+
+export interface TaxPackUpdate {
+  // The catalog's current id — pass this to catalog/install, not installedPackId.
+  packId: string;
+  // The id actually stored in country_packs.id for this store, which predates
+  // a rename for legacy installs (see LEGACY_TAX_PACK_ID_ALIASES below).
+  installedPackId: string;
+  country: string;
+  publisher: string;
+  currentVersion: string;
+  latestVersion: string;
+  entry: TaxPackCatalogEntry;
+}
+
+// Pack ids renamed by commit 3a75876, before the public catalog existed —
+// see LEGACY_TRUSTED_PACK_DIGESTS in routes/tax-packs.ts for the matching
+// signature-trust concern. Stores that installed one of these before the
+// rename still carry the pre-rename id in country_packs.id; the catalog only
+// lists the current id, so update checks must resolve through this alias or
+// a renamed pack looks like "no updates" forever.
+const LEGACY_TAX_PACK_ID_ALIASES: Record<string, string> = {
+  'official-in': 'official-india',
+  'official-th': 'official-thailand',
+};
+
+function currentTaxPackId(packId: string): string {
+  return LEGACY_TAX_PACK_ID_ALIASES[packId] || packId;
+}
+
+function newerVersion(a: string, b: string): boolean {
+  return a.localeCompare(b, undefined, { numeric: true }) > 0;
+}
+
+export function computeTaxPackUpdates(
+  installed: InstalledTaxPackVersion[],
+  catalog: TaxPackCatalog,
+): TaxPackUpdate[] {
+  const updates: TaxPackUpdate[] = [];
+  for (const row of installed) {
+    const catalogId = currentTaxPackId(row.packId);
+    const newest = catalog.packs
+      .filter((entry) => entry.id === catalogId)
+      .reduce<TaxPackCatalogEntry | null>(
+        (best, entry) => (!best || newerVersion(entry.version, best.version) ? entry : best),
+        null,
+      );
+    if (newest && newerVersion(newest.version, row.version)) {
+      updates.push({
+        packId: catalogId,
+        installedPackId: row.packId,
+        country: row.country,
+        publisher: row.publisher,
+        currentVersion: row.version,
+        latestVersion: newest.version,
+        entry: newest,
+      });
+    }
+  }
+  return updates;
+}
+
 interface GitHubReleaseAsset {
   name?: unknown;
   browser_download_url?: unknown;

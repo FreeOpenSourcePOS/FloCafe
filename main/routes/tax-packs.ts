@@ -7,6 +7,7 @@ import { TaxEngine } from '../services/tax-engine';
 import type { CountryPack, PluginPrintTemplate, TaxBehavior, TaxCategory, TaxRule } from '../tax-packs/types';
 import { BUNDLED_COUNTRY_PACKS } from '../tax-packs/bundled';
 import {
+  computeTaxPackUpdates,
   downloadAndVerifyTaxPack,
   fetchRemoteTaxPackCatalog,
   verifyTaxPackSignature,
@@ -750,6 +751,28 @@ router.get('/catalog', requireRole('owner', 'manager'), asyncHandler(async (req:
   } catch (error: any) {
     console.error('[Tax Packs] Catalog fetch failed:', error);
     res.status(502).json({ error: error.message || 'Could not check the tax pack catalog' });
+  }
+}));
+
+router.get('/updates', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
+  try {
+    const remote = await fetchRemoteTaxPackCatalog(fetch, getHttpRequestSignal(req));
+    const installedRows = getDatabase().prepare(`
+      SELECT pack.id AS pack_id, pack.country, pack.publisher, version.version
+      FROM country_packs AS pack
+      JOIN country_pack_versions AS version ON version.id = pack.active_version_id
+      WHERE pack.status = 'active'
+    `).all() as Array<{ pack_id: string; country: string; publisher: string; version: string }>;
+    const updates = computeTaxPackUpdates(
+      installedRows.map((row) => (
+        { packId: row.pack_id, country: row.country, publisher: row.publisher, version: row.version }
+      )),
+      remote.catalog,
+    );
+    res.json({ checked_at: now(), release_tag: remote.releaseTag, updates });
+  } catch (error: any) {
+    console.error('[Tax Packs] Update check failed:', error);
+    res.status(502).json({ error: error.message || 'Could not check for tax plugin updates' });
   }
 }));
 

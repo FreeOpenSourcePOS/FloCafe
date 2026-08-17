@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  computeTaxPackUpdates,
   downloadAndVerifyTaxPack,
   fetchRemoteTaxPackCatalog,
   parseTaxPackCatalog,
@@ -53,6 +54,89 @@ function signedFixture() {
   };
   return { privateKey, publicKey, pack, packJson, signature, entry, catalog };
 }
+
+function catalogEntry(overrides: Partial<TaxPackCatalogEntry>): TaxPackCatalogEntry {
+  return {
+    id: 'official-testland',
+    publisher: 'FreeOpenSourcePOS',
+    country: 'ZZ',
+    jurisdiction: '*',
+    version: '1.0.0',
+    publishedAt: '2026-01-01',
+    minFloVersion: '2.4.0',
+    downloadUrl: `${releaseBase}/official-testland-v1.0.0.json`,
+    signatureUrl: `${releaseBase}/official-testland-v1.0.0.json.sig`,
+    digest: '0'.repeat(64),
+    ...overrides,
+  };
+}
+
+test('computeTaxPackUpdates flags only installed packs with a newer catalog version', () => {
+  const catalog: TaxPackCatalog = {
+    schemaVersion: 1,
+    generatedAt: '2026-08-01T00:00:00.000Z',
+    packs: [
+      catalogEntry({ id: 'official-testland', version: '1.2.0' }),
+      catalogEntry({ id: 'official-otherland', country: 'YY', version: '1.0.0' }),
+    ],
+  };
+  const updates = computeTaxPackUpdates(
+    [
+      { packId: 'official-testland', country: 'ZZ', publisher: 'FreeOpenSourcePOS', version: '1.0.0' },
+      { packId: 'official-otherland', country: 'YY', publisher: 'FreeOpenSourcePOS', version: '1.0.0' },
+    ],
+    catalog,
+  );
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].packId, 'official-testland');
+  assert.equal(updates[0].installedPackId, 'official-testland');
+  assert.equal(updates[0].currentVersion, '1.0.0');
+  assert.equal(updates[0].latestVersion, '1.2.0');
+});
+
+test('computeTaxPackUpdates resolves a pre-rename installed id (official-in) against the current catalog id (official-india)', () => {
+  const catalog: TaxPackCatalog = {
+    schemaVersion: 1,
+    generatedAt: '2026-08-14T20:42:36.442Z',
+    packs: [catalogEntry({ id: 'official-india', country: 'IN', version: '1.0.4' })],
+  };
+  const updates = computeTaxPackUpdates(
+    [{ packId: 'official-in', country: 'IN', publisher: 'FreeOpenSourcePOS', version: '1.0.0' }],
+    catalog,
+  );
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].installedPackId, 'official-in');
+  assert.equal(updates[0].packId, 'official-india');
+  assert.equal(updates[0].currentVersion, '1.0.0');
+  assert.equal(updates[0].latestVersion, '1.0.4');
+});
+
+test('computeTaxPackUpdates treats a double-digit minor version as newer, not a string comparison', () => {
+  const catalog: TaxPackCatalog = {
+    schemaVersion: 1,
+    generatedAt: '2026-08-01T00:00:00.000Z',
+    packs: [catalogEntry({ id: 'official-testland', version: '1.10.0' })],
+  };
+  const updates = computeTaxPackUpdates(
+    [{ packId: 'official-testland', country: 'ZZ', publisher: 'FreeOpenSourcePOS', version: '1.9.0' }],
+    catalog,
+  );
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].latestVersion, '1.10.0');
+});
+
+test('computeTaxPackUpdates returns nothing when the installed version is already current', () => {
+  const catalog: TaxPackCatalog = {
+    schemaVersion: 1,
+    generatedAt: '2026-08-01T00:00:00.000Z',
+    packs: [catalogEntry({ id: 'official-testland', version: '1.0.0' })],
+  };
+  const updates = computeTaxPackUpdates(
+    [{ packId: 'official-testland', country: 'ZZ', publisher: 'FreeOpenSourcePOS', version: '1.0.0' }],
+    catalog,
+  );
+  assert.equal(updates.length, 0);
+});
 
 test('catalog discovery finds the newest tax-pack release and verifies its detached signature', async () => {
   const fixture = signedFixture();

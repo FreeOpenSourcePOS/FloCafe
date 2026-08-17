@@ -2,10 +2,10 @@
  * Translation integrity test.
  *
  * Verifies, on every run, that:
- *   1. Every key in en.json is also present in es.json (and vice versa).
- *      Missing key on either side means the UI falls back to a raw key string
- *      for the unmatched language.
- *   2. Neither file contains a duplicate key. JSON.parse silently drops
+ *   1. Every key across all translation bundles (en, es, pt, fa) is present
+ *      in all files. A missing key means the UI falls back to a raw key string
+ *      for that language.
+ *   2. No file contains a duplicate key. JSON.parse silently drops
  *      duplicates, so we scan the raw text for `"key":` patterns and fail
  *      loudly when a key appears more than once.
  *   3. No value is an obviously broken shape: empty, whitespace-only, with

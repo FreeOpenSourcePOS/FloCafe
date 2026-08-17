@@ -8,15 +8,18 @@ All notable changes to Flo Cafe are documented here. Dates are release dates, no
 - Added full Persian (Farsi) RTL layout support across the Setup wizard, auth screens, Settings, Dashboard, POS, and shared UI components, with logical direction utilities and isolated LTR islands for technical values (order numbers, phone numbers, URLs, IDs).
 - Completed Persian translation coverage to full parity with English, including Iranian Economic Code terminology for tax identification fields.
 - Windows releases now build and publish x64 and arm64 Microsoft Store AppX packages automatically.
+- Settings → Tax Config now shows the installed tax plugin's version and trust status, with a manual "Check for updates" action and a best-effort update check on startup.
 
 ### Fixed
 - Iranian Rial ESC/POS receipts now preserve raw financial lines and print within correct column bounds on 58mm and 80mm printers.
 - Hardened static file path resolution across the main, server-app, and KDS HTTP servers and backup listing against directory traversal.
 - Bounded email and tax-ID input validation to prevent ReDoS.
 - Repaired databases that never created the `revoked_tokens` table because of a migration version-number collision shipped in release 2.9.0. Affected installs were failing every authenticated request closed; a new migration (v71) idempotently restores the table on upgrade.
+- Tax plugin update checks now resolve a pre-rename installed pack id (e.g. `official-in`) against the current catalog id (`official-india`), so stores that installed before the rename correctly see real updates instead of "up to date" forever.
 
 ### Changed
 - CI test suite now shards across two parallel runners to speed up merge-ready checks.
+- Hardened the Microsoft Store publish step: gated to tag pushes only, explicit exit-code checks on the Store CLI, pinned publisher action, and per-package identity/publisher/version validation before upload.
 
 ## [3.2.0] - 2026-08-15
 

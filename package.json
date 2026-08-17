@@ -182,7 +182,7 @@
     "eslint": "^10.8.0",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
-    "typescript": "^5.4.5"
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc13",

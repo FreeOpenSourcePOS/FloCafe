@@ -39,7 +39,7 @@ export default function GlobalNotifications() {
           href="/customers?filter=invalid_phones" 
           className="text-sm text-red-600 hover:text-red-700 font-bold flex items-center underline underline-offset-2"
         >
-          {t('common.reviewFix') || 'Review & Fix'} <ChevronRight className="w-4 h-4 ml-0.5" />
+          {t('common.reviewFix') || 'Review & Fix'} <ChevronRight className="w-4 h-4 ms-0.5 rtl-flip" />
         </Link>
       </div>
     </div>

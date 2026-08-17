@@ -155,7 +155,7 @@ export default function AppSidebar() {
                         <span className="relative flex size-4 shrink-0 items-center justify-center">
                           <item.icon className="size-4 shrink-0" />
                           {item.href === '/settings' && emailNeedsAttention && (
-                            <span aria-label="Email verification required" className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
+                            <span aria-label="Email verification required" className="absolute -end-1 -top-1 h-2 w-2 rounded-full bg-red-500 ring-2 ring-sidebar" />
                           )}
                         </span>
                         <span>{t(item.labelKey)}</span>
@@ -190,7 +190,7 @@ export default function AppSidebar() {
                 deliberately skips SidebarMenuButton's interactive/hover styling. */}
             <div
               title={user?.name || user?.email || t('nav.user', { defaultValue: 'User' })}
-              className="flex w-full items-center gap-2 rounded-md p-2 text-left text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0"
+              className="flex w-full items-center gap-2 rounded-md p-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0"
             >
               <UserCircle />
               <span className="truncate">{user?.name || user?.email || t('nav.user', { defaultValue: 'User' })}</span>

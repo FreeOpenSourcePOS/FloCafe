@@ -875,6 +875,19 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   const browserTaxHtml = generateBillHtml(frontendBill as any, frontendTenant, { useUnicode: false });
   assert('browser tax-bill printing preserves Persian Rial output', browserTaxHtml.includes('ریال') && !browserTaxHtml.includes('IRR'));
   assert('browser tax-bill printing preserves Persian numeric output', /[۰-۹]/.test(browserTaxHtml));
+  const browserTomanHtml = generateBillHtml(
+    frontendBill as any,
+    { ...frontendTenant, currency_display: 'toman' },
+    { trimDecimals: true },
+  );
+  assert('browser printing respects Toman currency display with trimDecimals', browserTomanHtml.includes('تومان') && !browserTomanHtml.includes('ریال'));
+  assert('browser printing converts Rial to Toman value', browserTomanHtml.includes('۹٬۹۰۰ تومان'));
+  const browserTomanShortHtml = generateBillHtml(
+    frontendBill as any,
+    { ...frontendTenant, currency_display: 'toman_short', number_digits: 'latin' },
+    { trimDecimals: true },
+  );
+  assert('browser printing respects Toman short with Latin digits and trimDecimals', browserTomanShortHtml.includes('9,900T'));
 
   // Unsupported free-form Persian text warning contract test (frontend)
   const persianTenant = { ...frontendTenant, business_name: 'کافه فلو تهران' };

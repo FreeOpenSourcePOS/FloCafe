@@ -69,7 +69,7 @@ export default function SupportPage() {
       setSubmittedId(data.client_ticket_id || '');
       setSubject('');
       setMessage('');
-      toast.success(data.message || t('support.queued'));
+      toast.success(t('support.queued'));
     } catch {
       toast.error(t('support.submitFailed'));
     } finally {

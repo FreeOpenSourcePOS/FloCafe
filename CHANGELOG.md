@@ -2,7 +2,7 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
-## [3.2.1] - 2026-08-17
+## [3.2.2] - 2026-08-17
 
 ### Added
 - Added full Persian (Farsi) RTL layout support across the Setup wizard, auth screens, Settings, Dashboard, POS, and shared UI components, with logical direction utilities and isolated LTR islands for technical values (order numbers, phone numbers, URLs, IDs).
@@ -16,6 +16,7 @@ All notable changes to Flo Cafe are documented here. Dates are release dates, no
 - Bounded email and tax-ID input validation to prevent ReDoS.
 - Repaired databases that never created the `revoked_tokens` table because of a migration version-number collision shipped in release 2.9.0. Affected installs were failing every authenticated request closed; a new migration (v71) idempotently restores the table on upgrade.
 - Tax plugin update checks now resolve a pre-rename installed pack id (e.g. `official-in`) against the current catalog id (`official-india`), so stores that installed before the rename correctly see real updates instead of "up to date" forever.
+- Windows release verification no longer false-positives on the AppX manifest's `Publisher` identity attribute, which electron-builder emits with single quotes rather than double quotes.
 
 ### Changed
 - CI test suite now shards across two parallel runners to speed up merge-ready checks.

@@ -8,6 +8,7 @@ import { KdsLoginForm } from '@/components/kds/KdsLoginForm';
 import { KdsWorkspace } from '@/components/kds/KdsWorkspace';
 import { useKdsConnection } from '@/hooks/useKdsConnection';
 import { useSyncServerLanguage } from '@/lib/i18n';
+import { useI18n } from '@/hooks/useI18n';
 import type { KdsViewMode } from '@/hooks/useKdsView';
 
 // Reads the kds_enabled setting directly (not the cached posSettings copy) so
@@ -50,6 +51,7 @@ function useDashboardKdsDefault(): KdsViewMode | null {
 
 export default function KdsPage() {
   useSyncServerLanguage();
+  const { t } = useI18n();
   const conn = useKdsConnection({ api });
   const kdsDefaultView = useDashboardKdsDefault();
   const kdsEnabled = useKdsEnabledCheck();
@@ -65,12 +67,12 @@ export default function KdsPage() {
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-3 text-center px-6">
         <ChefHat size={40} className="text-gray-300" />
-        <h1 className="text-lg font-semibold text-gray-900">Kitchen Display is disabled</h1>
+        <h1 className="text-lg font-semibold text-gray-900">{t('kds.disabledTitle')}</h1>
         <p className="text-sm text-gray-500 max-w-sm">
-          This business has turned off the Kitchen Display System. An owner or manager can turn it back on from Settings.
+          {t('kds.disabledHintDashboard')}
         </p>
         <Link href="/settings?tab=kds" className="text-sm text-brand hover:underline mt-1">
-          Go to Settings
+          {t('kds.goToSettings')}
         </Link>
       </div>
     );

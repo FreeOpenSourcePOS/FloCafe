@@ -195,9 +195,9 @@ export default function ProductsPage() {
       );
       const failedCount = results.filter((r) => r.status === 'rejected').length;
       if (failedCount > 0) {
-        toast.error(`Assigned category to ${results.length - failedCount} of ${results.length} products — ${failedCount} failed`);
+        toast.error(t('products.categoryAssignPartial', { assigned: results.length - failedCount, total: results.length, failed: failedCount }));
       } else {
-        toast.success(`Tax category assigned to ${results.length} product(s)`);
+        toast.success(t('products.categoryAssignSuccess', { count: results.length }));
       }
       setShowBulkTaxModal(false);
       fetchData();
@@ -215,9 +215,8 @@ export default function ProductsPage() {
       const res = await api.post(`/menu-csv/import/${csvType}`, { csv: text });
       setCsvResult(res.data);
       fetchData();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? t('common.importFailed');
-      toast.error(msg);
+    } catch {
+      toast.error(t('common.importFailed'));
     } finally {
       setCsvUploading(false);
     }
@@ -271,7 +270,7 @@ export default function ProductsPage() {
     if (loyaltyEnabled && form.cb_percent !== '') {
       const parsed = Number(form.cb_percent);
       if (isNaN(parsed) || parsed < 0 || parsed > 100) {
-        toast.error('Please enter a valid loyalty cashback rate (0–100%)');
+        toast.error(t('products.invalidCashbackRate'));
         return;
       }
     }
@@ -312,12 +311,8 @@ export default function ProductsPage() {
       }
       resetForm();
       fetchData();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { errors?: Record<string, string[]>; error?: string } } };
-      const firstError = error.response?.data?.errors
-        ? Object.values(error.response.data.errors)[0]?.[0]
-        : error.response?.data?.error || t('products.failedToSave');
-      toast.error(firstError);
+    } catch {
+      toast.error(t('products.failedToSave'));
     }
   };
 
@@ -381,7 +376,7 @@ export default function ProductsPage() {
         setCatReassignTo('');
         setCatDeleteModal({ open: true, id, name, productCount: e.response.data.productCount });
       } else {
-        toast.error(e?.response?.data?.error || t('common.failedToDelete'));
+        toast.error(t('common.failedToDelete'));
       }
     }
   };
@@ -393,9 +388,8 @@ export default function ProductsPage() {
       toast.success(t('products.reassignAndDelete'));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } } };
-      toast.error(e?.response?.data?.error || t('common.failedToDelete'));
+    } catch {
+      toast.error(t('common.failedToDelete'));
     }
   };
 
@@ -406,9 +400,8 @@ export default function ProductsPage() {
       toast.success(t('products.categoryAndProductsDeleted'));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } } };
-      toast.error(e?.response?.data?.error || t('common.failedToDelete'));
+    } catch {
+      toast.error(t('common.failedToDelete'));
     }
   };
 

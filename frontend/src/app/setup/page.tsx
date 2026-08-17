@@ -92,6 +92,7 @@ export default function SetupPage() {
     return true;
   };
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
+  const t = (key: string) => translate(key, language);
 
   useEffect(() => {
     let mounted = true;
@@ -103,7 +104,7 @@ export default function SetupPage() {
         // so bail out immediately instead of letting the user fill the whole wizard
         // and only find out at the final submit.
         if (!data.needsSetup) {
-          toast.error('Setup has already been completed on this install. Redirecting to login…');
+          toast.error(t('setup.alreadyCompleted'));
           window.location.replace('/auth/login');
         }
       })
@@ -113,6 +114,8 @@ export default function SetupPage() {
         setMasterPinAvailable(false);
       });
     return () => { mounted = false; };
+    // One-time mount check — the toast uses the initial language selection.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
@@ -127,8 +130,6 @@ export default function SetupPage() {
       (c.locale ?? '').toLowerCase().includes(q)
     );
   });
-
-  const t = (key: string) => translate(key, language);
 
   const completeSetup = () => {
     usePosSettingsStore.getState().setLanguage(language);
@@ -188,12 +189,12 @@ export default function SetupPage() {
         const localHttp = parsed.protocol === 'http:'
           && ['localhost', '127.0.0.1', '::1', '[::1]'].includes(parsed.hostname);
         if (parsed.protocol !== 'https:' && !localHttp) {
-          toast.error('Cloud server URL must use HTTPS (or local HTTP for development)');
+          toast.error(t('setup.cloudUrlHttpsRequired'));
           setStep(5);
           return;
         }
       } catch {
-        toast.error('Please enter a valid Cloud server URL');
+        toast.error(t('setup.cloudUrlInvalid'));
         setStep(5);
         return;
       }
@@ -227,9 +228,8 @@ export default function SetupPage() {
         ...countryPayload,
       });
       completeSetup();
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } } };
-      toast.error(axiosErr.response?.data?.error || t('setup.errorGeneric'));
+    } catch {
+      toast.error(t('setup.errorGeneric'));
     } finally {
       setLoading(false);
     }

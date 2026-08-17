@@ -204,7 +204,11 @@ function run() {
     'release-windows job must verify and upload the .appx Microsoft Store package'
   );
   assert.ok(
-    winJob.includes('ProcessorArchitecture="([^"]+)"') &&
+    // Quote-agnostic: electron-builder emits some AppX Identity attributes
+    // (e.g. Publisher) with single quotes and others with double quotes —
+    // both are valid XML — so this must not lock in one quote style. The
+    // doubled '' is PowerShell's single-quoted-string escape for a literal '.
+    winJob.includes(`ProcessorArchitecture=["'']([^"'']+)["'']`) &&
     winJob.includes('@("x64", "arm64")'),
     'release-windows job must inspect AppX manifests and require both x64 and arm64 packages'
   );

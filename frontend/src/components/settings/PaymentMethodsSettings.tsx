@@ -6,6 +6,7 @@ import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/hooks/useI18n';
+import { useFormatDate } from '@/hooks/useFormatDate';
 import type { CustomPaymentMethod } from '@/lib/payment-methods';
 
 interface MergeRecord {
@@ -18,6 +19,7 @@ interface MergeRecord {
 
 export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
   const { t } = useI18n();
+  const { formatDate } = useFormatDate();
   const [methods, setMethods] = useState<CustomPaymentMethod[]>([]);
   const [names, setNames] = useState<Record<number, string>>({});
   const [newName, setNewName] = useState('');
@@ -49,8 +51,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
       await api.post('/payment-methods', { name: newName });
       setNewName('');
       await load();
-    } catch (error: unknown) {
-      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || t('settings.saveFailed'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
     }
   };
 
@@ -58,8 +60,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
     try {
       await api.put(`/payment-methods/${method.id}`, changes);
       await load();
-    } catch (error: unknown) {
-      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || t('settings.saveFailed'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
     }
   };
 
@@ -68,8 +70,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
     try {
       await api.delete(`/payment-methods/${method.id}`);
       await load();
-    } catch (error: unknown) {
-      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || t('settings.saveFailed'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
     }
   };
 
@@ -83,8 +85,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         : { target_type: 'custom', target_id: Number(target) });
       await load();
       toast.success(t('settings.paymentMethodMerged', { defaultValue: 'Payment methods merged' }));
-    } catch (error: unknown) {
-      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || t('settings.saveFailed'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
     }
   };
 
@@ -123,7 +125,7 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         <input type="checkbox" className="size-5" disabled={!isAdmin} checked={splitChecksEnabled} onChange={async (e) => { const value = e.target.checked; setSplitChecksEnabled(value); try { await api.put('/settings/split_checks_enabled', { value: String(value) }); } catch { setSplitChecksEnabled(!value); toast.error(t('settings.saveFailed')); } }} />
       </div>
 
-      {merges.length > 0 && <div className="bg-white rounded-xl border border-gray-100 p-6"><h2 className="font-semibold text-gray-900 mb-3">{t('settings.mergeHistory', { defaultValue: 'Recent merges' })}</h2><div className="space-y-2 text-sm text-gray-600">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {new Date(`${entry.merged_at.replace(' ', 'T')}Z`).toLocaleDateString()}</p>)}</div></div>}
+      {merges.length > 0 && <div className="bg-white rounded-xl border border-gray-100 p-6"><h2 className="font-semibold text-gray-900 mb-3">{t('settings.mergeHistory', { defaultValue: 'Recent merges' })}</h2><div className="space-y-2 text-sm text-gray-600">{merges.map((entry) => <p key={entry.id}>{entry.source_name} → {entry.target_name} · {entry.affected_payments} · {formatDate(entry.merged_at)}</p>)}</div></div>}
     </div>
   );
 }

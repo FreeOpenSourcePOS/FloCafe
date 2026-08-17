@@ -13,6 +13,15 @@ export interface SupportedPrinterProfile {
   fontBColumns: number;
   printWidthMm?: number;
   cutMode: PrinterCutMode;
+  /**
+   * Whether the printer's firmware performs Arabic/Persian contextual shaping
+   * and bidirectional ordering. Generic ESC/POS printers do NOT — they render
+   * isolated glyph forms or garbage for Persian — so this defaults to unset
+   * (false), which makes the encoders skip Arabic-script text instead of
+   * printing corrupted output. Only set true after a real print on the
+   * specific hardware proves shaped Persian output.
+   */
+  arabicShaping?: boolean;
   notes?: string;
 }
 

@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { COUNTRIES, countryName } from '@/lib/countries';
+import { COUNTRIES, countryName, getCountryByCode, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -22,6 +22,7 @@ import { InitializeDatabaseDialog } from '@/components/settings/InitializeDataba
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
+import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import type { HealthCheckReport } from '@/types/electron';
 import { useI18n } from '@/hooks/useI18n';
 import { Ltr } from '@/components/layout/Ltr';
@@ -409,11 +410,10 @@ export default function SettingsPage() {
   const runImport = async (data: ImportPayload, overwrite: boolean, master_pin?: string) => {
     try {
       const response = await api.post('/db/import', { data, overwrite, master_pin });
-      if (response.data.success) toast.success(response.data.message);
+      if (response.data.success) toast.success(t('settings.importSuccess'));
       return { success: true };
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      const message = error.response?.data?.error || t('settings.importFailed');
+    } catch {
+      const message = t('settings.importFailed');
       toast.error(message);
       return { success: false, error: message };
     }
@@ -429,9 +429,8 @@ export default function SettingsPage() {
         toast.success(t('settings.masterPinSaved'));
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.savePinFailed') };
+      } catch {
+        return { success: false, error: t('settings.savePinFailed') };
       }
     }
 
@@ -442,9 +441,8 @@ export default function SettingsPage() {
         setPinGate(null);
         fetchBackups();
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.backupFailedGeneric') };
+      } catch {
+        return { success: false, error: t('settings.backupFailedGeneric') };
       }
     }
 
@@ -490,39 +488,36 @@ export default function SettingsPage() {
         setPinGate(null);
         fetchBackups();
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.backupDeleteFailed') };
+      } catch {
+        return { success: false, error: t('settings.backupDeleteFailed') };
       }
     }
 
     if (pinGate.mode === 'delete-cloud') {
       try {
         await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
-        toast.success('Cloud deletion request submitted for manual review. Cloud services have been stopped on this device.');
+        toast.success(t('settings.cloudDeletionSubmitted'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
+      } catch {
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Cloud data deletion failed' };
+        return { success: false, error: t('settings.cloudDeletionFailed') };
       }
     }
 
     if (pinGate.mode === 'cancel-cloud-deletion') {
       try {
         await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
-        toast.success('Cloud deletion request cancelled. Cloud services remain off until you explicitly re-enable them.');
+        toast.success(t('settings.cloudDeletionCancelled'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Could not cancel deletion request' };
+      } catch {
+        return { success: false, error: t('settings.cloudDeletionCancelFailed') };
       }
     }
 
@@ -621,9 +616,8 @@ export default function SettingsPage() {
         await api.post(`/db-tools/backups/${encodeURIComponent(backup.fileName)}/delete`, {});
         toast.success(t('settings.backupDeleted'));
         fetchBackups();
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        toast.error(error.response?.data?.error || t('settings.backupDeleteFailed'));
+      } catch {
+        toast.error(t('settings.backupDeleteFailed'));
       }
       return;
     }
@@ -634,9 +628,8 @@ export default function SettingsPage() {
     try {
       const { data } = await api.post('/db-tools/initialize', { master_pin: pin, confirmation_phrase: 'INITIALIZE' });
       return { success: true, backupPath: data.backupPath };
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      return { success: false, error: error.response?.data?.error || t('settings.initializeFailedGeneric') };
+    } catch {
+      return { success: false, error: t('settings.initializeFailedGeneric') };
     }
   };
 
@@ -818,9 +811,8 @@ export default function SettingsPage() {
       toast.success(t('settings.printerQuickAdded', { name: p.name }));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.printerAddFailed'));
+    } catch {
+      toast.error(t('settings.printerAddFailed'));
     } finally {
       setAddingDetectedName(null);
     }
@@ -898,9 +890,8 @@ export default function SettingsPage() {
     try {
       await api.post(`/printers/${printer.id}/test`);
       toast.success(t('settings.testPrintSent'));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.testPrintFailed'));
+    } catch {
+      toast.error(t('settings.testPrintFailed'));
     } finally {
       setTestingPrinterId(null);
     }
@@ -995,9 +986,8 @@ export default function SettingsPage() {
       toast.success(editingStationId ? t('settings.stationUpdated') : t('settings.stationSaved'));
       setShowStationForm(false);
       fetchStations();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.stationSaveFailed'));
+    } catch {
+      toast.error(t('settings.stationSaveFailed'));
     } finally {
       setSavingStation(false);
     }
@@ -1009,9 +999,8 @@ export default function SettingsPage() {
       await api.delete(`/kitchen-stations/${id}`);
       toast.success(t('settings.stationDeleted'));
       fetchStations();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.stationDeleteFailed'));
+    } catch {
+      toast.error(t('settings.stationDeleteFailed'));
     }
   };
 
@@ -1135,12 +1124,18 @@ export default function SettingsPage() {
     tablesRequired: boolean;
     taxRegistered: boolean;
     taxRegistrationNumber: string; businessAddress: string; businessPhone: string; instagramHandle: string;
+    currencyDisplay: CurrencyDisplay;
+    numberDigits: DigitMode;
+    calendar: CalendarMode;
   };
   const [savedBusiness, setSavedBusiness] = useState<BusinessForm>({
     businessName: '', countryCode: '', timezone: '', currency: '', billingType: 'postpaid',
     tablesRequired: true,
     taxRegistered: false,
     taxRegistrationNumber: '', businessAddress: '', businessPhone: '', instagramHandle: '',
+    currencyDisplay: 'rial',
+    numberDigits: 'locale',
+    calendar: 'locale',
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
@@ -1206,9 +1201,9 @@ export default function SettingsPage() {
       await api.get('/settings/cloud/delete-data/status');
       await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
       notifyCloudAccountStatusChanged();
-      toast.success('Cloud deletion status refreshed');
+      toast.success(t('settings.cloudDeletionStatusRefreshed'));
     } catch {
-      toast.error('Could not refresh cloud deletion status');
+      toast.error(t('settings.cloudDeletionStatusRefreshFailed'));
     } finally {
       setRefreshingDeletionStatus(false);
     }
@@ -1304,6 +1299,9 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
+        currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
+        numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
+        calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1577,6 +1575,9 @@ export default function SettingsPage() {
         businessAddress: d.business_address || '',
         businessPhone: d.business_phone || '',
         instagramHandle: d.instagram_handle || '',
+        currencyDisplay: d.currency_display === 'toman' ? 'toman' : d.currency_display === 'toman_short' ? 'toman_short' : 'rial',
+        numberDigits: d.number_digits === 'latin' ? 'latin' : 'locale',
+        calendar: d.calendar === 'persian' ? 'persian' : d.calendar === 'gregorian' ? 'gregorian' : 'locale',
       };
       setSavedBusiness(loaded);
       setForm(loaded);
@@ -1670,9 +1671,8 @@ export default function SettingsPage() {
       if (res.data.cloud_registration_status === 'registered') {
         toast.success(t('settings.cloudRegistrationSuccess'));
       }
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.cloudRegistrationFailed'));
+    } catch {
+      toast.error(t('settings.cloudRegistrationFailed'));
     } finally {
       setRegisteringCloud(false);
     }
@@ -1713,9 +1713,8 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveConnectedSuccess'));
       fetchBackups();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveConnectFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveConnectFailed'));
     } finally {
       setConnectingGoogleDrive(false);
     }
@@ -1732,9 +1731,8 @@ export default function SettingsPage() {
       const res = await api.post('/settings/google-drive/disconnect');
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveDisconnectedSuccess'));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveDisconnectFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveDisconnectFailed'));
     } finally {
       setDisconnectingGoogleDrive(false);
     }
@@ -1747,9 +1745,8 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveBackupSuccess'));
       fetchBackups();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveBackupFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveBackupFailed'));
       fetchGoogleDriveStatus();
     } finally {
       setBackingUpGoogleDrive(false);
@@ -1763,10 +1760,9 @@ export default function SettingsPage() {
     try {
       const res = await api.put('/settings/google-drive', patch);
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
+    } catch {
       setGoogleDriveStatus(previous);
-      toast.error(error.response?.data?.error || t('settings.googleDriveSavePreferencesFailed'));
+      toast.error(t('settings.googleDriveSavePreferencesFailed'));
     } finally {
       setSavingGoogleDrivePrefs(false);
     }
@@ -1906,6 +1902,9 @@ export default function SettingsPage() {
         business_address: form.businessAddress,
         business_phone: normalizedBusinessPhone,
         instagram_handle: form.instagramHandle,
+        currency_display: form.currencyDisplay,
+        number_digits: form.numberDigits,
+        calendar: form.calendar,
       });
       if (savedBusiness.countryCode !== form.countryCode) {
         const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
@@ -1929,9 +1928,9 @@ export default function SettingsPage() {
                 diagnostics: { country: form.countryCode },
               }).catch(() => {});
               await api.put('/settings/taxes_enabled', { value: 'false' }).catch(() => {});
-              toast.error(`Tax support for ${form.countryCode} is not available yet. We requested the plugin and will build it soon. Taxes are now off.`);
+              toast.error(t('settings.taxSupportUnavailable', { country: form.countryCode }));
             } else {
-              toast.error('The country was saved, but its tax plugin could not be installed. Taxes remain enabled until it is resolved.');
+              toast.error(t('settings.countrySavedTaxPluginFailed'));
             }
           }
         }
@@ -1944,11 +1943,11 @@ export default function SettingsPage() {
       posSettings.setBillPhone(normalizedBusinessPhone);
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
-      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode });
+      updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
       if (!silent) toast.success(t('settings.storeSaved'));
     } catch (err) {
       if (!silent) {
-        const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('settings.saveFailed');
+        const message = t('settings.saveFailed');
         toast.error(message);
       }
       throw err;
@@ -2020,12 +2019,9 @@ export default function SettingsPage() {
       setPairingUnavailable(false);
       toast.success(t('settings.pairingCodeRotated'));
       loadPairedDevices();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      // Surface the backend's actual reason (e.g. "this POS hasn't been
-      // claimed in FloAdmin yet") instead of a one-size-fits-all message —
-      // "not registered" and "FloAdmin unreachable" need different next steps.
-      toast.error(error.response?.data?.error || t('settings.pairingCodeFailed'));
+    } catch {
+      // Show a localized failure; the specific backend reason stays in logs.
+      toast.error(t('settings.pairingCodeFailed'));
     } finally {
       setRotatingCode(false);
     }
@@ -2236,6 +2232,19 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
+                <LocalePreferencesPanel
+                  options={getCountryByCode(form.countryCode)?.localeOptions}
+                  currencyDisplay={form.currencyDisplay}
+                  digits={form.numberDigits}
+                  calendar={form.calendar}
+                  isAdmin={isAdmin}
+                  onChange={(patch) => setForm((p) => ({
+                    ...p,
+                    ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
+                    ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
+                    ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
+                  }))}
+                />
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.billingType')}</label>
                   {isAdmin ? (
@@ -3020,9 +3029,9 @@ export default function SettingsPage() {
                                   <QrCode size={40} className="text-gray-400" />
                                 </div>
                               )}
-                              <a href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
+                              <Ltr as="a" href={ipInfo.url} target="_blank" rel="noopener noreferrer" className="text-xs font-mono text-brand hover:underline break-all text-center">
                                 {ipInfo.url}
-                              </a>
+                              </Ltr>
                             </div>
                           ))}
                         </div>
@@ -3270,18 +3279,17 @@ export default function SettingsPage() {
                 {cloudAccountAvailable && !cloudAccount?.verified && (
                   <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
                     setCloudAccountBusy(true);
-                    try { await api.post('/settings/cloud/account/verification'); toast.success('Verification email queued'); await fetchCloudAccount(); }
-                    catch (err: unknown) {
-                      const error = err as { response?: { data?: { error?: string } } };
-                      toast.error(error.response?.data?.error || 'Could not send verification email');
+                    try { await api.post('/settings/cloud/account/verification'); toast.success(t('settings.verificationEmailQueued')); await fetchCloudAccount(); }
+                    catch {
+                      toast.error(t('settings.verificationEmailFailed'));
                     }
                     finally { setCloudAccountBusy(false); }
                   }}>{cloudAccountBusy ? 'Sending…' : 'Send verification email'}</Button>
                 )}
                 {cloudAccountAvailable && (
                   <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error('Could not save preference'); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Product updates and release notes</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error(t('settings.couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>Marketing messages, offers, and surveys</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error(t('settings.couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
                     <p className="text-xs text-gray-500">Essential service and security notices are separate from these optional subscriptions.</p>
                   </div>
                 )}
@@ -3359,14 +3367,14 @@ export default function SettingsPage() {
                       setDiagnosticsConsent(false);
                       await fetchCloudAccount();
                       notifyCloudAccountStatusChanged();
-                      toast.success('All cloud services and telemetry stopped');
+                      toast.success(t('settings.cloudAllStopped'));
                     }
-                    catch { toast.error('Could not stop cloud services'); }
+                    catch { toast.error(t('settings.cloudStopFailed')); }
                   }}><CloudOff size={16} className="me-2" />Stop all cloud services</Button>
                   {!cloudDeletionFinal && <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'processing' || cloudAccount?.deletion_request?.status === 'approved' || cloudStatus.cloud_deletion_status === 'processing'} onClick={() => {
                     const phrase = window.prompt('This submits a deletion request to FloAdmin for manual review and immediately stops cloud services here. After approval, store-linked server data is permanently deleted. Local POS data stays on this device. Type DELETE CLOUD DATA to continue.');
                     if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
-                    else if (phrase !== null) toast.error('Confirmation phrase did not match');
+                    else if (phrase !== null) toast.error(t('settings.confirmationPhraseMismatch'));
                   }}><Trash2 size={16} className="me-2" />Request cloud data deletion</Button>}
                   {cloudDeletionNeedsAction && (
                     <>

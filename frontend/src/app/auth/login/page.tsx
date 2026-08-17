@@ -102,13 +102,13 @@ function LoginContent() {
           }
         } else if (failure.status === 429) {
           // Middleware-level lockout (authRateLimit window exhausted)
-          setLoginError(failure.message || t('auth.lockedOut').replace('{minutes}', '15'));
+          setLoginError(t('auth.lockedOut').replace('{minutes}', '15'));
         } else if (failure.status === undefined) {
           // No HTTP response at all: the server was unreachable (network).
           setLoginError(t('auth.connectionFailed'));
         } else {
           // Other server-side failures belong under the database/setup banner.
-          setDbError(failure.message || t('auth.loginFailed'));
+          setDbError(t('auth.loginFailed'));
         }
       }
     } finally {

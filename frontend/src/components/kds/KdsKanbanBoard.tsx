@@ -21,6 +21,7 @@ import {
 import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import { useI18n } from '@/hooks/useI18n';
 import { useConfirm } from '@/hooks/use-confirm';
+import { Ltr } from '@/components/layout/Ltr';
 
 export interface KdsKanbanBoardProps {
   orders: KdsOrder[];
@@ -121,7 +122,7 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     ));
     const failed = results.filter((result) => !result).length;
     if (failed > 0) {
-      toast.error(`${failed} item${failed === 1 ? '' : 's'} could not be updated. The board was refreshed.`);
+      toast.error(t('kds.itemsUpdateFailed', { count: failed }));
     }
   }
 
@@ -215,7 +216,7 @@ function KanbanOrderCard({
       <div className={`rounded-xl border-2 ${config.border} bg-white p-3 flex flex-col shadow-sm`}>
         <div className="flex justify-between items-center mb-2 gap-2">
           <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-            <span className="font-bold text-sm shrink-0">#{order.order_number}</span>
+            <Ltr as="span" className="font-bold text-sm shrink-0">#{order.order_number}</Ltr>
             <Badge
               variant="outline"
               className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
@@ -228,7 +229,7 @@ function KanbanOrderCard({
           </div>
           <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
             <Clock size={12} />
-            <ElapsedTime dateStr={order.created_at} />
+            <Ltr><ElapsedTime dateStr={order.created_at} /></Ltr>
           </div>
         </div>
 
@@ -248,7 +249,7 @@ function KanbanOrderCard({
                 e.stopPropagation();
                 onItemOpen(item);
               }}
-              className={`w-full text-left rounded-lg border ${config.border} ${config.bg} px-2 py-1.5 hover:brightness-95 active:scale-[0.98] transition`}
+              className={`w-full text-start rounded-lg border ${config.border} ${config.bg} px-2 py-1.5 hover:brightness-95 active:scale-[0.98] transition`}
             >
               <div className="flex items-center gap-2">
                 <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>
@@ -258,7 +259,7 @@ function KanbanOrderCard({
                 )}
               </div>
               {item.special_instructions && (
-                <p className="ml-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
+                <p className="ms-[26px] text-sm text-red-600 italic mt-0.5 font-medium break-words">
                   {`"${item.special_instructions}"`}
                 </p>
               )}
@@ -290,7 +291,7 @@ function VoidedColumn({
       <div className={`flex items-center gap-2 px-3 py-2 ${config.bg} rounded-t-lg border-2 ${config.border} border-b-0`}>
         <div className={`w-2 h-2 rounded-full ${config.color}`} />
         <span className={`text-base font-semibold ${config.text}`}>{t(config.labelKey)}</span>
-        <span className="ml-auto text-xs px-1.5 py-0.5 rounded-full bg-white/70 text-gray-700 font-medium tabular-nums">
+        <span className="ms-auto text-xs px-1.5 py-0.5 rounded-full bg-white/70 text-gray-700 font-medium tabular-nums">
           {count}
         </span>
       </div>
@@ -301,7 +302,7 @@ function VoidedColumn({
         {groups.map(({ order, items }) => (
           <div key={order.id} className={`rounded-xl border-2 ${config.border} bg-white p-3 flex flex-col shadow-sm opacity-80`}>
             <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
-              <span className="font-bold text-sm shrink-0">#{order.order_number}</span>
+              <Ltr as="span" className="font-bold text-sm shrink-0">#{order.order_number}</Ltr>
               {order.table?.name && (
                 <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
               )}
@@ -312,7 +313,7 @@ function VoidedColumn({
                   key={item.id}
                   type="button"
                   onClick={() => onItemOpen(item, order.order_number)}
-                  className={`w-full text-left rounded-lg border ${config.border} ${config.bg} px-2 py-1.5 hover:brightness-95 active:scale-[0.98] transition`}
+                  className={`w-full text-start rounded-lg border ${config.border} ${config.bg} px-2 py-1.5 hover:brightness-95 active:scale-[0.98] transition`}
                 >
                   <div className="flex items-center gap-2">
                     <span className={`text-base font-bold w-6 shrink-0 ${config.text}`}>{item.quantity}×</span>

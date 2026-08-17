@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 /**
  * Rendered RTL/LTR evidence for the Dashboard, POS, and common order flow
@@ -38,7 +39,7 @@ import * as fs from 'fs';
 const BASE = 'http://localhost:3001';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
-  '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M06ZR8QPAYE8HF2XV90DDKGY';
+  path.join(os.tmpdir(), 'no-mistakes-evidence', '01M06ZR8QPAYE8HF2XV90DDKGY');
 
 async function captureScreenshot(page: Page, filename: string): Promise<void> {
   try {

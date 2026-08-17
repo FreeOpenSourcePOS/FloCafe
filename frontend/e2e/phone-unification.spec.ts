@@ -8,17 +8,15 @@ if (!fs.existsSync(EVIDENCE_DIR)) {
   fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
 }
 
-test.describe('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', () => {
-  test.beforeEach(async ({ page }) => {
-    // Log in as owner for full administrative access
-    await page.goto('http://localhost:3001/auth/login');
-    await page.locator('#email').fill('owner@flo.local');
-    await page.locator('#password').fill('E2ePass123!');
-    await page.locator('button[type="submit"]').click();
-    await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 15000 });
-  });
+test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({ page }) => {
+  // Log in as owner for full administrative access
+  await page.goto('http://localhost:3001/auth/login');
+  await page.locator('#email').fill('owner@flo.local');
+  await page.locator('#password').fill('E2ePass123!');
+  await page.locator('button[type="submit"]').click();
+  await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 15000 });
 
-  test('Customer Management: validates, normalizes, clears, and updates phone numbers', async ({ page }) => {
+  // ── 1. Customer Management: validates, normalizes, clears, and updates phone numbers ──
     await page.goto('http://localhost:3001/customers');
     await expect(page.locator('table')).toBeVisible();
 
@@ -89,9 +87,8 @@ test.describe('Frontend Phone Unification End-to-End Visual Suite (Issue #263)',
     await expect(page.locator('tr:has-text("Somchai Prasert")')).toContainText('+16502530000');
     const tableIntlScreenshot = path.join(EVIDENCE_DIR, '06-customers-table-intl-phone.png');
     await page.screenshot({ path: tableIntlScreenshot });
-  });
 
-  test('Business Settings: normalizes and validates business contact phone', async ({ page }) => {
+    // ── 2. Business Settings: normalizes and validates business contact phone ──
     await page.goto('http://localhost:3001/settings');
     await page.waitForLoadState('networkidle');
 
@@ -112,8 +109,8 @@ test.describe('Frontend Phone Unification End-to-End Visual Suite (Issue #263)',
     // 2. Reject invalid phone format
     await phoneInput.fill('invalid-phone-123');
     await saveBtn.click();
-    const errorToast = page.locator('.react-hot-toast, [role="status"]').first();
-    await expect(errorToast).toBeVisible({ timeout: 5000 });
+    const settingsErrorToast = page.locator('.react-hot-toast, [role="status"]').first();
+    await expect(settingsErrorToast).toBeVisible({ timeout: 5000 });
     const settingsInvalidToastScreenshot = path.join(EVIDENCE_DIR, '08-settings-business-phone-invalid-toast.png');
     await page.screenshot({ path: settingsInvalidToastScreenshot });
 
@@ -123,9 +120,8 @@ test.describe('Frontend Phone Unification End-to-End Visual Suite (Issue #263)',
     await expect(phoneInput).toHaveValue('');
     const settingsClearedScreenshot = path.join(EVIDENCE_DIR, '09-settings-business-phone-cleared.png');
     await page.screenshot({ path: settingsClearedScreenshot });
-  });
 
-  test('WhatsApp Blocklist: normalizes entered phone with tenant country', async ({ page }) => {
+    // ── 3. WhatsApp Blocklist: normalizes entered phone with tenant country ──
     await page.goto('http://localhost:3001/whatsapp');
     await page.waitForLoadState('networkidle');
 
@@ -149,5 +145,4 @@ test.describe('Frontend Phone Unification End-to-End Visual Suite (Issue #263)',
     await expect(page.locator('table')).toContainText('+66812345678');
     const whatsappBlocklistScreenshot = path.join(EVIDENCE_DIR, '11-whatsapp-blocklist-normalized.png');
     await page.screenshot({ path: whatsappBlocklistScreenshot });
-  });
 });

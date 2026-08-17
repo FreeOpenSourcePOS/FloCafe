@@ -24,10 +24,15 @@ export function hasUnsupportedPrinterChars(text: string): boolean {
   return /[^\x00-\x7F]/.test(text.replace(SUPPORTED_CURRENCY_SYMBOLS, ''));
 }
 
+const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
+
 export function makePrintWarning(text: string, isStoreName = false): PrintWarning {
   const field = isStoreName ? 'store name' : 'receipt line';
   const label = isStoreName ? 'Store name' : 'Receipt line';
-  return { field, text, message: `${label} was not printed because it contains unsupported characters: ${text}` };
+  const why = ARABIC_SCRIPT_RE.test(text)
+    ? 'it contains Persian/Arabic script and the printer cannot shape it'
+    : 'it contains unsupported characters';
+  return { field, text, message: `${label} was not printed because ${why}: ${text}` };
 }
 
 /**

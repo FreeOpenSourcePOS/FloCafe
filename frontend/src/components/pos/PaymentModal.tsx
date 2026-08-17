@@ -13,6 +13,7 @@ import { useConfirm } from '@/hooks/use-confirm';
 import { useI18n } from '@/hooks/useI18n';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
+import { useFormatNumber } from '@/hooks/useFormatNumber';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
@@ -177,6 +178,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     : 0;
 
   const currencyFmt = useFormatCurrency();
+  const fmtNum = useFormatNumber();
 
   const handleApplyDiscount = async (customVal?: number) => {
     if (applyingDiscount) return;
@@ -214,10 +216,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       if (data.bill && onBillUpdate) {
         onBillUpdate(data.bill);
       }
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { status?: number; data?: { error?: string; message?: string } } };
-      const msg = axiosErr.response?.data?.error || axiosErr.response?.data?.message || t('pos.failedToUpdateDiscount');
-      toast.error(msg);
+    } catch {
+      toast.error(t('pos.failedToUpdateDiscount'));
       // Clear the PIN on any failure (wrong PIN or rate-limited) so a stale/rejected
       // PIN doesn't sit in the field looking like it might still work on retry.
       setDiscountPin('');
@@ -289,9 +289,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         // new request and must not reuse the completed request's hash.
         if (updatedBill) idempotencyKeyRef.current = null;
         if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
-        throw new Error(t('pos.paymentIncomplete', {
+        toast.error(t('pos.paymentIncomplete', {
           amount: currencyFmt(Number(updatedBill?.balance) || 0),
         }));
+        return;
       }
       const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
       setPointsEarned(earned);
@@ -301,9 +302,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         toast.success(t('pos.paymentRecorded'));
       }
       setJustPaid(true);
-    } catch (err: unknown) {
-      const axiosErr = err as { response?: { data?: { error?: string } }; message?: string };
-      toast.error(axiosErr.response?.data?.error || axiosErr.message || t('pos.paymentFailed'));
+    } catch {
+      toast.error(t('pos.paymentFailed'));
     } finally {
       setProcessing(false);
     }
@@ -431,7 +431,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 <span className="text-gray-700 font-medium">{t('pos.loyalty')}</span>
                 <span className="font-semibold text-gray-700">
                   {walletBalance !== null
-                    ? t('pos.pointsApproxValue', { count: walletBalance, value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
+                    ? t('pos.pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
                     : '…'}
                 </span>
               </div>
@@ -613,7 +613,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                   />
                 </div>
               </div>
-              <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: walletBalance.toLocaleString(), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
+              <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
             </div>
           )}
         </div>

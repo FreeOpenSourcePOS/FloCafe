@@ -274,7 +274,7 @@ export default function SetupPage() {
                       <button
                         key={option}
                         onClick={() => setLanguage(option)}
-                        className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        className={`p-4 rounded-xl border-2 text-start transition-all ${
                           selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
@@ -297,12 +297,12 @@ export default function SetupPage() {
                   </div>
 
                   <div className="relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+                    <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                     <Input
                       value={countryQuery}
                       onChange={(e) => setCountryQuery(e.target.value)}
                       placeholder={t('setup.searchPlaceholder')}
-                      className="pl-9"
+                      className="ps-9"
                     />
                   </div>
                 </div>
@@ -314,7 +314,7 @@ export default function SetupPage() {
                       <button
                         key={c.code}
                         onClick={() => setCountry(c.code)}
-                        className={`p-3 rounded-xl border-2 text-left transition-all flex items-center justify-between ${
+                        className={`p-3 rounded-xl border-2 text-start transition-all flex items-center justify-between ${
                           selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
@@ -334,7 +334,7 @@ export default function SetupPage() {
                 </div>
 
                 <Button onClick={() => setStep(2)} className="w-full" size="lg">
-                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
+                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>
             )}
@@ -345,7 +345,7 @@ export default function SetupPage() {
                   onClick={() => setStep(1)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
                 </button>
 
                 <div className="text-center">
@@ -379,12 +379,12 @@ export default function SetupPage() {
                           value={masterPin}
                           onChange={(e) => setMasterPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
                           placeholder="••••"
-                          className="text-center text-lg tracking-[0.5em] pr-10"
+                          className="text-center text-lg tracking-[0.5em] pe-10"
                         />
                         <button
                           type="button"
                           onClick={() => setShowMasterPin(!showMasterPin)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                          className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                           tabIndex={-1}
                         >
                           {showMasterPin ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -403,12 +403,12 @@ export default function SetupPage() {
                           value={masterPinConfirm}
                           onChange={(e) => setMasterPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 4))}
                           placeholder="••••"
-                          className="text-center text-lg tracking-[0.5em] pr-10"
+                          className="text-center text-lg tracking-[0.5em] pe-10"
                         />
                         <button
                           type="button"
                           onClick={() => setShowConfirmMasterPin(!showConfirmMasterPin)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                          className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                           tabIndex={-1}
                         >
                           {showConfirmMasterPin ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -424,7 +424,7 @@ export default function SetupPage() {
                   className="w-full"
                   size="lg"
                 >
-                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
+                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>
             )}
@@ -435,7 +435,7 @@ export default function SetupPage() {
                   onClick={() => setStep(2)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
                 </button>
 
                 <div className="text-center">
@@ -464,6 +464,7 @@ export default function SetupPage() {
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
                       placeholder={t('setup.ownerEmailPlaceholder')}
                       aria-invalid={ownerEmailInvalid}
+                      dir="ltr"
                       required
                     />
                     {ownerEmailInvalid && (
@@ -488,13 +489,13 @@ export default function SetupPage() {
                           value={form.password}
                           onChange={(e) => setForm({ ...form, password: e.target.value })}
                           placeholder={t('setup.passwordPlaceholder')}
-                          className="pr-10"
+                          className="pe-10"
                           required
                         />
                         <button
                           type="button"
                           onClick={() => setShowPassword(!showPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                          className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                           tabIndex={-1}
                         >
                           {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -511,13 +512,13 @@ export default function SetupPage() {
                           value={form.confirmPassword}
                           onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
                           placeholder={t('setup.confirmPasswordPlaceholder')}
-                          className="pr-10"
+                          className="pe-10"
                           required
                         />
                         <button
                           type="button"
                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
+                          className="absolute end-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground focus:outline-none"
                           tabIndex={-1}
                         >
                           {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
@@ -594,7 +595,7 @@ export default function SetupPage() {
 
 
                   <Button type="submit" disabled={ownerEmailInvalid || !passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
-                    {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
+                    {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                   </Button>
                 </form>
               </div>
@@ -606,7 +607,7 @@ export default function SetupPage() {
                   onClick={() => setStep(3)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
                 </button>
 
                 <div className="text-center">
@@ -622,7 +623,7 @@ export default function SetupPage() {
                       <button
                         key={item.value}
                         onClick={() => setProfile(item.value)}
-                        className={`p-4 rounded-xl border-2 text-left transition-all ${
+                        className={`p-4 rounded-xl border-2 text-start transition-all ${
                           selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
@@ -650,7 +651,7 @@ export default function SetupPage() {
                 </div>
 
                 <Button onClick={() => setStep(5)} className="w-full" size="lg">
-                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
+                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>
             )}
@@ -661,7 +662,7 @@ export default function SetupPage() {
                   onClick={() => setStep(4)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
                 </button>
 
                 <div className="text-center">
@@ -694,6 +695,7 @@ export default function SetupPage() {
                       value={cloudServerUrl}
                       onChange={(e) => setCloudServerUrl(e.target.value)}
                       placeholder={DEFAULT_CLOUD_SERVER_URL}
+                      dir="ltr"
                     />
                     <p className="text-xs text-muted-foreground">{t('setup.cloudUrlHint')}</p>
                   </div>
@@ -704,7 +706,7 @@ export default function SetupPage() {
                 </p>
 
                 <Button onClick={() => setStep(6)} className="w-full" size="lg">
-                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ml-2" />
+                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>
             )}
@@ -715,7 +717,7 @@ export default function SetupPage() {
                   onClick={() => setStep(5)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
                 </button>
 
                 <div className="text-center">
@@ -730,7 +732,7 @@ export default function SetupPage() {
                       <button
                         key={item.value}
                         onClick={() => setServiceModel(item.value)}
-                        className={`p-5 rounded-xl border-2 text-left transition-all ${
+                        className={`p-5 rounded-xl border-2 text-start transition-all ${
                           selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
                         }`}
                       >
@@ -750,7 +752,7 @@ export default function SetupPage() {
                 <Button onClick={handleCompleteSetup} disabled={loading} className="w-full" size="lg">
                   {loading ? t('setup.completingSetup') : (
                     <>
-                      {t('setup.completeSetup')} <ArrowRight className="w-4 h-4 ml-2" />
+                      {t('setup.completeSetup')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                     </>
                   )}
                 </Button>

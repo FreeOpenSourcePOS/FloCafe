@@ -110,11 +110,11 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
                   <option value="">{t('settings.mergeInto', { defaultValue: 'Merge into…' })}</option><option value="card">Card</option>
                   {methods.filter((target) => target.id !== method.id).map((target) => <option key={target.id} value={target.id}>{target.name}</option>)}
                 </select>
-                <Button variant="outline" size="sm" disabled={!mergeTargets[method.id]} onClick={() => merge(method)}><Merge size={14} className="mr-1" />{t('settings.merge', { defaultValue: 'Merge' })}</Button>
+                <Button variant="outline" size="sm" disabled={!mergeTargets[method.id]} onClick={() => merge(method)}><Merge size={14} className="me-1" />{t('settings.merge', { defaultValue: 'Merge' })}</Button>
               </div>}
             </div>
           ))}
-          {isAdmin && <div className="flex gap-2"><input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(); }} placeholder={t('settings.paymentMethodName', { defaultValue: 'e.g. Paytm, cheque, bank transfer' })} className="flex-1 px-3 py-2 text-sm border rounded-lg" /><Button onClick={add} disabled={!newName.trim()}><Plus size={14} className="mr-1" />{t('common.add')}</Button></div>}
+          {isAdmin && <div className="flex gap-2"><input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void add(); }} placeholder={t('settings.paymentMethodName', { defaultValue: 'e.g. Paytm, cheque, bank transfer' })} className="flex-1 px-3 py-2 text-sm border rounded-lg" /><Button onClick={add} disabled={!newName.trim()}><Plus size={14} className="me-1" />{t('common.add')}</Button></div>}
         </div>
       </div>
 

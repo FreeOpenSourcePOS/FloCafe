@@ -64,7 +64,7 @@ export function InitializeDatabaseDialog({ open, onOpenChange, onConfirm, onSucc
               <AlertTriangle size={18} />
               {t('settings.initializeDatabase')}
             </DialogTitle>
-            <DialogDescription className="space-y-2 pt-2 text-left">
+            <DialogDescription className="space-y-2 pt-2 text-start">
               <span className="block">
                 {t('settings.initializeDialogBody')}
               </span>

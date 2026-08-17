@@ -1616,7 +1616,7 @@ function makeUnsupportedLineWarning(isStoreName: boolean, text: string): string 
   return `${label} was not printed because ${why}: ${text}`;
 }
 
-export function buildEscPos(lines: string[], useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean } = {}, warnings?: PrintWarning[]): Buffer {
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
 
   const resetAllStyles = () => {

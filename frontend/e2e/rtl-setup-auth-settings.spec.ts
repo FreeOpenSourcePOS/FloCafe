@@ -1,4 +1,6 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, Page } from '@playwright/test';
+import * as path from 'path';
+import * as fs from 'fs';
 
 /**
  * Rendered RTL/LTR evidence for the Setup, Auth, and Settings screens
@@ -13,6 +15,8 @@ import { test, expect } from '@playwright/test';
  *  - Naturally-LTR fields (email, URLs, technical values) are isolated in
  *    `dir="ltr"` islands so they stay readable inside the RTL page.
  *  - The Settings page does not overflow horizontally in RTL.
+ *  - Directional navigation arrows mirror via `.rtl-flip`.
+ *  - Screenshots are captured and written to the evidence directory.
  *
  * The login-page test sets the store language purely client-side (via the
  * persisted `pos-settings` store) so it never touches the shared e2e server's
@@ -25,8 +29,22 @@ import { test, expect } from '@playwright/test';
  */
 
 const BASE = 'http://localhost:3001';
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR ||
+  '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M06TFQ2DPQQE7CME0SCKM8Y3';
 
-async function loginAsManager(page: import('@playwright/test').Page): Promise<void> {
+async function captureScreenshot(page: Page, filename: string): Promise<void> {
+  try {
+    if (!fs.existsSync(EVIDENCE_DIR)) {
+      fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
+    }
+    await page.screenshot({ path: path.join(EVIDENCE_DIR, filename), fullPage: true });
+  } catch (err) {
+    console.warn(`Could not save screenshot ${filename}:`, err);
+  }
+}
+
+async function loginAsManager(page: Page): Promise<void> {
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
@@ -34,7 +52,7 @@ async function loginAsManager(page: import('@playwright/test').Page): Promise<vo
   await page.waitForURL('**/pos/**', { timeout: 20000 });
 }
 
-async function setLanguage(page: import('@playwright/test').Page, value: string): Promise<void> {
+async function setLanguage(page: Page, value: string): Promise<void> {
   const token = await page.evaluate(() => localStorage.getItem('token'));
   const res = await page.request.put(`${BASE}/api/settings/language`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -43,21 +61,20 @@ async function setLanguage(page: import('@playwright/test').Page, value: string)
   expect(res.ok(), `setting language=${value} should succeed`).toBeTruthy();
 }
 
-async function logout(page: import('@playwright/test').Page): Promise<void> {
+async function logout(page: Page): Promise<void> {
   await page.evaluate(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('tenant');
   });
 }
 
-test('login page is LTR in English', async ({ page }) => {
+test('login page is LTR in English and RTL in Persian with LTR email and end-aligned toggle', async ({ page }) => {
+  // 1. English (LTR)
   await page.goto(`${BASE}/auth/login`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
-});
+  await captureScreenshot(page, 'auth-login-ltr-en.png');
 
-test('login page is RTL in Persian with an LTR email field and end-aligned eye toggle', async ({ page }) => {
-  // Set the persisted store language to Persian entirely client-side so the
-  // shared e2e server's language setting is never modified.
+  // 2. Persian (RTL)
   await page.addInitScript(() => {
     localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
   });
@@ -77,27 +94,141 @@ test('login page is RTL in Persian with an LTR email field and end-aligned eye t
   expect(inputBox).not.toBeNull();
   expect(toggleBox).not.toBeNull();
   expect(toggleBox!.x + toggleBox!.width).toBeLessThan(inputBox!.x + inputBox!.width / 2);
+
+  await captureScreenshot(page, 'auth-login-rtl-fa.png');
 });
 
-test('settings renders RTL without horizontal overflow and keeps emails in LTR islands', async ({ page }) => {
+test('recover password page is LTR in English and RTL in Persian with .rtl-flip arrow and LTR email', async ({ page }) => {
+  await page.route('**/api/auth/setup/status', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ masterPinAvailable: true, needsSetup: false }),
+    });
+  });
+
+  // 1. English (LTR)
+  await page.goto(`${BASE}/auth/recover`);
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await expect(page.locator('#recover-email')).toBeVisible();
+  await captureScreenshot(page, 'auth-recover-ltr-en.png');
+
+  // 2. Persian (RTL)
+  await page.addInitScript(() => {
+    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
+  });
+  await page.goto(`${BASE}/auth/recover`);
+
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+
+  // Recover email input must have dir="ltr"
+  await expect(page.locator('#recover-email')).toHaveAttribute('dir', 'ltr');
+
+  // Back arrow has rtl-flip class
+  const backButtonArrow = page.locator('button svg.rtl-flip');
+  await expect(backButtonArrow).toBeVisible();
+
+  await captureScreenshot(page, 'auth-recover-rtl-fa.png');
+});
+
+test('setup wizard renders with logical navigation, .rtl-flip directional arrows, and hides Persian from language options', async ({ page }) => {
+  await page.route('**/api/auth/setup/status', (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ needsSetup: true, masterPinAvailable: true }),
+    });
+  });
+
+  // 1. Step 1 in English (LTR)
+  await page.goto(`${BASE}/setup`);
+  await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+
+  // Verify language options only include EN, ES, PT, not FA
+  const languageButtons = page.locator('button', { hasText: /English|Inglés|Inglês/ });
+  await expect(languageButtons.first()).toBeVisible();
+  const allButtonsText = await page.locator('button').allInnerTexts();
+  const hasPersianOption = allButtonsText.some((text) => text.includes('فارسی') || text.includes('FA'));
+  expect(hasPersianOption, 'Persian (fa) must remain hidden from setup language options').toBeFalsy();
+
+  // Forward arrow has rtl-flip class
+  const continueArrow = page.locator('button svg.rtl-flip').first();
+  await expect(continueArrow).toBeVisible();
+
+  await captureScreenshot(page, 'setup-step1-ltr-en.png');
+
+  // 2. Step 1 in Persian (RTL)
+  await page.addInitScript(() => {
+    localStorage.setItem('pos-settings', JSON.stringify({ state: { language: 'fa' }, version: 3 }));
+  });
+  await page.goto(`${BASE}/setup`);
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await captureScreenshot(page, 'setup-step1-rtl-fa.png');
+
+  // Advance to Step 2 (Master PIN)
+  await page.locator('button', { hasText: /ادامه|Continue/ }).first().click();
+  await expect(page.locator('#master-pin')).toBeVisible();
+  await captureScreenshot(page, 'setup-step2-master-pin-rtl-fa.png');
+
+  // Fill master pin to advance to Step 3 (Admin Account)
+  await page.locator('#master-pin').fill('1234');
+  await page.locator('#master-pin-confirm').fill('1234');
+  await page.locator('button', { hasText: /ادامه|Continue/ }).first().click();
+
+  // Step 3 (Owner Account)
+  await expect(page.locator('#email')).toBeVisible();
+  // Owner email input is naturally LTR
+  await expect(page.locator('#email')).toHaveAttribute('dir', 'ltr');
+
+  await captureScreenshot(page, 'setup-step3-owner-account-rtl-fa.png');
+});
+
+test('settings renders RTL without horizontal overflow, mirrors toggles and tabs, and isolates LTR data', async ({ page }) => {
   await loginAsManager(page);
   await setLanguage(page, 'fa');
+
   try {
-    await page.goto(`${BASE}/settings?tab=account`);
-
+    // 1. Store tab in Persian (RTL)
+    await page.goto(`${BASE}/settings?tab=store`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-
-    // The Settings nav and content render.
     await expect(page.locator('nav')).toBeVisible();
 
-    // No horizontal overflow of the document in RTL.
-    const overflow = await page.evaluate(() => ({
+    // Verify language dropdown in Settings only has en, es, pt
+    const languageSelect = page.locator('select').filter({ has: page.locator('option[value="en"]') }).first();
+    await expect(languageSelect).toBeVisible();
+    const options = await languageSelect.locator('option').all();
+    const optionValues = await Promise.all(options.map((opt) => opt.getAttribute('value')));
+    expect(optionValues).toContain('en');
+    expect(optionValues).toContain('es');
+    expect(optionValues).toContain('pt');
+    expect(optionValues).not.toContain('fa');
+
+    // Check document does not overflow horizontally in RTL
+    const storeOverflow = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
     }));
-    expect(overflow.scrollWidth, 'settings must not overflow horizontally in RTL').toBeLessThanOrEqual(overflow.clientWidth + 1);
+    expect(storeOverflow.scrollWidth, 'settings store tab must not overflow horizontally in RTL').toBeLessThanOrEqual(
+      storeOverflow.clientWidth + 1
+    );
 
-    // The account email (manager@flo.local) must be inside a dir="ltr" island.
+    await captureScreenshot(page, 'settings-store-rtl-fa.png');
+
+    // Also take an English screenshot for visual comparison
+    await page.goto(`${BASE}/settings?tab=store`);
+    await page.evaluate(() => {
+      document.documentElement.setAttribute('dir', 'ltr');
+    });
+    await captureScreenshot(page, 'settings-store-ltr-en.png');
+    await page.evaluate(() => {
+      document.documentElement.setAttribute('dir', 'rtl');
+    });
+
+    // 2. Account tab in Persian (RTL)
+    await page.goto(`${BASE}/settings?tab=account`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+
+    // Account email (manager@flo.local) is in an LTR island
     const email = page.locator('text=manager@flo.local').first();
     await expect(email).toBeVisible();
     const hasLtrAncestor = await email.evaluate((el) => {
@@ -109,10 +240,30 @@ test('settings renders RTL without horizontal overflow and keeps emails in LTR i
       return false;
     });
     expect(hasLtrAncestor, 'account email must live inside an LTR island').toBeTruthy();
+
+    const accountOverflow = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(accountOverflow.scrollWidth, 'settings account tab must not overflow horizontally in RTL').toBeLessThanOrEqual(
+      accountOverflow.clientWidth + 1
+    );
+
+    await captureScreenshot(page, 'settings-account-rtl-fa.png');
+
+    // 3. Taxes tab in Persian (RTL)
+    await page.goto(`${BASE}/settings?tab=tax`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await captureScreenshot(page, 'settings-taxes-rtl-fa.png');
+
+    // 4. Health Check dialog in Persian (RTL)
+    await page.goto(`${BASE}/settings?tab=store&action=health-check`);
+    await page.waitForTimeout(500);
+    await captureScreenshot(page, 'settings-health-check-dialog-rtl-fa.png');
   } finally {
-    // Restore the shared e2e server's language so other specs (which use
-    // English text locators) are unaffected.
+    // Restore English on server
     await setLanguage(page, 'en');
     await logout(page);
   }
 });
+

@@ -2,6 +2,11 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.2.3] - 2026-08-17
+
+### Added
+- Settings → Tax Config now has an owner-only "Reinstall plugin" action that re-downloads an already-installed tax plugin and rebuilds its categories, rules, and billing template in place, repairing a pack that shows as installed/active but is missing its billing template (e.g. after a database restore or an interrupted prior install) without requiring a version change.
+
 ## [3.2.2] - 2026-08-17
 
 ### Added

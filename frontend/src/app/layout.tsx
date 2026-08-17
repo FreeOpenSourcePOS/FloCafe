@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { Toaster } from "react-hot-toast";
 import "./globals.css";
 import MenuActionHandler from "@/components/layout/MenuActionHandler";
 import AuthGuard from "@/components/layout/AuthGuard";
 import { HtmlLangSync } from "@/components/layout/HtmlLangSync";
+import { DirectionalToaster } from "@/components/layout/DirectionalToaster";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -55,7 +55,7 @@ export default function RootLayout({
         <MenuActionHandler />
         <HtmlLangSync />
         <AuthGuard>{children}</AuthGuard>
-        <Toaster position="top-right" />
+        <DirectionalToaster />
         <script
           dangerouslySetInnerHTML={{
             __html: `

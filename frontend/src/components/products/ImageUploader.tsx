@@ -213,6 +213,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
             onChange={(e) => setUrlInput(e.target.value)}
             placeholder="https://example.com/photo.jpg"
             className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-brand outline-none"
+            dir="ltr"
             onKeyDown={(e) => e.key === 'Enter' && handleUrlFetch()}
           />
           <button type="button"
@@ -247,7 +248,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
           <img src={previewUrl} alt="Product" className="w-full h-full object-cover" />
           <button type="button"
             onClick={handleRemove}
-            className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
+            className="absolute top-1 end-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center hover:bg-red-600"
           >
             <X size={12} />
           </button>

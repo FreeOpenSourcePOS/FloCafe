@@ -10,6 +10,7 @@ import { useAuthStore } from '@/store/auth';
 import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 
 const statusColors: Record<string, string> = {
@@ -117,7 +118,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
           <div className="flex items-center justify-between px-3 py-2.5 bg-brand-light rounded-xl mb-4">
             <div>
               <p className="font-semibold text-brand text-sm">{selected.name}</p>
-              <p className="text-xs text-brand/70">{selected.phone}</p>
+              <p className="text-xs text-brand/70"><Ltr>{selected.phone}</Ltr></p>
             </div>
             <button onClick={() => setSelected(null)} className="text-brand hover:text-brand-hover">
               <X size={14} />
@@ -127,22 +128,22 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
           <div className="mb-4">
             <p className="text-sm text-gray-500 mb-2">{t('tables.linkCustomer')}</p>
             <div className="relative mb-2">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <Search size={14} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); searchCustomers(e.target.value); }}
                 placeholder={t('tables.searchCustomerPlaceholder')}
-                className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+                className="w-full ps-8 pe-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
               />
             </div>
             {results.length > 0 && (
               <div className="border border-gray-200 rounded-lg overflow-hidden mb-2 max-h-36 overflow-y-auto">
                 {results.map((c) => (
                   <button key={c.id} onClick={() => { setSelected(c); setQuery(''); setResults([]); }}
-                    className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0">
+                    className="w-full text-start px-3 py-2 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0">
                     <span className="font-medium">{c.name}</span>
-                    <span className="text-gray-400 ml-2 text-xs">{c.phone}</span>
+                    <span className="text-gray-400 ms-2 text-xs"><Ltr>{c.phone}</Ltr></span>
                   </button>
                 ))}
               </div>
@@ -329,7 +330,7 @@ export default function TablesPage() {
             {t('tables.showOrderDetails')}
           </label>
           <Button onClick={() => setShowForm(true)}>
-            <Plus size={16} className="mr-1" /> {t('tables.addTable')}
+            <Plus size={16} className="me-1" /> {t('tables.addTable')}
           </Button>
         </div>
       </div>
@@ -343,7 +344,7 @@ export default function TablesPage() {
             return (
               <div key={table.id}
                 className={`bg-white rounded-xl border border-gray-100 hover:shadow-md transition-shadow ${
-                  hasOrders ? 'border-l-4 border-l-brand' : ''
+                  hasOrders ? 'border-s-4 border-s-brand' : ''
                 } ${!table.is_active ? 'opacity-60' : ''}`}>
                 {/* Table header */}
                 <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between">
@@ -361,7 +362,7 @@ export default function TablesPage() {
                     {tableOrders.map((order) => (
                       <div key={order.id} className="bg-gray-50 rounded-lg p-3">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-sm font-semibold text-gray-800">#{order.order_number}</span>
+                          <span className="text-sm font-semibold text-gray-800">#<Ltr>{order.order_number}</Ltr></span>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${
                             order.status === 'pending' ? 'bg-yellow-100 text-yellow-700' :
                             order.status === 'preparing' ? 'bg-blue-100 text-blue-700' :
@@ -434,7 +435,7 @@ export default function TablesPage() {
                 <p className="text-xs text-yellow-700 font-medium mt-1 truncate">{table.reservation_customer_name}</p>
               )}
               {table.status === 'reserved' && table.reservation_customer_phone && (
-                <p className="text-xs text-yellow-600 mt-0.5">{table.reservation_customer_phone}</p>
+                <p className="text-xs text-yellow-600 mt-0.5"><Ltr>{table.reservation_customer_phone}</Ltr></p>
               )}
 
               {(table.status === 'occupied' || table.status === 'reserved') && (

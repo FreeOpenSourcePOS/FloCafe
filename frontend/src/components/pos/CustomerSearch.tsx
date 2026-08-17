@@ -11,6 +11,7 @@ import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
 import type { Customer } from '@/lib/types';
 import EditCustomerModal from './EditCustomerModal';
+import { Ltr } from '@/components/layout/Ltr';
 
 import { useI18n } from '@/hooks/useI18n';
 
@@ -214,10 +215,10 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             <button
               onClick={() => setEditingCustomer(true)}
               title={t('pos.editCustomer', { defaultValue: 'Edit name / phone' })}
-              className="flex-1 min-w-0 flex items-center gap-x-2 flex-wrap text-left group"
+              className="flex-1 min-w-0 flex items-center gap-x-2 flex-wrap text-start group"
             >
               <span className="font-semibold text-brand text-sm truncate group-hover:underline">{customer.name}</span>
-              <span className="text-brand/70 text-xs shrink-0">{customer.phone}</span>
+              <span className="text-brand/70 text-xs shrink-0"><Ltr>{customer.phone}</Ltr></span>
               <Pencil size={11} className="text-brand/50 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
               {!!loyaltyPoints && loyaltyPoints > 0 && (
                 <span className="flex items-center gap-0.5 text-xs font-medium text-brand bg-white/70 rounded-full px-1.5 py-0.5 shrink-0">
@@ -227,7 +228,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               )}
               {hasTags && <TagBadges counts={customer.tag_counts!} t={t} />}
             </button>
-            <button onClick={handleClear} className="text-brand hover:text-brand-hover shrink-0 ml-auto">
+            <button onClick={handleClear} className="text-brand hover:text-brand-hover shrink-0 ms-auto">
               <X size={14} />
             </button>
           </div>
@@ -245,12 +246,12 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     return (
       <div className="space-y-1">
         <div className="flex items-center justify-between px-3 py-2 bg-brand-light rounded-lg text-sm">
-          <button onClick={() => setEditingCustomer(true)} className="flex-1 min-w-0 flex items-center gap-2 text-left group">
+          <button onClick={() => setEditingCustomer(true)} className="flex-1 min-w-0 flex items-center gap-2 text-start group">
             <span className="font-medium text-brand truncate group-hover:underline">{customer.name}</span>
-            {customer.phone && <span className="text-xs text-gray-500">{customer.phone}</span>}
+            {customer.phone && <span className="text-xs text-gray-500"><Ltr>{customer.phone}</Ltr></span>}
             <Pencil size={11} className="text-brand/50 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           </button>
-          <button onClick={handleClear} className="text-brand hover:text-brand-hover ml-2 shrink-0">
+          <button onClick={handleClear} className="text-brand hover:text-brand-hover ms-2 shrink-0">
             <X size={14} />
           </button>
         </div>
@@ -286,6 +287,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             onKeyDown={handlePhoneKeyDown}
             placeholder={dialCode ? `${dialCode} ${t('pos.phone')}` : t('pos.phone')}
             className="h-10 w-48 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none"
+            dir="ltr"
           />
           <input
             ref={nameRef}
@@ -326,7 +328,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         </div>
 
         {searched && (
-          <div className="absolute left-0 top-full mt-1 z-20 rounded-md border border-gray-100 bg-white px-2 py-1 shadow-sm">
+          <div className="absolute start-0 top-full mt-1 z-20 rounded-md border border-gray-100 bg-white px-2 py-1 shadow-sm">
             {matched ? (
               <span className="text-xs text-green-600 font-medium">{t('pos.customerFound')}</span>
             ) : (
@@ -352,6 +354,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             onKeyDown={handlePhoneKeyDown}
             placeholder={dialCode ? `${dialCode} ${t('pos.phone')}` : t('pos.phone')}
             className={`${baseInput} flex-1 py-2`}
+            dir="ltr"
           />
         </div>
         <input

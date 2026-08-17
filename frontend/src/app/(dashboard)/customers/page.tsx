@@ -15,11 +15,12 @@ import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useI18n } from '@/hooks/useI18n';
+import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
 function SortIcon({ field, sortField, sortOrder }: { field: string; sortField: string; sortOrder: 'asc' | 'desc' }) {
-  if (sortField !== field) return <span className="text-gray-300 w-3 inline-block ml-1 opacity-0 group-hover:opacity-100 transition-opacity">↕</span>;
-  return sortOrder === 'asc' ? <TrendingUp size={12} className="inline ml-1 text-gray-500" /> : <TrendingDown size={12} className="inline ml-1 text-gray-500" />;
+  if (sortField !== field) return <span className="text-gray-300 w-3 inline-block ms-1 opacity-0 group-hover:opacity-100 transition-opacity">↕</span>;
+  return sortOrder === 'asc' ? <TrendingUp size={12} className="inline ms-1 text-gray-500" /> : <TrendingDown size={12} className="inline ms-1 text-gray-500" />;
 }
 
 export default function CustomersPage() {
@@ -144,21 +145,21 @@ export default function CustomersPage() {
           {filter === 'invalid_phones' && (
             <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">
               <AlertCircle size={14} /> Action Required
-              <button onClick={() => router.push('/customers')} className="ml-1 text-red-500 hover:text-red-700">
+              <button onClick={() => router.push('/customers')} className="ms-1 text-red-500 hover:text-red-700">
                 <X size={12} />
               </button>
             </span>
           )}
         </div>
-        <Button onClick={openAdd}><Plus size={16} className="mr-1" /> {t('customer.add')}</Button>
+        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('customer.add')}</Button>
       </div>
 
       <div className="relative mb-4">
-        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+        <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           type="text" value={search} onChange={(e) => setSearch(e.target.value)}
           placeholder={t('customer.search')}
-          className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
+          className="w-full ps-10 pe-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
         />
       </div>
 
@@ -166,10 +167,10 @@ export default function CustomersPage() {
         <table className="w-full">
           <thead className="bg-gray-50">
             <tr>
-              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('name')}>
+              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('name')}>
                 {t('customers.columnCustomer')} <SortIcon field="name" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-left p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('phone')}>
+              <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('phone')}>
                 {t('customer.phone')} <SortIcon field="phone" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('last_visit')}>
@@ -178,10 +179,10 @@ export default function CustomersPage() {
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('visits')}>
                 {t('customer.visits')} <SortIcon field="visits" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('spent')}>
+              <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('spent')}>
                 {t('customer.totalSpent')} <SortIcon field="spent" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-right p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('loyalty')}>
+              <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('loyalty')}>
                 {t('customer.loyalty')} <SortIcon field="loyalty" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('customers.columnActions')}</th>
@@ -198,7 +199,7 @@ export default function CustomersPage() {
                 <td className="p-4 text-sm text-gray-600">
                   <div className="flex items-center gap-2">
                     <span>
-                      {c.phone ? (c.country_code && !c.phone.startsWith(c.country_code) ? `${c.country_code}${c.phone}` : c.phone) : '—'}
+                      <Ltr>{c.phone ? (c.country_code && !c.phone.startsWith(c.country_code) ? `${c.country_code}${c.phone}` : c.phone) : '—'}</Ltr>
                     </span>
                     {c.phone && !c.phone.startsWith('+') && (
                       <div className="text-red-500 flex items-center" title="Invalid format">
@@ -211,8 +212,8 @@ export default function CustomersPage() {
                   {c.last_visit_at ? fmtDate(c.last_visit_at) : '—'}
                 </td>
                 <td className="p-4 text-center text-sm">{c.visits_count}</td>
-                <td className="p-4 text-right font-medium">{fmt(Number(c.total_spent))}</td>
-                <td className="p-4 text-right">
+                <td className="p-4 text-end font-medium">{fmt(Number(c.total_spent))}</td>
+                <td className="p-4 text-end">
                   {Number(c.wallet_balance) > 0 ? (
                     <span className="inline-flex items-center gap-1 text-purple-700 font-semibold text-sm">
                       <Wallet size={13} />
@@ -274,10 +275,10 @@ export default function CustomersPage() {
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
-                          <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnDate')}</th>
-                          <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnDescription')}</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnPoints')}</th>
-                          <th className="text-right px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnExpires')}</th>
+                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnDate')}</th>
+                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnDescription')}</th>
+                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnPoints')}</th>
+                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnExpires')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
@@ -285,7 +286,7 @@ export default function CustomersPage() {
                           <tr key={t.id} className="hover:bg-gray-50">
                             <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{fmtDate(t.created_at)}</td>
                             <td className="px-4 py-3 text-gray-700">{t.description || '—'}</td>
-                            <td className="px-4 py-3 text-right font-semibold whitespace-nowrap">
+                            <td className="px-4 py-3 text-end font-semibold whitespace-nowrap">
                               <span className={`inline-flex items-center gap-1 ${
                                 t.type === 'credit' ? 'text-green-600' : 'text-red-500'
                               }`}>
@@ -295,7 +296,7 @@ export default function CustomersPage() {
                                 {t.type === 'credit' ? '+' : '-'}{t.amount}
                               </span>
                             </td>
-                            <td className="px-4 py-3 text-right text-xs text-gray-400 whitespace-nowrap">
+                            <td className="px-4 py-3 text-end text-xs text-gray-400 whitespace-nowrap">
                               {t.expires_at ? fmtDate(t.expires_at) : '—'}
                             </td>
                           </tr>

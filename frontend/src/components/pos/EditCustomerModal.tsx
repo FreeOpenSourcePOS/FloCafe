@@ -88,6 +88,7 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
               onChange={(e) => setPhone(e.target.value)}
               placeholder={dialCode}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
+              dir="ltr"
             />
           </div>
         </div>

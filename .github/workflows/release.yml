@@ -419,35 +419,6 @@ jobs:
           # (mirrors release-mac; see #168, electron-userland/electron-builder#7515).
           CSC_IDENTITY_AUTO_DISCOVERY: false
 
-      - name: TEMP debug - dump AppX manifests
-        # Diagnostic only — investigating a 3.2.1 release-windows failure
-        # ("AppX publisher ... does not match the configured Store publisher"
-        # for the arm64 package). Remove once root-caused.
-        shell: pwsh
-        run: |
-          $expectedIdentity = node -p "require('./package.json').build.appx.identityName"
-          $expectedPublisher = node -p "require('./package.json').build.appx.publisher"
-          $expectedVersion = "$(node -p "require('./package.json').version").0"
-          Write-Host "expectedIdentity=$expectedIdentity"
-          Write-Host "expectedPublisher=$expectedPublisher"
-          Write-Host "expectedVersion=$expectedVersion"
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $appxFiles = @(Get-ChildItem release\*.appx -ErrorAction SilentlyContinue)
-          foreach ($appx in $appxFiles) {
-            Write-Host "---- $($appx.Name) ----"
-            $zip = [System.IO.Compression.ZipFile]::OpenRead($appx.FullName)
-            try {
-              $entry = $zip.GetEntry("AppxManifest.xml")
-              $reader = New-Object System.IO.StreamReader($entry.Open())
-              try { $manifest = $reader.ReadToEnd() } finally { $reader.Dispose() }
-            } finally { $zip.Dispose() }
-            if ($manifest -match '<Identity\s+([^>]+?)/?>') {
-              Write-Host "Identity attrs: $($Matches[1])"
-            } else {
-              Write-Host "NO <Identity> MATCH FOUND"
-            }
-          }
-
       - name: Verify Windows release assets
         # Same class of bug as macOS's missing latest-mac.yml: electron-updater's
         # NSIS updater needs latest.yml + the installer's .blockmap to check for
@@ -492,21 +463,27 @@ jobs:
               Write-Error "Identity element is missing from AppxManifest.xml in $($appx.Name)"
               exit 1
             }
+            # Attribute values may be single- or double-quoted (both are
+            # valid XML) — electron-builder 26.15.3 emits Publisher with
+            # single quotes while Name/ProcessorArchitecture/Version use
+            # double quotes. A double-quote-only pattern here false-positives
+            # "does not match" even when the value is correct (see the 3.2.1
+            # release-windows failure this was found from).
             $identityAttrs = $Matches[1]
-            if ($identityAttrs -notmatch 'ProcessorArchitecture="([^"]+)"') {
+            if ($identityAttrs -notmatch 'ProcessorArchitecture=["'']([^"'']+)["'']') {
               Write-Error "ProcessorArchitecture is missing from AppxManifest.xml in $($appx.Name)"
               exit 1
             }
             $architectures[$Matches[1]] = $true
-            if ($identityAttrs -notmatch 'Name="([^"]+)"' -or $Matches[1] -ne $expectedIdentity) {
+            if ($identityAttrs -notmatch 'Name=["'']([^"'']+)["'']' -or $Matches[1] -ne $expectedIdentity) {
               Write-Error "AppX identity in $($appx.Name) does not match expected '$expectedIdentity'"
               exit 1
             }
-            if ($identityAttrs -notmatch 'Publisher="([^"]+)"' -or $Matches[1] -ne $expectedPublisher) {
+            if ($identityAttrs -notmatch 'Publisher=["'']([^"'']+)["'']' -or $Matches[1] -ne $expectedPublisher) {
               Write-Error "AppX publisher in $($appx.Name) does not match the configured Store publisher"
               exit 1
             }
-            if ($identityAttrs -notmatch 'Version="([^"]+)"' -or $Matches[1] -ne $expectedVersion) {
+            if ($identityAttrs -notmatch 'Version=["'']([^"'']+)["'']' -or $Matches[1] -ne $expectedVersion) {
               Write-Error "AppX version in $($appx.Name) does not match package.json version '$expectedVersion'"
               exit 1
             }

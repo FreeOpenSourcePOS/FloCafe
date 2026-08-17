@@ -16,9 +16,8 @@ import {
  * Storage contract: monetary values are stored as raw numbers in the tenant's
  * currency code (IRR for Iran) and are NEVER converted to Toman. Display uses
  * `Intl` with the tenant locale (`fa-IR`), which renders the Rial symbol
- * (`ریال`), Persian digits (arabext), and the Shamsi calendar. Persian digits
- * and Shamsi calendar are the accepted defaults; Toman display and digit/calendar
- * configurability are intentionally deferred until an explicit product decision.
+ * (`ریال`), Persian digits (arabext), and the Shamsi calendar by default, with
+ * display-only configurability for Toman, Latin digits, and Gregorian calendar.
  */
 
 const PERSIAN_DIGITS = '۰۱۲۳۴۵۶۷۸۹';

@@ -42,6 +42,27 @@ test('IR profile resolves fa-IR / IRR / Asia/Tehran', () => {
   assert.equal(ir.timezone, 'Asia/Tehran');
 });
 
+test('IR profile exposes locale display options (data-driven UI)', () => {
+  const ir = getCountryByCode('IR');
+  assert.ok(ir?.localeOptions, 'expected IR to declare localeOptions');
+  assert.deepEqual(ir.localeOptions.currencyDisplay, ['rial', 'toman', 'toman_short']);
+  assert.deepEqual(ir.localeOptions.digits, ['locale', 'latin']);
+  assert.deepEqual(ir.localeOptions.calendar, ['locale', 'persian', 'gregorian']);
+});
+
+test('non-IR profiles expose no localeOptions (no Settings UI bloat)', () => {
+  for (const code of ['IN', 'US', 'BR', 'AR', 'EG', 'TR', 'ZZ']) {
+    const profile = getCountryByCode(code);
+    if (profile) {
+      assert.equal(
+        profile.localeOptions,
+        undefined,
+        `expected no localeOptions for ${code}, got: ${JSON.stringify(profile.localeOptions)}`,
+      );
+    }
+  }
+});
+
 test('formatCurrency: IR renders Rial with Persian digits and no decimals', () => {
   const out = formatCurrency(6000000, 'IRR', 'fa-IR');
   assert.ok(out.includes('ریال'), `expected the Rial token, got: ${out}`);

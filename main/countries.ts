@@ -6,6 +6,17 @@ export interface TaxIdFormat {
   description: string;
 }
 
+/**
+ * Which locale display preferences a country supports. The Settings UI only
+ * renders these controls when a country's profile declares them, so
+ * region-specific options never appear (or bloat) other regions' UI.
+ */
+export interface CountryLocaleOptions {
+  currencyDisplay?: ('rial' | 'toman' | 'toman_short')[];
+  digits?: ('locale' | 'latin')[];
+  calendar?: ('locale' | 'persian' | 'gregorian')[];
+}
+
 export interface Country {
   code: string;
   name: string;
@@ -20,6 +31,8 @@ export interface Country {
   // for countries we haven't verified a format for; unset means no format
   // is enforced, never "reject everything".
   taxIdFormat?: TaxIdFormat;
+  // Locale display preferences available for this country (undefined = none).
+  localeOptions?: CountryLocaleOptions;
 }
 
 const dn = new Intl.DisplayNames(['en'], { type: 'region' });
@@ -31,6 +44,7 @@ interface Row {
   taxIdLabel?: string;
   taxName?: string;
   taxIdFormat?: TaxIdFormat;
+  localeOptions?: CountryLocaleOptions;
 }
 
 const SUPPORTED: Record<string, Row> = {
@@ -74,7 +88,12 @@ const SUPPORTED: Record<string, Row> = {
   EG: { locale: 'ar-EG', currency: 'EGP', tz: 'Africa/Cairo',                    taxIdLabel: 'TIN',   taxName: 'VAT' },
   IL: { locale: 'he-IL', currency: 'ILS', tz: 'Asia/Jerusalem',                                                      taxName: 'VAT' },
   TR: { locale: 'tr-TR', currency: 'TRY', tz: 'Europe/Istanbul',                 taxIdLabel: 'VKN',   taxName: 'KDV' },
-  IR: { locale: 'fa-IR', currency: 'IRR', tz: 'Asia/Tehran',                     taxIdLabel: 'Economic Code', taxName: 'VAT' },
+  IR: { locale: 'fa-IR', currency: 'IRR', tz: 'Asia/Tehran',                     taxIdLabel: 'Economic Code', taxName: 'VAT',
+    localeOptions: {
+      currencyDisplay: ['rial', 'toman', 'toman_short'],
+      digits: ['locale', 'latin'],
+      calendar: ['locale', 'persian', 'gregorian'],
+    } },
 };
 
 function build(code: string): Country {
@@ -89,6 +108,7 @@ function build(code: string): Country {
     taxIdLabel: r.taxIdLabel,
     taxName: r.taxName,
     taxIdFormat: r.taxIdFormat,
+    localeOptions: r.localeOptions,
   };
 }
 

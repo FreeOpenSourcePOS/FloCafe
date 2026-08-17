@@ -380,9 +380,12 @@ function formatAmount(value: number | string, tenant: ReceiptTenant, trimDecimal
   const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
   const prefs = { currencyDisplay: tenant.currency_display, digits: tenant.number_digits };
   const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
+  const isToman =
+    (tenant.currency === 'IRR' || (!tenant.currency && tenant.country === 'IR')) &&
+    (tenant.currency_display === 'toman' || tenant.currency_display === 'toman_short');
 
   // trimDecimals hides trailing .00 only when there is no fractional part.
-  if (trimDecimals && !hasDecimals) {
+  if (trimDecimals && !hasDecimals && !isToman) {
     const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
     const numberingSystem = tenant.number_digits === 'latin' ? 'latn' : undefined;
     try {

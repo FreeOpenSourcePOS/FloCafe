@@ -268,6 +268,14 @@ function run(): void {
   );
   console.log('  ✓ Ltr component isolates POS operational values (order #, phone, IP, VID, table, JSON)');
 
+  // 6. Shared language-direction metadata (single source of truth).
+  const { getLanguageDirection } = require('../frontend/src/lib/i18n');
+  assert(getLanguageDirection('fa') === 'rtl', 'Persian (fa) must resolve to rtl');
+  for (const ltrLang of ['en', 'es', 'pt'] as const) {
+    assert(getLanguageDirection(ltrLang) === 'ltr', `${ltrLang} must resolve to ltr`);
+  }
+  console.log('  ✓ getLanguageDirection resolves direction from shared language metadata');
+
   console.log('\n✅ All RTL/LTR Dashboard, POS, and common flow checks passed.');
 }
 

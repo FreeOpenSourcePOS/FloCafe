@@ -215,9 +215,8 @@ export default function ProductsPage() {
       const res = await api.post(`/menu-csv/import/${csvType}`, { csv: text });
       setCsvResult(res.data);
       fetchData();
-    } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? t('common.importFailed');
-      toast.error(msg);
+    } catch {
+      toast.error(t('common.importFailed'));
     } finally {
       setCsvUploading(false);
     }
@@ -312,12 +311,8 @@ export default function ProductsPage() {
       }
       resetForm();
       fetchData();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { errors?: Record<string, string[]>; error?: string } } };
-      const firstError = error.response?.data?.errors
-        ? Object.values(error.response.data.errors)[0]?.[0]
-        : error.response?.data?.error || t('products.failedToSave');
-      toast.error(firstError);
+    } catch {
+      toast.error(t('products.failedToSave'));
     }
   };
 
@@ -381,7 +376,7 @@ export default function ProductsPage() {
         setCatReassignTo('');
         setCatDeleteModal({ open: true, id, name, productCount: e.response.data.productCount });
       } else {
-        toast.error(e?.response?.data?.error || t('common.failedToDelete'));
+        toast.error(t('common.failedToDelete'));
       }
     }
   };
@@ -393,9 +388,8 @@ export default function ProductsPage() {
       toast.success(t('products.reassignAndDelete'));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } } };
-      toast.error(e?.response?.data?.error || t('common.failedToDelete'));
+    } catch {
+      toast.error(t('common.failedToDelete'));
     }
   };
 
@@ -406,9 +400,8 @@ export default function ProductsPage() {
       toast.success(t('products.categoryAndProductsDeleted'));
       setCatDeleteModal({ open: false, id: null, name: '', productCount: 0 });
       fetchData();
-    } catch (err: unknown) {
-      const e = err as { response?: { data?: { error?: string } } };
-      toast.error(e?.response?.data?.error || t('common.failedToDelete'));
+    } catch {
+      toast.error(t('common.failedToDelete'));
     }
   };
 

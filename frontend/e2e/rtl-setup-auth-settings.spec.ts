@@ -1,6 +1,7 @@
 import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as os from 'os';
 
 /**
  * Rendered RTL/LTR evidence for the Setup, Auth, and Settings screens
@@ -31,7 +32,7 @@ import * as fs from 'fs';
 const BASE = 'http://localhost:3001';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
-  '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M06TFQ2DPQQE7CME0SCKM8Y3';
+  path.join(os.tmpdir(), 'no-mistakes-evidence', '01M06TFQ2DPQQE7CME0SCKM8Y3');
 
 async function captureScreenshot(page: Page, filename: string): Promise<void> {
   try {

@@ -95,6 +95,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cardIn(preparingCol)).toBeVisible();
   await expect(cardIn(preparingCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(waitingCol)).toHaveCount(0);
+  await page.waitForTimeout(200);
 
   // ---------------------------------------------------------------------
   // Step B: Multi-step forward move (Preparing -> Delivered, skipping Ready)
@@ -118,6 +119,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cardIn(preparingCol)).toBeVisible();
   await expect(cardIn(preparingCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(deliveredCol)).toHaveCount(0);
+  await page.waitForTimeout(200);
 
   // ---------------------------------------------------------------------
   // Step D: Drag again and Confirm -> card commits transition to Delivered

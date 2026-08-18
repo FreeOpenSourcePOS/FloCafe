@@ -182,9 +182,8 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       setPhone(''); setName(''); setMatched(null); setSearched(false);
       toast.success(t('pos.customerCreated'));
       onSelected?.();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { message?: string } } };
-      toast.error(error.response?.data?.message || t('pos.createCustomerFailed'));
+    } catch {
+      toast.error(t('pos.createCustomerFailed'));
     } finally {
       setCreating(false);
     }

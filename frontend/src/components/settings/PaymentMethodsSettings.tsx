@@ -51,8 +51,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
       await api.post('/payment-methods', { name: newName });
       setNewName('');
       await load();
-    } catch (error: unknown) {
-      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || t('settings.saveFailed'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
     }
   };
 
@@ -60,8 +60,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
     try {
       await api.put(`/payment-methods/${method.id}`, changes);
       await load();
-    } catch (error: unknown) {
-      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || t('settings.saveFailed'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
     }
   };
 
@@ -70,8 +70,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
     try {
       await api.delete(`/payment-methods/${method.id}`);
       await load();
-    } catch (error: unknown) {
-      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || t('settings.saveFailed'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
     }
   };
 
@@ -85,8 +85,8 @@ export function PaymentMethodsSettings({ isAdmin }: { isAdmin: boolean }) {
         : { target_type: 'custom', target_id: Number(target) });
       await load();
       toast.success(t('settings.paymentMethodMerged', { defaultValue: 'Payment methods merged' }));
-    } catch (error: unknown) {
-      toast.error((error as { response?: { data?: { error?: string } } }).response?.data?.error || t('settings.saveFailed'));
+    } catch {
+      toast.error(t('settings.saveFailed'));
     }
   };
 

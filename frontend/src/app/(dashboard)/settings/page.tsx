@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { COUNTRIES, countryName, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
+import { COUNTRIES, countryName, getCountryByCode, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -22,6 +22,7 @@ import { InitializeDatabaseDialog } from '@/components/settings/InitializeDataba
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
+import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import type { HealthCheckReport } from '@/types/electron';
 import { useI18n } from '@/hooks/useI18n';
 import { Ltr } from '@/components/layout/Ltr';
@@ -409,11 +410,10 @@ export default function SettingsPage() {
   const runImport = async (data: ImportPayload, overwrite: boolean, master_pin?: string) => {
     try {
       const response = await api.post('/db/import', { data, overwrite, master_pin });
-      if (response.data.success) toast.success(response.data.message);
+      if (response.data.success) toast.success(t('settings.importSuccess'));
       return { success: true };
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      const message = error.response?.data?.error || t('settings.importFailed');
+    } catch {
+      const message = t('settings.importFailed');
       toast.error(message);
       return { success: false, error: message };
     }
@@ -429,9 +429,8 @@ export default function SettingsPage() {
         toast.success(t('settings.masterPinSaved'));
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.savePinFailed') };
+      } catch {
+        return { success: false, error: t('settings.savePinFailed') };
       }
     }
 
@@ -442,9 +441,8 @@ export default function SettingsPage() {
         setPinGate(null);
         fetchBackups();
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.backupFailedGeneric') };
+      } catch {
+        return { success: false, error: t('settings.backupFailedGeneric') };
       }
     }
 
@@ -490,9 +488,8 @@ export default function SettingsPage() {
         setPinGate(null);
         fetchBackups();
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || t('settings.backupDeleteFailed') };
+      } catch {
+        return { success: false, error: t('settings.backupDeleteFailed') };
       }
     }
 
@@ -504,11 +501,10 @@ export default function SettingsPage() {
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
+      } catch {
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Cloud data deletion failed' };
+        return { success: false, error: t('settings.cloudDeletionFailed') };
       }
     }
 
@@ -520,9 +516,8 @@ export default function SettingsPage() {
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        return { success: false, error: error.response?.data?.error || 'Could not cancel deletion request' };
+      } catch {
+        return { success: false, error: t('settings.cloudDeletionCancelFailed') };
       }
     }
 
@@ -621,9 +616,8 @@ export default function SettingsPage() {
         await api.post(`/db-tools/backups/${encodeURIComponent(backup.fileName)}/delete`, {});
         toast.success(t('settings.backupDeleted'));
         fetchBackups();
-      } catch (err: unknown) {
-        const error = err as { response?: { data?: { error?: string } } };
-        toast.error(error.response?.data?.error || t('settings.backupDeleteFailed'));
+      } catch {
+        toast.error(t('settings.backupDeleteFailed'));
       }
       return;
     }
@@ -634,9 +628,8 @@ export default function SettingsPage() {
     try {
       const { data } = await api.post('/db-tools/initialize', { master_pin: pin, confirmation_phrase: 'INITIALIZE' });
       return { success: true, backupPath: data.backupPath };
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      return { success: false, error: error.response?.data?.error || t('settings.initializeFailedGeneric') };
+    } catch {
+      return { success: false, error: t('settings.initializeFailedGeneric') };
     }
   };
 
@@ -818,9 +811,8 @@ export default function SettingsPage() {
       toast.success(t('settings.printerQuickAdded', { name: p.name }));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.printerAddFailed'));
+    } catch {
+      toast.error(t('settings.printerAddFailed'));
     } finally {
       setAddingDetectedName(null);
     }
@@ -898,9 +890,8 @@ export default function SettingsPage() {
     try {
       await api.post(`/printers/${printer.id}/test`);
       toast.success(t('settings.testPrintSent'));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.testPrintFailed'));
+    } catch {
+      toast.error(t('settings.testPrintFailed'));
     } finally {
       setTestingPrinterId(null);
     }
@@ -995,9 +986,8 @@ export default function SettingsPage() {
       toast.success(editingStationId ? t('settings.stationUpdated') : t('settings.stationSaved'));
       setShowStationForm(false);
       fetchStations();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.stationSaveFailed'));
+    } catch {
+      toast.error(t('settings.stationSaveFailed'));
     } finally {
       setSavingStation(false);
     }
@@ -1009,9 +999,8 @@ export default function SettingsPage() {
       await api.delete(`/kitchen-stations/${id}`);
       toast.success(t('settings.stationDeleted'));
       fetchStations();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error?.response?.data?.error || t('settings.stationDeleteFailed'));
+    } catch {
+      toast.error(t('settings.stationDeleteFailed'));
     }
   };
 
@@ -1682,9 +1671,8 @@ export default function SettingsPage() {
       if (res.data.cloud_registration_status === 'registered') {
         toast.success(t('settings.cloudRegistrationSuccess'));
       }
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.cloudRegistrationFailed'));
+    } catch {
+      toast.error(t('settings.cloudRegistrationFailed'));
     } finally {
       setRegisteringCloud(false);
     }
@@ -1725,9 +1713,8 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveConnectedSuccess'));
       fetchBackups();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveConnectFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveConnectFailed'));
     } finally {
       setConnectingGoogleDrive(false);
     }
@@ -1744,9 +1731,8 @@ export default function SettingsPage() {
       const res = await api.post('/settings/google-drive/disconnect');
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveDisconnectedSuccess'));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveDisconnectFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveDisconnectFailed'));
     } finally {
       setDisconnectingGoogleDrive(false);
     }
@@ -1759,9 +1745,8 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
       toast.success(t('settings.googleDriveBackupSuccess'));
       fetchBackups();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      toast.error(error.response?.data?.error || t('settings.googleDriveBackupFailed'));
+    } catch {
+      toast.error(t('settings.googleDriveBackupFailed'));
       fetchGoogleDriveStatus();
     } finally {
       setBackingUpGoogleDrive(false);
@@ -1775,10 +1760,9 @@ export default function SettingsPage() {
     try {
       const res = await api.put('/settings/google-drive', patch);
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
+    } catch {
       setGoogleDriveStatus(previous);
-      toast.error(error.response?.data?.error || t('settings.googleDriveSavePreferencesFailed'));
+      toast.error(t('settings.googleDriveSavePreferencesFailed'));
     } finally {
       setSavingGoogleDrivePrefs(false);
     }
@@ -1963,7 +1947,7 @@ export default function SettingsPage() {
       if (!silent) toast.success(t('settings.storeSaved'));
     } catch (err) {
       if (!silent) {
-        const message = (err as { response?: { data?: { error?: string } } })?.response?.data?.error || t('settings.saveFailed');
+        const message = t('settings.saveFailed');
         toast.error(message);
       }
       throw err;
@@ -2035,12 +2019,9 @@ export default function SettingsPage() {
       setPairingUnavailable(false);
       toast.success(t('settings.pairingCodeRotated'));
       loadPairedDevices();
-    } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } };
-      // Surface the backend's actual reason (e.g. "this POS hasn't been
-      // claimed in FloAdmin yet") instead of a one-size-fits-all message —
-      // "not registered" and "FloAdmin unreachable" need different next steps.
-      toast.error(error.response?.data?.error || t('settings.pairingCodeFailed'));
+    } catch {
+      // Show a localized failure; the specific backend reason stays in logs.
+      toast.error(t('settings.pairingCodeFailed'));
     } finally {
       setRotatingCode(false);
     }
@@ -2251,61 +2232,19 @@ export default function SettingsPage() {
                     </div>
                   )}
                 </div>
-                {form.countryCode === 'IR' && (
-                  <div className="md:col-span-2 space-y-4 rounded-lg border border-gray-100 bg-gray-50/60 p-4">
-                    <p className="text-sm font-medium text-gray-700">{t('settings.iranLocaleTitle')}</p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranCurrencyDisplay')}</label>
-                        {isAdmin ? (
-                          <select
-                            value={form.currencyDisplay}
-                            onChange={(e) => setForm((p) => ({ ...p, currencyDisplay: e.target.value as CurrencyDisplay }))}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
-                          >
-                            <option value="rial">{t('settings.iranCurrencyDisplayRial')}</option>
-                            <option value="toman">{t('settings.iranCurrencyDisplayToman')}</option>
-                            <option value="toman_short">{t('settings.iranCurrencyDisplayTomanShort')}</option>
-                          </select>
-                        ) : (
-                          <p className="font-medium text-gray-900">{form.currencyDisplay === 'toman' ? t('settings.iranCurrencyDisplayToman') : form.currencyDisplay === 'toman_short' ? t('settings.iranCurrencyDisplayTomanShort') : t('settings.iranCurrencyDisplayRial')}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranNumberDigits')}</label>
-                        {isAdmin ? (
-                          <select
-                            value={form.numberDigits}
-                            onChange={(e) => setForm((p) => ({ ...p, numberDigits: e.target.value as DigitMode }))}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
-                          >
-                            <option value="locale">{t('settings.iranNumberDigitsLocale')}</option>
-                            <option value="latin">{t('settings.iranNumberDigitsLatin')}</option>
-                          </select>
-                        ) : (
-                          <p className="font-medium text-gray-900">{form.numberDigits === 'latin' ? t('settings.iranNumberDigitsLatin') : t('settings.iranNumberDigitsLocale')}</p>
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('settings.iranCalendar')}</label>
-                        {isAdmin ? (
-                          <select
-                            value={form.calendar}
-                            onChange={(e) => setForm((p) => ({ ...p, calendar: e.target.value as CalendarMode }))}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
-                          >
-                            <option value="locale">{t('settings.iranCalendarLocale')}</option>
-                            <option value="persian">{t('settings.iranCalendarPersian')}</option>
-                            <option value="gregorian">{t('settings.iranCalendarGregorian')}</option>
-                          </select>
-                        ) : (
-                          <p className="font-medium text-gray-900">{form.calendar === 'persian' ? t('settings.iranCalendarPersian') : form.calendar === 'gregorian' ? t('settings.iranCalendarGregorian') : t('settings.iranCalendarLocale')}</p>
-                        )}
-                      </div>
-                    </div>
-                    <p className="text-xs text-gray-400">{t('settings.iranLocaleHint')}</p>
-                  </div>
-                )}
+                <LocalePreferencesPanel
+                  options={getCountryByCode(form.countryCode)?.localeOptions}
+                  currencyDisplay={form.currencyDisplay}
+                  digits={form.numberDigits}
+                  calendar={form.calendar}
+                  isAdmin={isAdmin}
+                  onChange={(patch) => setForm((p) => ({
+                    ...p,
+                    ...(patch.currencyDisplay !== undefined ? { currencyDisplay: patch.currencyDisplay } : {}),
+                    ...(patch.digits !== undefined ? { numberDigits: patch.digits } : {}),
+                    ...(patch.calendar !== undefined ? { calendar: patch.calendar } : {}),
+                  }))}
+                />
                 <div>
                   <label className="block text-sm text-gray-500 mb-1">{t('settings.billingType')}</label>
                   {isAdmin ? (
@@ -3341,9 +3280,8 @@ export default function SettingsPage() {
                   <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
                     setCloudAccountBusy(true);
                     try { await api.post('/settings/cloud/account/verification'); toast.success(t('settings.verificationEmailQueued')); await fetchCloudAccount(); }
-                    catch (err: unknown) {
-                      const error = err as { response?: { data?: { error?: string } } };
-                      toast.error(error.response?.data?.error || 'Could not send verification email');
+                    catch {
+                      toast.error(t('settings.verificationEmailFailed'));
                     }
                     finally { setCloudAccountBusy(false); }
                   }}>{cloudAccountBusy ? 'Sending…' : 'Send verification email'}</Button>

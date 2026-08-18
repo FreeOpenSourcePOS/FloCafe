@@ -38,7 +38,6 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | Document | Description | Status |
 | --- | --- | --- |
 | [security-audit-2.7.0.md](security-audit-2.7.0.md) | Security audit report for FloCafe v2.7.0 dated 2026-08-04. | HISTORICAL |
-| [superpowers/specs/2026-07-05-integration-tests-design.md](superpowers/specs/2026-07-05-integration-tests-design.md) | Design record for the initial suite of 7 core business flow integration tests dated 2026-07-05. | HISTORICAL |
 
 ---
 

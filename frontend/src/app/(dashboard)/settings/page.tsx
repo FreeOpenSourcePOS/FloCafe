@@ -4699,8 +4699,10 @@ export default function SettingsPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t('settings.cloudInitializeDialogTitle')}</DialogTitle>
-            <DialogDescription className="whitespace-pre-line">
+            <DialogDescription>
               {t('settings.cloudInitializeDialogBody')}
+              <br /><br />
+              {t('settings.cloudInitializeDialogBody2')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

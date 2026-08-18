@@ -48,8 +48,8 @@ export default function StatusBar() {
   function formatUptime(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) return t('common.timeHoursMinutesAgo', { h: hours, m: minutes }).replace(/\s*ago$/, '').replace(/\s*پیش$/, '');
-    return t('common.timeMinutesAgo', { m: minutes }).replace(/\s*ago$/, '').replace(/\s*پیش$/, '');
+    if (hours > 0) return t('common.timeHoursMinutes', { h: hours, m: minutes });
+    return t('common.timeMinutes', { m: minutes });
   }
 
   if (typeof window === 'undefined' || !window.electronAPI?.getStatus) return null;

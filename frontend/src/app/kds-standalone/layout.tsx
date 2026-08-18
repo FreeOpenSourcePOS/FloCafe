@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import '../globals.css';
-import { Toaster } from 'react-hot-toast';
+import { DirectionalToaster } from '@/components/layout/DirectionalToaster';
 import { KdsHtmlLang } from '@/components/kds/KdsHtmlLang';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -20,7 +20,7 @@ export default function KdsStandaloneLayout({
     <html lang="en" suppressHydrationWarning className="h-full">
       <body className={`${inter.className} h-full bg-gray-100`}>
         <KdsHtmlLang />
-        <Toaster position="top-right" />
+        <DirectionalToaster />
         <div className="h-full flex flex-col p-4">
           {children}
         </div>

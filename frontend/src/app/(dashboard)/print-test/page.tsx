@@ -275,7 +275,7 @@ export default function PrintTestPage() {
               variant="outline"
               size="lg"
             >
-              <Download size={18} className="mr-2" />
+              <Download size={18} className="me-2" />
               {t('printTest.downloadHtml')}
             </Button>
           )}

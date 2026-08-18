@@ -194,7 +194,7 @@ export default function AddonGroupsPage() {
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{t('addonGroups.title')}</h1>
         <Button onClick={() => { resetForm(); setShowForm(true); }}>
-          <Plus size={16} className="mr-1" /> {t('addonGroups.addGroup')}
+          <Plus size={16} className="me-1" /> {t('addonGroups.addGroup')}
         </Button>
       </div>
 
@@ -207,7 +207,7 @@ export default function AddonGroupsPage() {
               <div className="flex items-center justify-between p-4">
                 <button
                   onClick={() => setExpandedGroup(isExpanded ? null : group.id)}
-                  className="flex items-center gap-3 flex-1 text-left"
+                  className="flex items-center gap-3 flex-1 text-start"
                 >
                   {isExpanded ? <ChevronDown size={18} className="text-gray-400" /> : <ChevronRight size={18} className="text-gray-400" />}
                   <div>

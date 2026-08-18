@@ -77,7 +77,7 @@ export default function CustomerDisplayPage() {
           <div className="text-2xl md:text-3xl font-bold tracking-tight">{currentTenant.business_name}</div>
           <div className="text-slate-400 mt-1 text-sm md:text-base">Order status</div>
         </div>
-        <div className="text-right text-xs text-slate-500">
+        <div className="text-end text-xs text-slate-500">
           {error ? 'Connection problem — retrying…' : lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : 'Connecting…'}
         </div>
       </header>

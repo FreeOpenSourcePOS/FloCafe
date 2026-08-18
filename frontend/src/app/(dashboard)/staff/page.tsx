@@ -167,7 +167,7 @@ export default function StaffPage() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">{t('staff.title')}</h1>
-        <Button onClick={openAdd}><Plus size={16} className="mr-1" /> {t('staff.addButton')}</Button>
+        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('staff.addButton')}</Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -187,10 +187,10 @@ export default function StaffPage() {
             </div>
             <div className="flex flex-wrap gap-2 mt-3">
               <Button variant="outline" size="sm" onClick={() => openEdit(s)}>
-                <Edit size={14} className="mr-1" /> {t('common.edit')}
+                <Edit size={14} className="me-1" /> {t('common.edit')}
               </Button>
               <Button variant="outline" size="sm" onClick={() => openResetPw(s)}>
-                <RotateCcw size={14} className="mr-1" /> {t('staff.resetPwButton')}
+                <RotateCcw size={14} className="me-1" /> {t('staff.resetPwButton')}
               </Button>
               <Button
                 variant="ghost"
@@ -230,10 +230,10 @@ export default function StaffPage() {
                   type={showPassword ? 'text' : 'password'} placeholder={editingStaff ? t('staff.newPasswordPlaceholder') : t('staff.passwordPlaceholder')}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
-                  className="w-full px-3 py-2 pr-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                   required={!editingStaff}
                 />
-                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowPassword(!showPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
                   {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
@@ -262,12 +262,12 @@ export default function StaffPage() {
                       type={showPin ? 'text' : 'password'} placeholder={editingStaff ? t('staff.pinPlaceholderEdit') : t('staff.pinPlaceholderAdd')}
                       value={form.pin}
                       onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
-                      className="w-full px-3 py-2 pr-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                      className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                       maxLength={6}
                       pattern="[0-9]*"
                       inputMode="numeric"
                     />
-                    <button type="button" aria-label="Toggle PIN visibility" title="Toggle PIN visibility" onClick={() => setShowPin(!showPin)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                    <button type="button" aria-label="Toggle PIN visibility" title="Toggle PIN visibility" onClick={() => setShowPin(!showPin)} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
                       {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
@@ -293,9 +293,9 @@ export default function StaffPage() {
                 <input
                   type={showResetPassword ? 'text' : 'password'} placeholder={t('staff.newPasswordPlaceholder')} value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
-                  className="w-full px-3 py-2 pr-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
+                  className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                 />
-                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowResetPassword(!showResetPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+                <button type="button" aria-label="Toggle password visibility" title="Toggle password visibility" onClick={() => setShowResetPassword(!showResetPassword)} className="absolute end-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
                   {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>

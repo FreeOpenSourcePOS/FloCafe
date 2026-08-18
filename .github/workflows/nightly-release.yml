@@ -1,8 +1,12 @@
 name: Full Cross-Platform Matrix
 
+# Runs nightly and on demand only. It deliberately does NOT trigger on every
+# push to main: with `concurrency.cancel-in-progress: true` below, a burst of
+# merges (e.g. dependency bumps) would cancel each other's in-flight matrix
+# builds mid-package — wasting ~30 min of runner time per kill and losing the
+# per-commit packaging result. The nightly run always covers the latest main,
+# and release.yml already builds tagged releases per platform.
 on:
-  push:
-    branches: [main]
   schedule:
     - cron: '0 0 * * *' # Nightly
   workflow_dispatch:

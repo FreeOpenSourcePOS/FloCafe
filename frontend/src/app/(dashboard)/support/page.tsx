@@ -145,7 +145,7 @@ export default function SupportPage() {
             <div className="space-y-2">
               <Label htmlFor="support-message">{t('support.description')}</Label>
               <textarea id="support-message" value={message} onChange={(e) => setMessage(e.target.value)} maxLength={20000} rows={10} className="w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50" placeholder={t('support.descriptionPlaceholder')} required />
-              <p className="text-right text-xs text-muted-foreground">{fmtNum(message.length)} / 20,000</p>
+              <p className="text-end text-xs text-muted-foreground">{fmtNum(message.length)} / 20,000</p>
             </div>
             <Button type="submit" disabled={loading || submitting || !subject.trim() || !message.trim()} className="w-full sm:w-auto">
               {submitting ? <Loader2 className="animate-spin" /> : <LifeBuoy />}{submitting ? t('support.submitting') : t('support.submit')}

@@ -5,17 +5,27 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { Tabs as TabsPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { usePosSettingsStore } from "@/store/pos-settings"
+import { getLanguageDirection } from "@/lib/i18n"
 
 function Tabs({
   className,
   orientation = "horizontal",
+  dir,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Root>) {
+  // Radix defaults `dir` to "ltr", which pins tab layouts (and their flex
+  // columns, e.g. the Settings left nav) to LTR even inside RTL (Persian)
+  // documents. Follow the active UI language direction instead so the tabs
+  // mirror with the rest of the page. An explicit `dir` prop still wins.
+  const language = usePosSettingsStore((s) => s.language);
+  const direction = dir ?? getLanguageDirection(language);
   return (
     <TabsPrimitive.Root
       data-slot="tabs"
       data-orientation={orientation}
       orientation={orientation}
+      dir={direction}
       className={cn(
         "group/tabs flex gap-2 data-[orientation=horizontal]:flex-col",
         className

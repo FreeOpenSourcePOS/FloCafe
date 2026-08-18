@@ -68,6 +68,14 @@ async function setLanguage(page: Page, value: string): Promise<void> {
     data: { value },
   });
   expect(res.ok(), `setting language=${value} should succeed (status ${res.status()})`).toBeTruthy();
+  await page.evaluate((lang) => {
+    try {
+      const raw = localStorage.getItem('pos-settings');
+      const parsed = raw ? JSON.parse(raw) : { state: {} };
+      parsed.state = { ...parsed.state, language: lang };
+      localStorage.setItem('pos-settings', JSON.stringify(parsed));
+    } catch {}
+  }, value);
 }
 
 async function assertNoHorizontalOverflow(page: Page, label: string): Promise<void> {
@@ -168,6 +176,77 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     await expect(page.locator('h1')).toBeVisible();
     await assertNoHorizontalOverflow(page, 'tables screen');
     await captureScreenshot(page, 'tables-rtl-fa.png');
+
+    // ── Persian (RTL) on the staff screen & modal ──────────────────────────
+    await page.goto(`${BASE}/staff`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.locator('h1')).toBeVisible();
+    await assertNoHorizontalOverflow(page, 'staff screen');
+    const addStaffBtn = page.locator('button', { has: page.locator('svg') }).filter({ hasText: /افزودن|Add/i }).first();
+    if (await addStaffBtn.isVisible()) {
+      await addStaffBtn.click();
+      const roleSelect = page.locator('select').first();
+      await roleSelect.selectOption('manager');
+      const pinInput = page.locator('input[placeholder*="PIN"], input[placeholder*="پین"], input[inputmode="numeric"]').first();
+      await expect(pinInput).toBeVisible();
+      const togglePinBtn = page.locator('button[aria-label="Toggle PIN visibility"]').first();
+      await expect(togglePinBtn).toBeVisible();
+      const pinBox = await pinInput.boundingBox();
+      const toggleBox = await togglePinBtn.boundingBox();
+      expect(pinBox).not.toBeNull();
+      expect(toggleBox).not.toBeNull();
+      // In RTL, end-3 is on the left half of the input.
+      expect(toggleBox!.x + toggleBox!.width).toBeLessThan(pinBox!.x + pinBox!.width / 2);
+      await captureScreenshot(page, 'staff-modal-rtl-fa.png');
+      const closeFormBtn = page.locator('button:has(svg.lucide-x)').first();
+      if (await closeFormBtn.isVisible()) {
+        await closeFormBtn.click();
+      } else {
+        await page.keyboard.press('Escape');
+      }
+    }
+
+    // ── Persian (RTL) on addon-groups, print-test, support, customer-display ─
+    await page.goto(`${BASE}/addon-groups`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await assertNoHorizontalOverflow(page, 'addon-groups screen');
+    await captureScreenshot(page, 'addon-groups-rtl-fa.png');
+
+    await page.goto(`${BASE}/print-test`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await assertNoHorizontalOverflow(page, 'print-test screen');
+    await captureScreenshot(page, 'print-test-rtl-fa.png');
+
+    await page.goto(`${BASE}/support`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await assertNoHorizontalOverflow(page, 'support screen');
+    await captureScreenshot(page, 'support-rtl-fa.png');
+
+    await page.goto(`${BASE}/customer-display`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await assertNoHorizontalOverflow(page, 'customer-display screen');
+    await captureScreenshot(page, 'customer-display-rtl-fa.png');
+
+    // ── Mobile layout & SidebarTrigger on Persian dashboard ─────────────────
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.goto(`${BASE}/dashboard`);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    const mobileTrigger = page.locator('button[aria-label="Open navigation"]');
+    await expect(mobileTrigger).toBeVisible();
+    await captureScreenshot(page, 'mobile-dashboard-appbar-rtl-fa.png');
+
+    await mobileTrigger.click();
+    const sheetContent = page.locator('[data-mobile="true"]');
+    await expect(sheetContent).toBeVisible();
+    const sheetBox = await sheetContent.boundingBox();
+    expect(sheetBox).not.toBeNull();
+    // In RTL, side="left" (inline-start) is pinned to the right edge.
+    expect(sheetBox!.x + sheetBox!.width).toBeGreaterThan(360);
+    await captureScreenshot(page, 'mobile-sidebar-sheet-rtl-fa.png');
+    await page.keyboard.press('Escape');
+
+    // Restore desktop viewport
+    await page.setViewportSize({ width: 1280, height: 720 });
   } finally {
     // Restore English so the shared server does not leak Persian into other specs.
     await setLanguage(page, 'en');

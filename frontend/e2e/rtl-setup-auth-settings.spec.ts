@@ -61,6 +61,14 @@ async function setLanguage(page: Page, value: string): Promise<void> {
     data: { value },
   });
   expect(res.ok(), `setting language=${value} should succeed`).toBeTruthy();
+  await page.evaluate((lang) => {
+    try {
+      const raw = localStorage.getItem('pos-settings');
+      const parsed = raw ? JSON.parse(raw) : { state: {} };
+      parsed.state = { ...parsed.state, language: lang };
+      localStorage.setItem('pos-settings', JSON.stringify(parsed));
+    } catch {}
+  }, value);
 }
 
 async function logout(page: Page): Promise<void> {

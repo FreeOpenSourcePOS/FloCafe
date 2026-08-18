@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
+import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -53,12 +54,14 @@ interface Payment {
   amount: string;
 }
 
-export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: Props) {
+export default function PrepaidCheckoutModal({ onClose, onConfirm }: Props) {
   const cart = useCartStore();
   const customer = cart.customer;
   const { t } = useI18n();
   const currencyFmt = useFormatCurrency();
   const fmtNum = useFormatNumber();
+  const unitAdapter = useCurrencyUnitAdapter();
+  const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
 
   const [loyaltySettings, setLoyaltySettings] = useState<LoyaltySettings | null>(null);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
@@ -82,9 +85,9 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       type: discountType,
       value: discountType === 'percentage'
         ? Math.min(100, Math.max(0, rawValue))
-        : Math.max(0, rawValue),
+        : toStoredUnit(Math.max(0, rawValue)),
     };
-  }, [discountType, discountValue]);
+  }, [discountType, discountValue, toStoredUnit]);
   const { tax, loading: taxLoading } = useTaxPreview(
     cart.items,
     cart.customerId,
@@ -175,19 +178,20 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   const [syncedRemaining, setSyncedRemaining] = useState(remaining);
   if (preview && !paymentsTouched && remaining !== syncedRemaining) {
     setSyncedRemaining(remaining);
-    const walletUsed = parseFloat(walletAmount) || 0;
+    const walletUsed = toStoredUnit(parseFloat(walletAmount) || 0);
     const cashRemaining = Math.max(0, remaining - walletUsed);
     const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
     if (totalAllocated > 0) {
-      setPayments(payments.map((p) => {
+      const displayRemaining = toDisplayUnit(cashRemaining);
+      setPayments(payments.map(p => {
         const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
-        return { ...p, amount: (cashRemaining * ratio).toFixed(2) };
+        return { ...p, amount: formatInput(displayRemaining * ratio) };
       }));
     }
   }
 
-  const walletAmt = parseFloat(walletAmount) || 0;
-  const totalPayment = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0) + walletAmt;
+  const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
+  const totalPayment = payments.reduce((s, p) => s + toStoredUnit(parseFloat(p.amount) || 0), 0) + walletAmt;
 
   const updatePaymentAmount = (idx: number, value: string) => {
     setPaymentsTouched(true);
@@ -195,10 +199,11 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
   };
 
   const allocateRemainingTo = (idx: number) => {
-    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + (parseFloat(payment.amount) || 0), walletAmt);
-    const due = Math.max(0, remaining - allocatedElsewhere);
+    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt);
+    const dueStored = Math.max(0, remaining - allocatedElsewhere);
+    const dueDisplay = toDisplayUnit(dueStored);
     setPaymentsTouched(true);
-    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: due > 0 ? due.toFixed(2) : '' } : payment));
+    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment));
   };
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
@@ -208,7 +213,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
 
   const handleConfirm = () => {
     if (!preview) return;
-    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,2})?$/.test(value.trim());
+    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,4})?$/.test(value.trim());
     if (payments.some((p) => (
       !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
       && !customMethods.some((method) => method.id === p.payment_method_id)
@@ -216,13 +221,13 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       toast.error(t('pos.paymentFailed'));
       return;
     }
-    if (walletAmount.trim() && !/^\d+(?:\.\d{1,2})?$/.test(walletAmount.trim())) {
+    if (walletAmount.trim() && !/^\d+(?:\.\d{1,4})?$/.test(walletAmount.trim())) {
       toast.error(t('pos.paymentFailed'));
       return;
     }
     const nonCashTotal = payments
       .filter((p) => p.method !== 'cash')
-      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) + walletAmt;
+      .reduce((sum, p) => sum + toStoredUnit(Number(p.amount) || 0), 0) + walletAmt;
     if (nonCashTotal > remaining + 0.000001) {
       toast.error(t('pos.paymentAboveBalance'));
       return;
@@ -248,25 +253,25 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
       return;
     }
 
-    const finalPayments: PrepaidPayment[] = payments
+    setProcessing(true);
+    const splitLines: PrepaidPayment[] = payments
       .map((p) => ({
         method: p.payment_method_id === undefined ? p.method : 'custom',
         ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
-        amount: parseFloat(p.amount) || 0,
+        amount: toStoredUnit(parseFloat(p.amount) || 0),
       }))
-      .filter((p) => p.amount > 0);
+      .filter((p) => p.amount > 0 && !isNaN(p.amount));
 
-    const discount: PrepaidDiscount | null = preview.discountAmount > 0
+    const finalDiscount: PrepaidDiscount | null = preview.discountAmount > 0
       ? {
         type: discountType,
-        value: previewDiscount?.value || 0,
+        value: previewDiscount?.value ?? 0,
         reason: discountReason || undefined,
-        override_pin: discountRequiresApproval ? discountPin : undefined,
+        override_pin: discountRequiresApproval && discountPin ? discountPin : undefined,
       }
       : null;
 
-    setProcessing(true);
-    onConfirm(finalPayments, walletAmt, discount);
+    onConfirm(splitLines, walletAmt, finalDiscount);
   };
 
   return (
@@ -394,7 +399,7 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                 </div>
                 <div className="relative">
                   <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                    {discountType === 'percentage' ? '%' : currency}
+                    {discountType === 'percentage' ? '%' : inputCurrencyLabel}
                   </span>
                   <input
                     type="number"
@@ -402,8 +407,8 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                     onChange={(e) => setDiscountValue(e.target.value)}
                     placeholder={discountType === 'percentage' ? '0' : '0.00'}
                     min="0"
-                    max={discountType === 'percentage' ? 100 : preview?.subtotal ?? undefined}
-                    step={discountType === 'percentage' ? 1 : 0.01}
+                    max={discountType === 'percentage' ? 100 : (preview ? toDisplayUnit(preview.subtotal) : undefined)}
+                    step={discountType === 'percentage' ? 1 : inputCurrencyStep}
                     className="w-full ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
                   />
                 </div>
@@ -452,14 +457,14 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
                   <span className="truncate">{label}</span>
                 </button>
                 <div className="flex flex-1 items-center border border-s-0 border-gray-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
-                  <span className="ps-3 text-gray-400 text-xs">{currency}</span>
+                  <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
                     value={payment.amount}
                     onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                     placeholder="0.00"
                     className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl"
-                    step="0.01"
+                    step={inputCurrencyStep}
                     min="0"
                   />
                 </div>
@@ -492,40 +497,42 @@ export default function PrepaidCheckoutModal({ currency, onClose, onConfirm }: P
               <span className={`text-xl font-bold tabular-nums ${
                 change > 0 ? 'text-emerald-600' : 'text-gray-300'
               }`}>
-                {change > 0 ? currencyFmt(change) : currencyFmt(0)}
+                {currencyFmt(change)}
               </span>
             </div>
           )}
 
-          {/* Loyalty wallet uses the same one-method/one-amount interaction. */}
-          {customer && walletBalance !== null && (
+          {/* Loyalty Wallet Section */}
+          {loyaltySettings?.loyalty_enabled && customer && walletBalance !== null && (
             <div className="space-y-1">
               <div className="flex h-11">
                 <button type="button" disabled={walletBalance <= 0} onClick={() => {
-                  const allocatedElsewhere = payments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-                  const maxWallet = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-                  const due = Math.min(maxWallet, Math.max(0, remaining - allocatedElsewhere));
-                  setWalletAmount(due > 0 ? due.toFixed(2) : '');
+                  const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
+                  const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+                  const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
+                  const dueDisplay = toDisplayUnit(dueStored);
+                  setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
                 }} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200'}`}>
                   <Wallet size={15} /><span className="truncate">{t('pos.loyaltyWallet')}</span>
                 </button>
                 <div className="flex flex-1 items-center border border-s-0 border-purple-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-purple-400">
-                  <span className="ps-3 text-gray-400 text-xs">{currency}</span>
+                  <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
                     value={walletAmount}
                     onChange={(e) => {
-                      const value = e.target.value;
-                      const parsed = parseFloat(value);
-                      const max = Math.min(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE), remaining);
-                      setWalletAmount(Number.isFinite(parsed) && parsed > max ? max.toFixed(2) : value);
+                      const v = e.target.value;
+                      const maxWalletCurrencyStored = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
+                      const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
+                      const clamped = parseFloat(v) > maxDisplay ? String(maxDisplay) : v;
+                      setWalletAmount(clamped);
                     }}
                     placeholder="0.00"
                     disabled={walletBalance <= 0}
                     className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl disabled:bg-gray-50"
-                    step="0.01"
+                    step={inputCurrencyStep}
                     min="0"
-                    max={Math.min(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE), remaining)}
+                    max={toDisplayUnit(Math.min(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE)), remaining))}
                   />
                 </div>
               </div>

@@ -9,6 +9,7 @@ export {
   formatNumber,
   formatNumberForTenant,
   formatDateForTenant,
+  getCurrencyUnitAdapter,
   countryName,
   type Country,
   type CountryLocaleOptions,
@@ -16,4 +17,5 @@ export {
   type CurrencyDisplay,
   type DigitMode,
   type CalendarMode,
+  type CurrencyUnitAdapter,
 } from '@countries';

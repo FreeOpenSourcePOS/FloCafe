@@ -10,6 +10,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { useI18n } from '@/hooks/useI18n';
 
 interface ConfirmState {
   open: boolean;
@@ -40,6 +41,7 @@ interface ConfirmState {
  *   );
  */
 export function useConfirm() {
+  const { t } = useI18n();
   const [state, setState] = useState<ConfirmState | null>(null);
 
   const confirm = useCallback(
@@ -82,18 +84,18 @@ export function useConfirm() {
     <Dialog open={state.open} onOpenChange={(open) => !open && handleCancel()}>
       <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>{state.title || 'Confirm'}</DialogTitle>
+          <DialogTitle>{state.title || t('common.confirm')}</DialogTitle>
           <DialogDescription>{state.message}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel}>
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             variant={state.destructive ? 'destructive' : 'default'}
             onClick={handleConfirm}
           >
-            {state.confirmLabel || 'Confirm'}
+            {state.confirmLabel || t('common.confirm')}
           </Button>
         </DialogFooter>
       </DialogContent>

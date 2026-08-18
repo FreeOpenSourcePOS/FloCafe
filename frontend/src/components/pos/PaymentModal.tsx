@@ -14,6 +14,7 @@ import { useI18n } from '@/hooks/useI18n';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
+import { useCurrencyUnitAdapter } from '@/hooks/useCurrencyUnitAdapter';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
 import { sendBillViaFlo, shareBillViaWhatsApp } from '@/lib/whatsapp-share';
 import { useAuthStore } from '@/store/auth';
@@ -43,7 +44,7 @@ interface Payment {
 // Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
 const LOYALTY_REDEMPTION_RATE = 100;
 
-export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUpdate }: Props) {
+export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Props) {
   const remaining = Number(bill.balance);
   const cartCustomerId = useCartStore((s) => s.customerId);
   const cartCustomer = useCartStore((s) => s.customer);
@@ -52,6 +53,9 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   const { t } = useI18n();
   const { currentTenant } = useAuthStore();
   const isWhatsAppReady = useWhatsAppReady();
+  const unitAdapter = useCurrencyUnitAdapter();
+  const { toDisplay: toDisplayUnit, toStored: toStoredUnit, label: inputCurrencyLabel, step: inputCurrencyStep, formatInput } = unitAdapter;
+
   const idempotencyKeyRef = useRef<string | null>(null);
   useEffect(() => {
     idempotencyKeyRef.current = null;
@@ -93,7 +97,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         ? bill.discount_type
         : defaultDiscountTypeForMode(discountMode);
       setDiscountType(isDiscountTypeAllowed(discountMode, nextType) ? nextType : defaultDiscountTypeForMode(discountMode));
-      setDiscountValue(String(bill.discount_value || ''));
+      setDiscountValue(String(nextType === 'amount' ? toDisplayUnit(Number(bill.discount_value || 0)) : (bill.discount_value || '')));
       setDiscountReason(bill.discount_reason || '');
       setShowDiscount(true);
     } else {
@@ -119,9 +123,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     setSyncedRemaining(remaining);
     const totalAllocated = payments.reduce((sum, p) => sum + (parseFloat(p.amount) || 0), 0);
     if (totalAllocated > 0) {
+      const displayRemaining = toDisplayUnit(remaining);
       setPayments(payments.map(p => {
         const ratio = (parseFloat(p.amount) || 0) / totalAllocated;
-        return { ...p, amount: (remaining * ratio).toFixed(2) };
+        return { ...p, amount: formatInput(displayRemaining * ratio) };
       }));
     }
   }
@@ -156,8 +161,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       .catch(() => setCustomMethods([]));
   }, [bill.customer_id, cartCustomerId]);
 
-  const walletAmt = parseFloat(walletAmount) || 0;
-  const totalPayment = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0) + walletAmt;
+  const walletAmt = toStoredUnit(parseFloat(walletAmount) || 0);
+  const totalPayment = payments.reduce((s, p) => s + toStoredUnit(parseFloat(p.amount) || 0), 0) + walletAmt;
 
   const updatePaymentAmount = (idx: number, value: string) => {
     setPaymentsTouched(true);
@@ -165,10 +170,11 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   };
 
   const allocateRemainingTo = (idx: number) => {
-    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + (parseFloat(payment.amount) || 0), walletAmt);
-    const due = Math.max(0, remaining - allocatedElsewhere);
+    const allocatedElsewhere = payments.reduce((sum, payment, index) => index === idx ? sum : sum + toStoredUnit(parseFloat(payment.amount) || 0), walletAmt);
+    const dueStored = Math.max(0, remaining - allocatedElsewhere);
+    const dueDisplay = toDisplayUnit(dueStored);
     setPaymentsTouched(true);
-    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: due > 0 ? due.toFixed(2) : '' } : payment));
+    setPayments(payments.map((payment, index) => index === idx ? { ...payment, amount: dueDisplay > 0 ? String(dueDisplay) : '' } : payment));
   };
 
   const hasCash = payments.some((p) => p.method === 'cash' && (parseFloat(p.amount) || 0) > 0);
@@ -198,9 +204,10 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
     }
     setApplyingDiscount(true);
     try {
+      const storedDiscountValue = discountType === 'amount' && customVal === undefined ? toStoredUnit(val) : val;
       await api.patch(`/orders/${bill.order_id}/discount`, {
         discount_type: discountType,
-        discount_value: val,
+        discount_value: storedDiscountValue,
         discount_reason: val > 0 ? discountReason || undefined : undefined,
         override_pin: discountRequiresApproval && val > 0 ? discountPin : undefined,
       });
@@ -227,7 +234,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
   };
 
   const handlePay = async () => {
-    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,2})?$/.test(value.trim());
+    const amountIsValid = (value: string) => value.trim() === '' || /^\d+(?:\.\d{1,4})?$/.test(value.trim());
     if (payments.some((p) => (
       !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
       && !customMethods.some((method) => method.id === p.payment_method_id)
@@ -235,13 +242,13 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       toast.error(t('pos.paymentFailed'));
       return;
     }
-    if (walletAmount.trim() && !/^\d+(?:\.\d{1,2})?$/.test(walletAmount.trim())) {
+    if (walletAmount.trim() && !/^\d+(?:\.\d{1,4})?$/.test(walletAmount.trim())) {
       toast.error(t('pos.paymentFailed'));
       return;
     }
     const nonCashTotal = payments
       .filter((p) => p.method !== 'cash')
-      .reduce((sum, p) => sum + (Number(p.amount) || 0), 0) + walletAmt;
+      .reduce((sum, p) => sum + toStoredUnit(Number(p.amount) || 0), 0) + walletAmt;
     if (nonCashTotal > remaining + 0.000001) {
       toast.error(t('pos.paymentAboveBalance'));
       return;
@@ -266,7 +273,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
         .map((p) => ({
           method: p.payment_method_id === undefined ? p.method : 'custom',
           ...(p.payment_method_id !== undefined ? { payment_method_id: p.payment_method_id } : {}),
-          amount: parseFloat(p.amount),
+          amount: toStoredUnit(parseFloat(p.amount) || 0),
         }))
         .filter((p) => p.amount > 0 && !isNaN(p.amount));
       if (walletAmt > 0) splitLines.push({ method: 'wallet', amount: walletAmt });
@@ -276,7 +283,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
       // line failed (e.g. network drop) after an earlier one had already committed.
       const idempotencyKey = idempotencyKeyRef.current || (typeof globalThis.crypto?.randomUUID === 'function'
         ? globalThis.crypto.randomUUID()
-        : `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+        : 'payment-req');
       idempotencyKeyRef.current = idempotencyKey;
       const res = await api.post(
         `/bills/${bill.id}/payments`,
@@ -472,7 +479,7 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                 </div>
                 <div className="relative">
                   <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
-                    {discountType === 'percentage' ? '%' : currency}
+                    {discountType === 'percentage' ? '%' : inputCurrencyLabel}
                   </span>
                   <input
                     type="number"
@@ -480,8 +487,8 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                     onChange={(e) => setDiscountValue(e.target.value)}
                     placeholder={discountType === 'percentage' ? '0' : '0.00'}
                     min="0"
-                    max={discountType === 'percentage' ? 100 : Number(bill.subtotal)}
-                    step={discountType === 'percentage' ? 1 : 0.01}
+                    max={discountType === 'percentage' ? 100 : toDisplayUnit(Number(bill.subtotal))}
+                    step={discountType === 'percentage' ? 1 : inputCurrencyStep}
                     className="w-full ps-8 pe-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
                   />
                 </div>
@@ -536,14 +543,14 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
                   <span className="truncate">{label}</span>
                 </button>
                 <div className="flex flex-1 items-center border border-s-0 border-gray-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-brand focus-within:border-transparent">
-                  <span className="ps-3 text-gray-400 text-xs">{currency}</span>
+                  <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
                     value={payment.amount}
                     onChange={(e) => updatePaymentAmount(idx, e.target.value)}
                     placeholder="0.00"
                     className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl"
-                    step="0.01"
+                    step={inputCurrencyStep}
                     min="0"
                   />
                 </div>
@@ -581,35 +588,37 @@ export default function PaymentModal({ bill, currency, onClose, onPaid, onBillUp
             </div>
           )}
 
-          {bill.customer_id && walletBalance !== null && (
+          {/* Loyalty Wallet Section */}
+          {loyaltySettings?.loyalty_enabled && effectiveCustomerId && walletBalance !== null && (
             <div className="space-y-1">
               <div className="flex h-11">
                 <button type="button" disabled={walletBalance <= 0} onClick={() => {
-                  const allocatedElsewhere = payments.reduce((sum, payment) => sum + (parseFloat(payment.amount) || 0), 0);
-                  const maxWallet = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
-                  const due = Math.min(maxWallet, Math.max(0, remaining - allocatedElsewhere));
-                  setWalletAmount(due > 0 ? due.toFixed(2) : '');
+                  const allocatedElsewhere = payments.reduce((sum, payment) => sum + toStoredUnit(parseFloat(payment.amount) || 0), 0);
+                  const maxWalletStored = Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE);
+                  const dueStored = Math.min(maxWalletStored, Math.max(0, remaining - allocatedElsewhere));
+                  const dueDisplay = toDisplayUnit(dueStored);
+                  setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
                 }} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200'}`}>
                   <Wallet size={15} /><span className="truncate">{t('pos.loyaltyWallet')}</span>
                 </button>
                 <div className="flex flex-1 items-center border border-s-0 border-purple-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-purple-400">
-                  <span className="ps-3 text-gray-400 text-xs">{currency}</span>
+                  <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
                   <input
                     type="number"
                     value={walletAmount}
                     onChange={(e) => {
                       const v = e.target.value;
-                      const maxWalletCurrency = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
-                      const max = Math.min(maxWalletCurrency, remaining);
-                      const clamped = parseFloat(v) > max ? max.toFixed(2) : v;
+                      const maxWalletCurrencyStored = Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE));
+                      const maxDisplay = toDisplayUnit(Math.min(maxWalletCurrencyStored, remaining));
+                      const clamped = parseFloat(v) > maxDisplay ? String(maxDisplay) : v;
                       setWalletAmount(clamped);
                     }}
                     placeholder="0.00"
                     disabled={walletBalance <= 0}
                     className="min-w-0 flex-1 px-2 py-2 text-end text-sm font-semibold outline-none rounded-e-xl disabled:bg-gray-50"
-                    step="0.01"
+                    step={inputCurrencyStep}
                     min="0"
-                    max={Math.min(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE)), remaining)}
+                    max={toDisplayUnit(Math.min(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE)), remaining))}
                   />
                 </div>
               </div>

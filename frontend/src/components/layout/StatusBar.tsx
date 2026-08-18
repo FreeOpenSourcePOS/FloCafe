@@ -48,14 +48,21 @@ export default function StatusBar() {
   function formatUptime(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
+    if (hours > 0) return t('common.timeHoursMinutes', { h: hours, m: minutes });
+    return t('common.timeMinutes', { m: minutes });
   }
 
   if (typeof window === 'undefined' || !window.electronAPI?.getStatus) return null;
 
   const isRunning = status?.server === 'running';
   const isPending = !status && !error;
+
+  const serverStatusDisplay = status?.server
+    ? (status.server === 'running' ? t('nav.serverStatusRunning')
+       : status.server === 'stopped' ? t('nav.serverStatusStopped')
+       : status.server === 'starting' ? t('nav.serverStatusStarting')
+       : status.server)
+    : t('nav.serverUnknown');
 
   return (
     <footer
@@ -77,7 +84,7 @@ export default function StatusBar() {
         ) : (
           <AlertCircle size={13} />
         )}
-        <span>{t('nav.serverLabel')}{status?.server || t('nav.serverUnknown')}</span>
+        <span>{t('nav.serverLabel')}{serverStatusDisplay}</span>
       </div>
 
       {error && (

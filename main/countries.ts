@@ -151,8 +151,8 @@ export const getCurrencySymbol = (currency: string, locale = 'en-US'): string =>
  * - `calendar`: `locale` (default) follows the locale's calendar (Shamsi for
  *   `fa-IR`); `persian` forces Shamsi; `gregorian` forces Gregorian.
  *
- * Toman conversion is display-only: product/payment inputs remain in the
- * stored unit (Rial) so no existing database value is ever reinterpreted.
+ * Storage is canonical: monetary amounts persist in the tenant currency (Rial / IRR),
+ * and `getCurrencyUnitAdapter` translates UI payment modal inputs to/from the display unit.
  */
 export type CurrencyDisplay = 'rial' | 'toman' | 'toman_short';
 export type DigitMode = 'locale' | 'latin';
@@ -217,6 +217,52 @@ export const formatMoney = (
   } catch {
     return `${currency} ${formatNumber(amount, locale, numberingSystem)}`;
   }
+};
+
+export interface CurrencyUnitAdapter {
+  scale: number;
+  label: string;
+  step: string;
+  maxDecimals: number;
+  toDisplay: (storedAmount: number) => number;
+  toStored: (displayAmount: number) => number;
+  formatInput: (displayAmount: number) => string;
+}
+
+/**
+ * Returns a centralized adapter for handling input/display unit conversions
+ * across all currencies and tenant display preferences (e.g. Rial vs Toman).
+ */
+export const getCurrencyUnitAdapter = (
+  currency: string,
+  countryCode?: string,
+  prefs?: LocalePreferences,
+): CurrencyUnitAdapter => {
+  const { currencyDisplay, digits } = normalizePreferences(prefs);
+  if (currency === IRAN_CURRENCY && currencyDisplay !== 'rial') {
+    const label = currencyDisplay === 'toman_short'
+      ? (digits === 'latin' ? 'T' : 'ت')
+      : 'تومان';
+    return {
+      scale: 0.1,
+      label,
+      step: '0.001',
+      maxDecimals: 3,
+      toDisplay: (storedAmount: number) => Number((storedAmount / TOMAN_PER_RIAL).toFixed(4)),
+      toStored: (displayAmount: number) => Number((displayAmount * TOMAN_PER_RIAL).toFixed(2)),
+      formatInput: (displayAmount: number) => String(Number(displayAmount.toFixed(3))),
+    };
+  }
+
+  return {
+    scale: 1,
+    label: currency,
+    step: '0.01',
+    maxDecimals: 2,
+    toDisplay: (storedAmount: number) => Number(storedAmount.toFixed(2)),
+    toStored: (displayAmount: number) => Number(displayAmount.toFixed(2)),
+    formatInput: (displayAmount: number) => String(Number(displayAmount.toFixed(2))),
+  };
 };
 
 export const formatCurrencyForTenant = (

@@ -8,6 +8,7 @@ import {
   formatNumberForTenant,
   formatDateForTenant,
   getCountryByCode,
+  getCurrencyUnitAdapter,
 } from '../main/countries';
 
 /**
@@ -205,3 +206,53 @@ test('formatDateForTenant: non-Iran tenants stay Gregorian', () => {
   const out = formatDateForTenant(date, 'IN', 'Asia/Kolkata', {}, { year: 'numeric', month: 'short', day: 'numeric' });
   assert.ok(out.includes('2026'), `expected Gregorian year 2026, got: ${out}`);
 });
+
+test('getCurrencyUnitAdapter: IR with toman display scales amounts and labels correctly', () => {
+  const adapter = getCurrencyUnitAdapter('IRR', 'IR', { currencyDisplay: 'toman' });
+  assert.equal(adapter.scale, 0.1);
+  assert.equal(adapter.label, 'تومان');
+  assert.equal(adapter.step, '0.001');
+  assert.equal(adapter.maxDecimals, 3);
+  assert.equal(adapter.toDisplay(6000000), 600000);
+  assert.equal(adapter.toStored(600000), 6000000);
+  assert.equal(adapter.formatInput(600000), '600000');
+  assert.equal(adapter.formatInput(12.3456), '12.346');
+});
+
+test('getCurrencyUnitAdapter: IR with toman_short latin and locale digits', () => {
+  const latinAdapter = getCurrencyUnitAdapter('IRR', 'IR', { currencyDisplay: 'toman_short', digits: 'latin' });
+  assert.equal(latinAdapter.label, 'T');
+  assert.equal(latinAdapter.scale, 0.1);
+
+  const localeAdapter = getCurrencyUnitAdapter('IRR', 'IR', { currencyDisplay: 'toman_short', digits: 'locale' });
+  assert.equal(localeAdapter.label, 'ت');
+  assert.equal(localeAdapter.scale, 0.1);
+});
+
+test('getCurrencyUnitAdapter: IR with rial display keeps 1:1 scale and IRR label', () => {
+  const adapter = getCurrencyUnitAdapter('IRR', 'IR', { currencyDisplay: 'rial' });
+  assert.equal(adapter.scale, 1);
+  assert.equal(adapter.label, 'IRR');
+  assert.equal(adapter.step, '0.01');
+  assert.equal(adapter.maxDecimals, 2);
+  assert.equal(adapter.toDisplay(6000000), 6000000);
+  assert.equal(adapter.toStored(6000000), 6000000);
+});
+
+test('getCurrencyUnitAdapter: non-IR currencies default to 1:1 scale', () => {
+  const usdAdapter = getCurrencyUnitAdapter('USD', 'US');
+  assert.equal(usdAdapter.scale, 1);
+  assert.equal(usdAdapter.label, 'USD');
+  assert.equal(usdAdapter.step, '0.01');
+  assert.equal(usdAdapter.toDisplay(12.34), 12.34);
+  assert.equal(usdAdapter.toStored(12.34), 12.34);
+  assert.equal(usdAdapter.formatInput(12.34), '12.34');
+
+  const inrAdapter = getCurrencyUnitAdapter('INR', 'IN');
+  assert.equal(inrAdapter.scale, 1);
+  assert.equal(inrAdapter.label, 'INR');
+  assert.equal(inrAdapter.step, '0.01');
+  assert.equal(inrAdapter.toDisplay(500), 500);
+  assert.equal(inrAdapter.toStored(500), 500);
+});
+

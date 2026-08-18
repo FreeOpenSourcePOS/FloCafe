@@ -191,7 +191,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
               className="flex items-center gap-2 px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand/90 transition-colors"
             >
               <Check size={16} />
-              Apply
+              {t('products.imageCropApply')}
             </button>
           </div>
         </div>
@@ -218,16 +218,16 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
             disabled={fetching || !urlInput.trim()}
             className="px-3 py-2 bg-brand text-white rounded-lg text-sm hover:bg-brand/90 disabled:opacity-50"
           >
-            {fetching ? 'Fetching...' : 'Fetch'}
+            {fetching ? t('products.imageFetching') : t('products.imageFetch')}
           </button>
           <button type="button"
             onClick={() => { setMode('idle'); setUrlInput(''); }}
             className="px-3 py-2 text-gray-500 hover:text-gray-700 text-sm"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
         </div>
-        <p className="text-xs text-gray-400">Only HTTPS URLs supported. Image will be fetched, cropped, and stored locally.</p>
+        <p className="text-xs text-gray-400">{t('products.imageUrlHint')}</p>
       </div>
     );
   }
@@ -264,13 +264,13 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
           <input {...getInputProps()} />
           <Upload size={24} className="mb-2 text-gray-400" />
           <p className="text-sm font-medium text-center">
-            {isDragActive ? 'Drop image here...' : 'Drag & drop an image here, or click to browse'}
+            {isDragActive ? t('products.imageDropActive') : t('products.imageDropIdle')}
           </p>
         </div>
 
         <div className="flex items-center gap-2 justify-center">
           <div className="flex-1 h-px bg-gray-200"></div>
-          <span className="text-xs text-gray-400 font-medium uppercase px-2">OR USE</span>
+          <span className="text-xs text-gray-400 font-medium uppercase px-2">{t('products.imageOrUse')}</span>
           <div className="flex-1 h-px bg-gray-200"></div>
         </div>
 
@@ -281,7 +281,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
             className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
           >
             <Camera size={16} />
-            Camera
+            {t('products.imageCamera')}
           </button>
           <input
             ref={cameraInputRef}
@@ -302,13 +302,13 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
             className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
           >
             <Link size={16} />
-            Paste URL
+            {t('products.imagePasteUrl')}
           </button>
         </div>
       </div>
 
       <p className="text-xs text-gray-400 text-center mt-4">
-        Max {MAX_RAW_FILE_SIZE / 1024 / 1024} MB. Images are compressed to WebP.
+        {t('products.imageMaxSize', { size: MAX_RAW_FILE_SIZE / 1024 / 1024 })}
       </p>
     </div>
   );

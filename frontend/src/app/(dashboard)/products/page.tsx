@@ -481,7 +481,7 @@ export default function ProductsPage() {
           <div className="flex justify-end gap-2 mb-4">
             {isOwnerOrManager && taxCategories.length > 0 && (
               <Button variant="outline" onClick={() => { setBulkTaxCategoryId(''); setShowBulkTaxModal(true); }}>
-                Assign tax category
+                {t('products.assignTaxCategory')}
               </Button>
             )}
             <Button variant="outline" onClick={() => openCsvModal('products')}>
@@ -499,7 +499,7 @@ export default function ProductsPage() {
             <tr>
               <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnProduct')}</th>
               <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnCategory')}</th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">Add-ons</th>
+              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnAddons')}</th>
               <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnPrice')}</th>
               <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnTax')}</th>
               {loyaltyEnabled && <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase">{t('products.columnCashback')}</th>}
@@ -555,7 +555,7 @@ export default function ProductsPage() {
                     <span>{product.category?.name || '—'}</span>
                     {isCategoryInactive && (
                       <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 w-fit" title="Parent category is inactive; product is hidden on POS">
-                        <AlertTriangle size={11} className="shrink-0" /> Category Inactive
+                        <AlertTriangle size={11} className="shrink-0" /> {t('products.categoryInactiveBadge')}
                       </span>
                     )}
                   </div>
@@ -571,7 +571,7 @@ export default function ProductsPage() {
                 </td>
                 <td className="p-4 text-end">
                   <p className="font-medium">{fmt(Number(product.price))}</p>
-                  {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">Cost: {fmt(Number(product.cost_price))}</p>}
+                  {product.cost_price != null && product.cost_price > 0 && <p className="text-xs text-gray-400">{t('products.costLabel', { value: fmt(Number(product.cost_price)) })}</p>}
                 </td>
                 <td className="p-4 text-sm text-gray-600">
                   <div className="flex flex-col gap-0.5">
@@ -610,7 +610,7 @@ export default function ProductsPage() {
                     {product.is_active ? t('common.active') : t('common.inactive')}
                   </span>
                   {product.is_active && isCategoryInactive && (
-                    <span className="text-[10px] text-amber-600 font-medium block mt-1">(Hidden on POS)</span>
+                    <span className="text-[10px] text-amber-600 font-medium block mt-1">{t('products.hiddenOnPos')}</span>
                   )}
                 </td>
                 <td className="p-4 text-end">
@@ -722,34 +722,34 @@ export default function ProductsPage() {
                 </div>
               )}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tax rate group</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.taxRateGroupLabel')}</label>
                 <select value={form.tax_category_id} onChange={(e) => setForm({ ...form, tax_category_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
-                  <option value="">— No tax / exempt —</option>
+                  <option value="">{t('products.taxNoTax')}</option>
                   {taxCategories.map((tc) => <option key={tc.id} value={tc.id}>{taxCategoryOptionLabel(tc)}</option>)}
                 </select>
                 {taxCategories.length === 0 && (
-                  <p className="text-xs text-gray-400 mt-1">No tax groups are available until country taxes are enabled in Settings.</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('products.taxNoGroupsHint')}</p>
                 )}
                 {taxCategories.length > 0 && (
-                  <p className="text-xs text-gray-400 mt-1">The store default is selected automatically. Change this only when a product legally uses a different rate or is exempt.</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('products.taxDefaultHint')}</p>
                 )}
               </div>
               {form.tax_category_id ? (
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Tax behavior</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.taxBehaviorLabel')}</label>
                   <select value={form.tax_behavior} onChange={(e) => setForm({ ...form, tax_behavior: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none">
-                    <option value="country_default">Country default</option>
+                    <option value="country_default">{t('products.taxCountryDefault')}</option>
                     <option value="inclusive">{t('products.taxInclusive')}</option>
                     <option value="exclusive">{t('products.taxExclusive')}</option>
-                    <option value="exempt">Exempt</option>
+                    <option value="exempt">{t('products.taxExempt')}</option>
                   </select>
-                  <p className="text-xs text-gray-400 mt-1">The rate is resolved from the active tax profile for this category, not entered manually.</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('products.taxRateHint')}</p>
                 </div>
               ) : (
                 <p className="text-xs text-gray-400 -mt-2">
-                  No tax will be calculated or printed until a tax category is selected.
+                  {t('products.taxNoCategory')}
                 </p>
               )}
               <div>
@@ -1054,7 +1054,7 @@ export default function ProductsPage() {
                   </label>
                   <label className="flex items-center gap-2">
                     <input type="checkbox" checked={addonForm.allow_multiple_quantities} onChange={(e) => setAddonForm({ ...addonForm, allow_multiple_quantities: e.target.checked })} className="rounded border-gray-300 text-brand focus:ring-brand" />
-                    <span className="text-sm text-gray-700">Allow multiple quantities per add-on</span>
+                    <span className="text-sm text-gray-700">{t('products.addonAllowMultipleQuantities')}</span>
                   </label>
                   <div>
                     <div className="flex justify-between items-center mb-2">
@@ -1089,17 +1089,17 @@ export default function ProductsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">Assign tax category</h2>
+              <h2 className="text-lg font-bold">{t('products.assignTaxCategory')}</h2>
               <button onClick={() => setShowBulkTaxModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             {legacyProducts.length === 0 ? (
-              <p className="text-sm text-gray-500">Every active product already has a tax category assigned.</p>
+              <p className="text-sm text-gray-500">{t('products.taxAllAssigned')}</p>
             ) : (
               <>
                 <p className="text-sm text-gray-600 mb-4">
-                  Apply one tax category to all <span className="font-medium">{legacyProducts.length}</span> active product(s) still on a legacy manual rate. Products with their own category already set are left untouched.
+                  {t('products.taxBulkBody', { count: legacyProducts.length })}
                 </p>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Tax category</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.taxRateGroupLabel')}</label>
                 <select value={bulkTaxCategoryId} onChange={(e) => setBulkTaxCategoryId(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none mb-5">
                   <option value="">{t('products.selectPlaceholder')}</option>
@@ -1108,7 +1108,7 @@ export default function ProductsPage() {
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setShowBulkTaxModal(false)}>{t('common.cancel')}</Button>
                   <Button onClick={handleBulkTaxAssign} disabled={!bulkTaxCategoryId || bulkTaxApplying}>
-                    {bulkTaxApplying ? t('products.csvImporting') : `Apply to ${legacyProducts.length} product(s)`}
+                    {bulkTaxApplying ? t('products.csvImporting') : t('products.taxApplyToProducts', { count: legacyProducts.length })}
                   </Button>
                 </div>
               </>

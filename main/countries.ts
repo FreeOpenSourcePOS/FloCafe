@@ -151,8 +151,8 @@ export const getCurrencySymbol = (currency: string, locale = 'en-US'): string =>
  * - `calendar`: `locale` (default) follows the locale's calendar (Shamsi for
  *   `fa-IR`); `persian` forces Shamsi; `gregorian` forces Gregorian.
  *
- * Toman conversion is display-only: product/payment inputs remain in the
- * stored unit (Rial) so no existing database value is ever reinterpreted.
+ * Storage is canonical: monetary amounts persist in the tenant currency (Rial / IRR),
+ * and `getCurrencyUnitAdapter` translates UI payment modal inputs to/from the display unit.
  */
 export type CurrencyDisplay = 'rial' | 'toman' | 'toman_short';
 export type DigitMode = 'locale' | 'latin';

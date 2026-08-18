@@ -1,33 +1,47 @@
 name: Feature Request
-description: Suggest a new feature or improvement
+description: Suggest a new feature, workflow improvement, or enhancement
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for suggesting a feature! Please describe what you'd like.
+        Thanks for suggesting a feature or improvement!
+
+        *Note: Opening a feature request captures the proposal and use case. An open issue does not automatically mean a proposed technical implementation has been approved. Maintainers may discuss and refine scope or architecture before implementation begins.*
 
   - type: textarea
     id: problem
     attributes:
       label: Problem or motivation
-      description: What problem does this feature solve? Is it related to a frustration?
+      description: What problem does this feature solve? What operator or customer need does it address?
     validations:
       required: true
 
   - type: textarea
-    id: solution
+    id: current_behavior
     attributes:
-      label: Proposed solution
-      description: Describe the solution you'd like.
+      label: Current behavior
+      description: How does FloCafe currently handle this workflow (if at all)?
+
+  - type: textarea
+    id: desired_outcome
+    attributes:
+      label: Desired outcome
+      description: Describe what you would like to happen from a user/operator perspective.
     validations:
       required: true
+
+  - type: textarea
+    id: proposed_approach
+    attributes:
+      label: Proposed technical approach (optional)
+      description: If you have a specific technical implementation idea, describe it here.
 
   - type: textarea
     id: alternatives
     attributes:
-      label: Alternatives considered
-      description: Any alternative solutions or features you've considered.
+      label: Alternatives considered (optional)
+      description: Any alternative designs, workarounds, or workflows you considered.
 
   - type: dropdown
     id: area
@@ -37,12 +51,13 @@ body:
       options:
         - POS / Checkout
         - Table Management
-        - Kitchen Display (KDS)
-        - Inventory / Products
+        - Kitchen Display (KDS) & Stations
+        - Inventory / Products / Menu
+        - Taxes & Compliance
+        - Printing / ESC-POS
         - Reports / Analytics
-        - Settings / Configuration
-        - Printing
-        - Authentication / Users
+        - Settings & Backups
+        - Authentication & Staff Roles
         - Other
     validations:
       required: true
@@ -51,4 +66,4 @@ body:
     id: context
     attributes:
       label: Additional context
-      description: Any other context, screenshots, or mockups.
+      description: Screenshots, mockups, operator notes, or hardware details.

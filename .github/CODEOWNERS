@@ -1,26 +1,11 @@
 # CODEOWNERS — Auto-assign reviewers based on file paths
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 #
-# Maintainers: @itsbkm (owner), @ARCHITVARMA15, @khaira777
+# Project Owner: @itsbkm
+# Maintainers & Reviewers: @khaira777, @carvalab
 
-# Default owners for everything
-* @itsbkm
+# Default reviewers for all files across the repository
+* @itsbkm @khaira777 @carvalab
 
-# Backend (Electron + Express + SQLite)
-/main/ @itsbkm
-
-# Frontend (Next.js + React)
-/frontend/ @itsbkm
-
-# Database migrations — require careful review
-/main/db.ts @itsbkm
-
-# Authentication & security — require careful review
-/main/routes/auth.ts @itsbkm
-/main/middleware/ @itsbkm
-
-# Tests
-/tests/ @itsbkm
-
-# CI/CD
-/.github/ @itsbkm
+# Repository governance changes require project owner review
+/.github/CODEOWNERS @itsbkm

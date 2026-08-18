@@ -141,7 +141,7 @@ export default function CustomersPage() {
           <h1 className="text-2xl font-bold text-gray-900">{t('nav.customers')}</h1>
           {filter === 'invalid_phones' && (
             <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">
-              <AlertCircle size={14} /> Action Required
+              <AlertCircle size={14} /> {t('customers.actionRequired')}
               <button onClick={() => router.push('/customers')} className="ms-1 text-red-500 hover:text-red-700">
                 <X size={12} />
               </button>
@@ -171,7 +171,7 @@ export default function CustomersPage() {
                 {t('customer.phone')} <SortIcon field="phone" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('last_visit')}>
-                Last Visit <SortIcon field="last_visit" sortField={sortField} sortOrder={sortOrder} />
+                {t('customers.columnLastVisit')} <SortIcon field="last_visit" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('visits')}>
                 {t('customer.visits')} <SortIcon field="visits" sortField={sortField} sortOrder={sortOrder} />

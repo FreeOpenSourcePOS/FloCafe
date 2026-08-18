@@ -376,8 +376,8 @@ export default function OrdersPage() {
   const getTimeSince = (dateStr: string) => {
     const minutes = Math.floor((now - parseDbTimestamp(dateStr).getTime()) / 60000);
     if (minutes < 1) return t('common.justNow');
-    if (minutes < 60) return `${minutes}m ago`;
-    return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
+    if (minutes < 60) return t('common.timeMinutesAgo', { m: minutes });
+    return t('common.timeHoursMinutesAgo', { h: Math.floor(minutes / 60), m: minutes % 60 });
   };
 
   const handleCreateNewOrderForCustomer = async (order: Order) => {
@@ -1054,7 +1054,7 @@ export default function OrdersPage() {
                         onClick={() => isWhatsAppReady ? handleSendViaFlo(order) : handleWhatsAppShare(order)}
                         disabled={sendingWaOrderId === order.id}
                         className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-70"
-                        title={isWhatsAppReady ? 'Send via Flo' : t('common.shareViaWhatsApp')}
+                        title={isWhatsAppReady ? t('common.sendViaFlo') : t('common.shareViaWhatsApp')}
                       >
                         {sendingWaOrderId === order.id ? <Loader2 className="size-4 animate-spin" /> : isWhatsAppReady ? <Send size={14} /> : <MessageCircle size={14} />}
                       </button>
@@ -1594,7 +1594,7 @@ placeholder={t('orders.managerPin')}
               {/* Discount Reason */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Reason (optional)
+                  {t('common.reasonOptional')}
                 </label>
                 <input
                   type="text"

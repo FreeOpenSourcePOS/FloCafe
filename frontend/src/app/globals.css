@@ -182,8 +182,8 @@ body {
 }
 
 /* ── RTL / direction foundation (Batch C, Refs #241) ──────────────────────────
- * Shared building blocks for Persian RTL UI. Persian stays hidden from user
- * language selectors; these rules only take effect once the document is
+ * Shared building blocks for Persian RTL UI. Persian is a user-selectable UI
+ * language (Batch J, Refs #241); these rules take effect once the document is
  * `dir="rtl"` (set by HtmlLangSync / KdsHtmlLang).
  *
  * - `.ltr-island` keeps content that is naturally LTR (emails, URLs, IP

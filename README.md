@@ -119,7 +119,7 @@ It is free software. FloCafe has no tiers or paywalled features, and the code is
 - Product images, barcode lookup, and CSV menu import/export
 - Customer records, staff roles, sales reporting, and receipt history
 - Configurable tax packs and local overrides
-- English, Spanish, and Brazilian Portuguese
+- English, Spanish, Brazilian Portuguese, and Persian
 
 Backups and restores are built in. Optional [Google Drive backup](docs/google-drive-setup.md) stores backup copies in the owner’s Drive. WhatsApp bill delivery can be enabled for businesses that use a paired phone.
 

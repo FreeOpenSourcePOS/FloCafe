@@ -163,6 +163,89 @@ function run(): void {
 
   console.log('  ✓ Ltr polymorphic rendering (as="a", as="code") verified through React interface');
 
+  // 4. getBrowserLanguage returns 'fa' for fa locales, 'es' for es, 'pt' for pt, 'en' otherwise.
+  const i18nModule = (() => {
+    const moduleApi = require('module') as {
+      _resolveFilename: (...args: any[]) => string;
+    };
+    const originalResolveFilename = moduleApi._resolveFilename;
+    moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+      let resolvedRequest = request;
+      if (request.startsWith('@/')) {
+        resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
+      }
+      return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+    };
+    try {
+      return require('../frontend/src/lib/i18n');
+    } finally {
+      moduleApi._resolveFilename = originalResolveFilename;
+    }
+  })();
+
+  function withNavigatorLanguage(lang: string | undefined, fn: () => void): void {
+    const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    const originalNav = (globalThis as any).navigator;
+    try {
+      Object.defineProperty(globalThis, 'navigator', {
+        value: lang !== undefined ? { language: lang } : undefined,
+        configurable: true,
+        writable: true,
+      });
+      fn();
+    } finally {
+      if (originalDescriptor) {
+        Object.defineProperty(globalThis, 'navigator', originalDescriptor);
+      } else {
+        Object.defineProperty(globalThis, 'navigator', {
+          value: originalNav,
+          configurable: true,
+          writable: true,
+        });
+      }
+    }
+  }
+
+  withNavigatorLanguage('fa-IR', () => {
+    assert(i18nModule.getBrowserLanguage() === 'fa', 'getBrowserLanguage must return "fa" for fa-IR');
+  });
+  withNavigatorLanguage('fa', () => {
+    assert(i18nModule.getBrowserLanguage() === 'fa', 'getBrowserLanguage must return "fa" for fa');
+  });
+  withNavigatorLanguage('fa-AF', () => {
+    assert(i18nModule.getBrowserLanguage() === 'fa', 'getBrowserLanguage must return "fa" for fa-AF');
+  });
+  withNavigatorLanguage('es-ES', () => {
+    assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must return "es" for es-ES');
+  });
+  withNavigatorLanguage('pt-BR', () => {
+    assert(i18nModule.getBrowserLanguage() === 'pt', 'getBrowserLanguage must return "pt" for pt-BR');
+  });
+  withNavigatorLanguage('en-US', () => {
+    assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must return "en" for en-US');
+  });
+  withNavigatorLanguage('fr-FR', () => {
+    assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must fallback to "en" for unsupported locales');
+  });
+  withNavigatorLanguage(undefined, () => {
+    assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must fallback to "en" when navigator is undefined');
+  });
+  console.log('  ✓ getBrowserLanguage resolves fa for fa* locales and defaults correctly');
+
+  // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all four languages.
+  const languages = ['en', 'es', 'pt', 'fa'] as const;
+  for (const lang of languages) {
+    const setupLabel = i18nModule.t('setup.languagePersian', lang);
+    assert(setupLabel && setupLabel !== 'setup.languagePersian', `setup.languagePersian must be translated in ${lang}, got: ${setupLabel}`);
+    const settingsLabel = i18nModule.t('settings.languageFa', lang);
+    assert(settingsLabel && settingsLabel !== 'settings.languageFa', `settings.languageFa must be translated in ${lang}, got: ${settingsLabel}`);
+  }
+  assert(i18nModule.t('setup.languagePersian', 'fa') === 'فارسی', 'setup.languagePersian in fa must be فارسی');
+  assert(i18nModule.t('settings.languageFa', 'fa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
+  assert(i18nModule.t('setup.languagePersian', 'en') === 'Persian', 'setup.languagePersian in en must be Persian');
+  assert(i18nModule.t('settings.languageFa', 'en') === 'Persian (FA)', 'settings.languageFa in en must be Persian (FA)');
+  console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, pt, fa');
+
   console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');
 }
 

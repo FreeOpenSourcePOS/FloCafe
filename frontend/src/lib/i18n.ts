@@ -78,6 +78,7 @@ export function getBrowserLanguage(): Language {
     const nav = navigator.language?.toLowerCase();
     if (nav?.startsWith('es')) return 'es';
     if (nav?.startsWith('pt')) return 'pt';
+    if (nav?.startsWith('fa')) return 'fa';
   }
   return 'en';
 }

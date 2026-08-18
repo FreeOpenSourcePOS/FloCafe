@@ -80,6 +80,24 @@ async function assertNoHorizontalOverflow(page: Page, label: string): Promise<vo
   );
 }
 
+/**
+ * The fixed app sidebar rail must sit at the inline-start: left edge in LTR,
+ * right edge in RTL (Persian). Regression coverage for the physical left-0
+ * pinning that kept it stuck on the left in RTL (Refs #241).
+ */
+async function assertSidebarSide(page: Page, expected: 'left' | 'right'): Promise<void> {
+  const container = page.locator('[data-slot="sidebar-container"]');
+  await expect(container).toBeVisible();
+  const box = await container.boundingBox();
+  expect(box, 'sidebar container must have a bounding box').not.toBeNull();
+  const vw = page.viewportSize()?.width ?? 0;
+  if (expected === 'left') {
+    expect(box!.x, 'sidebar must be pinned to the left edge in LTR').toBeLessThan(5);
+  } else {
+    expect(box!.x + box!.width, 'sidebar must be pinned to the right edge in RTL').toBeGreaterThan(vw - 5);
+  }
+}
+
 test('Dashboard, POS, and orders screens render LTR in English and RTL in Persian with LTR phone input, mirrored arrows, and no overflow', async ({ page }) => {
   // Owner account: the dashboard page redirects non-owner roles to /pos, and
   // one login keeps the suite within the shared server's login rate limit.
@@ -91,6 +109,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByTestId('pos-product-grid')).toBeVisible();
   await expect(page.getByText('E2E Coffee')).toBeVisible();
+  await assertSidebarSide(page, 'left');
   await captureScreenshot(page, 'pos-ltr-en.png');
 
   // ── Persian (RTL) on the POS screen ──────────────────────────────────────
@@ -100,6 +119,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     await expect(page.getByText('E2E Coffee')).toBeVisible();
+    await assertSidebarSide(page, 'right');
 
     // The customer-search phone input is naturally LTR and must stay dir="ltr" inside RTL.
     const phoneInput = page.locator('input[type="tel"]').first();

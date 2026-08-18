@@ -231,6 +231,15 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.locator('nav')).toBeVisible();
 
+    // The Settings left nav mirrors to the inline-end in RTL: radix Tabs must
+    // follow the document direction instead of forcing dir="ltr" (Refs #241).
+    await expect(page.locator('[data-slot="tabs"]')).toHaveAttribute('dir', 'rtl');
+    const settingsNavBox = await page.locator('nav').boundingBox();
+    expect(settingsNavBox, 'settings nav must have a bounding box').not.toBeNull();
+    expect(settingsNavBox!.x, 'settings nav must sit on the right side in RTL').toBeGreaterThan(
+      (page.viewportSize()?.width ?? 0) / 2
+    );
+
     // Verify language dropdown in Settings offers en, es, pt, and fa
     const languageSelect = page.locator('select').filter({ has: page.locator('option[value="en"]') }).first();
     await expect(languageSelect).toBeVisible();

@@ -1,17 +1,19 @@
 name: Bug Report
-description: Report a bug or unexpected behavior
+description: Report a bug, crash, or unexpected behavior
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting a bug! Please fill out the sections below.
+        Thanks for reporting an issue! Please provide the details below.
+
+        > **Security & Privacy Reminder:** Do NOT upload real customer databases, credentials, API keys, `.env` files, or private business records. If reporting a security vulnerability, please report it privately per [SECURITY.md](https://github.com/FreeOpenSourcePOS/FloCafe/blob/main/SECURITY.md).
 
   - type: textarea
     id: description
     attributes:
-      label: Describe the bug
-      description: A clear and concise description of what the bug is.
+      label: Bug description
+      description: A clear and concise summary of what went wrong.
     validations:
       required: true
 
@@ -19,7 +21,7 @@ body:
     id: steps
     attributes:
       label: Steps to reproduce
-      description: Steps to reproduce the behavior.
+      description: Exact steps to reproduce the issue.
       placeholder: |
         1. Go to '...'
         2. Click on '...'
@@ -31,7 +33,7 @@ body:
     id: expected
     attributes:
       label: Expected behavior
-      description: What you expected to happen.
+      description: What should have happened.
     validations:
       required: true
 
@@ -39,19 +41,36 @@ body:
     id: actual
     attributes:
       label: Actual behavior
-      description: What actually happened.
+      description: What actually happened (include error text if any).
     validations:
       required: true
 
   - type: dropdown
-    id: platform
+    id: os
     attributes:
-      label: Platform
+      label: Operating System
       options:
-        - macOS
         - Windows
+        - macOS
         - Linux
-        - All
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: Installation Method
+      options:
+        - GitHub / direct installer
+        - Mac App Store
+        - Microsoft Store
+        - AppImage
+        - deb
+        - rpm
+        - Snap
+        - Source / development build
+        - Other
     validations:
       required: true
 
@@ -59,19 +78,24 @@ body:
     id: version
     attributes:
       label: FloCafe version
-      description: "Find this in the app menu: FloCafe > About"
-      placeholder: "e.g. 1.7.2"
+      description: "Exact version from app menu: FloCafe > About"
     validations:
       required: true
+
+  - type: input
+    id: os_details
+    attributes:
+      label: OS version & architecture (optional)
+      description: "e.g., Windows 11 x64, macOS 14.5 Apple Silicon, Ubuntu 24.04"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or printer output
+      description: "Paste relevant error lines from Help > Open Logs Folder (main.log). Redact any private information."
 
   - type: textarea
     id: screenshots
     attributes:
-      label: Screenshots
-      description: If applicable, add screenshots to help explain the problem.
-
-  - type: textarea
-    id: context
-    attributes:
-      label: Additional context
-      description: Any other context about the problem (database size, number of tables, etc.).
+      label: Screenshots & hardware context
+      description: Drag and drop screenshots, screen recordings, or printer make/model details if helpful.

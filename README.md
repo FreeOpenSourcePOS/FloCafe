@@ -13,12 +13,6 @@
     <a href="https://github.com/FreeOpenSourcePOS/FloCafe/blob/main/LICENSE"><img src="https://img.shields.io/github/license/FreeOpenSourcePOS/FloCafe" alt="MIT License"></a>
     <img src="https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-blue" alt="Windows, macOS, and Linux">
     <a href="https://github.com/FreeOpenSourcePOS/FloCafe/actions/workflows/ci.yml"><img src="https://github.com/FreeOpenSourcePOS/FloCafe/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
-    <br>
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/stargazers"><img src="https://img.shields.io/github/stars/FreeOpenSourcePOS/FloCafe?style=social" alt="GitHub stars"></a>
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/network/members"><img src="https://img.shields.io/github/forks/FreeOpenSourcePOS/FloCafe?style=social" alt="GitHub forks"></a>
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/issues"><img src="https://img.shields.io/github/issues/FreeOpenSourcePOS/FloCafe" alt="Open issues"></a>
-    <a href="https://github.com/FreeOpenSourcePOS/FloCafe/pulls"><img src="https://img.shields.io/github/issues-pr/FreeOpenSourcePOS/FloCafe" alt="Open pull requests"></a>
-    <a href="https://www.reddit.com/r/FloPOS/"><img src="https://img.shields.io/badge/Reddit-r%2FFloPOS-FF4500?logo=reddit&logoColor=white" alt="Reddit community"></a>
   </p>
 </div>
 
@@ -26,15 +20,11 @@
   <img src="docs/images/flo-cafe-pos.webp" alt="FloCafe POS screen showing product selection and an active dine-in order" width="100%">
 </p>
 
-FloCafe runs on the business's own computer. Orders, customers, receipts, and backups stay in a local SQLite database, so the counter keeps working when the internet does not. Google Drive backup, WhatsApp bill delivery, and cloud-connected reporting are optional.
-
-If FloCafe helps your cafe, restaurant, cloud kitchen, bakery, or food truck, please star the repository. GitHub stars help more operators find a free open-source POS instead of assuming every restaurant system must be a paid cloud subscription.
-
-**Best-fit searches:** open-source POS, free restaurant POS, cafe POS, kitchen display system, KDS, self-hosted restaurant POS, offline-first POS, thermal printer POS.
+FloCafe runs directly on the business's own computer. Orders, customers, receipts, and backups are stored in a local SQLite database, allowing counter service and kitchen displays to continue operating without an internet connection. No hosted or cloud account is required for core POS operation. Optional integrations—such as Google Drive backup, WhatsApp bill delivery, and cloud-connected reporting—can be enabled when needed.
 
 ## Get FloCafe
 
-Download the latest installer from [GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases), or use the app store for macOS and Windows.
+Download the latest installer from [GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases), or install through your platform's app store:
 
 <p>
   <a href="https://apps.apple.com/in/app/flo-cafe/id6763136018">
@@ -62,15 +52,7 @@ sudo apt install ./flocafe-*.deb
 sudo snap install flocafe
 ```
 
-If the Snap build cannot see a USB receipt printer:
-
-```sh
-sudo snap connect flocafe:raw-usb
-```
-
-On first launch, create the owner account, then add products, tables, staff, and printers in Settings.
-
-For Linux package choices, updates, FUSE, printing, and tray support, see [Linux installation and support](docs/linux.md).
+For Linux package choices, updates, FUSE setup, printing permissions, and tray behavior, see [Linux installation and support](docs/linux.md).
 
 ### System requirements
 
@@ -82,74 +64,50 @@ For Linux package choices, updates, FUSE, printing, and tray support, see [Linux
 
 Node.js is only required to develop FloCafe, not to run a packaged release.
 
-<details>
-<summary>Uninstall a direct-download build</summary>
+## Highlights
 
-App Store and Microsoft Store installs should be removed through the relevant store or operating system.
+- **Order workflows:** Counter, dine-in, takeaway, and delivery orders with table management and held orders.
+- **Modifiers & pricing:** Item modifiers, add-on groups, discounts, and customer loyalty points.
+- **Receipt printing:** ESC/POS thermal printing over USB, local network (TCP), and OS-managed print queues, with WebUSB supported in compatible browsers (58 mm and 80 mm paper support).
+- **Kitchen operations:** Standalone Kitchen Display System (KDS) server and category-based kitchen station routing.
+- **Catalog management:** Product images, barcode scanning, and CSV menu import/export.
+- **Administration:** Role-based staff accounts (Owner, Manager, Cashier, Chef), sales analytics, and audit logs.
+- **Data protection:** Local SQLite database with automated pre-migration backups, manual restore tools, and optional Google Drive backup.
 
-```sh
-# macOS
-curl -fsSL https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-macos.sh -o uninstall-macos.sh
-chmod +x uninstall-macos.sh
-./uninstall-macos.sh
-```
+## Project status
 
-```powershell
-# Windows PowerShell
-irm https://github.com/FreeOpenSourcePOS/FloCafe/releases/latest/download/uninstall-windows.ps1 -OutFile uninstall-windows.ps1
-powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
-```
+FloCafe is actively developed and already used in real deployments. Core customer data and upgrade safety are treated carefully, including explicit database migrations and recovery mechanisms. Some internal and extension-facing architecture is still evolving, so implementation details and internal contracts may change as the project matures.
 
-Both scripts ask whether to keep application data. Do not choose their data-purge options unless you intend to remove the local database and backups.
+## Offline-first by design
 
-</details>
+Core POS operation and local data are offline-first. Order entry, billing, KDS coordination, and receipt printing do not depend on internet access or external cloud services.
 
-## Why FloCafe
+- **Data location:** The SQLite database and local backups reside in the operating system user-data directory, separate from installed application binaries. Standard in-place application updates do not remove them. As a best practice, create a manual backup before reinstalling, moving to a new machine, or changing distribution channels.
+- **Pre-migration backups:** FloCafe automatically creates a timestamped database backup before running schema migrations.
+- **Optional network features:** Services such as Google Drive backups, WhatsApp bill delivery, and cloud reporting communicate over the network only when explicitly configured and enabled by the store owner.
 
-FloCafe combines counter service and table service in one desktop app. A kitchen display can receive live orders while receipt printers and kitchen tickets use the same local setup. There is no hosted account required for the core POS.
+## Languages and regional support
 
-It is free software. FloCafe has no tiers or paywalled features, and the code is available under the [MIT License](LICENSE).
+FloCafe includes UI translations for:
 
-## What it handles
+- English
+- Spanish
+- Brazilian Portuguese
+- Persian (Farsi), including RTL support
 
-- Counter, dine-in, takeaway, and delivery orders
-- Tables, held orders, modifiers, add-ons, discounts, and loyalty points
-- ESC/POS receipt printing over USB, network, and Bluetooth
-- Kitchen display, kitchen stations, and kitchen order tickets
-- Product images, barcode lookup, and CSV menu import/export
-- Customer records, staff roles, sales reporting, and receipt history
-- Configurable tax packs and local overrides
-- English, Spanish, Brazilian Portuguese, and Persian
+UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern.
 
-Backups and restores are built in. Optional [Google Drive backup](docs/google-drive-setup.md) stores backup copies in the owner’s Drive. WhatsApp bill delivery can be enabled for businesses that use a paired phone.
+## Tax support
 
-## Direction
+FloCafe includes a generic calculation engine and supports signed, versioned country tax packs for regional rules, tax categories, and rounding policies. Country coverage is expanding through the catalog, and availability varies. Operators can also configure manual tax rules and rates locally.
 
-FloCafe will remain local-first and free. Current work focuses on making the desktop POS easier to operate, expanding tax and country support, improving inventory and loyalty workflows, and allowing companion devices to work with the existing local install. Public discussions and planned work live in [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues).
+> **Notice:** FloCafe is software, not legal or tax advice. Tax packs and configuration tools do not by themselves certify compliance with local regulations. Operators remain responsible for verifying the requirements that apply to their business.
 
-## Data, updates, and recovery
-
-The database and backups live in the operating system's user-data directory, separate from the installed application. Updating or reinstalling through the same distribution channel does not remove them.
-
-Before a pending migration runs, FloCafe creates a timestamped local backup. Migrations are additive and tracked with SQLite's `user_version` pragma. Use Settings → Database Tools → Backup before moving to another computer or switching distribution channels.
-
-If the app cannot start, do not delete the database first. Restore the latest backup from Settings → Database Tools, then [open an issue](https://github.com/FreeOpenSourcePOS/FloCafe/issues) with the app version, operating system, and logs.
-
-## Troubleshooting
-
-### Printers not printing
-
-1. Use Settings → Printers → **Test Print** first to verify printer connectivity.
-2. **Network printers:** confirm the printer's IP address hasn't changed (check your router's DHCP lease list or set a static IP/DHCP reservation) and that it's on the same network as the machine running FloCafe.
-3. **Windows USB printers, especially with the manufacturer's own driver installed:** FloCafe sends raw ESC/POS bytes directly to the Windows print queue, bypassing the driver, which only works if the queue's *Print Processor* is the default `winprint`/`RAW`. Manufacturer "official" driver packages (Epson APD, Star, etc.) are usually GDI drivers meant to render formatted pages, and can register their own print processor or reject/garble a raw byte stream. Two things to try, in order:
-   - Right-click the printer in Windows → **Printer Properties → Advanced tab → Print Processor** → confirm it's `winprint` with datatype `RAW`.
-   - If that doesn't help, add/reinstall the printer using Windows' built-in **"Generic / Text Only"** driver, or the manufacturer's dedicated raw/ESC-POS mode if their installer offers one as an alternative to their main GDI driver — then re-select it in FloCafe's printer settings, since renaming or reinstalling changes the exact queue name FloCafe has stored.
-4. **macOS/Linux (CUPS) printers:** if the print queue is disabled (commonly after the printer was unplugged), re-enable it from the OS's printer settings and the next print will go through — FloCafe detects and reports a disabled queue rather than silently failing.
-5. Still stuck? Open **Help → Open Logs Folder** (added in 2.6.1) and check `main.log` around the time of the failed print for a `[Printer]` line with the specific error, then [open an issue](https://github.com/FreeOpenSourcePOS/FloCafe/issues) with that line, your OS, printer make/model, and whether it's USB or network.
+For pack authoring, validation, and schema details, see the [Tax packs developer guide](docs/tax-packs.md).
 
 ## Development
 
-Development requires Node.js 22 or later.
+Setting up a local development environment requires Node.js 22 or later:
 
 ```sh
 git clone https://github.com/FreeOpenSourcePOS/FloCafe.git
@@ -158,18 +116,7 @@ npm install
 npm run dev
 ```
 
-`npm run dev` builds the frontend and backend, then starts Electron. For backend-only work:
-
-```sh
-node dev-server.js
-```
-
-```sh
-npm run lint             # backend and frontend lint
-npm run build            # compile main/ to dist/
-npm run build:frontend   # export the Next.js frontend
-npm test                 # complete test suite
-```
+`npm run dev` builds the frontend and backend, then launches Electron.
 
 ### Architecture
 
@@ -183,40 +130,27 @@ Next.js renderer
 └── React UI and Zustand client state
 ```
 
-| Layer | Technology |
-| --- | --- |
-| Desktop runtime | Electron |
-| Backend | Express and TypeScript |
-| Frontend | Next.js, React, Tailwind CSS, and shadcn/ui |
-| Database | SQLite via better-sqlite3 in WAL mode |
-| Realtime | WebSocket |
-| Printing | ESC/POS via node-thermal-printer |
+For detailed developer workflows, coding standards, branch conventions, and testing procedures, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```text
-main/          Electron process, Express servers, SQLite, printing, and services
-frontend/src/  Next.js pages, components, client state, and translations
-tests/         Backend, integration, and release checks
-docs/          API, release, and integration notes
-```
+## Contributing
 
-Both servers use the same local SQLite database. The renderer is a statically exported Next.js application using React and Zustand.
+Contributions are welcome. Please check [CONTRIBUTING.md](CONTRIBUTING.md) before starting work:
 
-## Tax packs
+- **Small bug fixes, documentation improvements, and focused tests** can be started freely.
+- **New features, database schema changes, and architectural refactors** require maintainer discussion and approval before implementation.
 
-Country tax rules ship as signed, versioned data files, not code. A generic engine, English/Spanish/Portuguese tax labels, and official packs for India and Thailand are bundled with every installer; more countries can be added as pack data without an app release. Owners install and activate packs from Settings → Tax Configuration, with rollback and an audit trail.
+If FloCafe is useful to you, consider starring the repository.
 
-Adding tax support for a new country is usually a pack contribution, not a code change. See [Tax packs: developer guide](docs/tax-packs.md) for the pack schema, how to author and test one, and how signing and publishing work.
+## Help and documentation
 
-## Contribute
+- **Documentation index:** [docs/README.md](docs/README.md)
+- **Printer guide & troubleshooting:** [docs/printers.md](docs/printers.md)
+- **Linux setup & support:** [docs/linux.md](docs/linux.md)
+- **Google Drive backup setup:** [docs/google-drive-setup.md](docs/google-drive-setup.md)
+- **Community discussion:** [Reddit r/FloPOS](https://www.reddit.com/r/FloPOS/)
+- **Bug reports & feature proposals:** [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)
+- **General questions & ideas:** [GitHub Discussions](https://github.com/FreeOpenSourcePOS/FloCafe/discussions)
 
-Start with [open issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues). For substantial work, open an issue first so the change can be discussed before implementation.
+## License
 
-Database migrations must be non-destructive. Add a migration for existing installations instead of replacing or dropping schema. Before opening a pull request, run:
-
-```sh
-npm run lint
-npm run build
-npm test
-```
-
-Project activity is also available through [Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases), [Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues), and [Pulse](https://github.com/FreeOpenSourcePOS/FloCafe/pulse).
+FloCafe is open-source software licensed under the [MIT License](LICENSE).

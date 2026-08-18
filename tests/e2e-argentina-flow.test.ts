@@ -207,7 +207,7 @@ async function runArgentinaTaxAndCustomers(baseUrl, db) {
 
 async function runArgentinaTranslations(db) {
   console.log('\n4. i18n has matching keys for both languages and every t() reference resolves');
-  const i18nDir = path.join(__dirname, '../frontend/src/lib/i18n');
+  const i18nDir = path.join(__dirname, '../frontend/src/lib/i18n/messages');
   const enSrc = fs.readFileSync(path.join(i18nDir, 'en.json'), 'utf8');
   const esSrc = fs.readFileSync(path.join(i18nDir, 'es.json'), 'utf8');
 

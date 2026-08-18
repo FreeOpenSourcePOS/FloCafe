@@ -1,30 +1,27 @@
-export type Language = 'en' | 'es' | 'pt' | 'fa';
-export type LanguageDirection = 'ltr' | 'rtl';
+import {
+  LANGUAGES,
+  getLanguageDirection,
+  getLanguageLocale,
+  type Language,
+  type LanguageDirection,
+} from './i18n/languages';
 
-/**
- * Text direction of each supported UI language, stored next to the language
- * definitions. Persian (fa) is RTL; all other supported languages are LTR.
- *
- * Consumers resolve direction through {@link getLanguageDirection} instead of
- * re-hardcoding `fa` (HtmlLangSync, KdsHtmlLang, DirectionalToaster, …), so
- * adding another RTL language only requires updating this map.
- */
-export const LANGUAGE_DIRECTION: Record<Language, LanguageDirection> = {
-  en: 'ltr',
-  es: 'ltr',
-  pt: 'ltr',
-  fa: 'rtl',
+// Backward-compatible re-exports: existing callers (HtmlLangSync, KdsHtmlLang,
+// DirectionalToaster, useI18n, the pos-settings/auth stores, etc.) keep
+// importing `Language`, `LanguageDirection`, and the direction helper from this
+// module while the single source of truth now lives in ./i18n/languages.
+export {
+  LANGUAGES,
+  getLanguageDirection,
+  getLanguageLocale,
+  type Language,
+  type LanguageDirection,
 };
 
-/** Returns the text direction of a UI language (defaults to `ltr`). */
-export function getLanguageDirection(lang: Language): LanguageDirection {
-  return LANGUAGE_DIRECTION[lang] ?? 'ltr';
-}
-
-import en from './i18n/en.json';
-import es from './i18n/es.json';
-import pt from './i18n/pt.json';
-import fa from './i18n/fa.json';
+import en from './i18n/messages/en.json';
+import es from './i18n/messages/es.json';
+import pt from './i18n/messages/pt.json';
+import fa from './i18n/messages/fa.json';
 
 const translations: Record<Language, Record<string, string>> = { en, es, pt, fa };
 

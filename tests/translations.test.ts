@@ -33,7 +33,7 @@ import * as path from 'path';
 import { spawnSync } from 'node:child_process';
 
 const ROOT = path.join(__dirname, '..');
-const I18N_DIR = path.join(ROOT, 'frontend/src/lib/i18n');
+const I18N_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
 const FILES = [
   { lang: 'en', file: path.join(I18N_DIR, 'en.json') },
   { lang: 'es', file: path.join(I18N_DIR, 'es.json') },

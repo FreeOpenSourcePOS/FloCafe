@@ -5,6 +5,7 @@ import MenuActionHandler from "@/components/layout/MenuActionHandler";
 import AuthGuard from "@/components/layout/AuthGuard";
 import { HtmlLangSync } from "@/components/layout/HtmlLangSync";
 import { DirectionalToaster } from "@/components/layout/DirectionalToaster";
+import { I18nProvider } from "@/components/providers/I18nProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -52,10 +53,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <MenuActionHandler />
-        <HtmlLangSync />
-        <AuthGuard>{children}</AuthGuard>
-        <DirectionalToaster />
+        <I18nProvider>
+          <MenuActionHandler />
+          <HtmlLangSync />
+          <AuthGuard>{children}</AuthGuard>
+          <DirectionalToaster />
+        </I18nProvider>
         <script
           dangerouslySetInnerHTML={{
             __html: `

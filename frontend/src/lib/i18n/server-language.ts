@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import type { Language } from './languages';
+import { isLanguage, type Language } from './languages';
 
 export type ServerInfo = {
   language: Language | null;
@@ -35,16 +35,7 @@ export async function fetchServerInfo(
       kds_default_view?: string | null;
     };
     return {
-      language:
-        data.language === 'fa'
-          ? 'fa'
-          : data.language === 'es'
-            ? 'es'
-            : data.language === 'pt'
-              ? 'pt'
-              : data.language === 'en'
-                ? 'en'
-                : null,
+      language: isLanguage(data.language) ? data.language : null,
       country: data.country || null,
       kdsDefaultView:
         data.kds_default_view === 'kanban' ? 'kanban' : data.kds_default_view === 'tabs' ? 'tabs' : null,

@@ -41,7 +41,6 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { spawnSync } from 'node:child_process';
 import {
   parse,
   isArgumentElement,
@@ -59,12 +58,10 @@ const ROOT = path.join(__dirname, '..');
 const I18N_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
 const FRONTEND_SRC = path.join(ROOT, 'frontend/src');
 const MESSAGES_DTS = path.join(ROOT, 'frontend/src/lib/i18n/messages.d.ts');
-const FILES = [
-  { lang: 'en', file: path.join(I18N_DIR, 'en.json') },
-  { lang: 'es', file: path.join(I18N_DIR, 'es.json') },
-  { lang: 'pt', file: path.join(I18N_DIR, 'pt.json') },
-  { lang: 'fa', file: path.join(I18N_DIR, 'fa.json') },
-] as const;
+const FILES = (Object.keys(LANGUAGES) as Array<keyof typeof LANGUAGES>).map((lang) => ({
+  lang,
+  file: path.join(I18N_DIR, `${lang}.json`),
+}));
 
 function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
@@ -418,36 +415,72 @@ function faFallbackErrors(faFlat: Record<string, string>, enFlat: Record<string,
  * Frontend source scans (TypeScript key safety, Issue #382 §6). *
  * ------------------------------------------------------------ */
 
+/** Walk frontend TypeScript source without depending on shell tools. */
+function walkTypeScriptFiles(dir: string): string[] {
+  const files: string[] = [];
+  const visit = (current: string): void => {
+    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === 'node_modules' || entry.name === '.next' || entry.name === 'out') continue;
+        visit(full);
+      } else if (/\.(ts|tsx)$/.test(entry.name)) {
+        files.push(full);
+      }
+    }
+  };
+  visit(dir);
+  return files;
+}
+
 /**
- * Collect every dotted key passed to `t('foo.bar')`, `t(\`foo.bar\`, ...)`,
- * or `t("foo.bar", ...)` in the given TypeScript source directory. The
- * translation helper is the only `t(` call site we care about: it has at
- * least one dotted identifier argument.
+ * Collect every translation key called in the given TypeScript source directory.
+ * Resolves both:
+ * 1. Scoped `useTranslations('namespace')` bindings (e.g. `const t = useTranslations('pos'); t('title')` -> `pos.title`,
+ *    `const tCommon = useTranslations('common'); tCommon('save')` -> `common.save`)
+ * 2. Unscoped / global translation calls (e.g. `const t = useTranslations(); t('pos.title')` -> `pos.title`,
+ *    inline `useTranslations('pos')('title')` -> `pos.title`, or standalone `t('foo.bar')`)
  */
 function collectCalledKeys(dir: string = FRONTEND_SRC): Set<string> {
   const out = new Set<string>();
-  // No shell — pass the pattern as a single argv entry to dodge backtick
-  // and quote escaping in /bin/sh.
-  const result = spawnSync(
-    'grep',
-    [
-      '-rohE',
-      String.raw`t\(\s*['"\`][a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*)+['"\`]\s*[,)]`,
-      dir,
-      '--include=*.ts',
-      '--include=*.tsx',
-    ],
-    { cwd: ROOT, encoding: 'utf8' },
-  );
-  if (result.status && result.status > 1) {
-    throw new Error(`grep failed: ${result.stderr}`);
+  const scopedRegex = /(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*useTranslations\(\s*(?:['"`]([^'"`]+)['"`])?\s*\)/g;
+  const inlineRegex = /useTranslations\(\s*(?:['"`]([^'"`]+)['"`])?\s*\)\s*\(\s*(['"`])([^'"`]+)\2/g;
+  const dottedRegex = /\bt\(\s*(['"`])([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)\1/g;
+
+  for (const file of walkTypeScriptFiles(dir)) {
+    const source = fs.readFileSync(file, 'utf8');
+
+    // 1. Find scoped translator bindings: const t = useTranslations('namespace')
+    const scopes = new Map<string, string>();
+    let sm: RegExpExecArray | null;
+    while ((sm = scopedRegex.exec(source)) !== null) {
+      scopes.set(sm[1], sm[2] || '');
+    }
+
+    // 2. Find inline useTranslations('namespace')('key')
+    let im: RegExpExecArray | null;
+    while ((im = inlineRegex.exec(source)) !== null) {
+      const ns = im[1] || '';
+      const key = im[3];
+      out.add(ns ? `${ns}.${key}` : key);
+    }
+
+    // 3. For each bound translator, collect its literal call arguments
+    for (const [varName, ns] of scopes.entries()) {
+      const callRegex = new RegExp(`\\b${varName}\\(\\s*(['"\`])([a-zA-Z0-9_]+(?:\\.[a-zA-Z0-9_]+)*)\\1`, 'g');
+      let cm: RegExpExecArray | null;
+      while ((cm = callRegex.exec(source)) !== null) {
+        const key = cm[2];
+        out.add(ns ? `${ns}.${key}` : key);
+      }
+    }
+
+    // 4. Catch any standalone t('dotted.key') calls not tied to useTranslations
+    let dm: RegExpExecArray | null;
+    while ((dm = dottedRegex.exec(source)) !== null) {
+      out.add(dm[2]);
+    }
   }
-  // Capture the full dotted key (any number of segments). The earlier
-  // two-segment-only regex silently skipped 3+ segment keys like
-  // `whatsapp.send.error.notConnected`, leaving them unchecked.
-  const re = /['"`]([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+)['"`]/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(result.stdout)) !== null) out.add(m[1]);
   return out;
 }
 
@@ -459,27 +492,38 @@ function collectCalledKeys(dir: string = FRONTEND_SRC): Set<string> {
  */
 function collectUnsafeDynamicKeys(dir: string = FRONTEND_SRC): Array<{ file: string; line: number; code: string }> {
   const hits: Array<{ file: string; line: number; code: string }> = [];
-  const walk = (d: string): void => {
-    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-      const full = path.join(d, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || entry.name === '.next' || entry.name === 'out') continue;
-        walk(full);
-      } else if (/\.(ts|tsx)$/.test(entry.name)) {
-        const lines = fs.readFileSync(full, 'utf8').split('\n');
-        lines.forEach((line, idx) => {
-          // `t(` immediately followed by a backtick template containing `${`
-          // and NOT followed (after the closing backtick) by ` as `.
-          const re = /(?:^|[^\w$.])t\(\s*`([^`]*\$\{[^}]*\}[^`]*)`(?!\s*as\s+)/;
-          if (re.test(line)) {
-            hits.push({ file: path.relative(ROOT, full), line: idx + 1, code: line.trim() });
-          }
-        });
+  for (const file of walkTypeScriptFiles(dir)) {
+    const lines = fs.readFileSync(file, 'utf8').split('\n');
+    lines.forEach((line, idx) => {
+      // `t(` immediately followed by a backtick template containing `${`
+      // and NOT followed (after the closing backtick) by ` as `.
+      const re = /(?:^|[^\w$.])t\(\s*`([^`]*\$\{[^}]*\}[^`]*)`(?!\s*as\s+)/;
+      if (re.test(line)) {
+        hits.push({ file: path.relative(ROOT, file), line: idx + 1, code: line.trim() });
       }
-    }
-  };
-  walk(dir);
+    });
+  }
   return hits;
+}
+
+/** Prevent new frontend consumers from depending on the bridge removed by #381. */
+function legacyImportErrors(dir: string = FRONTEND_SRC): string[] {
+  const errors: string[] = [];
+  const allowed = new Set([
+    path.normalize(path.join(dir, 'hooks/useI18n.ts')),
+    path.normalize(path.join(dir, 'lib/i18n.ts')),
+  ]);
+  for (const file of walkTypeScriptFiles(dir)) {
+    if (allowed.has(path.normalize(file))) continue;
+    const source = fs.readFileSync(file, 'utf8');
+    if (/\buseI18n\b/.test(source)) {
+      errors.push(`${path.relative(ROOT, file)} uses the legacy useI18n bridge`);
+    }
+    if (/import\s*\{[\s\S]*?\b(?:t|translate)\b[\s\S]*?\}\s*from\s*['"]@\/lib\/i18n['"]/.test(source)) {
+      errors.push(`${path.relative(ROOT, file)} imports the legacy t() bridge`);
+    }
+  }
+  return errors;
 }
 
 /** The `use-intl` AppConfig augmentation must stay wired (Issue #382 §6). */
@@ -546,7 +590,8 @@ async function run(): Promise<void> {
   }
   console.log('  ✓ no duplicate keys within translation files');
 
-  const enKeys = sets.get('en')!;
+  const enKeys = sets.get('en');
+  if (!enKeys) throw new Error('languages registry must include the canonical en locale');
 
   // 2. Exact nested leaf key parity — en.json is canonical (zero missing,
   // zero orphan extras) across all registered locales.
@@ -650,7 +695,16 @@ async function run(): Promise<void> {
   }
   console.log('  ✓ no unsafe template-literal t() calls (all dynamic keys exhaustively cast)');
 
-  // 7c. The use-intl AppConfig augmentation is wired (compile-time key safety).
+  // 7c. No active frontend component may add a dependency on the bridge
+  // scheduled for deletion in #381.
+  const legacyErrors = legacyImportErrors();
+  if (legacyErrors.length) {
+    for (const e of legacyErrors) console.error(`  - ${e}`);
+    assert(false, 'legacy i18n bridge imports found in active frontend source');
+  }
+  console.log('  ✓ no active frontend consumers import the legacy i18n bridge');
+
+  // 7d. The use-intl AppConfig augmentation is wired (compile-time key checks).
   const dtsErrors = messagesDtsErrors();
   if (dtsErrors.length) {
     for (const e of dtsErrors) console.error(`  - ${e}`);
@@ -659,7 +713,9 @@ async function run(): Promise<void> {
   console.log('  ✓ messages.d.ts AppConfig augmentation present (compile-time key checks active)');
 
   // 8. fa.json values must not silently fall back to the English value.
-  const faErrors = faFallbackErrors(loadedStrings.get('fa')!, loadedStrings.get('en')!);
+  const faMessages = loadedStrings.get('fa');
+  if (!faMessages) throw new Error('languages registry must include the maintained fa locale');
+  const faErrors = faFallbackErrors(faMessages, loadedStrings.get('en')!);
   if (faErrors.length) {
     console.error(`\nfa.json values identical to English (${faErrors.length}) — these render as English for Persian users:`);
     for (const e of faErrors.slice(0, 100)) console.error(`  - ${e}`);
@@ -785,8 +841,11 @@ function runNegativeTests(): void {
       path.join(tmp, 'fixture.ts'),
       [
         "const bad = t('does.not.exist');",
+        "const tPos = useTranslations('pos');",
+        "const badScoped = tPos('doesNotExistScoped');",
         "const unsafe = t(`prefix.${value}`);",
         "const safe = t(`prefix.${value}` as 'prefix.a' | 'prefix.b');",
+        "import { useI18n } from '@/hooks/useI18n';",
       ].join('\n'),
     );
 
@@ -798,9 +857,13 @@ function runNegativeTests(): void {
 
     const unsafe = collectUnsafeDynamicKeys(tmp);
     expectDetected('ts: unsafe template-literal t() call', unsafe.map((u) => u.code));
+    expectDetected(
+      'ts: legacy i18n bridge import',
+      legacyImportErrors(tmp),
+    );
     const flaggedLines = unsafe.map((u) => u.line);
     assert(
-      flaggedLines.length === 1 && flaggedLines[0] === 2,
+      flaggedLines.length === 1 && flaggedLines[0] === 4,
       `ts: exhaustively cast dynamic key must NOT be flagged (flagged lines: ${flaggedLines.join(',')})`,
     );
   } finally {

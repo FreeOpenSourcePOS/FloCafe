@@ -203,15 +203,15 @@ export default function AppSidebar() {
             {/* Identity label, not a button — nothing to click through to, so it
                 deliberately skips SidebarMenuButton's interactive/hover styling. */}
             <div
-              title={user?.name || user?.email || t('user', { defaultValue: 'User' })}
+              title={user?.name || user?.email || t('user')}
               className="flex w-full items-center gap-2 rounded-md p-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0"
             >
               <UserCircle />
-              <span className="truncate">{user?.name || user?.email || t('user', { defaultValue: 'User' })}</span>
+              <span className="truncate">{user?.name || user?.email || t('user')}</span>
             </div>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={async () => { if (await confirm(t('confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) logout(); }} tooltip={t('logoutTooltip')}>
+            <SidebarMenuButton onClick={async () => { if (await confirm(t('confirmLogout'))) logout(); }} tooltip={t('logoutTooltip')}>
               <LogOut />
               <span>{t('logout')}</span>
             </SidebarMenuButton>

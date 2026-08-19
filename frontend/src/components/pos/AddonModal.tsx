@@ -299,7 +299,7 @@ export default function AddonModal({
           </div>
           <Button onClick={handleAdd} disabled={!isValid} className="w-full" size="lg">
             {mode === 'edit'
-              ? t('saveItemChanges', { total: fmt(itemTotal), defaultValue: 'Save changes — {total}' })
+              ? t('saveItemChanges', { total: fmt(itemTotal) })
               : t('addToCart', { total: fmt(itemTotal) })}
           </Button>
         </div>

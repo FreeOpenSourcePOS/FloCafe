@@ -126,7 +126,7 @@ test('recover password page is LTR in English and RTL in Persian with .rtl-flip 
   await captureScreenshot(page, 'auth-recover-rtl-fa.png');
 });
 
-test('setup wizard renders with logical navigation, .rtl-flip directional arrows, and English-only language options for an English browser', async ({ page }) => {
+test('setup wizard renders with logical navigation, .rtl-flip directional arrows, and all selectable language options', async ({ page }) => {
   await page.route('**/api/auth/setup/status', (route) => {
     route.fulfill({
       status: 200,
@@ -139,13 +139,13 @@ test('setup wizard renders with logical navigation, .rtl-flip directional arrows
   await page.goto(`${BASE}/setup`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
 
-  // Verify language options: EN, ES, PT present; Persian surfaces only for
-  // Persian-browser users (asserted in the fa-locale test below).
+  // Verify every registered selectable language is available regardless of
+  // browser locale; browser preference only controls ordering/default choice.
   const languageButtons = page.locator('button', { hasText: /English|Inglés|Inglês/ });
   await expect(languageButtons.first()).toBeVisible();
   const allButtonsText = await page.locator('button').allInnerTexts();
   const hasPersianOption = allButtonsText.some((text) => text.includes('فارسی') || text.includes('FA'));
-  expect(hasPersianOption, 'Persian (fa) is browser-relative: not offered to English-browser users').toBeFalsy();
+  expect(hasPersianOption, 'Persian (fa) must be available as a selectable UI language').toBeTruthy();
 
   // Forward arrow has rtl-flip class
   const continueArrow = page.locator('button svg.rtl-flip').first();
@@ -233,7 +233,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
       (page.viewportSize()?.width ?? 0) / 2
     );
 
-    // Verify language dropdown in Settings offers selectable languages (en, es, pt)
+    // Verify language dropdown in Settings offers all selectable languages.
     const languageSelect = page.locator('select').filter({ has: page.locator('option[value="en"]') }).first();
     await expect(languageSelect).toBeVisible();
     const options = await languageSelect.locator('option').all();
@@ -241,7 +241,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     expect(optionValues).toContain('en');
     expect(optionValues).toContain('es');
     expect(optionValues).toContain('pt');
-    expect(optionValues).not.toContain('fa');
+    expect(optionValues).toContain('fa');
 
     // Check document does not overflow horizontally in RTL
     const storeOverflow = await page.evaluate(() => ({

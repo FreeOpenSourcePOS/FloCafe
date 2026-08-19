@@ -28,13 +28,13 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
 
   const handleSave = async () => {
     if (!name.trim()) {
-      toast.error(t('nameRequired', { defaultValue: 'Name is required' }));
+      toast.error(t('nameRequired'));
       return;
     }
 
     const norm = normalizeOptionalPhone(phone.trim(), country);
     if (!norm.valid) {
-      toast.error(t('invalidPhone', { country, defaultValue: 'Invalid phone number' }));
+      toast.error(t('invalidPhone', { country }));
       return;
     }
 
@@ -46,10 +46,10 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
         country_code: norm.countryCode ?? '',
       });
       onSaved(data.customer);
-      toast.success(t('customerUpdated', { defaultValue: 'Customer updated' }));
+      toast.success(t('customerUpdated'));
       onClose();
     } catch {
-      toast.error(t('customerUpdateFailed', { defaultValue: 'Failed to update customer' }));
+      toast.error(t('customerUpdateFailed'));
     } finally {
       setSaving(false);
     }
@@ -59,14 +59,14 @@ export default function EditCustomerModal({ customer, onClose, onSaved }: Props)
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl w-full max-w-sm p-5">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-gray-900">{t('editCustomer', { defaultValue: 'Edit Customer' })}</h3>
+          <h3 className="text-lg font-bold text-gray-900">{t('editCustomer')}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
           </button>
         </div>
         <div className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">{t('customerName', { defaultValue: 'Name' })}</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">{t('customerName')}</label>
             <input
               type="text"
               value={name}

@@ -215,7 +215,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           <div className="h-10 flex items-center gap-2 px-3 bg-brand-light rounded-lg min-w-0 w-full">
             <button
               onClick={() => setEditingCustomer(true)}
-              title={t('editCustomer', { defaultValue: 'Edit name / phone' })}
+              title={t('editCustomer')}
               className="flex-1 min-w-0 flex items-center gap-x-2 flex-wrap text-start group"
             >
               <span className="font-semibold text-brand text-sm truncate group-hover:underline">{customer.name}</span>
@@ -224,7 +224,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               {!!loyaltyPoints && loyaltyPoints > 0 && (
                 <span className="flex items-center gap-0.5 text-xs font-medium text-brand bg-white/70 rounded-full px-1.5 py-0.5 shrink-0">
                   <Gift size={11} />
-                  {t('loyaltyPointsShort', { count: loyaltyPoints, defaultValue: '{count} pts' })}
+                  {t('loyaltyPointsShort', { count: loyaltyPoints })}
                 </span>
               )}
               {hasTags && <TagBadges counts={customer.tag_counts!} />}
@@ -259,7 +259,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         {!!loyaltyPoints && loyaltyPoints > 0 && (
           <span className="inline-flex items-center gap-0.5 text-xs font-medium text-brand bg-brand-light rounded-full px-1.5 py-0.5">
             <Gift size={11} />
-            {t('loyaltyPointsShort', { count: loyaltyPoints, defaultValue: '{count} pts' })}
+            {t('loyaltyPointsShort', { count: loyaltyPoints })}
           </span>
         )}
         {hasTags && <TagBadges counts={customer.tag_counts!} />}

@@ -1,34 +1,26 @@
-import { LANGUAGES, type Language } from './languages';
+import { isLanguage, LANGUAGES, type Language } from './languages';
 
 /**
  * Detect the user's preferred language from the browser `navigator`.
  *
- * Uses `Intl.Locale` to parse BCP-47 language tags from `navigator.languages`
- * (or `navigator.language` as fallback) and matches the parsed language
- * against registered languages in {@link LANGUAGES}.
- *
- * Tolerates malformed tags, dialect/region subtags (e.g. `fa-IR`, `pt-BR`,
- * `es-ES`, `en-US`), and missing navigator (SSR), safely defaulting to `'en'`.
+ * Uses `Intl.Locale` to parse BCP-47 language tags from the browser's
+ * ordered preference list, then matches only registered selectable languages.
+ * A legacy `navigator.language` fallback keeps older/webview implementations
+ * working when `navigator.languages` is absent or incomplete.
  */
 export function getBrowserLanguage(): Language {
   if (typeof navigator === 'undefined') return 'en';
 
-  const rawLanguages: readonly string[] =
-    navigator.languages && navigator.languages.length > 0
-      ? navigator.languages
-      : navigator.language
-        ? [navigator.language]
-        : [];
+  const candidates = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    navigator.language,
+  ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
 
-  if (!rawLanguages.length) return 'en';
-
-  for (const raw of rawLanguages) {
+  for (const candidate of candidates) {
     try {
-      const parsed = new Intl.Locale(raw);
+      const parsed = new Intl.Locale(candidate);
       const lang = parsed.language?.toLowerCase();
-      if (lang && lang in LANGUAGES) {
-        return lang as Language;
-      }
+      if (isLanguage(lang) && LANGUAGES[lang].selectable) return lang;
     } catch {
       // Malformed language tag — continue searching fallback preferences.
     }

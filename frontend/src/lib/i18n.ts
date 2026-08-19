@@ -10,6 +10,7 @@ export {
   getLanguageDirection,
   getLanguageFromLocale,
   getLanguageLocale,
+  isLanguage,
   type Language,
   type LanguageConfig,
   type LanguageDirection,

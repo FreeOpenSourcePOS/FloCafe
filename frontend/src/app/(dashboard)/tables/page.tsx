@@ -5,13 +5,13 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, X, Search, UserPlus, RotateCcw } from 'lucide-react';
-import type { Table, Customer, Order } from '@/lib/types';
+import type { Table, Customer, Order, OrderItem } from '@/lib/types';
 import { useAuthStore } from '@/store/auth';
 import { countryName } from '@/lib/countries';
 import { parsePhone, dialCodeFor } from '@/lib/phone';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
-import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { ORDER_STATUS_LABEL_KEYS, ITEM_STATUS_LABEL_KEYS, TABLE_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 
 const statusColors: Record<string, string> = {
   available: 'bg-green-500',
@@ -21,13 +21,13 @@ const statusColors: Record<string, string> = {
   held: 'bg-blue-500',
 };
 
-const TABLE_STATUS_LABEL: Record<string, string> = {
-  available: 'tables.statusAvailable',
-  occupied: 'tables.statusOccupied',
-  reserved: 'tables.statusReserved',
-  cleaning: 'tables.statusCleaning',
-  held: 'tables.statusHeld',
-};
+type OrdersKey = keyof AppConfig['Messages']['orders'];
+
+// Runtime-safe item-status lookup keeps the raw-status fallback for the
+// `void_adjustment` status (which has no translation key) while the map
+// itself stays exhaustively typed.
+const itemStatusLabelKey = (status: OrderItem['status']): OrdersKey | undefined =>
+  (ITEM_STATUS_LABEL_KEYS as Record<string, OrdersKey | undefined>)[status];
 
 interface ReserveModalProps {
   table: Table;
@@ -37,7 +37,11 @@ interface ReserveModalProps {
 
 function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
   const { currentTenant } = useAuthStore();
-  const { t } = useI18n();
+  const tTables = useTranslations('tables');
+  const tPos = useTranslations('pos');
+  const tNav = useTranslations('nav');
+  const tSettings = useTranslations('settings');
+  const tProducts = useTranslations('products');
   const dialCode = dialCodeFor(currentTenant?.country ?? 'IN') || '+91';
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Customer[]>([]);
@@ -66,7 +70,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
     const country = currentTenant?.country ?? 'IN';
     const parsed = parsePhone(newPhone, country);
     if (!parsed) {
-      toast.error(t('pos.invalidPhone', { country: countryName(country) }));
+      toast.error(tPos('invalidPhone', { country: countryName(country) }));
       return;
     }
     setCreating(true);
@@ -76,9 +80,9 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
       setShowCreate(false);
       setQuery('');
       setResults([]);
-      toast.success(t('pos.customerCreated'));
+      toast.success(tPos('customerCreated'));
     } catch {
-      toast.error(t('pos.createCustomerFailed'));
+      toast.error(tPos('createCustomerFailed'));
     } finally {
       setCreating(false);
     }
@@ -94,12 +98,12 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
         reservation_customer_phone: selected?.phone ?? null,
       });
       const msg = selected
-        ? t('tables.reservedFor', { name: table.name, customer: selected.name })
-        : t('tables.reservedNoCustomer', { name: table.name });
+        ? tTables('reservedFor', { name: table.name, customer: selected.name })
+        : tTables('reservedNoCustomer', { name: table.name });
       toast.success(msg);
       onDone();
     } catch {
-      toast.error(t('tables.tableReserveFailed'));
+      toast.error(tTables('tableReserveFailed'));
     } finally {
       setSaving(false);
     }
@@ -109,7 +113,7 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-bold">{t('nav.tables')} · {table.name}</h2>
+          <h2 className="text-lg font-bold">{tNav('tables')} · {table.name}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
 
@@ -125,14 +129,14 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
           </div>
         ) : (
           <div className="mb-4">
-            <p className="text-sm text-gray-500 mb-2">{t('tables.linkCustomer')}</p>
+            <p className="text-sm text-gray-500 mb-2">{tTables('linkCustomer')}</p>
             <div className="relative mb-2">
               <Search size={14} className="absolute start-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 value={query}
                 onChange={(e) => { setQuery(e.target.value); searchCustomers(e.target.value); }}
-                placeholder={t('tables.searchCustomerPlaceholder')}
+                placeholder={tTables('searchCustomerPlaceholder')}
                 className="w-full ps-8 pe-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
               />
             </div>
@@ -150,23 +154,23 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
             {!showCreate ? (
               <button onClick={() => { setShowCreate(true); if (/^\d+$/.test(query.trim())) setNewPhone(query.trim()); }}
                 className="flex items-center gap-1.5 text-sm text-brand font-medium hover:text-brand-hover">
-                <UserPlus size={14} /> {t('tables.newCustomer')}
+                <UserPlus size={14} /> {tTables('newCustomer')}
               </button>
             ) : (
               <div className="space-y-2 border border-gray-200 rounded-xl p-3">
-                <input type="text" placeholder={t('products.nameLabel')} value={newName} onChange={(e) => setNewName(e.target.value)}
+                <input type="text" placeholder={tProducts('nameLabel')} value={newName} onChange={(e) => setNewName(e.target.value)}
                   className="w-full px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                 <div className="flex items-stretch gap-2">
 
-                  <input type="tel" inputMode="numeric" placeholder={`${dialCode} ${t('settings.phone')}`} value={newPhone}
+                  <input type="tel" inputMode="numeric" placeholder={`${dialCode} ${tSettings('phone')}`} value={newPhone}
                     onChange={(e) => setNewPhone(e.target.value)}
                     className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setShowCreate(false)} className="flex-1 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">{t('tables.cancel')}</button>
+                  <button onClick={() => setShowCreate(false)} className="flex-1 py-1.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50">{tTables('cancel')}</button>
                   <button onClick={handleCreateCustomer} disabled={creating || !newName.trim() || !newPhone.trim()}
                     className="flex-1 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50">
-                    {creating ? t('tables.creating') : t('tables.create')}
+                    {creating ? tTables('creating') : tTables('create')}
                   </button>
                 </div>
               </div>
@@ -175,9 +179,9 @@ function ReserveModal({ table, onClose, onDone }: ReserveModalProps) {
         )}
 
         <div className="flex gap-2">
-          <Button variant="outline" onClick={onClose} className="flex-1">{t('tables.cancel')}</Button>
+          <Button variant="outline" onClick={onClose} className="flex-1">{tTables('cancel')}</Button>
           <Button onClick={handleReserve} disabled={saving} className="flex-1">
-            {saving ? t('tables.reserving') : t('tables.reserveTable')}
+            {saving ? tTables('reserving') : tTables('reserveTable')}
           </Button>
         </div>
       </div>
@@ -194,7 +198,8 @@ const itemStatusColors: Record<string, { bg: string; text: string; dot: string }
 };
 
 export default function TablesPage() {
-  const { t } = useI18n();
+  const tTables = useTranslations('tables');
+  const tOrders = useTranslations('orders');
   const [tables, setTables] = useState<Table[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -220,7 +225,7 @@ export default function TablesPage() {
       const { data } = await api.get('/tables');
       setTables(data.tables || []);
     } catch {
-      toast.error(t('tables.loadFailed'));
+      toast.error(tTables('loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -230,7 +235,7 @@ export default function TablesPage() {
     const load = () => {
       api.get('/tables')
         .then(({ data }) => setTables(data.tables || []))
-        .catch(() => toast.error(t('tables.loadFailed')))
+        .catch(() => toast.error(tTables('loadFailed')))
         .finally(() => setLoading(false));
     };
     load();
@@ -278,12 +283,12 @@ export default function TablesPage() {
     e.preventDefault();
     try {
       await api.post('/tables', { ...form, capacity: Number(form.capacity) });
-      toast.success(t('tables.tableCreated'));
+      toast.success(tTables('tableCreated'));
       setShowForm(false);
       setForm({ name: '', capacity: '4', floor: 'Ground', section: '' });
       fetchTables();
     } catch {
-      toast.error(t('tables.tableCreateFailed'));
+      toast.error(tTables('tableCreateFailed'));
     }
   };
 
@@ -292,7 +297,7 @@ export default function TablesPage() {
       await api.patch(`/tables/${id}/status`, { status });
       fetchTables();
     } catch {
-      toast.error(t('tables.tableUpdateFailed'));
+      toast.error(tTables('tableUpdateFailed'));
     }
   };
 
@@ -301,7 +306,7 @@ export default function TablesPage() {
       await api.post(`/tables/${table.id}/${table.is_active ? 'deactivate' : 'reactivate'}`);
       fetchTables();
     } catch {
-      toast.error(t('tables.updateStatusFailed'));
+      toast.error(tTables('updateStatusFailed'));
     }
   };
 
@@ -316,7 +321,7 @@ export default function TablesPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('tables.title')}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{tTables('title')}</h1>
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
             <input
@@ -325,10 +330,10 @@ export default function TablesPage() {
               onChange={toggleDetails}
               className="w-4 h-4 rounded border-gray-300 text-brand focus:ring-brand"
             />
-            {t('tables.showOrderDetails')}
+            {tTables('showOrderDetails')}
           </label>
           <Button onClick={() => setShowForm(true)}>
-            <Plus size={16} className="me-1" /> {t('tables.addTable')}
+            <Plus size={16} className="me-1" /> {tTables('addTable')}
           </Button>
         </div>
       </div>
@@ -349,9 +354,9 @@ export default function TablesPage() {
                   <div className="flex items-center gap-2">
                     <div className={`w-3 h-3 rounded-full ${statusColors[table.status]}`} />
                     <h3 className="font-bold text-gray-900">{table.name}</h3>
-                    <span className="text-xs text-gray-400">· {t('tables.capacitySeats', { count: table.capacity })}</span>
+                    <span className="text-xs text-gray-400">· {tTables('capacitySeats', { count: table.capacity })}</span>
                   </div>
-                  <span className="text-xs text-gray-400">{t(TABLE_STATUS_LABEL[table.status] ?? table.status)}</span>
+                  <span className="text-xs text-gray-400">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</span>
                 </div>
 
                 {/* Orders section */}
@@ -368,7 +373,7 @@ export default function TablesPage() {
                             order.status === 'served' ? 'bg-purple-100 text-purple-700' :
                             'bg-gray-100 text-gray-600'
                           }`}>
-                            {t(ORDER_STATUS_LABEL_KEYS[order.status] ?? order.status)}
+                            {tOrders(ORDER_STATUS_LABEL_KEYS[order.status])}
                           </span>
                         </div>
                         {order.customer?.name && (
@@ -382,7 +387,7 @@ export default function TablesPage() {
                                 <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} flex-shrink-0`} />
                                 <span className="flex-1 truncate text-gray-700">{item.product_name}</span>
                                 <span className="text-gray-500">×{item.quantity}</span>
-                                <span className={`font-medium capitalize ${sc.text}`}>{t(ITEM_STATUS_LABEL_KEYS[item.status] ?? item.status)}</span>
+                                <span className={`font-medium capitalize ${sc.text}`}>{(() => { const k = itemStatusLabelKey(item.status); return k ? tOrders(k) : item.status; })()}</span>
                               </div>
                             );
                           })}
@@ -392,7 +397,7 @@ export default function TablesPage() {
                   </div>
                 ) : (
                   <div className="px-4 py-4 text-center text-xs text-gray-400">
-                    {t('tables.noActiveOrders')}
+                    {tTables('noActiveOrders')}
                   </div>
                 )}
 
@@ -401,18 +406,18 @@ export default function TablesPage() {
                   {(table.status === 'occupied' || table.status === 'reserved') && (
                     <button onClick={() => updateStatus(table.id, 'available')}
                       className="text-xs text-brand hover:text-brand-hover font-medium">
-                      {t('tables.markAvailable')}
+                      {tTables('markAvailable')}
                     </button>
                   )}
                   {table.status === 'available' && (
                     <button onClick={() => setReservingTable(table)}
                       className="text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                      {t('tables.reserve')}
+                      {tTables('reserve')}
                     </button>
                   )}
                   <button onClick={() => toggleActive(table)}
                     className={`text-xs font-medium flex items-center gap-1 ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                    {!table.is_active ? <><RotateCcw size={12} /> {t('tables.reactivate')}</> : t('tables.deactivate')}
+                    {!table.is_active ? <><RotateCcw size={12} /> {tTables('reactivate')}</> : tTables('deactivate')}
                   </button>
                 </div>
               </div>
@@ -426,8 +431,8 @@ export default function TablesPage() {
               className={`bg-white rounded-xl p-5 border border-gray-100 text-center hover:shadow-md transition-shadow ${!table.is_active ? 'opacity-60' : ''}`}>
               <div className={`w-3 h-3 rounded-full ${statusColors[table.status]} mx-auto mb-3`} />
               <h3 className="font-bold text-lg text-gray-900">{table.name}</h3>
-              <p className="text-sm text-gray-500">{t('tables.capacitySeats', { count: table.capacity })}</p>
-              <p className="text-xs text-gray-400 mt-1">{t(TABLE_STATUS_LABEL[table.status] ?? table.status)}</p>
+              <p className="text-sm text-gray-500">{tTables('capacitySeats', { count: table.capacity })}</p>
+              <p className="text-xs text-gray-400 mt-1">{tTables(TABLE_STATUS_LABEL_KEYS[table.status])}</p>
               {table.floor && <p className="text-xs text-gray-400">{table.floor}</p>}
               {table.status === 'reserved' && table.reservation_customer_name && (
                 <p className="text-xs text-yellow-700 font-medium mt-1 truncate">{table.reservation_customer_name}</p>
@@ -439,18 +444,18 @@ export default function TablesPage() {
               {(table.status === 'occupied' || table.status === 'reserved') && (
                 <button onClick={() => updateStatus(table.id, 'available')}
                   className="mt-3 text-xs text-brand hover:text-brand-hover font-medium">
-                  {t('tables.markAvailable')}
+                  {tTables('markAvailable')}
                 </button>
               )}
               {table.status === 'available' && (
                 <button onClick={() => setReservingTable(table)}
                   className="mt-3 text-xs text-yellow-600 hover:text-yellow-700 font-medium">
-                  {t('tables.reserve')}
+                  {tTables('reserve')}
                 </button>
               )}
               <button onClick={() => toggleActive(table)}
                 className={`mt-2 block mx-auto text-xs font-medium ${!table.is_active ? 'text-green-600 hover:text-green-700' : 'text-red-500 hover:text-red-700'}`}>
-                {!table.is_active ? t('tables.reactivate') : t('tables.deactivate')}
+                {!table.is_active ? tTables('reactivate') : tTables('deactivate')}
               </button>
             </div>
           ))}
@@ -458,7 +463,7 @@ export default function TablesPage() {
       )}
 
       {tables.length === 0 && (
-        <p className="text-center text-gray-500 py-12">{t('tables.noTablesYet')}</p>
+        <p className="text-center text-gray-500 py-12">{tTables('noTablesYet')}</p>
       )}
 
       {/* Reserve Modal */}
@@ -475,28 +480,28 @@ export default function TablesPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{t('tables.add')}</h2>
+              <h2 className="text-lg font-bold">{tTables('add')}</h2>
               <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <form onSubmit={handleCreate} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('tables.tableName')}</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('tableName')}</label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder={t('tables.tableNamePlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
+                  placeholder={tTables('tableNamePlaceholder')} className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('tables.capacity')}</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('capacity')}</label>
                   <input type="number" min="1" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('tables.floor')}</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{tTables('floor')}</label>
                   <input type="text" value={form.floor} onChange={(e) => setForm({ ...form, floor: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                 </div>
               </div>
-              <Button type="submit" className="w-full">{t('tables.createTable')}</Button>
+              <Button type="submit" className="w-full">{tTables('createTable')}</Button>
             </form>
           </div>
         </div>

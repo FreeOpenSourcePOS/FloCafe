@@ -20,11 +20,10 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
-import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 import {
   defaultDiscountTypeForMode,
   isDiscountTypeAllowed,
@@ -43,40 +42,49 @@ import {
 } from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/tax-components';
 
-const itemStatusConfig: Record<string, { dot: string; color: string; labelKey: string }> = {
-  pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', labelKey: 'orders.itemStatusWaiting' },
-  preparing: { dot: 'bg-blue-500', color: 'text-blue-700', labelKey: 'orders.itemStatusPreparing' },
-  ready: { dot: 'bg-green-500', color: 'text-green-700', labelKey: 'orders.itemStatusReady' },
-  served: { dot: 'bg-purple-500', color: 'text-purple-700', labelKey: 'orders.itemStatusServed' },
-  cancelled: { dot: 'bg-red-400', color: 'text-red-500', labelKey: 'orders.itemStatusCancelled' },
-  voided: { dot: 'bg-red-500', color: 'text-red-600 line-through', labelKey: 'orders.itemStatusVoided' },
-  void_adjustment: { dot: 'bg-red-300', color: 'text-red-500 italic', labelKey: 'orders.itemStatusVoidAdjustment' },
+type OrdersKey = keyof AppConfig['Messages']['orders'];
+
+const itemStatusConfig: Record<OrderItem['status'], { dot: string; color: string; labelKey: OrdersKey }> = {
+  pending: { dot: 'bg-yellow-400', color: 'text-yellow-700', labelKey: 'itemStatusWaiting' },
+  preparing: { dot: 'bg-blue-500', color: 'text-blue-700', labelKey: 'itemStatusPreparing' },
+  ready: { dot: 'bg-green-500', color: 'text-green-700', labelKey: 'itemStatusReady' },
+  served: { dot: 'bg-purple-500', color: 'text-purple-700', labelKey: 'itemStatusServed' },
+  cancelled: { dot: 'bg-red-400', color: 'text-red-500', labelKey: 'itemStatusCancelled' },
+  voided: { dot: 'bg-red-500', color: 'text-red-600 line-through', labelKey: 'itemStatusVoided' },
+  void_adjustment: { dot: 'bg-red-300', color: 'text-red-500 italic', labelKey: 'itemStatusVoidAdjustment' },
 };
 
-const orderStatusBadge: Record<string, { bg: string; text: string; labelKey: string }> = {
-  pending: { bg: 'bg-yellow-100', text: 'text-yellow-700', labelKey: 'orders.pending' },
-  preparing: { bg: 'bg-blue-100', text: 'text-blue-700', labelKey: 'orders.preparing' },
-  ready: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'orders.ready' },
-  served: { bg: 'bg-purple-100', text: 'text-purple-700', labelKey: 'orders.served' },
-  completed: { bg: 'bg-gray-100', text: 'text-gray-600', labelKey: 'orders.completed' },
-  cancelled: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'orders.cancelled' },
+const orderStatusBadge: Record<Order['status'], { bg: string; text: string; labelKey: OrdersKey }> = {
+  pending: { bg: 'bg-yellow-100', text: 'text-yellow-700', labelKey: 'pending' },
+  preparing: { bg: 'bg-blue-100', text: 'text-blue-700', labelKey: 'preparing' },
+  ready: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'ready' },
+  served: { bg: 'bg-purple-100', text: 'text-purple-700', labelKey: 'served' },
+  completed: { bg: 'bg-gray-100', text: 'text-gray-600', labelKey: 'completed' },
+  cancelled: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'cancelled' },
 };
 
-const paymentStatusBadge: Record<string, { bg: string; text: string; labelKey: string }> = {
-  paid: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'orders.paid' },
-  partial: { bg: 'bg-amber-100', text: 'text-amber-700', labelKey: 'orders.partiallyPaid' },
-  unpaid: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'orders.unpaidBadge' },
+const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; text: string; labelKey: OrdersKey }> = {
+  paid: { bg: 'bg-green-100', text: 'text-green-700', labelKey: 'paid' },
+  partial: { bg: 'bg-amber-100', text: 'text-amber-700', labelKey: 'partiallyPaid' },
+  unpaid: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'unpaidBadge' },
 };
 
-const orderTypeLabel = ORDER_TYPE_LABEL_KEYS;
+// Typed leaf-key order-type map. The shared ORDER_TYPE_LABEL_KEYS stays dotted
+// for the not-yet-migrated KDS batch (5D), so this page uses a local map.
+const ORDER_TYPE_KEYS = {
+  dine_in: 'dineIn',
+  takeaway: 'takeaway',
+  delivery: 'delivery',
+  online: 'online',
+} as const satisfies Record<Order['type'], OrdersKey>;
 
 type FilterType = 'all' | 'active' | 'unpaid' | 'held';
 
-const tabLabelKey: Record<FilterType, string> = {
-  all: 'orders.all',
-  active: 'orders.active',
-  unpaid: 'orders.unpaidBadge',
-  held: 'orders.held',
+const tabLabelKey: Record<FilterType, OrdersKey> = {
+  all: 'all',
+  active: 'active',
+  unpaid: 'unpaidBadge',
+  held: 'held',
 };
 
 // Consolidated state types
@@ -115,7 +123,23 @@ export default function OrdersPage() {
   const router = useRouter();
   const cartStore = useCartStore();
   const { setTablesRequired, autoPrintBill, printerUseUnicode } = usePosSettingsStore();
-  const { t } = useI18n();
+  const tOrders = useTranslations('orders');
+  const tCommon = useTranslations('common');
+  const tNav = useTranslations('nav');
+  const tWhatsappSend = useTranslations('whatsapp.send');
+
+  // sendBillViaFlo (shared with PaymentModal) still takes a legacy dotted-key
+  // translator; bridge the typed `whatsapp.send` namespace to that contract.
+  const whatsappSendT = (key: string): string =>
+    tWhatsappSend(
+      key.replace(/^whatsapp\.send\./, '') as
+        | 'success'
+        | 'failed'
+        | 'error.notConnected'
+        | 'error.notOnWhatsapp'
+        | 'error.blocked'
+        | 'error.rateLimited',
+    );
   const { formatTime, formatDateTime } = useFormatDate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -233,7 +257,7 @@ export default function OrdersPage() {
         }
       });
     } catch {
-      toast.error(t('orders.loadOrdersFailed'));
+      toast.error(tOrders('loadOrdersFailed'));
     } finally {
       setLoading(false);
     }
@@ -257,10 +281,10 @@ export default function OrdersPage() {
       if (!clearAppendAttempt(getAppendAttemptStorage(), pendingAttempt!)) throw new Error('Unable to clear append retry state');
       if (addItemsAttemptRef.current?.idempotencyKey !== pendingAttempt!.idempotencyKey) return;
       addItemsAttemptRef.current = null;
-      toast.success(t('orders.itemsAdded', { count: pendingAttempt!.items.length }));
+      toast.success(tOrders('itemsAdded', { count: pendingAttempt!.items.length }));
       fetchOrders();
     }).catch(() => {
-      toast.error(t('orders.addItemsFailed'));
+      toast.error(tOrders('addItemsFailed'));
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeUserId]);
@@ -375,9 +399,9 @@ export default function OrdersPage() {
 
   const getTimeSince = (dateStr: string) => {
     const minutes = Math.floor((now - parseDbTimestamp(dateStr).getTime()) / 60000);
-    if (minutes < 1) return t('common.justNow');
-    if (minutes < 60) return t('common.timeMinutesAgo', { m: minutes });
-    return t('common.timeHoursMinutesAgo', { h: Math.floor(minutes / 60), m: minutes % 60 });
+    if (minutes < 1) return tCommon('justNow');
+    if (minutes < 60) return tCommon('timeMinutesAgo', { m: minutes });
+    return tCommon('timeHoursMinutesAgo', { h: Math.floor(minutes / 60), m: minutes % 60 });
   };
 
   const handleCreateNewOrderForCustomer = async (order: Order) => {
@@ -386,7 +410,7 @@ export default function OrdersPage() {
     // Check for active POS cart items to avoid accidental loss of progress
     if (cartStore.items.length > 0) {
       const proceed = await confirm(
-        t('orders.cartClearConfirm')
+        tOrders('cartClearConfirm')
       );
       if (!proceed) return;
     }
@@ -408,7 +432,7 @@ export default function OrdersPage() {
     }
 
     router.push('/pos');
-    toast.success(t('orders.newOrderStarted', { name: order.customer.name }));
+    toast.success(tOrders('newOrderStarted', { name: order.customer.name }));
   };
 
   const searchCustomersForLink = (query: string) => {
@@ -431,13 +455,13 @@ export default function OrdersPage() {
     setLinkingCustomer(true);
     try {
       await api.patch(`/orders/${orderId}/customer`, { customer_id: customerId });
-      toast.success(t('orders.customerLinked'));
+      toast.success(tOrders('customerLinked'));
       setLinkCustomerOrderId(null);
       setLinkCustomerSearch('');
       setLinkCustomerResults([]);
       fetchOrders();
     } catch {
-      toast.error(t('orders.linkCustomerFailed'));
+      toast.error(tOrders('linkCustomerFailed'));
     } finally {
       setLinkingCustomer(false);
     }
@@ -496,7 +520,7 @@ export default function OrdersPage() {
       const { data } = await api.post('/bills/generate', { order_id: orderId });
       setPaymentBill(data.bill);
     } catch {
-      toast.error(t('orders.generateBillFailed'));
+      toast.error(tOrders('generateBillFailed'));
     } finally {
       setGeneratingBill(null);
     }
@@ -515,7 +539,7 @@ export default function OrdersPage() {
         await printBill(
           latestBill,
           {
-            business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+            business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
             currency: currentTenant?.currency || 'INR',
             country: currentTenant?.country || 'IN',
             timezone: currentTenant?.timezone || 'UTC',
@@ -527,7 +551,7 @@ export default function OrdersPage() {
         );
         await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
       } catch {
-        toast.error(t('orders.receiptPrintFailedHint'));
+        toast.error(tOrders('receiptPrintFailedHint'));
       }
     }
   };
@@ -535,7 +559,7 @@ export default function OrdersPage() {
   const handlePrint = async (billId: number) => {
     const order = orders.find((o) => o.bill?.id === billId);
     if (!order?.bill) {
-      toast.error(t('orders.billNotFound'));
+      toast.error(tOrders('billNotFound'));
       return;
     }
     const isReprint = (printHistory[billId]?.length ?? 0) > 0;
@@ -548,7 +572,7 @@ export default function OrdersPage() {
       const printWarnings = await printBill(
         latestBill,
         {
-          business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+          business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
           currency: currentTenant?.currency || 'INR',
           country: currentTenant?.country || 'IN',
           timezone: currentTenant?.timezone || 'UTC',
@@ -559,11 +583,11 @@ export default function OrdersPage() {
         { isReprint }
       );
       await api.post(`/bills/${billId}/print`, { print_type: isReprint ? 'reprint' : 'receipt' });
-      toast.success(isReprint ? t('orders.printReceiptReprint') : t('orders.printReceipt'));
+      toast.success(isReprint ? tOrders('printReceiptReprint') : tOrders('printReceipt'));
       showPrintWarningsToast(printWarnings);
       fetchPrintHistory(billId);
     } catch {
-      toast.error(t('orders.printReceiptFailed'));
+      toast.error(tOrders('printReceiptFailed'));
     } finally {
       setPrintingBillId(null);
       setConfirmPrintBillId(null);
@@ -591,9 +615,9 @@ export default function OrdersPage() {
       link.download = `receipt-${billId}-${data.columns}cols.txt`;
       link.click();
       URL.revokeObjectURL(url);
-      toast.success(t('orders.printPreviewDownloaded'));
+      toast.success(tOrders('printPreviewDownloaded'));
     } catch {
-      toast.error(t('orders.printPreviewFailed'));
+      toast.error(tOrders('printPreviewFailed'));
     } finally {
       setPreviewingBillId(null);
     }
@@ -601,16 +625,16 @@ export default function OrdersPage() {
 
   const deleteItem = async (orderId: number, itemId: number) => {
     if (!isOwnerOrManager) {
-      toast.error(t('orders.onlyOwnersRemove'));
+      toast.error(tOrders('onlyOwnersRemove'));
       return;
     }
-    if (!await confirm(t('orders.removeItemConfirm'), { destructive: true, confirmLabel: t('common.remove') })) return;
+    if (!await confirm(tOrders('removeItemConfirm'), { destructive: true, confirmLabel: tCommon('remove') })) return;
     try {
-      await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: t('orders.removedByManager') });
-      toast.success(t('orders.itemRemoved'));
+      await api.patch(`/orders/${orderId}/items/${itemId}/cancel`, { reason: tOrders('removedByManager') });
+      toast.success(tOrders('itemRemoved'));
       fetchOrders();
     } catch {
-      toast.error(t('orders.removeItemFailed'));
+      toast.error(tOrders('removeItemFailed'));
     }
   };
 
@@ -619,14 +643,14 @@ export default function OrdersPage() {
     setVoidingItem(true);
     try {
       await api.patch(`/orders/${voidItemModal.orderId}/items/${voidItemModal.itemId}/cancel`, {
-        reason: t('orders.removedByManager'),
+        reason: tOrders('removedByManager'),
         override_pin: voidItemModal.overridePin || undefined,
       });
-      toast.success(t('orders.itemVoided'));
+      toast.success(tOrders('itemVoided'));
       setVoidItemModal(null);
       fetchOrders();
     } catch {
-      toast.error(t('orders.voidItemFailed'));
+      toast.error(tOrders('voidItemFailed'));
     } finally {
       setVoidingItem(false);
     }
@@ -636,20 +660,20 @@ export default function OrdersPage() {
     if (!isOwnerOrManager) return;
     try {
       await api.patch(`/orders/${orderId}/items/${itemId}/restore`);
-      toast.success(t('orders.itemRestored'));
+      toast.success(tOrders('itemRestored'));
       fetchOrders();
     } catch {
-      toast.error(t('orders.restoreItemFailed'));
+      toast.error(tOrders('restoreItemFailed'));
     }
   };
 
   const handleWhatsAppShare = (order: Order) => {
     if (!order.bill) {
-      toast.error(t('orders.billNotFound'));
+      toast.error(tOrders('billNotFound'));
       return;
     }
     if (!order.customer?.phone) {
-      toast.error(t('orders.customerPhoneMissing'));
+      toast.error(tOrders('customerPhoneMissing'));
       return;
     }
 
@@ -658,24 +682,24 @@ export default function OrdersPage() {
         order.bill,
         { phone: order.customer.phone, country_code: order.customer.country_code },
         {
-          business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+          business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
           currency,
           country: currentTenant?.country || 'IN',
         },
         { pointsEarned: order.bill.points_earned ?? 0 }
       );
     } catch {
-      toast.error(t('orders.whatsappFailed'));
+      toast.error(tOrders('whatsappFailed'));
     }
   };
 
   const handleSendViaFlo = async (order: Order) => {
     if (!order.bill) {
-      toast.error(t('orders.billNotFound'));
+      toast.error(tOrders('billNotFound'));
       return;
     }
     if (!order.customer?.phone) {
-      toast.error(t('whatsapp.send.customerPhoneRequired'));
+      toast.error(tWhatsappSend('customerPhoneRequired'));
       return;
     }
     setSendingWaOrderId(order.id);
@@ -684,11 +708,11 @@ export default function OrdersPage() {
         order.bill,
         order.customer.phone,
         {
-          business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+          business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
           currency: currentTenant?.currency || 'INR',
           country: currentTenant?.country || 'IN',
         },
-        t,
+        whatsappSendT,
         { pointsEarned: order.bill.points_earned ?? 0 }
       );
     } finally {
@@ -701,11 +725,11 @@ export default function OrdersPage() {
 
     // Check if PIN is required
     if (discountRequiresApproval && discountModal.value > 0 && !discountPin) {
-      toast.error(t('orders.managerPinRequired'));
+      toast.error(tOrders('managerPinRequired'));
       return;
     }
     if (discountModal.value > 0 && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
-      toast.error(t('orders.discountFailed'));
+      toast.error(tOrders('discountFailed'));
       return;
     }
 
@@ -716,10 +740,10 @@ export default function OrdersPage() {
         discount_reason: discountModal.reason || undefined,
         override_pin: discountRequiresApproval && discountModal.value > 0 ? discountPin : undefined,
       });
-      toast.success(t('orders.discountApplied'));
+      toast.success(tOrders('discountApplied'));
       fetchOrders();
     } catch {
-      toast.error(t('orders.discountFailed'));
+      toast.error(tOrders('discountFailed'));
     } finally {
       setDiscountModal(null);
       setDiscountPin('');
@@ -731,15 +755,15 @@ export default function OrdersPage() {
   };
 
   const handleConvertToTakeaway = async (order: Order) => {
-    const tableNote = order.table ? t('orders.freeTableSuffix', { name: order.table.name }) : '';
-    if (!await confirm(t('orders.convertToTakeawayConfirm', { number: order.order_number, tableNote }))) return;
+    const tableNote = order.table ? tOrders('freeTableSuffix', { name: order.table.name }) : '';
+    if (!await confirm(tOrders('convertToTakeawayConfirm', { number: order.order_number, tableNote }))) return;
     setConvertingOrderId(order.id);
     try {
       await api.patch(`/orders/${order.id}/convert-to-takeaway`);
-      toast.success(t('orders.orderConvertedTakeaway'));
+      toast.success(tOrders('orderConvertedTakeaway'));
       fetchOrders();
     } catch {
-      toast.error(t('orders.convertOrderFailed'));
+      toast.error(tOrders('convertOrderFailed'));
     } finally {
       setConvertingOrderId(null);
     }
@@ -755,8 +779,8 @@ export default function OrdersPage() {
     if (!addItemsOrder) return;
     api.get('/products', { params: { per_page: 200 } })
       .then(({ data }) => setProducts(data.products || []))
-      .catch(() => toast.error(t('orders.menuLoadFailed')));
-  }, [addItemsOrder, t]);
+      .catch(() => toast.error(tOrders('menuLoadFailed')));
+  }, [addItemsOrder, tOrders]);
 
   const handleAddItemToSelection = (product: Product) => {
     setSelectedItems(prev => {
@@ -808,11 +832,11 @@ export default function OrdersPage() {
       }, { headers: { 'Idempotency-Key': attempt.idempotencyKey } });
       if (!clearAppendAttempt(storage, attempt)) throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
-      toast.success(t('orders.itemsAdded', { count: selectedItems.length }));
+      toast.success(tOrders('itemsAdded', { count: selectedItems.length }));
       openAddItemsModal(null);
       fetchOrders();
     } catch {
-      toast.error(t('orders.addItemsFailed'));
+      toast.error(tOrders('addItemsFailed'));
     } finally {
       setAddingItems(false);
     }
@@ -829,10 +853,10 @@ export default function OrdersPage() {
         free_table: cancelModal.freeTable,
         override_pin: cancelModal.overridePin || undefined,
       });
-      toast.success(t('orders.orderCancelled'));
+      toast.success(tOrders('orderCancelled'));
       fetchOrders();
     } catch {
-      toast.error(t('orders.cancelOrderFailed'));
+      toast.error(tOrders('cancelOrderFailed'));
     } finally {
       setCancellingOrderId(null);
       setCancelModal(null);
@@ -857,7 +881,7 @@ export default function OrdersPage() {
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-gray-900">{t('nav.orders')}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{tNav('orders')}</h1>
         <div className="flex gap-2">
           {(['all', 'active', 'unpaid', 'held'] as FilterType[]).map((f) => (
             <button
@@ -869,7 +893,7 @@ export default function OrdersPage() {
                   : 'bg-white text-gray-600 border border-gray-200 hover:border-gray-400'
               }`}
             >
-              {t(tabLabelKey[f])}
+              {tOrders(tabLabelKey[f])}
             </button>
           ))}
         </div>
@@ -882,7 +906,7 @@ export default function OrdersPage() {
           <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
-            placeholder={t('orders.search')}
+            placeholder={tOrders('search')}
             value={filters.search}
             onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
             className="w-full ps-9 pe-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand bg-white"
@@ -895,7 +919,7 @@ export default function OrdersPage() {
           onChange={(e) => setFilters(prev => ({ ...prev, table: e.target.value }))}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
-          <option value="">{t('orders.allTables')}</option>
+          <option value="">{tOrders('allTables')}</option>
           {tables.map((table: Table) => (
             <option key={table.id} value={String(table.id)}>
               {table.name}
@@ -909,11 +933,11 @@ export default function OrdersPage() {
           onChange={(e) => setFilters(prev => ({ ...prev, type: e.target.value }))}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
-          <option value="">{t('orders.allTypes')}</option>
-          <option value="dine_in">{t('orders.dineIn')}</option>
-          <option value="takeaway">{t('orders.takeaway')}</option>
-          <option value="delivery">{t('orders.delivery')}</option>
-          <option value="online">{t('orders.online')}</option>
+          <option value="">{tOrders('allTypes')}</option>
+          <option value="dine_in">{tOrders('dineIn')}</option>
+          <option value="takeaway">{tOrders('takeaway')}</option>
+          <option value="delivery">{tOrders('delivery')}</option>
+          <option value="online">{tOrders('online')}</option>
         </select>
 
         {/* Status filter */}
@@ -922,10 +946,10 @@ export default function OrdersPage() {
           onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
           className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
         >
-          <option value="">{t('orders.allStatuses')}</option>
-          <option value="active">{t('orders.active')}</option>
-          <option value="completed">{t('orders.completed')}</option>
-          <option value="cancelled">{t('orders.cancelled')}</option>
+          <option value="">{tOrders('allStatuses')}</option>
+          <option value="active">{tOrders('active')}</option>
+          <option value="completed">{tOrders('completed')}</option>
+          <option value="cancelled">{tOrders('cancelled')}</option>
         </select>
       </div>
 
@@ -937,7 +961,7 @@ export default function OrdersPage() {
           </div>
         ) : Object.keys(heldOrdersStore.orders).length === 0 ? (
           <div className="flex items-center justify-center flex-1 text-gray-400">
-            <p>{t('orders.heldEmpty')}</p>
+            <p>{tOrders('heldEmpty')}</p>
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
@@ -945,10 +969,10 @@ export default function OrdersPage() {
               <div key={heldOrder.tableId} className="bg-white rounded-xl border border-blue-200 overflow-hidden flex flex-col shadow-sm hover:shadow-md transition-shadow">
                  <div className="p-4 border-b border-gray-100 bg-blue-50/50 flex justify-between items-center">
                    <div>
-                     <p className="font-bold text-gray-900">{tables.find(t => t.id === heldOrder.tableId)?.name || t('common.tableFallback')}</p>
+                     <p className="font-bold text-gray-900">{tables.find(t => t.id === heldOrder.tableId)?.name || tCommon('tableFallback')}</p>
                      <p className="text-xs text-gray-500">{formatTime(heldOrder.heldAt)}</p>
                    </div>
-                   <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-bold tracking-wide">{t('orders.held')}</span>
+                   <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-bold tracking-wide">{tOrders('held')}</span>
                  </div>
                  <div className="p-4 flex-1">
                    {heldOrder.items.map((item, idx) => (
@@ -972,27 +996,27 @@ export default function OrdersPage() {
                           router.push('/pos');
                         } else {
                           await heldOrdersStore.fetchHeldOrders();
-                          toast.error(t('orders.resumeFailed'));
+                          toast.error(tOrders('resumeFailed'));
                         }
                       } catch {
-                        toast.error(t('orders.resumeFailed'));
+                        toast.error(tOrders('resumeFailed'));
                       }
-                    }} variant="default" className="flex-1 bg-brand hover:bg-brand/90 text-white">{t('orders.resumeInPos')}</Button>
+                    }} variant="default" className="flex-1 bg-brand hover:bg-brand/90 text-white">{tOrders('resumeInPos')}</Button>
                     <Button onClick={async () => {
-                      if (await confirm(t('orders.deleteHeldConfirm'), { destructive: true })) {
+                      if (await confirm(tOrders('deleteHeldConfirm'), { destructive: true })) {
                         try {
                           const deleted = await heldOrdersStore.removeHeldOrder(heldOrder.tableId, heldOrder.id);
                           if (deleted) {
-                            toast.success(t('orders.heldOrderRemoved'));
+                            toast.success(tOrders('heldOrderRemoved'));
                           } else {
                             await heldOrdersStore.fetchHeldOrders();
-                            toast.error(t('orders.removeHeldOrderFailed'));
+                            toast.error(tOrders('removeHeldOrderFailed'));
                           }
                         } catch {
-                          toast.error(t('orders.removeHeldOrderFailed'));
+                          toast.error(tOrders('removeHeldOrderFailed'));
                         }
                       }
-                    }} variant="outline" className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50">{t('orders.delete')}</Button>
+                    }} variant="outline" className="flex-1 text-red-600 hover:text-red-700 hover:bg-red-50">{tOrders('delete')}</Button>
                  </div>
               </div>
             ))}
@@ -1004,7 +1028,7 @@ export default function OrdersPage() {
         </div>
       ) : filteredOrders.length === 0 ? (
         <div className="flex items-center justify-center flex-1 text-gray-400">
-          <p>{t('orders.empty')}</p>
+          <p>{tOrders('empty')}</p>
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4 content-start items-start auto-rows-max">
@@ -1032,9 +1056,9 @@ export default function OrdersPage() {
                   <div className="flex items-center gap-2 flex-wrap min-w-0">
                     <span className="font-bold text-gray-900">#<Ltr>{order.order_number}</Ltr></span>
                     {(() => { const badge = orderStatusBadge[order.status]; return badge ? (
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>{t(badge.labelKey)}</span>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${badge.bg} ${badge.text}`}>{tOrders(badge.labelKey)}</span>
                     ) : null; })()}
-                    <span className="text-sm text-gray-500 capitalize">{t(orderTypeLabel[order.type] ?? order.type)}</span>
+                    <span className="text-sm text-gray-500 capitalize">{tOrders(ORDER_TYPE_KEYS[order.type])}</span>
                     {order.table && (
                       <span className="text-sm text-orange-600 font-medium">{order.table.name}</span>
                     )}
@@ -1046,7 +1070,7 @@ export default function OrdersPage() {
                   <div className="flex items-center gap-2 shrink-0">
                     {payBadge && (
                       <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium ${payBadge.bg} ${payBadge.text}`}>
-                        {t(payBadge.labelKey)}
+                        {tOrders(payBadge.labelKey)}
                       </span>
                     )}
                     {paid && order.customer?.phone && (
@@ -1054,7 +1078,7 @@ export default function OrdersPage() {
                         onClick={() => isWhatsAppReady ? handleSendViaFlo(order) : handleWhatsAppShare(order)}
                         disabled={sendingWaOrderId === order.id}
                         className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors disabled:opacity-70"
-                        title={isWhatsAppReady ? t('common.sendViaFlo') : t('common.shareViaWhatsApp')}
+                        title={isWhatsAppReady ? tCommon('sendViaFlo') : tCommon('shareViaWhatsApp')}
                       >
                         {sendingWaOrderId === order.id ? <Loader2 className="size-4 animate-spin" /> : isWhatsAppReady ? <Send size={14} /> : <MessageCircle size={14} />}
                       </button>
@@ -1064,7 +1088,7 @@ export default function OrdersPage() {
                         onClick={() => setConfirmPrintBillId(order.bill!.id)}
                         disabled={printingBillId === order.bill.id}
                         className="p-1.5 rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-100 disabled:opacity-50 transition-colors"
-                        title={(printHistory[order.bill.id]?.length ?? 0) > 0 ? t('common.reprint') : t('common.print')}
+                        title={(printHistory[order.bill.id]?.length ?? 0) > 0 ? tCommon('reprint') : tCommon('print')}
                       >
                         <Printer size={14} />
                       </button>
@@ -1094,9 +1118,9 @@ export default function OrdersPage() {
                     <button
                       onClick={() => handleCreateNewOrderForCustomer(order)}
                       className="flex items-center gap-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-100 hover:bg-blue-200 px-2.5 py-1 rounded-lg transition-colors shrink-0"
-                      title={t('orders.startNewOrderForCustomer')}
+                      title={tOrders('startNewOrderForCustomer')}
                     >
-                      <Plus size={12} /> {t('orders.newOrder')}
+                      <Plus size={12} /> {tOrders('newOrder')}
                     </button>
                   </div>
                 ) : isOwnerOrManager && !['completed', 'cancelled'].includes(order.status) ? (
@@ -1110,7 +1134,7 @@ export default function OrdersPage() {
                             setLinkCustomerSearch(e.target.value);
                             searchCustomersForLink(e.target.value);
                           }}
-                          placeholder={t('orders.searchCustomer')}
+                          placeholder={tOrders('searchCustomer')}
                           className="flex-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                           autoFocus
                         />
@@ -1131,7 +1155,7 @@ export default function OrdersPage() {
                         className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-blue-600 transition-colors"
                       >
                         <UserPlus size={14} />
-                        {t('orders.linkCustomer')}
+                        {tOrders('linkCustomer')}
                       </button>
                     )}
                     {linkCustomerOrderId === order.id && linkCustomerResults.length > 0 && (
@@ -1149,7 +1173,7 @@ export default function OrdersPage() {
                                 <span className="text-xs text-gray-500 ms-2"><Ltr>{customer.phone}</Ltr></span>
                               )}
                             </div>
-                            {linkingCustomer && <span className="text-xs text-gray-400">{t('orders.linking')}</span>}
+                            {linkingCustomer && <span className="text-xs text-gray-400">{tOrders('linking')}</span>}
                           </button>
                         ))}
                       </div>
@@ -1166,7 +1190,7 @@ export default function OrdersPage() {
                         <div key={item.id} className="py-1.5">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span className={`w-2 h-2 rounded-full shrink-0 ${config.dot}`} title={t(config.labelKey)} />
+                              <span className={`w-2 h-2 rounded-full shrink-0 ${config.dot}`} title={tOrders(config.labelKey)} />
                               <span className={`text-sm font-medium ${config.color}`}>
                                 {item.quantity}x
                               </span>
@@ -1181,7 +1205,7 @@ export default function OrdersPage() {
                                 <button
                                   onClick={() => deleteItem(order.id, item.id)}
                                   className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-                                  title={t('common.removeItem')}
+                                  title={tCommon('removeItem')}
                                 >
                                   <Trash2 size={14} />
                                 </button>
@@ -1190,7 +1214,7 @@ export default function OrdersPage() {
                                 <button
                                   onClick={() => setVoidItemModal({ orderId: order.id, itemId: item.id, productName: item.product_name, overridePin: '' })}
                                   className="p-1 rounded hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors"
-                                  title={t('orders.voidItem')}
+                                  title={tOrders('voidItem')}
                                 >
                                   <Ban size={14} />
                                 </button>
@@ -1214,29 +1238,29 @@ export default function OrdersPage() {
                   {/* Bill summary */}
                   <div className="mt-3 pt-3 border-t border-dashed border-gray-200 space-y-1">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">{t('common.subtotal')}</span>
+                      <span className="text-gray-500">{tCommon('subtotal')}</span>
                       <span className="text-gray-700">{fmt(subtotal)}</span>
                     </div>
                     {discount > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-purple-600">{t('common.discount')}</span>
+                        <span className="text-purple-600">{tCommon('discount')}</span>
                         <span className="text-purple-600">-{fmt(discount)}</span>
                       </div>
                     )}
                     {tax > 0 && (
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">{t('common.tax')}</span>
+                        <span className="text-gray-500">{tCommon('tax')}</span>
                         <span className="text-gray-700">{fmt(tax)}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-base font-bold pt-1 border-t border-gray-100">
-                      <span className="text-gray-900">{t('common.total')}</span>
+                      <span className="text-gray-900">{tCommon('total')}</span>
                       <span className="text-gray-900">{fmt(total)}</span>
                     </div>
                     {bill && payStatus === 'partial' && (
                       <div className="flex justify-between text-xs text-gray-500 pt-0.5">
-                        <span>{t('orders.paid')} {fmt(Number(bill.paid_amount))}</span>
-                        <span>{t('orders.balance')} {fmt(Number(bill.balance))}</span>
+                        <span>{tOrders('paid')} {fmt(Number(bill.paid_amount))}</span>
+                        <span>{tOrders('balance')} {fmt(Number(bill.balance))}</span>
                       </div>
                     )}
                   </div>
@@ -1256,7 +1280,7 @@ export default function OrdersPage() {
                             <button
                               onClick={() => restoreItem(order.id, item.id)}
                               className="p-1 rounded hover:bg-green-50 text-green-400 hover:text-green-600"
-                              title={t('common.restore')}
+                              title={tCommon('restore')}
                             >
                               <RotateCcw size={12} />
                             </button>
@@ -1275,14 +1299,14 @@ export default function OrdersPage() {
                         className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-700"
                       >
                         {printHistoryExpanded[order.bill!.id] ? <ChevronDown size={14} /> : <ChevronRight size={14} className="rtl-flip" />}
-                        {t('orders.printHistory')}
+                        {tOrders('printHistory')}
                       </button>
 
                       {printHistoryExpanded[order.bill!.id] && (
                         <div className="mt-2 ps-4 space-y-1">
                           {printHistory[order.bill!.id].map((print, index) => (
                             <div key={print.id} className="text-xs text-gray-500">
-                              {index + 1}. {t('orders.printHistoryEntry', { printedType: print.print_type === 'reprint' ? t('orders.reprint') : t('orders.printed'), user: print.user_name, time: formatDateTime(print.printed_at) })}
+                              {index + 1}. {tOrders('printHistoryEntry', { printedType: print.print_type === 'reprint' ? tOrders('reprint') : tOrders('printed'), user: print.user_name, time: formatDateTime(print.printed_at) })}
                             </div>
                           ))}
                         </div>
@@ -1301,7 +1325,7 @@ export default function OrdersPage() {
                         className="flex-1 justify-center"
                       >
                         <CreditCard size={14} className="me-1.5" />
-                        {generatingBill === order.id ? t('orders.generating') : t('orders.checkout')}
+                        {generatingBill === order.id ? tOrders('generating') : tOrders('checkout')}
                       </Button>
                     )}
                     {!['completed', 'cancelled'].includes(order.status) && (
@@ -1312,7 +1336,7 @@ export default function OrdersPage() {
                         className="flex-1 justify-center border-green-300 text-green-600 hover:bg-green-50 hover:text-green-700"
                       >
                         <Plus size={14} className="me-1.5" />
-                        {t('orders.addItem')}
+                        {tOrders('addItem')}
                       </Button>
                     )}
                     {order.type === 'dine_in' && !['completed', 'cancelled'].includes(order.status) && (
@@ -1324,7 +1348,7 @@ export default function OrdersPage() {
                         className="flex-1 justify-center border-blue-300 text-blue-600 hover:bg-blue-50 hover:text-blue-700"
                       >
                         <ShoppingBag size={14} className="me-1.5" />
-                        {convertingOrderId === order.id ? t('orders.converting') : t('orders.convertToTakeaway')}
+                        {convertingOrderId === order.id ? tOrders('converting') : tOrders('convertToTakeaway')}
                       </Button>
                     )}
                     {!['completed', 'cancelled'].includes(order.status) && (
@@ -1344,7 +1368,7 @@ export default function OrdersPage() {
                         ) : (
                           <Lock size={14} className="me-1.5" />
                         )}
-                        {cancellingOrderId === order.id ? t('orders.cancelling') : t('common.cancel')}
+                        {cancellingOrderId === order.id ? tOrders('cancelling') : tCommon('cancel')}
                       </Button>
                     )}
                   </div>
@@ -1370,12 +1394,12 @@ export default function OrdersPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
             <h2 className="text-lg font-bold text-gray-900 mb-2">
-              {(printHistory[confirmPrintBillId]?.length ?? 0) > 0 ? t('orders.reprintReceiptTitle') : t('orders.printReceiptTitle')}
+              {(printHistory[confirmPrintBillId]?.length ?? 0) > 0 ? tOrders('reprintReceiptTitle') : tOrders('printReceiptTitle')}
             </h2>
             <p className="text-sm text-gray-600 mb-6">
               {(printHistory[confirmPrintBillId]?.length ?? 0) > 0
-                ? t('orders.reprintReceiptWarning')
-                : t('orders.printReceiptConfirm')}
+                ? tOrders('reprintReceiptWarning')
+                : tOrders('printReceiptConfirm')}
             </p>
             <div className="flex justify-end gap-2">
               <Button
@@ -1383,15 +1407,15 @@ export default function OrdersPage() {
                 size="sm"
                 onClick={() => setConfirmPrintBillId(null)}
               >
-                {t('common.cancel')}
+                {tCommon('cancel')}
               </Button>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => handleDownloadPrintPreview(confirmPrintBillId)}
                 disabled={previewingBillId === confirmPrintBillId}
-                title={t('orders.downloadPrintPreview')}
-                aria-label={t('orders.downloadPrintPreview')}
+                title={tOrders('downloadPrintPreview')}
+                aria-label={tOrders('downloadPrintPreview')}
                 className="w-9 px-0"
               >
                 {previewingBillId === confirmPrintBillId
@@ -1405,10 +1429,10 @@ export default function OrdersPage() {
               >
                 <Printer size={14} className="me-1.5" />
                 {printingBillId === confirmPrintBillId
-                  ? t('orders.printing')
+                  ? tOrders('printing')
                   : (printHistory[confirmPrintBillId]?.length ?? 0) > 0
-                    ? t('orders.confirmReprint')
-                    : t('orders.confirmPrint')}
+                    ? tOrders('confirmReprint')
+                    : tOrders('confirmPrint')}
               </Button>
             </div>
           </div>
@@ -1419,19 +1443,19 @@ export default function OrdersPage() {
       {cancelModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('orders.cancel')} #<Ltr>{cancelModal.order.order_number}</Ltr></h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">{tOrders('cancel')} #<Ltr>{cancelModal.order.order_number}</Ltr></h2>
 
             <div className="space-y-4">
               <div>
                 <label htmlFor="cancelReason" className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('common.reasonOptional')}
+                  {tCommon('reasonOptional')}
                 </label>
                 <input
                   id="cancelReason"
                   type="text"
                   value={cancelModal.reason}
                   onChange={(e) => updateCancelModal({ reason: e.target.value })}
-                  placeholder={t('orders.cancelReason')}
+                  placeholder={tOrders('cancelReason')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                 />
               </div>
@@ -1446,7 +1470,7 @@ export default function OrdersPage() {
                     className="h-4 w-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
                   />
                   <label htmlFor="freeTable" className="text-sm text-gray-700">
-                    {t('orders.freeTable', { name: cancelModal.order.table.name })}
+                    {tOrders('freeTable', { name: cancelModal.order.table.name })}
                   </label>
                 </div>
               )}
@@ -1454,14 +1478,14 @@ export default function OrdersPage() {
               {(cancelModal.order.status !== 'pending' || cancelModal.order.items?.some((i) => ['preparing', 'ready', 'served', 'completed'].includes(i.status))) && (
                 <div>
                   <label htmlFor="overridePin" className="block text-sm font-medium text-gray-700 mb-1">
-                    {t('orders.overridePinLabel')}
+                    {tOrders('overridePinLabel')}
                   </label>
                   <input
                     id="overridePin"
                     type="password"
                     value={cancelModal.overridePin}
                     onChange={(e) => updateCancelModal({ overridePin: e.target.value })}
-placeholder={t('orders.managerPin')}
+placeholder={tOrders('managerPin')}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
                   />
                 </div>
@@ -1474,7 +1498,7 @@ placeholder={t('orders.managerPin')}
                 size="sm"
                 onClick={() => setCancelModal(null)}
               >
-                {t('common.cancel')}
+                {tCommon('cancel')}
               </Button>
               <Button
                 size="sm"
@@ -1482,7 +1506,7 @@ placeholder={t('orders.managerPin')}
                 disabled={cancellingOrderId === cancelModal.order.id}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
-                {cancellingOrderId === cancelModal.order.id ? t('orders.cancelling') : t('orders.confirmCancel')}
+                {cancellingOrderId === cancelModal.order.id ? tOrders('cancelling') : tOrders('confirmCancel')}
               </Button>
             </div>
           </div>
@@ -1493,12 +1517,12 @@ placeholder={t('orders.managerPin')}
       {voidItemModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-1">{t('orders.voidItem')}</h2>
-            <p className="text-sm text-gray-500 mb-4">{t('orders.voidItemConfirm', { name: voidItemModal.productName })}</p>
+            <h2 className="text-lg font-bold text-gray-900 mb-1">{tOrders('voidItem')}</h2>
+            <p className="text-sm text-gray-500 mb-4">{tOrders('voidItemConfirm', { name: voidItemModal.productName })}</p>
 
             <div>
               <label htmlFor="voidOverridePin" className="block text-sm font-medium text-gray-700 mb-1">
-                {t('orders.overridePinLabel')}
+                {tOrders('overridePinLabel')}
               </label>
               <input
                 id="voidOverridePin"
@@ -1506,7 +1530,7 @@ placeholder={t('orders.managerPin')}
                 autoFocus
                 value={voidItemModal.overridePin}
                 onChange={(e) => setVoidItemModal({ ...voidItemModal, overridePin: e.target.value })}
-                placeholder={t('orders.managerPin')}
+                placeholder={tOrders('managerPin')}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-500 focus:border-transparent"
               />
             </div>
@@ -1517,7 +1541,7 @@ placeholder={t('orders.managerPin')}
                 size="sm"
                 onClick={() => setVoidItemModal(null)}
               >
-                {t('common.cancel')}
+                {tCommon('cancel')}
               </Button>
               <Button
                 size="sm"
@@ -1525,7 +1549,7 @@ placeholder={t('orders.managerPin')}
                 disabled={voidingItem || !voidItemModal.overridePin}
                 className="bg-red-600 hover:bg-red-700 text-white"
               >
-                {voidingItem ? t('orders.voidingItem') : t('orders.confirmVoidItem')}
+                {voidingItem ? tOrders('voidingItem') : tOrders('confirmVoidItem')}
               </Button>
             </div>
           </div>
@@ -1536,7 +1560,7 @@ placeholder={t('orders.managerPin')}
       {discountModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-sm mx-4">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('orders.applyDiscountTitle', { number: discountModal.order.order_number })}</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">{tOrders('applyDiscountTitle', { number: discountModal.order.order_number })}</h2>
 
             <div className="space-y-4">
               {/* Discount Type Toggle */}
@@ -1551,7 +1575,7 @@ placeholder={t('orders.managerPin')}
                     }`}
                   >
                     <Percent size={14} />
-                    {t('common.percentage')}
+                    {tCommon('percentage')}
                   </button>
                 )}
                 {isDiscountTypeAllowed(discountMode, 'amount') && (
@@ -1564,7 +1588,7 @@ placeholder={t('orders.managerPin')}
                     }`}
                   >
                     <Banknote size={14} />
-                    {t('common.amount')}
+                    {tCommon('amount')}
                   </button>
                 )}
               </div>
@@ -1572,7 +1596,7 @@ placeholder={t('orders.managerPin')}
               {/* Discount Value */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {discountModal.type === 'percentage' ? t('orders.discountPercentageLabel') : t('orders.discountAmountLabel')}
+                  {discountModal.type === 'percentage' ? tOrders('discountPercentageLabel') : tOrders('discountAmountLabel')}
                 </label>
                 <div className="relative">
                   <span className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
@@ -1594,13 +1618,13 @@ placeholder={t('orders.managerPin')}
               {/* Discount Reason */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  {t('common.reasonOptional')}
+                  {tCommon('reasonOptional')}
                 </label>
                 <input
                   type="text"
                   value={discountModal.reason}
                   onChange={(e) => updateDiscountModal({ reason: e.target.value })}
-                  placeholder={t('orders.discountReason')}
+                  placeholder={tOrders('discountReason')}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
               </div>
@@ -1608,18 +1632,18 @@ placeholder={t('orders.managerPin')}
               {/* Preview */}
               <div className="bg-gray-50 rounded-lg p-3 space-y-1.5">
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">{t('common.subtotal')}</span>
+                  <span className="text-gray-500">{tCommon('subtotal')}</span>
                   <span className="text-gray-900">{fmt(Number(discountModal.order.subtotal))}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-gray-500">{t('common.tax')}</span>
+                  <span className="text-gray-500">{tCommon('tax')}</span>
                   <span className="text-gray-900">{fmt(Number(discountModal.order.tax_amount || 0))}</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-purple-600">
-                    {t('common.discount')}
+                    {tCommon('discount')}
                     {discountModal.type === 'percentage' && discountModal.value > 0 && (
-                      <span className="text-gray-400 ms-1">{t('orders.percentOnSubtotal', { value: discountModal.value })}</span>
+                      <span className="text-gray-400 ms-1">{tOrders('percentOnSubtotal', { value: discountModal.value })}</span>
                     )}
                   </span>
                   <span className="text-purple-600">
@@ -1631,7 +1655,7 @@ placeholder={t('orders.managerPin')}
                   </span>
                 </div>
                 <div className="border-t border-gray-200 pt-1.5 flex justify-between text-sm font-bold">
-                  <span className="text-gray-900">{t('orders.newTotal')}</span>
+                  <span className="text-gray-900">{tOrders('newTotal')}</span>
                   <span className="text-gray-900">
                     {fmt(
                       discountModal.type === 'percentage'
@@ -1645,12 +1669,12 @@ placeholder={t('orders.managerPin')}
 
             {discountRequiresApproval && discountModal.value > 0 && (
               <div className="mt-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('orders.managerPinLabel')}</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{tOrders('managerPinLabel')}</label>
                 <input
                   type="password"
                   value={discountPin}
                   onChange={(e) => setDiscountPin(e.target.value)}
-placeholder={t('orders.managerPin')}
+placeholder={tOrders('managerPin')}
                 maxLength={6}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                 />
@@ -1663,7 +1687,7 @@ placeholder={t('orders.managerPin')}
                 size="sm"
                 onClick={() => setDiscountModal(null)}
               >
-                {t('common.cancel')}
+                {tCommon('cancel')}
               </Button>
               <Button
                 size="sm"
@@ -1672,7 +1696,7 @@ placeholder={t('orders.managerPin')}
                 className="bg-purple-600 hover:bg-purple-700 text-white"
               >
                 <Percent size={14} className="me-1.5" />
-                {t('orders.applyDiscount')}
+                {tOrders('applyDiscount')}
               </Button>
             </div>
           </div>
@@ -1683,14 +1707,14 @@ placeholder={t('orders.managerPin')}
       {addItemsOrder && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-lg mx-4 max-h-[80vh] flex flex-col">
-            <h2 className="text-lg font-bold text-gray-900 mb-4">{t('orders.addItems')} #<Ltr>{addItemsOrder.order_number}</Ltr></h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-4">{tOrders('addItems')} #<Ltr>{addItemsOrder.order_number}</Ltr></h2>
 
             {/* Search */}
             <div className="relative mb-3">
               <Search size={16} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder={t('orders.searchMenu')}
+                placeholder={tOrders('searchMenu')}
                 value={productSearch}
                 onChange={(e) => setProductSearch(e.target.value)}
                 className="w-full ps-9 pe-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent"
@@ -1718,21 +1742,21 @@ placeholder={t('orders.managerPin')}
                 ))
               }
               {products.filter(p => !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase())).length === 0 && (
-                <div className="px-3 py-4 text-sm text-gray-400 text-center">{t('orders.noItemsFound')}</div>
+                <div className="px-3 py-4 text-sm text-gray-400 text-center">{tOrders('noItemsFound')}</div>
               )}
             </div>
 
             {/* Selected items */}
             {selectedItems.length > 0 && (
               <div className="space-y-2 mb-3">
-                <p className="text-xs font-medium text-gray-500 uppercase">{t('orders.selectedItems')}</p>
+                <p className="text-xs font-medium text-gray-500 uppercase">{tOrders('selectedItems')}</p>
                 {selectedItems.map(item => (
                   <div key={item.product_id} className="flex items-center gap-2 bg-gray-50 rounded-lg p-2">
                     <div className="flex-1 min-w-0">
                       <span className="text-sm font-medium text-gray-900 truncate block">{item.product_name}</span>
                       <input
                         type="text"
-                        placeholder={t('orders.notesOptional')}
+                        placeholder={tOrders('notesOptional')}
                         value={item.special_instructions}
                         maxLength={100}
                         onChange={(e) => handleUpdateSelectionNotes(item.product_id, e.target.value.slice(0, 100))}
@@ -1768,7 +1792,7 @@ placeholder={t('orders.managerPin')}
                 size="sm"
                 onClick={() => openAddItemsModal(null)}
               >
-                {t('common.cancel')}
+                {tCommon('cancel')}
               </Button>
               <Button
                 size="sm"
@@ -1777,7 +1801,7 @@ placeholder={t('orders.managerPin')}
                 className="bg-green-600 hover:bg-green-700 text-white"
               >
                 <Plus size={14} className="me-1.5" />
-                {addingItems ? t('orders.adding') : t('orders.addItemsCount', { count: selectedItems.length })}
+                {addingItems ? tOrders('adding') : tOrders('addItemsCount', { count: selectedItems.length })}
               </Button>
             </div>
           </div>

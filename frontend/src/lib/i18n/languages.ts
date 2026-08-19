@@ -1,8 +1,3 @@
-import en from './messages/en.json';
-import es from './messages/es.json';
-import pt from './messages/pt.json';
-import fa from './messages/fa.json';
-
 export type LanguageDirection = 'ltr' | 'rtl';
 
 export interface LanguageConfig {
@@ -10,14 +5,18 @@ export interface LanguageConfig {
   readonly nativeName: string;
   readonly direction: LanguageDirection;
   readonly selectable: boolean;
-  readonly messages: Record<string, unknown>;
-  readonly load?: () => Promise<{ default: Record<string, unknown> }>;
+  /** Dynamic chunk loader for this language's message bundle (#375). */
+  readonly load: () => Promise<{ default: Record<string, unknown> }>;
 }
 
 /**
  * Single source of truth for supported UI languages, BCP-47 locale tags,
  * native display names, text directions, user-facing selectability, and
- * (later) dynamic chunk loaders.
+ * dynamic chunk loaders.
+ *
+ * Message bundles are NOT statically imported here: each language is loaded
+ * on demand through `load()` and shared via `loader.ts`, so only the active
+ * locale bundle ships in the startup payload (#375).
  *
  * `as const satisfies Record<string, LanguageConfig>` preserves the literal
  * keys/types (so `Language` and `Locale` can be derived) while still
@@ -29,7 +28,6 @@ export const LANGUAGES = {
     nativeName: 'English',
     direction: 'ltr',
     selectable: true,
-    messages: en,
     load: () => import('./messages/en.json'),
   },
   es: {
@@ -37,7 +35,6 @@ export const LANGUAGES = {
     nativeName: 'Español',
     direction: 'ltr',
     selectable: true,
-    messages: es,
     load: () => import('./messages/es.json'),
   },
   pt: {
@@ -45,7 +42,6 @@ export const LANGUAGES = {
     nativeName: 'Português',
     direction: 'ltr',
     selectable: true,
-    messages: pt,
     load: () => import('./messages/pt.json'),
   },
   fa: {
@@ -55,7 +51,6 @@ export const LANGUAGES = {
     // Governed by #241 acceptance: technical readiness only until Persian is
     // enabled for end users, so keep it hidden from the language selector.
     selectable: false,
-    messages: fa,
     load: () => import('./messages/fa.json'),
   },
 } as const satisfies Record<string, LanguageConfig>;

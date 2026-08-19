@@ -127,7 +127,7 @@ function loadComponents(): {
     const { KdsHtmlLang } = require('../frontend/src/components/kds/KdsHtmlLang');
     const { HtmlLangSync } = require('../frontend/src/components/layout/HtmlLangSync');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
-    const { t, fetchServerInfo, getLanguageDirection } = require('../frontend/src/lib/i18n');
+    const { t, fetchServerInfo, getLanguageDirection, loadLocaleMessages } = require('../frontend/src/lib/i18n');
     return {
       Ltr,
       KdsHtmlLang,
@@ -136,6 +136,7 @@ function loadComponents(): {
       t,
       fetchServerInfo,
       getLanguageDirection,
+      loadLocaleMessages,
       React,
       ReactDOMServer,
     };
@@ -192,9 +193,16 @@ async function run(): Promise<void> {
     t,
     fetchServerInfo,
     getLanguageDirection,
+    loadLocaleMessages,
     React,
     ReactDOMServer,
   } = loadComponents();
+
+  // #375: prime the shared locale cache so synchronous t() resolves the
+  // on-demand bundles in this test process.
+  for (const lang of ['en', 'es', 'pt', 'fa'] as const) {
+    await loadLocaleMessages(lang);
+  }
 
   React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
 

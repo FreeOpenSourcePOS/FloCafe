@@ -11,7 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { COUNTRIES, getCountryByCode, countryName, type Country } from '@/lib/countries';
-import { getBrowserLanguage, t as translate, type Language } from '@/lib/i18n';
+import { getBrowserLanguage, loadLocaleMessages, t as translate, type Language } from '@/lib/i18n';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
 type ServiceModel = 'qsr' | 'finedine';
@@ -57,6 +57,20 @@ export default function SetupPage() {
   const [serviceModel, setServiceModel] = useState<ServiceModel>('qsr');
   const [language, setLanguage] = useState<Language>(() => getBrowserLanguage());
   const [browserLanguage] = useState<Language>(() => getBrowserLanguage());
+  // #375: translations load on demand; render once the locale bundle is ready
+  // so the setup flow shows the browser language instead of a brief English pass.
+  const [loadedLanguage, setLoadedLanguage] = useState<Language | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    loadLocaleMessages(language)
+      .then(() => {
+        if (!cancelled) setLoadedLanguage(language);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [language]);
   const [country, setCountry] = useState<string>('IN');
   const [countryQuery, setCountryQuery] = useState<string>('');
   const [form, setForm] = useState({
@@ -92,7 +106,7 @@ export default function SetupPage() {
     return true;
   };
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
-  const t = (key: string) => translate(key, language);
+  const t = (key: string) => translate(key, loadedLanguage ?? 'en');
 
   useEffect(() => {
     let mounted = true;

@@ -2,39 +2,41 @@
 
 import { useEffect } from 'react';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { getLanguageDirection } from '@/lib/i18n';
+import { getLanguageDirection, getLanguageLocale } from '@/lib/i18n';
+import { loadLocaleMessages } from '@/lib/i18n/loader';
 
 /**
  * Syncs `<html lang>` and `<html dir>` with the active UI language.
  *
- * Direction comes from the shared language metadata (`getLanguageDirection`),
- * so an RTL language is handled automatically rather than hard-coded here.
- * This runs client-side on every language change so the browser and screen
- * readers always have the correct BCP 47 locale and text-direction cues,
- * even though the root layout is a static Next.js export.
+ * Direction and locale come from the shared language metadata, so RTL
+ * languages are handled automatically rather than hard-coded. #375: lang/dir
+ * are applied atomically only after the locale's messages have actually
+ * loaded, so the document direction never flips ahead of message resolution
+ * (no key flashing or layout jump during language switches).
  *
- * HtmlLangSync handles the main application document and standalone layouts (such as Server App).
- * KDS performs equivalent synchronization separately through KdsHtmlLang.
+ * HtmlLangSync handles the main application document and standalone layouts
+ * (such as Server App). KDS performs equivalent synchronization separately
+ * through KdsHtmlLang.
  */
 export function HtmlLangSync() {
   const language = usePosSettingsStore((s) => s.language);
   useEffect(() => {
     if (typeof document === 'undefined') return;
-    const el = document.documentElement;
-    el.dir = getLanguageDirection(language);
-    switch (language) {
-      case 'fa':
-        el.lang = 'fa-IR';
-        break;
-      case 'es':
-        el.lang = 'es';
-        break;
-      case 'pt':
-        el.lang = 'pt-BR';
-        break;
-      default:
-        el.lang = 'en';
-    }
+    let cancelled = false;
+    loadLocaleMessages(language)
+      .then(() => {
+        if (cancelled) return;
+        const el = document.documentElement;
+        el.lang = getLanguageLocale(language);
+        el.dir = getLanguageDirection(language);
+      })
+      .catch(() => {
+        // Locale failed to load: keep the current document lang/dir; the
+        // provider reverts the store request in this case.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [language]);
   return null;
 }

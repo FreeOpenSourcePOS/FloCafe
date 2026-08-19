@@ -17,15 +17,11 @@ export {
   type Language,
   type LanguageDirection,
 };
+export { loadLocaleMessages, getCachedMessages, isLocaleLoaded } from './i18n/loader';
 
-import en from './i18n/messages/en.json';
-import es from './i18n/messages/es.json';
-import pt from './i18n/messages/pt.json';
-import fa from './i18n/messages/fa.json';
+import { getCachedMessages } from './i18n/loader';
 
 type NestedMessages = Record<string, unknown>;
-
-const translations: Record<Language, NestedMessages> = { en, es, pt, fa };
 
 /**
  * Resolve a legacy dotted key (e.g. "auth.signIn") against the nested message
@@ -79,9 +75,15 @@ function formatIcuPlural(template: string, params: Record<string, string | numbe
 }
 
 export function t(key: string, lang: Language, params?: Record<string, string | number>): string {
+  // #375: messages live in the shared loader cache. The active locale's
+  // bundle is loaded on demand; until it resolves, packaged English is
+  // rendered (never raw keys). Fallback chain is unchanged:
+  // target language → English → raw key.
+  const target = getCachedMessages(lang);
+  const english = getCachedMessages('en');
   let value =
-    resolveMessage(translations[lang], key) ??
-    resolveMessage(translations.en, key) ??
+    (target ? resolveMessage(target, key) : undefined) ??
+    (english ? resolveMessage(english, key) : undefined) ??
     key;
   if (params) {
     value = formatIcuPlural(value, params, lang);

@@ -76,7 +76,7 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
   return origUseSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
-const { t, getLanguageDirection } = require('@/lib/i18n');
+const { t, getLanguageDirection, loadLocaleMessages } = require('@/lib/i18n');
 const { usePosSettingsStore } = require('@/store/pos-settings');
 const { usePrinterStore } = require('@/hooks/usePrinter');
 const { printerService } = require('@/lib/printer/PrinterService');
@@ -212,6 +212,10 @@ async function run(): Promise<void> {
     'support.showPayload',
     'support.requestQueued',
   ];
+
+  // #375: prime the shared locale cache so synchronous t() resolves the
+  // on-demand bundles in this test process.
+  await Promise.all(LANGUAGES.map((lang) => loadLocaleMessages(lang)));
 
   console.log('\n--- 1. Translation Keys Integrity ---');
   for (const key of REQUIRED_KEYS) {

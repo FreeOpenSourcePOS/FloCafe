@@ -13,10 +13,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff } from 'lucide-react';
 
-// Backend enum → leaf key maps for the tenant picker. The shared
-// `i18n-enums` maps use dotted keys for the legacy bridge; use-intl
-// namespaces resolve leaf keys, so these typed mirrors live here until the
-// remaining batches migrate too.
+// Backend enum → leaf key maps for the tenant picker.
 type StaffRoleKey = keyof AppConfig['Messages']['staff'];
 type BusinessTypeKey = keyof AppConfig['Messages']['businessType'];
 

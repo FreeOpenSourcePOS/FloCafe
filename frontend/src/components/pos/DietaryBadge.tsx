@@ -81,8 +81,7 @@ function formatTagName(canonical: string): string {
   return canonical.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// Legacy dotted-key helper retained for the unmigrated products page (#380)
-// which still calls `t(tagLabel(tag))` through the compatibility bridge.
+// Dotted-key helper returning a `pos.<key>` prefix or formatted tag name.
 export function tagLabel(tag: string): string {
   const canonical = normalizeTag(tag);
   const key = (DIETARY_TAG_KEYS as Record<string, PosKey | undefined>)[canonical];

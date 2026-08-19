@@ -60,8 +60,7 @@ const ORDER_TYPE_SUFFIX_KEYS = {
   online: 'orderTypeSuffix_online',
 } as const satisfies Record<OrderType, PosKey>;
 
-// Built-in payment method label keys (PAYMENT_METHODS keeps dotted keys for the
-// unmigrated dashboard page, so this maps them to the typed `pos` leaf keys).
+// Built-in payment method label keys mapped to typed `pos` leaf keys.
 const BUILT_IN_PAYMENT_KEYS = {
   cash: 'methodCash',
   card: 'methodCard',

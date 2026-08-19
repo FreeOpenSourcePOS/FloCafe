@@ -113,8 +113,7 @@ const STATUS_LABEL_KEY: Partial<Record<Order['status'], OrdersKey>> = {
   cancelled: 'voided',
 };
 
-// Typed leaf-key order-type map. The shared ORDER_TYPE_LABEL_KEYS stays dotted
-// for the not-yet-migrated KDS batch (5D), so 5C uses this local map.
+// Typed leaf-key order-type map.
 const ORDER_TYPE_KEYS = {
   dine_in: 'dineIn',
   takeaway: 'takeaway',

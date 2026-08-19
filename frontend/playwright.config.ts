@@ -2,6 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
   testDir: './e2e',
+  testMatch: /.*\.spec\.ts/,
   workers: 1, // Single shared backend server requires serial execution to prevent DB state races
   retries: process.env.CI ? 1 : 0,
   use: {

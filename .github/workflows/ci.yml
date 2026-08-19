@@ -199,18 +199,18 @@ jobs:
 
       - name: Cache Playwright Browsers
         id: playwright-cache
-        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772115f6ec1 # v4.2.2
+        uses: actions/cache@d4323d4df104b026a6aa633fdb11d772146be0bf # v4.2.2
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
 
-      - name: Install Playwright Browsers
+      - name: Install Playwright Dependencies & Browsers
         working-directory: frontend
         run: |
           if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
             npx playwright install --with-deps chromium
           else
-            npx playwright install chromium
+            npx playwright install-deps chromium
           fi
 
       - name: Run Playwright tests

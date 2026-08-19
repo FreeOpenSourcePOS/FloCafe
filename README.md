@@ -95,7 +95,7 @@ FloCafe includes UI translations for:
 - Brazilian Portuguese
 - Persian (Farsi), including RTL support
 
-UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern.
+UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/i18n.md).
 
 ## Tax support
 
@@ -146,6 +146,7 @@ If FloCafe is useful to you, consider starring the repository.
 - **Documentation index:** [docs/README.md](docs/README.md)
 - **Printer guide & troubleshooting:** [docs/printers.md](docs/printers.md)
 - **Linux setup & support:** [docs/linux.md](docs/linux.md)
+- **Internationalization & translations:** [docs/i18n.md](docs/i18n.md)
 - **Google Drive backup setup:** [docs/google-drive-setup.md](docs/google-drive-setup.md)
 - **Community discussion:** [Reddit r/FloPOS](https://www.reddit.com/r/FloPOS/)
 - **Bug reports & feature proposals:** [GitHub Issues](https://github.com/FreeOpenSourcePOS/FloCafe/issues)

@@ -100,7 +100,7 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-function run(): void {
+async function run(): Promise<void> {
   console.log('RTL/LTR Setup, Auth, and Settings checks:');
 
   // 1. Batch screens use logical direction utilities (or are allowlisted).
@@ -234,6 +234,11 @@ function run(): void {
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all four languages.
   const languages = ['en', 'es', 'pt', 'fa'] as const;
+  // #375: prime the shared locale cache so synchronous t() resolves the
+  // on-demand bundles in this test process.
+  for (const lang of languages) {
+    await i18nModule.loadLocaleMessages(lang);
+  }
   for (const lang of languages) {
     const setupLabel = i18nModule.t('setup.languagePersian', lang);
     assert(setupLabel && setupLabel !== 'setup.languagePersian', `setup.languagePersian must be translated in ${lang}, got: ${setupLabel}`);
@@ -249,4 +254,7 @@ function run(): void {
   console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');
 }
 
-run();
+run().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

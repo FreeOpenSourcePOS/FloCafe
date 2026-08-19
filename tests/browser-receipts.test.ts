@@ -65,6 +65,12 @@ async function run() {
     fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
   }
 
+  // #375: prime the shared locale cache so synchronous t() resolves the
+  // on-demand bundles in this test process.
+  for (const lang of ['en', 'es', 'pt', 'fa'] as const) {
+    await i18n.loadLocaleMessages(lang);
+  }
+
   // Create sample Iranian Bill and Tenant
   const testIranOrder: Order = {
     id: 101,

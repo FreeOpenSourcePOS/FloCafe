@@ -7,8 +7,9 @@
  * translator (`useTranslations()` leaf keys or legacy `t()` dotted keys) so
  * every language shows a localized label.
  *
- * Migrated status maps (`ORDER_STATUS_LABEL_KEYS`, `ITEM_STATUS_LABEL_KEYS`,
- * `TABLE_STATUS_LABEL_KEYS`) are exhaustively typed against use-intl leaf keys.
+ * Migrated status maps (`ORDER_TYPE_LABEL_KEYS`, `ORDER_STATUS_LABEL_KEYS`,
+ * `ITEM_STATUS_LABEL_KEYS`, `TABLE_STATUS_LABEL_KEYS`) are exhaustively typed
+ * against use-intl leaf keys.
  * Unmigrated maps retain dotted keys for legacy `t()` callers until their
  * batches migrate.
  *

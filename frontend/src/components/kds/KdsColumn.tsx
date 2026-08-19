@@ -2,8 +2,8 @@
 
 import { useDroppable } from '@dnd-kit/react';
 import { ReactNode } from 'react';
+import { useTranslations } from 'use-intl';
 import { STATUS_CONFIG, type KitchenStatus } from '@/hooks/useKdsConnection';
-import { useI18n } from '@/hooks/useI18n';
 
 export interface KdsColumnProps {
   status: KitchenStatus;
@@ -12,7 +12,7 @@ export interface KdsColumnProps {
 }
 
 export function KdsColumn({ status, count, children }: KdsColumnProps) {
-  const { t } = useI18n();
+  const t = useTranslations('kds');
   const config = STATUS_CONFIG[status];
   const statusLabel = t(config.labelKey);
 
@@ -40,7 +40,7 @@ export function KdsColumn({ status, count, children }: KdsColumnProps) {
         {children}
         {count === 0 && (
           <div className="flex flex-col items-center justify-center py-6 text-gray-400 text-xs">
-            <span>{t('kds.emptyColumn')}</span>
+            <span>{t('emptyColumn')}</span>
           </div>
         )}
       </div>

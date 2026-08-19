@@ -1,7 +1,7 @@
 'use client';
 
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import {
   STATUS_CONFIG,
   STATUS_ORDER,
@@ -19,7 +19,8 @@ export interface KdsItemModalProps {
 }
 
 export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateStatus }: KdsItemModalProps) {
-  const { t } = useI18n();
+  const t = useTranslations('kds');
+  const tCommon = useTranslations('common');
   const statusLabel = (s: KitchenStatus) => t(STATUS_CONFIG[normalizeKitchenStatus(s)].labelKey);
   const currentStatus = normalizeKitchenStatus(item.status);
   // 'voided' is locked — it's outside STATUS_ORDER on purpose (issue #150),
@@ -44,7 +45,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
         <div className="flex items-start justify-between gap-3">
           <div className="flex-1 min-w-0">
             <p className="text-xs text-gray-400 font-medium mb-1">
-              {t('kds.modalOrderNumber', { orderNumber })}
+              {t('modalOrderNumber', { orderNumber })}
             </p>
             <h2 id="kds-item-modal-title" className={`text-2xl font-bold leading-tight ${isVoided ? 'text-gray-400 line-through' : 'text-gray-900'}`}>{item.product_name}</h2>
             <div className="flex items-center gap-2 mt-1.5">
@@ -60,7 +61,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
           <button
             onClick={onClose}
             className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 shrink-0"
-            aria-label={t('common.close')}
+            aria-label={tCommon('close')}
           >
             <X size={18} />
           </button>
@@ -69,7 +70,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
         {item.addons && item.addons.length > 0 && (
           <div className="bg-blue-50 rounded-xl p-3">
             <p className="text-xs font-semibold text-blue-700 mb-1.5 uppercase tracking-wide">
-              {t('kds.addonsLabel')}
+              {t('addonsLabel')}
             </p>
             <div className="flex flex-wrap gap-1.5">
               {item.addons.map((addon, i) => (
@@ -87,7 +88,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
         {item.special_instructions && (
           <div className="bg-red-50 rounded-xl p-3">
             <p className="text-xs font-semibold text-red-700 mb-1 uppercase tracking-wide">
-              {t('kds.specialInstructionsLabel')}
+              {t('specialInstructionsLabel')}
             </p>
             <p className="text-sm text-red-700 italic font-medium break-words">{item.special_instructions}</p>
           </div>
@@ -121,7 +122,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
         <div className="flex flex-col gap-3">
           {isVoided ? (
             <div className="text-center py-4 text-red-500 text-base font-medium">
-              {t('kds.itemVoidedLocked')}
+              {t('itemVoidedLocked')}
             </div>
           ) : (
             <>
@@ -131,7 +132,7 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
                   disabled={updating}
                   className={`w-full py-5 rounded-2xl text-white text-xl font-bold transition-all active:scale-95 disabled:opacity-50 ${STATUS_CONFIG[next].color} hover:brightness-90`}
                 >
-                  {updating ? t('kds.updating') : t('kds.markAs', { status: statusLabel(next) })}
+                  {updating ? t('updating') : t('markAs', { status: statusLabel(next) })}
                 </button>
               )}
               {prev && (
@@ -141,12 +142,12 @@ export function KdsItemModal({ item, orderNumber, updating, onClose, onUpdateSta
                   className="w-full py-4 rounded-2xl text-gray-600 text-base font-semibold border-2 border-gray-200 bg-gray-50 hover:bg-gray-100 transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
                 >
                   <ChevronLeft size={18} className="rtl-flip" />
-                  {t('kds.backTo', { status: statusLabel(prev) })}
+                  {t('backTo', { status: statusLabel(prev) })}
                 </button>
               )}
               {!next && (
                 <div className="text-center py-4 text-gray-400 text-base font-medium">
-                  {t('kds.deliveredDone')}
+                  {t('deliveredDone')}
                 </div>
               )}
             </>

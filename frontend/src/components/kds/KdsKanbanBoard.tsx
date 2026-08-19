@@ -18,8 +18,8 @@ import {
   type KdsOrder,
   type KdsOrderItem,
 } from '@/hooks/useKdsConnection';
-import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
-import { useI18n } from '@/hooks/useI18n';
+import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
+import { useTranslations } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 import { Ltr } from '@/components/layout/Ltr';
 
@@ -53,7 +53,7 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
   const resolvedModalItem = modalItem
     ? { ...modalItem, item: orders.flatMap((order) => order.items || []).find((item) => item.id === modalItem.item.id) || modalItem.item }
     : null;
-  const { t } = useI18n();
+  const t = useTranslations('kds');
   const { confirm, ConfirmDialog } = useConfirm();
 
   // Group by status, then by order. Default rendering matches the tabs view:
@@ -111,8 +111,8 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     if (skipsStage) {
       const targetLabel = t(STATUS_CONFIG[targetData.status].labelKey);
       const proceed = await confirm(
-        t('kds.skipStageMessage', { status: targetLabel }),
-        { title: t('kds.skipStageTitle'), confirmLabel: t('kds.markAs', { status: targetLabel }) },
+        t('skipStageMessage', { status: targetLabel }),
+        { title: t('skipStageTitle'), confirmLabel: t('markAs', { status: targetLabel }) },
       );
       if (!proceed) return;
     }
@@ -122,7 +122,7 @@ export function KdsKanbanBoard({ orders, updating, updateItemStatus }: KdsKanban
     ));
     const failed = results.filter((result) => !result).length;
     if (failed > 0) {
-      toast.error(t('kds.itemsUpdateFailed', { count: failed }));
+      toast.error(t('itemsUpdateFailed', { count: failed }));
     }
   }
 
@@ -197,7 +197,8 @@ function KanbanOrderCard({
   updating: number | null;
   onItemOpen: (item: KdsOrderItem) => void;
 }) {
-  const { t } = useI18n();
+  const t = useTranslations('kds');
+  const tOrders = useTranslations('orders');
   const config = STATUS_CONFIG[status];
   const itemIds = items.map((i) => i.id);
   const busy = items.some((i) => updating === i.id);
@@ -221,10 +222,12 @@ function KanbanOrderCard({
               variant="outline"
               className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
             >
-              {t(ORDER_TYPE_LABEL_KEYS[order.type] ?? order.type)}
+              {ORDER_TYPE_LABEL_KEYS[order.type as OrderType]
+                ? tOrders(ORDER_TYPE_LABEL_KEYS[order.type as OrderType])
+                : order.type}
             </Badge>
             {order.table?.name && (
-              <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
+              <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
             )}
           </div>
           <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
@@ -282,7 +285,7 @@ function VoidedColumn({
   groups: Array<{ order: KdsOrder; items: KdsOrderItem[] }>;
   onItemOpen: (item: KdsOrderItem, orderNumber: string) => void;
 }) {
-  const { t } = useI18n();
+  const t = useTranslations('kds');
   const config = STATUS_CONFIG.voided;
   const count = groups.reduce((sum, g) => sum + g.items.length, 0);
 
@@ -304,7 +307,7 @@ function VoidedColumn({
             <div className="flex items-center gap-1.5 min-w-0 flex-wrap mb-2">
               <Ltr as="span" className="font-bold text-sm shrink-0">#{order.order_number}</Ltr>
               {order.table?.name && (
-                <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
+                <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
               )}
             </div>
             <div className="space-y-1">
@@ -326,7 +329,7 @@ function VoidedColumn({
         ))}
         {count === 0 && (
           <div className="flex flex-col items-center justify-center py-6 text-gray-400 text-xs">
-            <span>{t('kds.emptyColumn')}</span>
+            <span>{t('emptyColumn')}</span>
           </div>
         )}
       </div>

@@ -6,7 +6,7 @@ import { Bell, CheckCircle2, ChefHat, Circle, Flame, LogOut, Minus, Plus, Refres
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { parsePhone } from '@/lib/phone';
 import { useSyncServerLanguage } from '@/lib/i18n';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { toastApiError } from '@/lib/api-error';
 
@@ -17,6 +17,8 @@ type Table = { id: string; name?: string; number?: string; status?: string; acti
 type OrderItem = { id: number; product_name: string; quantity: number; status: string; special_instructions?: string | null };
 type Order = { id: number; order_number: string; table_id?: string | null; status: string; items?: OrderItem[]; customer?: { id: string; name: string; phone?: string } | null };
 type DraftLine = { product: Product; quantity: number; note: string };
+
+type ServerAppKey = keyof AppConfig['Messages']['serverApp'];
 
 const TOKEN_KEY = 'flocafe:server-app-token';
 
@@ -37,11 +39,11 @@ function createApi(): AxiosInstance {
   return api;
 }
 
-function itemStatusIcon(status: string, t: (k: string) => string) {
-  if (status === 'preparing') return <Flame size={15} className="text-orange-500" aria-label={t('serverApp.statusPreparing')} />;
-  if (status === 'ready') return <Bell size={15} className="text-emerald-600" aria-label={t('serverApp.statusReady')} />;
-  if (status === 'served') return <CheckCircle2 size={15} className="text-blue-600" aria-label={t('serverApp.statusServed')} />;
-  return <Circle size={15} className="text-gray-400" aria-label={t('serverApp.statusWaiting')} />;
+function itemStatusIcon(status: string, t: (key: ServerAppKey) => string) {
+  if (status === 'preparing') return <Flame size={15} className="text-orange-500" aria-label={t('statusPreparing')} />;
+  if (status === 'ready') return <Bell size={15} className="text-emerald-600" aria-label={t('statusReady')} />;
+  if (status === 'served') return <CheckCircle2 size={15} className="text-blue-600" aria-label={t('statusServed')} />;
+  return <Circle size={15} className="text-gray-400" aria-label={t('statusWaiting')} />;
 }
 
 function money(value: number | string) {
@@ -53,7 +55,15 @@ export default function ServerStandalonePage() {
   // the same way the standalone KDS inherits it from `/api/kds/info` — no
   // separate language store, just the shared usePosSettingsStore.
   useSyncServerLanguage('/api/server-app/info');
-  const { t } = useI18n();
+  const t = useTranslations('serverApp');
+  const tAuth = useTranslations('auth');
+  const tOrders = useTranslations('orders');
+  const tTables = useTranslations('tables');
+
+  // toastApiError (shared legacy helper) resolves `apiError.<code>` dotted keys;
+  // server-app errors have no such keys, so bridge with a no-op that always
+  // falls back to the caller-supplied localized message.
+  const apiErrorT = (key: string): string => key;
   const api = useMemo(() => (typeof window !== 'undefined' ? createApi() : null), []);
   const [loading, setLoading] = useState(true);
   const [loginLoading, setLoginLoading] = useState(false);
@@ -136,7 +146,7 @@ export default function ServerStandalonePage() {
       const loadedTables = tablesRes.data.tables || [];
       setTables(loadedTables);
       if (!selectedTableId && loadedTables[0]) setSelectedTableId(loadedTables[0].id);
-    }).catch(() => toast.error(t('serverApp.couldNotLoadData')));
+    }).catch(() => toast.error(t('couldNotLoadData')));
     return () => { cancelled = true; };
   }, [api, selectedTableId, user, t]);
 
@@ -171,7 +181,7 @@ export default function ServerStandalonePage() {
       localStorage.setItem(TOKEN_KEY, res.data.access_token);
       setUser(res.data.user);
     } catch (error: unknown) {
-      toastApiError(error, t('serverApp.signInFailed'), t);
+      toastApiError(error, t('signInFailed'), apiErrorT);
     } finally {
       setLoginLoading(false);
     }
@@ -213,7 +223,7 @@ export default function ServerStandalonePage() {
         if (lookup.data.found && lookup.data.customer?.id) return lookup.data.customer.id;
       } catch {}
     }
-    const fallbackName = name || t('serverApp.guestFallbackName', { last4: rawPhone.slice(-4) });
+    const fallbackName = name || t('guestFallbackName', { last4: rawPhone.slice(-4) });
     const res = await api.post('/api/customers', { name: fallbackName, phone: normalizedPhone || undefined });
     return res.data.customer?.id || null;
   }
@@ -240,9 +250,9 @@ export default function ServerStandalonePage() {
       }
       setDraft([]);
       await Promise.all([loadAll(), loadOrder(selectedTableId)]);
-      toast.success(t('serverApp.orderSent'));
+      toast.success(t('orderSent'));
     } catch (error: unknown) {
-      toastApiError(error, t('serverApp.couldNotSendOrder'), t);
+      toastApiError(error, t('couldNotSendOrder'), apiErrorT);
     } finally {
       setSending(false);
     }
@@ -264,8 +274,8 @@ export default function ServerStandalonePage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-6 text-center">
         <Smartphone size={44} className="text-gray-400" />
-        <h1 className="text-lg font-semibold text-gray-900">{t('serverApp.disabledTitle')}</h1>
-        <p className="max-w-sm text-sm text-gray-500">{t('serverApp.disabledHint')}</p>
+        <h1 className="text-lg font-semibold text-gray-900">{t('disabledTitle')}</h1>
+        <p className="max-w-sm text-sm text-gray-500">{t('disabledHint')}</p>
       </div>
     );
   }
@@ -276,18 +286,18 @@ export default function ServerStandalonePage() {
         <form onSubmit={handleLogin} className="w-full max-w-sm rounded-xl border border-gray-200 bg-white p-6 shadow-sm">
           <div className="mb-6 text-center">
             <UserRound size={42} className="mx-auto mb-3 text-brand" />
-            <h1 className="text-2xl font-bold text-gray-900">{t('serverApp.title')}</h1>
-            <p className="mt-1 text-sm text-gray-500">{t('serverApp.loginSubtitle')}</p>
+            <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+            <p className="mt-1 text-sm text-gray-500">{t('loginSubtitle')}</p>
           </div>
           <div className="space-y-3">
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('serverApp.emailPlaceholder')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={t('auth.password')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" dir="ltr" placeholder={t('emailPlaceholder')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
+            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" placeholder={tAuth('password')} required className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20" />
             <label className="flex items-center gap-2 text-sm text-gray-600">
               <input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="rounded border-gray-300 text-brand focus:ring-brand" />
-              {t('auth.rememberMe')}
+              {tAuth('rememberMe')}
             </label>
             <button disabled={loginLoading} className="h-11 w-full rounded-lg bg-brand font-semibold text-white disabled:opacity-60">
-              {loginLoading ? t('auth.signingIn') : t('auth.signIn')}
+              {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
             </button>
           </div>
         </form>
@@ -301,17 +311,17 @@ export default function ServerStandalonePage() {
         <div className="mx-auto flex max-w-6xl items-center gap-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-brand text-white"><ChefHat size={18} /></div>
           <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold">{t('serverApp.title')}</h1>
-            <p className="truncate text-xs text-gray-500">{activeTable ? t('serverApp.tableLabel', { name: activeTable.name ?? String(activeTable.number) }) : t('serverApp.selectTable')}</p>
+            <h1 className="truncate text-base font-semibold">{t('title')}</h1>
+            <p className="truncate text-xs text-gray-500">{activeTable ? t('tableLabel', { name: activeTable.name ?? String(activeTable.number) }) : t('selectTable')}</p>
           </div>
-          <button onClick={() => loadAll().catch(() => toast.error(t('serverApp.refreshFailed')))} className="rounded-lg border border-gray-200 p-2 text-gray-600"><RefreshCw size={17} /></button>
+          <button onClick={() => loadAll().catch(() => toast.error(t('refreshFailed')))} className="rounded-lg border border-gray-200 p-2 text-gray-600"><RefreshCw size={17} /></button>
           <button onClick={logout} className="rounded-lg border border-gray-200 p-2 text-gray-600"><LogOut size={17} /></button>
         </div>
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-3 p-3 lg:grid-cols-[220px_1fr_340px]">
         <section className="rounded-lg border border-gray-200 bg-white p-3">
-          <h2 className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('serverApp.tables')}</h2>
+          <h2 className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('tables')}</h2>
           <div className="grid grid-cols-3 gap-2 lg:grid-cols-1">
             {tables.map((table) => {
               const selected = table.id === selectedTableId;
@@ -320,7 +330,7 @@ export default function ServerStandalonePage() {
                 <button key={table.id} onClick={() => setSelectedTableId(table.id)}
                   className={`min-h-14 rounded-lg border px-2 py-2 text-start ${selected ? 'border-brand bg-brand/5' : 'border-gray-200 bg-white'}`}>
                   <span className="block truncate text-sm font-semibold">{table.name || table.number}</span>
-                  <span className="text-xs text-gray-500">{order ? t('serverApp.openOrder') : t('tables.statusAvailable')}</span>
+                  <span className="text-xs text-gray-500">{order ? t('openOrder') : tTables('statusAvailable')}</span>
                 </button>
               );
             })}
@@ -331,11 +341,11 @@ export default function ServerStandalonePage() {
           <div className="mb-3 flex gap-2">
             <div className="relative flex-1">
               <Search size={16} className="absolute start-3 top-3 text-gray-400" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('serverApp.searchMenu')} className="h-10 w-full rounded-lg border border-gray-200 ps-9 pe-3 text-sm focus:border-brand focus:outline-none" />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('searchMenu')} className="h-10 w-full rounded-lg border border-gray-200 ps-9 pe-3 text-sm focus:border-brand focus:outline-none" />
             </div>
           </div>
           <div className="mb-3 flex gap-2 overflow-x-auto pb-1">
-            <button onClick={() => setSelectedCategoryId('all')} className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>{t('orders.all')}</button>
+            <button onClick={() => setSelectedCategoryId('all')} className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === 'all' ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>{tOrders('all')}</button>
             {categories.map((category) => (
               <button key={category.id} onClick={() => setSelectedCategoryId(category.id)}
                 className={`h-9 shrink-0 rounded-lg px-3 text-sm ${selectedCategoryId === category.id ? 'bg-brand text-white' : 'bg-gray-100 text-gray-700'}`}>
@@ -355,15 +365,15 @@ export default function ServerStandalonePage() {
         </section>
 
         <section className="rounded-lg border border-gray-200 bg-white p-3 lg:sticky lg:top-16 lg:self-start">
-          <h2 className="text-sm font-semibold">{t('serverApp.currentTicket')}</h2>
+          <h2 className="text-sm font-semibold">{t('currentTicket')}</h2>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder={t('serverApp.customerNamePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
-            <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} dir="ltr" placeholder={t('serverApp.phonePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
+            <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder={t('customerNamePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
+            <input value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} dir="ltr" placeholder={t('phonePlaceholder')} className="h-10 rounded-lg border border-gray-200 px-3 text-sm focus:border-brand focus:outline-none" />
           </div>
 
           {currentOrder?.items && currentOrder.items.length > 0 && (
             <div className="mt-4 border-t border-gray-100 pt-3">
-              <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('serverApp.kitchen')}</p>
+              <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('kitchen')}</p>
               <div className="space-y-2">
                 {currentOrder.items.map((item) => (
                   <div key={item.id} className="flex items-center gap-2 text-sm">
@@ -376,9 +386,9 @@ export default function ServerStandalonePage() {
           )}
 
           <div className="mt-4 border-t border-gray-100 pt-3">
-            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('serverApp.newItems')}</p>
+            <p className="mb-2 text-xs font-semibold uppercase text-gray-500">{t('newItems')}</p>
             {draft.length === 0 ? (
-              <p className="py-6 text-center text-sm text-gray-400">{t('serverApp.emptyDraft')}</p>
+              <p className="py-6 text-center text-sm text-gray-400">{t('emptyDraft')}</p>
             ) : (
               <div className="space-y-3">
                 {draft.map((line) => (
@@ -390,7 +400,7 @@ export default function ServerStandalonePage() {
                       <button onClick={() => changeQty(line.product.id, 1)} className="rounded-md border border-gray-200 p-1"><Plus size={14} /></button>
                     </div>
                     <input value={line.note} onChange={(event) => setDraft((lines) => lines.map((draftLine) => draftLine.product.id === line.product.id ? { ...draftLine, note: event.target.value } : draftLine))}
-                      placeholder={t('serverApp.itemNotePlaceholder')} className="mt-2 h-9 w-full rounded-md border border-gray-200 px-2 text-sm focus:border-brand focus:outline-none" />
+                      placeholder={t('itemNotePlaceholder')} className="mt-2 h-9 w-full rounded-md border border-gray-200 px-2 text-sm focus:border-brand focus:outline-none" />
                   </div>
                 ))}
               </div>
@@ -398,13 +408,13 @@ export default function ServerStandalonePage() {
           </div>
 
           <div className="mt-4 flex items-center justify-between border-t border-gray-100 pt-3">
-            <span className="text-sm text-gray-500">{t('serverApp.draftTotal')}</span>
+            <span className="text-sm text-gray-500">{t('draftTotal')}</span>
             <span className="text-lg font-bold"><Ltr>{money(draftTotal)}</Ltr></span>
           </div>
           <button onClick={sendDraft} disabled={!selectedTableId || draft.length === 0 || sending}
             className="mt-3 flex h-12 w-full items-center justify-center gap-2 rounded-lg bg-brand font-semibold text-white disabled:opacity-50">
             <Send size={17} />
-            {sending ? t('serverApp.sending') : currentOrder ? t('serverApp.addToOrder') : t('serverApp.sendToKitchen')}
+            {sending ? t('sending') : currentOrder ? t('addToOrder') : t('sendToKitchen')}
           </button>
         </section>
       </main>

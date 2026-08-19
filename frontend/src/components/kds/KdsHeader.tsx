@@ -1,8 +1,8 @@
 'use client';
 
 import { ChefHat, LogOut, Wifi, WifiOff } from 'lucide-react';
+import { useTranslations } from 'use-intl';
 import type { ConnectionMode } from '@/hooks/useKdsConnection';
-import { useI18n } from '@/hooks/useI18n';
 import type { KdsViewMode } from '@/hooks/useKdsView';
 
 export interface KdsHeaderProps {
@@ -24,25 +24,26 @@ export function KdsHeader({
   onChangeView,
   onLogout,
 }: KdsHeaderProps) {
-  const { t } = useI18n();
+  const t = useTranslations('kds');
+  const tNav = useTranslations('nav');
 
   return (
     <div className="shrink-0 mb-4">
       <div className="flex items-center gap-3 mb-3">
         <ChefHat size={24} className="text-brand" />
         <div>
-          <h1 className="text-xl font-bold text-gray-900">{t('kds.title')}</h1>
+          <h1 className="text-xl font-bold text-gray-900">{t('title')}</h1>
           <p className="text-xs text-gray-500">
             {userName} ({userRole})
           </p>
         </div>
         <div className="ms-auto flex items-center gap-2">
           {connectionMode === 'websocket' ? (
-            <span title={t('kds.wsConnected')}>
+            <span title={t('wsConnected')}>
               <Wifi size={16} className="text-green-500" />
             </span>
           ) : connectionMode === 'rest' ? (
-            <span title={t('kds.restPolling')}>
+            <span title={t('restPolling')}>
               <WifiOff size={16} className="text-amber-500" />
             </span>
           ) : null}
@@ -50,9 +51,9 @@ export function KdsHeader({
           <span className="text-xs text-gray-400">
             {connected
               ? connectionMode === 'websocket'
-                ? t('kds.connectionLive')
-                : t('kds.connectionPolling')
-              : t('kds.connectionConnecting')}
+                ? t('connectionLive')
+                : t('connectionPolling')
+              : t('connectionConnecting')}
           </span>
 
           <div className="flex items-center bg-gray-100 rounded-lg p-0.5 ms-2" role="tablist">
@@ -65,7 +66,7 @@ export function KdsHeader({
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {t('kds.viewTabs')}
+              {t('viewTabs')}
             </button>
             <button
               onClick={() => onChangeView('kanban')}
@@ -76,14 +77,14 @@ export function KdsHeader({
                   : 'text-gray-500 hover:text-gray-700'
               }`}
             >
-              {t('kds.viewKanban')}
+              {t('viewKanban')}
             </button>
           </div>
 
           <button
             onClick={onLogout}
             className="min-w-11 min-h-11 p-2 hover:bg-gray-100 rounded-lg text-gray-500 ms-2"
-            title={t('nav.logout')}
+            title={tNav('logout')}
           >
             <LogOut size={20} />
           </button>

@@ -6,7 +6,7 @@ import { KdsWorkspace } from '@/components/kds/KdsWorkspace';
 import { useKdsConnection } from '@/hooks/useKdsConnection';
 import { useServerKdsInfo } from '@/hooks/useServerKdsInfo';
 import { useSyncServerLanguage } from '@/lib/i18n';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import { useEffect, useMemo, useState } from 'react';
 
 // `/api/kds/info` 404s when kds_enabled is off (issue #133) — that's the
@@ -54,7 +54,7 @@ function createStandaloneApi() {
 
 export default function KdsStandalonePage() {
   useSyncServerLanguage();
-  const { t } = useI18n();
+  const t = useTranslations('kds');
   // Lazy-init the axios instance — must not run during SSR prerender.
   const api = useMemo(() => (typeof window !== 'undefined' ? createStandaloneApi() : null), []);
   // kds-server.ts (this page's backend, a separate Express app from the main
@@ -75,9 +75,9 @@ export default function KdsStandalonePage() {
   if (kdsDisabled) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3 text-center px-6 bg-gray-900 text-white">
-        <h1 className="text-lg font-semibold">{t('kds.disabledTitle')}</h1>
+        <h1 className="text-lg font-semibold">{t('disabledTitle')}</h1>
         <p className="text-sm text-gray-400 max-w-sm">
-          {t('kds.disabledHint')}
+          {t('disabledHint')}
         </p>
       </div>
     );

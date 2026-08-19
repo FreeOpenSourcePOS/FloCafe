@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import { Plus, Pencil, Trash2, X, ChevronDown, ChevronRight } from 'lucide-react';
 import type { AddonGroup, Addon } from '@/lib/types';
@@ -11,7 +11,11 @@ import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useConfirm } from '@/hooks/use-confirm';
 
 export default function AddonGroupsPage() {
-  const { t } = useI18n();
+  const t = useTranslations('addonGroups');
+  const tCommon = useTranslations('common');
+  const tPos = useTranslations('pos');
+  const tProducts = useTranslations('products');
+  const tTables = useTranslations('tables');
   const [groups, setGroups] = useState<AddonGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const { confirm, ConfirmDialog } = useConfirm();
@@ -40,7 +44,7 @@ export default function AddonGroupsPage() {
       const { data } = await api.get('/addon-groups');
       setGroups(data.addon_groups || []);
     } catch {
-      toast.error(t('addonGroups.failedToLoad'));
+      toast.error(t('failedToLoad'));
     } finally {
       setLoading(false);
     }
@@ -49,7 +53,7 @@ export default function AddonGroupsPage() {
   useEffect(() => {
     api.get('/addon-groups')
       .then(({ data }) => setGroups(data.addon_groups || []))
-      .catch(() => toast.error(t('addonGroups.failedToLoad')))
+      .catch(() => toast.error(t('failedToLoad')))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -79,12 +83,12 @@ export default function AddonGroupsPage() {
     const minVal = Number(form.min_selection);
     const maxVal = Number(form.max_selection);
     if (minVal > maxVal) {
-      toast.error(t('addonGroups.minExceedsMax'));
+      toast.error(t('minExceedsMax'));
       return;
     }
     const activeAddonCount = editingGroup ? (editingGroup.addons?.filter((a) => a.is_active).length ?? 0) : 0;
     if (minVal > activeAddonCount) {
-      toast.error(t('addonGroups.minExceedsAvailable', { count: activeAddonCount }));
+      toast.error(t('minExceedsAvailable', { count: activeAddonCount }));
       return;
     }
     try {
@@ -96,15 +100,15 @@ export default function AddonGroupsPage() {
       };
       if (editingGroup) {
         await api.put(`/addon-groups/${editingGroup.id}`, payload);
-        toast.success(t('addonGroups.groupUpdated'));
+        toast.success(t('groupUpdated'));
       } else {
         await api.post('/addon-groups', payload);
-        toast.success(t('addonGroups.groupCreated'));
+        toast.success(t('groupCreated'));
       }
       resetForm();
       fetchGroups();
     } catch (err: unknown) {
-      toast.error(extractErrorMessage(err, t('common.failedToSave')));
+      toast.error(extractErrorMessage(err, tCommon('failedToSave')));
     } finally {
       setMutating(false);
     }
@@ -112,14 +116,14 @@ export default function AddonGroupsPage() {
 
   const handleDeleteGroup = async (id: number | string) => {
     if (mutating) return;
-    if (!await confirm(t('addonGroups.deleteGroupConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
+    if (!await confirm(t('deleteGroupConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
     try {
       setMutating(true);
       await api.delete(`/addon-groups/${id}`);
-      toast.success(t('addonGroups.groupDeleted'));
+      toast.success(t('groupDeleted'));
       fetchGroups();
     } catch {
-      toast.error(t('common.failedToDelete'));
+      toast.error(tCommon('failedToDelete'));
     } finally {
       setMutating(false);
     }
@@ -135,12 +139,12 @@ export default function AddonGroupsPage() {
         name: addonForm.name,
         price: Number(addonForm.price),
       });
-      toast.success(t('addonGroups.addonAdded'));
+      toast.success(t('addonAdded'));
       setAddonForm({ name: '', price: '0' });
       setAddingAddonTo(null);
       fetchGroups();
     } catch {
-      toast.error(t('addonGroups.failedToAddAddon'));
+      toast.error(t('failedToAddAddon'));
     } finally {
       setMutating(false);
     }
@@ -155,12 +159,12 @@ export default function AddonGroupsPage() {
         name: addonForm.name,
         price: Number(addonForm.price),
       });
-      toast.success(t('addonGroups.addonUpdated'));
+      toast.success(t('addonUpdated'));
       setAddonForm({ name: '', price: '0' });
       setEditingAddon(null);
       fetchGroups();
     } catch {
-      toast.error(t('addonGroups.failedToUpdateAddon'));
+      toast.error(t('failedToUpdateAddon'));
     } finally {
       setMutating(false);
     }
@@ -168,14 +172,14 @@ export default function AddonGroupsPage() {
 
   const handleDeleteAddon = async (groupId: number | string, addonId: number | string) => {
     if (mutating) return;
-    if (!await confirm(t('addonGroups.deleteAddonConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
+    if (!await confirm(t('deleteAddonConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
     try {
       setMutating(true);
       await api.delete(`/addon-groups/${groupId}/addons/${addonId}`);
-      toast.success(t('addonGroups.addonDeleted'));
+      toast.success(t('addonDeleted'));
       fetchGroups();
     } catch (err: unknown) {
-      toast.error(extractErrorMessage(err, t('addonGroups.failedToDeleteAddon')));
+      toast.error(extractErrorMessage(err, t('failedToDeleteAddon')));
     } finally {
       setMutating(false);
     }
@@ -192,9 +196,9 @@ export default function AddonGroupsPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('addonGroups.title')}</h1>
+        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
         <Button onClick={() => { resetForm(); setShowForm(true); }}>
-          <Plus size={16} className="me-1" /> {t('addonGroups.addGroup')}
+          <Plus size={16} className="me-1" /> {t('addGroup')}
         </Button>
       </div>
 
@@ -214,17 +218,17 @@ export default function AddonGroupsPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-900">{group.name}</span>
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${group.is_required ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-500'}`}>
-                        {group.is_required ? t('products.requiredTag') : t('products.optionalTag')}
+                        {group.is_required ? tProducts('requiredTag') : tProducts('optionalTag')}
                       </span>
                       <span className="text-xs text-gray-400">
-                        {t('addonGroups.addCount', { count: group.addons?.length || 0 })}
+                        {t('addCount', { count: group.addons?.length || 0 })}
                       </span>
                     </div>
                     {group.description && (
                       <p className="text-xs text-gray-500 mt-0.5">{group.description}</p>
                     )}
                     <p className="text-xs text-gray-400 mt-0.5">
-                      {t('addonGroups.selectRange', { min: group.min_selection, max: group.max_selection })}
+                      {t('selectRange', { min: group.min_selection, max: group.max_selection })}
                     </p>
                   </div>
                 </button>
@@ -247,24 +251,24 @@ export default function AddonGroupsPage() {
                         {editingAddon?.addon.id === addon.id ? (
                           <div className="flex items-end gap-2 flex-1">
                             <label className="flex-1">
-                              <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('products.nameLabel')}</span>
+                              <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{tProducts('nameLabel')}</span>
                               <input type="text" value={addonForm.name} onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })}
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-brand" />
                             </label>
                             <label className="w-24">
-                              <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('products.columnPrice')}</span>
+                              <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{tProducts('columnPrice')}</span>
                               <input type="number" step="0.01" value={addonForm.price} onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })} onWheel={(e) => e.currentTarget.blur()}
                                 className="w-full px-2 py-1 text-sm border border-gray-300 rounded outline-none focus:ring-1 focus:ring-brand" />
                             </label>
-                            <button onClick={handleUpdateAddon} disabled={mutating} className="text-xs text-brand font-medium hover:underline disabled:opacity-50">{t('common.save')}</button>
-                            <button onClick={() => { setEditingAddon(null); setAddonForm({ name: '', price: '0' }); }} className="text-xs text-gray-400 hover:underline">{t('tables.cancel')}</button>
+                            <button onClick={handleUpdateAddon} disabled={mutating} className="text-xs text-brand font-medium hover:underline disabled:opacity-50">{tCommon('save')}</button>
+                            <button onClick={() => { setEditingAddon(null); setAddonForm({ name: '', price: '0' }); }} className="text-xs text-gray-400 hover:underline">{tTables('cancel')}</button>
                           </div>
                         ) : (
                           <>
                             <span className="text-sm text-gray-700">{addon.name}</span>
                             <div className="flex items-center gap-3">
                               <span className="text-sm font-medium text-gray-900">
-                                {Number(addon.price) === 0 ? t('pos.free') : fmt(Number(addon.price))}
+                                {Number(addon.price) === 0 ? tPos('free') : fmt(Number(addon.price))}
                               </span>
                               <button onClick={() => { setEditingAddon({ groupId: group.id, addon }); setAddonForm({ name: addon.name, price: String(addon.price) }); }}
                                 disabled={mutating} className="p-1 text-gray-400 hover:text-brand disabled:opacity-50"><Pencil size={14} /></button>
@@ -281,20 +285,20 @@ export default function AddonGroupsPage() {
                   {addingAddonTo === group.id ? (
                     <div className="flex items-end gap-2 mt-3">
                       <label className="flex-1">
-                        <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('products.nameLabel')}</span>
-                        <input type="text" placeholder={t('products.addonNamePlaceholder')} value={addonForm.name}
+                        <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{tProducts('nameLabel')}</span>
+                        <input type="text" placeholder={tProducts('addonNamePlaceholder')} value={addonForm.name}
                           onChange={(e) => setAddonForm({ ...addonForm, name: e.target.value })}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       </label>
                       <label className="w-24">
-                        <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{t('products.columnPrice')}</span>
-                        <input type="number" step="0.01" placeholder={t('products.addonPricePlaceholder')} value={addonForm.price}
+                        <span className="block text-[11px] font-medium text-gray-500 mb-0.5">{tProducts('columnPrice')}</span>
+                        <input type="number" step="0.01" placeholder={tProducts('addonPricePlaceholder')} value={addonForm.price}
                           onChange={(e) => setAddonForm({ ...addonForm, price: e.target.value })}
                           onWheel={(e) => e.currentTarget.blur()}
                           className="w-full px-3 py-1.5 text-sm border border-gray-300 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
                       </label>
                       <button onClick={() => handleAddAddon(group.id)} disabled={mutating}
-                        className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover disabled:opacity-50">{t('products.addButton')}</button>
+                        className="px-3 py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover disabled:opacity-50">{tProducts('addButton')}</button>
                       <button onClick={() => { setAddingAddonTo(null); setAddonForm({ name: '', price: '0' }); }}
                         className="text-gray-400 hover:text-gray-600"><X size={16} /></button>
                     </div>
@@ -303,7 +307,7 @@ export default function AddonGroupsPage() {
                       onClick={() => { setAddingAddonTo(group.id); setAddonForm({ name: '', price: '0' }); }}
                       className="mt-3 text-sm text-brand font-medium flex items-center gap-1 hover:underline"
                     >
-                      <Plus size={14} /> {t('products.addAddon')}
+                      <Plus size={14} /> {tProducts('addAddon')}
                     </button>
                   )}
                 </div>
@@ -312,7 +316,7 @@ export default function AddonGroupsPage() {
           );
         })}
         {groups.length === 0 && (
-          <p className="text-center text-gray-500 py-12">{t('addonGroups.noAddonGroups')}</p>
+          <p className="text-center text-gray-500 py-12">{t('noAddonGroups')}</p>
         )}
       </div>
 
@@ -321,24 +325,24 @@ export default function AddonGroupsPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{editingGroup ? t('addonGroups.editGroup') : t('products.addAddonGroupForm')}</h2>
+              <h2 className="text-lg font-bold">{editingGroup ? t('editGroup') : tProducts('addAddonGroupForm')}</h2>
               <button onClick={resetForm} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.nameLabel')}</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{tProducts('nameLabel')}</label>
                 <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" required />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.categoryDescription')}</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{tProducts('categoryDescription')}</label>
                 <input type="text" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" checked={form.is_required} onChange={(e) => setForm({ ...form, is_required: e.target.checked })}
                   className="rounded border-gray-300 text-brand focus:ring-brand" />
-                <span className="text-sm text-gray-700">{t('products.requiredSelection')}</span>
+                <span className="text-sm text-gray-700">{tProducts('requiredSelection')}</span>
               </div>
               <div className="flex items-center gap-2">
                 <input type="checkbox" id="allow_multiple_quantities" checked={form.allow_multiple_quantities} onChange={(e) => setForm({ ...form, allow_multiple_quantities: e.target.checked })}
@@ -347,18 +351,18 @@ export default function AddonGroupsPage() {
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.minSelection')}</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{tProducts('minSelection')}</label>
                   <input type="number" min="0" value={form.min_selection} onChange={(e) => setForm({ ...form, min_selection: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">{t('products.maxSelection')}</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{tProducts('maxSelection')}</label>
                   <input type="number" min="1" value={form.max_selection} onChange={(e) => setForm({ ...form, max_selection: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand outline-none" />
                 </div>
               </div>
               <Button type="submit" disabled={mutating} className="w-full">
-                {editingGroup ? t('products.update') : t('products.create')}
+                {editingGroup ? tProducts('update') : tProducts('create')}
               </Button>
             </form>
           </div>

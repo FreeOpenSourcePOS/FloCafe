@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import { usePosSettingsStore } from '@/store/pos-settings';
 
 /**
@@ -17,14 +17,15 @@ import { usePosSettingsStore } from '@/store/pos-settings';
  * whether to show it.
  */
 export function WhatsAppEnableCard() {
-  const { t } = useI18n();
+  const t = useTranslations('whatsapp.enable');
+  const tConnect = useTranslations('whatsapp.connect');
   const setWhatsappEnabled = usePosSettingsStore((s) => s.setWhatsappEnabled);
   const [ack, setAck] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const handleEnable = async () => {
     if (!ack) {
-      toast.error(t('whatsapp.enable.ackError'));
+      toast.error(t('ackError'));
       return;
     }
     setSubmitting(true);
@@ -32,10 +33,10 @@ export function WhatsAppEnableCard() {
       await api.post('/whatsapp/enable');
       setWhatsappEnabled(true);
       setAck(false);
-      toast.success(t('whatsapp.enable.success'));
+      toast.success(t('success'));
     } catch (err: unknown) {
       console.warn('[WhatsAppEnable] Enable failed:', (err as Error)?.message || err);
-      toast.error(t('whatsapp.enable.failed'));
+      toast.error(t('failed'));
     } finally {
       setSubmitting(false);
     }
@@ -47,13 +48,13 @@ export function WhatsAppEnableCard() {
         <div className="flex items-center gap-2">
           <MessageCircle size={20} className="text-brand" />
           <div>
-            <h2 className="font-semibold text-gray-900">{t('whatsapp.enable.title')}</h2>
-            <p className="text-xs text-gray-500 mt-0.5">{t('whatsapp.enable.description')}</p>
+            <h2 className="font-semibold text-gray-900">{t('title')}</h2>
+            <p className="text-xs text-gray-500 mt-0.5">{t('description')}</p>
           </div>
         </div>
         <div className="rounded-md border bg-muted/40 p-4 text-sm space-y-3">
-          <p>{t('whatsapp.enable.riskNote')}</p>
-          <p className="text-muted-foreground">{t('whatsapp.enable.floHelps')}</p>
+          <p>{t('riskNote')}</p>
+          <p className="text-muted-foreground">{t('floHelps')}</p>
         </div>
         <label className="flex items-start gap-3 text-sm cursor-pointer">
           <input
@@ -62,11 +63,11 @@ export function WhatsAppEnableCard() {
             checked={ack}
             onChange={(e) => setAck(e.target.checked)}
           />
-          <span>{t('whatsapp.enable.acknowledge')}</span>
+          <span>{t('acknowledge')}</span>
         </label>
         <div className="flex">
           <Button onClick={handleEnable} disabled={!ack || submitting}>
-            {submitting ? t('whatsapp.connect.connecting') : t('whatsapp.enable.cta')}
+            {submitting ? tConnect('connecting') : t('cta')}
           </Button>
         </div>
       </CardContent>

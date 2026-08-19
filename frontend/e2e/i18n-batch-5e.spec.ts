@@ -1,15 +1,11 @@
 import { test, expect, Page } from '@playwright/test';
-import * as path from 'path';
-import * as fs from 'fs';
 
 const BASE = 'http://localhost:3001';
-const EVIDENCE_DIR = '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M0DFPDSSXXR8V1EG3NZ1HGEC';
 
 async function captureScreenshot(page: Page, filename: string): Promise<void> {
-  if (!fs.existsSync(EVIDENCE_DIR)) {
-    fs.mkdirSync(EVIDENCE_DIR, { recursive: true });
-  }
-  await page.screenshot({ path: path.join(EVIDENCE_DIR, filename), fullPage: true });
+  // Playwright writes to a per-test output dir (test-results/), which is
+  // gitignored and writable on every platform/CI runner.
+  await page.screenshot({ path: test.info().outputPath(filename), fullPage: true });
 }
 
 async function login(page: Page, email: string): Promise<void> {

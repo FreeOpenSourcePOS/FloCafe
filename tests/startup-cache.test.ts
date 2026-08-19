@@ -8,7 +8,7 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 }
 
 function makeSilentLogger() {
-  return { log: () => {}, warn: () => {} };
+  return { debug: () => {}, warn: () => {} };
 }
 
 function withTempUserData(fn: (dir: string) => void): void {

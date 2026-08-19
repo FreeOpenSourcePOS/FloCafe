@@ -28,8 +28,11 @@ export const STALE_RENDER_CACHE_DIRS = [
 
 const VERSION_MARKER_FILENAME = '.electron-version';
 
+// debug/warn only — matches every other electron-log call site in this
+// codebase (log.debug/log.error/log.warn; log.log/log.info are never used),
+// and what the startup-failure test harness's electron-log stub implements.
 interface Logger {
-  log: (...args: unknown[]) => void;
+  debug: (...args: unknown[]) => void;
   warn: (...args: unknown[]) => void;
 }
 
@@ -73,7 +76,7 @@ export function clearStaleRenderCachesOnVersionChange(
       return;
     }
 
-    logger.log(
+    logger.debug(
       `[Flo] Electron version marker ${previousVersion ?? '(none)'} -> ${currentElectronVersion}; cleared render caches to avoid a stale-cache crash loop.`,
     );
   }

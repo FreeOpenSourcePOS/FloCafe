@@ -17,6 +17,7 @@ import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShu
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
+import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -640,6 +641,8 @@ async function initialize(): Promise<void> {
   try {
     if (isShutdownRequested()) return;
     console.log('[Flo] Initializing...');
+
+    clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
     console.log('[Flo] Initializing database...');
     initDatabase();

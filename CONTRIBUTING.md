@@ -161,6 +161,8 @@ FloCafe currently provides translations for English (`en`), Spanish (`es`), Braz
 
 The validation command is fully offline and checks registry/file consistency, exact English key parity, string and ICU validity, placeholder/tag parity, Persian fallback safeguards, and frontend translation-key safety.
 
+For complete authoring, scaffolding, RTL support, and verification instructions, see the [Internationalization and translation guide](docs/i18n.md).
+
 ---
 
 ## Tax packs and compliance contributions

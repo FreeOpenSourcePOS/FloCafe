@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import type { HealthCheckReport, HealthFinding } from '@/types/electron';
 import { AlertTriangle, CheckCircle2, Wrench } from 'lucide-react';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 
 interface HealthCheckDialogProps {
   open: boolean;
@@ -48,7 +48,8 @@ function FindingRow({ finding }: { finding: HealthFinding }) {
 }
 
 export function HealthCheckDialog({ open, onOpenChange, report, applying, onApplySafeFixes }: HealthCheckDialogProps) {
-  const { t } = useI18n();
+  const t = useTranslations('settings');
+  const tCommon = useTranslations('common');
   const safeFindings = (report?.findings ?? []).filter((f) => f.risk === 'safe');
   const reviewFindings = (report?.findings ?? []).filter((f) => f.risk === 'manual_review');
   const isClean = report && report.findings.length === 0;
@@ -57,21 +58,21 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>{t('settings.databaseHealthCheck')}</DialogTitle>
+          <DialogTitle>{t('databaseHealthCheck')}</DialogTitle>
           <DialogDescription>
-            {t('settings.healthCheckDescription')}
+            {t('healthCheckDescription')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-6 py-2">
           {!report && (
-            <p className="text-sm text-gray-500 text-center py-10">{t('common.loading')}</p>
+            <p className="text-sm text-gray-500 text-center py-10">{tCommon('loading')}</p>
           )}
 
           {isClean && (
             <div className="flex items-center gap-2 text-green-700 bg-green-50 border border-green-200 rounded-lg p-4">
               <CheckCircle2 size={18} />
-              <span className="text-sm font-medium">{t('settings.healthCheckClean')}</span>
+              <span className="text-sm font-medium">{t('healthCheckClean')}</span>
             </div>
           )}
 
@@ -79,7 +80,7 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <Wrench size={16} className="text-brand" />
-                <h3 className="font-medium text-gray-900">{t('settings.healthCheckSafeHeader', { count: safeFindings.length })}</h3>
+                <h3 className="font-medium text-gray-900">{t('healthCheckSafeHeader', { count: safeFindings.length })}</h3>
               </div>
               <div className="space-y-2">
                 {safeFindings.map((f) => <FindingRow key={f.id} finding={f} />)}
@@ -91,10 +92,10 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle size={16} className="text-amber-600" />
-                <h3 className="font-medium text-gray-900">{t('settings.healthCheckReviewHeader', { count: reviewFindings.length })}</h3>
+                <h3 className="font-medium text-gray-900">{t('healthCheckReviewHeader', { count: reviewFindings.length })}</h3>
               </div>
               <p className="text-xs text-gray-500 mb-2">
-                {t('settings.healthCheckReviewHint')}
+                {t('healthCheckReviewHint')}
               </p>
               <div className="space-y-2">
                 {reviewFindings.map((f) => <FindingRow key={f.id} finding={f} />)}
@@ -104,10 +105,10 @@ export function HealthCheckDialog({ open, onOpenChange, report, applying, onAppl
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('settings.close')}</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t('close')}</Button>
           {safeFindings.length > 0 && (
             <Button onClick={onApplySafeFixes} disabled={applying}>
-              {applying ? t('settings.applyingFixes') : t('settings.applySafeFixes', { count: safeFindings.length })}
+              {applying ? t('applyingFixes') : t('applySafeFixes', { count: safeFindings.length })}
             </Button>
           )}
         </DialogFooter>

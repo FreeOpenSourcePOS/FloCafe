@@ -7,11 +7,9 @@
  * translator (`useTranslations()` leaf keys or legacy `t()` dotted keys) so
  * every language shows a localized label.
  *
- * Migrated status maps (`ORDER_TYPE_LABEL_KEYS`, `ORDER_STATUS_LABEL_KEYS`,
- * `ITEM_STATUS_LABEL_KEYS`, `TABLE_STATUS_LABEL_KEYS`) are exhaustively typed
- * against use-intl leaf keys.
- * Unmigrated maps retain dotted keys for legacy `t()` callers until their
- * batches migrate.
+ * All maps in this module are exhaustively typed against use-intl leaf keys
+ * (`AppConfig['Messages']`), including `ORDER_TYPE_LABEL_KEYS` re-exported
+ * from `order-types.ts`.
  *
  * Unknown values fall back to the raw string, so a new backend status never
  * crashes the UI — it just shows in English until a translation key is added.
@@ -25,15 +23,18 @@ export { ORDER_TYPE_LABEL_KEYS };
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 type TablesKey = keyof AppConfig['Messages']['tables'];
+type StaffKey = keyof AppConfig['Messages']['staff'];
+type CommonKey = keyof AppConfig['Messages']['common'];
+type BusinessTypeKey = keyof AppConfig['Messages']['businessType'];
 
 /** Staff/tenant role → label. Used in login tenant picker, staff table, etc. */
-export const ROLE_LABEL_KEYS: Record<string, string> = {
-  owner: 'staff.roleOwner',
-  manager: 'staff.roleManager',
-  cashier: 'staff.roleCashier',
-  chef: 'staff.roleChef',
-  server: 'staff.roleServer',
-};
+export const ROLE_LABEL_KEYS = {
+  owner: 'roleOwner',
+  manager: 'roleManager',
+  cashier: 'roleCashier',
+  chef: 'roleChef',
+  server: 'roleServer',
+} as const satisfies Record<'owner' | 'manager' | 'cashier' | 'chef' | 'server', StaffKey>;
 
 /** Order-level status → label (exhaustively typed against `Order['status']`). */
 export const ORDER_STATUS_LABEL_KEYS = {
@@ -71,20 +72,20 @@ export const TABLE_STATUS_LABEL_KEYS = {
 } as const satisfies Record<Table['status'], TablesKey>;
 
 /** Tenant/business status → label. */
-export const TENANT_STATUS_LABEL_KEYS: Record<string, string> = {
-  active: 'common.active',
-  inactive: 'common.inactive',
-  suspended: 'common.inactive',
-};
+export const TENANT_STATUS_LABEL_KEYS = {
+  active: 'active',
+  inactive: 'inactive',
+  suspended: 'inactive',
+} as const satisfies Record<'active' | 'inactive' | 'suspended', CommonKey>;
 
 /** Business type → label. Currently only 'restaurant' is valid. */
-export const BUSINESS_TYPE_LABEL_KEYS: Record<string, string> = {
-  restaurant: 'businessType.restaurant',
-};
+export const BUSINESS_TYPE_LABEL_KEYS = {
+  restaurant: 'restaurant',
+} as const satisfies Record<'restaurant', BusinessTypeKey>;
 
 /** Payment status → label. */
-export const PAYMENT_STATUS_LABEL_KEYS: Record<string, string> = {
-  paid: 'orders.paid',
-  partial: 'orders.partiallyPaid',
-  unpaid: 'orders.unpaidBadge',
-};
+export const PAYMENT_STATUS_LABEL_KEYS = {
+  paid: 'paid',
+  partial: 'partiallyPaid',
+  unpaid: 'unpaidBadge',
+} as const satisfies Record<'paid' | 'partial' | 'unpaid', OrdersKey>;

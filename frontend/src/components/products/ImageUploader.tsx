@@ -7,7 +7,7 @@ import { Camera, Link, Upload, X, Check } from 'lucide-react';
 import { compressCroppedImage, MAX_RAW_FILE_SIZE } from '@/lib/image-utils';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 interface ImageUploaderProps {
   /** Current Base64 data URI (or null if no image) */
   value: string | null;
@@ -20,7 +20,8 @@ interface ImageUploaderProps {
 type Mode = 'idle' | 'cropping' | 'url-input';
 
 export default function ImageUploader({ value, onChange, productId }: ImageUploaderProps) {
-  const { t } = useI18n();
+  const t = useTranslations('products');
+  const tCommon = useTranslations('common');
   const [mode, setMode] = useState<Mode>('idle');
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
@@ -38,11 +39,11 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
 
   const processFile = useCallback(async (file: File) => {
     if (file.size > MAX_RAW_FILE_SIZE) {
-      toast.error(t('products.imageTooLarge', { size: MAX_RAW_FILE_SIZE / 1024 / 1024 }));
+      toast.error(t('imageTooLarge', { size: MAX_RAW_FILE_SIZE / 1024 / 1024 }));
       return;
     }
     if (!file.type.startsWith('image/')) {
-      toast.error(t('products.imageSelectFile'));
+      toast.error(t('imageSelectFile'));
       return;
     }
 
@@ -55,7 +56,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       setZoom(1);
     };
     reader.onerror = () => {
-      toast.error(t('products.imageReadFailed'));
+      toast.error(t('imageReadFailed'));
     };
     reader.readAsDataURL(file);
   }, [t]);
@@ -88,16 +89,16 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
 
       const dataUri = compressCroppedImage(img, { x, y, width, height });
       if (!dataUri) {
-        toast.error(t('products.imageCompressFailed'));
+        toast.error(t('imageCompressFailed'));
         return;
       }
 
       onChange(dataUri);
       setMode('idle');
       setCropSrc(null);
-      toast.success(t('products.imageReady'));
+      toast.success(t('imageReady'));
     } catch {
-      toast.error(t('products.imageCropFailed'));
+      toast.error(t('imageCropFailed'));
       setMode('idle');
       setCropSrc(null);
     }
@@ -107,7 +108,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
     const trimmed = urlInput.trim();
     if (!trimmed) return;
     if (!trimmed.toLowerCase().startsWith('https://')) {
-      toast.error(t('products.imageHttpsOnly'));
+      toast.error(t('imageHttpsOnly'));
       return;
     }
     setFetching(true);
@@ -117,7 +118,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       const dataUri = res.data.data;
 
       if (!dataUri) {
-        toast.error(t('products.imageFetchFailed'));
+        toast.error(t('imageFetchFailed'));
         return;
       }
 
@@ -128,7 +129,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       setZoom(1);
       setUrlInput('');
     } catch {
-      toast.error(t('products.imageFetchFailed'));
+      toast.error(t('imageFetchFailed'));
     } finally {
       setFetching(false);
     }
@@ -160,7 +161,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
       <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
         <div className="bg-white rounded-2xl max-w-lg w-full overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b">
-            <h3 className="font-semibold text-gray-900">{t('products.cropImage')}</h3>
+            <h3 className="font-semibold text-gray-900">{t('cropImage')}</h3>
             <button type="button" onClick={() => { setMode('idle'); setCropSrc(null); }} className="text-gray-400 hover:text-gray-600">
               <X size={20} />
             </button>
@@ -191,7 +192,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
               className="flex items-center gap-2 px-4 py-2 bg-brand text-white rounded-lg hover:bg-brand/90 transition-colors"
             >
               <Check size={16} />
-              {t('products.imageCropApply')}
+              {t('imageCropApply')}
             </button>
           </div>
         </div>
@@ -218,16 +219,16 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
             disabled={fetching || !urlInput.trim()}
             className="px-3 py-2 bg-brand text-white rounded-lg text-sm hover:bg-brand/90 disabled:opacity-50"
           >
-            {fetching ? t('products.imageFetching') : t('products.imageFetch')}
+            {fetching ? t('imageFetching') : t('imageFetch')}
           </button>
           <button type="button"
             onClick={() => { setMode('idle'); setUrlInput(''); }}
             className="px-3 py-2 text-gray-500 hover:text-gray-700 text-sm"
           >
-            {t('common.cancel')}
+            {tCommon('cancel')}
           </button>
         </div>
-        <p className="text-xs text-gray-400">{t('products.imageUrlHint')}</p>
+        <p className="text-xs text-gray-400">{t('imageUrlHint')}</p>
       </div>
     );
   }
@@ -264,13 +265,13 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
           <input {...getInputProps()} />
           <Upload size={24} className="mb-2 text-gray-400" />
           <p className="text-sm font-medium text-center">
-            {isDragActive ? t('products.imageDropActive') : t('products.imageDropIdle')}
+            {isDragActive ? t('imageDropActive') : t('imageDropIdle')}
           </p>
         </div>
 
         <div className="flex items-center gap-2 justify-center">
           <div className="flex-1 h-px bg-gray-200"></div>
-          <span className="text-xs text-gray-400 font-medium uppercase px-2">{t('products.imageOrUse')}</span>
+          <span className="text-xs text-gray-400 font-medium uppercase px-2">{t('imageOrUse')}</span>
           <div className="flex-1 h-px bg-gray-200"></div>
         </div>
 
@@ -281,7 +282,7 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
             className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
           >
             <Camera size={16} />
-            {t('products.imageCamera')}
+            {t('imageCamera')}
           </button>
           <input
             ref={cameraInputRef}
@@ -302,13 +303,13 @@ export default function ImageUploader({ value, onChange, productId }: ImageUploa
             className="flex items-center gap-2 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
           >
             <Link size={16} />
-            {t('products.imagePasteUrl')}
+            {t('imagePasteUrl')}
           </button>
         </div>
       </div>
 
       <p className="text-xs text-gray-400 text-center mt-4">
-        {t('products.imageMaxSize', { size: MAX_RAW_FILE_SIZE / 1024 / 1024 })}
+        {t('imageMaxSize', { size: MAX_RAW_FILE_SIZE / 1024 / 1024 })}
       </p>
     </div>
   );

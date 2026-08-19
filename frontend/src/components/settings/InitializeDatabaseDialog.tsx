@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MasterPinPrompt } from './MasterPinPrompt';
 import { AlertTriangle } from 'lucide-react';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 
 const CONFIRM_PHRASE = 'INITIALIZE';
 
@@ -26,7 +26,8 @@ interface InitializeDatabaseDialogProps {
 }
 
 export function InitializeDatabaseDialog({ open, onOpenChange, onConfirm, onSuccess }: InitializeDatabaseDialogProps) {
-  const { t } = useI18n();
+  const t = useTranslations('settings');
+  const tCommon = useTranslations('common');
   const [phrase, setPhrase] = useState('');
   const [showPinPrompt, setShowPinPrompt] = useState(false);
 
@@ -62,21 +63,21 @@ export function InitializeDatabaseDialog({ open, onOpenChange, onConfirm, onSucc
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-red-600">
               <AlertTriangle size={18} />
-              {t('settings.initializeDatabase')}
+              {t('initializeDatabase')}
             </DialogTitle>
             <DialogDescription className="space-y-2 pt-2 text-start">
               <span className="block">
-                {t('settings.initializeDialogBody')}
+                {t('initializeDialogBody')}
               </span>
               <span className="block font-medium text-gray-700">
-                {t('settings.initializeDialogBackup')}
+                {t('initializeDialogBackup')}
               </span>
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-2">
             <Label htmlFor="initialize-confirm">
-              {t('settings.initializeTypeConfirm', { phrase: CONFIRM_PHRASE })}
+              {t('initializeTypeConfirm', { phrase: CONFIRM_PHRASE })}
             </Label>
             <Input
               id="initialize-confirm"
@@ -88,13 +89,13 @@ export function InitializeDatabaseDialog({ open, onOpenChange, onConfirm, onSucc
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={close}>{t('common.cancel')}</Button>
+            <Button variant="outline" onClick={close}>{tCommon('cancel')}</Button>
             <Button
               variant="destructive"
               disabled={phrase !== CONFIRM_PHRASE}
               onClick={() => setShowPinPrompt(true)}
             >
-              {t('common.continue')}
+              {tCommon('continue')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -103,8 +104,8 @@ export function InitializeDatabaseDialog({ open, onOpenChange, onConfirm, onSucc
       <MasterPinPrompt
         open={open && showPinPrompt}
         mode="verify"
-        title={t('settings.masterPin')}
-        description={t('settings.initializeMasterPinPrompt')}
+        title={t('masterPin')}
+        description={t('initializeMasterPinPrompt')}
         onCancel={() => setShowPinPrompt(false)}
         onSubmit={handlePinSubmit}
       />

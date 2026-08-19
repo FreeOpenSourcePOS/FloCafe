@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 
 interface MasterPinPromptProps {
   open: boolean;
@@ -26,7 +26,8 @@ interface MasterPinPromptProps {
 const PIN_REGEX = /^\d{4}$/;
 
 export function MasterPinPrompt({ open, mode, title, description, onCancel, onSubmit }: MasterPinPromptProps) {
-  const { t } = useI18n();
+  const t = useTranslations('settings');
+  const tCommon = useTranslations('common');
   const [pin, setPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -48,11 +49,11 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
     setError(null);
 
     if (!PIN_REGEX.test(pin)) {
-      setError(t('settings.pinFourDigits'));
+      setError(t('pinFourDigits'));
       return;
     }
     if (mode === 'set' && pin !== confirmPin) {
-      setError(t('settings.pinMismatch'));
+      setError(t('pinMismatch'));
       setConfirmPin('');
       return;
     }
@@ -64,7 +65,7 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
     if (result.success) {
       reset();
     } else {
-      setError(result.error || t('common.somethingWrong'));
+      setError(result.error || tCommon('somethingWrong'));
       setPin('');
       setConfirmPin('');
     }
@@ -74,17 +75,17 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
     <Dialog open={open} onOpenChange={(next) => !next && handleCancel()}>
       <DialogContent className="sm:max-w-sm" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>{title || t('settings.masterPin')}</DialogTitle>
+          <DialogTitle>{title || t('masterPin')}</DialogTitle>
           <DialogDescription>
             {description || (mode === 'set'
-              ? t('settings.setPinDescription')
-              : t('settings.verifyPinDescription'))}
+              ? t('setPinDescription')
+              : t('verifyPinDescription'))}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="master-pin">{mode === 'set' ? t('settings.newPin') : t('settings.masterPin')}</Label>
+            <Label htmlFor="master-pin">{mode === 'set' ? t('newPin') : t('masterPin')}</Label>
             <Input
               id="master-pin"
               type="password"
@@ -102,7 +103,7 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
 
           {mode === 'set' && (
             <div className="space-y-2">
-              <Label htmlFor="master-pin-confirm">{t('settings.confirmPin')}</Label>
+              <Label htmlFor="master-pin-confirm">{t('confirmPin')}</Label>
               <Input
                 id="master-pin-confirm"
                 type="password"
@@ -123,10 +124,10 @@ export function MasterPinPrompt({ open, mode, title, description, onCancel, onSu
 
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel} disabled={submitting}>
-            {t('common.cancel')}
+            {tCommon('cancel')}
           </Button>
           <Button onClick={handleSubmit} disabled={submitting || pin.length !== 4}>
-            {submitting ? t('common.loading') : mode === 'set' ? t('settings.setPinButton') : t('settings.confirmButton')}
+            {submitting ? tCommon('loading') : mode === 'set' ? t('setPinButton') : t('confirmButton')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -6,17 +6,19 @@ import { Button } from '@/components/ui/button';
 import toast from 'react-hot-toast';
 import { Plus, X, Edit, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import type { Staff } from '@/lib/types';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 
 const VALID_ROLES = ['owner', 'manager', 'cashier', 'server', 'chef'];
 
-const roleColorKey: Record<string, string> = {
-  owner: 'staff.roleOwner',
-  manager: 'staff.roleManager',
-  cashier: 'staff.roleCashier',
-  server: 'staff.roleServer',
-  chef: 'staff.roleChef',
-};
+type StaffKey = keyof AppConfig['Messages']['staff'];
+
+const roleColorKey = {
+  owner: 'roleOwner',
+  manager: 'roleManager',
+  cashier: 'roleCashier',
+  server: 'roleServer',
+  chef: 'roleChef',
+} as const satisfies Record<'owner' | 'manager' | 'cashier' | 'server' | 'chef', StaffKey>;
 
 const roleColors: Record<string, string> = {
   owner: 'bg-red-100 text-red-800',
@@ -26,8 +28,16 @@ const roleColors: Record<string, string> = {
   chef: 'bg-orange-100 text-orange-800',
 };
 
+function roleLabel(role: string, t: (key: StaffKey) => string): string {
+  const key = (roleColorKey as Record<string, StaffKey | undefined>)[role];
+  return key ? t(key) : role;
+}
+
 export default function StaffPage() {
-  const { t } = useI18n();
+  const t = useTranslations('staff');
+  const tCommon = useTranslations('common');
+  const tAuth = useTranslations('auth');
+  const tSetup = useTranslations('setup');
   const [staff, setStaff] = useState<Staff[]>([]);
   const [, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -53,7 +63,7 @@ export default function StaffPage() {
       const { data } = await api.get('/staff');
       setStaff(data.staff || []);
     } catch {
-      toast.error(t('staff.failedToLoad'));
+      toast.error(t('failedToLoad'));
     } finally {
       setLoading(false);
     }
@@ -62,7 +72,7 @@ export default function StaffPage() {
   useEffect(() => {
     api.get('/staff')
       .then(({ data }) => setStaff(data.staff || []))
-      .catch(() => toast.error(t('staff.failedToLoad')))
+      .catch(() => toast.error(t('failedToLoad')))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -94,7 +104,7 @@ export default function StaffPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (form.password && form.password !== form.confirmPassword) {
-      toast.error(t('setup.passwordsMismatch'));
+      toast.error(tSetup('passwordsMismatch'));
       return;
     }
     try {
@@ -106,7 +116,7 @@ export default function StaffPage() {
           ...(form.password ? { password: form.password } : {}),
           ...(form.pin ? { pin: form.pin } : {}),
         });
-        toast.success(t('staff.updatedToast'));
+        toast.success(t('updatedToast'));
       } else {
         await api.post('/staff', {
           name: form.name,
@@ -115,27 +125,27 @@ export default function StaffPage() {
           role: form.role,
           ...(form.pin ? { pin: form.pin } : {}),
         });
-        toast.success(t('staff.addedToast'));
+        toast.success(t('addedToast'));
       }
       closeForm();
       fetchStaff();
     } catch {
-      toast.error(t('staff.failedToSave'));
+      toast.error(t('failedToSave'));
     }
   };
 
   const handleResetPassword = async () => {
     if (!resetPwStaff || !newPassword) return;
     if (newPassword !== confirmNewPassword) {
-      toast.error(t('setup.passwordsMismatch'));
+      toast.error(tSetup('passwordsMismatch'));
       return;
     }
     try {
       await api.put(`/staff/${resetPwStaff.id}`, { password: newPassword });
-      toast.success(t('staff.resetPasswordToast'));
+      toast.success(t('resetPasswordToast'));
       closeResetPassword();
     } catch {
-      toast.error(t('staff.failedToReset'));
+      toast.error(t('failedToReset'));
     }
   };
 
@@ -155,7 +165,7 @@ export default function StaffPage() {
       await api.post(`/staff/${s.id}/${s.is_active ? 'deactivate' : 'reactivate'}`);
       fetchStaff();
     } catch {
-      toast.error(t('staff.failedToUpdate'));
+      toast.error(t('failedToUpdate'));
     }
   };
 
@@ -166,8 +176,8 @@ export default function StaffPage() {
   return (
     <div>
       <div className="flex justify-between items-center mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">{t('staff.title')}</h1>
-        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('staff.addButton')}</Button>
+        <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
+        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('addButton')}</Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -178,19 +188,19 @@ export default function StaffPage() {
                 <p className="font-bold text-gray-900">{s.name}</p>
                 <p className="text-xs text-gray-500">{s.email || '—'}</p>
                 {Boolean(s.has_pin) && (
-                  <p className="text-xs text-green-600 mt-1">{t('staff.pinSet')}</p>
+                  <p className="text-xs text-green-600 mt-1">{t('pinSet')}</p>
                 )}
               </div>
               <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${roleColors[s.role] || 'bg-gray-100 text-gray-800'}`}>
-                {roleColorKey[s.role] ? t(roleColorKey[s.role]) : s.role}
+                {roleLabel(s.role, t)}
               </span>
             </div>
             <div className="flex flex-wrap gap-2 mt-3">
               <Button variant="outline" size="sm" onClick={() => openEdit(s)}>
-                <Edit size={14} className="me-1" /> {t('common.edit')}
+                <Edit size={14} className="me-1" /> {tCommon('edit')}
               </Button>
               <Button variant="outline" size="sm" onClick={() => openResetPw(s)}>
-                <RotateCcw size={14} className="me-1" /> {t('staff.resetPwButton')}
+                <RotateCcw size={14} className="me-1" /> {t('resetPwButton')}
               </Button>
               <Button
                 variant="ghost"
@@ -198,36 +208,36 @@ export default function StaffPage() {
                 onClick={() => toggleActive(s)}
                 className={s.is_active ? 'text-red-500 hover:text-red-700 hover:bg-red-50' : 'text-green-500 hover:text-green-700 hover:bg-green-50'}
               >
-                {s.is_active ? t('staff.deactivate') : t('staff.reactivate')}
+                {s.is_active ? t('deactivate') : t('reactivate')}
               </Button>
             </div>
           </div>
         ))}
       </div>
 
-      {staff.length === 0 && <p className="text-center text-gray-500 py-12">{t('staff.empty')}</p>}
+      {staff.length === 0 && <p className="text-center text-gray-500 py-12">{t('empty')}</p>}
 
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{editingStaff ? t('staff.modalTitleEdit') : t('staff.modalTitleAdd')}</h2>
+              <h2 className="text-lg font-bold">{editingStaff ? t('modalTitleEdit') : t('modalTitleAdd')}</h2>
               <button type="button" onClick={closeForm}><X size={20} className="text-gray-400" /></button>
             </div>
             <form onSubmit={handleSave} className="space-y-4">
               <input
-                type="text" placeholder={t('staff.namePlaceholder')} value={form.name}
+                type="text" placeholder={t('namePlaceholder')} value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required
               />
               <input
-                type="email" placeholder={`${t('auth.email')} (${t('common.optional')})`} value={form.email}
+                type="email" placeholder={`${tAuth('email')} (${tCommon('optional')})`} value={form.email}
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               />
               <div className="relative">
                 <input
-                  type={showPassword ? 'text' : 'password'} placeholder={editingStaff ? t('staff.newPasswordPlaceholder') : t('staff.passwordPlaceholder')}
+                  type={showPassword ? 'text' : 'password'} placeholder={editingStaff ? t('newPasswordPlaceholder') : t('passwordPlaceholder')}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -238,7 +248,7 @@ export default function StaffPage() {
                 </button>
               </div>
               <input
-                type={showPassword ? 'text' : 'password'} placeholder={t('auth.confirmPassword')}
+                type={showPassword ? 'text' : 'password'} placeholder={tAuth('confirmPassword')}
                 value={form.confirmPassword}
                 onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -252,14 +262,14 @@ export default function StaffPage() {
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               >
                 {VALID_ROLES.map((r) => (
-                  <option key={r} value={r} disabled={editingLastActiveOwner && r !== 'owner'}>{roleColorKey[r] ? t(roleColorKey[r]) : r}</option>
+                  <option key={r} value={r} disabled={editingLastActiveOwner && r !== 'owner'}>{roleLabel(r, t)}</option>
                 ))}
               </select>
               {['owner', 'manager'].includes(form.role) && (
                 <div>
                   <div className="relative">
                     <input
-                      type={showPin ? 'text' : 'password'} placeholder={editingStaff ? t('staff.pinPlaceholderEdit') : t('staff.pinPlaceholderAdd')}
+                      type={showPin ? 'text' : 'password'} placeholder={editingStaff ? t('pinPlaceholderEdit') : t('pinPlaceholderAdd')}
                       value={form.pin}
                       onChange={(e) => setForm({ ...form, pin: e.target.value.replace(/\D/g, '').slice(0, 6) })}
                       className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
@@ -271,10 +281,10 @@ export default function StaffPage() {
                       {showPin ? <EyeOff size={16} /> : <Eye size={16} />}
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">{t('staff.pinHint')}</p>
+                  <p className="text-xs text-gray-500 mt-1">{t('pinHint')}</p>
                 </div>
               )}
-              <Button type="submit" className="w-full">{editingStaff ? t('staff.updateButton') : t('staff.addButton')}</Button>
+              <Button type="submit" className="w-full">{editingStaff ? t('updateButton') : t('addButton')}</Button>
             </form>
           </div>
         </div>
@@ -284,14 +294,14 @@ export default function StaffPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{t('staff.resetPasswordTitle')}</h2>
+              <h2 className="text-lg font-bold">{t('resetPasswordTitle')}</h2>
               <button type="button" onClick={closeResetPassword}><X size={20} className="text-gray-400" /></button>
             </div>
-            <p className="text-sm text-gray-600 mb-4">{t('staff.resetPasswordBody', { name: resetPwStaff.name })}</p>
+            <p className="text-sm text-gray-600 mb-4">{t('resetPasswordBody', { name: resetPwStaff.name })}</p>
             <div className="space-y-4">
               <div className="relative">
                 <input
-                  type={showResetPassword ? 'text' : 'password'} placeholder={t('staff.newPasswordPlaceholder')} value={newPassword}
+                  type={showResetPassword ? 'text' : 'password'} placeholder={t('newPasswordPlaceholder')} value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   className="w-full px-3 py-2 pe-10 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
                 />
@@ -300,11 +310,11 @@ export default function StaffPage() {
                 </button>
               </div>
               <input
-                type={showResetPassword ? 'text' : 'password'} placeholder={t('auth.confirmPassword')} value={confirmNewPassword}
+                type={showResetPassword ? 'text' : 'password'} placeholder={tAuth('confirmPassword')} value={confirmNewPassword}
                 onChange={(e) => setConfirmNewPassword(e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               />
-              <Button onClick={handleResetPassword} className="w-full">{t('staff.resetPasswordTitle')}</Button>
+              <Button onClick={handleResetPassword} className="w-full">{t('resetPasswordTitle')}</Button>
             </div>
           </div>
         </div>

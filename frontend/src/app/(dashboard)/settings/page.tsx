@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
-import type { Language } from '@/lib/i18n';
+import { LANGUAGES, type Language } from '@/lib/i18n';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -24,11 +24,21 @@ import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPan
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import type { HealthCheckReport } from '@/types/electron';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+
+// Registry-derived selectable UI languages (from LANGUAGES where selectable: true).
+const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
+  (lang) => LANGUAGES[lang].selectable,
+);
+
+function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' | 'inactive') => string): string {
+  const key = (TENANT_STATUS_LABEL_KEYS as Record<string, 'active' | 'inactive' | undefined>)[status ?? ''];
+  return key ? tCommon(key) : (status ?? '');
+}
 
 const CLOUD_ACCOUNT_STATUS_CHANGED_EVENT = 'flo:cloud-account-status-changed';
 
@@ -78,9 +88,11 @@ function formatBackupSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+type SettingsKey = keyof AppConfig['Messages']['settings'];
+
 interface TemplateCard {
   id: BillTemplate;
-  nameKey?: string;
+  nameKey?: SettingsKey;
   displayName?: string;
   preview: string;
   source: 'core' | 'plugin';
@@ -88,8 +100,8 @@ interface TemplateCard {
 }
 
 const TEMPLATE_CARDS: TemplateCard[] = [
-  { id: 'classic', nameKey: 'settings.billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core' },
-  { id: 'compact', nameKey: 'settings.billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core' },
+  { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core' },
+  { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core' },
 ];
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -150,7 +162,8 @@ function SettingsNavItem({
 }
 
 function KdsDefaultViewCard() {
-  const { t } = useI18n();
+  const t = useTranslations('settings');
+  const tCommon = useTranslations('common');
   const [view, setView] = useState<'tabs' | 'kanban'>('tabs');
   const [savedView, setSavedView] = useState<'tabs' | 'kanban'>('tabs');
   const [saving, setSaving] = useState(false);
@@ -172,9 +185,9 @@ function KdsDefaultViewCard() {
       const next = data?.kds_default_view === 'kanban' ? 'kanban' : 'tabs';
       setSavedView(next);
       setView(next);
-      toast.success(t('settings.kdsViewSaved'));
+      toast.success(t('kdsViewSaved'));
     } catch {
-      toast.error(t('settings.kdsViewSaveFailed'));
+      toast.error(t('kdsViewSaveFailed'));
     } finally {
       setSaving(false);
     }
@@ -184,9 +197,9 @@ function KdsDefaultViewCard() {
     <div className="bg-white rounded-xl border border-gray-100 p-6">
       <div className="flex items-center gap-2 mb-4">
         <Monitor size={20} className="text-gray-500" />
-        <h2 className="font-semibold text-gray-900">{t('settings.kdsDefaultView')}</h2>
+        <h2 className="font-semibold text-gray-900">{t('kdsDefaultView')}</h2>
       </div>
-      <p className="text-sm text-gray-500 mb-5">{t('settings.kdsDefaultViewHint')}</p>
+      <p className="text-sm text-gray-500 mb-5">{t('kdsDefaultViewHint')}</p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <button
@@ -200,9 +213,9 @@ function KdsDefaultViewCard() {
         >
           <div className="flex items-center gap-2 mb-1">
             <input type="radio" readOnly checked={view === 'tabs'} className="text-brand" />
-            <span className="font-medium text-gray-900">{t('settings.kdsDefaultViewTabs')}</span>
+            <span className="font-medium text-gray-900">{t('kdsDefaultViewTabs')}</span>
           </div>
-          <p className="text-xs text-gray-500 ms-6">{t('settings.kdsDefaultViewTabsHint')}</p>
+          <p className="text-xs text-gray-500 ms-6">{t('kdsDefaultViewTabsHint')}</p>
         </button>
         <button
           type="button"
@@ -215,9 +228,9 @@ function KdsDefaultViewCard() {
         >
           <div className="flex items-center gap-2 mb-1">
             <input type="radio" readOnly checked={view === 'kanban'} className="text-brand" />
-            <span className="font-medium text-gray-900">{t('settings.kdsDefaultViewKanban')}</span>
+            <span className="font-medium text-gray-900">{t('kdsDefaultViewKanban')}</span>
           </div>
-          <p className="text-xs text-gray-500 ms-6">{t('settings.kdsDefaultViewKanbanHint')}</p>
+          <p className="text-xs text-gray-500 ms-6">{t('kdsDefaultViewKanbanHint')}</p>
         </button>
       </div>
 
@@ -228,7 +241,7 @@ function KdsDefaultViewCard() {
           disabled={!dirty || saving}
           className="px-4 py-2 bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium text-sm"
         >
-          {saving ? t('common.saving') : t('common.save')}
+          {saving ? tCommon('saving') : tCommon('save')}
         </button>
       </div>
     </div>
@@ -242,7 +255,12 @@ export default function SettingsPage() {
   const whatsappEnabled = posSettings.whatsappEnabled;
   const { printMethod, setPrintMethod, refreshHardwarePrinter } = usePrinterStore();
   usePrinterStatusSync();
-  const { t, language, setLanguage } = useI18n();
+  const t = useTranslations('settings');
+  const tCommon = useTranslations('common');
+  const tRestore = useTranslations('restore');
+  const tWhatsappSettings = useTranslations('whatsapp.settings');
+  const language = posSettings.language;
+  const setLanguage = posSettings.setLanguage;
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
   const isAdmin = currentTenant?.role === 'admin' || currentTenant?.role === 'owner';
   const canViewTaxConfiguration = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
@@ -352,7 +370,7 @@ export default function SettingsPage() {
       const { data } = await api.get('/db-tools/health-check');
       setHealthReport(data);
     } catch {
-      toast.error(t('settings.healthCheckFailed'));
+      toast.error(t('healthCheckFailed'));
       setHealthCheckOpen(false);
     }
   };
@@ -383,7 +401,7 @@ export default function SettingsPage() {
       api.get('/db-tools/health-check')
         .then(({ data }) => setHealthReport(data))
         .catch(() => {
-          toast.error(t('settings.healthCheckFailed'));
+          toast.error(t('healthCheckFailed'));
           setHealthCheckOpen(false);
         });
     }
@@ -395,13 +413,13 @@ export default function SettingsPage() {
     try {
       const { data } = await api.post('/db-tools/apply-safe-fixes', {});
       if (data.errors?.length) {
-        toast.error(t('settings.fixesAppliedPartial', { applied: data.applied.length, failed: data.errors.length }));
+        toast.error(t('fixesAppliedPartial', { applied: data.applied.length, failed: data.errors.length }));
       } else {
-        toast.success(t('settings.fixesApplied', { count: data.applied.length }));
+        toast.success(t('fixesApplied', { count: data.applied.length }));
       }
       await runHealthCheck();
     } catch {
-      toast.error(t('settings.applyingFixesFailed'));
+      toast.error(t('applyingFixesFailed'));
     } finally {
       setApplyingFixes(false);
     }
@@ -410,49 +428,49 @@ export default function SettingsPage() {
   const runImport = async (data: ImportPayload, overwrite: boolean, master_pin?: string) => {
     try {
       const response = await api.post('/db/import', { data, overwrite, master_pin });
-      if (response.data.success) toast.success(t('settings.importSuccess'));
+      if (response.data.success) toast.success(t('importSuccess'));
       return { success: true };
     } catch {
-      const message = t('settings.importFailed');
+      const message = t('importFailed');
       toast.error(message);
       return { success: false, error: message };
     }
   };
 
   const handlePinGateSubmit = async (pin: string): Promise<{ success: boolean; error?: string }> => {
-    if (!pinGate) return { success: false, error: t('settings.nothingPending') };
+    if (!pinGate) return { success: false, error: t('nothingPending') };
 
     if (pinGate.mode === 'set') {
       try {
         await api.post('/db-tools/master-pin/reset', { pin, confirm_pin: pin });
         await fetchMasterPinStatus();
-        toast.success(t('settings.masterPinSaved'));
+        toast.success(t('masterPinSaved'));
         setPinGate(null);
         return { success: true };
       } catch {
-        return { success: false, error: t('settings.savePinFailed') };
+        return { success: false, error: t('savePinFailed') };
       }
     }
 
     if (pinGate.mode === 'backup') {
       try {
         const response = await api.post('/db/backup', { master_pin: pin });
-        toast.success(`${t('settings.backupCreated')} ${response.data.path}`, { duration: 5000 });
+        toast.success(`${t('backupCreated')} ${response.data.path}`, { duration: 5000 });
         setPinGate(null);
         fetchBackups();
         return { success: true };
       } catch {
-        return { success: false, error: t('settings.backupFailedGeneric') };
+        return { success: false, error: t('backupFailedGeneric') };
       }
     }
 
     if (pinGate.mode === 'backup-custom') {
       if (!window.electronAPI?.backupDatabase) {
-        return { success: false, error: t('common.notAvailable') };
+        return { success: false, error: tCommon('notAvailable') };
       }
       const result = await window.electronAPI.backupDatabase(pin);
       if (result.success) {
-        toast.success(`${t('settings.backupCreated')} ${result.path}`, { duration: 5000 });
+        toast.success(`${t('backupCreated')} ${result.path}`, { duration: 5000 });
         setPinGate(null);
         return { success: true };
       }
@@ -460,16 +478,16 @@ export default function SettingsPage() {
         setPinGate(null);
         return { success: true };
       }
-      return { success: false, error: result.error || t('settings.backupFailedGeneric') };
+      return { success: false, error: result.error || t('backupFailedGeneric') };
     }
 
     if (pinGate.mode === 'restore') {
       if (!window.electronAPI?.restoreBackup) {
-        return { success: false, error: t('common.notAvailable') };
+        return { success: false, error: tCommon('notAvailable') };
       }
       const result = await window.electronAPI.restoreBackup(pin, pinGate.payload.backupPath);
       if (result.success) {
-        toast.success(t('restore.success'));
+        toast.success(tRestore('success'));
         setPinGate(null);
         setTimeout(() => window.location.reload(), 1500);
         return { success: true };
@@ -478,25 +496,25 @@ export default function SettingsPage() {
         setPinGate(null);
         return { success: true };
       }
-      return { success: false, error: result.error || t('settings.restoreFailedGeneric') };
+      return { success: false, error: result.error || t('restoreFailedGeneric') };
     }
 
     if (pinGate.mode === 'delete-backup') {
       try {
         await api.post(`/db-tools/backups/${encodeURIComponent(pinGate.payload.fileName)}/delete`, { master_pin: pin });
-        toast.success(t('settings.backupDeleted'));
+        toast.success(t('backupDeleted'));
         setPinGate(null);
         fetchBackups();
         return { success: true };
       } catch {
-        return { success: false, error: t('settings.backupDeleteFailed') };
+        return { success: false, error: t('backupDeleteFailed') };
       }
     }
 
     if (pinGate.mode === 'delete-cloud') {
       try {
         await api.post('/settings/cloud/delete-data', { master_pin: pin, confirmation: 'DELETE CLOUD DATA' });
-        toast.success(t('settings.cloudDeletionSubmitted'));
+        toast.success(t('cloudDeletionSubmitted'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
         setPinGate(null);
@@ -504,20 +522,20 @@ export default function SettingsPage() {
       } catch {
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
-        return { success: false, error: t('settings.cloudDeletionFailed') };
+        return { success: false, error: t('cloudDeletionFailed') };
       }
     }
 
     if (pinGate.mode === 'cancel-cloud-deletion') {
       try {
         await api.post('/settings/cloud/delete-data/cancel', { master_pin: pin });
-        toast.success(t('settings.cloudDeletionCancelled'));
+        toast.success(t('cloudDeletionCancelled'));
         await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
         notifyCloudAccountStatusChanged();
         setPinGate(null);
         return { success: true };
       } catch {
-        return { success: false, error: t('settings.cloudDeletionCancelFailed') };
+        return { success: false, error: t('cloudDeletionCancelFailed') };
       }
     }
 
@@ -529,15 +547,15 @@ export default function SettingsPage() {
 
   const handleCreateBackup = async () => {
     if (masterPinStatus.available && !masterPinStatus.isSet) {
-      toast.error(t('settings.masterPinRequiredForBackup'));
+      toast.error(t('masterPinRequiredForBackup'));
       return;
     }
     if (!masterPinStatus.available) {
       try {
         const response = await api.post('/db/backup', {});
-        toast.success(`${t('settings.backupCreated')} ${response.data.path}`, { duration: 5000 });
+        toast.success(`${t('backupCreated')} ${response.data.path}`, { duration: 5000 });
       } catch {
-        toast.error(t('settings.backupFailed'));
+        toast.error(t('backupFailed'));
       }
       return;
     }
@@ -551,19 +569,19 @@ export default function SettingsPage() {
   // action — since it's outside the managed backups/ directory. See #120.
   const handleChooseBackupLocation = async () => {
     if (masterPinStatus.available && !masterPinStatus.isSet) {
-      toast.error(t('settings.masterPinRequiredForBackup'));
+      toast.error(t('masterPinRequiredForBackup'));
       return;
     }
     if (!masterPinStatus.available) {
       if (!window.electronAPI?.backupDatabase) {
-        toast.error(t('common.notAvailable'));
+        toast.error(tCommon('notAvailable'));
         return;
       }
       const result = await window.electronAPI.backupDatabase('');
       if (result.success) {
-        toast.success(`${t('settings.backupCreated')} ${result.path}`, { duration: 5000 });
+        toast.success(`${t('backupCreated')} ${result.path}`, { duration: 5000 });
       } else if (result.error !== 'Cancelled') {
-        toast.error(result.error || t('settings.backupFailedGeneric'));
+        toast.error(result.error || t('backupFailedGeneric'));
       }
       return;
     }
@@ -571,28 +589,28 @@ export default function SettingsPage() {
   };
 
   const handleRestoreFromHistory = async (backup: BackupInfo) => {
-    const ok = await confirm(t('settings.restoreConfirm', { fileName: backup.fileName }), {
-      title: t('settings.confirmRestoreTitle'),
-      confirmLabel: t('settings.restoreBackup'),
+    const ok = await confirm(t('restoreConfirm', { fileName: backup.fileName }), {
+      title: t('confirmRestoreTitle'),
+      confirmLabel: t('restoreBackup'),
       destructive: true,
     });
     if (!ok) return;
 
     if (masterPinStatus.available && !masterPinStatus.isSet) {
-      toast.error(t('settings.setMasterPinFirst'));
+      toast.error(t('setMasterPinFirst'));
       return;
     }
     if (!masterPinStatus.available) {
       if (!window.electronAPI?.restoreBackup) {
-        toast.error(t('common.notAvailable'));
+        toast.error(tCommon('notAvailable'));
         return;
       }
       const result = await window.electronAPI.restoreBackup('', backup.path);
       if (result.success) {
-        toast.success(t('restore.success'));
+        toast.success(tRestore('success'));
         setTimeout(() => window.location.reload(), 1500);
       } else if (result.error !== 'Cancelled') {
-        toast.error(result.error || t('settings.restoreFailedGeneric'));
+        toast.error(result.error || t('restoreFailedGeneric'));
       }
       return;
     }
@@ -600,24 +618,24 @@ export default function SettingsPage() {
   };
 
   const handleDeleteBackup = async (backup: BackupInfo) => {
-    const ok = await confirm(t('settings.deleteBackupConfirm', { fileName: backup.fileName }), {
-      title: t('settings.confirmDeleteBackupTitle'),
-      confirmLabel: t('settings.deleteBackup'),
+    const ok = await confirm(t('deleteBackupConfirm', { fileName: backup.fileName }), {
+      title: t('confirmDeleteBackupTitle'),
+      confirmLabel: t('deleteBackup'),
       destructive: true,
     });
     if (!ok) return;
 
     if (masterPinStatus.available && !masterPinStatus.isSet) {
-      toast.error(t('settings.setMasterPinFirst'));
+      toast.error(t('setMasterPinFirst'));
       return;
     }
     if (!masterPinStatus.available) {
       try {
         await api.post(`/db-tools/backups/${encodeURIComponent(backup.fileName)}/delete`, {});
-        toast.success(t('settings.backupDeleted'));
+        toast.success(t('backupDeleted'));
         fetchBackups();
       } catch {
-        toast.error(t('settings.backupDeleteFailed'));
+        toast.error(t('backupDeleteFailed'));
       }
       return;
     }
@@ -629,7 +647,7 @@ export default function SettingsPage() {
       const { data } = await api.post('/db-tools/initialize', { master_pin: pin, confirmation_phrase: 'INITIALIZE' });
       return { success: true, backupPath: data.backupPath };
     } catch {
-      return { success: false, error: t('settings.initializeFailedGeneric') };
+      return { success: false, error: t('initializeFailedGeneric') };
     }
   };
 
@@ -651,7 +669,7 @@ export default function SettingsPage() {
     api.get('/kds-info').then((res) => {
       setKdsInfo(res.data);
     }).catch(() => {
-      toast.error(t('settings.kdsInfoFetchFailed'));
+      toast.error(t('kdsInfoFetchFailed'));
     }).finally(() => setKdsInfoLoading(false));
   };
 
@@ -670,7 +688,7 @@ export default function SettingsPage() {
     api.get('/server-app-info').then((res) => {
       setServerAppInfo(res.data);
     }).catch(() => {
-      toast.error(t('settings.serverAppInfoFetchFailed', { defaultValue: 'Could not load Server App info' }));
+      toast.error(t('serverAppInfoFetchFailed', { defaultValue: 'Could not load Server App info' }));
     }).finally(() => setServerAppInfoLoading(false));
   };
 
@@ -689,7 +707,7 @@ export default function SettingsPage() {
     api.get('/pos-info').then((res) => {
       setPosInfo(res.data);
     }).catch(() => {
-      toast.error(t('settings.posInfoFetchFailed'));
+      toast.error(t('posInfoFetchFailed'));
     }).finally(() => setPosInfoLoading(false));
   };
 
@@ -774,7 +792,7 @@ export default function SettingsPage() {
 
   const printWidthLabel = (value?: string | null): string => {
     const cols = normalizePrinterWidthValue(value).replace('cols-', '');
-    return t('settings.printColumnsShort', { cols });
+    return t('printColumnsShort', { cols });
   };
 
   const fetchPrinters = () => {
@@ -808,11 +826,11 @@ export default function SettingsPage() {
         payload.port = p.port || 9100;
       }
       await api.post('/printers', payload);
-      toast.success(t('settings.printerQuickAdded', { name: p.name }));
+      toast.success(t('printerQuickAdded', { name: p.name }));
       fetchPrinters();
       refreshHardwarePrinter();
     } catch {
-      toast.error(t('settings.printerAddFailed'));
+      toast.error(t('printerAddFailed'));
     } finally {
       setAddingDetectedName(null);
     }
@@ -835,7 +853,7 @@ export default function SettingsPage() {
   };
 
   const savePrinterHw = async () => {
-    if (!printerForm.name) { toast.error(t('settings.printerNameRequired')); return; }
+    if (!printerForm.name) { toast.error(t('printerNameRequired')); return; }
     setSavingPrinter(true);
     try {
       const payload = {
@@ -847,51 +865,51 @@ export default function SettingsPage() {
       };
       if (editingPrinterId) {
         await api.put(`/printers/${editingPrinterId}`, payload);
-        toast.success(t('settings.printerUpdated'));
+        toast.success(t('printerUpdated'));
       } else {
         await api.post('/printers', payload);
-        toast.success(t('settings.printerSaved'));
+        toast.success(t('printerSaved'));
       }
       fetchPrinters();
       refreshHardwarePrinter();
       setShowPrinterForm(false);
     } catch {
-      toast.error(t('settings.printerSaveFailed'));
+      toast.error(t('printerSaveFailed'));
     } finally {
       setSavingPrinter(false);
     }
   };
 
   const deletePrinterHw = async (id: string) => {
-    if (!await confirm(t('settings.printerDeleteConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
+    if (!await confirm(t('printerDeleteConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
     try {
       await api.delete(`/printers/${id}`);
-      toast.success(t('settings.printerDeleted'));
+      toast.success(t('printerDeleted'));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch { toast.error(t('settings.printerDeleteFailed')); }
+    } catch { toast.error(t('printerDeleteFailed')); }
   };
 
   const setDefaultPrinter = async (id: string) => {
     try {
       await api.post(`/printers/${id}/set-default`);
-      toast.success(t('settings.defaultPrinterSet'));
+      toast.success(t('defaultPrinterSet'));
       fetchPrinters();
       refreshHardwarePrinter();
-    } catch { toast.error(t('settings.actionFailed')); }
+    } catch { toast.error(t('actionFailed')); }
   };
 
   const testPrinterHw = async (printer: HwPrinter) => {
     if (printer.connection_type === 'webusb') {
-      toast(t('settings.webusbTestHint'));
+      toast(t('webusbTestHint'));
       return;
     }
     setTestingPrinterId(printer.id);
     try {
       await api.post(`/printers/${printer.id}/test`);
-      toast.success(t('settings.testPrintSent'));
+      toast.success(t('testPrintSent'));
     } catch {
-      toast.error(t('settings.testPrintFailed'));
+      toast.error(t('testPrintFailed'));
     } finally {
       setTestingPrinterId(null);
     }
@@ -964,7 +982,7 @@ export default function SettingsPage() {
   };
 
   const saveStation = async () => {
-    if (!stationForm.name.trim()) { toast.error(t('settings.stationNameRequired')); return; }
+    if (!stationForm.name.trim()) { toast.error(t('stationNameRequired')); return; }
     setSavingStation(true);
     try {
       const payload = {
@@ -983,24 +1001,24 @@ export default function SettingsPage() {
         await api.put(`/kitchen-stations/${stationId}/users`, { user_ids: stationForm.user_ids });
         await fetchStationUsers(stationId);
       }
-      toast.success(editingStationId ? t('settings.stationUpdated') : t('settings.stationSaved'));
+      toast.success(editingStationId ? t('stationUpdated') : t('stationSaved'));
       setShowStationForm(false);
       fetchStations();
     } catch {
-      toast.error(t('settings.stationSaveFailed'));
+      toast.error(t('stationSaveFailed'));
     } finally {
       setSavingStation(false);
     }
   };
 
   const deleteStation = async (id: string) => {
-    if (!await confirm(t('settings.stationDeleteConfirm'), { destructive: true, confirmLabel: t('common.delete') })) return;
+    if (!await confirm(t('stationDeleteConfirm'), { destructive: true, confirmLabel: tCommon('delete') })) return;
     try {
       await api.delete(`/kitchen-stations/${id}`);
-      toast.success(t('settings.stationDeleted'));
+      toast.success(t('stationDeleted'));
       fetchStations();
     } catch {
-      toast.error(t('settings.stationDeleteFailed'));
+      toast.error(t('stationDeleteFailed'));
     }
   };
 
@@ -1092,7 +1110,7 @@ export default function SettingsPage() {
       ] as const).map(([key, value]) => api.put(`/settings/${key}`, { value: value ? 'true' : 'false' })),
     ]);
     setSavedPrinting(printingForm);
-    if (!silent) toast.success(t('settings.printingSettingsSaved'));
+    if (!silent) toast.success(t('printingSettingsSaved'));
   };
   const resetPrinting = () => setPrintingForm(savedPrinting);
 
@@ -1113,7 +1131,7 @@ export default function SettingsPage() {
       api.put('/settings/bill_footer_message', { value: billForm.billFooterMessage }),
     ]);
     setSavedBillForm(billForm);
-    if (!silent) toast.success(t('settings.billTemplateSaved'));
+    if (!silent) toast.success(t('billTemplateSaved'));
   };
   const resetBillTemplate = () => setBillForm(savedBillForm);
 
@@ -1201,9 +1219,9 @@ export default function SettingsPage() {
       await api.get('/settings/cloud/delete-data/status');
       await Promise.all([fetchCloudAccount(), refreshCloudStatus()]);
       notifyCloudAccountStatusChanged();
-      toast.success(t('settings.cloudDeletionStatusRefreshed'));
+      toast.success(t('cloudDeletionStatusRefreshed'));
     } catch {
-      toast.error(t('settings.cloudDeletionStatusRefreshFailed'));
+      toast.error(t('cloudDeletionStatusRefreshFailed'));
     } finally {
       setRefreshingDeletionStatus(false);
     }
@@ -1357,9 +1375,9 @@ export default function SettingsPage() {
       setOrderNumberForm(loadedOrderNumbering);
       setSavedOrderNumberForm(loadedOrderNumbering);
 
-      toast.success(t('settings.reloadedFromDb'));
+      toast.success(t('reloadedFromDb'));
     } catch {
-      toast.error(t('settings.reloadFailed'));
+      toast.error(t('reloadFailed'));
     }
   };
 
@@ -1407,7 +1425,7 @@ export default function SettingsPage() {
     // kdsInfoLoading already starts true for this initial fetch.
     api.get('/kds-info')
       .then((res) => setKdsInfo(res.data))
-      .catch(() => toast.error(t('settings.kdsInfoFetchFailed')))
+      .catch(() => toast.error(t('kdsInfoFetchFailed')))
       .finally(() => setKdsInfoLoading(false));
     fetchStations();
     fetchStationCategories();
@@ -1635,9 +1653,9 @@ export default function SettingsPage() {
       });
       await fetchCloudAccount();
       notifyCloudAccountStatusChanged();
-      if (!silent) toast.success(t('settings.cloudSaved'));
+      if (!silent) toast.success(t('cloudSaved'));
     } catch (err) {
-      if (!silent) toast.error(t('settings.cloudSaveFailed'));
+      if (!silent) toast.error(t('cloudSaveFailed'));
       throw err;
     } finally {
       setSavingCloud(false);
@@ -1669,10 +1687,10 @@ export default function SettingsPage() {
       await fetchCloudAccount();
       notifyCloudAccountStatusChanged();
       if (res.data.cloud_registration_status === 'registered') {
-        toast.success(t('settings.cloudRegistrationSuccess'));
+        toast.success(t('cloudRegistrationSuccess'));
       }
     } catch {
-      toast.error(t('settings.cloudRegistrationFailed'));
+      toast.error(t('cloudRegistrationFailed'));
     } finally {
       setRegisteringCloud(false);
     }
@@ -1686,7 +1704,7 @@ export default function SettingsPage() {
       await api.put('/settings/telemetry_enabled', { value: enabled ? 'true' : 'false' });
     } catch {
       setTelemetryEnabled(previous);
-      toast.error(t('settings.saveFailed'));
+      toast.error(t('saveFailed'));
     } finally {
       setSavingTelemetry(false);
     }
@@ -1700,7 +1718,7 @@ export default function SettingsPage() {
       await api.put('/settings/diagnostics_consent', { value: enabled ? 'true' : 'false' });
     } catch {
       setDiagnosticsConsent(previous);
-      toast.error(t('settings.saveFailed'));
+      toast.error(t('saveFailed'));
     } finally {
       setSavingDiagnosticsConsent(false);
     }
@@ -1711,18 +1729,18 @@ export default function SettingsPage() {
     try {
       const res = await api.post('/settings/google-drive/connect');
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-      toast.success(t('settings.googleDriveConnectedSuccess'));
+      toast.success(t('googleDriveConnectedSuccess'));
       fetchBackups();
     } catch {
-      toast.error(t('settings.googleDriveConnectFailed'));
+      toast.error(t('googleDriveConnectFailed'));
     } finally {
       setConnectingGoogleDrive(false);
     }
   };
 
   const disconnectGoogleDrive = async () => {
-    const ok = await confirm(t('settings.googleDriveDisconnectConfirm'), {
-      confirmLabel: t('settings.googleDriveDisconnect'),
+    const ok = await confirm(t('googleDriveDisconnectConfirm'), {
+      confirmLabel: t('googleDriveDisconnect'),
       destructive: true,
     });
     if (!ok) return;
@@ -1730,9 +1748,9 @@ export default function SettingsPage() {
     try {
       const res = await api.post('/settings/google-drive/disconnect');
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-      toast.success(t('settings.googleDriveDisconnectedSuccess'));
+      toast.success(t('googleDriveDisconnectedSuccess'));
     } catch {
-      toast.error(t('settings.googleDriveDisconnectFailed'));
+      toast.error(t('googleDriveDisconnectFailed'));
     } finally {
       setDisconnectingGoogleDrive(false);
     }
@@ -1743,10 +1761,10 @@ export default function SettingsPage() {
     try {
       const res = await api.post('/settings/google-drive/backup-now');
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
-      toast.success(t('settings.googleDriveBackupSuccess'));
+      toast.success(t('googleDriveBackupSuccess'));
       fetchBackups();
     } catch {
-      toast.error(t('settings.googleDriveBackupFailed'));
+      toast.error(t('googleDriveBackupFailed'));
       fetchGoogleDriveStatus();
     } finally {
       setBackingUpGoogleDrive(false);
@@ -1762,7 +1780,7 @@ export default function SettingsPage() {
       setGoogleDriveStatus((prev) => ({ ...prev, ...res.data }));
     } catch {
       setGoogleDriveStatus(previous);
-      toast.error(t('settings.googleDriveSavePreferencesFailed'));
+      toast.error(t('googleDriveSavePreferencesFailed'));
     } finally {
       setSavingGoogleDrivePrefs(false);
     }
@@ -1779,11 +1797,11 @@ export default function SettingsPage() {
     setSavingKdsEnabled(true);
     try {
       await api.put('/settings/kds_enabled', { value: enabled ? 'true' : 'false' });
-      toast.success(enabled ? t('settings.kdsEnabledOn', { defaultValue: 'Kitchen Display System enabled' }) : t('settings.kdsEnabledOff', { defaultValue: 'Kitchen Display System disabled' }));
+      toast.success(enabled ? t('kdsEnabledOn', { defaultValue: 'Kitchen Display System enabled' }) : t('kdsEnabledOff', { defaultValue: 'Kitchen Display System disabled' }));
     } catch {
       setKdsEnabledSetting(previous);
       posSettings.setKdsEnabled(previous);
-      toast.error(t('settings.saveFailed'));
+      toast.error(t('saveFailed'));
     } finally {
       setSavingKdsEnabled(false);
     }
@@ -1797,11 +1815,11 @@ export default function SettingsPage() {
       await api.put('/settings/server_app_enabled', { value: enabled ? 'true' : 'false' });
       if (!enabled) setServerAppInfo(null);
       toast.success(enabled
-        ? t('settings.serverAppEnabledOn', { defaultValue: 'Server App enabled' })
-        : t('settings.serverAppEnabledOff', { defaultValue: 'Server App disabled' }));
+        ? t('serverAppEnabledOn', { defaultValue: 'Server App enabled' })
+        : t('serverAppEnabledOff', { defaultValue: 'Server App disabled' }));
     } catch {
       setServerAppEnabledSetting(previous);
-      toast.error(t('settings.saveFailed'));
+      toast.error(t('saveFailed'));
     } finally {
       setSavingServerAppEnabled(false);
     }
@@ -1814,11 +1832,11 @@ export default function SettingsPage() {
     setSavingKotPrintingEnabled(true);
     try {
       await api.put('/settings/kot_printing_enabled', { value: enabled ? 'true' : 'false' });
-      toast.success(enabled ? t('settings.kotPrintingEnabledOn', { defaultValue: 'KOT printing enabled' }) : t('settings.kotPrintingEnabledOff', { defaultValue: 'KOT printing disabled' }));
+      toast.success(enabled ? t('kotPrintingEnabledOn', { defaultValue: 'KOT printing enabled' }) : t('kotPrintingEnabledOff', { defaultValue: 'KOT printing disabled' }));
     } catch {
       setKotPrintingEnabledSetting(previous);
       posSettings.setKotPrintingEnabled(previous);
-      toast.error(t('settings.saveFailed'));
+      toast.error(t('saveFailed'));
     } finally {
       setSavingKotPrintingEnabled(false);
     }
@@ -1835,9 +1853,9 @@ export default function SettingsPage() {
       setSavedLoyaltyEnabled(loyaltyEnabled);
       setGlobalCashbackPercent(String(parsedRate));
       setSavedGlobalCashbackPercent(String(parsedRate));
-      if (!silent) toast.success(t('settings.loyaltySaved'));
+      if (!silent) toast.success(t('loyaltySaved'));
     } catch (err) {
-      if (!silent) toast.error(t('settings.saveFailed'));
+      if (!silent) toast.error(t('saveFailed'));
       throw err;
     } finally {
       setSavingLoyalty(false);
@@ -1850,9 +1868,9 @@ export default function SettingsPage() {
       const res = await api.post('/products/loyalty/apply-global-rate');
       const updated = Number(res.data.updated) || 0;
       setGlobalRateCandidates(0);
-      toast.success(t('settings.applyGlobalRateDone', { count: updated }));
+      toast.success(t('applyGlobalRateDone', { count: updated }));
     } catch {
-      toast.error(t('settings.saveFailed'));
+      toast.error(t('saveFailed'));
     } finally {
       setApplyingGlobalRate(false);
     }
@@ -1871,9 +1889,9 @@ export default function SettingsPage() {
       setSavedDiscountMaxAmount(normalizeDiscountAmount(discountMaxAmount));
       setSavedDiscountMode(discountMode);
       setSavedDiscountRequiresApproval(discountRequiresApproval);
-      if (!silent) toast.success(t('settings.discountSaved'));
+      if (!silent) toast.success(t('discountSaved'));
     } catch (err) {
-      if (!silent) toast.error(t('settings.saveFailed'));
+      if (!silent) toast.error(t('saveFailed'));
       throw err;
     } finally {
       setSavingDiscount(false);
@@ -1883,7 +1901,7 @@ export default function SettingsPage() {
   const saveBusinessInfo = async (silent = false) => {
     const norm = normalizeOptionalPhone(form.businessPhone, form.countryCode || 'IN');
     if (!norm.valid) {
-      toast.error(t('settings.invalidPhoneFormat', { defaultValue: 'Invalid phone number format' }));
+      toast.error(t('invalidPhoneFormat', { defaultValue: 'Invalid phone number format' }));
       return;
     }
     const normalizedBusinessPhone = norm.e164 ?? '';
@@ -1928,9 +1946,9 @@ export default function SettingsPage() {
                 diagnostics: { country: form.countryCode },
               }).catch(() => {});
               await api.put('/settings/taxes_enabled', { value: 'false' }).catch(() => {});
-              toast.error(t('settings.taxSupportUnavailable', { country: form.countryCode }));
+              toast.error(t('taxSupportUnavailable', { country: form.countryCode }));
             } else {
-              toast.error(t('settings.countrySavedTaxPluginFailed'));
+              toast.error(t('countrySavedTaxPluginFailed'));
             }
           }
         }
@@ -1944,10 +1962,10 @@ export default function SettingsPage() {
       posSettings.setBillingType(form.billingType);
       posSettings.setTablesRequired(form.tablesRequired);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
-      if (!silent) toast.success(t('settings.storeSaved'));
+      if (!silent) toast.success(t('storeSaved'));
     } catch (err) {
       if (!silent) {
-        const message = t('settings.saveFailed');
+        const message = t('saveFailed');
         toast.error(message);
       }
       throw err;
@@ -1959,12 +1977,12 @@ export default function SettingsPage() {
   const saveOrderNumbering = async (silent = false) => {
     const prefix = orderNumberForm.prefix.trim();
     if (prefix && !/^[A-Za-z0-9_-]{0,12}$/.test(prefix)) {
-      toast.error(t('settings.orderNumberPrefixInvalid', { defaultValue: 'Prefix must be up to 12 characters (letters, numbers, - or _)' }));
+      toast.error(t('orderNumberPrefixInvalid', { defaultValue: 'Prefix must be up to 12 characters (letters, numbers, - or _)' }));
       return;
     }
     const invoicePrefix = orderNumberForm.invoicePrefix.trim();
     if (invoicePrefix && !/^[A-Za-z0-9_-]{0,12}$/.test(invoicePrefix)) {
-      toast.error(t('settings.invoiceNumberPrefixInvalid', { defaultValue: 'Invoice prefix must be up to 12 characters (letters, numbers, - or _)' }));
+      toast.error(t('invoiceNumberPrefixInvalid', { defaultValue: 'Invoice prefix must be up to 12 characters (letters, numbers, - or _)' }));
       return;
     }
     setSavingOrderNumbering(true);
@@ -1982,9 +2000,9 @@ export default function SettingsPage() {
       const saved = { ...orderNumberForm, prefix, invoicePrefix };
       setOrderNumberForm(saved);
       setSavedOrderNumberForm(saved);
-      if (!silent) toast.success(t('settings.orderNumberingSaved', { defaultValue: 'Numbering settings saved' }));
+      if (!silent) toast.success(t('orderNumberingSaved', { defaultValue: 'Numbering settings saved' }));
     } catch (err) {
-      if (!silent) toast.error(t('settings.saveFailed'));
+      if (!silent) toast.error(t('saveFailed'));
       throw err;
     } finally {
       setSavingOrderNumbering(false);
@@ -2003,9 +2021,9 @@ export default function SettingsPage() {
       await Promise.all([saveBusinessInfo(true), saveLoyalty(true), saveDiscount(true), saveCloud(true), saveOrderNumbering(true)]);
       await savePrinting(true);
       await saveBillTemplate(true);
-      toast.success(t('settings.allSaved'));
+      toast.success(t('allSaved'));
     } catch {
-      toast.error(t('settings.allSaveFailed'));
+      toast.error(t('allSaveFailed'));
     }
   };
 
@@ -2017,11 +2035,11 @@ export default function SettingsPage() {
       setPairingExpiresAt(res.data.expires_at);
       setPairingQrDataUrl(res.data.qr_data_url || null);
       setPairingUnavailable(false);
-      toast.success(t('settings.pairingCodeRotated'));
+      toast.success(t('pairingCodeRotated'));
       loadPairedDevices();
     } catch {
       // Show a localized failure; the specific backend reason stays in logs.
-      toast.error(t('settings.pairingCodeFailed'));
+      toast.error(t('pairingCodeFailed'));
     } finally {
       setRotatingCode(false);
     }
@@ -2036,8 +2054,8 @@ export default function SettingsPage() {
   };
 
   const paperSizeOptions: { value: PaperSize; label: string }[] = [
-    { value: 'thermal58', label: t('settings.paperSize58') },
-    { value: 'thermal80', label: t('settings.paperSize80') },
+    { value: 'thermal58', label: t('paperSize58') },
+    { value: 'thermal80', label: t('paperSize80') },
   ];
 
   const isDirty = 
@@ -2088,56 +2106,56 @@ export default function SettingsPage() {
         <div className="w-full md:w-40 md:min-w-[10rem] shrink-0 md:sticky md:top-0">
           <div className="flex items-center gap-3 mb-6">
             <Settings size={28} className="text-brand" />
-            <h1 className="text-2xl font-bold text-gray-900">{t('settings.title')}</h1>
+            <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
           </div>
 
            <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible border-b md:border-b-0 md:border-e border-gray-200 pb-2 md:pb-0 md:pe-2">
 
             {/* General group */}
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupGeneral')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupGeneral')}</p>
             </div>
-            <SettingsNavItem label={t('settings.storeDetails')} value="store" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tabPrinters')} value="receipts-printers" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.paymentMethods', { defaultValue: 'Payments' })} value="payments" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('storeDetails')} value="store" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabPrinters')} value="receipts-printers" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('paymentMethods', { defaultValue: 'Payments' })} value="payments" active={activeTab} onClick={setActiveTab} />
             {canViewTaxConfiguration && (
-              <SettingsNavItem label={t('settings.taxConfiguration')} value="tax" active={activeTab} onClick={setActiveTab} />
+              <SettingsNavItem label={t('taxConfiguration')} value="tax" active={activeTab} onClick={setActiveTab} />
             )}
 
             {/* Operations group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupOperations')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupOperations')}</p>
             </div>
-            <SettingsNavItem label={t('settings.posWorkflow')} value="pos" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tabKds')} value="kds" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tablesideOrdering')} value="server-app" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('posWorkflow')} value="pos" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tablesideOrdering')} value="server-app" active={activeTab} onClick={setActiveTab} />
             {/* WhatsApp opt-in lives under Operations because the receive-bill
                 workflow is what the cashier touches every time a customer pays. */}
-            <SettingsNavItem label={t('settings.tabWhatsapp')} value="whatsapp" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={setActiveTab} />
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupCustomers')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupCustomers')}</p>
             </div>
-            <SettingsNavItem label={t('settings.loyalty')} value="loyalty" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.discounts')} value="discounts" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('loyalty')} value="loyalty" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('discounts')} value="discounts" active={activeTab} onClick={setActiveTab} />
 
             {/* Integrations group (formerly "Data") */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupData')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupData')}</p>
             </div>
-            <SettingsNavItem label={t('settings.tabMobileAccess')} value="mobile-access" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tabBackupData')} value="data" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tabOrderflow')} value="orderflow" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabMobileAccess')} value="mobile-access" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabOrderflow')} value="orderflow" active={activeTab} onClick={setActiveTab} />
 
             {/* Account group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
-              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('settings.navGroupAccount')}</p>
+              <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupAccount')}</p>
             </div>
-            <SettingsNavItem label={t('settings.account')} value="account" active={activeTab} onClick={setActiveTab} attention={cloudDeletionNeedsAction || (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))} />
-            <SettingsNavItem label={t('settings.privacy')} value="privacy" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tabUpdates')} value="updates" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('settings.tabAbout')} value="about" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={setActiveTab} attention={cloudDeletionNeedsAction || (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))} />
+            <SettingsNavItem label={t('privacy')} value="privacy" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabUpdates')} value="updates" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabAbout')} value="about" active={activeTab} onClick={setActiveTab} />
 
           </nav>
         </div>
@@ -2150,17 +2168,17 @@ export default function SettingsPage() {
             <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Building2 size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.storeDetails')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('storeDetails')}</h2>
                 {!isAdmin && (
                   <span className="ms-auto flex items-center gap-1 text-xs text-gray-400">
-                    <Lock size={12} /> {t('settings.adminOnly')}
+                    <Lock size={12} /> {t('adminOnly')}
                   </span>
                 )}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.businessName')}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('businessName')}</label>
                   {isAdmin ? (
                     <input type="text" value={form.businessName} onChange={(e) => setForm((p) => ({ ...p, businessName: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
@@ -2172,9 +2190,9 @@ export default function SettingsPage() {
                 <div className="md:col-span-2 space-y-2">
                   {/* Headings */}
                   <div className="grid grid-cols-3 gap-2">
-                    <label className="text-sm text-gray-500">{t('settings.country')}</label>
-                    <label className="text-sm text-gray-500">{t('settings.timezone')}</label>
-                    <label className="text-sm text-gray-500">{t('settings.currency')}</label>
+                    <label className="text-sm text-gray-500">{t('country')}</label>
+                    <label className="text-sm text-gray-500">{t('timezone')}</label>
+                    <label className="text-sm text-gray-500">{t('currency')}</label>
                   </div>
                   
                   {/* Input fields */}
@@ -2191,10 +2209,10 @@ export default function SettingsPage() {
                             timezone: country?.timezone || p.timezone,
                           }));
                         }}
-                        aria-label={t('common.search')}
+                        aria-label={tCommon('search')}
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
                       >
-                        <option value="">{t('settings.selectCountry')}</option>
+                        <option value="">{t('selectCountry')}</option>
                         {COUNTRIES.map((c) => (
                           <option key={c.code} value={c.code}>{countryName(c.code)}</option>
                         ))}
@@ -2203,7 +2221,7 @@ export default function SettingsPage() {
                         type="text" 
                         value={form.timezone} 
                         onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
-                        placeholder={t('settings.timezoneAutoFilled')}
+                        placeholder={t('timezoneAutoFilled')}
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-gray-50" 
                         readOnly
                         dir="ltr"
@@ -2212,7 +2230,7 @@ export default function SettingsPage() {
                         type="text" 
                         value={form.currency} 
                         onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
-                        placeholder={t('settings.currencyAutoFilled')}
+                        placeholder={t('currencyAutoFilled')}
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-gray-50" 
                         readOnly
                         dir="ltr"
@@ -2246,54 +2264,54 @@ export default function SettingsPage() {
                   }))}
                 />
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.billingType')}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('billingType')}</label>
                   {isAdmin ? (
                     <select value={form.billingType}
                       onChange={(e) => setForm((p) => ({ ...p, billingType: e.target.value as 'postpaid' | 'prepaid' }))}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white">
-                      <option value="postpaid">{t('settings.billingTypePostpaid')}</option>
-                      <option value="prepaid">{t('settings.billingTypePrepaid')}</option>
+                      <option value="postpaid">{t('billingTypePostpaid')}</option>
+                      <option value="prepaid">{t('billingTypePrepaid')}</option>
                     </select>
                   ) : (
                     <p className="font-medium text-gray-900 capitalize">{form.billingType}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.tablesRequired')}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('tablesRequired')}</label>
                   {isAdmin ? (
                     <select
                       value={form.tablesRequired ? 'yes' : 'no'}
                       onChange={(e) => setForm((p) => ({ ...p, tablesRequired: e.target.value === 'yes' }))}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
                     >
-                      <option value="yes">{t('settings.tablesRequiredYes')}</option>
-                      <option value="no">{t('settings.tablesRequiredNo')}</option>
+                      <option value="yes">{t('tablesRequiredYes')}</option>
+                      <option value="no">{t('tablesRequiredNo')}</option>
                     </select>
                   ) : (
-                    <p className="font-medium text-gray-900">{form.tablesRequired ? t('settings.yes') : t('settings.no')}</p>
+                    <p className="font-medium text-gray-900">{form.tablesRequired ? t('yes') : t('no')}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.taxRegistered', { defaultValue: 'Tax Registered' })}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('taxRegistered', { defaultValue: 'Tax Registered' })}</label>
                   {isAdmin ? (
                     <select
                       value={form.taxRegistered ? 'yes' : 'no'}
                       onChange={(e) => setForm((p) => ({ ...p, taxRegistered: e.target.value === 'yes' }))}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
                     >
-                      <option value="yes">{t('settings.yes')}</option>
-                      <option value="no">{t('settings.no')}</option>
+                      <option value="yes">{t('yes')}</option>
+                      <option value="no">{t('no')}</option>
                     </select>
                   ) : (
-                    <p className="font-medium text-gray-900">{form.taxRegistered ? t('settings.yes') : t('settings.no')}</p>
+                    <p className="font-medium text-gray-900">{form.taxRegistered ? t('yes') : t('no')}</p>
                   )}
                 </div>
                 {form.taxRegistered ? (
                   <div>
-                    <label className="block text-sm text-gray-500 mb-1">{t('settings.taxIdLabel')}</label>
+                    <label className="block text-sm text-gray-500 mb-1">{t('taxIdLabel')}</label>
                     {isAdmin ? (
                       <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
-                        placeholder={t('settings.taxIdPlaceholder')}
+                        placeholder={t('taxIdPlaceholder')}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                     ) : (
                       <p className="font-medium text-gray-900"><Ltr>{form.taxRegistrationNumber || '—'}</Ltr></p>
@@ -2301,35 +2319,35 @@ export default function SettingsPage() {
                   </div>
                 ) : <div className="hidden md:block" />}
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.phone')}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('phone')}</label>
                   {isAdmin ? (
                     <input type="text" value={form.businessPhone} onChange={(e) => setForm((p) => ({ ...p, businessPhone: e.target.value }))}
-                      placeholder={t('settings.phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1', defaultValue: '+1 555 000 0000' })}
+                      placeholder={t('phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1', defaultValue: '+1 555 000 0000' })}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                   ) : (
                     <p className="font-medium text-gray-900"><Ltr>{form.businessPhone || '—'}</Ltr></p>
                   )}
                 </div>
                 <div className="md:col-span-2">
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.address')}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('address')}</label>
                   {isAdmin ? (
                     <textarea value={form.businessAddress} onChange={(e) => setForm((p) => ({ ...p, businessAddress: e.target.value }))}
-                      rows={2} placeholder={t('settings.addressPlaceholder')}
+                      rows={2} placeholder={t('addressPlaceholder')}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
                   ) : (
                     <p className="font-medium text-gray-900">{form.businessAddress || '—'}</p>
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.instagramHandle')}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('instagramHandle')}</label>
                   {isAdmin ? (
                     <input type="text" value={form.instagramHandle} onChange={(e) => setForm((p) => ({ ...p, instagramHandle: e.target.value }))}
-                      placeholder={t('settings.instagramPlaceholder')}
+                      placeholder={t('instagramPlaceholder')}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                   ) : (
                     <p className="font-medium text-gray-900">{form.instagramHandle || '—'}</p>
                   )}
-                  <p className="text-xs text-gray-500 mt-1">{t('settings.instagramHint')}</p>
+                  <p className="text-xs text-gray-500 mt-1">{t('instagramHint')}</p>
                 </div>
               </div>
 
@@ -2343,18 +2361,18 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Hash size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.orderNumberFormat', { defaultValue: 'Number Formats' })}</h2>
+                <h2 className="font-semibold text-gray-900">{t('orderNumberFormat', { defaultValue: 'Number Formats' })}</h2>
                 {!isAdmin && (
                   <span className="ms-auto flex items-center gap-1 text-xs text-gray-400">
-                    <Lock size={12} /> {t('settings.adminOnly')}
+                    <Lock size={12} /> {t('adminOnly')}
                   </span>
                 )}
               </div>
 
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('settings.orderNumbers', { defaultValue: 'Order numbers' })}</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('orderNumbers', { defaultValue: 'Order numbers' })}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.orderNumberPrefix', { defaultValue: 'Prefix' })}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('orderNumberPrefix', { defaultValue: 'Prefix' })}</label>
                   {isAdmin ? (
                     <input
                       type="text"
@@ -2369,7 +2387,7 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('settings.orderNumberPreview', { defaultValue: 'Preview' })}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('orderNumberPreview', { defaultValue: 'Preview' })}</label>
                   <p className="font-mono font-medium text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
                     <Ltr>{[
                       orderNumberForm.prefix,
@@ -2383,8 +2401,8 @@ export default function SettingsPage() {
               <div className="mt-5 pt-5 border-t border-gray-100 space-y-3">
                 <div className="flex items-center justify-between py-2">
                   <div>
-                    <span className="text-sm text-gray-700">{t('settings.orderNumberIncludeDate', { defaultValue: 'Include date in order number' })}</span>
-                    <p className="text-xs text-gray-500">{t('settings.orderNumberIncludeDateHint', { defaultValue: 'Adds the current date (YYYYMMDD) after the prefix.' })}</p>
+                    <span className="text-sm text-gray-700">{t('orderNumberIncludeDate', { defaultValue: 'Include date in order number' })}</span>
+                    <p className="text-xs text-gray-500">{t('orderNumberIncludeDateHint', { defaultValue: 'Adds the current date (YYYYMMDD) after the prefix.' })}</p>
                   </div>
                   <Toggle
                     value={orderNumberForm.includeDate}
@@ -2393,8 +2411,8 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center justify-between py-2">
                   <div>
-                    <span className="text-sm text-gray-700">{t('settings.orderNumberResetDaily', { defaultValue: 'Reset series every 24 hours' })}</span>
-                    <p className="text-xs text-gray-500">{t('settings.orderNumberResetDailyHint', { defaultValue: 'Numbering restarts from 1 at midnight in the store’s timezone.' })}</p>
+                    <span className="text-sm text-gray-700">{t('orderNumberResetDaily', { defaultValue: 'Reset series every 24 hours' })}</span>
+                    <p className="text-xs text-gray-500">{t('orderNumberResetDailyHint', { defaultValue: 'Numbering restarts from 1 at midnight in the store’s timezone.' })}</p>
                   </div>
                   <Toggle
                     value={orderNumberForm.resetDaily}
@@ -2404,10 +2422,10 @@ export default function SettingsPage() {
               </div>
 
               <div className="mt-6 pt-5 border-t border-gray-100">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('settings.invoiceNumbers', { defaultValue: 'Invoice numbers' })}</h3>
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('invoiceNumbers', { defaultValue: 'Invoice numbers' })}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm text-gray-500 mb-1">{t('settings.invoiceNumberPrefix', { defaultValue: 'Prefix' })}</label>
+                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceNumberPrefix', { defaultValue: 'Prefix' })}</label>
                     {isAdmin ? (
                       <input
                         type="text"
@@ -2422,7 +2440,7 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-500 mb-1">{t('settings.invoiceNumberPreview', { defaultValue: 'Preview' })}</label>
+                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceNumberPreview', { defaultValue: 'Preview' })}</label>
                     <p className="font-mono font-medium text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
                       <Ltr>{[
                         orderNumberForm.invoicePrefix,
@@ -2436,17 +2454,17 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-500 mb-1">{t('settings.invoiceResetPeriod', { defaultValue: 'Reset series' })}</label>
+                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceResetPeriod', { defaultValue: 'Reset series' })}</label>
                     {isAdmin ? (
                       <select
                         value={orderNumberForm.invoiceResetPeriod}
                         onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceResetPeriod: e.target.value as InvoiceResetPeriod }))}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
                       >
-                        <option value="daily">{t('settings.invoiceResetDaily', { defaultValue: 'Daily' })}</option>
-                        <option value="monthly">{t('settings.invoiceResetMonthly', { defaultValue: 'Monthly' })}</option>
-                        <option value="financial_year">{t('settings.invoiceResetFinancialYear', { defaultValue: 'Financial year' })}</option>
-                        <option value="never">{t('settings.invoiceResetNever', { defaultValue: 'Never' })}</option>
+                        <option value="daily">{t('invoiceResetDaily', { defaultValue: 'Daily' })}</option>
+                        <option value="monthly">{t('invoiceResetMonthly', { defaultValue: 'Monthly' })}</option>
+                        <option value="financial_year">{t('invoiceResetFinancialYear', { defaultValue: 'Financial year' })}</option>
+                        <option value="never">{t('invoiceResetNever', { defaultValue: 'Never' })}</option>
                       </select>
                     ) : (
                       <p className="font-medium text-gray-900">{orderNumberForm.invoiceResetPeriod.replace('_', ' ')}</p>
@@ -2455,7 +2473,7 @@ export default function SettingsPage() {
                   {orderNumberForm.invoiceResetPeriod === 'financial_year' && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('settings.financialYearStartMonth', { defaultValue: 'FY start month' })}</label>
+                        <label className="block text-sm text-gray-500 mb-1">{t('financialYearStartMonth', { defaultValue: 'FY start month' })}</label>
                         <input
                           type="number"
                           min={1}
@@ -2467,7 +2485,7 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('settings.financialYearStartDay', { defaultValue: 'FY start day' })}</label>
+                        <label className="block text-sm text-gray-500 mb-1">{t('financialYearStartDay', { defaultValue: 'FY start day' })}</label>
                         <input
                           type="number"
                           min={1}
@@ -2485,8 +2503,8 @@ export default function SettingsPage() {
                 <div className="mt-5 pt-5 border-t border-gray-100">
                   <div className="flex items-center justify-between py-2">
                     <div>
-                      <span className="text-sm text-gray-700">{t('settings.invoiceNumberIncludePeriod', { defaultValue: 'Include period in invoice number' })}</span>
-                      <p className="text-xs text-gray-500">{t('settings.invoiceNumberIncludePeriodHint', { defaultValue: 'Adds the date, month, or financial year after the prefix.' })}</p>
+                      <span className="text-sm text-gray-700">{t('invoiceNumberIncludePeriod', { defaultValue: 'Include period in invoice number' })}</span>
+                      <p className="text-xs text-gray-500">{t('invoiceNumberIncludePeriodHint', { defaultValue: 'Adds the date, month, or financial year after the prefix.' })}</p>
                     </div>
                     <Toggle
                       value={orderNumberForm.invoiceIncludePeriod}
@@ -2502,36 +2520,35 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <CreditCard size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.subscription')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('subscription')}</h2>
               </div>
               <div className="space-y-3">
                 <div>
-                  <p className="text-sm text-gray-500">{t('settings.plan')}</p>
+                  <p className="text-sm text-gray-500">{t('plan')}</p>
                   <p className="font-medium text-gray-900 capitalize">{currentTenant?.plan}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">{t('settings.status')}</p>
+                  <p className="text-sm text-gray-500">{t('status')}</p>
                   <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
                     currentTenant?.status === 'active' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                   }`}>
-                    {t(TENANT_STATUS_LABEL_KEYS[currentTenant?.status ?? ''] ?? currentTenant?.status ?? '')}
+                    {tenantStatusLabel(currentTenant?.status, tCommon)}
                   </span>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500 mb-1">{t('settings.languages')}</p>
+                  <p className="text-sm text-gray-500 mb-1">{t('languages')}</p>
                   <select
                     value={language}
                     onChange={(e) => {
                       const lang = e.target.value as Language;
                       setLanguage(lang);
-                      api.put('/settings/business', { language: lang }).catch(() => toast.error(t('settings.saveFailed')));
+                      api.put('/settings/business', { language: lang }).catch(() => toast.error(t('saveFailed')));
                     }}
                     className="block w-full rounded-md border-gray-200 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
                   >
-                    <option value="en">{t('settings.languageEn')}</option>
-                    <option value="es">{t('settings.languageEs')}</option>
-                    <option value="pt">{t('settings.languagePt')}</option>
-                    <option value="fa">{t('settings.languageFa')}</option>
+                    {SELECTABLE_LANGUAGES.map((lang) => (
+                      <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -2557,16 +2574,16 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Monitor size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.posDisplay')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('posDisplay')}</h2>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900">{t('settings.showProductImages')}</p>
-                  <p className="text-sm text-gray-500">{t('settings.showProductImagesHint')}</p>
+                  <p className="font-medium text-gray-900">{t('showProductImages')}</p>
+                  <p className="text-sm text-gray-500">{t('showProductImagesHint')}</p>
                 </div>
                 <Toggle value={posSettings.showProductImages} onChange={(v) => {
                   posSettings.setShowProductImages(v);
-                  toast.success(v ? t('settings.productImagesEnabled', { defaultValue: 'Product images enabled' }) : t('settings.productImagesDisabled', { defaultValue: 'Product images disabled' }), { id: 'pos-local' });
+                  toast.success(v ? t('productImagesEnabled', { defaultValue: 'Product images enabled' }) : t('productImagesDisabled', { defaultValue: 'Product images disabled' }), { id: 'pos-local' });
                 }} />
               </div>
             </div>
@@ -2575,28 +2592,28 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Users size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.posWorkflow')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('posWorkflow')}</h2>
               </div>
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('settings.customerMandatory')}</p>
-                    <p className="text-sm text-gray-500">{t('settings.customerMandatoryHint')}</p>
+                    <p className="font-medium text-gray-900">{t('customerMandatory')}</p>
+                    <p className="text-sm text-gray-500">{t('customerMandatoryHint')}</p>
                   </div>
                   <Toggle value={posSettings.customerMandatory} onChange={(v) => {
                     posSettings.setCustomerMandatory(v);
-                    toast.success(v ? t('settings.customerMandatoryEnabled', { defaultValue: 'Mandatory customer enabled' }) : t('settings.customerMandatoryDisabled', { defaultValue: 'Mandatory customer disabled' }), { id: 'pos-local' });
+                    toast.success(v ? t('customerMandatoryEnabled', { defaultValue: 'Mandatory customer enabled' }) : t('customerMandatoryDisabled', { defaultValue: 'Mandatory customer disabled' }), { id: 'pos-local' });
                   }} />
                 </div>
-                <p className="text-sm text-gray-500">{t('settings.phoneDigitsDerived')}</p>
+                <p className="text-sm text-gray-500">{t('phoneDigitsDerived')}</p>
                 <div className="flex items-center justify-between gap-4 pt-2 border-t border-gray-100">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('settings.enforcePhoneLength', { defaultValue: 'Enforce Phone Number Length' })}</p>
-                    <p className="text-sm text-gray-500">{t('settings.enforcePhoneLengthHint', { defaultValue: 'Automatically jump to the Name field once a valid phone number for your country has been typed — e.g. 10 digits for India.' })}</p>
+                    <p className="font-medium text-gray-900">{t('enforcePhoneLength', { defaultValue: 'Enforce Phone Number Length' })}</p>
+                    <p className="text-sm text-gray-500">{t('enforcePhoneLengthHint', { defaultValue: 'Automatically jump to the Name field once a valid phone number for your country has been typed — e.g. 10 digits for India.' })}</p>
                   </div>
                   <Toggle value={posSettings.enforcePhoneLength} onChange={(v) => {
                     posSettings.setEnforcePhoneLength(v);
-                    toast.success(v ? t('settings.enforcePhoneLengthEnabled', { defaultValue: 'Phone length enforcement enabled' }) : t('settings.enforcePhoneLengthDisabled', { defaultValue: 'Phone length enforcement disabled' }), { id: 'pos-local' });
+                    toast.success(v ? t('enforcePhoneLengthEnabled', { defaultValue: 'Phone length enforcement enabled' }) : t('enforcePhoneLengthDisabled', { defaultValue: 'Phone length enforcement disabled' }), { id: 'pos-local' });
                   }} />
                 </div>
               </div>
@@ -2606,10 +2623,10 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Smartphone size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.posPairing')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('posPairing')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-5">
-                {t('settings.posPairingHint')}
+                {t('posPairingHint')}
               </p>
 
               {posInfoLoading && (
@@ -2626,7 +2643,7 @@ export default function SettingsPage() {
                         {posInfo.ips_data.map((ipInfo: { ip: string; url: string; qr_data: string | null }, idx: number) => (
                           <div key={idx} className="flex flex-col items-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
                             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                              {ipInfo.ip.startsWith('100.') ? t('settings.vpnMeshNetwork') : t('settings.localNetwork')}
+                              {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}
                             </p>
                             {ipInfo.qr_data ? (
                               <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-white p-2 border border-gray-100" />
@@ -2644,12 +2661,12 @@ export default function SettingsPage() {
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <div className="flex items-start gap-3">
                           <div className="flex-1">
-                            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('settings.appleDevices')}</p>
+                            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
                             <Ltr as="a" href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
                               {posInfo.mdns_url}
                             </Ltr>
                             <p className="text-xs text-blue-600 mt-2">
-                              {t('settings.appleDevicesHint')}
+                              {t('appleDevicesHint')}
                             </p>
                           </div>
                         </div>
@@ -2659,7 +2676,7 @@ export default function SettingsPage() {
                     <div className="flex flex-col sm:flex-row gap-6 items-start">
                       <div className="shrink-0">
                         {posInfo.qr_data_url ? (
-                          <img src={posInfo.qr_data_url} alt={t('settings.posQrAlt')} className="w-48 h-48 rounded-xl border border-gray-200" />
+                          <img src={posInfo.qr_data_url} alt={t('posQrAlt')} className="w-48 h-48 rounded-xl border border-gray-200" />
                         ) : (
                           <div className="w-48 h-48 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400">
                             <QrCode size={48} />
@@ -2668,13 +2685,13 @@ export default function SettingsPage() {
                       </div>
                       <div className="flex-1 space-y-4">
                         <div>
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.directIp')}</p>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('directIp')}</p>
                           <Ltr as="a" href={posInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
                             {posInfo.ip_url}
                           </Ltr>
                         </div>
                         <div>
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.mdnsAlwaysStable')}</p>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('mdnsAlwaysStable')}</p>
                           <Ltr as="a" href={posInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
                             {posInfo.mdns_url}
                           </Ltr>
@@ -2687,7 +2704,7 @@ export default function SettingsPage() {
                     <button onClick={fetchPosInfo} disabled={posInfoLoading}
                       className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800">
                       <RefreshCw size={14} className={posInfoLoading ? 'animate-spin' : ''} />
-                      {t('settings.refreshUrls')}
+                      {t('refreshUrls')}
                     </button>
                   </div>
                 </div>
@@ -2696,11 +2713,11 @@ export default function SettingsPage() {
               {!posInfo && !posInfoLoading && (
                 <>
                   <p className="text-sm text-gray-500 mb-3">
-                    {t('settings.posLoadHint')}
+                    {t('posLoadHint')}
                   </p>
                   <button onClick={fetchPosInfo}
                     className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
-                    {t('settings.loadPosInfo')}
+                    {t('loadPosInfo')}
                   </button>
                 </>
               )}
@@ -2715,8 +2732,8 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900">{t('settings.kdsEnabledToggle', { defaultValue: 'Kitchen Display System' })}</p>
-                  <p className="text-sm text-gray-500">{t('settings.kdsEnabledToggleHint', { defaultValue: 'Show the Kitchen Display and allow devices to pair over your network. Turn this off if this business doesn’t use a KDS.' })}</p>
+                  <p className="font-medium text-gray-900">{t('kdsEnabledToggle', { defaultValue: 'Kitchen Display System' })}</p>
+                  <p className="text-sm text-gray-500">{t('kdsEnabledToggleHint', { defaultValue: 'Show the Kitchen Display and allow devices to pair over your network. Turn this off if this business doesn’t use a KDS.' })}</p>
                 </div>
                 <Toggle value={kdsEnabledSetting} onChange={(v) => { if (!savingKdsEnabled) saveKdsEnabled(v); }} />
               </div>
@@ -2724,7 +2741,7 @@ export default function SettingsPage() {
                 <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                   <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-800">
-                    {t('settings.kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
+                    {t('kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
                   </p>
                 </div>
               )}
@@ -2732,7 +2749,7 @@ export default function SettingsPage() {
 
             {!kdsEnabledSetting && (
               <p className="text-sm text-gray-400 italic">
-                {t('settings.kdsPairingHiddenHint', { defaultValue: 'Pairing is hidden while the Kitchen Display System is disabled.' })}
+                {t('kdsPairingHiddenHint', { defaultValue: 'Pairing is hidden while the Kitchen Display System is disabled.' })}
               </p>
             )}
 
@@ -2740,10 +2757,10 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <ChefHat size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.kds')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('kds')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-5">
-                {t('settings.kdsPairingHint')}
+                {t('kdsPairingHint')}
               </p>
 
               {kdsInfoLoading && (
@@ -2760,7 +2777,7 @@ export default function SettingsPage() {
                         {kdsInfo.ips_data.map((ipInfo: { ip: string; url: string; qr_data: string | null }, idx: number) => (
                           <div key={idx} className="flex flex-col items-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
                             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                              {ipInfo.ip.startsWith('100.') ? t('settings.vpnMeshNetwork') : t('settings.localNetwork')}
+                              {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}
                             </p>
                             {ipInfo.qr_data ? (
                               <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-white p-2 border border-gray-100" />
@@ -2778,12 +2795,12 @@ export default function SettingsPage() {
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                         <div className="flex items-start gap-3">
                           <div className="flex-1">
-                            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('settings.appleDevices')}</p>
+                            <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
                             <Ltr as="a" href={kdsInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
                               {kdsInfo.mdns_url}
                             </Ltr>
                             <p className="text-xs text-blue-600 mt-2">
-                              {t('settings.appleDevicesHint')}
+                              {t('appleDevicesHint')}
                             </p>
                           </div>
                         </div>
@@ -2793,7 +2810,7 @@ export default function SettingsPage() {
                     <div className="flex flex-col sm:flex-row gap-6 items-start">
                       <div className="shrink-0">
                         {kdsInfo.qr_data_url ? (
-                          <img src={kdsInfo.qr_data_url} alt={t('settings.kdsQrAlt')} className="w-48 h-48 rounded-xl border border-gray-200" />
+                          <img src={kdsInfo.qr_data_url} alt={t('kdsQrAlt')} className="w-48 h-48 rounded-xl border border-gray-200" />
                         ) : (
                           <div className="w-48 h-48 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400">
                             <QrCode size={48} />
@@ -2802,13 +2819,13 @@ export default function SettingsPage() {
                       </div>
                       <div className="flex-1 space-y-4">
                         <div>
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.directIp')}</p>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('directIp')}</p>
                           <Ltr as="a" href={kdsInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
                             {kdsInfo.ip_url}
                           </Ltr>
                         </div>
                         <div>
-                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.mdnsAlwaysStable')}</p>
+                          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('mdnsAlwaysStable')}</p>
                           <Ltr as="a" href={kdsInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
                             {kdsInfo.mdns_url}
                           </Ltr>
@@ -2821,7 +2838,7 @@ export default function SettingsPage() {
                     <button onClick={fetchKdsInfo} disabled={kdsInfoLoading}
                       className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800">
                       <RefreshCw size={14} className={kdsInfoLoading ? 'animate-spin' : ''} />
-                      {t('settings.refreshUrls')}
+                      {t('refreshUrls')}
                     </button>
                   </div>
                 </div>
@@ -2830,11 +2847,11 @@ export default function SettingsPage() {
               {!kdsInfo && !kdsInfoLoading && (
                 <>
                   <p className="text-sm text-gray-500 mb-3">
-                    {t('settings.kdsLoadHint', { defaultValue: 'Load connection details to pair kitchen display devices on your local network.' })}
+                    {t('kdsLoadHint', { defaultValue: 'Load connection details to pair kitchen display devices on your local network.' })}
                   </p>
                   <button onClick={fetchKdsInfo}
                     className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
-                    {t('settings.loadKdsInfo')}
+                    {t('loadKdsInfo')}
                   </button>
                 </>
               )}
@@ -2845,18 +2862,18 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <ChefHat size={20} className="text-gray-500" />
-                  <h2 className="font-semibold text-gray-900">{t('settings.kitchenStations')}</h2>
+                  <h2 className="font-semibold text-gray-900">{t('kitchenStations')}</h2>
                 </div>
                 <button onClick={openAddStation}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
                   <Plus size={14} />
-                  {t('settings.addStation')}
+                  {t('addStation')}
                 </button>
               </div>
-              <p className="text-sm text-gray-500 mb-5">{t('settings.kitchenStationsHint')}</p>
+              <p className="text-sm text-gray-500 mb-5">{t('kitchenStationsHint')}</p>
 
               {stations.length === 0 ? (
-                <p className="text-sm text-gray-400 py-4 text-center">{t('settings.noStationsYet')}</p>
+                <p className="text-sm text-gray-400 py-4 text-center">{t('noStationsYet')}</p>
               ) : (
                 <div className="space-y-2">
                   {stations.map((station) => {
@@ -2872,16 +2889,16 @@ export default function SettingsPage() {
                         <div className="min-w-0">
                           <p className="font-medium text-gray-900">{station.name}</p>
                           <p className="text-xs text-gray-500 mt-0.5">
-                            {categoryNames.length > 0 ? categoryNames.join(', ') : t('settings.stationNoCategories')}
+                            {categoryNames.length > 0 ? categoryNames.join(', ') : t('stationNoCategories')}
                             {' · '}
-                            {printer ? printer.name : t('settings.stationNoPrinter')}
+                            {printer ? printer.name : t('stationNoPrinter')}
                             {users.length > 0 && ` · ${users.map((u) => u.name).join(', ')}`}
                           </p>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">
                           <button onClick={() => openEditStation(station)}
                             className="px-2 py-1 text-xs text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded">
-                            {t('common.edit')}
+                            {tCommon('edit')}
                           </button>
                           <button onClick={() => deleteStation(station.id)}
                             className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
@@ -2898,22 +2915,22 @@ export default function SettingsPage() {
                 <Dialog open={showStationForm} onOpenChange={setShowStationForm}>
                   <DialogContent>
                     <DialogHeader>
-                      <DialogTitle>{editingStationId ? t('settings.editStation') : t('settings.addStation')}</DialogTitle>
-                      <DialogDescription>{t('settings.stationFormHint')}</DialogDescription>
+                      <DialogTitle>{editingStationId ? t('editStation') : t('addStation')}</DialogTitle>
+                      <DialogDescription>{t('stationFormHint')}</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4 py-2">
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.stationName')}</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('stationName')}</label>
                         <input type="text" value={stationForm.name}
                           onChange={(e) => setStationForm((f) => ({ ...f, name: e.target.value }))}
-                          placeholder={t('settings.stationNamePlaceholder')}
+                          placeholder={t('stationNamePlaceholder')}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.stationCategories')}</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('stationCategories')}</label>
                         {stationCategories.length === 0 ? (
-                          <p className="text-xs text-gray-400">{t('settings.noCategoriesYet')}</p>
+                          <p className="text-xs text-gray-400">{t('noCategoriesYet')}</p>
                         ) : (
                           <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
                             {stationCategories.map((cat) => (
@@ -2929,11 +2946,11 @@ export default function SettingsPage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.stationPrinter')}</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('stationPrinter')}</label>
                         <select value={stationForm.printer_id}
                           onChange={(e) => setStationForm((f) => ({ ...f, printer_id: e.target.value }))}
                           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white">
-                          <option value="">{t('settings.stationUseDefaultPrinter')}</option>
+                          <option value="">{t('stationUseDefaultPrinter')}</option>
                           {hwPrinters.map((p) => (
                             <option key={p.id} value={p.id}>{p.name}</option>
                           ))}
@@ -2941,9 +2958,9 @@ export default function SettingsPage() {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.stationStaff')}</label>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">{t('stationStaff')}</label>
                         {stationStaff.length === 0 ? (
-                          <p className="text-xs text-gray-400">{t('settings.noStaffYet')}</p>
+                          <p className="text-xs text-gray-400">{t('noStaffYet')}</p>
                         ) : (
                           <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
                             {stationStaff.map((u) => (
@@ -2959,9 +2976,9 @@ export default function SettingsPage() {
                       </div>
                     </div>
                     <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowStationForm(false)}>{t('common.cancel')}</Button>
+                      <Button variant="outline" onClick={() => setShowStationForm(false)}>{tCommon('cancel')}</Button>
                       <Button onClick={saveStation} disabled={savingStation}>
-                        {savingStation ? t('common.saving') : t('common.save')}
+                        {savingStation ? tCommon('saving') : tCommon('save')}
                       </Button>
                     </DialogFooter>
                   </DialogContent>
@@ -2972,7 +2989,7 @@ export default function SettingsPage() {
             <KdsDefaultViewCard />
 
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
-              <strong>{t('settings.howItWorks')}</strong> {t('settings.howItWorksBody')}
+              <strong>{t('howItWorks')}</strong> {t('howItWorksBody')}
             </div>
           </div>
         </TabsContent>
@@ -2982,9 +2999,9 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900">{t('settings.serverApp', { defaultValue: 'Server App' })}</p>
+                  <p className="font-medium text-gray-900">{t('serverApp', { defaultValue: 'Server App' })}</p>
                   <p className="text-sm text-gray-500">
-                    {t('settings.serverAppEnabledHint', { defaultValue: 'Let service staff open a mobile/tablet-friendly order pad for tableside ordering.' })}
+                    {t('serverAppEnabledHint', { defaultValue: 'Let service staff open a mobile/tablet-friendly order pad for tableside ordering.' })}
                   </p>
                 </div>
                 <Toggle value={serverAppEnabledSetting} onChange={(v) => { if (!savingServerAppEnabled) saveServerAppEnabled(v); }} />
@@ -2993,7 +3010,7 @@ export default function SettingsPage() {
 
             {!serverAppEnabledSetting && (
               <p className="text-sm text-gray-400 italic">
-                {t('settings.serverAppPairingHiddenHint', { defaultValue: 'Pairing is hidden while the Server App is disabled.' })}
+                {t('serverAppPairingHiddenHint', { defaultValue: 'Pairing is hidden while the Server App is disabled.' })}
               </p>
             )}
 
@@ -3001,10 +3018,10 @@ export default function SettingsPage() {
               <div className="bg-white rounded-xl border border-gray-100 p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Smartphone size={20} className="text-gray-500" />
-                  <h2 className="font-semibold text-gray-900">{t('settings.tablesideOrdering', { defaultValue: 'Tableside Ordering' })}</h2>
+                  <h2 className="font-semibold text-gray-900">{t('tablesideOrdering', { defaultValue: 'Tableside Ordering' })}</h2>
                 </div>
                 <p className="text-sm text-gray-500 mb-5">
-                  {t('settings.serverAppPairingHint', { defaultValue: 'Pair servers’ phones or tablets on your local network. They can punch table orders and see compact kitchen status icons.' })}
+                  {t('serverAppPairingHint', { defaultValue: 'Pair servers’ phones or tablets on your local network. They can punch table orders and see compact kitchen status icons.' })}
                 </p>
 
                 {serverAppInfoLoading && (
@@ -3021,7 +3038,7 @@ export default function SettingsPage() {
                           {serverAppInfo.ips_data.map((ipInfo: { ip: string; url: string; qr_data: string | null }, idx: number) => (
                             <div key={idx} className="flex flex-col items-center p-4 bg-gray-50 border border-gray-200 rounded-lg">
                               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                                {ipInfo.ip.startsWith('100.') ? t('settings.vpnMeshNetwork') : t('settings.localNetwork')}
+                                {ipInfo.ip.startsWith('100.') ? t('vpnMeshNetwork') : t('localNetwork')}
                               </p>
                               {ipInfo.qr_data ? (
                                 <img src={ipInfo.qr_data} alt={`QR Code for ${ipInfo.ip}`} className="w-40 h-40 rounded-lg mb-3 bg-white p-2 border border-gray-100" />
@@ -3037,18 +3054,18 @@ export default function SettingsPage() {
                           ))}
                         </div>
                         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('settings.appleDevices')}</p>
+                          <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide mb-1">{t('appleDevices')}</p>
                           <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-blue-600 break-all hover:underline">
                             {serverAppInfo.mdns_url}
                           </Ltr>
-                          <p className="text-xs text-blue-600 mt-2">{t('settings.appleDevicesHint')}</p>
+                          <p className="text-xs text-blue-600 mt-2">{t('appleDevicesHint')}</p>
                         </div>
                       </>
                     ) : (
                       <div className="flex flex-col sm:flex-row gap-6 items-start">
                         <div className="shrink-0">
                           {serverAppInfo.qr_data_url ? (
-                            <img src={serverAppInfo.qr_data_url} alt={t('settings.serverAppQrAlt', { defaultValue: 'Server App QR code' })} className="w-48 h-48 rounded-xl border border-gray-200" />
+                            <img src={serverAppInfo.qr_data_url} alt={t('serverAppQrAlt', { defaultValue: 'Server App QR code' })} className="w-48 h-48 rounded-xl border border-gray-200" />
                           ) : (
                             <div className="w-48 h-48 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400">
                               <QrCode size={48} />
@@ -3057,13 +3074,13 @@ export default function SettingsPage() {
                         </div>
                         <div className="flex-1 space-y-4">
                           <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.directIp')}</p>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('directIp')}</p>
                             <Ltr as="a" href={serverAppInfo.ip_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-brand break-all hover:underline">
                               {serverAppInfo.ip_url}
                             </Ltr>
                           </div>
                           <div>
-                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('settings.mdnsAlwaysStable')}</p>
+                            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">{t('mdnsAlwaysStable')}</p>
                             <Ltr as="a" href={serverAppInfo.mdns_url} target="_blank" rel="noopener noreferrer" className="block font-mono text-sm text-gray-700 break-all hover:underline">
                               {serverAppInfo.mdns_url}
                             </Ltr>
@@ -3076,7 +3093,7 @@ export default function SettingsPage() {
                       <button onClick={fetchServerAppInfo} disabled={serverAppInfoLoading}
                         className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800">
                         <RefreshCw size={14} className={serverAppInfoLoading ? 'animate-spin' : ''} />
-                        {t('settings.refreshUrls')}
+                        {t('refreshUrls')}
                       </button>
                     </div>
                   </div>
@@ -3085,11 +3102,11 @@ export default function SettingsPage() {
                 {!serverAppInfo && !serverAppInfoLoading && (
                   <>
                     <p className="text-sm text-gray-500 mb-3">
-                      {t('settings.serverAppLoadHint', { defaultValue: 'Load connection details to pair tableside ordering devices on your local network.' })}
+                      {t('serverAppLoadHint', { defaultValue: 'Load connection details to pair tableside ordering devices on your local network.' })}
                     </p>
                     <button onClick={fetchServerAppInfo}
                       className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
-                      {t('settings.loadServerAppInfo', { defaultValue: 'Load Server App Info' })}
+                      {t('loadServerAppInfo', { defaultValue: 'Load Server App Info' })}
                     </button>
                   </>
                 )}
@@ -3104,14 +3121,14 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Gift size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.loyaltyProgram')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('loyaltyProgram')}</h2>
               </div>
               <div className="space-y-5">
                 {/* Enable toggle */}
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-gray-900">{t('settings.enableLoyalty')}</p>
-                    <p className="text-sm text-gray-500">{t('settings.loyaltyHint')}</p>
+                    <p className="font-medium text-gray-900">{t('enableLoyalty')}</p>
+                    <p className="text-sm text-gray-500">{t('loyaltyHint')}</p>
                   </div>
                   <button
                     onClick={() => setLoyaltyEnabled(!loyaltyEnabled)}
@@ -3128,8 +3145,8 @@ export default function SettingsPage() {
                 {loyaltyEnabled && (
                   <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
                     <div>
-                      <p className="font-medium text-gray-900">{t('settings.globalLoyaltyRate')}</p>
-                      <p className="text-sm text-gray-500">{t('settings.globalLoyaltyRateHint')}</p>
+                      <p className="font-medium text-gray-900">{t('globalLoyaltyRate')}</p>
+                      <p className="text-sm text-gray-500">{t('globalLoyaltyRateHint')}</p>
                     </div>
                     <div className="flex items-center gap-2">
                       <input
@@ -3151,9 +3168,9 @@ export default function SettingsPage() {
                     until the owner explicitly opts them in. */}
                 {loyaltyEnabled && globalRateCandidates > 0 && (
                   <div className="pt-4 border-t border-gray-100">
-                    <p className="font-medium text-gray-900">{t('settings.applyGlobalRateTitle')}</p>
+                    <p className="font-medium text-gray-900">{t('applyGlobalRateTitle')}</p>
                     <p className="text-sm text-gray-500 mt-1">
-                      {t('settings.applyGlobalRateHint', { count: globalRateCandidates })}
+                      {t('applyGlobalRateHint', { count: globalRateCandidates })}
                     </p>
                     <button
                       type="button"
@@ -3162,8 +3179,8 @@ export default function SettingsPage() {
                       className="mt-3 px-4 py-2 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-50"
                     >
                       {applyingGlobalRate
-                        ? t('settings.applyGlobalRateWorking')
-                        : t('settings.applyGlobalRateAction', { count: globalRateCandidates })}
+                        ? t('applyGlobalRateWorking')
+                        : t('applyGlobalRateAction', { count: globalRateCandidates })}
                     </button>
                   </div>
                 )}
@@ -3178,52 +3195,52 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Percent size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.discountLimits')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('discountLimits')}</h2>
               </div>
               <div className="space-y-5">
                 {/* Discount mode */}
                 <div>
-                  <p className="font-medium text-gray-900">{t('settings.discountMode')}</p>
-                  <p className="text-sm text-gray-500 mb-2">{t('settings.discountModeHint')}</p>
+                  <p className="font-medium text-gray-900">{t('discountMode')}</p>
+                  <p className="text-sm text-gray-500 mb-2">{t('discountModeHint')}</p>
                   <select value={discountMode}
                     onChange={(e) => setDiscountMode(e.target.value)}
                     className="w-48 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand bg-white">
-                    <option value="both">{t('settings.discountBoth')}</option>
-                    <option value="percentage">{t('settings.discountPercentageOnly')}</option>
-                    <option value="flat">{t('settings.discountFlatOnly')}</option>
+                    <option value="both">{t('discountBoth')}</option>
+                    <option value="percentage">{t('discountPercentageOnly')}</option>
+                    <option value="flat">{t('discountFlatOnly')}</option>
                   </select>
                 </div>
 
                 {(discountMode === 'percentage' || discountMode === 'both') && (
                   <div>
-                    <p className="font-medium text-gray-900">{t('settings.maxDiscountPercentage')}</p>
-                    <p className="text-sm text-gray-500 mb-2">{t('settings.maxDiscountPercentageHint')}</p>
+                    <p className="font-medium text-gray-900">{t('maxDiscountPercentage')}</p>
+                    <p className="text-sm text-gray-500 mb-2">{t('maxDiscountPercentageHint')}</p>
                     <div className="flex items-center gap-3">
                       <input type="number" min={1} max={100} value={discountMaxPct}
                         onChange={(e) => setDiscountMaxPct(normalizeDiscountPercentage(e.target.value))}
                         className="w-24 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
-                      <span className="text-sm text-gray-500">{t('settings.percentMaximum')}</span>
+                      <span className="text-sm text-gray-500">{t('percentMaximum')}</span>
                     </div>
                   </div>
                 )}
 
                 {(discountMode === 'flat' || discountMode === 'both') && (
                   <div>
-                    <p className="font-medium text-gray-900">{t('settings.maxDiscountAmount')}</p>
-                    <p className="text-sm text-gray-500 mb-2">{t('settings.maxDiscountAmountHint')}</p>
+                    <p className="font-medium text-gray-900">{t('maxDiscountAmount')}</p>
+                    <p className="text-sm text-gray-500 mb-2">{t('maxDiscountAmountHint')}</p>
                     <div className="flex items-center gap-3">
                       <input type="number" min={0} max={999999} value={discountMaxAmount}
                         onChange={(e) => setDiscountMaxAmount(normalizeDiscountAmount(e.target.value))}
                         className="w-24 px-3 py-1.5 text-sm border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-brand" />
-                      <span className="text-sm text-gray-500">{t('settings.zeroNoLimit')}</span>
+                      <span className="text-sm text-gray-500">{t('zeroNoLimit')}</span>
                     </div>
                   </div>
                 )}
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-gray-900">{t('settings.requireApproval')}</p>
-                    <p className="text-sm text-gray-500">{t('settings.requireApprovalHint')}</p>
+                    <p className="font-medium text-gray-900">{t('requireApproval')}</p>
+                    <p className="text-sm text-gray-500">{t('requireApprovalHint')}</p>
                   </div>
                   <button
                     onClick={() => setDiscountRequiresApproval(!discountRequiresApproval)}
@@ -3246,18 +3263,18 @@ export default function SettingsPage() {
           <div className="pb-6 max-w-3xl space-y-6">
             {/* Account */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">{t('settings.account')}</h2>
+              <h2 className="font-semibold text-gray-900 mb-4">{t('account')}</h2>
               <div className="space-y-3">
                 <div>
-                  <p className="text-sm text-gray-500">{t('settings.name')}</p>
+                  <p className="text-sm text-gray-500">{t('name')}</p>
                   <p className="font-medium text-gray-900">{user?.name}</p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">{t('settings.email')}</p>
+                  <p className="text-sm text-gray-500">{t('email')}</p>
                   <p className="font-medium text-gray-900"><Ltr>{user?.email}</Ltr></p>
                 </div>
                 <div>
-                  <p className="text-sm text-gray-500">{t('settings.role')}</p>
+                  <p className="text-sm text-gray-500">{t('role')}</p>
                   <p className="font-medium text-gray-900 capitalize">{currentTenant?.role || '—'}</p>
                 </div>
               </div>
@@ -3266,32 +3283,32 @@ export default function SettingsPage() {
               <div className={`rounded-xl border p-6 ${cloudAccountAvailable && cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <h2 className="font-semibold text-gray-900">{t('settings.contactEmailTitle')}</h2>
-                    <p className="mt-1 text-sm text-gray-600">{cloudAccountLoadFailed ? t('settings.cloudAccountLoadFailed') : cloudAccountAvailable ? <Ltr>{cloudAccount?.email || user?.email || t('settings.noCloudContactEmail')}</Ltr> : t('settings.cloudAccountUnavailable')}</p>
+                    <h2 className="font-semibold text-gray-900">{t('contactEmailTitle')}</h2>
+                    <p className="mt-1 text-sm text-gray-600">{cloudAccountLoadFailed ? t('cloudAccountLoadFailed') : cloudAccountAvailable ? <Ltr>{cloudAccount?.email || user?.email || t('noCloudContactEmail')}</Ltr> : t('cloudAccountUnavailable')}</p>
                   </div>
                   <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${!cloudAccountAvailable ? 'bg-gray-100 text-gray-600' : cloudAccount?.verified ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {cloudAccountLoadFailed ? t('settings.cloudStatusUnavailable') : !cloudAccountAvailable ? t('settings.cloudUnavailableBadge') : cloudAccount?.verified ? t('settings.cloudVerified') : t('settings.cloudPendingVerification')}
+                    {cloudAccountLoadFailed ? t('cloudStatusUnavailable') : !cloudAccountAvailable ? t('cloudUnavailableBadge') : cloudAccount?.verified ? t('cloudVerified') : t('cloudPendingVerification')}
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-gray-600">{cloudAccountLoadFailed ? t('settings.cloudAccountLoadError') : cloudAccountAvailable ? t('settings.cloudVerificationHint') : cloudDeletionPending ? t('settings.cloudDeletionPendingHint') : cloudDeletionStatus === 'processing' ? t('settings.cloudDeletionProcessingHint') : cloudDeletionStatus === 'failed' || cloudStatus.cloud_deletion_status === 'failed' ? t('settings.cloudDeletionFailedHint') : t('settings.cloudEnableHintAccount')}</p>
+                <p className="mt-3 text-sm text-gray-600">{cloudAccountLoadFailed ? t('cloudAccountLoadError') : cloudAccountAvailable ? t('cloudVerificationHint') : cloudDeletionPending ? t('cloudDeletionPendingHint') : cloudDeletionStatus === 'processing' ? t('cloudDeletionProcessingHint') : cloudDeletionStatus === 'failed' || cloudStatus.cloud_deletion_status === 'failed' ? t('cloudDeletionFailedHint') : t('cloudEnableHintAccount')}</p>
                 {cloudAccountLoadFailed && (
-                  <Button variant="outline" className="mt-4" onClick={() => void fetchCloudAccount()}>{t('settings.retry')}</Button>
+                  <Button variant="outline" className="mt-4" onClick={() => void fetchCloudAccount()}>{t('retry')}</Button>
                 )}
                 {cloudAccountAvailable && !cloudAccount?.verified && (
                   <Button className="mt-4" disabled={cloudAccountBusy} onClick={async () => {
                     setCloudAccountBusy(true);
-                    try { await api.post('/settings/cloud/account/verification'); toast.success(t('settings.verificationEmailQueued')); await fetchCloudAccount(); }
+                    try { await api.post('/settings/cloud/account/verification'); toast.success(t('verificationEmailQueued')); await fetchCloudAccount(); }
                     catch {
-                      toast.error(t('settings.verificationEmailFailed'));
+                      toast.error(t('verificationEmailFailed'));
                     }
                     finally { setCloudAccountBusy(false); }
-                  }}>{cloudAccountBusy ? t('settings.cloudSendingVerification') : t('settings.cloudSendVerificationEmail')}</Button>
+                  }}>{cloudAccountBusy ? t('cloudSendingVerification') : t('cloudSendVerificationEmail')}</Button>
                 )}
                 {cloudAccountAvailable && (
                   <div className="mt-5 space-y-3 border-t border-gray-200 pt-4">
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('settings.cloudPrefProductUpdates')}</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error(t('settings.couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('settings.cloudPrefMarketing')}</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error(t('settings.couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
-                    <p className="text-xs text-gray-500">{t('settings.cloudPrefNote')}</p>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('cloudPrefProductUpdates')}</span><Toggle value={Boolean(cloudAccount?.product_updates)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { product_updates: value }); setCloudAccount(data); } catch { toast.error(t('couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <label className="flex items-center justify-between gap-4 text-sm"><span>{t('cloudPrefMarketing')}</span><Toggle value={Boolean(cloudAccount?.marketing)} onChange={async (value) => { setCloudAccountBusy(true); try { const { data } = await api.put('/settings/cloud/account/preferences', { marketing: value }); setCloudAccount(data); } catch { toast.error(t('couldNotSavePreference')); } finally { setCloudAccountBusy(false); } }} /></label>
+                    <p className="text-xs text-gray-500">{t('cloudPrefNote')}</p>
                   </div>
                 )}
               </div>
@@ -3306,7 +3323,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2">
                 <Lock size={20} className="text-gray-500" />
                 <div>
-                  <h2 className="font-semibold text-gray-900">{t('settings.privacy')}</h2>
+                  <h2 className="font-semibold text-gray-900">{t('privacy')}</h2>
                 </div>
               </div>
 
@@ -3318,9 +3335,9 @@ export default function SettingsPage() {
                   onChange={(e) => saveTelemetry(e.target.checked)}
                   className="rounded border-gray-300 text-brand focus:ring-brand"
                 />
-                <span className="text-sm text-gray-700">{t('settings.anonymousTelemetry')}</span>
+                <span className="text-sm text-gray-700">{t('anonymousTelemetry')}</span>
               </label>
-              <p className="text-xs text-gray-500">{t('settings.anonymousTelemetryHint')}</p>
+              <p className="text-xs text-gray-500">{t('anonymousTelemetryHint')}</p>
 
               <div className="border-t border-gray-100 pt-4">
                 <label className="flex items-center gap-3 cursor-pointer">
@@ -3331,26 +3348,26 @@ export default function SettingsPage() {
                     onChange={(e) => saveDiagnosticsConsent(e.target.checked)}
                     className="rounded border-gray-300 text-brand focus:ring-brand"
                   />
-                  <span className="text-sm text-gray-700">{t('settings.storeDiagnostics')}</span>
+                  <span className="text-sm text-gray-700">{t('storeDiagnostics')}</span>
                 </label>
-                <p className="text-xs text-gray-500 mt-1">{t('settings.storeDiagnosticsHint')}</p>
+                <p className="text-xs text-gray-500 mt-1">{t('storeDiagnosticsHint')}</p>
               </div>
             </div>
 
             {currentTenant?.role === 'owner' && (
               <div className="rounded-xl border border-gray-100 bg-white p-6">
-                <h2 className="font-semibold text-gray-900">{t('settings.cloudPrivacyControls')}</h2>
-                <p className="mt-2 text-sm text-gray-600">{t('settings.cloudStopReversible')}</p>
+                <h2 className="font-semibold text-gray-900">{t('cloudPrivacyControls')}</h2>
+                <p className="mt-2 text-sm text-gray-600">{t('cloudStopReversible')}</p>
                 {cloudAccount?.deletion_request && (
                   <div className={`mt-4 rounded-lg border p-3 text-sm ${cloudAccount.deletion_request.status === 'pending' || cloudAccount.deletion_request.status === 'processing' ? 'border-amber-200 bg-amber-50 text-amber-900' : cloudAccount.deletion_request.status === 'approved' || cloudAccount.deletion_request.status === 'completed' || cloudAccount.deletion_request.status === 'deleted' ? 'border-green-200 bg-green-50 text-green-800' : cloudAccount.deletion_request.status === 'failed' ? 'border-red-200 bg-red-50 text-red-800' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
-                    <p className="font-semibold">{t('settings.cloudDeletionRequest', { status: cloudAccount.deletion_request.status || '' })}</p>
+                    <p className="font-semibold">{t('cloudDeletionRequest', { status: cloudAccount.deletion_request.status || '' })}</p>
                     {cloudAccount.deletion_request.id && <p className="mt-1 font-mono text-xs"><Ltr>{cloudAccount.deletion_request.id}</Ltr></p>}
                     {cloudAccount.deletion_request.decision_note && <p className="mt-2">{cloudAccount.deletion_request.decision_note}</p>}
                   </div>
                 )}
                 <div className="mt-4 flex flex-wrap gap-3">
                   <Button variant="outline" onClick={async () => {
-                    if (!await confirm(t('settings.cloudStopAllConfirm'))) return;
+                    if (!await confirm(t('cloudStopAllConfirm'))) return;
                     try {
                       const { data } = await api.post('/settings/cloud/stop-all');
                       setCloudStatus({
@@ -3368,25 +3385,25 @@ export default function SettingsPage() {
                       setDiagnosticsConsent(false);
                       await fetchCloudAccount();
                       notifyCloudAccountStatusChanged();
-                      toast.success(t('settings.cloudAllStopped'));
+                      toast.success(t('cloudAllStopped'));
                     }
-                    catch { toast.error(t('settings.cloudStopFailed')); }
-                  }}><CloudOff size={16} className="me-2" />{t('settings.cloudStopAllButton')}</Button>
+                    catch { toast.error(t('cloudStopFailed')); }
+                  }}><CloudOff size={16} className="me-2" />{t('cloudStopAllButton')}</Button>
                   {!cloudDeletionFinal && <Button variant="destructive" disabled={cloudAccount?.deletion_request?.status === 'pending' || cloudAccount?.deletion_request?.status === 'processing' || cloudAccount?.deletion_request?.status === 'approved' || cloudStatus.cloud_deletion_status === 'processing'} onClick={() => {
-                    const phrase = window.prompt(t('settings.cloudDeletePrompt'));
+                    const phrase = window.prompt(t('cloudDeletePrompt'));
                     if (phrase === 'DELETE CLOUD DATA') setPinGate({ mode: 'delete-cloud' });
-                    else if (phrase !== null) toast.error(t('settings.confirmationPhraseMismatch'));
-                  }}><Trash2 size={16} className="me-2" />{t('settings.cloudDeleteDataButton')}</Button>}
+                    else if (phrase !== null) toast.error(t('confirmationPhraseMismatch'));
+                  }}><Trash2 size={16} className="me-2" />{t('cloudDeleteDataButton')}</Button>}
                   {cloudDeletionNeedsAction && (
                     <>
                       <Button variant="outline" onClick={() => void refreshDeletionStatus()} disabled={refreshingDeletionStatus}>
-                        {refreshingDeletionStatus ? t('settings.cloudRefreshingDeletion') : t('settings.cloudRefreshDeletion')}
+                        {refreshingDeletionStatus ? t('cloudRefreshingDeletion') : t('cloudRefreshDeletion')}
                       </Button>
-                      {cloudDeletionCanCancel && <Button variant="outline" onClick={() => setPinGate({ mode: 'cancel-cloud-deletion' })}>{t('settings.cloudCancelDeletion')}</Button>}
+                      {cloudDeletionCanCancel && <Button variant="outline" onClick={() => setPinGate({ mode: 'cancel-cloud-deletion' })}>{t('cloudCancelDeletion')}</Button>}
                     </>
                   )}
                 </div>
-                <p className="mt-3 text-xs text-gray-500">{t('settings.cloudTelemetryNote')}</p>
+                <p className="mt-3 text-xs text-gray-500">{t('cloudTelemetryNote')}</p>
               </div>
             )}
           </div>
@@ -3400,18 +3417,18 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <Printer size={20} className="text-gray-500" />
-                  <h2 className="font-semibold text-gray-900">{t('settings.printers')}</h2>
+                  <h2 className="font-semibold text-gray-900">{t('printers')}</h2>
                 </div>
                 {!showPrinterForm && (
                   <div className="flex items-center gap-2">
                     <button onClick={fetchDetectedPrinters} disabled={detectingPrinters}
-                      title={t('settings.refreshList')}
+                      title={t('refreshList')}
                       className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 font-medium disabled:opacity-50">
-                      <RefreshCw size={14} className={detectingPrinters ? 'animate-spin' : ''} /> {t('settings.refresh')}
+                      <RefreshCw size={14} className={detectingPrinters ? 'animate-spin' : ''} /> {t('refresh')}
                     </button>
                     <button onClick={openAddPrinter}
                       className="flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 font-medium">
-                      <Plus size={14} /> {t('settings.addPrinterManually')}
+                      <Plus size={14} /> {t('addPrinterManually')}
                     </button>
                   </div>
                 )}
@@ -3427,15 +3444,15 @@ export default function SettingsPage() {
                     aria-expanded={installedPrintersOpen}
                   >
                     <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      {t('settings.installedOnThisComputer')} ({detectedPrinters.length})
+                      {t('installedOnThisComputer')} ({detectedPrinters.length})
                     </span>
                     <ChevronDown size={16} className={`text-gray-400 transition-transform ${installedPrintersOpen ? 'rotate-180' : ''}`} />
                   </button>
                   {installedPrintersOpen && (detectingPrinters && detectedPrinters.length === 0 ? (
-                    <div className="py-6 text-center text-gray-400 text-sm">{t('settings.scanningForPrinters')}</div>
+                    <div className="py-6 text-center text-gray-400 text-sm">{t('scanningForPrinters')}</div>
                   ) : detectedPrinters.length === 0 ? (
                     <div className="mt-2 py-6 text-center text-gray-400 text-sm border border-dashed border-gray-200 rounded-lg">
-                      {t('settings.noInstalledPrinters')}
+                      {t('noInstalledPrinters')}
                     </div>
                   ) : (
                     <div className="mt-2 space-y-2">
@@ -3443,7 +3460,7 @@ export default function SettingsPage() {
                         const alreadyAdded = hwPrinters.some((h) => h.name.toLowerCase() === p.name.toLowerCase());
                         const isAdding = addingDetectedName === p.name;
                         const dotColor = p.status === 'idle' ? 'bg-green-500' : p.status === 'printing' ? 'bg-yellow-500' : 'bg-gray-300';
-                        const statusLabel = p.status === 'idle' ? t('settings.printerOnline') : p.status === 'printing' ? t('settings.printerPrinting') : t('settings.printerOffline');
+                        const statusLabel = p.status === 'idle' ? t('printerOnline') : p.status === 'printing' ? t('printerPrinting') : t('printerOffline');
                         return (
                           <div key={p.name} className="flex items-center gap-3 rounded-xl border border-gray-200 p-3">
                             <div className="w-9 h-9 rounded-lg flex items-center justify-center bg-gray-100 shrink-0">
@@ -3461,17 +3478,17 @@ export default function SettingsPage() {
                                 {p.make !== 'Unknown' ? `${p.make} ${p.model}` : p.model}
                                 {p.connectionType === 'network' && p.ipAddress ? <> · <Ltr>{p.ipAddress}{p.port ? ':' + p.port : ''}</Ltr></> : ''}
                                 {p.paperWidth ? ` · ${printWidthLabel(p.paperWidth)}` : ''}
-                                {p.profileId ? ` · ${t('settings.printerSupportedProfile')}` : ''}
+                                {p.profileId ? ` · ${t('printerSupportedProfile')}` : ''}
                               </p>
                             </div>
                             {alreadyAdded ? (
                               <span className="text-xs text-gray-400 px-3 py-1.5 flex items-center gap-1">
-                                <CheckCircle2 size={14} className="text-green-500" /> {t('settings.printerAdded')}
+                                <CheckCircle2 size={14} className="text-green-500" /> {t('printerAdded')}
                               </span>
                             ) : (
                               <button onClick={() => quickAddDetected(p)} disabled={isAdding}
                                 className="px-3 py-1.5 text-xs bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium flex items-center gap-1">
-                                <Plus size={13} /> {isAdding ? t('settings.printerAdding') : t('common.add')}
+                                <Plus size={13} /> {isAdding ? t('printerAdding') : tCommon('add')}
                               </button>
                             )}
                           </div>
@@ -3485,13 +3502,13 @@ export default function SettingsPage() {
               {/* Configured printer list */}
               {hwPrinters.length === 0 && !showPrinterForm && (
                 <div className="py-6 text-center text-gray-400">
-                  <p className="text-sm">{t('settings.noPrintersConfigured')}</p>
-                  <p className="text-xs mt-1">{t('settings.printerHint')}</p>
+                  <p className="text-sm">{t('noPrintersConfigured')}</p>
+                  <p className="text-xs mt-1">{t('printerHint')}</p>
                 </div>
               )}
 
               {hwPrinters.length > 0 && !showPrinterForm && (
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{t('settings.configuredPrinters')}</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">{t('configuredPrinters')}</h3>
               )}
               <div className="space-y-3">
                 {hwPrinters.map((p) => (
@@ -3505,34 +3522,34 @@ export default function SettingsPage() {
                       <div className="flex items-center gap-2">
                         <span className="font-semibold text-gray-900 text-sm">{p.name}</span>
                         {p.is_default === 1 && (
-                          <span className="text-[10px] bg-brand/10 text-brand px-2 py-0.5 rounded-full font-medium">{t('settings.defaultPrinter')}</span>
+                          <span className="text-[10px] bg-brand/10 text-brand px-2 py-0.5 rounded-full font-medium">{t('defaultPrinter')}</span>
                         )}
                       </div>
                       <p className="text-xs text-gray-500 mt-0.5">
                         {p.connection_type === 'network' ? <Ltr>{p.ip_address}:{p.port}</Ltr> :
-                         p.connection_type === 'usb' ? t('settings.connectionUsb') :
-                         t('settings.browserWebusb')}
+                         p.connection_type === 'usb' ? t('connectionUsb') :
+                         t('browserWebusb')}
                         {' · '}{printWidthLabel(p.paper_width)}
                         {p.profile_name ? ` · ${p.profile_name}` : ''}
                       </p>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
                       <button onClick={() => testPrinterHw(p)} disabled={testingPrinterId === p.id}
-                        title={t('settings.testPrint')}
+                        title={t('testPrint')}
                         className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700 disabled:opacity-40">
                         <TestTube2 size={15} />
                       </button>
                       {p.is_default !== 1 && (
-                        <button onClick={() => setDefaultPrinter(p.id)} title={t('settings.setAsDefault')}
+                        <button onClick={() => setDefaultPrinter(p.id)} title={t('setAsDefault')}
                           className="p-2 rounded-lg hover:bg-yellow-50 text-gray-400 hover:text-yellow-600">
                           <Star size={15} />
                         </button>
                       )}
-                      <button onClick={() => openEditPrinter(p)} title={t('settings.edit')}
+                      <button onClick={() => openEditPrinter(p)} title={t('edit')}
                         className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700">
                         <Settings size={15} />
                       </button>
-                      <button onClick={() => deletePrinterHw(p.id)} title={t('settings.delete')}
+                      <button onClick={() => deletePrinterHw(p.id)} title={t('delete')}
                         className="p-2 rounded-lg hover:bg-red-50 text-gray-400 hover:text-red-600">
                         <Trash2 size={15} />
                       </button>
@@ -3545,61 +3562,61 @@ export default function SettingsPage() {
               {showPrinterForm && (
                 <div className="mt-5 pt-5 border-t border-gray-100">
                   <h3 className="font-semibold text-gray-900 text-sm mb-4">
-                    {editingPrinterId ? t('settings.editPrinter') : t('settings.addPrinter')}
+                    {editingPrinterId ? t('editPrinter') : t('addPrinter')}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">{t('settings.printerName')}</label>
+                      <label className="block text-xs text-gray-500 mb-1">{t('printerName')}</label>
                       <input type="text" value={printerForm.name}
                         onChange={(e) => setPrinterForm((p) => ({ ...p, name: e.target.value }))}
-                        placeholder={t('settings.printerNamePlaceholder')}
+                        placeholder={t('printerNamePlaceholder')}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                     </div>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">{t('settings.connectionType')}</label>
+                      <label className="block text-xs text-gray-500 mb-1">{t('connectionType')}</label>
                       <select value={printerForm.connection_type}
                         onChange={(e) => setPrinterForm((p) => ({ ...p, connection_type: e.target.value as HwPrinter['connection_type'] }))}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand">
-                        <option value="network">{t('settings.connectionNetwork')}</option>
-                        <option value="usb">{t('settings.connectionUsb')}</option>
-                        <option value="webusb">{t('settings.connectionWebusb')}</option>
+                        <option value="network">{t('connectionNetwork')}</option>
+                        <option value="usb">{t('connectionUsb')}</option>
+                        <option value="webusb">{t('connectionWebusb')}</option>
                       </select>
                     </div>
 
                     {printerForm.connection_type === 'network' && (<>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">{t('settings.ipAddress')}</label>
+                        <label className="block text-xs text-gray-500 mb-1">{t('ipAddress')}</label>
                         <input type="text" value={printerForm.ip_address}
                           onChange={(e) => setPrinterForm((p) => ({ ...p, ip_address: e.target.value }))}
-                          placeholder={t('settings.ipAddressPlaceholder')}
+                          placeholder={t('ipAddressPlaceholder')}
                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                       </div>
                       <div>
-                        <label className="block text-xs text-gray-500 mb-1">{t('settings.port')}</label>
+                        <label className="block text-xs text-gray-500 mb-1">{t('port')}</label>
                         <input type="number" value={printerForm.port}
                           onChange={(e) => setPrinterForm((p) => ({ ...p, port: e.target.value }))}
-                          placeholder={t('settings.portPlaceholder')}
+                          placeholder={t('portPlaceholder')}
                           className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" />
                       </div>
                     </>)}
 
                     {printerForm.connection_type === 'webusb' && (
                       <div className="md:col-span-2 bg-blue-50 rounded-lg p-3 text-sm text-blue-700">
-                        {t('settings.webusbHint')}
+                        {t('webusbHint')}
                       </div>
                     )}
 
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">{t('settings.paperWidth')}</label>
+                      <label className="block text-xs text-gray-500 mb-1">{t('paperWidth')}</label>
                       <select value={printerForm.paper_width}
                         onChange={(e) => setPrinterForm((p) => ({ ...p, paper_width: e.target.value }))}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand">
-                        <option value="cols-32">{t('settings.printColumns32')}</option>
-                        <option value="cols-36">{t('settings.printColumns36')}</option>
-                        <option value="cols-40">{t('settings.printColumns40')}</option>
-                        <option value="cols-42">{t('settings.printColumns42')}</option>
-                        <option value="cols-44">{t('settings.printColumns44')}</option>
-                        <option value="cols-48">{t('settings.printColumns48')}</option>
+                        <option value="cols-32">{t('printColumns32')}</option>
+                        <option value="cols-36">{t('printColumns36')}</option>
+                        <option value="cols-40">{t('printColumns40')}</option>
+                        <option value="cols-42">{t('printColumns42')}</option>
+                        <option value="cols-44">{t('printColumns44')}</option>
+                        <option value="cols-48">{t('printColumns48')}</option>
                       </select>
                     </div>
                   </div>
@@ -3607,11 +3624,11 @@ export default function SettingsPage() {
                   <div className="mt-4 flex gap-2">
                     <button onClick={savePrinterHw} disabled={savingPrinter}
                       className="px-5 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium">
-                      {savingPrinter ? t('settings.saving') : editingPrinterId ? t('common.update') : t('settings.addPrinter')}
+                      {savingPrinter ? t('saving') : editingPrinterId ? tCommon('update') : t('addPrinter')}
                     </button>
                     <button onClick={() => setShowPrinterForm(false)}
                       className="px-5 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 font-medium">
-                      {t('settings.cancel')}
+                      {t('cancel')}
                     </button>
                   </div>
                 </div>
@@ -3619,29 +3636,29 @@ export default function SettingsPage() {
             </div>
 
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
-              <strong>{t('settings.defaultPrinterTipTitle')}</strong> {t('settings.defaultPrinterTipBody')}
+              <strong>{t('defaultPrinterTipTitle')}</strong> {t('defaultPrinterTipBody')}
             </div>
 
             {/* Print Options — merged into the same Printers page rather than a separate tab */}
             <div className="pt-4 border-t border-gray-100">
-              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">{t('settings.tabPrinting')}</h2>
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-400">{t('tabPrinting')}</h2>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Printer size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.printing')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('printing')}</h2>
               </div>
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('settings.enablePrinter')}</p>
-                    <p className="text-sm text-gray-500">{t('settings.enablePrinterHint')}</p>
+                    <p className="font-medium text-gray-900">{t('enablePrinter')}</p>
+                    <p className="text-sm text-gray-500">{t('enablePrinterHint')}</p>
                   </div>
                   <Toggle value={printingForm.printerEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, printerEnabled: v }))} />
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900 mb-2">{t('settings.paperSize')}</p>
+                  <p className="font-medium text-gray-900 mb-2">{t('paperSize')}</p>
                   <select value={printingForm.printerPaperSize}
                     onChange={(e) => setPrintingForm((p) => ({ ...p, printerPaperSize: e.target.value as PaperSize }))}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand">
@@ -3651,33 +3668,33 @@ export default function SettingsPage() {
                   </select>
                 </div>
                 <div>
-                  <p className="font-medium text-gray-900 mb-2">{t('settings.printMethod')}</p>
+                  <p className="font-medium text-gray-900 mb-2">{t('printMethod')}</p>
                   <select value={printingForm.printMethod}
                     onChange={(e) => setPrintingForm((p) => ({ ...p, printMethod: e.target.value as 'escpos' | 'browser' }))}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand">
-                    <option value="escpos">{t('settings.printMethodEscpos')}</option>
-                    <option value="browser">{t('settings.printMethodBrowser')}</option>
+                    <option value="escpos">{t('printMethodEscpos')}</option>
+                    <option value="browser">{t('printMethodBrowser')}</option>
                   </select>
                   <p className="text-xs text-gray-500 mt-1">
                     {printingForm.printMethod === 'escpos'
-                      ? t('settings.printMethodEscposHint')
-                      : t('settings.printMethodBrowserHint')}
+                      ? t('printMethodEscposHint')
+                      : t('printMethodBrowserHint')}
                   </p>
                 </div>
                 <div className="flex items-center justify-between gap-4 border-t border-gray-100 pt-4">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('settings.kotPrintingEnabledToggle', { defaultValue: 'KOT Ticket Printing' })}</p>
-                    <p className="text-sm text-gray-500">{t('settings.kotPrintingEnabledToggleHint', { defaultValue: 'Allow KOT tickets to print at all, automatically or manually. Turn this off if this business doesn’t use a KOT printer.' })}</p>
+                    <p className="font-medium text-gray-900">{t('kotPrintingEnabledToggle', { defaultValue: 'KOT Ticket Printing' })}</p>
+                    <p className="text-sm text-gray-500">{t('kotPrintingEnabledToggleHint', { defaultValue: 'Allow KOT tickets to print at all, automatically or manually. Turn this off if this business doesn’t use a KOT printer.' })}</p>
                   </div>
                   <Toggle value={kotPrintingEnabledSetting} onChange={(v) => { if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v); }} />
                 </div>
                 <div className={`flex items-center justify-between gap-4 ${!kotPrintingEnabledSetting ? 'opacity-50' : ''}`}>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('settings.autoPrintKot')}</p>
+                    <p className="font-medium text-gray-900">{t('autoPrintKot')}</p>
                     <p className="text-sm text-gray-500">
                       {kotPrintingEnabledSetting
-                        ? t('settings.autoPrintKotHint')
-                        : t('settings.autoPrintKotDisabledHint', { defaultValue: 'KOT printing is turned off above, so this has no effect.' })}
+                        ? t('autoPrintKotHint')
+                        : t('autoPrintKotDisabledHint', { defaultValue: 'KOT printing is turned off above, so this has no effect.' })}
                     </p>
                   </div>
                   <Toggle
@@ -3689,46 +3706,46 @@ export default function SettingsPage() {
                   <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-800">
-                      {t('settings.kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
+                      {t('kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
                     </p>
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('settings.autoPrintBill')}</p>
-                    <p className="text-sm text-gray-500">{t('settings.autoPrintBillHint')}</p>
+                    <p className="font-medium text-gray-900">{t('autoPrintBill')}</p>
+                    <p className="text-sm text-gray-500">{t('autoPrintBillHint')}</p>
                   </div>
                   <Toggle value={printingForm.autoPrintBill} onChange={(v) => setPrintingForm((p) => ({ ...p, autoPrintBill: v }))} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('settings.printerUnicode')}</p>
+                    <p className="font-medium text-gray-900">{t('printerUnicode')}</p>
                     <p className="text-sm text-gray-500">
-                      {t('settings.printerUnicodeHint')}
+                      {t('printerUnicodeHint')}
                     </p>
                   </div>
                   <Toggle value={printingForm.printerUseUnicode} onChange={(v) => setPrintingForm((p) => ({ ...p, printerUseUnicode: v }))} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('settings.trimDecimals')}</p>
-                    <p className="text-sm text-gray-500">{t('settings.trimDecimalsHint')}</p>
+                    <p className="font-medium text-gray-900">{t('trimDecimals')}</p>
+                    <p className="text-sm text-gray-500">{t('trimDecimalsHint')}</p>
                   </div>
                   <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }))} />
                 </div>
                 <div className="pt-4 border-t border-gray-100">
-                  <p className="font-medium text-gray-900 mb-1">{t('settings.billContent')}</p>
-                  <p className="text-sm text-gray-500 mb-3">{t('settings.billContentHint')}</p>
+                  <p className="font-medium text-gray-900 mb-1">{t('billContent')}</p>
+                  <p className="text-sm text-gray-500 mb-3">{t('billContentHint')}</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1">
                     {([
-                      { label: t('settings.showRestaurantName'), key: 'billShowName' as const },
-                      { label: t('settings.showRestaurantAddress'), key: 'billShowAddress' as const },
-                      { label: t('settings.showRestaurantPhone'), key: 'billShowPhone' as const },
-                      { label: t('settings.showTaxId'), key: 'billShowTaxId' as const },
-                      { label: t('settings.showTaxBreakdown'), key: 'billShowTaxBreakdown' as const },
-                      { label: t('settings.showCustomerName'), key: 'billShowCustomerName' as const },
-                      { label: t('settings.showCustomerPhone'), key: 'billShowCustomerPhone' as const },
-                      { label: t('settings.showTableNumber'), key: 'billShowTableNumber' as const },
+                      { label: t('showRestaurantName'), key: 'billShowName' as const },
+                      { label: t('showRestaurantAddress'), key: 'billShowAddress' as const },
+                      { label: t('showRestaurantPhone'), key: 'billShowPhone' as const },
+                      { label: t('showTaxId'), key: 'billShowTaxId' as const },
+                      { label: t('showTaxBreakdown'), key: 'billShowTaxBreakdown' as const },
+                      { label: t('showCustomerName'), key: 'billShowCustomerName' as const },
+                      { label: t('showCustomerPhone'), key: 'billShowCustomerPhone' as const },
+                      { label: t('showTableNumber'), key: 'billShowTableNumber' as const },
                     ] as const).map((item) => (
                       <div key={item.key} className="flex min-h-11 items-center justify-between gap-3 py-1">
                         <span className="text-sm text-gray-700">{item.label}</span>
@@ -3740,13 +3757,13 @@ export default function SettingsPage() {
                     ))}
                   </div>
                   <div className="mt-4 border-t border-gray-100 pt-4">
-                    <label htmlFor="footer-message" className="block text-sm font-medium text-gray-700 mb-1">{t('settings.footerMessage')}</label>
+                    <label htmlFor="footer-message" className="block text-sm font-medium text-gray-700 mb-1">{t('footerMessage')}</label>
                     <textarea id="footer-message" rows={2}
-                      placeholder={t('settings.footerMessagePlaceholder')}
+                      placeholder={t('footerMessagePlaceholder')}
                       value={billForm.billFooterMessage}
                       onChange={(e) => setBillForm((p) => ({ ...p, billFooterMessage: e.target.value }))}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand resize-none" />
-                    <p className="text-xs text-gray-400 mt-1">{t('settings.footerMessageHint')}</p>
+                    <p className="text-xs text-gray-400 mt-1">{t('footerMessageHint')}</p>
                   </div>
                 </div>
               </div>
@@ -3755,12 +3772,12 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Share2 size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.whatsappSharing')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('whatsappSharing')}</h2>
               </div>
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="font-medium text-gray-900">{t('settings.enableWhatsappShare')}</p>
-                  <p className="text-sm text-gray-500">{t('settings.enableWhatsappShareHint')}</p>
+                  <p className="font-medium text-gray-900">{t('enableWhatsappShare')}</p>
+                  <p className="text-sm text-gray-500">{t('enableWhatsappShareHint')}</p>
                 </div>
                 <Toggle value={printingForm.whatsappShareEnabled} onChange={(v) => setPrintingForm((p) => ({ ...p, whatsappShareEnabled: v }))} />
               </div>
@@ -3771,7 +3788,7 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <FileText size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.billTemplate')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('billTemplate')}</h2>
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {billTemplateCards.map((card) => {
@@ -3791,8 +3808,8 @@ export default function SettingsPage() {
                         {card.source === 'plugin'
                           ? card.description
                           : card.id === 'classic'
-                            ? t('settings.billTemplateClassicDesc')
-                            : t('settings.billTemplateCompactDesc')}
+                            ? t('billTemplateClassicDesc')
+                            : t('billTemplateCompactDesc')}
                       </p>
                     </button>
                   );
@@ -3809,15 +3826,15 @@ export default function SettingsPage() {
         <TabsContent value="data">
           <div className="pb-6 max-w-3xl space-y-6">
             <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">{t('settings.tabBackupData')}</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('tabBackupData')}</h2>
             {/* Database Export */}
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <FileText size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.exportDatabase')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('exportDatabase')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-4">
-                {t('settings.exportDatabaseHint')}
+                {t('exportDatabaseHint')}
               </p>
               <button
                 onClick={async () => {
@@ -3832,14 +3849,14 @@ export default function SettingsPage() {
                     a.click();
                     document.body.removeChild(a);
                     window.URL.revokeObjectURL(url);
-                    toast.success(t('settings.databaseExported'));
+                    toast.success(t('databaseExported'));
                   } catch {
-                    toast.error(t('settings.exportFailed'));
+                    toast.error(t('exportFailed'));
                   }
                 }}
                 className="px-5 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium"
               >
-                {t('settings.exportToJson')}
+                {t('exportToJson')}
               </button>
             </div>
 
@@ -3847,23 +3864,23 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-blue-100 bg-blue-50/30 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Database size={20} className="text-blue-600" />
-                <h2 className="font-semibold text-gray-900">{t('settings.createBackup')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('createBackup')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-4">
-                {t('settings.createBackupHint')}
+                {t('createBackupHint')}
               </p>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={handleCreateBackup}
                   className="px-5 py-2 text-sm bg-gray-600 text-white rounded-lg hover:opacity-90 font-medium"
                 >
-                  {t('settings.createBackup')}
+                  {t('createBackup')}
                 </button>
                 <button
                   onClick={handleChooseBackupLocation}
                   className="px-5 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
                 >
-                  {t('settings.chooseBackupLocation')}
+                  {t('chooseBackupLocation')}
                 </button>
               </div>
             </div>
@@ -3873,23 +3890,23 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
                   <Database size={20} className="text-gray-500" />
-                  <h2 className="font-semibold text-gray-900">{t('settings.backupHistory')}</h2>
+                  <h2 className="font-semibold text-gray-900">{t('backupHistory')}</h2>
                 </div>
                 <button
                   onClick={fetchBackups}
                   disabled={backupsLoading}
                   className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-50"
-                  title={t('settings.refresh')}
+                  title={t('refresh')}
                 >
                   <RefreshCw size={16} className={backupsLoading ? 'animate-spin' : ''} />
                 </button>
               </div>
               <p className="text-sm text-gray-500 mb-4">
-                {t('settings.backupHistoryHint')}
+                {t('backupHistoryHint')}
               </p>
               {backups.length === 0 ? (
                 <p className="text-sm text-gray-400 py-4 text-center">
-                  {backupsLoading ? t('common.loading') : t('settings.backupHistoryEmpty')}
+                  {backupsLoading ? tCommon('loading') : t('backupHistoryEmpty')}
                 </p>
               ) : (
                 <div className="divide-y divide-gray-100">
@@ -3900,19 +3917,19 @@ export default function SettingsPage() {
                           <span className="text-sm font-medium text-gray-900">{formatDateTime(backup.createdAt)}</span>
                           {backup.kind === 'auto' && (
                             <span className="text-xs px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-100">
-                              {t('settings.backupKindAuto')}
+                              {t('backupKindAuto')}
                             </span>
                           )}
                           {googleDriveStatus.last_backup_filename === backup.fileName && (
                             <span className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100">
                               <HardDrive size={11} />
-                              {t('settings.googleDriveUploadedBadge')}
+                              {t('googleDriveUploadedBadge')}
                             </span>
                           )}
                         </div>
                         <p className="text-xs text-gray-400 truncate">
                           {formatBackupSize(backup.sizeBytes)}
-                          {backup.schemaVersion != null && ` · ${t('settings.backupSchemaVersion', { version: backup.schemaVersion })}`}
+                          {backup.schemaVersion != null && ` · ${t('backupSchemaVersion', { version: backup.schemaVersion })}`}
                         </p>
                       </div>
                       <div className="shrink-0 flex items-center gap-2">
@@ -3920,12 +3937,12 @@ export default function SettingsPage() {
                           onClick={() => handleRestoreFromHistory(backup)}
                           className="px-3 py-1.5 text-xs bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 font-medium"
                         >
-                          {t('settings.restoreBackup')}
+                          {t('restoreBackup')}
                         </button>
                         <button
                           onClick={() => handleDeleteBackup(backup)}
                           className="p-1.5 text-gray-400 hover:text-red-600 rounded-lg hover:bg-red-50"
-                          title={t('settings.deleteBackup')}
+                          title={t('deleteBackup')}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -3941,8 +3958,8 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2">
                 <HardDrive size={20} className="text-gray-500" />
                 <div>
-                  <h2 className="font-semibold text-gray-900">{t('settings.googleDrive')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('settings.googleDriveHint')}</p>
+                  <h2 className="font-semibold text-gray-900">{t('googleDrive')}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('googleDriveHint')}</p>
                 </div>
               </div>
 
@@ -3951,13 +3968,13 @@ export default function SettingsPage() {
                   <div className="p-3 bg-white rounded-full shadow-sm">
                     <HardDrive className="w-6 h-6 text-gray-400" />
                   </div>
-                  <p className="text-sm font-medium text-gray-900">{t('settings.googleDriveNotConfigured')}</p>
-                  <p className="text-xs text-gray-500 max-w-sm">{t('settings.googleDriveNotConfiguredHint')}</p>
+                  <p className="text-sm font-medium text-gray-900">{t('googleDriveNotConfigured')}</p>
+                  <p className="text-xs text-gray-500 max-w-sm">{t('googleDriveNotConfiguredHint')}</p>
                 </div>
               ) : !googleDriveStatus.secure_storage_available ? (
                 <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-4 py-3">
                   <AlertTriangle size={16} className="text-amber-600 shrink-0" />
-                  <p className="text-sm text-amber-800">{t('settings.googleDriveSecureStorageUnavailable')}</p>
+                  <p className="text-sm text-amber-800">{t('googleDriveSecureStorageUnavailable')}</p>
                 </div>
               ) : (
                 <>
@@ -3970,10 +3987,10 @@ export default function SettingsPage() {
                       )}
                       <div>
                         <p className="text-sm font-medium text-gray-900">
-                          {googleDriveStatus.connected ? t('settings.googleDriveConnected') : t('settings.googleDriveNotConnected')}
+                          {googleDriveStatus.connected ? t('googleDriveConnected') : t('googleDriveNotConnected')}
                         </p>
                         {googleDriveStatus.connected && googleDriveStatus.account_email && (
-                          <p className="text-xs text-gray-500">{t('settings.googleDriveAccount')}: <Ltr>{googleDriveStatus.account_email}</Ltr></p>
+                          <p className="text-xs text-gray-500">{t('googleDriveAccount')}: <Ltr>{googleDriveStatus.account_email}</Ltr></p>
                         )}
                       </div>
                     </div>
@@ -3984,7 +4001,7 @@ export default function SettingsPage() {
                           disabled={disconnectingGoogleDrive}
                           className="px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 font-medium shrink-0"
                         >
-                          {disconnectingGoogleDrive ? t('settings.googleDriveDisconnecting') : t('settings.googleDriveDisconnect')}
+                          {disconnectingGoogleDrive ? t('googleDriveDisconnecting') : t('googleDriveDisconnect')}
                         </button>
                       ) : (
                         <button
@@ -3992,7 +4009,7 @@ export default function SettingsPage() {
                           disabled={connectingGoogleDrive}
                           className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
                         >
-                          {connectingGoogleDrive ? t('settings.googleDriveConnecting') : t('settings.googleDriveConnect')}
+                          {connectingGoogleDrive ? t('googleDriveConnecting') : t('googleDriveConnect')}
                         </button>
                       )
                     )}
@@ -4002,19 +4019,19 @@ export default function SettingsPage() {
                     <>
                       <div className="grid sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.googleDriveFrequency')}</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('googleDriveFrequency')}</label>
                           <select
                             value={googleDriveStatus.frequency}
                             disabled={savingGoogleDrivePrefs}
                             onChange={(e) => updateGoogleDrivePrefs({ frequency: e.target.value as 'daily' | 'weekly' })}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-brand outline-none disabled:opacity-50"
                           >
-                            <option value="daily">{t('settings.googleDriveFrequencyDaily')}</option>
-                            <option value="weekly">{t('settings.googleDriveFrequencyWeekly')}</option>
+                            <option value="daily">{t('googleDriveFrequencyDaily')}</option>
+                            <option value="weekly">{t('googleDriveFrequencyWeekly')}</option>
                           </select>
                         </div>
                         <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('settings.googleDriveRetention')}</label>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">{t('googleDriveRetention')}</label>
                           <input
                             type="number"
                             min={1}
@@ -4030,7 +4047,7 @@ export default function SettingsPage() {
                           />
                         </div>
                       </div>
-                      <p className="text-xs text-gray-500">{t('settings.googleDriveRetentionHint')}</p>
+                      <p className="text-xs text-gray-500">{t('googleDriveRetentionHint')}</p>
 
                       <div className="flex items-center justify-between gap-3 flex-wrap pt-1">
                         <div className="text-xs text-gray-500">
@@ -4038,16 +4055,16 @@ export default function SettingsPage() {
                             googleDriveStatus.last_backup_status === 'error' ? (
                               <span className="flex items-center gap-1 text-red-600">
                                 <AlertTriangle size={13} />
-                                {t('settings.googleDriveLastBackupErrorAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
+                                {t('googleDriveLastBackupErrorAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
                               </span>
                             ) : (
                               <span className="flex items-center gap-1 text-gray-500">
                                 <CheckCircle2 size={13} className="text-green-600" />
-                                {t('settings.googleDriveLastBackupSuccessAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
+                                {t('googleDriveLastBackupSuccessAt', { time: formatDateTime(googleDriveStatus.last_backup_at) })}
                               </span>
                             )
                           ) : (
-                            <span>{t('settings.googleDriveLastBackup')}: {t('settings.googleDriveLastBackupNever')}</span>
+                            <span>{t('googleDriveLastBackup')}: {t('googleDriveLastBackupNever')}</span>
                           )}
                         </div>
                         {(currentTenant?.role === 'owner') && (
@@ -4057,7 +4074,7 @@ export default function SettingsPage() {
                             className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-600 text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
                           >
                             <UploadCloud size={15} />
-                            {backingUpGoogleDrive ? t('settings.googleDriveBackingUp') : t('settings.googleDriveBackupNow')}
+                            {backingUpGoogleDrive ? t('googleDriveBackingUp') : t('googleDriveBackupNow')}
                           </button>
                         )}
                       </div>
@@ -4071,10 +4088,10 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <FileText size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.importDatabase')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('importDatabase')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-4">
-                {t('settings.importDatabaseHint')}
+                {t('importDatabaseHint')}
               </p>
               <input
                 type="file"
@@ -4090,11 +4107,11 @@ export default function SettingsPage() {
                     try {
                       const data = JSON.parse(event.target?.result as string);
                       if (!data.app || data.app !== 'FloDesktop') {
-                        toast.error(t('settings.invalidExportFile'));
+                        toast.error(t('invalidExportFile'));
                         return;
                       }
 
-                      const overwrite = await confirm(t('settings.importOverwriteConfirm'), { confirmLabel: t('settings.replaceAll') });
+                      const overwrite = await confirm(t('importOverwriteConfirm'), { confirmLabel: t('replaceAll') });
 
                       // A schema-mismatch import takes the same destructive
                       // delete-and-replace path as an overwrite, so it needs the
@@ -4107,7 +4124,7 @@ export default function SettingsPage() {
 
                       if (destructive && masterPinStatus.available) {
                         if (!masterPinStatus.isSet) {
-                          toast.error(t('settings.masterPinRequiredForReplace'));
+                          toast.error(t('masterPinRequiredForReplace'));
                           return;
                         }
                         setPinGate({ mode: 'import', payload: { data, overwrite } });
@@ -4116,7 +4133,7 @@ export default function SettingsPage() {
 
                       await runImport(data, overwrite);
                     } catch {
-                      toast.error(t('settings.importFailed'));
+                      toast.error(t('importFailed'));
                     }
                   };
                   reader.readAsText(file);
@@ -4128,7 +4145,7 @@ export default function SettingsPage() {
                   htmlFor="import-file"
                   className="px-5 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 cursor-pointer font-medium"
                 >
-                  {t('settings.selectFileAndImport')}
+                  {t('selectFileAndImport')}
                 </label>
               </div>
             </div>
@@ -4137,7 +4154,7 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Database size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.databaseInformation')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('databaseInformation')}</h2>
               </div>
               <button
                 onClick={async () => {
@@ -4147,12 +4164,12 @@ export default function SettingsPage() {
                     setTableInfo(tables);
                     setTableInfoOpen(true);
                   } catch {
-                    toast.error(t('settings.tableInfoFailed'));
+                    toast.error(t('tableInfoFailed'));
                   }
                 }}
                 className="px-5 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 font-medium"
               >
-                {t('settings.viewTableInfo')}
+                {t('viewTableInfo')}
               </button>
             </div>
 
@@ -4160,16 +4177,16 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Wrench size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.databaseHealthCheck')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('databaseHealthCheck')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-4">
-                {t('settings.databaseHealthCheckDescription')}
+                {t('databaseHealthCheckDescription')}
               </p>
               <button
                 onClick={runHealthCheck}
                 className="px-5 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 font-medium"
               >
-                {t('settings.databaseHealthCheck')}
+                {t('databaseHealthCheck')}
               </button>
             </div>
 
@@ -4177,23 +4194,23 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <KeyRound size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.masterPin')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('masterPin')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-4">
-                {t('settings.masterPinDataDescription')}
+                {t('masterPinDataDescription')}
               </p>
               {!masterPinStatus.available ? (
-                <p className="text-sm text-amber-600">{t('settings.notAvailableOnDevice')}</p>
+                <p className="text-sm text-amber-600">{t('notAvailableOnDevice')}</p>
               ) : (
                 <div className="flex items-center gap-3">
                   <span className={`text-sm font-medium ${masterPinStatus.isSet ? 'text-green-600' : 'text-amber-600'}`}>
-                    {masterPinStatus.isSet ? t('settings.masterPinStatusSet') : t('settings.masterPinStatusNotSet')}
+                    {masterPinStatus.isSet ? t('masterPinStatusSet') : t('masterPinStatusNotSet')}
                   </span>
                   <button
                     onClick={() => setPinGate({ mode: 'set' })}
                     className="px-5 py-2 text-sm border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 font-medium"
                   >
-                    {masterPinStatus.isSet ? t('settings.masterPinChangeButton') : t('settings.masterPinSetButton')}
+                    {masterPinStatus.isSet ? t('masterPinChangeButton') : t('masterPinSetButton')}
                   </button>
                 </div>
               )}
@@ -4203,16 +4220,16 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-red-200 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <AlertTriangle size={20} className="text-red-600" />
-                <h2 className="font-semibold text-red-600">{t('settings.initializeDatabase')}</h2>
+                <h2 className="font-semibold text-red-600">{t('initializeDatabase')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-4">
-                {t('settings.initializeDatabaseDescription')}
+                {t('initializeDatabaseDescription')}
               </p>
               <button
                 onClick={() => setInitializeDbOpen(true)}
                 className="px-5 py-2 text-sm bg-red-600 text-white rounded-lg hover:opacity-90 font-medium"
               >
-                {t('settings.initializeDatabaseButton')}
+                {t('initializeDatabaseButton')}
               </button>
             </div>
           </div>
@@ -4227,11 +4244,11 @@ export default function SettingsPage() {
             ) : (
               <div className="bg-white rounded-xl border border-gray-100 p-6 flex items-center justify-between gap-4">
                 <div>
-                  <p className="font-semibold text-gray-900">{t('whatsapp.settings.enabled')}</p>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('whatsapp.settings.enabledHint')}</p>
+                  <p className="font-semibold text-gray-900">{tWhatsappSettings('enabled')}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{tWhatsappSettings('enabledHint')}</p>
                 </div>
                 <Button asChild variant="outline" size="sm">
-                  <Link href="/whatsapp">{t('whatsapp.settings.openConnection')}</Link>
+                  <Link href="/whatsapp">{tWhatsappSettings('openConnection')}</Link>
                 </Button>
               </div>
             )}
@@ -4241,15 +4258,15 @@ export default function SettingsPage() {
         <TabsContent value="mobile-access">
           <div className="pb-6 max-w-3xl space-y-6">
             <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">{t('settings.tabMobileAccess')}</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('tabMobileAccess')}</h2>
 
             {/* FloAdmin — reporting sync */}
             <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-5">
               <div className="flex items-center gap-2">
                 <Cloud size={20} className="text-brand" />
                 <div>
-                  <h2 className="font-semibold text-gray-900">{t('settings.floadminSalesReporting')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('settings.floadminSalesReportingHint')}</p>
+                  <h2 className="font-semibold text-gray-900">{t('floadminSalesReporting')}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('floadminSalesReportingHint')}</p>
                 </div>
               </div>
 
@@ -4259,14 +4276,14 @@ export default function SettingsPage() {
                     <Cloud className="w-6 h-6 text-brand" />
                   </div>
                   <div>
-                    <h3 className="font-medium text-gray-900">{t('settings.cloudServicesDisabled')}</h3>
-                    <p className="text-sm text-gray-500 mt-1 max-w-sm">{t('settings.cloudServicesDisabledHint')}</p>
+                    <h3 className="font-medium text-gray-900">{t('cloudServicesDisabled')}</h3>
+                    <p className="text-sm text-gray-500 mt-1 max-w-sm">{t('cloudServicesDisabledHint')}</p>
                   </div>
                   <button
                     onClick={() => setShowInitializeCloudConfirm(true)}
                     className="px-4 py-2 bg-brand text-white text-sm font-medium rounded-lg hover:opacity-90"
                   >
-                    {t('settings.cloudInitializeButton')}
+                    {t('cloudInitializeButton')}
                   </button>
                 </div>
               ) : (
@@ -4280,25 +4297,25 @@ export default function SettingsPage() {
                   )}
                   <div>
                     <p className="text-sm font-medium text-gray-900">
-                      {cloudStatus.cloud_registration_status === 'registered' && cloudServicesStopped && t('settings.cloudServicesStopped')}
-                      {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped && (cloudStatus.cloud_connected ? t('settings.connectedToFloadmin') : t('settings.registeredReconnecting'))}
-                      {cloudStatus.cloud_registration_status === 'rejected' && t('settings.registrationRejected')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && (cloudStatus.cloud_last_error || cloudStatus.cloud_deletion_status === 'failed') && t('settings.cloudDeletionFailed')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && cloudStatus.cloud_deletion_status === 'processing' && t('settings.cloudDeletionProcessing')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && !cloudStatus.cloud_last_error && cloudStatus.cloud_deletion_status !== 'failed' && cloudStatus.cloud_deletion_status !== 'processing' && t('settings.cloudDeletionPending')}
-                      {cloudStatus.cloud_registration_status === 'deleted' && t('settings.cloudDataDeleted')}
-                      {(cloudStatus.cloud_registration_status === 'unregistered' || cloudStatus.cloud_registration_status === 'registration_failed') && t('settings.notRegistered')}
+                      {cloudStatus.cloud_registration_status === 'registered' && cloudServicesStopped && t('cloudServicesStopped')}
+                      {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped && (cloudStatus.cloud_connected ? t('connectedToFloadmin') : t('registeredReconnecting'))}
+                      {cloudStatus.cloud_registration_status === 'rejected' && t('registrationRejected')}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && (cloudStatus.cloud_last_error || cloudStatus.cloud_deletion_status === 'failed') && t('cloudDeletionFailed')}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && cloudStatus.cloud_deletion_status === 'processing' && t('cloudDeletionProcessing')}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && !cloudStatus.cloud_last_error && cloudStatus.cloud_deletion_status !== 'failed' && cloudStatus.cloud_deletion_status !== 'processing' && t('cloudDeletionPending')}
+                      {cloudStatus.cloud_registration_status === 'deleted' && t('cloudDataDeleted')}
+                      {(cloudStatus.cloud_registration_status === 'unregistered' || cloudStatus.cloud_registration_status === 'registration_failed') && t('notRegistered')}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {cloudStatus.cloud_registration_status === 'registered' && cloudServicesStopped && t('settings.cloudResumeHint')}
-                      {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped && (cloudStatus.cloud_last_heartbeat ? t('settings.liveChannelHeartbeat', { mode: cloudStatus.cloud_relay_mode.replace('_', ' '), time: formatTime(cloudStatus.cloud_last_heartbeat) }) : t('settings.liveChannel', { mode: cloudStatus.cloud_relay_mode.replace('_', ' ') }))}
-                      {cloudStatus.cloud_registration_status === 'rejected' && t('settings.registrationContactSupport')}
-                      {cloudStatus.cloud_registration_status === 'registration_failed' && (cloudStatus.cloud_last_error ? t('settings.registrationLastError', { error: cloudStatus.cloud_last_error }) : t('settings.registrationLastFailed'))}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && (cloudStatus.cloud_last_error || cloudStatus.cloud_deletion_status === 'failed') && t('settings.cloudDeletionFailedHint2')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && cloudStatus.cloud_deletion_status === 'processing' && t('settings.cloudDeletionProcessingHint2')}
-                      {cloudStatus.cloud_registration_status === 'deletion_pending' && !cloudStatus.cloud_last_error && cloudStatus.cloud_deletion_status !== 'failed' && cloudStatus.cloud_deletion_status !== 'processing' && t('settings.cloudServicesStoppedHint')}
-                      {cloudStatus.cloud_registration_status === 'deleted' && t('settings.cloudDataDeletedHint')}
-                      {cloudStatus.cloud_registration_status === 'unregistered' && t('settings.registrationRegisterHelp')}
+                      {cloudStatus.cloud_registration_status === 'registered' && cloudServicesStopped && t('cloudResumeHint')}
+                      {cloudStatus.cloud_registration_status === 'registered' && !cloudServicesStopped && (cloudStatus.cloud_last_heartbeat ? t('liveChannelHeartbeat', { mode: cloudStatus.cloud_relay_mode.replace('_', ' '), time: formatTime(cloudStatus.cloud_last_heartbeat) }) : t('liveChannel', { mode: cloudStatus.cloud_relay_mode.replace('_', ' ') }))}
+                      {cloudStatus.cloud_registration_status === 'rejected' && t('registrationContactSupport')}
+                      {cloudStatus.cloud_registration_status === 'registration_failed' && (cloudStatus.cloud_last_error ? t('registrationLastError', { error: cloudStatus.cloud_last_error }) : t('registrationLastFailed'))}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && (cloudStatus.cloud_last_error || cloudStatus.cloud_deletion_status === 'failed') && t('cloudDeletionFailedHint2')}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && cloudStatus.cloud_deletion_status === 'processing' && t('cloudDeletionProcessingHint2')}
+                      {cloudStatus.cloud_registration_status === 'deletion_pending' && !cloudStatus.cloud_last_error && cloudStatus.cloud_deletion_status !== 'failed' && cloudStatus.cloud_deletion_status !== 'processing' && t('cloudServicesStoppedHint')}
+                      {cloudStatus.cloud_registration_status === 'deleted' && t('cloudDataDeletedHint')}
+                      {cloudStatus.cloud_registration_status === 'unregistered' && t('registrationRegisterHelp')}
                     </p>
                   </div>
                 </div>
@@ -4308,14 +4325,14 @@ export default function SettingsPage() {
                     disabled={registeringCloud}
                     className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium shrink-0"
                   >
-                    {registeringCloud ? t('settings.registering') : t('settings.registerWithFloadmin')}
+                    {registeringCloud ? t('registering') : t('registerWithFloadmin')}
                   </button>
                 )}
               </div>
 
               {cloudStatus.cloud_registration_status !== 'deleted' && (
               <div className="space-y-3">
-                <p className="text-sm text-gray-600">{t('settings.cloudManagedAutomatically')}</p>
+                <p className="text-sm text-gray-600">{t('cloudManagedAutomatically')}</p>
 
                 <label className="flex items-start gap-3 cursor-pointer">
                   <input
@@ -4325,13 +4342,13 @@ export default function SettingsPage() {
                     className="mt-0.5 rounded border-gray-300 text-brand focus:ring-brand"
                   />
                   <div>
-                    <span className="text-sm font-medium text-gray-900 block">{cloudServicesStopped ? t('settings.cloudEnableButton') : t('settings.enableBillSync')}</span>
-                    <p className="text-xs text-gray-500 mt-1">{cloudServicesStopped ? t('settings.cloudResumeHintStopped') : t('settings.enableBillSyncHint')}</p>
+                    <span className="text-sm font-medium text-gray-900 block">{cloudServicesStopped ? t('cloudEnableButton') : t('enableBillSync')}</span>
+                    <p className="text-xs text-gray-500 mt-1">{cloudServicesStopped ? t('cloudResumeHintStopped') : t('enableBillSyncHint')}</p>
                   </div>
                 </label>
 
                     {cloudSettings.cloud_last_sync && (
-                      <p className="text-xs text-gray-400">{t('settings.lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
+                      <p className="text-xs text-gray-400">{t('lastSync', { time: formatDateTime(cloudSettings.cloud_last_sync) })}</p>
                     )}
                   </div>
               )}
@@ -4344,8 +4361,8 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2">
                 <Smartphone size={20} className="text-gray-500" />
                 <div>
-                  <h2 className="font-semibold text-gray-900">{revflo?.name || t('settings.revflo')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{revflo?.tagline || t('settings.revfloHint')}</p>
+                  <h2 className="font-semibold text-gray-900">{revflo?.name || t('revflo')}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{revflo?.tagline || t('revfloHint')}</p>
                 </div>
               </div>
 
@@ -4353,7 +4370,7 @@ export default function SettingsPage() {
                 <div className="flex flex-col sm:flex-row gap-5 items-start border border-gray-100 rounded-xl p-5">
                   <div className="shrink-0">
                     {revflo.qr_data_url ? (
-                      <img src={revflo.qr_data_url} alt={t('settings.appQrAlt', { name: revflo.name })}
+                      <img src={revflo.qr_data_url} alt={t('appQrAlt', { name: revflo.name })}
                         className="w-28 h-28 rounded-lg border border-gray-200" />
                     ) : (
                       <div className="w-28 h-28 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400">
@@ -4364,12 +4381,12 @@ export default function SettingsPage() {
                   <div className="flex gap-3 text-sm">
                     {revflo.ios_url && (
                       <a href={revflo.ios_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
-                        {t('settings.downloadForIos')}
+                        {t('downloadForIos')}
                       </a>
                     )}
                     {revflo.android_url && (
                       <a href={revflo.android_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
-                        {t('settings.downloadForAndroid')}
+                        {t('downloadForAndroid')}
                       </a>
                     )}
                   </div>
@@ -4377,15 +4394,15 @@ export default function SettingsPage() {
               )}
 
               <div>
-                <p className="text-sm font-medium text-gray-900 mb-1">{t('settings.mobileApp')}</p>
-                <p className="text-xs text-gray-500 mb-4">{t('settings.mobileAppHint')}</p>
+                <p className="text-sm font-medium text-gray-900 mb-1">{t('mobileApp')}</p>
+                <p className="text-xs text-gray-500 mb-4">{t('mobileAppHint')}</p>
                 {pairingUnavailable ? (
-                  <p className="text-sm text-gray-500">{t('settings.mobilePairingNeedsCloud')}</p>
+                  <p className="text-sm text-gray-500">{t('mobilePairingNeedsCloud')}</p>
                 ) : pairingCode ? (
                   <div className="space-y-3">
                     <div className="flex items-center gap-4">
                       {pairingQrDataUrl && (
-                        <img src={pairingQrDataUrl} alt={t('settings.pairingQrAlt')} className="w-28 h-28 rounded-lg border border-gray-200" />
+                        <img src={pairingQrDataUrl} alt={t('pairingQrAlt')} className="w-28 h-28 rounded-lg border border-gray-200" />
                       )}
                       <div className="flex items-center gap-3 flex-1">
                       <div className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-center">
@@ -4396,7 +4413,7 @@ export default function SettingsPage() {
                       <button
                         onClick={copyPairingCode}
                         className="p-2.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500"
-                        title={t('settings.copyCode')}
+                        title={t('copyCode')}
                       >
                         {copiedCode ? <Check size={18} className="text-green-600" /> : <Copy size={18} />}
                       </button>
@@ -4404,11 +4421,11 @@ export default function SettingsPage() {
                     </div>
                     {pairingExpiresAt && (
                       <p className="text-xs text-gray-400">
-                        {t('settings.codeExpires', { date: formatDate(pairingExpiresAt) })}
+                        {t('codeExpires', { date: formatDate(pairingExpiresAt) })}
                       </p>
                     )}
                     <p className="text-xs text-gray-500">
-                      {t('settings.pairingCodeSingleUse')}
+                      {t('pairingCodeSingleUse')}
                     </p>
                     <button
                       onClick={rotatePairingCode}
@@ -4416,10 +4433,10 @@ export default function SettingsPage() {
                       className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 disabled:opacity-50"
                     >
                       <RefreshCw size={14} className={rotatingCode ? 'animate-spin' : ''} />
-                      {rotatingCode ? t('settings.generating') : t('settings.generateNewCode')}
+                      {rotatingCode ? t('generating') : t('generateNewCode')}
                     </button>
                     <p className="text-xs text-amber-600">
-                      {t('settings.disconnectDevicesWarning')}
+                      {t('disconnectDevicesWarning')}
                     </p>
                   </div>
                 ) : (
@@ -4428,33 +4445,33 @@ export default function SettingsPage() {
                     disabled={rotatingCode}
                     className="px-5 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 disabled:opacity-50 font-medium"
                   >
-                    {rotatingCode ? t('settings.generating') : t('settings.generatePairingCode')}
+                    {rotatingCode ? t('generating') : t('generatePairingCode')}
                   </button>
                 )}
               </div>
 
               {!pairingUnavailable && (
                 <div className="pt-5 border-t border-gray-100">
-                  <p className="text-sm font-medium text-gray-900 mb-3">{t('settings.pairedDevices')}</p>
+                  <p className="text-sm font-medium text-gray-900 mb-3">{t('pairedDevices')}</p>
                   {devicesLoading ? (
-                    <p className="text-sm text-gray-400">{t('settings.loading')}</p>
+                    <p className="text-sm text-gray-400">{t('loading')}</p>
                   ) : pairedDevices.length === 0 ? (
-                    <p className="text-sm text-gray-500">{t('settings.noPairedDevices')}</p>
+                    <p className="text-sm text-gray-500">{t('noPairedDevices')}</p>
                   ) : (
                     <div className="space-y-2">
                       {pairedDevices.map((d) => (
                         <div key={d.id} className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-sm">
                           <div className="flex items-center justify-between">
                             <span className="font-medium text-gray-900 capitalize">
-                              {d.platform || t('settings.unknownPlatform')}
+                              {d.platform || t('unknownPlatform')}
                               {d.country ? ` · ${d.country}` : ''}
                             </span>
                             <span className="text-xs text-gray-400">
-                              {t('settings.lastActive', { date: formatDate(d.last_seen_at) })}
+                              {t('lastActive', { date: formatDate(d.last_seen_at) })}
                             </span>
                           </div>
                           <p className="text-xs text-gray-500 mt-1">
-                            {t('settings.firstPaired', { date: formatDate(d.first_seen_at) })}
+                            {t('firstPaired', { date: formatDate(d.first_seen_at) })}
                             {d.app_version ? ` · v${d.app_version}` : ''}
                           </p>
                           {d.user_agent && (
@@ -4474,15 +4491,15 @@ export default function SettingsPage() {
         <TabsContent value="orderflow">
           <div className="pb-6 max-w-3xl space-y-6">
             <div className="space-y-6">
-            <h2 className="text-lg font-semibold text-gray-900">{t('settings.tabOrderflow')}</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('tabOrderflow')}</h2>
 
             {/* OrderFlow — online orders */}
             <div className="bg-white rounded-xl border border-gray-100 p-6 space-y-4">
               <div className="flex items-center gap-2">
                 <Zap size={20} className="text-amber-500" />
                 <div>
-                  <h2 className="font-semibold text-gray-900">{t('settings.orderflowOnlineOrders')}</h2>
-                  <p className="text-xs text-gray-500 mt-0.5">{t('settings.orderflowOnlineOrdersHint')}</p>
+                  <h2 className="font-semibold text-gray-900">{t('orderflowOnlineOrders')}</h2>
+                  <p className="text-xs text-gray-500 mt-0.5">{t('orderflowOnlineOrdersHint')}</p>
                 </div>
               </div>
 
@@ -4493,7 +4510,7 @@ export default function SettingsPage() {
                   onChange={(e) => setCloudSettings({ ...cloudSettings, cloud_orders_enabled: e.target.checked })}
                   className="rounded border-gray-300 text-brand focus:ring-brand"
                 />
-                <span className="text-sm text-gray-700">{t('settings.enableOnlineOrderPolling')}</span>
+                <span className="text-sm text-gray-700">{t('enableOnlineOrderPolling')}</span>
               </label>
 
             </div>
@@ -4505,18 +4522,18 @@ export default function SettingsPage() {
         <TabsContent value="about">
           <div className="pb-6 max-w-3xl space-y-6">
             <div className="bg-white rounded-xl border border-gray-100 p-6">
-              <h2 className="font-semibold text-gray-900 mb-4">{t('settings.aboutFloCafe')}</h2>
+              <h2 className="font-semibold text-gray-900 mb-4">{t('aboutFloCafe')}</h2>
               <p className="text-sm text-gray-600 mb-6">
-                {t('settings.aboutDescription')}
+                {t('aboutDescription')}
               </p>
               <div className="space-y-3">
                 <a href="https://github.com/FreeOpenSourcePOS/FloCafe" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.403 5.403 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></svg>
-                  {t('settings.aboutGithub')}
+                  {t('aboutGithub')}
                 </a>
                 <a href="https://flopos.com/" target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-brand hover:underline">
                   <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
-                  {t('settings.aboutWebsite')}
+                  {t('aboutWebsite')}
                 </a>
               </div>
             </div>
@@ -4525,10 +4542,10 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Smartphone size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('settings.moreApps')}</h2>
+                <h2 className="font-semibold text-gray-900">{t('moreApps')}</h2>
               </div>
               <p className="text-sm text-gray-500 mb-5">
-                {t('settings.moreAppsHint')}
+                {t('moreAppsHint')}
               </p>
 
               {moreAppsLoading && (
@@ -4543,7 +4560,7 @@ export default function SettingsPage() {
                     <div key={app.id} className="flex flex-col sm:flex-row gap-5 items-start border border-gray-100 rounded-xl p-5">
                       <div className="shrink-0">
                         {app.qr_data_url ? (
-                          <img src={app.qr_data_url} alt={t('settings.appQrAlt', { name: app.name })}
+                          <img src={app.qr_data_url} alt={t('appQrAlt', { name: app.name })}
                             className="w-32 h-32 rounded-lg border border-gray-200" />
                         ) : (
                           <div className="w-32 h-32 rounded-lg border border-gray-200 flex items-center justify-center text-gray-400">
@@ -4555,19 +4572,19 @@ export default function SettingsPage() {
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="font-semibold text-gray-900">{app.name}</h3>
                           {!app.available && (
-                            <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{t('settings.comingSoon')}</span>
+                            <span className="text-xs font-medium text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">{t('comingSoon')}</span>
                           )}
                         </div>
                         <p className="text-sm text-gray-500 mb-3">{app.tagline}</p>
                         <div className="flex gap-3 text-sm">
                           {app.ios_url && (
                             <a href={app.ios_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
-                              {t('settings.downloadForIos')}
+                              {t('downloadForIos')}
                             </a>
                           )}
                           {app.android_url && (
                             <a href={app.android_url} target="_blank" rel="noopener noreferrer" className="text-brand hover:underline">
-                              {t('settings.downloadForAndroid')}
+                              {t('downloadForAndroid')}
                             </a>
                           )}
                         </div>
@@ -4575,7 +4592,7 @@ export default function SettingsPage() {
                     </div>
                   ))}
                   {moreApps.length === 0 && (
-                    <p className="text-sm text-gray-400 text-center py-10">{t('settings.noAppsToShow')}</p>
+                    <p className="text-sm text-gray-400 text-center py-10">{t('noAppsToShow')}</p>
                   )}
                 </div>
               )}
@@ -4589,14 +4606,14 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
             <div className="flex items-center gap-2 mb-4">
               <RefreshCw size={20} className="text-gray-500" />
-              <h2 className="font-semibold text-gray-900">{t('settings.updates')}</h2>
+              <h2 className="font-semibold text-gray-900">{t('updates')}</h2>
             </div>
             <p className="text-sm text-gray-500 mb-6">
               {updateStatus?.status === 'store'
-                ? t('settings.softwareUpdatesHintStore')
+                ? t('softwareUpdatesHintStore')
                 : updateStatus?.status === 'linux-managed'
-                ? t('settings.softwareUpdatesHintLinuxManaged')
-                : t('settings.softwareUpdatesHintDefault')}
+                ? t('softwareUpdatesHintLinuxManaged')
+                : t('softwareUpdatesHintDefault')}
             </p>
 
             {updateStatus && updateStatus.status !== 'store' && updateStatus.status !== 'linux-managed' && (
@@ -4618,17 +4635,17 @@ export default function SettingsPage() {
                   {updateStatus.status === 'error' && <span className="text-red-600">✕</span>}
                   {updateStatus.status === 'dev-mode' && <span className="text-yellow-600">⚠</span>}
                   <span className="font-medium capitalize">
-                    {updateStatus.status === 'available' ? t('settings.updateStatusAvailable')
-                     : updateStatus.status === 'up-to-date' ? t('settings.updateStatusUpToDate')
-                     : updateStatus.status === 'ready-to-install' ? t('settings.updateStatusReadyToInstall')
+                    {updateStatus.status === 'available' ? t('updateStatusAvailable')
+                     : updateStatus.status === 'up-to-date' ? t('updateStatusUpToDate')
+                     : updateStatus.status === 'ready-to-install' ? t('updateStatusReadyToInstall')
                      : updateStatus.status.replace(/-/g, ' ')}
                   </span>
                 </div>
                 {appVersion && (
-                  <p className="text-sm font-medium text-gray-900">{t('settings.version')}: <Ltr>{appVersion}</Ltr></p>
+                  <p className="text-sm font-medium text-gray-900">{t('version')}: <Ltr>{appVersion}</Ltr></p>
                 )}
                 {updateStatus.version && updateStatus.version !== appVersion && (
-                  <p className="text-sm text-gray-600 mt-1">{t('settings.updateLatestAvailable')} <Ltr>{updateStatus.version}</Ltr></p>
+                  <p className="text-sm text-gray-600 mt-1">{t('updateLatestAvailable')} <Ltr>{updateStatus.version}</Ltr></p>
                 )}
                 {updateStatus.percent !== undefined && (
                   <div className="mt-2">
@@ -4638,17 +4655,17 @@ export default function SettingsPage() {
                         style={{ width: `${updateStatus.percent}%` }}
                       />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">{t('settings.percentDownloaded', { percent: updateStatus.percent.toFixed(1) })}</p>
+                    <p className="text-xs text-gray-500 mt-1">{t('percentDownloaded', { percent: updateStatus.percent.toFixed(1) })}</p>
                   </div>
                 )}
                 {updateStatus.error && (
                   <p className="text-sm text-red-600 mt-1">{updateStatus.error}</p>
                 )}
                 {updateStatus.status === 'up-to-date' && (
-                  <p className="text-sm text-gray-600">{t('settings.upToDate')}</p>
+                  <p className="text-sm text-gray-600">{t('upToDate')}</p>
                 )}
                 {updateStatus.status === 'dev-mode' && (
-                  <p className="text-sm text-yellow-600">{t('settings.devModeDisabled')}</p>
+                  <p className="text-sm text-yellow-600">{t('devModeDisabled')}</p>
                 )}
               </div>
             )}
@@ -4661,7 +4678,7 @@ export default function SettingsPage() {
                   className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 bg-brand text-white hover:opacity-90"
                 >
                   <RefreshCw size={16} className={updateStatus?.status === 'checking' ? 'animate-spin' : ''} />
-                  {updateStatus?.status === 'checking' ? t('settings.checking') : t('settings.checkForUpdates')}
+                  {updateStatus?.status === 'checking' ? t('checking') : t('checkForUpdates')}
                 </button>
               </div>
             )}
@@ -4677,19 +4694,19 @@ export default function SettingsPage() {
       <Dialog open={tableInfoOpen} onOpenChange={setTableInfoOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('settings.databaseTables')}</DialogTitle>
-            <DialogDescription>{t('settings.rowCountsForAll')}</DialogDescription>
+            <DialogTitle>{t('databaseTables')}</DialogTitle>
+            <DialogDescription>{t('rowCountsForAll')}</DialogDescription>
           </DialogHeader>
           <div className="max-h-60 overflow-y-auto space-y-1.5">
             {tableInfo.map((row) => (
               <div key={row.name} className="flex justify-between text-sm">
                 <span className="text-gray-700 font-mono">{row.name}</span>
-                <span className="text-gray-500">{row.rows.toLocaleString()} {t('settings.rows')}</span>
+                <span className="text-gray-500">{row.rows.toLocaleString()} {t('rows')}</span>
               </div>
             ))}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setTableInfoOpen(false)}>{t('settings.close')}</Button>
+            <Button variant="outline" onClick={() => setTableInfoOpen(false)}>{t('close')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -4698,20 +4715,20 @@ export default function SettingsPage() {
       <Dialog open={showInitializeCloudConfirm} onOpenChange={setShowInitializeCloudConfirm}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t('settings.cloudInitializeDialogTitle')}</DialogTitle>
+            <DialogTitle>{t('cloudInitializeDialogTitle')}</DialogTitle>
             <DialogDescription>
-              {t('settings.cloudInitializeDialogBody')}
+              {t('cloudInitializeDialogBody')}
               <br /><br />
-              {t('settings.cloudInitializeDialogBody2')}
+              {t('cloudInitializeDialogBody2')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowInitializeCloudConfirm(false)}>{t('settings.cancel')}</Button>
+            <Button variant="outline" onClick={() => setShowInitializeCloudConfirm(false)}>{t('cancel')}</Button>
             <Button
               disabled={registeringCloud}
               onClick={() => { setShowInitializeCloudConfirm(false); registerCloud(''); }}
             >
-              {registeringCloud ? t('settings.registering') : t('settings.cloudInitializeAccept')}
+              {registeringCloud ? t('registering') : t('cloudInitializeAccept')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -4721,11 +4738,11 @@ export default function SettingsPage() {
         open={pinGate !== null}
         mode={pinGate?.mode === 'set' ? 'set' : 'verify'}
         title={
-          pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('settings.confirmBackupTitle')
-          : pinGate?.mode === 'import' ? t('settings.confirmImportTitle')
-          : pinGate?.mode === 'restore' ? t('settings.confirmRestoreTitle')
-          : pinGate?.mode === 'delete-cloud' ? t('settings.cloudConfirmDeletion')
-          : pinGate?.mode === 'cancel-cloud-deletion' ? t('settings.cloudCancelDeletionTitle')
+          pinGate?.mode === 'backup' || pinGate?.mode === 'backup-custom' ? t('confirmBackupTitle')
+          : pinGate?.mode === 'import' ? t('confirmImportTitle')
+          : pinGate?.mode === 'restore' ? t('confirmRestoreTitle')
+          : pinGate?.mode === 'delete-cloud' ? t('cloudConfirmDeletion')
+          : pinGate?.mode === 'cancel-cloud-deletion' ? t('cloudCancelDeletionTitle')
           : undefined
         }
         onCancel={() => setPinGate(null)}
@@ -4745,17 +4762,17 @@ export default function SettingsPage() {
         onOpenChange={setInitializeDbOpen}
         onConfirm={handleInitializeDatabase}
         onSuccess={() => {
-          toast.success(t('settings.dbInitializedRedirecting'));
+          toast.success(t('dbInitializedRedirecting'));
           setTimeout(() => window.location.replace('/setup'), 1200);
         }}
       />
       {isAdmin && isDirty && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in slide-in-from-bottom-5 duration-300">
           <div className={`bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 pointer-events-auto ${shakeSaveBar ? 'animate-shake' : ''}`}>
-            <span className="text-sm font-medium">{t('settings.unsavedChanges', { defaultValue: 'You have unsaved changes' })}</span>
+            <span className="text-sm font-medium">{t('unsavedChanges', { defaultValue: 'You have unsaved changes' })}</span>
             <div className="flex items-center gap-2">
-              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('settings.discard', { defaultValue: 'Discard' })}</button>
-              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering) ? t('settings.saving') : t('settings.saveChanges', { defaultValue: 'Save Changes' })}</button>
+              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard', { defaultValue: 'Discard' })}</button>
+              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering) ? t('saving') : t('saveChanges', { defaultValue: 'Save Changes' })}</button>
             </div>
           </div>
         </div>

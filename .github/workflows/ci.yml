@@ -46,8 +46,8 @@ jobs:
         id: filter
         with:
           filters: |
-            frontend: ['frontend/**', 'package.json', 'package-lock.json']
-            backend: ['main/**', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig.json']
+            frontend: ['frontend/**', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']
+            backend: ['main/**', 'tests/**', 'package.json', 'package-lock.json', 'tsconfig.json', '.github/workflows/ci.yml']
             kds: ['main/kds-server.ts', 'main/services/kds.ts', 'main/routes/kds.ts', 'tests/kds-*.test.ts']
             db: ['main/db.ts', 'main/migrations/**', 'tests/fixtures/upgrade-snapshots/**', 'tests/upgrade-path.test.ts']
             uninstaller: ['scripts/uninstallers/**', 'tests/windows-uninstaller.Tests.ps1', 'tests/run-windows-uninstaller-tests.cjs', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']

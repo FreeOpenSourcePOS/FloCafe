@@ -44,8 +44,7 @@ const SERVICE_MODEL_KEYS = {
   finedine: { label: 'finedineLabel', desc: 'finedineDesc', details: 'finedineDetails' },
 } as const satisfies Record<ServiceModel, { label: SetupKey; desc: SetupKey; details: SetupKey }>;
 
-// Registry-derived selectable languages (#241: fa is technical-readiness
-// only, so it stays hidden from the language selector until it's user-facing).
+// Registry-derived selectable languages (derived from LANGUAGES registry where selectable: true).
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
   (lang) => LANGUAGES[lang].selectable,
 );
@@ -147,9 +146,12 @@ export default function SetupPage() {
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
   const q = countryQuery.trim().toLowerCase();
-  const languageOptions: Language[] = SELECTABLE_LANGUAGES.includes(browserLanguage)
-    ? [browserLanguage, ...SELECTABLE_LANGUAGES.filter((l) => l !== browserLanguage)]
-    : SELECTABLE_LANGUAGES;
+  const languageOptions: Language[] =
+    browserLanguage === 'fa'
+      ? ['fa', ...SELECTABLE_LANGUAGES]
+      : SELECTABLE_LANGUAGES.includes(browserLanguage)
+        ? [browserLanguage, ...SELECTABLE_LANGUAGES.filter((l) => l !== browserLanguage)]
+        : SELECTABLE_LANGUAGES;
   const filteredCountries = COUNTRIES.filter((c) => {
     if (!q) return true;
     return (

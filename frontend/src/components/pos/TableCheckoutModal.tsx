@@ -5,7 +5,7 @@ import { X, ShoppingCart, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import api from '@/lib/api';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import toast from 'react-hot-toast';
 import type { Table, Order, Bill, OrderItem } from '@/lib/types';
@@ -30,7 +30,7 @@ export default function TableCheckoutModal({
   onPayment,
   onAddCartToOrder
 }: Props) {
-  const { t } = useI18n();
+  const t = useTranslations('pos');
   const fmt = useFormatCurrency();
   const formatItemTotal = (value: unknown, fallback: unknown) => {
     const total = Number(value);
@@ -58,7 +58,7 @@ export default function TableCheckoutModal({
         }
       } catch {
         if (controller.signal.aborted) return;
-        toast.error(t('pos.loadOrderFailed'));
+        toast.error(t('loadOrderFailed'));
       } finally {
         setLoading(false);
       }
@@ -82,7 +82,7 @@ export default function TableCheckoutModal({
       const { data } = await api.post('/bills/generate', { order_id: order.id });
       onPayment(data.bill);
     } catch {
-      toast.error(t('pos.generateBillFailed'));
+      toast.error(t('generateBillFailed'));
     } finally {
       setGenerating(false);
     }
@@ -95,7 +95,7 @@ export default function TableCheckoutModal({
       const bill = order.bill || (await api.post('/bills/generate', { order_id: order.id })).data.bill;
       setSplitBill(bill);
     } catch {
-      toast.error(t('pos.generateBillFailed'));
+      toast.error(t('generateBillFailed'));
     }
     finally { setGenerating(false); }
   };
@@ -106,7 +106,7 @@ export default function TableCheckoutModal({
     try {
       await onAddCartToOrder(table, order);
     } catch {
-      toast.error(t('pos.addItemsFailed'));
+      toast.error(t('addItemsFailed'));
     } finally {
       setAddingItems(false);
     }
@@ -126,8 +126,8 @@ export default function TableCheckoutModal({
     return (
       <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
         <div className="bg-white rounded-2xl p-6 w-full max-w-md">
-          <p className="text-gray-500 text-center py-4">{t('pos.noActiveOrder')}</p>
-          <Button onClick={onClose} variant="outline" className="w-full">{t('pos.close')}</Button>
+          <p className="text-gray-500 text-center py-4">{t('noActiveOrder')}</p>
+          <Button onClick={onClose} variant="outline" className="w-full">{t('close')}</Button>
         </div>
       </div>
     );
@@ -150,10 +150,10 @@ export default function TableCheckoutModal({
                   ? 'bg-green-100 text-green-700' 
                   : 'bg-orange-100 text-orange-700'
               }`}>
-                {order.bill?.payment_status === 'paid' ? t('pos.paid') : t('pos.unpaid')}
+                {order.bill?.payment_status === 'paid' ? t('paid') : t('unpaid')}
               </span>
             </div>
-            <p className="text-sm text-gray-500">{t('pos.orderNumber', { number: order.order_number })}</p>
+            <p className="text-sm text-gray-500">{t('orderNumber', { number: order.order_number })}</p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
@@ -163,7 +163,7 @@ export default function TableCheckoutModal({
         <div className="flex-1 overflow-y-auto p-5">
           {/* Existing order items - shown as disabled/reference */}
           <div className="mb-3">
-            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{t('pos.previousItems')}</p>
+            <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{t('previousItems')}</p>
             <div className="space-y-1">
               {activeItems.map((item) => (
                 <div key={item.id} className="flex justify-between items-start py-1.5 px-2 bg-gray-50 rounded-lg">
@@ -186,7 +186,7 @@ export default function TableCheckoutModal({
 
         <div className="p-5 border-t border-gray-100 space-y-3">
           <div className="flex justify-between text-sm">
-            <span className="text-gray-500">{t('pos.subtotal')}</span>
+            <span className="text-gray-500">{t('subtotal')}</span>
             <span>{fmt(Number(order.subtotal))}</span>
           </div>
           <TaxBreakdown
@@ -195,20 +195,20 @@ export default function TableCheckoutModal({
             theme="light"
           />
           <div className="flex justify-between text-lg font-bold">
-            <span>{t('pos.total')}</span>
+            <span>{t('total')}</span>
             <span className="text-brand">{fmt(Number(order.total))}</span>
           </div>
           {order.bill && order.bill.payment_status !== 'paid' && Number(order.bill.balance) > 0 && (
             <div className="flex justify-between text-sm font-medium">
-              <span className="text-orange-600">{t('pos.balanceDue')}</span>
+              <span className="text-orange-600">{t('balanceDue')}</span>
               <span className="text-orange-600">{fmt(Number(order.bill.balance))}</span>
             </div>
           )}
 
-          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-gray-500">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pos.pay', { defaultValue: 'Pay' })}</Button>}</div>)}</div>}
+          {splitBills.length > 0 && <div className="space-y-2">{splitBills.map((bill) => <div key={bill.id} className="flex items-center justify-between rounded-lg border p-2"><div><p className="text-sm font-medium">{bill.split_label}</p><p className="text-xs text-gray-500">{fmt(Number(bill.total))} · {bill.payment_status}</p></div>{bill.payment_status !== 'paid' && <Button size="sm" onClick={() => onPayment(bill)}>{t('pay', { defaultValue: 'Pay' })}</Button>}</div>)}</div>}
 
           {/* Show different buttons based on cart state */}
-          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('pos.splitCheck', { defaultValue: 'Split check' })}</Button>}
+          {splitBills.length === 0 && splitChecksEnabled && order.type === 'dine_in' && order.bill?.payment_status !== 'paid' && <Button variant="outline" onClick={handleSplitCheck} disabled={generating} className="w-full"><Users size={15} className="me-2" />{t('splitCheck', { defaultValue: 'Split check' })}</Button>}
           {cartItemCount > 0 ? (
             // Cart has items - show "Add items to order" option
             <div className="space-y-2">
@@ -219,20 +219,20 @@ export default function TableCheckoutModal({
                 size="lg"
               >
                 <ShoppingCart size={16} className="me-2" />
-                {addingItems ? t('pos.adding') : t('pos.addToOrder', { count: cartItemCount })}
+                {addingItems ? t('adding') : t('addToOrder', { count: cartItemCount })}
               </Button>
               <Button onClick={handleCheckout} variant="outline" className="w-full" disabled={generating}>
-                {generating ? t('pos.generating') : t('pos.checkoutInstead')}
+                {generating ? t('generating') : t('checkoutInstead')}
               </Button>
             </div>
           ) : splitBills.length === 0 ? (
             // Cart empty - show both options
             <div className="grid grid-cols-2 gap-3">
               <Button variant="outline" onClick={() => onAddItems(table, order)}>
-                {t('pos.addItems')}
+                {t('addItems')}
               </Button>
               <Button onClick={handleCheckout} disabled={generating}>
-                {generating ? t('pos.generating') : t('pos.checkout')}
+                {generating ? t('generating') : t('checkout')}
               </Button>
             </div>
           ) : null}

@@ -10,7 +10,7 @@ import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import { resolveTaxComponents } from '@/lib/printer/tax-components';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -44,13 +44,39 @@ interface Payment {
 // Must match LOYALTY_REDEMPTION_RATE in main/routes/bills.ts.
 const LOYALTY_REDEMPTION_RATE = 100;
 
+type PosKey = keyof AppConfig['Messages']['pos'];
+
+// Built-in payment method label keys (PAYMENT_METHODS keeps dotted keys for the
+// unmigrated dashboard page, so this maps them to the typed `pos` leaf keys).
+const BUILT_IN_PAYMENT_KEYS = {
+  cash: 'methodCash',
+  card: 'methodCard',
+} as const satisfies Record<'cash' | 'card', PosKey>;
+
 export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Props) {
   const remaining = Number(bill.balance);
   const cartCustomerId = useCartStore((s) => s.customerId);
   const cartCustomer = useCartStore((s) => s.customer);
   const effectiveCustomerId = bill.customer_id || cartCustomerId || null;
   const { confirm, ConfirmDialog } = useConfirm();
-  const { t } = useI18n();
+  const t = useTranslations('pos');
+  const tCommon = useTranslations('common');
+  const tOrders = useTranslations('orders');
+  const tWhatsappSend = useTranslations('whatsapp.send');
+
+  // sendBillViaFlo (shared with the not-yet-migrated orders page) still takes a
+  // legacy dotted-key translator; bridge the typed `whatsapp.send` namespace to
+  // that contract without reintroducing the legacy global `t()`.
+  const whatsappSendT = (key: string): string =>
+    tWhatsappSend(
+      key.replace(/^whatsapp\.send\./, '') as
+        | 'success'
+        | 'failed'
+        | 'error.notConnected'
+        | 'error.notOnWhatsapp'
+        | 'error.blocked'
+        | 'error.rateLimited',
+    );
   const { currentTenant } = useAuthStore();
   const isWhatsAppReady = useWhatsAppReady();
   const unitAdapter = useCurrencyUnitAdapter();
@@ -190,16 +216,16 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     if (applyingDiscount) return;
     const val = customVal !== undefined ? customVal : parseFloat(discountValue);
     if (customVal === undefined && (isNaN(val) || val < 0)) {
-      toast.error(t('pos.discountInvalid'));
+      toast.error(t('discountInvalid'));
       return;
     }
     // Check if PIN is required
     if (discountRequiresApproval && val > 0 && !discountPin) {
-      toast.error(t('pos.managerPinRequired'));
+      toast.error(t('managerPinRequired'));
       return;
     }
     if (val > 0 && !isDiscountTypeAllowed(discountMode, discountType)) {
-      toast.error(t('pos.discountInvalid'));
+      toast.error(t('discountInvalid'));
       return;
     }
     setApplyingDiscount(true);
@@ -211,7 +237,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         discount_reason: val > 0 ? discountReason || undefined : undefined,
         override_pin: discountRequiresApproval && val > 0 ? discountPin : undefined,
       });
-      toast.success(val === 0 ? t('pos.discountRemoved') : t('pos.discountUpdated'));
+      toast.success(val === 0 ? t('discountRemoved') : t('discountUpdated'));
       setDiscountPin('');
       if (val === 0) {
         setShowDiscount(false);
@@ -224,7 +250,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         onBillUpdate(data.bill);
       }
     } catch {
-      toast.error(t('pos.failedToUpdateDiscount'));
+      toast.error(t('failedToUpdateDiscount'));
       // Clear the PIN on any failure (wrong PIN or rate-limited) so a stale/rejected
       // PIN doesn't sit in the field looking like it might still work on retry.
       setDiscountPin('');
@@ -239,22 +265,22 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       !PAYMENT_METHODS.some((allowed) => allowed.key === p.method)
       && !customMethods.some((method) => method.id === p.payment_method_id)
     ) || !amountIsValid(p.amount))) {
-      toast.error(t('pos.paymentFailed'));
+      toast.error(t('paymentFailed'));
       return;
     }
     if (walletAmount.trim() && !/^\d+(?:\.\d{1,4})?$/.test(walletAmount.trim())) {
-      toast.error(t('pos.paymentFailed'));
+      toast.error(t('paymentFailed'));
       return;
     }
     const nonCashTotal = payments
       .filter((p) => p.method !== 'cash')
       .reduce((sum, p) => sum + toStoredUnit(Number(p.amount) || 0), 0) + walletAmt;
     if (nonCashTotal > remaining + 0.000001) {
-      toast.error(t('pos.paymentAboveBalance'));
+      toast.error(t('paymentAboveBalance'));
       return;
     }
     if (totalPayment < remaining - 0.01) {
-      toast.error(t('pos.paymentBelowBalance'));
+      toast.error(t('paymentBelowBalance'));
       return;
     }
     // Validate wallet amount against available balance (convert currency to points for comparison)
@@ -263,7 +289,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       const walletPointsRequired = walletAmt * redemptionRate;
       if (walletPointsRequired > walletBalance) {
         const maxCurrency = Math.floor(walletBalance / redemptionRate);
-        toast.error(t('pos.walletMaxAmount', { max: currencyFmt(maxCurrency) }));
+        toast.error(t('walletMaxAmount', { max: currencyFmt(maxCurrency) }));
         return;
       }
     }
@@ -296,7 +322,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         // new request and must not reuse the completed request's hash.
         if (updatedBill) idempotencyKeyRef.current = null;
         if (updatedBill && onBillUpdate) onBillUpdate(updatedBill);
-        toast.error(t('pos.paymentIncomplete', {
+        toast.error(t('paymentIncomplete', {
           amount: currencyFmt(Number(updatedBill?.balance) || 0),
         }));
         return;
@@ -304,20 +330,20 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
       const earned = res.data?.loyaltyPointsEarned > 0 ? res.data.loyaltyPointsEarned : 0;
       setPointsEarned(earned);
       if (earned > 0) {
-        toast.success(t('pos.paymentRecordedWithPoints', { points: earned }));
+        toast.success(t('paymentRecordedWithPoints', { points: earned }));
       } else {
-        toast.success(t('pos.paymentRecorded'));
+        toast.success(t('paymentRecorded'));
       }
       setJustPaid(true);
     } catch {
-      toast.error(t('pos.paymentFailed'));
+      toast.error(t('paymentFailed'));
     } finally {
       setProcessing(false);
     }
   };
 
   const tenantForShare = {
-    business_name: currentTenant?.business_name || t('common.businessNameFallback'),
+    business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
     currency: currentTenant?.currency || 'INR',
     country: currentTenant?.country || 'IN',
   };
@@ -325,12 +351,12 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const handleSendWhatsApp = async () => {
     const phone = cartCustomer?.phone;
     if (!phone) {
-      toast.error(t('whatsapp.send.customerPhoneRequired'));
+      toast.error(tWhatsappSend('customerPhoneRequired'));
       return;
     }
     setSendingWa(true);
     try {
-      await sendBillViaFlo(bill, phone, tenantForShare, t, { pointsEarned });
+      await sendBillViaFlo(bill, phone, tenantForShare, whatsappSendT, { pointsEarned });
     } finally {
       setSendingWa(false);
     }
@@ -338,7 +364,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
   const handleShareWhatsApp = () => {
     if (!cartCustomer?.phone) {
-      toast.error(t('whatsapp.send.customerPhoneRequired'));
+      toast.error(tWhatsappSend('customerPhoneRequired'));
       return;
     }
     try {
@@ -349,7 +375,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         { pointsEarned }
       );
     } catch {
-      toast.error(t('orders.whatsappFailed'));
+      toast.error(tOrders('whatsappFailed'));
     }
   };
 
@@ -360,8 +386,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         {/* Header */}
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-gray-100">
           <div>
-            <h2 className="text-lg font-bold text-gray-900">{t('pos.payment')}</h2>
-            <p className="text-xs text-gray-400 mt-0.5">{t('pos.billNumber', { number: bill.bill_number })}</p>
+            <h2 className="text-lg font-bold text-gray-900">{t('payment')}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{t('billNumber', { number: bill.bill_number })}</p>
           </div>
           <button
             onClick={onClose}
@@ -377,7 +403,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
           <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl px-5 py-4 text-white">
             <div className="flex items-start justify-between mb-3">
               <div>
-                <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">{t('pos.totalDue')}</p>
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-widest">{t('totalDue')}</p>
                 <p className="text-4xl font-bold mt-1 tracking-tight">{currencyFmt(remaining)}</p>
               </div>
               {cartCustomer && (
@@ -392,12 +418,12 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
 
             <div className="border-t border-white/10 pt-3 space-y-1.5 text-xs">
               <div className="flex justify-between text-slate-300">
-                <span>{t('pos.subtotal')}</span>
+                <span>{t('subtotal')}</span>
                 <span>{currencyFmt(Number(bill.subtotal))}</span>
               </div>
               {Number(bill.discount_amount) > 0 && (
                 <div className="flex justify-between text-emerald-400 font-medium">
-                  <span>{t('pos.discount')}</span>
+                  <span>{t('discount')}</span>
                   <span>− {currencyFmt(Number(bill.discount_amount))}</span>
                 </div>
               )}
@@ -407,24 +433,24 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
               }))} />
               {Number(bill.delivery_charge) > 0 && (
                 <div className="flex justify-between text-slate-300">
-                  <span>{t('pos.delivery')}</span>
+                  <span>{t('delivery')}</span>
                   <span>{currencyFmt(Number(bill.delivery_charge))}</span>
                 </div>
               )}
               {Number(bill.packaging_charge) > 0 && (
                 <div className="flex justify-between text-slate-300">
-                  <span>{t('pos.packaging')}</span>
+                  <span>{t('packaging')}</span>
                   <span>{currencyFmt(Number(bill.packaging_charge))}</span>
                 </div>
               )}
               {Number(bill.round_off) !== 0 && (
                 <div className="flex justify-between text-slate-300">
-                  <span>{t('pos.roundOff')}</span>
+                  <span>{t('roundOff')}</span>
                   <span>{Number(bill.round_off) > 0 ? '+' : ''}{currencyFmt(Number(bill.round_off))}</span>
                 </div>
               )}
               <div className="flex justify-between text-white font-semibold border-t border-white/10 pt-1.5 mt-1">
-                <span>{t('pos.total')}</span>
+                <span>{t('total')}</span>
                 <span>{currencyFmt(Number(bill.total))}</span>
               </div>
             </div>
@@ -435,10 +461,10 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             <div className="flex items-center gap-2 px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl">
               <Sparkles size={13} className="text-gray-400 shrink-0" />
               <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs">
-                <span className="text-gray-700 font-medium">{t('pos.loyalty')}</span>
+                <span className="text-gray-700 font-medium">{t('loyalty')}</span>
                 <span className="font-semibold text-gray-700">
                   {walletBalance !== null
-                    ? t('pos.pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
+                    ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / (LOYALTY_REDEMPTION_RATE))) })
                     : '…'}
                 </span>
               </div>
@@ -450,8 +476,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             <button type="button" onClick={() => setShowDiscount((open) => !open)} className="w-full flex items-center justify-between gap-3 px-3 py-2.5 bg-gray-50 text-start">
               <span className="text-sm font-medium text-gray-700">
                 {Number(bill.discount_amount) > 0
-                  ? `${t('pos.discount')}: -${currencyFmt(Number(bill.discount_amount))}`
-                  : t('pos.applyDiscount')}
+                  ? `${t('discount')}: -${currencyFmt(Number(bill.discount_amount))}`
+                  : t('applyDiscount')}
               </span>
               <ChevronDown size={16} className={`text-gray-400 transition-transform ${showDiscount ? 'rotate-180' : ''}`} />
             </button>
@@ -465,7 +491,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'percentage' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                     >
                       <Percent size={14} />
-                      {t('pos.percentage')}
+                      {t('percentage')}
                     </button>
                   )}
                   {isDiscountTypeAllowed(discountMode, 'amount') && (
@@ -473,7 +499,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                       onClick={() => { setDiscountType('amount'); }}
                       className={`flex-1 flex items-center justify-center gap-1.5 py-2 text-sm font-medium transition-colors ${discountType === 'amount' ? 'bg-purple-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
                     >
-                      {t('pos.flatAmount')}
+                      {t('flatAmount')}
                     </button>
                   )}
                 </div>
@@ -496,7 +522,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   type="text"
                   value={discountReason}
                   onChange={(e) => setDiscountReason(e.target.value)}
-                  placeholder={t('pos.discountReasonPlaceholder')}
+                  placeholder={t('discountReasonPlaceholder')}
                   className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
                 />
                 {discountRequiresApproval && parseFloat(discountValue) > 0 && (
@@ -504,7 +530,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     type="password"
                     value={discountPin}
                     onChange={(e) => setDiscountPin(e.target.value)}
-                    placeholder={t('pos.managerPin')}
+                    placeholder={t('managerPin')}
                     maxLength={6}
                     className="w-full px-3 py-2 text-sm border border-purple-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-400 bg-white"
                   />
@@ -516,14 +542,14 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   className="w-full bg-purple-600 hover:bg-purple-700 text-white"
                 >
                   {applyingDiscount
-                    ? t('pos.applyingDiscount')
-                    : Number(bill.discount_amount) > 0 ? t('pos.updateDiscount') : t('pos.applyDiscount')}
+                    ? t('applyingDiscount')
+                    : Number(bill.discount_amount) > 0 ? t('updateDiscount') : t('applyDiscount')}
                 </Button>
                 {Number(bill.discount_amount) > 0 && (
                   <Button variant="outline" size="sm" className="w-full" onClick={async () => {
-                    if (await confirm(t('pos.removeDiscountConfirm'), { destructive: true, confirmLabel: t('pos.remove') })) void handleApplyDiscount(0);
+                    if (await confirm(t('removeDiscountConfirm'), { destructive: true, confirmLabel: t('remove') })) void handleApplyDiscount(0);
                   }}>
-                    {t('pos.remove')}
+                    {t('remove')}
                   </Button>
                 )}
               </div>
@@ -534,7 +560,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
             {payments.map((payment, idx) => {
               const builtIn = PAYMENT_METHODS.find((method) => method.key === payment.method && payment.payment_method_id === undefined);
               const custom = customMethods.find((method) => method.id === payment.payment_method_id);
-              const label = builtIn ? t(builtIn.labelKey) : custom?.name || t('common.unknown');
+              const label = builtIn ? t(BUILT_IN_PAYMENT_KEYS[builtIn.key]) : custom?.name || tCommon('unknown');
               const Icon = builtIn?.icon;
               const active = (parseFloat(payment.amount) || 0) > 0;
               return <div key={payment.payment_method_id === undefined ? payment.method : `custom:${payment.payment_method_id}`} className="flex h-11">
@@ -577,7 +603,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                 <span className={`text-sm font-semibold ${
                   change > 0 ? 'text-emerald-800' : 'text-gray-400'
                 }`}>
-                  {t('pos.changeReturned')}
+                  {t('changeReturned')}
                 </span>
               </div>
               <span className={`text-xl font-bold tabular-nums ${
@@ -599,7 +625,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   const dueDisplay = toDisplayUnit(dueStored);
                   setWalletAmount(dueDisplay > 0 ? String(dueDisplay) : '');
                 }} className={`w-36 shrink-0 rounded-s-xl border px-3 flex items-center gap-2 text-sm font-semibold ${walletAmt > 0 ? 'bg-purple-600 text-white border-purple-600' : 'bg-purple-50 text-purple-800 border-purple-200 disabled:bg-gray-50 disabled:text-gray-400 disabled:border-gray-200'}`}>
-                  <Wallet size={15} /><span className="truncate">{t('pos.loyaltyWallet')}</span>
+                  <Wallet size={15} /><span className="truncate">{t('loyaltyWallet')}</span>
                 </button>
                 <div className="flex flex-1 items-center border border-s-0 border-purple-200 rounded-e-xl bg-white focus-within:ring-2 focus-within:ring-purple-400">
                   <span className="ps-3 text-gray-400 text-xs">{inputCurrencyLabel}</span>
@@ -622,7 +648,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                   />
                 </div>
               </div>
-              <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pos.pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('pos.noBalance')}</p>
+              <p className="px-1 text-[11px] text-gray-400 text-end">{walletBalance > 0 ? t('pointsApproxValue', { count: fmtNum(walletBalance), value: currencyFmt(Math.floor(walletBalance / LOYALTY_REDEMPTION_RATE)) }) : t('noBalance')}</p>
             </div>
           )}
         </div>
@@ -639,7 +665,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     size="lg"
                   >
                     <Send size={16} className="me-2" />
-                    {sendingWa ? t('pos.processingPayment') : t('pos.sendViaWhatsApp')}
+                    {sendingWa ? t('processingPayment') : t('sendViaWhatsApp')}
                   </Button>
                 ) : (
                   <Button
@@ -649,17 +675,17 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
                     size="lg"
                   >
                     <Send size={16} className="me-2" />
-                    {t('common.shareViaWhatsApp')}
+                    {tCommon('shareViaWhatsApp')}
                   </Button>
                 )
               )}
               <Button onClick={onPaid} variant="outline" className="w-full" size="lg">
-                {t('common.done')}
+                {tCommon('done')}
               </Button>
             </>
           ) : (
             <Button onClick={handlePay} disabled={processing || totalPayment < remaining - 0.01} className="w-full" size="lg">
-              {processing ? t('pos.processingPayment') : `${t('pos.pay')} ${currencyFmt(totalPayment)}`}
+              {processing ? t('processingPayment') : `${t('pay')} ${currencyFmt(totalPayment)}`}
             </Button>
           )}
         </div>

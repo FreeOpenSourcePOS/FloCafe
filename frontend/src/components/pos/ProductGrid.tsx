@@ -8,7 +8,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { nameToColor } from '@/lib/image-utils';
 import TagBadge from './DietaryBadge';
 import api from '@/lib/api';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import { parseDbTimestamp } from '@/lib/utils';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 
@@ -59,7 +59,7 @@ export default function ProductGrid({
 }: Props) {
   const cart = useCartStore();
   const { showProductImages } = usePosSettingsStore();
-  const { t } = useI18n();
+  const t = useTranslations('pos');
   const fmt = useFormatCurrency();
   const cartQuantities = useMemo(() => {
     const quantities = new Map<Product['id'], number>();
@@ -96,7 +96,7 @@ export default function ProductGrid({
                 setSearch('');
               }
             }}
-            placeholder={t('pos.searchProducts')}
+            placeholder={t('searchProducts')}
             className="w-full ps-9 pe-4 py-2 bg-white border border-gray-200 rounded-xl focus:border-brand outline-none transition-colors text-sm"
           />
         </div>
@@ -107,7 +107,7 @@ export default function ProductGrid({
               !selectedCategory ? 'bg-brand text-white' : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
             }`}
           >
-            {t('pos.allCategories')}
+            {t('allCategories')}
           </button>
           {categories.filter((cat) => cat.id != null).map((cat) => {
             const colorClasses = getCategoryColorClasses(cat.color);
@@ -154,11 +154,11 @@ export default function ProductGrid({
                   <>
                     {product.stock_quantity <= 0 ? (
                       <span className="absolute top-2 start-2 bg-red-100 text-red-700 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-red-200 pointer-events-none">
-                        {t('pos.outOfStock')}
+                        {t('outOfStock')}
                       </span>
                     ) : product.stock_quantity <= (product.low_stock_threshold || 0) ? (
                       <span className="absolute top-2 start-2 bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full z-10 shadow-sm border border-orange-200 pointer-events-none">
-                        {t('pos.lowStock')}
+                        {t('lowStock')}
                       </span>
                     ) : null}
                   </>
@@ -217,7 +217,7 @@ export default function ProductGrid({
                           onProductClick(product);
                         }}
                         className="text-gray-400 hover:text-gray-600 transition-colors"
-                        title={t('pos.customisable')}
+                        title={t('customisable')}
                       >
                         <SlidersHorizontal size={12} />
                       </button>

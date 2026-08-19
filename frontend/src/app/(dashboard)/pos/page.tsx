@@ -27,7 +27,7 @@ import PosTopbar from '@/components/pos/PosTopbar';
 import { usePrinterStore } from '@/hooks/usePrinter';
 import { showPrintWarningsToast } from '@/lib/printer/warnings-toast';
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useSupportTicketStatus } from '@/hooks/useSupportTicketStatus';
@@ -78,7 +78,8 @@ export default function POSPage() {
   const heldOrders = useHeldOrdersStore();
   const { customerMandatory, autoPrintKot, autoPrintBill, billingType, tablesRequired, kotPrintingEnabled, setBillingType, setTablesRequired, setKotPrintingEnabled } = usePosSettingsStore();
   const { open: leftSidebarOpen } = useSidebar();
-  const { t } = useI18n();
+  const t = useTranslations('pos');
+  const tSupport = useTranslations('support');
   const currencyFmt = useFormatCurrency();
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -268,10 +269,10 @@ export default function POSPage() {
       const code = `print.kot.${msg.toLowerCase().includes('spool') ? 'spooler_timeout' : 'failed'}`;
       setSupportError({
         code,
-        message: t('pos.kotPrintFailed'),
+        message: t('kotPrintFailed'),
         payload: { event_code: code, message: msg, category: 'printer', diagnostics: { order_id: order.id, stage: 'kot_print' } },
       });
-      toast.error(t('pos.kotPrintFailed'));
+      toast.error(t('kotPrintFailed'));
     }
   };
 
@@ -293,10 +294,10 @@ export default function POSPage() {
       const code = 'print.receipt.failed';
       setSupportError({
         code,
-        message: t('pos.receiptPrintFailed'),
+        message: t('receiptPrintFailed'),
         payload: { event_code: code, message: msg, category: 'printer', diagnostics: { bill_id: bill.id, stage: 'receipt_print' } },
       });
-      toast.error(t('pos.receiptPrintFailed'));
+      toast.error(t('receiptPrintFailed'));
     }
   };
 
@@ -338,10 +339,10 @@ export default function POSPage() {
       addItemsAttemptRef.current = null;
       // Do not clear cart or checkout state that may have been started while
       // recovery was in flight. A reload starts empty; any current UI is newer.
-      toast.success(t('pos.itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }));
+      toast.success(t('itemsAddedToOrder', { number: pendingAttempt!.orderNumber || pendingAttempt!.orderId }));
       refreshTables();
     }).catch(() => {
-      toast.error(t('pos.addItemsFailed'));
+      toast.error(t('addItemsFailed'));
     });
   // The recovery runs once per authenticated renderer and intentionally uses
   // the persisted attempt rather than the transient cart state.
@@ -387,7 +388,7 @@ export default function POSPage() {
           await heldOrders.fetchHeldOrders();
         }
       } catch {
-        toast.error(t('pos.menuLoadFailed'));
+        toast.error(t('menuLoadFailed'));
       }
     };
     fetchData();
@@ -419,13 +420,13 @@ export default function POSPage() {
     if (product) {
       handleProductClick(product);
     } else {
-      toast.error(t('pos.barcodeNotFound', { code }));
+      toast.error(t('barcodeNotFound', { code }));
     }
   }, !anyModalOpen);
 
   const handlePlaceOrder = async () => {
     if (cart.items.length === 0) {
-      toast.error(t('pos.cartEmpty'));
+      toast.error(t('cartEmpty'));
       return;
     }
     if (customerMandatory && !cart.customerId) {
@@ -476,7 +477,7 @@ export default function POSPage() {
           { items: newItems, special_instructions: specialInstructions },
           { headers: { 'Idempotency-Key': itemAttempt.idempotencyKey } },
         );
-        toast.success(t('pos.itemsAddedToOrder', { number: pendingOrder.order_number }));
+        toast.success(t('itemsAddedToOrder', { number: pendingOrder.order_number }));
         orderForKot = data.order as Order;
         if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
         addItemsAttemptRef.current = null;
@@ -502,12 +503,12 @@ export default function POSPage() {
         const orderAttempt: PostpaidAttempt = priorOrderAttempt?.userId === activeUserId && priorOrderAttempt.fingerprint === orderFingerprint
           ? priorOrderAttempt
           : { userId: activeUserId || '', fingerprint: orderFingerprint, idempotencyKey: newIdempotencyKey() };
-        if (!savePostpaidAttempt(orderAttempt)) throw new Error(t('pos.placeOrderFailed'));
+        if (!savePostpaidAttempt(orderAttempt)) throw new Error(t('placeOrderFailed'));
         const { data } = orderAttempt.order
           ? { data: { order: orderAttempt.order } }
           : await api.post('/orders', orderPayload, { headers: { 'Idempotency-Key': orderAttempt.idempotencyKey } });
         if (!orderAttempt.order) savePostpaidAttempt({ ...orderAttempt, order: data.order as Order });
-        toast.success(t('pos.orderPlaced', { number: data.order.order_number }));
+        toast.success(t('orderPlaced', { number: data.order.order_number }));
         orderForKot = data.order as Order;
         clearPostpaidAttempt();
       }
@@ -528,7 +529,7 @@ export default function POSPage() {
 
       await printKotIfEnabled(orderForKot);
     } catch {
-      toast.error(t('pos.placeOrderFailed'));
+      toast.error(t('placeOrderFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -598,7 +599,7 @@ export default function POSPage() {
     // order response if this renderer loses the response or restarts.
     if (!savePrepaidAttempt(attempt)) {
       clearPrepaidAttempt();
-      toast.error(t('pos.processOrderFailed'));
+      toast.error(t('processOrderFailed'));
       setSubmitting(false);
       return;
     }
@@ -704,15 +705,15 @@ export default function POSPage() {
         : 0;
 
       if (paidBill.payment_status !== 'paid') {
-        toast.error(t('pos.paymentIncomplete', {
+        toast.error(t('paymentIncomplete', {
           amount: currencyFmt(Number(paidBill.balance) || 0),
         }));
         return;
       }
 
       const successMsg = pointsEarned > 0
-        ? t('pos.orderPaidWithPoints', { number: orderData.order.order_number, points: pointsEarned })
-        : t('pos.orderPaid', { number: orderData.order.order_number });
+        ? t('orderPaidWithPoints', { number: orderData.order.order_number, points: pointsEarned })
+        : t('orderPaid', { number: orderData.order.order_number });
       toast.success(successMsg);
       if (cart.tableId) {
         try {
@@ -732,7 +733,7 @@ export default function POSPage() {
 
       await printBillForTenant(paidBill, isPrepaidCheckout);
     } catch {
-      toast.error(t('pos.processOrderFailed'));
+      toast.error(t('processOrderFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -750,7 +751,7 @@ export default function POSPage() {
   const handleSelectOccupiedTable = async (table: Table) => {
     const activeOrder = table.current_order || table.activeOrder || null;
     const activeCustomerId = activeOrder?.customer_id;
-    const activeCustomerName = activeOrder?.customer?.name || t('pos.anotherCustomer');
+    const activeCustomerName = activeOrder?.customer?.name || t('anotherCustomer');
 
     if (
       cart.customerId != null &&
@@ -758,10 +759,10 @@ export default function POSPage() {
       String(cart.customerId) !== String(activeCustomerId)
     ) {
       const shouldProceed = await confirm(
-        t('pos.customerMismatchWarning', { customer: activeCustomerName }),
+        t('customerMismatchWarning', { customer: activeCustomerName }),
         {
-          title: t('pos.customerMismatchTitle'),
-          confirmLabel: t('pos.proceedAnyway'),
+          title: t('customerMismatchTitle'),
+          confirmLabel: t('proceedAnyway'),
         },
       );
 
@@ -780,10 +781,10 @@ export default function POSPage() {
         cart.setOrderType('dine_in');
       } else {
         await heldOrders.fetchHeldOrders();
-        toast.error(t('pos.loadOrderFailed'));
+        toast.error(t('loadOrderFailed'));
       }
     } catch {
-      toast.error(t('pos.loadOrderFailed'));
+      toast.error(t('loadOrderFailed'));
     } finally {
       setShowTablePicker(false);
       await refreshTables();
@@ -792,7 +793,7 @@ export default function POSPage() {
 
   const handleHoldTable = async (tableId: string) => {
     if (cart.items.length === 0) {
-      toast.error(t('pos.cartEmpty'));
+      toast.error(t('cartEmpty'));
       return;
     }
     const tableName = tables.find((t) => t.id === tableId)?.name || tableId;
@@ -800,10 +801,10 @@ export default function POSPage() {
       await heldOrders.holdOrder(tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
       setShowTablePicker(false);
-      toast.success(t('pos.orderHeld', { tableName }));
+      toast.success(t('orderHeld', { tableName }));
       await refreshTables();
     } catch {
-      toast.error(t('pos.holdOrderFailed'));
+      toast.error(t('holdOrderFailed'));
     }
   };
 
@@ -814,13 +815,13 @@ export default function POSPage() {
     cart.setGuestCount(order.guest_count || 1);
     cart.setOrderNotes(order.special_instructions || '');
     setPendingOrder(order);
-    toast(`${t('pos.addingItemsToOrder', { number: order.order_number })} ${t('pos.placeOrderReady')}`, { icon: 'ℹ️' });
+    toast(`${t('addingItemsToOrder', { number: order.order_number })} ${t('placeOrderReady')}`, { icon: 'ℹ️' });
   };
 
   // Add cart items directly to existing order
   const handleAddCartToOrder = async (table: Table, order: Order) => {
     if (cart.items.length === 0) {
-      toast.error(t('pos.cartEmpty'));
+      toast.error(t('cartEmpty'));
       return;
     }
     setSubmitting(true);
@@ -854,12 +855,12 @@ export default function POSPage() {
       // attempt through all network errors so a lost response can replay it.
       if (!clearAppendAttempt(storage, itemAttempt)) throw new Error('Unable to clear append retry state');
       addItemsAttemptRef.current = null;
-      toast.success(t('pos.itemsAddedToOrder', { number: order.order_number }));
+      toast.success(t('itemsAddedToOrder', { number: order.order_number }));
       cart.clearCart();
       setCheckoutTable(null);
       refreshTables();
     } catch {
-      toast.error(t('pos.addItemsFailed'));
+      toast.error(t('addItemsFailed'));
     } finally {
       setSubmitting(false);
     }
@@ -875,7 +876,7 @@ export default function POSPage() {
       try {
         await printBillForTenant(await fetchLatestBill(bill.id));
       } catch {
-        toast.error(t('pos.receiptPrintFailed'));
+        toast.error(t('receiptPrintFailed'));
       }
     }
   };
@@ -898,27 +899,27 @@ export default function POSPage() {
         <div className="fixed bottom-4 start-4 z-50 w-[min(28rem,calc(100vw-2rem))] rounded-xl border border-red-200 bg-white p-4 shadow-xl">
           {sentTicketId ? (
             <>
-              <p className="font-semibold text-red-800">{t('support.requestQueued')}</p>
+              <p className="font-semibold text-red-800">{tSupport('requestQueued')}</p>
               {delivery.status === 'delivered' && delivery.supportCode ? (
                 <>
-                  <p className="mt-1 text-sm font-semibold text-gray-800">{t('support.supportCode')}: <Ltr as="span" className="font-mono">{delivery.supportCode}</Ltr></p>
-                  <p className="mt-0.5 text-xs text-gray-500">{t('support.supportCodeHint')}</p>
+                  <p className="mt-1 text-sm font-semibold text-gray-800">{tSupport('supportCode')}: <Ltr as="span" className="font-mono">{delivery.supportCode}</Ltr></p>
+                  <p className="mt-0.5 text-xs text-gray-500">{tSupport('supportCodeHint')}</p>
                 </>
               ) : (
                 <p className="mt-1 text-xs text-gray-500">
-                  {delivery.status === 'failed' ? t('support.stillQueuedLocally') : t('support.confirmingDelivery')}
+                  {delivery.status === 'failed' ? tSupport('stillQueuedLocally') : tSupport('confirmingDelivery')}
                 </p>
               )}
               <div className="mt-3">
-                <button className="rounded border px-3 py-2 text-sm" onClick={() => { setSupportError(null); setSentTicketId(null); }}>{t('support.dismiss')}</button>
+                <button className="rounded border px-3 py-2 text-sm" onClick={() => { setSupportError(null); setSentTicketId(null); }}>{tSupport('dismiss')}</button>
               </div>
             </>
           ) : (
             <>
-              <p className="font-semibold text-red-800">{t('pos.printingFailed')}</p>
+              <p className="font-semibold text-red-800">{t('printingFailed')}</p>
               <p className="mt-1 text-sm text-gray-600">{supportError.message}</p>
               <details className="mt-2 text-xs text-gray-500">
-                <summary className="cursor-pointer">{t('support.showPayload')}</summary>
+                <summary className="cursor-pointer">{tSupport('showPayload')}</summary>
                 <Ltr as="pre" className="mt-2 max-h-32 overflow-auto rounded bg-gray-50 p-2">{JSON.stringify(
                   diagnosticsPreview
                     ? { ...supportError.payload, diagnostics: { ...(supportError.payload.diagnostics as Record<string, unknown> | undefined), ...diagnosticsPreview } }
@@ -938,14 +939,14 @@ export default function POSPage() {
                         correlation_id: crypto.randomUUID(),
                         client_ticket_id: clientTicketId,
                       });
-                      toast.success(t('support.queued'));
+                      toast.success(tSupport('queued'));
                       setSentTicketId(clientTicketId);
                     } catch {
-                      toast.error(t('pos.supportRequestQueueFailed'));
+                      toast.error(t('supportRequestQueueFailed'));
                     }
                   }}
-                >{t('support.getHelp')}</button>
-                <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>{t('support.dismiss')}</button>
+                >{tSupport('getHelp')}</button>
+                <button className="rounded border px-3 py-2 text-sm" onClick={() => setSupportError(null)}>{tSupport('dismiss')}</button>
               </div>
             </>
           )}
@@ -1057,12 +1058,12 @@ export default function POSPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-5 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-bold">{t('pos.selectCustomer')}</h3>
+              <h3 className="text-lg font-bold">{t('selectCustomer')}</h3>
               <button onClick={() => setShowCustomerPrompt(false)} className="text-gray-400 hover:text-gray-600">
                 <X size={20} />
               </button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">{t('pos.customerRequiredBeforeOrder')}</p>
+            <p className="text-sm text-gray-500 mb-4">{t('customerRequiredBeforeOrder')}</p>
             <CustomerSearch onSelected={() => setShowCustomerPrompt(false)} />
           </div>
         </div>

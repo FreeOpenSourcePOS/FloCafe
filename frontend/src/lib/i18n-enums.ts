@@ -3,13 +3,17 @@
  *
  * Backend values (roles, order statuses, item statuses, table statuses, etc.)
  * are English identifiers stored in the DB. The UI must never render them
- * raw — pass them through these maps and then through `t()` so every language
- * shows a localized label.
+ * raw — pass them through these maps and then through the appropriate
+ * translator (`useTranslations()` leaf keys or legacy `t()` dotted keys) so
+ * every language shows a localized label.
  *
- * Pattern mirrors `ORDER_TYPE_LABEL_KEYS` in order-types.ts.
- * Unknown values fall back to the raw string (then to the key itself in `t()`),
- * so a new backend status never crashes the UI — it just shows in English
- * until a translation key is added.
+ * Migrated status maps (`ORDER_STATUS_LABEL_KEYS`, `ITEM_STATUS_LABEL_KEYS`,
+ * `TABLE_STATUS_LABEL_KEYS`) are exhaustively typed against use-intl leaf keys.
+ * Unmigrated maps retain dotted keys for legacy `t()` callers until their
+ * batches migrate.
+ *
+ * Unknown values fall back to the raw string, so a new backend status never
+ * crashes the UI — it just shows in English until a translation key is added.
  */
 
 import { ORDER_TYPE_LABEL_KEYS } from './order-types';

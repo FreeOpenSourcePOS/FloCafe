@@ -129,18 +129,18 @@ function loadComponents(): {
     const { KdsHtmlLang } = require('../frontend/src/components/kds/KdsHtmlLang');
     const { HtmlLangSync } = require('../frontend/src/components/layout/HtmlLangSync');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
-    const { t, fetchServerInfo, getLanguageDirection, getLanguageLocale, loadLocaleMessages } = require('../frontend/src/lib/i18n');
+    const { fetchServerInfo, getLanguageDirection, getLanguageLocale, loadLocaleMessages, getCachedMessages } = require('../frontend/src/lib/i18n');
     const { IntlProvider } = frontendRequire('use-intl');
     return {
       Ltr,
       KdsHtmlLang,
       HtmlLangSync,
       usePosSettingsStore,
-      t,
       fetchServerInfo,
       getLanguageDirection,
       getLanguageLocale,
       loadLocaleMessages,
+      getCachedMessages,
       IntlProvider,
       React,
       ReactDOMServer,
@@ -195,11 +195,11 @@ async function run(): Promise<void> {
     KdsHtmlLang,
     HtmlLangSync,
     usePosSettingsStore,
-    t,
     fetchServerInfo,
     getLanguageDirection,
     getLanguageLocale,
     loadLocaleMessages,
+    getCachedMessages,
     IntlProvider,
     React,
     ReactDOMServer,
@@ -302,39 +302,48 @@ async function run(): Promise<void> {
   console.log('  ✓ standalone layouts sync document dir/lang (KdsHtmlLang / HtmlLangSync)');
 
   // 5. KDS disabled screens and Server App strings resolve localized i18n keys.
-  const kdsDisabledFa = t('kds.disabledTitle', 'fa');
+  const { createTranslator } = frontendRequire('use-intl/core');
+  const getTestTranslator = (lang: 'en' | 'es' | 'pt' | 'fa') => {
+    const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
+    return createTranslator({ locale: getLanguageLocale(lang), messages }) as unknown as (
+      key: string,
+      values?: Record<string, any>,
+    ) => string;
+  };
+
+  const kdsDisabledFa = getTestTranslator('fa')('kds.disabledTitle');
   assert(
     kdsDisabledFa && kdsDisabledFa !== 'kds.disabledTitle' && kdsDisabledFa !== 'Kitchen Display is disabled',
     `kds.disabledTitle in Persian must be localized, got: ${kdsDisabledFa}`
   );
-  const kdsHintFa = t('kds.disabledHint', 'fa');
+  const kdsHintFa = getTestTranslator('fa')('kds.disabledHint');
   assert(
     kdsHintFa && kdsHintFa !== 'kds.disabledHint' && !kdsHintFa.includes('This business has turned off'),
     `kds.disabledHint in Persian must be localized, got: ${kdsHintFa}`
   );
 
-  const serverAppTitleFa = t('serverApp.title', 'fa');
+  const serverAppTitleFa = getTestTranslator('fa')('serverApp.title');
   assert(
     serverAppTitleFa && serverAppTitleFa !== 'serverApp.title',
     `serverApp.title in Persian must be localized, got: ${serverAppTitleFa}`
   );
-  const serverAppDisabledFa = t('serverApp.disabledTitle', 'fa');
+  const serverAppDisabledFa = getTestTranslator('fa')('serverApp.disabledTitle');
   assert(
     serverAppDisabledFa && serverAppDisabledFa !== 'serverApp.disabledTitle' && serverAppDisabledFa !== 'Server App is disabled',
     `serverApp.disabledTitle in Persian must be localized, got: ${serverAppDisabledFa}`
   );
 
-  const tableEn = t('serverApp.tableLabel', 'en', { name: '12' });
+  const tableEn = getTestTranslator('en')('serverApp.tableLabel', { name: '12' });
   assert(tableEn === 'Table 12', `serverApp.tableLabel EN substitution failed, got: ${tableEn}`);
-  const tableFa = t('serverApp.tableLabel', 'fa', { name: '12' });
+  const tableFa = getTestTranslator('fa')('serverApp.tableLabel', { name: '12' });
   assert(tableFa.includes('12') && tableFa !== 'Table 12', `serverApp.tableLabel FA substitution failed, got: ${tableFa}`);
 
-  const guestFa = t('serverApp.guestFallbackName', 'fa', { last4: '5678' });
+  const guestFa = getTestTranslator('fa')('serverApp.guestFallbackName', { last4: '5678' });
   assert(guestFa.includes('5678') && !guestFa.startsWith('Guest '), `serverApp.guestFallbackName FA substitution failed, got: ${guestFa}`);
 
   for (const lang of ['en', 'es', 'pt', 'fa'] as const) {
     for (const key of ['kds.disabledTitle', 'kds.disabledHint', 'serverApp.disabledTitle', 'serverApp.disabledHint']) {
-      const val = t(key, lang);
+      const val = getTestTranslator(lang)(key);
       assert(val && val !== key, `Translation key ${key} must resolve for ${lang}`);
     }
   }

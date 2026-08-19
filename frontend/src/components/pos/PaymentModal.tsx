@@ -46,8 +46,7 @@ const LOYALTY_REDEMPTION_RATE = 100;
 
 type PosKey = keyof AppConfig['Messages']['pos'];
 
-// Built-in payment method label keys (PAYMENT_METHODS keeps dotted keys for the
-// unmigrated dashboard page, so this maps them to the typed `pos` leaf keys).
+// Built-in payment method label keys mapped to typed `pos` leaf keys.
 const BUILT_IN_PAYMENT_KEYS = {
   cash: 'methodCash',
   card: 'methodCard',
@@ -64,9 +63,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const tOrders = useTranslations('orders');
   const tWhatsappSend = useTranslations('whatsapp.send');
 
-  // sendBillViaFlo (shared with the not-yet-migrated orders page) still takes a
-  // legacy dotted-key translator; bridge the typed `whatsapp.send` namespace to
-  // that contract without reintroducing the legacy global `t()`.
+  // sendBillViaFlo (shared with OrdersPage) takes a translator callback;
+  // bridge the typed `whatsapp.send` namespace to that contract.
   const whatsappSendT = (key: string): string =>
     tWhatsappSend(
       key.replace(/^whatsapp\.send\./, '') as

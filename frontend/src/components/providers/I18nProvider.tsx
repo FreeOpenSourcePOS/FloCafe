@@ -44,8 +44,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   // One-time: resolve the deterministic initial language (persisted store
   // preference → browser match against selectable languages → packaged
-  // English) and sync the store so legacy `t()` consumers render the same
-  // language as the provider.
+  // English) and sync the store so non-React and standalone consumers render
+  // the same language as the provider.
   useEffect(() => {
     const initial = resolveInitialLanguage();
     if (initial !== usePosSettingsStore.getState().language) {

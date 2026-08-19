@@ -1,4 +1,4 @@
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 
 // Normalise a raw tag string to its canonical key used in TAG_CONFIG.
 // Handles case, spaces, hyphens, underscores and common spelling variants so
@@ -41,15 +41,52 @@ const TAG_CONFIG: Record<string, { color: string; bg: string; dot: string }> = {
   limited:        { color: 'text-rose-700',   bg: 'bg-rose-100',    dot: 'bg-rose-500' },
 };
 
+// Exhaustively typed leaf-key map for known tags (use-intl resolves leaf keys
+// within the `pos` namespace scope, so no template-literal dynamic keys).
+type PosKey = keyof AppConfig['Messages']['pos'];
+
+type KnownDietaryTag =
+  | 'veg'
+  | 'vegan'
+  | 'egg'
+  | 'non_veg'
+  | 'spicy'
+  | 'contains_nuts'
+  | 'gluten_free'
+  | 'dairy_free'
+  | 'new_arrival'
+  | 'bestseller'
+  | 'organic'
+  | 'fragrance_free'
+  | 'limited';
+
+const DIETARY_TAG_KEYS = {
+  veg: 'tagVeg',
+  vegan: 'tagVegan',
+  egg: 'tagEgg',
+  non_veg: 'tagNonVeg',
+  spicy: 'tagSpicy',
+  contains_nuts: 'tagContainsNuts',
+  gluten_free: 'tagGlutenFree',
+  dairy_free: 'tagDairyFree',
+  new_arrival: 'tagNewArrival',
+  bestseller: 'tagBestseller',
+  organic: 'tagOrganic',
+  fragrance_free: 'tagFragranceFree',
+  limited: 'tagLimited',
+} as const satisfies Record<KnownDietaryTag, PosKey>;
+
+/** Title-cases a normalized tag for display when it has no translation key. */
+function formatTagName(canonical: string): string {
+  return canonical.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Legacy dotted-key helper retained for the unmigrated products page (#380)
+// which still calls `t(tagLabel(tag))` through the compatibility bridge.
 export function tagLabel(tag: string): string {
   const canonical = normalizeTag(tag);
-  const map: Record<string, string> = {
-    veg: 'pos.tagVeg', vegan: 'pos.tagVegan', egg: 'pos.tagEgg', non_veg: 'pos.tagNonVeg',
-    spicy: 'pos.tagSpicy', contains_nuts: 'pos.tagContainsNuts', gluten_free: 'pos.tagGlutenFree',
-    dairy_free: 'pos.tagDairyFree', new_arrival: 'pos.tagNewArrival', bestseller: 'pos.tagBestseller',
-    organic: 'pos.tagOrganic', fragrance_free: 'pos.tagFragranceFree', limited: 'pos.tagLimited',
-  };
-  return map[canonical] ?? canonical.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  const key = (DIETARY_TAG_KEYS as Record<string, PosKey | undefined>)[canonical];
+  return key ? `pos.${key}` : formatTagName(canonical);
 }
 
 // First tag's bg colour for card background tinting
@@ -59,12 +96,16 @@ export function firstTagBg(tags: string[] | null | undefined): string {
 }
 
 export default function TagBadge({ tag }: { tag: string }) {
-  const { t } = useI18n();
-  const cfg = TAG_CONFIG[normalizeTag(tag)] ?? { color: 'text-gray-600', bg: 'bg-gray-100', dot: 'bg-gray-400' };
+  const t = useTranslations('pos');
+  const canonical = normalizeTag(tag);
+  const cfg = TAG_CONFIG[canonical] ?? { color: 'text-gray-600', bg: 'bg-gray-100', dot: 'bg-gray-400' };
+  // Known tags translate through the typed map; custom tags render their
+  // formatted name directly without an unchecked runtime translation key.
+  const key = (DIETARY_TAG_KEYS as Record<string, PosKey | undefined>)[canonical];
   return (
     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase ${cfg.color} ${cfg.bg}`}>
       <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dot}`} />
-      {t(tagLabel(tag))}
+      {key ? t(key) : formatTagName(canonical)}
     </span>
   );
 }

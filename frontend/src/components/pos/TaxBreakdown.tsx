@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import { formatCurrencyForTenant } from '@/lib/countries';
 import { useAuthStore } from '@/store/auth';
 
@@ -19,7 +19,7 @@ interface Props {
 }
 
 export default function TaxBreakdown({ taxAmount, taxBreakdown, theme = 'dark' }: Props) {
-  const { t } = useI18n();
+  const t = useTranslations('pos');
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const tenantCountry = currentTenant?.country;
   const tenantCurrency = currentTenant?.currency ?? 'INR';
@@ -42,7 +42,7 @@ export default function TaxBreakdown({ taxAmount, taxBreakdown, theme = 'dark' }
             ? <ChevronDown size={12} className={theme === 'light' ? 'text-gray-400' : 'text-slate-400'} />
             : <ChevronRight size={12} className={`rtl-flip ${theme === 'light' ? 'text-gray-400' : 'text-slate-400'}`} />
         )}
-        <span className={`text-xs ${theme === 'light' ? 'text-gray-500' : 'text-slate-300'}`}>{t('pos.tax')}</span>
+        <span className={`text-xs ${theme === 'light' ? 'text-gray-500' : 'text-slate-300'}`}>{t('tax')}</span>
         <span className="flex-1" />
         <span className={`text-xs ${theme === 'light' ? 'text-gray-500' : 'text-slate-300'}`}>{fmt(taxAmount)}</span>
       </button>
@@ -54,7 +54,7 @@ export default function TaxBreakdown({ taxAmount, taxBreakdown, theme = 'dark' }
             const amount = typeof line?.amount === 'number' ? line.amount : 0;
             return (
               <div key={`${title}_${rate}_${i}`} className={`flex justify-between text-xs ${theme === 'light' ? 'text-gray-400' : 'text-slate-400'}`}>
-                <span>{t('pos.taxLine', { title, rate })}</span>
+                <span>{t('taxLine', { title, rate })}</span>
                 <span>{fmt(amount)}</span>
               </div>
             );

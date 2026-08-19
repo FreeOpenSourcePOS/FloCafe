@@ -35,30 +35,32 @@ import {
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import type { PrinterStatus } from '@/lib/printer/PrinterService';
 import toast from 'react-hot-toast';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
+
+type PosKey = keyof AppConfig['Messages']['pos'];
 
 const STATUS_CONFIG: Record<
   PrinterStatus,
-  { labelKey: string; color: string; Icon: React.ElementType }
+  { labelKey: PosKey; color: string; Icon: React.ElementType }
 > = {
   disconnected: {
-    labelKey: 'pos.printerNoPrinter',
+    labelKey: 'printerNoPrinter',
     color: 'text-gray-400',
     Icon: Printer,
   },
   connecting: {
-    labelKey: 'pos.printerConnecting',
+    labelKey: 'printerConnecting',
     color: 'text-amber-500',
     Icon: Loader2,
   },
   connected: {
-    labelKey: 'pos.printerReady',
+    labelKey: 'printerReady',
     color: 'text-green-600',
     Icon: PrinterCheck,
   },
   error: {
-    labelKey: 'pos.printerError',
+    labelKey: 'printerError',
     color: 'text-red-500',
     Icon: PrinterX,
   },
@@ -72,7 +74,7 @@ export default function PrinterStatus() {
     connect, disconnect, clearError,
     printMethod, hardwarePrinter,
   } = usePrinterStore();
-  const { t } = useI18n();
+  const t = useTranslations('pos');
   const router = useRouter();
 
   const effectiveStatus: PrinterStatus = hardwarePrinter ? 'connected' : status;
@@ -84,21 +86,21 @@ export default function PrinterStatus() {
     try {
       await connect();
       if (usePrinterStore.getState().status === 'connected') {
-        toast.success(t('pos.printerConnected'));
+        toast.success(t('printerConnected'));
       } else if (usePrinterStore.getState().lastError) {
-        toast.error(t('pos.printerError'));
+        toast.error(t('printerError'));
       }
     } catch {
-      toast.error(t('pos.printerError'));
+      toast.error(t('printerError'));
     }
   };
 
   const handleDisconnect = async () => {
     try {
       await disconnect();
-      toast(t('pos.printerDisconnected'));
+      toast(t('printerDisconnected'));
     } catch {
-      toast.error(t('pos.printerError'));
+      toast.error(t('printerError'));
     }
   };
 
@@ -126,7 +128,7 @@ export default function PrinterStatus() {
 
       <DropdownMenuContent align="end" className="w-52">
         <DropdownMenuLabel className="text-xs text-gray-500">
-          {t('pos.printerSectionLabel')}
+          {t('printerSectionLabel')}
         </DropdownMenuLabel>
 
         {hardwarePrinter && (
@@ -148,7 +150,7 @@ export default function PrinterStatus() {
         {isConnected && deviceInfo && (
           <div className="px-2 py-1.5 text-xs text-gray-500 border-b border-gray-100">
             <p className="font-medium text-gray-700 truncate">
-              {deviceInfo.productName ?? t('pos.printerUnknownDevice')}
+              {deviceInfo.productName ?? t('printerUnknownDevice')}
             </p>
             <p><Ltr>{deviceInfo.manufacturerName ?? `VID:${deviceInfo.vendorId.toString(16).toUpperCase()}`}</Ltr></p>
           </div>
@@ -156,7 +158,7 @@ export default function PrinterStatus() {
 
         {lastError && (
           <div className="px-2 py-1.5 text-xs text-red-600 bg-red-50 rounded mx-1 my-1">
-            {t('pos.printerError')}
+            {t('printerError')}
           </div>
         )}
 
@@ -171,7 +173,7 @@ export default function PrinterStatus() {
                 className="text-sm cursor-pointer"
               >
                 <Printer size={14} className="me-2" />
-                {isConnecting ? t('pos.printerConnecting') : t('pos.printerConnectUsb')}
+                {isConnecting ? t('printerConnecting') : t('printerConnectUsb')}
               </DropdownMenuItem>
             )}
 
@@ -181,7 +183,7 @@ export default function PrinterStatus() {
                 className="text-sm cursor-pointer text-red-600 focus:text-red-600"
               >
                 <Unplug size={14} className="me-2" />
-{t('pos.printerDisconnect')}
+{t('printerDisconnect')}
               </DropdownMenuItem>
             )}
           </>
@@ -189,7 +191,7 @@ export default function PrinterStatus() {
 
         {printMethod === 'browser' && (
           <div className="px-2 py-1.5 text-xs text-gray-500">
-            {t('pos.printerBrowserMode')}
+            {t('printerBrowserMode')}
           </div>
         )}
 
@@ -200,7 +202,7 @@ export default function PrinterStatus() {
           className="text-sm cursor-pointer"
         >
           <Settings size={14} className="me-2" />
-          {t('pos.printerSettings')}
+          {t('printerSettings')}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

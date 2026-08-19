@@ -13,7 +13,7 @@ import type { Customer } from '@/lib/types';
 import EditCustomerModal from './EditCustomerModal';
 import { Ltr } from '@/components/layout/Ltr';
 
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 
 interface Props {
   onSelected?: () => void;
@@ -40,14 +40,15 @@ function phoneMatchesInput(customerPhoneDigits: string | null | undefined, input
   return customerPhoneDigits.includes(inputDigits);
 }
 
-function TagBadges({ counts, t }: { counts: Record<string, number>; t: (k: string, p?: Record<string, string | number>) => string }) {
+function TagBadges({ counts }: { counts: Record<string, number> }) {
+  const t = useTranslations('pos');
   const entries = Object.entries(counts).filter(([, n]) => n > 0);
   if (entries.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1">
       {entries.map(([tag, count]) => (
         <span key={tag} className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${tagColor(tag)}`}>
-          {t('pos.tagCount', { tag, count })}
+          {t('tagCount', { tag, count })}
         </span>
       ))}
     </div>
@@ -58,7 +59,8 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
   const cart = useCartStore();
   const { currentTenant } = useAuthStore();
   const enforcePhoneLength = usePosSettingsStore((s) => s.enforcePhoneLength);
-  const { t } = useI18n();
+  const t = useTranslations('pos');
+  const tCommon = useTranslations('common');
   const country = currentTenant?.country ?? 'IN';
   const dialCode = dialCodeFor(country);
   const [phone, setPhone] = useState('');
@@ -172,7 +174,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
     if (!name.trim() || !phone.trim()) return;
     const parsed = parsePhone(phone, country);
     if (!parsed) {
-      toast.error(t('pos.invalidPhone', { country: countryName(country) }));
+      toast.error(t('invalidPhone', { country: countryName(country) }));
       return;
     }
     setCreating(true);
@@ -180,10 +182,10 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
       const { data } = await api.post('/customers', { name: name.trim(), phone: parsed.e164, country_code: parsed.countryCode });
       cart.setCustomer(data.customer);
       setPhone(''); setName(''); setMatched(null); setSearched(false);
-      toast.success(t('pos.customerCreated'));
+      toast.success(t('customerCreated'));
       onSelected?.();
     } catch {
-      toast.error(t('pos.createCustomerFailed'));
+      toast.error(t('createCustomerFailed'));
     } finally {
       setCreating(false);
     }
@@ -213,7 +215,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
           <div className="h-10 flex items-center gap-2 px-3 bg-brand-light rounded-lg min-w-0 w-full">
             <button
               onClick={() => setEditingCustomer(true)}
-              title={t('pos.editCustomer', { defaultValue: 'Edit name / phone' })}
+              title={t('editCustomer', { defaultValue: 'Edit name / phone' })}
               className="flex-1 min-w-0 flex items-center gap-x-2 flex-wrap text-start group"
             >
               <span className="font-semibold text-brand text-sm truncate group-hover:underline">{customer.name}</span>
@@ -222,10 +224,10 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               {!!loyaltyPoints && loyaltyPoints > 0 && (
                 <span className="flex items-center gap-0.5 text-xs font-medium text-brand bg-white/70 rounded-full px-1.5 py-0.5 shrink-0">
                   <Gift size={11} />
-                  {t('pos.loyaltyPointsShort', { count: loyaltyPoints, defaultValue: '{count} pts' })}
+                  {t('loyaltyPointsShort', { count: loyaltyPoints, defaultValue: '{count} pts' })}
                 </span>
               )}
-              {hasTags && <TagBadges counts={customer.tag_counts!} t={t} />}
+              {hasTags && <TagBadges counts={customer.tag_counts!} />}
             </button>
             <button onClick={handleClear} className="text-brand hover:text-brand-hover shrink-0 ms-auto">
               <X size={14} />
@@ -257,10 +259,10 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         {!!loyaltyPoints && loyaltyPoints > 0 && (
           <span className="inline-flex items-center gap-0.5 text-xs font-medium text-brand bg-brand-light rounded-full px-1.5 py-0.5">
             <Gift size={11} />
-            {t('pos.loyaltyPointsShort', { count: loyaltyPoints, defaultValue: '{count} pts' })}
+            {t('loyaltyPointsShort', { count: loyaltyPoints, defaultValue: '{count} pts' })}
           </span>
         )}
-        {hasTags && <TagBadges counts={customer.tag_counts!} t={t} />}
+        {hasTags && <TagBadges counts={customer.tag_counts!} />}
         {editingCustomer && (
           <EditCustomerModal
             customer={customer}
@@ -284,7 +286,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             value={phone}
             onChange={handlePhoneChange}
             onKeyDown={handlePhoneKeyDown}
-            placeholder={dialCode ? `${dialCode} ${t('pos.phone')}` : t('pos.phone')}
+            placeholder={dialCode ? `${dialCode} ${t('phone')}` : t('phone')}
             className="h-10 w-48 shrink-0 px-3 text-sm border border-amber-400 bg-amber-50 placeholder:text-amber-600/70 rounded-lg focus:ring-2 focus:ring-amber-200 focus:border-amber-500 outline-none"
             dir="ltr"
           />
@@ -299,7 +301,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               else handleCreate();
             }}
             readOnly={!!matched}
-            placeholder={searched ? (matched ? '' : t('pos.enterName')) : t('pos.nameAutoFills')}
+            placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
             className={`h-10 w-48 shrink-0 px-3 text-sm border rounded-lg focus:ring-2 outline-none transition-colors duration-150 ${
               matched
                 ? 'border-gray-200 bg-gray-50 cursor-pointer focus:ring-brand/20 focus:border-brand'
@@ -312,7 +314,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               onClick={handleSelectMatched}
               className="h-10 shrink-0 px-3 bg-brand text-white text-xs rounded-lg hover:bg-brand-hover whitespace-nowrap"
             >
-              {t('pos.select')}
+              {t('select')}
             </button>
           )}
           {isNew && name.trim() && (
@@ -321,7 +323,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
               disabled={creating}
               className="h-10 shrink-0 px-3 bg-brand text-white text-xs rounded-lg hover:bg-brand-hover disabled:opacity-50 whitespace-nowrap"
             >
-              {creating ? t('pos.loadingEllipsis') : t('common.add')}
+              {creating ? t('loadingEllipsis') : tCommon('add')}
             </button>
           )}
         </div>
@@ -329,9 +331,9 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         {searched && (
           <div className="absolute start-0 top-full mt-1 z-20 rounded-md border border-gray-100 bg-white px-2 py-1 shadow-sm">
             {matched ? (
-              <span className="text-xs text-green-600 font-medium">{t('pos.customerFound')}</span>
+              <span className="text-xs text-green-600 font-medium">{t('customerFound')}</span>
             ) : (
-              <span className="text-xs text-red-500 font-medium">{t('pos.newCustomerEnterName')}</span>
+              <span className="text-xs text-red-500 font-medium">{t('newCustomerEnterName')}</span>
             )}
           </div>
         )}
@@ -351,7 +353,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             value={phone}
             onChange={handlePhoneChange}
             onKeyDown={handlePhoneKeyDown}
-            placeholder={dialCode ? `${dialCode} ${t('pos.phone')}` : t('pos.phone')}
+            placeholder={dialCode ? `${dialCode} ${t('phone')}` : t('phone')}
             className={`${baseInput} flex-1 py-2`}
             dir="ltr"
           />
@@ -367,7 +369,7 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
             else handleCreate();
           }}
           readOnly={!!matched}
-          placeholder={searched ? (matched ? '' : t('pos.enterName')) : t('pos.nameAutoFills')}
+          placeholder={searched ? (matched ? '' : t('enterName')) : t('nameAutoFills')}
           className={`${baseInput} w-full py-2 ${matched ? 'bg-gray-50 cursor-pointer' : ''}`}
           onClick={matched ? handleSelectMatched : undefined}
         />
@@ -377,25 +379,25 @@ export default function CustomerSearch({ onSelected, variant = 'default' }: Prop
         <div className="space-y-1.5">
           {matched ? (
             <>
-              <p className="text-xs text-green-600 font-medium">{t('pos.customerFoundClick')}</p>
-              {matched.tag_counts && <TagBadges counts={matched.tag_counts} t={t} />}
+              <p className="text-xs text-green-600 font-medium">{t('customerFoundClick')}</p>
+              {matched.tag_counts && <TagBadges counts={matched.tag_counts} />}
               <button
                 onClick={handleSelectMatched}
                 className="w-full py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover"
               >
-                {t('pos.selectName', { name: matched.name })}
+                {t('selectName', { name: matched.name })}
               </button>
             </>
           ) : (
             <>
-              <p className="text-xs text-red-500 font-medium">{t('pos.newCustomerEnterName')}</p>
+              <p className="text-xs text-red-500 font-medium">{t('newCustomerEnterName')}</p>
               {name.trim() && (
                 <button
                   onClick={handleCreate}
                   disabled={creating}
                   className="w-full py-1.5 bg-brand text-white text-sm rounded-lg hover:bg-brand-hover disabled:opacity-50"
                 >
-                  {creating ? t('pos.creating') : t('pos.addName', { name: name.trim() })}
+                  {creating ? t('creating') : t('addName', { name: name.trim() })}
                 </button>
               )}
             </>

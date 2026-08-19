@@ -22,7 +22,9 @@ import {
 } from '@/lib/countries';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
-import { t as translate, getLanguageDirection, type Language } from '@/lib/i18n';
+import { createTranslator } from 'use-intl/core';
+import { getCachedMessages } from '@/lib/i18n/loader';
+import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { parseDbTimestamp } from '@/lib/utils';
 
@@ -82,31 +84,47 @@ function resolveLanguage(language?: Language): Language {
   }
 }
 
+/**
+ * Synchronous receipt translator backed by the shared locale loader cache.
+ * English is primed at module load; other languages resolve once their bundle
+ * has been loaded on demand (#375). Falls back to English so a receipt always
+ * renders without raw keys.
+ */
+function getReceiptTranslator(lang: Language): (key: string) => string {
+  const locale = LANGUAGES[lang]?.locale ?? 'en';
+  const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
+  // `createTranslator` resolves dotted keys against the whole message tree;
+  // the cached messages are untyped (Record<string, unknown>), so the returned
+  // translator accepts arbitrary string keys at runtime.
+  return createTranslator({ locale, messages }) as unknown as (key: string) => string;
+}
+
 /** Static receipt labels in the active UI language. */
 function receiptLabels(lang: Language) {
+  const t = getReceiptTranslator(lang);
   return {
-    billNumber: translate('receipt.billNumber', lang),
-    date: translate('receipt.date', lang),
-    table: translate('receipt.table', lang),
-    customer: translate('pos.customer', lang),
-    customerNo: translate('receipt.customerNo', lang),
-    phone: translate('receipt.phone', lang),
-    item: translate('receipt.item', lang),
-    qty: translate('receipt.qty', lang),
-    rate: translate('receipt.rate', lang),
-    amount: translate('receipt.amount', lang),
-    taxDetails: translate('receipt.taxDetails', lang),
-    subtotal: translate('pos.subtotal', lang),
-    discount: translate('pos.discount', lang),
-    totalTax: translate('receipt.totalTax', lang),
-    serviceCharge: translate('receipt.serviceCharge', lang),
-    deliveryCharge: translate('receipt.deliveryCharge', lang),
-    grandTotal: translate('receipt.grandTotal', lang),
-    payments: translate('receipt.payments', lang),
-    thankYou: translate('receipt.thankYou', lang),
-    taxIncluded: translate('receipt.taxIncluded', lang),
-    printBill: translate('receipt.printBill', lang),
-    reprint: translate('receipt.reprint', lang),
+    billNumber: t('receipt.billNumber'),
+    date: t('receipt.date'),
+    table: t('receipt.table'),
+    customer: t('pos.customer'),
+    customerNo: t('receipt.customerNo'),
+    phone: t('receipt.phone'),
+    item: t('receipt.item'),
+    qty: t('receipt.qty'),
+    rate: t('receipt.rate'),
+    amount: t('receipt.amount'),
+    taxDetails: t('receipt.taxDetails'),
+    subtotal: t('pos.subtotal'),
+    discount: t('pos.discount'),
+    totalTax: t('receipt.totalTax'),
+    serviceCharge: t('receipt.serviceCharge'),
+    deliveryCharge: t('receipt.deliveryCharge'),
+    grandTotal: t('receipt.grandTotal'),
+    payments: t('receipt.payments'),
+    thankYou: t('receipt.thankYou'),
+    taxIncluded: t('receipt.taxIncluded'),
+    printBill: t('receipt.printBill'),
+    reprint: t('receipt.reprint'),
   };
 }
 
@@ -116,7 +134,7 @@ function receiptLabels(lang: Language) {
  * localized so a Persian receipt doesn't show an English phrase.
  */
 function resolveTaxIdLabel(country: string | undefined, lang: Language): string {
-  if (country?.toUpperCase() === 'IR') return translate('receipt.economicCode', lang);
+  if (country?.toUpperCase() === 'IR') return getReceiptTranslator(lang)('receipt.economicCode');
   return getCountryByCode(country ?? 'IN')?.taxIdLabel || 'Tax ID';
 }
 
@@ -128,7 +146,7 @@ const PAYMENT_METHOD_KEYS: Record<string, string> = {
 
 function resolvePaymentMethodLabel(method: string, lang: Language): string {
   const key = PAYMENT_METHOD_KEYS[method.toLowerCase()];
-  if (key) return translate(key, lang);
+  if (key) return getReceiptTranslator(lang)(key);
   return method.charAt(0).toUpperCase() + method.slice(1);
 }
 

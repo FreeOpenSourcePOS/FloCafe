@@ -10,7 +10,7 @@ import { useCartStore } from '@/store/cart';
 import { useHeldOrdersStore } from '@/store/held-orders';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import toast from 'react-hot-toast';
 import type { Table, Order, OrderItem, CartItem } from '@/lib/types';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
@@ -37,27 +37,28 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
   const heldOrders = useHeldOrdersStore();
   const { currentTenant } = useAuthStore();
   const billingType = usePosSettingsStore((s) => s.billingType);
-  const { t } = useI18n();
+  const t = useTranslations('pos');
+  const tCommon = useTranslations('common');
   const isRestaurant = (currentTenant?.business_type ?? 'restaurant') === 'restaurant';
   const fmt = useFormatCurrency();
   const canHold = isRestaurant && cart.orderType === 'dine_in' && cart.tableId && cart.items.length > 0 && billingType === 'postpaid';
 
   const handleHold = async () => {
     if (!cart.tableId) {
-      toast.error(t('pos.selectTableFirst'));
+      toast.error(t('selectTableFirst'));
       return;
     }
     if (cart.items.length === 0) {
-      toast.error(t('pos.cartEmpty'));
+      toast.error(t('cartEmpty'));
       return;
     }
     const tableName = tables.find((t) => t.id === cart.tableId)?.name || cart.tableId;
     try {
       await heldOrders.holdOrder(cart.tableId, cart.items, cart.customerId, cart.guestCount, cart.orderNotes);
       cart.clearCart();
-      toast.success(t('pos.orderHeldFor', { table: tableName }));
+      toast.success(t('orderHeldFor', { table: tableName }));
     } catch {
-      toast.error(t('pos.holdOrderFailed'));
+      toast.error(t('holdOrderFailed'));
     }
   };
 
@@ -76,7 +77,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             .filter((type) => isRestaurant || type !== 'dine_in')
             .map((type) => {
               const Icon = orderTypeIcons[type];
-              const label = type === 'dine_in' ? t('pos.orderTypeDineIn') : type === 'takeaway' ? t('pos.orderTypeTakeaway') : t('pos.orderTypeDelivery');
+              const label = type === 'dine_in' ? t('orderTypeDineIn') : type === 'takeaway' ? t('orderTypeTakeaway') : t('orderTypeDelivery');
               return (
                 <button
                   key={type}
@@ -96,11 +97,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
 
         {cart.orderType === 'dine_in' && (
           <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2">
-            <div className="flex items-center gap-2 text-sm text-gray-600"><Users size={15} /><span>{t('pos.pax', { defaultValue: 'Pax' })}</span></div>
+            <div className="flex items-center gap-2 text-sm text-gray-600"><Users size={15} /><span>{t('pax', { defaultValue: 'Pax' })}</span></div>
             <div className="flex items-center gap-2">
-              <button type="button" aria-label={t('pos.decreasePax', { defaultValue: 'Decrease pax' })} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Minus size={13} /></button>
-              <input aria-label={t('pos.pax', { defaultValue: 'Pax' })} type="number" min="1" max="99" value={cart.guestCount} onChange={(e) => cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))} className="w-10 text-center text-sm font-semibold border-0 outline-none" />
-              <button type="button" aria-label={t('pos.increasePax', { defaultValue: 'Increase pax' })} onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Plus size={13} /></button>
+              <button type="button" aria-label={t('decreasePax', { defaultValue: 'Decrease pax' })} onClick={() => cart.setGuestCount(Math.max(1, cart.guestCount - 1))} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Minus size={13} /></button>
+              <input aria-label={t('pax', { defaultValue: 'Pax' })} type="number" min="1" max="99" value={cart.guestCount} onChange={(e) => cart.setGuestCount(Math.min(99, Math.max(1, Number(e.target.value) || 1)))} className="w-10 text-center text-sm font-semibold border-0 outline-none" />
+              <button type="button" aria-label={t('increasePax', { defaultValue: 'Increase pax' })} onClick={() => cart.setGuestCount(Math.min(99, cart.guestCount + 1))} className="size-7 rounded-full bg-gray-100 flex items-center justify-center"><Plus size={13} /></button>
             </div>
           </div>
         )}
@@ -113,7 +114,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
               type="text"
               value={cart.deliveryAddress}
               onChange={(e) => cart.setDeliveryAddress(e.target.value)}
-              placeholder={t('pos.deliveryAddress')}
+              placeholder={t('deliveryAddress')}
               className="flex-1 px-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand focus:border-brand outline-none"
             />
           </div>
@@ -125,7 +126,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         {/* Previously ordered items (add-items mode) */}
         {existingOrder && existingOrder.items && existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').length > 0 && (
           <div className="mb-3 pb-3 border-b border-dashed border-gray-200">
-            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{t('pos.alreadyOrdered')}</p>
+            <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">{t('alreadyOrdered')}</p>
             <div className="space-y-1.5">
               {existingOrder.items.filter((i: OrderItem) => i.status !== 'cancelled').map((item: OrderItem) => (
                 <div key={item.id} className="flex justify-between items-center">
@@ -140,7 +141,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         {cart.items.length === 0 ? (
           <div className={`flex flex-col items-center justify-center text-gray-400 ${existingOrder ? 'py-4' : isDrawer ? 'py-8' : 'h-full'}`}>
             <ShoppingCart size={existingOrder ? 24 : 40} />
-            <p className="mt-2 text-sm">{existingOrder ? t('pos.addNewItemsAbove') : t('pos.cartEmpty')}</p>
+            <p className="mt-2 text-sm">{existingOrder ? t('addNewItemsAbove') : t('cartEmpty')}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -163,7 +164,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
                         className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 hover:bg-amber-200 text-xs font-medium transition-colors"
                       >
                         <SquarePen size={12} />
-                        {t('common.edit')}
+                        {tCommon('edit')}
                       </button>
                     )}
                   </div>
@@ -212,7 +213,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             <textarea
               value={cart.orderNotes}
               onChange={(e) => cart.setOrderNotes(e.target.value.slice(0, 200))}
-              placeholder={t('pos.orderNotesPlaceholder')}
+              placeholder={t('orderNotesPlaceholder')}
               rows={2}
               maxLength={200}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand/30 focus:border-brand"
@@ -221,11 +222,11 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
           </div>
         )}
         <div className="flex justify-between mb-1 text-sm">
-          <span className="text-gray-500">{t('pos.items')}</span>
+          <span className="text-gray-500">{t('items')}</span>
           <span className="font-medium">{cart.itemCount()}</span>
         </div>
         <div className="flex justify-between mb-4 text-lg">
-          <span className="font-semibold text-gray-900">{t('pos.subtotal')}</span>
+          <span className="font-semibold text-gray-900">{t('subtotal')}</span>
           <span className="font-bold text-brand">
             {fmt(cart.subtotal())}
           </span>
@@ -233,7 +234,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
         <div className="flex gap-2">
           {canHold && (
             <Button variant="outline" onClick={handleHold} className="flex-1">
-              <Pause size={14} className="me-1" /> {t('pos.holdButton')}
+              <Pause size={14} className="me-1" /> {t('holdButton')}
             </Button>
           )}
           <Button
@@ -242,7 +243,7 @@ export default function CartPanel({ tables, submitting, onPlaceOrder, onEditItem
             className="flex-1"
             size="lg"
           >
-            {submitting ? t('pos.placing') : t('pos.placeOrderButton')}
+            {submitting ? t('placing') : t('placeOrderButton')}
           </Button>
         </div>
       </div>

@@ -51,31 +51,15 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
   }
 }
 
+import { E2E_PASSWORD, setLanguage } from './helpers/test-auth';
+
 async function login(page: Page, email: string): Promise<void> {
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill(email);
-  await page.locator('#password').fill('E2ePass123!');
+  await page.locator('#password').fill(E2E_PASSWORD);
   await page.locator('button[type="submit"]').click();
   await page.waitForURL('**/pos/**', { timeout: 20000 });
   await page.waitForFunction(() => !!localStorage.getItem('token'));
-}
-
-async function setLanguage(page: Page, value: string): Promise<void> {
-  const token = await page.evaluate(() => localStorage.getItem('token'));
-  expect(token, 'auth token must be present before changing language').toBeTruthy();
-  const res = await page.request.put(`${BASE}/api/settings/language`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data: { value },
-  });
-  expect(res.ok(), `setting language=${value} should succeed (status ${res.status()})`).toBeTruthy();
-  await page.evaluate((lang) => {
-    try {
-      const raw = localStorage.getItem('pos-settings');
-      const parsed = raw ? JSON.parse(raw) : { state: {} };
-      parsed.state = { ...parsed.state, language: lang };
-      localStorage.setItem('pos-settings', JSON.stringify(parsed));
-    } catch {}
-  }, value);
 }
 
 async function assertNoHorizontalOverflow(page: Page, label: string): Promise<void> {

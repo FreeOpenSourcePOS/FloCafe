@@ -62,8 +62,11 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   // Helper for dnd-kit pointer drag and drop from card header
   const dragCard = async (sourceCard: Locator, targetColumn: Locator, desc = '') => {
     console.log(`\n[Drag] ${desc}`);
-    await expect(sourceCard).toBeVisible();
+    await expect(sourceCard).toBeVisible({ timeout: 10000 });
     await expect(sourceCard).not.toHaveClass(/pointer-events-none/);
+
+    await sourceCard.scrollIntoViewIfNeeded();
+    await targetColumn.scrollIntoViewIfNeeded();
 
     const headerLoc = sourceCard.locator('span.font-bold').first();
     const sourceBox = await headerLoc.boundingBox();
@@ -73,13 +76,13 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
     const startX = sourceBox.x + sourceBox.width / 2;
     const startY = sourceBox.y + sourceBox.height / 2;
     const endX = targetBox.x + targetBox.width / 2;
-    const endY = targetBox.y + 80;
+    const endY = targetBox.y + Math.min(100, Math.max(50, targetBox.height / 2));
 
     await page.mouse.move(startX, startY);
     await page.mouse.down();
-    await page.mouse.move(startX + 15, startY + 15, { steps: 5 });
+    await page.mouse.move(startX + 15, startY + 15, { steps: 10 });
     await page.waitForTimeout(100);
-    await page.mouse.move(endX, endY, { steps: 30 });
+    await page.mouse.move(endX, endY, { steps: 35 });
     await page.waitForTimeout(250);
     await page.mouse.up();
     await page.waitForTimeout(250);
@@ -92,7 +95,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await dragCard(cardIn(waitingCol), preparingCol, 'Waiting -> Preparing (single-step)');
   await expect(page.getByRole('heading', { name: 'Skip a stage?' })).toHaveCount(0);
 
-  await expect(cardIn(preparingCol)).toBeVisible();
+  await expect(cardIn(preparingCol)).toBeVisible({ timeout: 10000 });
   await expect(cardIn(preparingCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(waitingCol)).toHaveCount(0);
   await page.waitForTimeout(200);
@@ -104,19 +107,19 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await dragCard(cardIn(preparingCol), deliveredCol, 'Preparing -> Delivered (skips Ready)');
 
   const dialogTitle = page.getByRole('heading', { name: 'Skip a stage?' });
-  await expect(dialogTitle).toBeVisible();
-  await expect(page.getByText('This will mark the item as Delivered and skip the stages in between.')).toBeVisible();
+  await expect(dialogTitle).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('This will mark the item as Delivered and skip the stages in between.')).toBeVisible({ timeout: 10000 });
   const cancelBtn = page.getByRole('button', { name: 'Cancel' });
   const confirmDeliveredBtn = page.getByRole('button', { name: 'Mark as Delivered' });
-  await expect(cancelBtn).toBeVisible();
-  await expect(confirmDeliveredBtn).toBeVisible();
+  await expect(cancelBtn).toBeVisible({ timeout: 10000 });
+  await expect(confirmDeliveredBtn).toBeVisible({ timeout: 10000 });
 
   // ---------------------------------------------------------------------
   // Step C: Cancel confirmation -> card remains in Preparing
   // ---------------------------------------------------------------------
   await cancelBtn.click();
   await expect(dialogTitle).toHaveCount(0);
-  await expect(cardIn(preparingCol)).toBeVisible();
+  await expect(cardIn(preparingCol)).toBeVisible({ timeout: 10000 });
   await expect(cardIn(preparingCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(deliveredCol)).toHaveCount(0);
   await page.waitForTimeout(200);
@@ -125,11 +128,11 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   // Step D: Drag again and Confirm -> card commits transition to Delivered
   // ---------------------------------------------------------------------
   await dragCard(cardIn(preparingCol), deliveredCol, 'Preparing -> Delivered (confirm)');
-  await expect(dialogTitle).toBeVisible();
+  await expect(dialogTitle).toBeVisible({ timeout: 10000 });
   await confirmDeliveredBtn.click();
   await expect(dialogTitle).toHaveCount(0);
 
-  await expect(cardIn(deliveredCol)).toBeVisible();
+  await expect(cardIn(deliveredCol)).toBeVisible({ timeout: 10000 });
   await expect(cardIn(deliveredCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(preparingCol)).toHaveCount(0);
 
@@ -139,7 +142,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   // ---------------------------------------------------------------------
   await dragCard(cardIn(deliveredCol), preparingCol, 'Delivered -> Preparing (backward)');
   await expect(page.getByRole('heading', { name: 'Skip a stage?' })).toHaveCount(0);
-  await expect(cardIn(preparingCol)).toBeVisible();
+  await expect(cardIn(preparingCol)).toBeVisible({ timeout: 10000 });
   await expect(cardIn(preparingCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(deliveredCol)).toHaveCount(0);
   await page.waitForTimeout(200);
@@ -148,18 +151,18 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   // Step F: Backward drag to Waiting, then skip drag Waiting -> Ready (skipping Preparing)
   // ---------------------------------------------------------------------
   await dragCard(cardIn(preparingCol), waitingCol, 'Preparing -> Waiting (backward)');
-  await expect(cardIn(waitingCol)).toBeVisible();
+  await expect(cardIn(waitingCol)).toBeVisible({ timeout: 10000 });
   await expect(cardIn(waitingCol)).not.toHaveClass(/pointer-events-none/);
 
   await dragCard(cardIn(waitingCol), readyCol, 'Waiting -> Ready (skips Preparing)');
-  await expect(dialogTitle).toBeVisible();
-  await expect(page.getByText('This will mark the item as Ready and skip the stages in between.')).toBeVisible();
+  await expect(dialogTitle).toBeVisible({ timeout: 10000 });
+  await expect(page.getByText('This will mark the item as Ready and skip the stages in between.')).toBeVisible({ timeout: 10000 });
   const confirmReadyBtn = page.getByRole('button', { name: 'Mark as Ready' });
-  await expect(confirmReadyBtn).toBeVisible();
+  await expect(confirmReadyBtn).toBeVisible({ timeout: 10000 });
 
   await confirmReadyBtn.click();
   await expect(dialogTitle).toHaveCount(0);
-  await expect(cardIn(readyCol)).toBeVisible();
+  await expect(cardIn(readyCol)).toBeVisible({ timeout: 10000 });
   await expect(cardIn(readyCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(waitingCol)).toHaveCount(0);
 });

@@ -101,10 +101,11 @@ export function rateLimit(options: RateLimitOptions = {}) {
  * Private/LAN IPs are NOT exempt — LAN-based brute-force is a real threat
  * for a POS system. (vuln-0003)
  */
-export function authRateLimit() {
+export function authRateLimit(options: { max?: number } = {}) {
+  const envMax = process.env.FLO_AUTH_RATE_LIMIT_MAX ? parseInt(process.env.FLO_AUTH_RATE_LIMIT_MAX, 10) : undefined;
   return rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 10,
+    max: options.max ?? (Number.isFinite(envMax) ? envMax : 10),
     message: 'Too many authentication attempts. Please try again later.',
     bypassPrivateIp: false,
   });

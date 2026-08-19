@@ -957,7 +957,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
-            const methodLabel = truncate(String(payment.method), cols - 12);
+            const methodLabel = truncate(capitalize(String(payment.method)), cols - 12);
             lines.push(methodLabel + rightAlign(formatCurrency(payment.amount, prefix, locale, trimDecimals), cols - methodLabel.length));
           }
         }
@@ -1057,7 +1057,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
-            const methodLabel = truncate(String(payment.method), cols - 12);
+            const methodLabel = truncate(capitalize(String(payment.method)), cols - 12);
             lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals), cols));
           }
         }
@@ -1130,16 +1130,16 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   lines.push(dash);
 
-  // Discount / redeemed points sit above the subtotal, each only if present.
-  if (bill.discount_amount > 0) {
-    lines.push(...financialRows('Discount', '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
-  }
+  // Redeemed points sit above the subtotal, only if present.
   if (biz.points_redeemed > 0) {
     const label = 'Points Redeemed';
     lines.push(label + rightAlign('-' + biz.points_redeemed + ' pts', cols - label.length));
   }
 
   lines.push(...financialRows('Subtotal', formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
+  if (bill.discount_amount > 0) {
+    lines.push(...financialRows('Discount', '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
+  }
   if (biz.show_tax_breakdown === true && taxComponents.length > 0) {
     for (const tax of taxComponents) {
       if (tax.amount === 0) continue;
@@ -1158,7 +1158,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
       if (payments && Array.isArray(payments)) {
         for (const payment of payments) {
           if (payment && payment.method) {
-            const methodLabel = truncate(String(payment.method), cols - 12);
+            const methodLabel = truncate(capitalize(String(payment.method)), cols - 12);
             lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals), cols));
           }
         }
@@ -1168,9 +1168,9 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
     }
   }
 
-  // Earned points this bill + running balance, each only if it exists.
+  // Earned points this bill + running balance, each only if nonzero.
   const hasEarned = biz.points_earned > 0;
-  const hasBalance = biz.points_balance !== null && biz.points_balance !== undefined;
+  const hasBalance = biz.points_balance !== null && biz.points_balance !== undefined && biz.points_balance !== 0;
   if (hasEarned || hasBalance) {
     lines.push(dash);
     if (hasEarned) lines.push('Points Earned' + rightAlign(String(biz.points_earned), cols - 13));
@@ -1462,6 +1462,10 @@ function rightAlign(text: string, width: number = 24): string {
 
 function truncate(text: string, length: number): string {
   return text.length > length ? text.substring(0, length - 2) + '..' : text;
+}
+
+function capitalize(text: string): string {
+  return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
 function wrapText(text: string, cols: number): string[] {

@@ -9,9 +9,8 @@ import { formatCurrency, getCountryByCode, getCurrencySymbol } from '@/lib/count
 import { useAuthStore } from '@/store/auth';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import type { Order, OrderItem, Bill } from '@/lib/types';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
-import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
 
 // --- Mock data ---------------------------------------------------------
 // Shaped like the real `Order` / `Bill` types (src/lib/types.ts) so this
@@ -100,18 +99,33 @@ const MOCK_HISTORY: HistoryOrder[] = [
   },
 ];
 
+type OrdersKey = keyof AppConfig['Messages']['orders'];
+
 const STATUS_BADGE: Record<string, string> = {
   completed: 'bg-green-100 text-green-700 border-green-200',
   cancelled: 'bg-red-100 text-red-700 border-red-200',
 };
 
-const STATUS_LABEL_KEY: Record<string, string> = {
-  completed: 'orders.settled',
-  cancelled: 'orders.voided',
+// History view renders settled/voided (financial settlement terms), distinct
+// from the order-lifecycle `completed`/`cancelled` labels.
+const STATUS_LABEL_KEY: Partial<Record<Order['status'], OrdersKey>> = {
+  completed: 'settled',
+  cancelled: 'voided',
 };
 
+// Typed leaf-key order-type map. The shared ORDER_TYPE_LABEL_KEYS stays dotted
+// for the not-yet-migrated KDS batch (5D), so 5C uses this local map.
+const ORDER_TYPE_KEYS = {
+  dine_in: 'dineIn',
+  takeaway: 'takeaway',
+  delivery: 'delivery',
+  online: 'online',
+} as const satisfies Record<Order['type'], OrdersKey>;
+
 function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; currency: string; locale: string }) {
-  const { t } = useI18n();
+  const tOrders = useTranslations('orders');
+  const tCommon = useTranslations('common');
+  const tPrintTest = useTranslations('printTest');
   const { formatDate } = useFormatDate();
   const items: OrderItem[] = order.items ?? [];
   const bill = order.bill;
@@ -126,13 +140,13 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
             <CardDescription>{formatDate(order.created_at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</CardDescription>
           </div>
           <Badge className={STATUS_BADGE[order.status] ?? ''} variant="outline">
-            {STATUS_LABEL_KEY[order.status] ? t(STATUS_LABEL_KEY[order.status]) : order.status}
+            {(() => { const key = STATUS_LABEL_KEY[order.status]; return key ? tOrders(key) : order.status; })()}
           </Badge>
         </div>
         <p className="text-sm text-muted-foreground">
-          {t(ORDER_TYPE_LABEL_KEYS[order.type])}
-          {order.table && ` · ${t('orders.tableAt', { name: order.table.name })}`}
-          {order.guest_count ? ` · ${t('orders.guestCount', { count: order.guest_count })}` : ''}
+          {tOrders(ORDER_TYPE_KEYS[order.type])}
+          {order.table && ` · ${tOrders('tableAt', { name: order.table.name })}`}
+          {order.guest_count ? ` · ${tOrders('guestCount', { count: order.guest_count })}` : ''}
         </p>
       </CardHeader>
 
@@ -140,10 +154,10 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="px-0">{t('printTest.item')}</TableHead>
-              <TableHead className="px-0 text-center w-10">{t('printTest.qty')}</TableHead>
-              <TableHead className="px-0 text-end">{t('printTest.rate')}</TableHead>
-              <TableHead className="px-0 text-end">{t('printTest.amt')}</TableHead>
+              <TableHead className="px-0">{tPrintTest('item')}</TableHead>
+              <TableHead className="px-0 text-center w-10">{tPrintTest('qty')}</TableHead>
+              <TableHead className="px-0 text-end">{tPrintTest('rate')}</TableHead>
+              <TableHead className="px-0 text-end">{tPrintTest('amt')}</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -162,46 +176,47 @@ function HistoryOrderCard({ order, currency, locale }: { order: HistoryOrder; cu
 
         <div className="space-y-1 text-sm">
           <div className="flex justify-between text-muted-foreground">
-            <span>{t('common.subtotal')}</span>
+            <span>{tCommon('subtotal')}</span>
             <span className="tabular-nums">{fmt(order.subtotal)}</span>
           </div>
           <div className="flex justify-between text-muted-foreground">
-            <span>{t('common.tax')}</span>
+            <span>{tCommon('tax')}</span>
             <span className="tabular-nums">{fmt(order.tax_amount)}</span>
           </div>
           {order.discount_amount > 0 && (
             <div className="flex justify-between text-muted-foreground">
-              <span>{t('common.discount')}{bill?.discount_reason ? ` (${bill.discount_reason})` : ''}</span>
+              <span>{tCommon('discount')}{bill?.discount_reason ? ` (${bill.discount_reason})` : ''}</span>
               <span className="tabular-nums">−{fmt(order.discount_amount)}</span>
             </div>
           )}
           {order.delivery_charge > 0 && (
             <div className="flex justify-between text-muted-foreground">
-              <span>{t('orders.delivery')}</span>
+              <span>{tOrders('delivery')}</span>
               <span className="tabular-nums">{fmt(order.delivery_charge)}</span>
             </div>
           )}
           <Separator className="my-1.5" />
           <div className="flex justify-between font-bold text-base">
-            <span>{t('common.total')}</span>
+            <span>{tCommon('total')}</span>
             <span className="tabular-nums">{fmt(order.total)}</span>
           </div>
         </div>
       </CardContent>
 
       <CardFooter className="px-4 pb-4 pt-3 border-t flex flex-wrap gap-2">
-        <Button variant="outline" size="sm">{t('orders.printReceiptTitle')}</Button>
+        <Button variant="outline" size="sm">{tOrders('printReceiptTitle')}</Button>
         {order.status === 'completed' && (
-          <Button variant="outline" size="sm">{t('orders.reopenOrder')}</Button>
+          <Button variant="outline" size="sm">{tOrders('reopenOrder')}</Button>
         )}
-        <Button variant="ghost" size="sm">{t('orders.viewLogs')}</Button>
+        <Button variant="ghost" size="sm">{tOrders('viewLogs')}</Button>
       </CardFooter>
     </Card>
   );
 }
 
 export default function OrderHistoryGrid() {
-  const { t } = useI18n();
+  const tOrders = useTranslations('orders');
+  const tDashboard = useTranslations('dashboard');
   const currentTenant = useAuthStore((s) => s.currentTenant);
   const country = getCountryByCode(currentTenant?.country ?? 'IN');
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', country?.locale);
@@ -211,8 +226,8 @@ export default function OrderHistoryGrid() {
   return (
     <div className="p-4">
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">{t('orders.historyTitle')}</h1>
-        <Badge variant="outline">{t('dashboard.ordersCount', { count: orders.length })}</Badge>
+        <h1 className="text-2xl font-bold">{tOrders('historyTitle')}</h1>
+        <Badge variant="outline">{tDashboard('ordersCount', { count: orders.length })}</Badge>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 auto-rows-max content-start items-start">

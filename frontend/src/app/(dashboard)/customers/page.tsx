@@ -13,7 +13,7 @@ import { useSearchParams, useRouter } from 'next/navigation';
 import type { Customer } from '@/lib/types';
 import { countryName } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatDate } from '@/hooks/useFormatDate';
@@ -26,7 +26,11 @@ function SortIcon({ field, sortField, sortOrder }: { field: string; sortField: s
 
 export default function CustomersPage() {
   const { currentTenant } = useAuthStore();
-  const { t } = useI18n();
+  const tCustomer = useTranslations('customer');
+  const tCustomers = useTranslations('customers');
+  const tPos = useTranslations('pos');
+  const tNav = useTranslations('nav');
+  const tCommon = useTranslations('common');
   const fmt = useFormatCurrency();
   const { formatDate } = useFormatDate();
   const fmtNum = useFormatNumber();
@@ -59,7 +63,7 @@ export default function CustomersPage() {
       const { data } = await api.get(`/customers/${c.id}/wallet`);
       setLedgerData(data);
     } catch {
-      toast.error(t('customer.ledgerLoadFailed'));
+      toast.error(tCustomer('ledgerLoadFailed'));
     } finally {
       setLedgerLoading(false);
     }
@@ -76,7 +80,7 @@ export default function CustomersPage() {
     api.get('/customers', { params, signal: controller.signal })
       .then(({ data }) => setCustomers(data.data || []))
       .catch((err: unknown) => {
-        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(t('customer.loadFailed'));
+        if (!(err instanceof Error && (err.name === 'CanceledError' || err.name === 'AbortError'))) toast.error(tCustomer('loadFailed'));
       })
       .finally(() => { setLoading(false); });
     }, 250);
@@ -102,26 +106,26 @@ export default function CustomersPage() {
     e.preventDefault();
     const norm = normalizeOptionalPhone(form.phone, defaultCountry);
     if (!norm.valid) {
-      toast.error(t('pos.invalidPhone', { country: countryName(defaultCountry) }));
+      toast.error(tPos('invalidPhone', { country: countryName(defaultCountry) }));
       return;
     }
     if (!editingCustomer && !norm.e164) {
-      toast.error(t('pos.invalidPhone', { country: countryName(defaultCountry) }));
+      toast.error(tPos('invalidPhone', { country: countryName(defaultCountry) }));
       return;
     }
     const payload = { ...form, phone: norm.e164 ?? '', country_code: norm.countryCode ?? '' };
     try {
       if (editingCustomer) {
         await api.put(`/customers/${editingCustomer.id}`, payload);
-        toast.success(t('customer.updated'));
+        toast.success(tCustomer('updated'));
       } else {
         await api.post('/customers', payload);
-        toast.success(t('customer.added'));
+        toast.success(tCustomer('added'));
       }
       setShowForm(false);
       setRefreshKey((k) => k + 1);
     } catch {
-      toast.error(t('customer.saveFailed'));
+      toast.error(tCustomer('saveFailed'));
     }
   };
 
@@ -138,24 +142,24 @@ export default function CustomersPage() {
     <div>
       <div className="flex justify-between items-center mb-6">
         <div className="flex items-center gap-4">
-          <h1 className="text-2xl font-bold text-gray-900">{t('nav.customers')}</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{tNav('customers')}</h1>
           {filter === 'invalid_phones' && (
             <span className="bg-red-100 text-red-800 text-xs px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">
-              <AlertCircle size={14} /> {t('customers.actionRequired')}
+              <AlertCircle size={14} /> {tCustomers('actionRequired')}
               <button onClick={() => router.push('/customers')} className="ms-1 text-red-500 hover:text-red-700">
                 <X size={12} />
               </button>
             </span>
           )}
         </div>
-        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {t('customer.add')}</Button>
+        <Button onClick={openAdd}><Plus size={16} className="me-1" /> {tCustomer('add')}</Button>
       </div>
 
       <div className="relative mb-4">
         <Search size={18} className="absolute start-3 top-1/2 -translate-y-1/2 text-gray-400" />
         <input
           type="text" value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder={t('customer.search')}
+          placeholder={tCustomer('search')}
           className="w-full ps-10 pe-4 py-2.5 bg-white border border-gray-200 rounded-lg focus:ring-2 focus:ring-brand outline-none"
         />
       </div>
@@ -165,25 +169,25 @@ export default function CustomersPage() {
           <thead className="bg-gray-50">
             <tr>
               <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('name')}>
-                {t('customers.columnCustomer')} <SortIcon field="name" sortField={sortField} sortOrder={sortOrder} />
+                {tCustomers('columnCustomer')} <SortIcon field="name" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-start p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('phone')}>
-                {t('customer.phone')} <SortIcon field="phone" sortField={sortField} sortOrder={sortOrder} />
+                {tCustomer('phone')} <SortIcon field="phone" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('last_visit')}>
-                {t('customers.columnLastVisit')} <SortIcon field="last_visit" sortField={sortField} sortOrder={sortOrder} />
+                {tCustomers('columnLastVisit')} <SortIcon field="last_visit" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('visits')}>
-                {t('customer.visits')} <SortIcon field="visits" sortField={sortField} sortOrder={sortOrder} />
+                {tCustomer('visits')} <SortIcon field="visits" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('spent')}>
-                {t('customer.totalSpent')} <SortIcon field="spent" sortField={sortField} sortOrder={sortOrder} />
+                {tCustomer('totalSpent')} <SortIcon field="spent" sortField={sortField} sortOrder={sortOrder} />
               </th>
               <th className="text-end p-4 text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100 group transition-colors" onClick={() => onSort('loyalty')}>
-                {t('customer.loyalty')} <SortIcon field="loyalty" sortField={sortField} sortOrder={sortOrder} />
+                {tCustomer('loyalty')} <SortIcon field="loyalty" sortField={sortField} sortOrder={sortOrder} />
               </th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('customers.columnActions')}</th>
-              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{t('customers.columnLedger')}</th>
+              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{tCustomers('columnActions')}</th>
+              <th className="text-center p-4 text-xs font-medium text-gray-500 uppercase">{tCustomers('columnLedger')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -214,7 +218,7 @@ export default function CustomersPage() {
                   {Number(c.wallet_balance) > 0 ? (
                     <span className="inline-flex items-center gap-1 text-purple-700 font-semibold text-sm">
                       <Wallet size={13} />
-                      {fmtNum(Number(c.wallet_balance))} {t('customer.ptsSuffix')}
+                      {fmtNum(Number(c.wallet_balance))} {tCustomer('ptsSuffix')}
                     </span>
                   ) : (
                     <span className="text-gray-400 text-sm">—</span>
@@ -226,7 +230,7 @@ export default function CustomersPage() {
                   </Button>
                 </td>
                 <td className="p-4 text-center">
-                  <Button variant="ghost" size="sm" onClick={() => openLedger(c)} title={t('customer.viewLedgerTitle')}>
+                  <Button variant="ghost" size="sm" onClick={() => openLedger(c)} title={tCustomer('viewLedgerTitle')}>
                     <History size={14} />
                   </Button>
                 </td>
@@ -234,8 +238,8 @@ export default function CustomersPage() {
             ))}
           </tbody>
         </table>
-        {customers.length === 0 && <p className="text-center text-gray-500 py-12">{t('customers.empty')}</p>}
-        {customers.length >= 200 && <p className="text-center text-xs text-gray-400 py-3">{t('customers.first200')}</p>}
+        {customers.length === 0 && <p className="text-center text-gray-500 py-12">{tCustomers('empty')}</p>}
+        {customers.length >= 200 && <p className="text-center text-xs text-gray-400 py-3">{tCustomers('first200')}</p>}
       </div>
 
       {/* Loyalty Ledger Modal */}
@@ -244,7 +248,7 @@ export default function CustomersPage() {
           <div className="bg-white rounded-2xl w-full max-w-lg max-h-[85vh] flex flex-col shadow-xl">
             <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b border-gray-100">
               <div>
-                <h2 className="text-lg font-bold text-gray-900">{t('customers.loyaltyLedger')}</h2>
+                <h2 className="text-lg font-bold text-gray-900">{tCustomers('loyaltyLedger')}</h2>
                 <p className="text-sm text-gray-500">{ledgerCustomer.name}</p>
               </div>
               <button onClick={() => setLedgerCustomer(null)} className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 hover:bg-gray-200">
@@ -253,29 +257,29 @@ export default function CustomersPage() {
             </div>
 
             {ledgerLoading ? (
-              <div className="flex-1 flex items-center justify-center py-12 text-gray-400">{t('customer.loadingLedger')}</div>
+              <div className="flex-1 flex items-center justify-center py-12 text-gray-400">{tCustomer('loadingLedger')}</div>
             ) : ledgerData ? (
               <>
                 {/* Summary row */}
                 <div className="flex items-center gap-6 px-6 py-4 bg-gray-50 border-b border-gray-100">
                   <div>
-                    <p className="text-xs text-gray-500 mb-0.5">{t('customers.totalBalance')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{ledgerData.balance} <span className="text-sm font-normal text-gray-500">{t('customer.ptsSuffix')}</span></p>
+                    <p className="text-xs text-gray-500 mb-0.5">{tCustomers('totalBalance')}</p>
+                    <p className="text-2xl font-bold text-gray-900">{ledgerData.balance} <span className="text-sm font-normal text-gray-500">{tCustomer('ptsSuffix')}</span></p>
                   </div>
                 </div>
 
                 {/* Ledger table */}
                 <div className="flex-1 overflow-y-auto">
                   {ledgerData.transactions.length === 0 ? (
-                    <p className="text-center text-gray-400 py-12">{t('customers.noTransactions')}</p>
+                    <p className="text-center text-gray-400 py-12">{tCustomers('noTransactions')}</p>
                   ) : (
                     <table className="w-full text-sm">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
-                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnDate')}</th>
-                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnDescription')}</th>
-                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnPoints')}</th>
-                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{t('customers.columnExpires')}</th>
+                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnDate')}</th>
+                          <th className="text-start px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnDescription')}</th>
+                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnPoints')}</th>
+                          <th className="text-end px-4 py-2.5 text-xs font-medium text-gray-500">{tCustomers('columnExpires')}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
@@ -312,19 +316,19 @@ export default function CustomersPage() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-bold">{editingCustomer ? t('customer.edit') : t('customer.add')}</h2>
+              <h2 className="text-lg font-bold">{editingCustomer ? tCustomer('edit') : tCustomer('add')}</h2>
               <button onClick={() => setShowForm(false)}><X size={20} className="text-gray-400" /></button>
             </div>
             <form onSubmit={handleSave} className="space-y-4">
-              <input type="text" placeholder={t('customer.name')} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
+              <input type="text" placeholder={tCustomer('name')} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required />
               <div className="flex items-stretch gap-2">
-                <input type="tel" placeholder={dialCode ? `${dialCode} ${t('customer.phone')}` : t('customer.phone')} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                <input type="tel" placeholder={dialCode ? `${dialCode} ${tCustomer('phone')}` : tCustomer('phone')} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   className="flex-1 px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" required={!editingCustomer} />
               </div>
-              <input type="email" placeholder={`${t('customer.email')} (${t('common.optional')})`} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
+              <input type="email" placeholder={`${tCustomer('email')} (${tCommon('optional')})`} value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand" />
-              <Button type="submit" className="w-full">{editingCustomer ? t('customer.update') : t('customer.add')}</Button>
+              <Button type="submit" className="w-full">{editingCustomer ? tCustomer('update') : tCustomer('add')}</Button>
             </form>
           </div>
         </div>

@@ -1,8 +1,9 @@
 /**
- * Root i18n barrel re-exporting the modular i18n subsystem.
+ * Core i18n subsystem barrel export.
  *
- * Legacy custom translation engine and compatibility bridge have been
- * completely removed (#381).
+ * Provides central access to the language registry, dynamic chunk loader,
+ * BCP-47 browser language detection, server synchronization utilities,
+ * and exhaustively typed domain enum translation maps.
  */
 
 export {
@@ -10,28 +11,27 @@ export {
   getLanguageDirection,
   getLanguageFromLocale,
   getLanguageLocale,
-  isLanguage,
   type Language,
   type LanguageConfig,
   type LanguageDirection,
   type Locale,
-} from './i18n/languages';
+} from './languages';
 
 export {
   loadLocaleMessages,
   getCachedMessages,
   isLocaleLoaded,
-} from './i18n/loader';
+} from './loader';
 
 export {
   getBrowserLanguage,
-} from './i18n/browser-language';
+} from './browser-language';
 
 export {
   fetchServerInfo,
   useSyncServerLanguage,
   type ServerInfo,
-} from './i18n/server-language';
+} from './server-language';
 
 export {
   ORDER_TYPE_LABEL_KEYS,
@@ -42,4 +42,4 @@ export {
   TENANT_STATUS_LABEL_KEYS,
   BUSINESS_TYPE_LABEL_KEYS,
   PAYMENT_STATUS_LABEL_KEYS,
-} from './i18n/enums';
+} from './enums';

@@ -11,7 +11,7 @@ export type Messages = Record<string, unknown>;
  *   waiting for any network or chunk resolution.
  * - All other locales are fetched on demand via each language's dynamic
  *   chunk loader and shared between React (`I18nProvider`) and non-React
- *   consumers (the legacy `t()` adapter, print helpers, lang/dir sync).
+ *   consumers (print helpers, lang/dir sync, standalone pages).
  * - In-flight loads are deduplicated: concurrent callers for the same
  *   language share a single promise, and failed loads are retried on the
  *   next request (the failed promise is removed from the in-flight map).

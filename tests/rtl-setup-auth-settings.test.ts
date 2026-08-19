@@ -240,21 +240,27 @@ async function run(): Promise<void> {
 
   // 5. Translation keys setup.languagePersian and settings.languageFa resolve in all four languages.
   const languages = ['en', 'es', 'pt', 'fa'] as const;
-  // #375: prime the shared locale cache so synchronous t() resolves the
-  // on-demand bundles in this test process.
+  const { createTranslator } = frontendRequire('use-intl/core');
+  // #375: prime the shared locale cache so messages resolve for all locales.
   for (const lang of languages) {
     await i18nModule.loadLocaleMessages(lang);
   }
   for (const lang of languages) {
-    const setupLabel = i18nModule.t('setup.languagePersian', lang);
+    const t = createTranslator({
+      locale: i18nModule.getLanguageLocale(lang),
+      messages: i18nModule.getCachedMessages(lang),
+    });
+    const setupLabel = t('setup.languagePersian');
     assert(setupLabel && setupLabel !== 'setup.languagePersian', `setup.languagePersian must be translated in ${lang}, got: ${setupLabel}`);
-    const settingsLabel = i18nModule.t('settings.languageFa', lang);
+    const settingsLabel = t('settings.languageFa');
     assert(settingsLabel && settingsLabel !== 'settings.languageFa', `settings.languageFa must be translated in ${lang}, got: ${settingsLabel}`);
   }
-  assert(i18nModule.t('setup.languagePersian', 'fa') === 'فارسی', 'setup.languagePersian in fa must be فارسی');
-  assert(i18nModule.t('settings.languageFa', 'fa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
-  assert(i18nModule.t('setup.languagePersian', 'en') === 'Persian', 'setup.languagePersian in en must be Persian');
-  assert(i18nModule.t('settings.languageFa', 'en') === 'Persian (FA)', 'settings.languageFa in en must be Persian (FA)');
+  const tFa = createTranslator({ locale: 'fa-IR', messages: i18nModule.getCachedMessages('fa') });
+  const tEn = createTranslator({ locale: 'en', messages: i18nModule.getCachedMessages('en') });
+  assert(tFa('setup.languagePersian') === 'فارسی', 'setup.languagePersian in fa must be فارسی');
+  assert(tFa('settings.languageFa') === 'فارسی (FA)', 'settings.languageFa in fa must be فارسی (FA)');
+  assert(tEn('setup.languagePersian') === 'Persian', 'setup.languagePersian in en must be Persian');
+  assert(tEn('settings.languageFa') === 'Persian (FA)', 'settings.languageFa in en must be Persian (FA)');
   console.log('  ✓ setup.languagePersian and settings.languageFa translate across en, es, pt, fa');
 
   console.log('\n✅ All RTL/LTR Setup, Auth, and Settings checks passed.');

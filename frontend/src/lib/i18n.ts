@@ -23,7 +23,26 @@ import es from './i18n/messages/es.json';
 import pt from './i18n/messages/pt.json';
 import fa from './i18n/messages/fa.json';
 
-const translations: Record<Language, Record<string, string>> = { en, es, pt, fa };
+type NestedMessages = Record<string, unknown>;
+
+const translations: Record<Language, NestedMessages> = { en, es, pt, fa };
+
+/**
+ * Resolve a legacy dotted key (e.g. "auth.signIn") against the nested message
+ * tree by traversing each segment. Returns the leaf string, or undefined when
+ * the path does not resolve to a string leaf. This preserves the pre-nesting
+ * fallback semantics of {@link t} (target language → English → raw key).
+ */
+function resolveMessage(messages: NestedMessages, key: string): string | undefined {
+  let node: unknown = messages;
+  for (const part of key.split('.')) {
+    if (node === null || typeof node !== 'object' || Array.isArray(node)) {
+      return undefined;
+    }
+    node = (node as NestedMessages)[part];
+  }
+  return typeof node === 'string' ? node : undefined;
+}
 
 const PLURAL_RE = /\{(\w+),\s*plural,\s*((?:\s*(?:zero|one|two|few|many|other)\s*\{[^}]*\})+)\s*\}/g;
 const pluralRulesCache = new Map<string, Intl.PluralRules>();
@@ -60,7 +79,10 @@ function formatIcuPlural(template: string, params: Record<string, string | numbe
 }
 
 export function t(key: string, lang: Language, params?: Record<string, string | number>): string {
-  let value = translations[lang]?.[key] ?? translations.en[key] ?? key;
+  let value =
+    resolveMessage(translations[lang], key) ??
+    resolveMessage(translations.en, key) ??
+    key;
   if (params) {
     value = formatIcuPlural(value, params, lang);
     for (const [k, v] of Object.entries(params)) {

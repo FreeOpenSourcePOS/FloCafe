@@ -6,8 +6,9 @@
  *      in all files. A missing key means the UI falls back to a raw key string
  *      for that language.
  *   2. No file contains a duplicate key. JSON.parse silently drops
- *      duplicates, so we scan the raw text for `"key":` patterns and fail
- *      loudly when a key appears more than once.
+ *      duplicates, so we scan the raw text and fail loudly when a key
+ *      repeats within the same object (the same leaf name in different
+ *      namespaces is allowed).
  *   3. No value is an obviously broken shape: empty, whitespace-only, with
  *      stray JSON-parse artifacts at the edges (trailing `"` or `,`), real
  *      embedded newlines, or unbalanced braces. These signatures only catch
@@ -45,19 +46,71 @@ function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
 }
 
-function loadKeys(filePath: string): string[] {
-  const raw = fs.readFileSync(filePath, 'utf8');
-  const re = /"((?:[^"\\]|\\.)*)"\s*:/g;
-  const seen: string[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(raw)) !== null) seen.push(m[1]);
-  return seen;
+/**
+ * Recursively flatten a nested message tree back into flat dotted leaf keys
+ * (e.g. `{ auth: { signIn: "Sign In" } }` → `{ "auth.signIn": "Sign In" }`).
+ * This is the canonical view used for cross-locale parity and value checks.
+ */
+function flattenLeaves(node: unknown, prefix = '', out: Record<string, unknown> = {}): Record<string, unknown> {
+  if (node !== null && typeof node === 'object' && !Array.isArray(node)) {
+    for (const [k, v] of Object.entries(node)) {
+      const full = prefix ? `${prefix}.${k}` : k;
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        flattenLeaves(v, full, out);
+      } else {
+        out[full] = v;
+      }
+    }
+  }
+  return out;
 }
 
-function findDuplicates(keys: string[]): string[] {
-  const counts = new Map<string, number>();
-  for (const k of keys) counts.set(k, (counts.get(k) ?? 0) + 1);
-  return [...counts.entries()].filter(([, n]) => n > 1).map(([k]) => k);
+/**
+ * Scan raw JSON for duplicate keys scoped to their own object. JSON.parse
+ * silently drops duplicates, so walk the text ourselves: read string tokens
+ * (skipping escapes), treat a string followed by `:` as a key, and track
+ * `{`/`}` nesting so the same leaf name is allowed in different namespaces
+ * while a repeat inside one object is flagged.
+ */
+function findDuplicateKeys(raw: string): string[] {
+  const dups: string[] = [];
+  const stack: Array<Set<string>> = [new Set()];
+  let i = 0;
+  while (i < raw.length) {
+    const c = raw[i];
+    if (c === '"') {
+      let j = i + 1;
+      let str = '';
+      while (j < raw.length) {
+        if (raw[j] === '\\') {
+          if (raw[j + 1] === 'u') { str += raw.slice(j, j + 6); j += 6; }
+          else { str += raw[j] + raw[j + 1]; j += 2; }
+          continue;
+        }
+        if (raw[j] === '"') break;
+        str += raw[j];
+        j += 1;
+      }
+      i = j + 1;
+      let k = i;
+      while (k < raw.length && /\s/.test(raw[k])) k += 1;
+      if (raw[k] === ':') {
+        const key = JSON.parse(`"${str}"`);
+        const top = stack[stack.length - 1];
+        if (top.has(key)) dups.push(key); else top.add(key);
+        i = k + 1;
+      }
+    } else if (c === '{') {
+      stack.push(new Set());
+      i += 1;
+    } else if (c === '}') {
+      if (stack.length > 1) stack.pop();
+      i += 1;
+    } else {
+      i += 1;
+    }
+  }
+  return dups;
 }
 
 function isMalformedValue(value: unknown): string | null {
@@ -170,20 +223,21 @@ async function run(): Promise<void> {
 
   const sets = new Map<string, Set<string>>();
   const dups = new Map<string, string[]>();
-  const loaded = new Map<string, Record<string, string>>();
+  const loaded = new Map<string, Record<string, unknown>>();
 
   for (const { lang, file } of FILES) {
     const raw = fs.readFileSync(file, 'utf8');
-    const data = JSON.parse(raw) as Record<string, string>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const data = flattenLeaves(parsed);
     loaded.set(lang, data);
 
     const keys = Object.keys(data);
     sets.set(lang, new Set(keys));
 
-    const dupesRaw = findDuplicates(loadKeys(file));
+    const dupesRaw = findDuplicateKeys(raw);
     if (dupesRaw.length) dups.set(lang, dupesRaw);
 
-    console.log(`  ${lang}.json: ${keys.length} keys`);
+    console.log(`  ${lang}.json: ${keys.length} leaf keys`);
   }
 
   // 1. No missing keys — every file must hold the union of all keys.
@@ -249,8 +303,10 @@ async function run(): Promise<void> {
   console.log(`  ✓ no undefined keys (${called.size} t() calls covered)`);
 
   // 5. fa.json values must not silently fall back to the English value.
-  const enDict = loaded.get('en')!;
-  const faDict = loaded.get('fa')!;
+  // All values are strings past this point (the malformed-value check above
+  // would have thrown otherwise), so narrow for value-level comparisons.
+  const enDict = loaded.get('en')! as Record<string, string>;
+  const faDict = loaded.get('fa')! as Record<string, string>;
   const untranslated = Object.keys(faDict).filter(
     (k) => faDict[k] === enDict[k] && !FA_INTENTIONAL_IDENTICAL.has(k),
   );

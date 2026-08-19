@@ -1,0 +1,4 @@
+{
+  "pattern": "^(A+)+$",
+  "description": "Deliberately catastrophic for the check-25 rejection test (tests/tax-pack-management.test.ts) — the textbook nested-quantifier ReDoS shape, kept out of the .ts source as data so it is never itself flagged as vulnerable code (it is a negative-test fixture, never compiled or run against untrusted input outside validationChecklist's own reject path)."
+}

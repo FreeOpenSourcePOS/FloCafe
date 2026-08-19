@@ -1029,12 +1029,15 @@ async function main() {
       true,
       'check 25 accepts a well-formed, non-catastrophic registrationNumberFormat pattern',
     );
-    // Deliberately the textbook catastrophic-backtracking shape this test
-    // proves check 25 rejects — fixture data, never compiled or run against
-    // untrusted input outside validationChecklist's own reject path.
+    // Loaded from a JSON fixture (not written inline here) so the textbook
+    // catastrophic-backtracking shape this test proves check 25 rejects
+    // never appears as a regex literal in analyzed TypeScript source — it is
+    // fixture data, never compiled or run against untrusted input outside
+    // validationChecklist's own reject path.
+    const catastrophicFormat = require('./fixtures/catastrophic-registration-format.json');
     const catastrophicPackJson = JSON.stringify({
       ...formatOverridePack,
-      registrationNumberFormat: { pattern: '^(A+)+$', description: 'Deliberately catastrophic for the test' }, // codeql[js/redos]
+      registrationNumberFormat: catastrophicFormat,
     });
     const catastrophicValidation = validationChecklist({
       ...formatOverrideRow,

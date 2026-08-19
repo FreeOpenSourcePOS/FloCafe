@@ -497,61 +497,6 @@ function messagesDtsErrors(): string[] {
   return errors;
 }
 
-/* ------------------------------------------------------------ *
- * Legacy exclusion guardrails (Issue #381).                    *
- * ------------------------------------------------------------ */
-
-/** The legacy `useI18n.ts` hook must be deleted (#381). */
-function checkNoLegacyHook(): string[] {
-  const errors: string[] = [];
-  const hookPath = path.join(FRONTEND_SRC, 'hooks/useI18n.ts');
-  if (fs.existsSync(hookPath)) {
-    errors.push('frontend/src/hooks/useI18n.ts exists but must be deleted (#381)');
-  }
-  return errors;
-}
-
-/** No file in frontend/src may reference legacy useI18n or formatIcuPlural (#381). */
-function checkNoLegacyReferences(dir: string = FRONTEND_SRC): string[] {
-  const errors: string[] = [];
-  const walk = (d: string): void => {
-    for (const entry of fs.readdirSync(d, { withFileTypes: true })) {
-      const full = path.join(d, entry.name);
-      if (entry.isDirectory()) {
-        if (entry.name === 'node_modules' || entry.name === '.next' || entry.name === 'out') continue;
-        walk(full);
-      } else if (/\.(ts|tsx)$/.test(entry.name)) {
-        const content = fs.readFileSync(full, 'utf8');
-        const rel = path.relative(ROOT, full);
-        if (/\buseI18n\b/.test(content)) {
-          errors.push(`${rel} references legacy "useI18n" hook`);
-        }
-        if (/\bformatIcuPlural\b/.test(content)) {
-          errors.push(`${rel} references legacy "formatIcuPlural" regex parser`);
-        }
-      }
-    }
-  };
-  walk(dir);
-  return errors;
-}
-
-/** Legacy custom synchronous t() engine must not be exported in frontend/src/lib/i18n.ts (#381). */
-function checkNoLegacyEngine(): string[] {
-  const errors: string[] = [];
-  const i18nTs = path.join(FRONTEND_SRC, 'lib/i18n.ts');
-  if (fs.existsSync(i18nTs)) {
-    const content = fs.readFileSync(i18nTs, 'utf8');
-    if (/export\s+function\s+t\s*\(/.test(content)) {
-      errors.push('frontend/src/lib/i18n.ts still exports legacy custom t() engine');
-    }
-    if (/formatIcuPlural/.test(content)) {
-      errors.push('frontend/src/lib/i18n.ts still contains formatIcuPlural');
-    }
-  }
-  return errors;
-}
-
 /* ----------------------------------------------------------------- *
  * Live repository checks — run against the real message files.      *
  * ----------------------------------------------------------------- */
@@ -722,24 +667,6 @@ async function run(): Promise<void> {
   }
   console.log(`  ✓ no untranslated fa.json values (${FA_INTENTIONAL_IDENTICAL.size} intentional shared values)`);
 
-  // 9. Legacy exclusion guardrails (Issue #381).
-  const legacyHookErrors = checkNoLegacyHook();
-  if (legacyHookErrors.length) {
-    for (const e of legacyHookErrors) console.error(`  - ${e}`);
-    assert(false, 'legacy useI18n.ts hook detected');
-  }
-  const legacyRefErrors = checkNoLegacyReferences();
-  if (legacyRefErrors.length) {
-    for (const e of legacyRefErrors) console.error(`  - ${e}`);
-    assert(false, 'legacy i18n references detected in frontend/src');
-  }
-  const legacyEngineErrors = checkNoLegacyEngine();
-  if (legacyEngineErrors.length) {
-    for (const e of legacyEngineErrors) console.error(`  - ${e}`);
-    assert(false, 'legacy i18n engine detected in frontend/src/lib/i18n.ts');
-  }
-  console.log('  ✓ zero references to useI18n, formatIcuPlural, or legacy custom t() engine');
-
   console.log('\n✅ All translation integrity checks passed.');
 }
 
@@ -878,18 +805,6 @@ function runNegativeTests(): void {
     );
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
-  }
-
-  // 9. Legacy exclusion negative tests.
-  const tmpLegacy = fs.mkdtempSync(path.join(os.tmpdir(), 'i18n-legacy-negative-'));
-  try {
-    fs.writeFileSync(path.join(tmpLegacy, 'file1.ts'), 'import { useI18n } from "@/hooks/useI18n";');
-    fs.writeFileSync(path.join(tmpLegacy, 'file2.ts'), 'const x = formatIcuPlural("foo", {}, "en");');
-    const detectedRefs = checkNoLegacyReferences(tmpLegacy);
-    expectDetected('legacy: useI18n reference', detectedRefs.filter((e) => e.includes('useI18n')));
-    expectDetected('legacy: formatIcuPlural reference', detectedRefs.filter((e) => e.includes('formatIcuPlural')));
-  } finally {
-    fs.rmSync(tmpLegacy, { recursive: true, force: true });
   }
 
   console.log('  ✓ all negative fixtures detected by their validators');

@@ -1034,7 +1034,7 @@ async function main() {
     // untrusted input outside validationChecklist's own reject path.
     const catastrophicPackJson = JSON.stringify({
       ...formatOverridePack,
-      registrationNumberFormat: { pattern: '^(A+)+$', description: 'Deliberately catastrophic for the test' }, // codeql[js/polynomial-redos]
+      registrationNumberFormat: { pattern: '^(A+)+$', description: 'Deliberately catastrophic for the test' }, // codeql[js/redos]
     });
     const catastrophicValidation = validationChecklist({
       ...formatOverrideRow,

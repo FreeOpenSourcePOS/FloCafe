@@ -39,7 +39,8 @@ const {
   closeDatabase,
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
-const { calculateConfiguredChargeTaxes } = require('../main/services/tax');
+const { calculateConfiguredChargeTaxes, resolveTaxIdFormat, validateTaxRegistrationNumber, MAX_TAX_ID_LENGTH } = require('../main/services/tax');
+const { getCountryByCode } = require('../main/countries');
 const {
   installCatalogEntry,
   reinstallPackVersion,
@@ -106,7 +107,7 @@ async function main() {
     assertEqual(detailRes.status, 200, 'manager can view active pack details');
     assert(detailRes.data.categories.length > 0, 'categories are available for reference');
     assert(detailRes.data.rules.length > 0, 'rules are available for reference');
-    assertEqual(detailRes.data.active_version.validation.checks.length, 24, 'all 24 activation checks are reported');
+    assertEqual(detailRes.data.active_version.validation.checks.length, 25, 'all 25 activation checks are reported');
     assertEqual(detailRes.data.active_version.validation.valid, true,
       'an exact legacy unsigned artifact remains trusted after upgrade');
     for (const packId of ['test-legacy-th-pack', 'local-generic']) {
@@ -114,8 +115,8 @@ async function main() {
       assertEqual(packDetail.status, 200, `${packId} details are readable`);
       assertEqual(
         packDetail.data.active_version.validation.checks.length,
-        24,
-        `${packId} reports all 24 activation checks`,
+        25,
+        `${packId} reports all 25 activation checks`,
       );
       const failedCheckIds = packDetail.data.active_version.validation.checks
         .filter((check: any) => !check.passed)
@@ -482,7 +483,7 @@ async function main() {
       publicKey,
     });
     assertEqual(installed.version, '1.1.0', 'verified downloaded version is installed');
-    assertEqual(installed.validation.checks.length, 24, 'download uses the existing 24-check validation');
+    assertEqual(installed.validation.checks.length, 25, 'download uses the existing 25-check validation');
     assertEqual(installed.validation.valid, true, 'signed download passes all activation validation');
 
     const storedVersion = db.prepare(
@@ -966,6 +967,100 @@ async function main() {
       0,
       'failed validation leaves no installed version behind',
     );
+
+    console.log('\n9. resolveTaxIdFormat() versions registration-number format with the active country pack (#393)');
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'taxes_enabled'").run();
+    // getActiveCountryPack() picks the most-recently-updated 'active' pack
+    // per country; only one IN pack may be active at a time for these
+    // assertions to be unambiguous. test-legacy-in-pack (installed in step 1
+    // and touched again in step 8b) is still active at this point — revoke
+    // every IN pack before each install below so exactly one is active.
+    const revokeAllInPacks = () => db.prepare("UPDATE country_packs SET status = 'revoked' WHERE country = 'IN'").run();
+
+    revokeAllInPacks();
+    const noFormatPack = {
+      ...dualRatePackData,
+      id: 'test-in-no-format-pack',
+      country: 'IN',
+      currency: 'INR',
+      publisher: 'FreeOpenSourcePOS',
+    };
+    installAndActivateTestTaxPack(db, noFormatPack);
+    const staticFormat = getCountryByCode('IN')?.taxIdFormat;
+    assert(!!staticFormat, 'static countries.ts declares a taxIdFormat for IN (test precondition)');
+    assertEqual(
+      JSON.stringify(resolveTaxIdFormat('IN')),
+      JSON.stringify(staticFormat),
+      'a v1 pack lacking registrationNumberFormat falls back to the static countries.ts format',
+    );
+
+    revokeAllInPacks();
+    const overrideFormat = { pattern: '^TESTPACKFMT-[0-9]{4}$', description: 'Test pack override format' };
+    const formatOverridePack = {
+      ...dualRatePackData,
+      id: 'test-in-format-override-pack',
+      country: 'IN',
+      currency: 'INR',
+      publisher: 'FreeOpenSourcePOS',
+      registrationNumberFormat: overrideFormat,
+    };
+    installAndActivateTestTaxPack(db, formatOverridePack);
+    assertEqual(
+      JSON.stringify(resolveTaxIdFormat('IN')),
+      JSON.stringify(overrideFormat),
+      'an active pack declaring registrationNumberFormat takes priority over the static countries.ts fallback',
+    );
+    assertEqual(
+      validateTaxRegistrationNumber('IN', 'TESTPACKFMT-1234').valid,
+      true,
+      'validateTaxRegistrationNumber accepts a matching value under the length bound',
+    );
+    assertEqual(
+      validateTaxRegistrationNumber('IN', 'a'.repeat(MAX_TAX_ID_LENGTH + 1)).valid,
+      false,
+      'validateTaxRegistrationNumber rejects an over-length value before the pack-declared regex runs (ReDoS bound)',
+    );
+
+    const formatOverrideRow = db.prepare(
+      'SELECT * FROM country_pack_versions WHERE id = ?'
+    ).get(`${formatOverridePack.id}@${formatOverridePack.version}`);
+    assertEqual(
+      validationChecklist(formatOverrideRow).checks.find((check: any) => check.id === 25)?.passed,
+      true,
+      'check 25 accepts a well-formed, non-catastrophic registrationNumberFormat pattern',
+    );
+    // Deliberately the textbook catastrophic-backtracking shape this test
+    // proves check 25 rejects — fixture data, never compiled or run against
+    // untrusted input outside validationChecklist's own reject path.
+    const catastrophicPackJson = JSON.stringify({
+      ...formatOverridePack,
+      registrationNumberFormat: { pattern: '^(A+)+$', description: 'Deliberately catastrophic for the test' }, // codeql[js/redos]
+    });
+    const catastrophicValidation = validationChecklist({
+      ...formatOverrideRow,
+      pack_json: catastrophicPackJson,
+      digest: taxPackSha256(catastrophicPackJson),
+    });
+    assertEqual(
+      catastrophicValidation.checks.find((check: any) => check.id === 25)?.passed,
+      false,
+      'check 25 rejects a nested-quantifier (catastrophic-backtracking) registrationNumberFormat pattern',
+    );
+
+    revokeAllInPacks();
+    assertEqual(
+      resolveTaxIdFormat('TH'),
+      null,
+      'a country with neither a pack format nor a static format resolves to null (pass-through, never rejects)',
+    );
+
+    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'taxes_enabled'").run();
+    assertEqual(
+      resolveTaxIdFormat('IN'),
+      null,
+      'resolveTaxIdFormat never enforces a pattern while the taxes_enabled toggle is off',
+    );
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'taxes_enabled'").run();
   } finally {
     server.close();
     closeDatabase();

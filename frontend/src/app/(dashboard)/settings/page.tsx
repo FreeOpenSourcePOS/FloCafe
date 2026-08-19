@@ -1157,6 +1157,31 @@ export default function SettingsPage() {
   });
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
+  // Server-resolved: the active country tax pack's format if it declares
+  // one, else the static countries.ts fallback, else null. Never blocks
+  // the save — just drives the non-blocking warning below the field.
+  const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
+  // check 25 (main/routes/tax-packs.ts) rejects the textbook nested-
+  // quantifier ReDoS shape at pack-activation time, but that's a known-shape
+  // heuristic, not a formal safety proof. This runs on every keystroke, so
+  // cap the input actually tested as a backstop too: the longest real
+  // registration-number scheme is 15 chars (India GSTIN), so 24 leaves
+  // generous headroom while bounding a worst-case pattern's backtracking to
+  // low milliseconds instead of freezing the tab.
+  const TAX_ID_WARNING_MAX_LENGTH = 24;
+  const taxIdWarning = (() => {
+    const value = form.taxRegistrationNumber.trim();
+    // taxIdFormat was resolved for savedBusiness.countryCode; if the country
+    // field has since been edited (not yet saved), the format is stale and
+    // must not be shown against the newly selected country's label.
+    if (!taxIdFormat || !value || form.countryCode !== savedBusiness.countryCode) return null;
+    if (value.length > TAX_ID_WARNING_MAX_LENGTH) return null;
+    try {
+      return new RegExp(taxIdFormat.pattern, 'i').test(value) ? null : taxIdFormat.description;
+    } catch {
+      return null;
+    }
+  })();
 
   const [cloudSettings, setCloudSettings] = useState({
     cloud_api_key: '',
@@ -1323,6 +1348,7 @@ export default function SettingsPage() {
       };
       setSavedBusiness(loaded);
       setForm(loaded);
+      setTaxIdFormat(d.tax_id_format || null);
       const billDisplay = {
         billShowName: d.bill_show_name !== false,
         billShowAddress: d.bill_show_address !== false,
@@ -1599,6 +1625,7 @@ export default function SettingsPage() {
       };
       setSavedBusiness(loaded);
       setForm(loaded);
+      setTaxIdFormat(d.tax_id_format || null);
       // Sync to pos-settings store for bill printing
       const billDisplay = {
         billShowName: d.bill_show_name !== false,
@@ -1908,7 +1935,7 @@ export default function SettingsPage() {
 
     setSavingBusiness(true);
     try {
-      await api.put('/settings/business', {
+      const putRes = await api.put('/settings/business', {
         business_name: form.businessName,
         timezone: form.timezone,
         currency: form.currency,
@@ -1956,6 +1983,7 @@ export default function SettingsPage() {
       const updatedForm = { ...form, businessPhone: normalizedBusinessPhone };
       setSavedBusiness(updatedForm);
       setForm(updatedForm);
+      setTaxIdFormat(putRes.data?.tax_id_format || null);
       posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
       posSettings.setBillPhone(normalizedBusinessPhone);
@@ -2310,9 +2338,17 @@ export default function SettingsPage() {
                   <div>
                     <label className="block text-sm text-gray-500 mb-1">{t('taxIdLabel')}</label>
                     {isAdmin ? (
-                      <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
-                        placeholder={t('taxIdPlaceholder')}
-                        className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
+                      <>
+                        <input type="text" value={form.taxRegistrationNumber} onChange={(e) => setForm((p) => ({ ...p, taxRegistrationNumber: e.target.value }))}
+                          placeholder={t('taxIdPlaceholder')}
+                          className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
+                        {taxIdWarning ? (
+                          <p className="mt-1 text-xs text-amber-600">
+                            {t('taxIdFormatWarning', { country: form.countryCode, format: taxIdWarning })}
+                          </p>
+                        ) : null}
+                      </>
+
                     ) : (
                       <p className="font-medium text-gray-900"><Ltr>{form.taxRegistrationNumber || '—'}</Ltr></p>
                     )}

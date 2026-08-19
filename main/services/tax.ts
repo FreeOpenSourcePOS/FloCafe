@@ -116,8 +116,19 @@ export function isTaxModuleActiveForCountry(country: string): boolean {
 
 export function resolveTaxIdFormat(country: string): TaxIdFormat | null {
   if (!isTaxModuleActiveForCountry(country)) return null;
-  return getCountryByCode(country)?.taxIdFormat || null;
+  return getActiveCountryPack(country).registrationNumberFormat
+    || getCountryByCode(country)?.taxIdFormat
+    || null;
 }
+
+// check 25 (routes/tax-packs.ts) rejects the textbook nested-quantifier
+// ReDoS shape at pack-activation time, but that's a known-shape heuristic,
+// not a formal safety proof — bound the value as a backstop too. The
+// longest real registration-number scheme is 15 chars (India GSTIN), so 24
+// leaves generous headroom while keeping a worst-case pattern's
+// backtracking imperceptible (CodeQL js/polynomial-redos; same
+// bound-before-regex approach as isValidEmail in routes/auth.ts).
+export const MAX_TAX_ID_LENGTH = 24;
 
 export function validateTaxRegistrationNumber(
   country: string,
@@ -125,13 +136,15 @@ export function validateTaxRegistrationNumber(
 ): { valid: boolean; format: TaxIdFormat | null } {
   const format = resolveTaxIdFormat(country);
   if (!format || !value) return { valid: true, format };
+  const trimmed = value.trim();
+  if (trimmed.length > MAX_TAX_ID_LENGTH) return { valid: false, format };
   let regex: RegExp;
   try {
     regex = new RegExp(format.pattern, 'i');
   } catch {
     return { valid: true, format: null };
   }
-  return { valid: regex.test(value.trim()), format };
+  return { valid: regex.test(trimmed), format };
 }
 
 // A representative rate for display only (product tax-category picker,

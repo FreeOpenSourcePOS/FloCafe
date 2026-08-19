@@ -5,7 +5,7 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
-import { validateTaxRegistrationNumber } from '../services/tax';
+import { resolveTaxIdFormat } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
@@ -143,6 +143,10 @@ function businessShape(s: Record<string, string>) {
     currency_display: s.currency_display || 'rial',
     number_digits: s.number_digits || 'locale',
     calendar: s.calendar || 'locale',
+    // Informational only — the active country pack's format if it declares
+    // one, else the static main/countries.ts fallback, else null. Never
+    // blocks the save; the UI uses this to show a non-blocking warning.
+    tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
   };
 }
 
@@ -153,6 +157,7 @@ function taxShape(s: Record<string, string>) {
     state_code: s.state_code || '',
     tax_scheme: s.tax_scheme || 'regular',
     country: s.country || 'IN',
+    tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
   };
 }
 
@@ -188,16 +193,6 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
-    if (tax_registration_number) {
-      const effectiveCountry = country || currentSettings.country || 'IN';
-      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
-      if (!valid && format) {
-        return res.status(400).json({
-          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
-          tax_id_format: format,
-        });
-      }
-    }
     const effectiveCountry = country || currentSettings.country || 'IN';
     const effectiveCurrency = currency || currentSettings.currency || 'INR';
 
@@ -252,16 +247,6 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
-    if (tax_registration_number) {
-      const effectiveCountry = country || currentSettings.country || 'IN';
-      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
-      if (!valid && format) {
-        return res.status(400).json({
-          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
-          tax_id_format: format,
-        });
-      }
-    }
     upsertSettings(db, {
       tax_registered,
       tax_registration_number,

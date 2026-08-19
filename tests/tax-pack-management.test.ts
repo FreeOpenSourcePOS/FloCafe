@@ -1029,9 +1029,12 @@ async function main() {
       true,
       'check 25 accepts a well-formed, non-catastrophic registrationNumberFormat pattern',
     );
+    // Deliberately the textbook catastrophic-backtracking shape this test
+    // proves check 25 rejects — fixture data, never compiled or run against
+    // untrusted input outside validationChecklist's own reject path.
     const catastrophicPackJson = JSON.stringify({
       ...formatOverridePack,
-      registrationNumberFormat: { pattern: '^(A+)+$', description: 'Deliberately catastrophic for the test' },
+      registrationNumberFormat: { pattern: '^(A+)+$', description: 'Deliberately catastrophic for the test' }, // codeql[js/polynomial-redos]
     });
     const catastrophicValidation = validationChecklist({
       ...formatOverrideRow,

@@ -434,18 +434,52 @@ function walkTypeScriptFiles(dir: string): string[] {
 }
 
 /**
- * Collect every dotted key passed to `t('foo.bar')`, `t(\`foo.bar\`, ...)`,
- * or `t("foo.bar", ...)` in the given TypeScript source directory. The
- * translation helper is the only `t(` call site we care about: it has at
- * least one dotted identifier argument.
+ * Collect every translation key called in the given TypeScript source directory.
+ * Resolves both:
+ * 1. Scoped `useTranslations('namespace')` bindings (e.g. `const t = useTranslations('pos'); t('title')` -> `pos.title`,
+ *    `const tCommon = useTranslations('common'); tCommon('save')` -> `common.save`)
+ * 2. Unscoped / global translation calls (e.g. `const t = useTranslations(); t('pos.title')` -> `pos.title`,
+ *    inline `useTranslations('pos')('title')` -> `pos.title`, or standalone `t('foo.bar')`)
  */
 function collectCalledKeys(dir: string = FRONTEND_SRC): Set<string> {
   const out = new Set<string>();
-  const re = /\bt\(\s*(['"`])([a-zA-Z][a-zA-Z0-9_]*(?:\.[a-zA-Z][a-zA-Z0-9_]*)+)\1\s*[,)]/g;
+  const scopedRegex = /(?:const|let|var)\s+([a-zA-Z0-9_$]+)\s*=\s*useTranslations\(\s*(?:['"`]([^'"`]+)['"`])?\s*\)/g;
+  const inlineRegex = /useTranslations\(\s*(?:['"`]([^'"`]+)['"`])?\s*\)\s*\(\s*(['"`])([^'"`]+)\2/g;
+  const dottedRegex = /\bt\(\s*(['"`])([a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)+)\1/g;
+
   for (const file of walkTypeScriptFiles(dir)) {
     const source = fs.readFileSync(file, 'utf8');
-    let match: RegExpExecArray | null;
-    while ((match = re.exec(source)) !== null) out.add(match[2]);
+
+    // 1. Find scoped translator bindings: const t = useTranslations('namespace')
+    const scopes = new Map<string, string>();
+    let sm: RegExpExecArray | null;
+    while ((sm = scopedRegex.exec(source)) !== null) {
+      scopes.set(sm[1], sm[2] || '');
+    }
+
+    // 2. Find inline useTranslations('namespace')('key')
+    let im: RegExpExecArray | null;
+    while ((im = inlineRegex.exec(source)) !== null) {
+      const ns = im[1] || '';
+      const key = im[3];
+      out.add(ns ? `${ns}.${key}` : key);
+    }
+
+    // 3. For each bound translator, collect its literal call arguments
+    for (const [varName, ns] of scopes.entries()) {
+      const callRegex = new RegExp(`\\b${varName}\\(\\s*(['"\`])([a-zA-Z0-9_]+(?:\\.[a-zA-Z0-9_]+)*)\\1`, 'g');
+      let cm: RegExpExecArray | null;
+      while ((cm = callRegex.exec(source)) !== null) {
+        const key = cm[2];
+        out.add(ns ? `${ns}.${key}` : key);
+      }
+    }
+
+    // 4. Catch any standalone t('dotted.key') calls not tied to useTranslations
+    let dm: RegExpExecArray | null;
+    while ((dm = dottedRegex.exec(source)) !== null) {
+      out.add(dm[2]);
+    }
   }
   return out;
 }
@@ -807,6 +841,8 @@ function runNegativeTests(): void {
       path.join(tmp, 'fixture.ts'),
       [
         "const bad = t('does.not.exist');",
+        "const tPos = useTranslations('pos');",
+        "const badScoped = tPos('doesNotExistScoped');",
         "const unsafe = t(`prefix.${value}`);",
         "const safe = t(`prefix.${value}` as 'prefix.a' | 'prefix.b');",
         "import { useI18n } from '@/hooks/useI18n';",
@@ -827,7 +863,7 @@ function runNegativeTests(): void {
     );
     const flaggedLines = unsafe.map((u) => u.line);
     assert(
-      flaggedLines.length === 1 && flaggedLines[0] === 2,
+      flaggedLines.length === 1 && flaggedLines[0] === 4,
       `ts: exhaustively cast dynamic key must NOT be flagged (flagged lines: ${flaggedLines.join(',')})`,
     );
   } finally {

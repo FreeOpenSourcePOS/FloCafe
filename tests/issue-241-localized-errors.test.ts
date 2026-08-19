@@ -76,7 +76,9 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
   return origUseSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 };
 
-const { t, getLanguageDirection, loadLocaleMessages } = require('@/lib/i18n');
+const { getLanguageDirection, loadLocaleMessages, getCachedMessages, getLanguageLocale } = require('@/lib/i18n');
+const { createTranslator } = frontendRequire('use-intl/core');
+const { IntlProvider } = frontendRequire('use-intl');
 const { usePosSettingsStore } = require('@/store/pos-settings');
 const { usePrinterStore } = require('@/hooks/usePrinter');
 const { printerService } = require('@/lib/printer/PrinterService');
@@ -89,6 +91,14 @@ function assert(condition: boolean, msg: string): void {
 
 const LANGUAGES = ['en', 'es', 'pt', 'fa'] as const;
 type Lang = (typeof LANGUAGES)[number];
+
+const t = (key: string, lang: Lang, params?: Record<string, string | number>): string => {
+  const translator = createTranslator({
+    locale: getLanguageLocale(lang),
+    messages: getCachedMessages(lang) ?? getCachedMessages('en') ?? {},
+  });
+  return (translator as any)(key, params);
+};
 
 // Read compiled CSS if available for full styling in screenshots
 function getStyles(): string {
@@ -249,7 +259,13 @@ async function run(): Promise<void> {
     });
     (usePrinterStore as any).getInitialState = () => usePrinterStore.getState();
 
-    const markup = ReactDOMServer.renderToStaticMarkup(React.createElement(PrinterStatus));
+    const markup = ReactDOMServer.renderToStaticMarkup(
+      React.createElement(
+        IntlProvider,
+        { locale: getLanguageLocale(lang), messages: getCachedMessages(lang) },
+        React.createElement(PrinterStatus),
+      ),
+    );
     const expectedErrorText = t('pos.printerError', lang);
 
     // Verify localized error is in markup

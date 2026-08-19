@@ -18,10 +18,22 @@ import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
  * failed switch keeps the current language and reverts the store request.
  */
 function resolveInitialLanguage(): Language {
-  const stored = usePosSettingsStore.getState().language;
-  if (LANGUAGES[stored]) return stored;
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem('pos-settings');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const savedLang = parsed?.state?.language;
+        if (savedLang && savedLang in LANGUAGES) {
+          return savedLang as Language;
+        }
+      }
+    } catch {
+      // Fall through to browser detection
+    }
+  }
   const browser = getBrowserLanguage();
-  if (LANGUAGES[browser]?.selectable) return browser;
+  if (LANGUAGES[browser]) return browser;
   return 'en';
 }
 

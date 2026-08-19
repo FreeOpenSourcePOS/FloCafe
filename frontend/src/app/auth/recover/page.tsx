@@ -2,18 +2,19 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import toast from 'react-hot-toast';
-import { useI18n } from '@/hooks/useI18n';
 import { ArrowLeft, Eye, EyeOff, KeyRound } from 'lucide-react';
 
 export default function RecoverAccessPage() {
   const router = useRouter();
-  const { t } = useI18n();
+  const t = useTranslations('auth');
+  const tSetup = useTranslations('setup');
 
   const [email, setEmail] = useState('');
   const [masterPin, setMasterPin] = useState('');
@@ -53,15 +54,15 @@ export default function RecoverAccessPage() {
     setFormError(null);
 
     if (!/^\d{4}$/.test(masterPin)) {
-      setFormError(t('auth.recoverPinFormat'));
+      setFormError(t('recoverPinFormat'));
       return;
     }
     if (!isPasswordValid(newPassword)) {
-      setFormError(t('auth.recoverPasswordRequirements'));
+      setFormError(t('recoverPasswordRequirements'));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setFormError(t('auth.recoverPasswordMismatch'));
+      setFormError(t('recoverPasswordMismatch'));
       return;
     }
 
@@ -72,7 +73,7 @@ export default function RecoverAccessPage() {
         master_pin: masterPin,
         new_password: newPassword,
       });
-      toast.success(t('auth.recoverSuccess'));
+      toast.success(t('recoverSuccess'));
       router.push('/auth/login');
     } catch (err: unknown) {
       const error = err as { response?: { status?: number; data?: { error?: string } } };
@@ -81,19 +82,19 @@ export default function RecoverAccessPage() {
       if (status === 503) {
         // Honest fallback: no cloud/email recovery tier exists yet in this
         // build, so don't pretend one is available — see #127/#128.
-        setFormError(t('auth.recoverPinUnavailable'));
+        setFormError(t('recoverPinUnavailable'));
       } else if (status === 409) {
-        setFormError(t('auth.recoverErrorGeneric'));
+        setFormError(t('recoverErrorGeneric'));
       } else if (status === 429) {
-        setFormError(t('auth.recoverRateLimited'));
+        setFormError(t('recoverRateLimited'));
       } else if (status === 403) {
-        setFormError(t('auth.recoverWrongPin'));
+        setFormError(t('recoverWrongPin'));
       } else if (status === 404) {
-        setFormError(t('auth.recoverNoOwner'));
+        setFormError(t('recoverNoOwner'));
       } else if (status === 400) {
-        setFormError(t('auth.recoverErrorGeneric'));
+        setFormError(t('recoverErrorGeneric'));
       } else {
-        setFormError(t('auth.recoverErrorGeneric'));
+        setFormError(t('recoverErrorGeneric'));
       }
     } finally {
       setLoading(false);
@@ -107,44 +108,44 @@ export default function RecoverAccessPage() {
           onClick={() => router.push('/auth/login')}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
         >
-          <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('auth.recoverBackToLogin')}
+          <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('recoverBackToLogin')}
         </button>
 
         <div className="text-center mb-6">
           <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
             <KeyRound className="w-5 h-5 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold">{t('auth.recoverTitle')}</h1>
-          <p className="text-muted-foreground mt-2 text-sm">{t('auth.recoverSubtitle')}</p>
+          <h1 className="text-2xl font-bold">{t('recoverTitle')}</h1>
+          <p className="text-muted-foreground mt-2 text-sm">{t('recoverSubtitle')}</p>
         </div>
 
         <Card>
           <CardContent className="pt-6">
             {pinAvailable === null ? (
-              <p className="text-sm text-muted-foreground text-center py-6">{t('auth.recoverChecking')}</p>
+              <p className="text-sm text-muted-foreground text-center py-6">{t('recoverChecking')}</p>
             ) : pinAvailable === false ? (
               <div className="text-center py-4">
-                <p className="text-sm text-destructive font-medium">{t('auth.recoverPinUnavailable')}</p>
+                <p className="text-sm text-destructive font-medium">{t('recoverPinUnavailable')}</p>
               </div>
             ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="recover-email">{t('auth.email')}</Label>
+                <Label htmlFor="recover-email">{t('email')}</Label>
                 <Input
                   id="recover-email"
                   type="email"
                   autoComplete="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={t('auth.emailPlaceholder')}
+                  placeholder={t('emailPlaceholder')}
                   dir="ltr"
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="recover-pin">{t('auth.recoverPinLabel')}</Label>
-                <p className="text-xs text-muted-foreground">{t('auth.recoverPinHint')}</p>
+                <Label htmlFor="recover-pin">{t('recoverPinLabel')}</Label>
+                <p className="text-xs text-muted-foreground">{t('recoverPinHint')}</p>
                 <div className="relative">
                   <Input
                     id="recover-pin"
@@ -171,7 +172,7 @@ export default function RecoverAccessPage() {
 
               <div className="grid grid-cols-1 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="new-password">{t('auth.recoverNewPasswordLabel')}</Label>
+                  <Label htmlFor="new-password">{t('recoverNewPasswordLabel')}</Label>
                   <div className="relative">
                     <Input
                       id="new-password"
@@ -179,7 +180,7 @@ export default function RecoverAccessPage() {
                       autoComplete="new-password"
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder={t('auth.recoverNewPasswordPlaceholder')}
+                      placeholder={t('recoverNewPasswordPlaceholder')}
                       className="pe-10"
                       required
                     />
@@ -194,25 +195,25 @@ export default function RecoverAccessPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="confirm-new-password">{t('auth.recoverConfirmPasswordLabel')}</Label>
+                  <Label htmlFor="confirm-new-password">{t('recoverConfirmPasswordLabel')}</Label>
                   <Input
                     id="confirm-new-password"
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="new-password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder={t('auth.recoverConfirmPasswordPlaceholder')}
+                    placeholder={t('recoverConfirmPasswordPlaceholder')}
                     required
                   />
                 </div>
               </div>
 
               {!isPasswordValid(newPassword) && newPassword.length > 0 && (
-                <p className="text-xs font-medium text-red-600">{t('auth.recoverPasswordRequirements')}</p>
+                <p className="text-xs font-medium text-red-600">{t('recoverPasswordRequirements')}</p>
               )}
               {passwordsEntered && (
                 <p className={`text-xs font-medium ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}>
-                  {passwordsMatch ? t('setup.passwordsMatch') : t('setup.passwordsMismatch')}
+                  {passwordsMatch ? tSetup('passwordsMatch') : tSetup('passwordsMismatch')}
                 </p>
               )}
 
@@ -221,7 +222,7 @@ export default function RecoverAccessPage() {
               )}
 
               <Button type="submit" disabled={loading} className="w-full" size="lg">
-                {loading ? t('auth.recoverSubmitting') : t('auth.recoverSubmit')}
+                {loading ? t('recoverSubmitting') : t('recoverSubmit')}
               </Button>
             </form>
             )}

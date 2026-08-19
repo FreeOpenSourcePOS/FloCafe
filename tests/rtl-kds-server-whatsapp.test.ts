@@ -104,6 +104,8 @@ function loadComponents(): {
   t: any;
   fetchServerInfo: any;
   getLanguageDirection: any;
+  IntlProvider: any;
+  getLanguageLocale: (lang: string) => string;
   React: typeof import('react');
   ReactDOMServer: typeof import('react-dom/server');
 } {
@@ -127,7 +129,8 @@ function loadComponents(): {
     const { KdsHtmlLang } = require('../frontend/src/components/kds/KdsHtmlLang');
     const { HtmlLangSync } = require('../frontend/src/components/layout/HtmlLangSync');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
-    const { t, fetchServerInfo, getLanguageDirection, loadLocaleMessages } = require('../frontend/src/lib/i18n');
+    const { t, fetchServerInfo, getLanguageDirection, getLanguageLocale, loadLocaleMessages } = require('../frontend/src/lib/i18n');
+    const { IntlProvider } = frontendRequire('use-intl');
     return {
       Ltr,
       KdsHtmlLang,
@@ -136,7 +139,9 @@ function loadComponents(): {
       t,
       fetchServerInfo,
       getLanguageDirection,
+      getLanguageLocale,
       loadLocaleMessages,
+      IntlProvider,
       React,
       ReactDOMServer,
     };
@@ -193,7 +198,9 @@ async function run(): Promise<void> {
     t,
     fetchServerInfo,
     getLanguageDirection,
+    getLanguageLocale,
     loadLocaleMessages,
+    IntlProvider,
     React,
     ReactDOMServer,
   } = loadComponents();
@@ -275,11 +282,16 @@ async function run(): Promise<void> {
   console.log('  ✓ naturally LTR values are isolated with Ltr (order #, elapsed time, phones, pairing code, money, LAN URLs)');
 
   // 4. Standalone layouts sync dir/lang on the document.
+  //    #376: HtmlLangSync reads the active locale from the i18n context
+  //    (useLocale), so each render is wrapped in an IntlProvider whose locale
+  //    matches the language under test.
   for (const lang of ['en', 'es', 'pt', 'fa'] as const) {
     usePosSettingsStore.getState().setLanguage(lang);
     const kdsMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(KdsHtmlLang));
     assert(kdsMarkup === '', `KdsHtmlLang must render null, got: ${kdsMarkup}`);
-    const serverMarkup = ReactDOMServer.renderToStaticMarkup(React.createElement(HtmlLangSync));
+    const serverMarkup = ReactDOMServer.renderToStaticMarkup(
+      React.createElement(IntlProvider, { locale: getLanguageLocale(lang) }, React.createElement(HtmlLangSync))
+    );
     assert(serverMarkup === '', `HtmlLangSync must render null, got: ${serverMarkup}`);
   }
 

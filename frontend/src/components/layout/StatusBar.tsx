@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Server, HardDrive, Clock, AlertCircle, CheckCircle } from 'lucide-react';
-import { useI18n } from '@/hooks/useI18n';
+import { useTranslations } from 'use-intl';
 import UpdateBadge from './UpdateBadge';
 
 interface StatusInfo {
@@ -13,7 +13,8 @@ interface StatusInfo {
 }
 
 export default function StatusBar() {
-  const { t } = useI18n();
+  const tNav = useTranslations('nav');
+  const tCommon = useTranslations('common');
   const [status, setStatus] = useState<StatusInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -30,7 +31,7 @@ export default function StatusBar() {
         setStatus(data);
         setError(null);
       } catch {
-        setError(t('nav.statusError'));
+        setError(tNav('statusError'));
       } finally {
         inFlightRef.current = false;
       }
@@ -48,8 +49,8 @@ export default function StatusBar() {
   function formatUptime(seconds: number): string {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) return t('common.timeHoursMinutes', { h: hours, m: minutes });
-    return t('common.timeMinutes', { m: minutes });
+    if (hours > 0) return tCommon('timeHoursMinutes', { h: hours, m: minutes });
+    return tCommon('timeMinutes', { m: minutes });
   }
 
   if (typeof window === 'undefined' || !window.electronAPI?.getStatus) return null;
@@ -58,11 +59,11 @@ export default function StatusBar() {
   const isPending = !status && !error;
 
   const serverStatusDisplay = status?.server
-    ? (status.server === 'running' ? t('nav.serverStatusRunning')
-       : status.server === 'stopped' ? t('nav.serverStatusStopped')
-       : status.server === 'starting' ? t('nav.serverStatusStarting')
+    ? (status.server === 'running' ? tNav('serverStatusRunning')
+       : status.server === 'stopped' ? tNav('serverStatusStopped')
+       : status.server === 'starting' ? tNav('serverStatusStarting')
        : status.server)
-    : t('nav.serverUnknown');
+    : tNav('serverUnknown');
 
   return (
     <footer
@@ -84,7 +85,7 @@ export default function StatusBar() {
         ) : (
           <AlertCircle size={13} />
         )}
-        <span>{t('nav.serverLabel')}{serverStatusDisplay}</span>
+        <span>{tNav('serverLabel')}{serverStatusDisplay}</span>
       </div>
 
       {error && (
@@ -92,23 +93,23 @@ export default function StatusBar() {
       )}
 
       <div className="ms-auto flex h-full items-center divide-x divide-border/70">
-        <div className="flex items-center gap-1.5 px-3" title={t('nav.portLabel')}>
+        <div className="flex items-center gap-1.5 px-3" title={tNav('portLabel')}>
           <Server size={13} className="text-muted-foreground/70" />
-          <span className="hidden text-muted-foreground lg:inline">{t('nav.portLabel')}</span>
+          <span className="hidden text-muted-foreground lg:inline">{tNav('portLabel')}</span>
           <span className="font-medium tabular-nums text-foreground/70">{status?.port || '...'}</span>
         </div>
 
-        <div className="hidden items-center gap-1.5 px-3 md:flex" title={t('nav.heapLabel').trim()}>
+        <div className="hidden items-center gap-1.5 px-3 md:flex" title={tNav('heapLabel').trim()}>
           <HardDrive size={13} className="text-muted-foreground/70" />
-          <span className="hidden text-muted-foreground xl:inline">{t('nav.heapLabel')}</span>
+          <span className="hidden text-muted-foreground xl:inline">{tNav('heapLabel')}</span>
           <span className="font-medium tabular-nums text-foreground/70">
             {status?.memory.heapUsed || 0} / {status?.memory.heapTotal || 0} MB
           </span>
         </div>
 
-        <div className="hidden items-center gap-1.5 px-3 sm:flex" title={t('nav.uptimeLabel').trim()}>
+        <div className="hidden items-center gap-1.5 px-3 sm:flex" title={tNav('uptimeLabel').trim()}>
           <Clock size={13} className="text-muted-foreground/70" />
-          <span className="hidden text-muted-foreground xl:inline">{t('nav.uptimeLabel')}</span>
+          <span className="hidden text-muted-foreground xl:inline">{tNav('uptimeLabel')}</span>
           <span className="font-medium tabular-nums text-foreground/70">
             {status ? formatUptime(status.uptime) : '...'}
           </span>

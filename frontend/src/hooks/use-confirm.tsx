@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, type ReactNode } from 'react';
+import { useTranslations } from 'use-intl';
 import {
   Dialog,
   DialogContent,
@@ -10,7 +11,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { useI18n } from '@/hooks/useI18n';
 
 interface ConfirmState {
   open: boolean;
@@ -41,7 +41,7 @@ interface ConfirmState {
  *   );
  */
 export function useConfirm() {
-  const { t } = useI18n();
+  const t = useTranslations('common');
   const [state, setState] = useState<ConfirmState | null>(null);
 
   const confirm = useCallback(
@@ -84,18 +84,18 @@ export function useConfirm() {
     <Dialog open={state.open} onOpenChange={(open) => !open && handleCancel()}>
       <DialogContent className="sm:max-w-md" showCloseButton={false}>
         <DialogHeader>
-          <DialogTitle>{state.title || t('common.confirm')}</DialogTitle>
+          <DialogTitle>{state.title || t('confirm')}</DialogTitle>
           <DialogDescription>{state.message}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={handleCancel}>
-            {t('common.cancel')}
+            {t('cancel')}
           </Button>
           <Button
             variant={state.destructive ? 'destructive' : 'default'}
             onClick={handleConfirm}
           >
-            {state.confirmLabel || t('common.confirm')}
+            {state.confirmLabel || t('confirm')}
           </Button>
         </DialogFooter>
       </DialogContent>

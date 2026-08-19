@@ -3,31 +3,34 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import toast from 'react-hot-toast';
+import { useTranslations } from 'use-intl';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
-import { useI18n } from '@/hooks/useI18n';
 
 type PendingPinAction = 'backup' | 'restore' | null;
 
 export default function MenuActionHandler() {
-  const { t } = useI18n();
+  const tCommon = useTranslations('common');
+  const tBackup = useTranslations('backup');
+  const tRestore = useTranslations('restore');
+  const tSettings = useTranslations('settings');
   const router = useRouter();
   const [pendingPinAction, setPendingPinAction] = useState<PendingPinAction>(null);
 
   async function runBackup(pin: string) {
-    if (!window.electronAPI?.backupDatabase) return { success: false, error: t('common.notAvailable') };
+    if (!window.electronAPI?.backupDatabase) return { success: false, error: tCommon('notAvailable') };
 
-    toast.loading(t('backup.creating'), { id: 'backup' });
+    toast.loading(tBackup('creating'), { id: 'backup' });
     try {
       const result = await window.electronAPI.backupDatabase(pin);
       if (result.success) {
-        toast.success(t('backup.savedTo', { path: result.path ?? '' }));
+        toast.success(tBackup('savedTo', { path: result.path ?? '' }));
       } else if (result.error !== 'Cancelled') {
-        toast.error(t('backup.failedWith', { error: t('common.somethingWrong') }));
+        toast.error(tBackup('failedWith', { error: tCommon('somethingWrong') }));
       }
       return result;
     } catch {
-      const message = t('common.somethingWrong');
-      toast.error(t('backup.failedWith', { error: message }));
+      const message = tCommon('somethingWrong');
+      toast.error(tBackup('failedWith', { error: message }));
       return { success: false, error: message };
     } finally {
       toast.remove('backup');
@@ -35,20 +38,20 @@ export default function MenuActionHandler() {
   }
 
   async function runRestore(pin: string) {
-    if (!window.electronAPI?.restoreBackup) return { success: false, error: t('common.notAvailable') };
+    if (!window.electronAPI?.restoreBackup) return { success: false, error: tCommon('notAvailable') };
 
     try {
       const result = await window.electronAPI.restoreBackup(pin);
       if (result.success) {
-        toast.success(t('restore.success'));
+        toast.success(tRestore('success'));
         setTimeout(() => window.location.reload(), 1500);
       } else if (result.error !== 'Cancelled') {
-        toast.error(t('restore.failedWith', { error: t('common.somethingWrong') }));
+        toast.error(tRestore('failedWith', { error: tCommon('somethingWrong') }));
       }
       return result;
     } catch {
-      const message = t('common.somethingWrong');
-      toast.error(t('restore.failedWith', { error: message }));
+      const message = tCommon('somethingWrong');
+      toast.error(tRestore('failedWith', { error: message }));
       return { success: false, error: message };
     }
   }
@@ -73,15 +76,15 @@ export default function MenuActionHandler() {
       }
 
       if (!status.isSet) {
-        toast.error(t('settings.setMasterPinFirst'));
+        toast.error(tSettings('setMasterPinFirst'));
         router.push('/settings?tab=data&action=master-pin');
         return;
       }
 
       setPendingPinAction(action);
     } catch {
-      const message = t('common.somethingWrong');
-      toast.error(t(action === 'backup' ? 'backup.failedWith' : 'restore.failedWith', { error: message }));
+      const message = tCommon('somethingWrong');
+      toast.error(action === 'backup' ? tBackup('failedWith', { error: message }) : tRestore('failedWith', { error: message }));
     }
   }
 
@@ -141,8 +144,8 @@ export default function MenuActionHandler() {
     <MasterPinPrompt
       open={pendingPinAction !== null}
       mode="verify"
-      title={pendingPinAction === 'backup' ? t('settings.confirmBackupTitle') : t('settings.confirmRestoreTitle')}
-      description={t('settings.enterMasterPinPrompt')}
+      title={pendingPinAction === 'backup' ? tSettings('confirmBackupTitle') : tSettings('confirmRestoreTitle')}
+      description={tSettings('enterMasterPinPrompt')}
       onCancel={() => setPendingPinAction(null)}
       onSubmit={handlePinSubmit}
     />

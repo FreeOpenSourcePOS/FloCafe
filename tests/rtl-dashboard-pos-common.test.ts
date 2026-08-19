@@ -95,6 +95,8 @@ function loadComponents(): {
   DirectionalToaster: any;
   usePosSettingsStore: any;
   Ltr: any;
+  IntlProvider: any;
+  getLanguageLocale: (lang: string) => string;
   React: typeof import('react');
   ReactDOMServer: typeof import('react-dom/server');
 } {
@@ -117,7 +119,9 @@ function loadComponents(): {
     const { DirectionalToaster } = require('../frontend/src/components/layout/DirectionalToaster');
     const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
     const { Ltr } = require('../frontend/src/components/layout/Ltr');
-    return { DirectionalToaster, usePosSettingsStore, Ltr, React, ReactDOMServer };
+    const { IntlProvider } = frontendRequire('use-intl');
+    const { getLanguageLocale } = require('../frontend/src/lib/i18n');
+    return { DirectionalToaster, usePosSettingsStore, Ltr, IntlProvider, getLanguageLocale, React, ReactDOMServer };
   } finally {
     moduleApi._resolveFilename = originalResolveFilename;
   }
@@ -178,23 +182,28 @@ function run(): void {
   console.log('  ✓ icon-before-text gaps use me-* (inline-end), not ms-*');
 
   // 4. Executable DirectionalToaster position assertions across languages.
-  const { DirectionalToaster, usePosSettingsStore, Ltr, React, ReactDOMServer } = loadComponents();
+  //    #376: DirectionalToaster reads the active locale from the i18n context
+  //    (useLocale), so each render is wrapped in an IntlProvider whose locale
+  //    matches the language under test.
+  const { DirectionalToaster, usePosSettingsStore, Ltr, IntlProvider, getLanguageLocale, React, ReactDOMServer } = loadComponents();
 
   React.useSyncExternalStore = (_subscribe: any, getSnapshot: () => any) => getSnapshot();
 
-  function renderDirectionalToaster(): { position?: string; markup: string } {
+  function renderDirectionalToaster(locale: string): { position?: string; markup: string } {
     let capturedProps: any;
     function Probe() {
       const elem = DirectionalToaster();
       capturedProps = elem?.props;
       return elem;
     }
-    const markup = ReactDOMServer.renderToStaticMarkup(React.createElement(Probe));
+    const markup = ReactDOMServer.renderToStaticMarkup(
+      React.createElement(IntlProvider, { locale }, React.createElement(Probe))
+    );
     return { position: capturedProps?.position, markup };
   }
 
   usePosSettingsStore.getState().setLanguage('fa');
-  const renderedFa = renderDirectionalToaster();
+  const renderedFa = renderDirectionalToaster(getLanguageLocale('fa'));
   assert(
     renderedFa.position === 'top-left',
     `DirectionalToaster must set position="top-left" (inline-end) for Persian (fa), got: ${renderedFa.position}`
@@ -206,7 +215,7 @@ function run(): void {
 
   for (const ltrLang of ['en', 'es', 'pt'] as const) {
     usePosSettingsStore.getState().setLanguage(ltrLang);
-    const renderedLtr = renderDirectionalToaster();
+    const renderedLtr = renderDirectionalToaster(getLanguageLocale(ltrLang));
     assert(
       renderedLtr.position === 'top-right',
       `DirectionalToaster must set position="top-right" for ${ltrLang}, got: ${renderedLtr.position}`

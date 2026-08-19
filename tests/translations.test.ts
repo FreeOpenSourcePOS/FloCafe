@@ -549,7 +549,7 @@ async function run(): Promise<void> {
   const enKeys = sets.get('en')!;
 
   // 2. Exact nested leaf key parity — en.json is canonical (zero missing,
-  // zero orphan extras), including `selectable: false` locales like fa.
+  // zero orphan extras) across all registered locales.
   const parityErrors: string[] = [];
   for (const { lang } of FILES) {
     if (lang === 'en') continue;

@@ -11,7 +11,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { COUNTRIES, getCountryByCode, countryName, type Country } from '@/lib/countries';
-import { getBrowserLanguage, loadLocaleMessages, t as translate, type Language } from '@/lib/i18n';
+import { useTranslations, type AppConfig } from 'use-intl';
+import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
 type ServiceModel = 'qsr' | 'finedine';
@@ -26,6 +27,27 @@ const SERVICE_MODELS: Array<{ value: ServiceModel }> = [
   { value: 'qsr' },
   { value: 'finedine' },
 ];
+
+// Exhaustively typed leaf-key maps for the setup profile / service model
+// cards (use-intl resolves leaf keys within the namespace scope — no
+// template-literal dynamic key construction).
+type SetupKey = keyof AppConfig['Messages']['setup'];
+
+const SETUP_PROFILE_KEYS = {
+  empty: { label: 'emptyLabel', desc: 'emptyDesc', details: 'emptyDetails' },
+  express: { label: 'expressLabel', desc: 'expressDesc', details: 'expressDetails' },
+  demo: { label: 'demoLabel', desc: 'demoDesc', details: 'demoDetails' },
+} as const satisfies Record<SetupProfile, { label: SetupKey; desc: SetupKey; details: SetupKey }>;
+
+const SERVICE_MODEL_KEYS = {
+  qsr: { label: 'qsrLabel', desc: 'qsrDesc', details: 'qsrDetails' },
+  finedine: { label: 'finedineLabel', desc: 'finedineDesc', details: 'finedineDetails' },
+} as const satisfies Record<ServiceModel, { label: SetupKey; desc: SetupKey; details: SetupKey }>;
+
+// Registry-derived selectable languages (derived from LANGUAGES registry where selectable: true).
+const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
+  (lang) => LANGUAGES[lang].selectable,
+);
 
 // Mirrors main/services/cloud-sync.ts DEFAULT_CLOUD_SERVER_URL — kept in sync
 // manually since the frontend can't import backend TS modules directly.
@@ -55,22 +77,12 @@ export default function SetupPage() {
   const [showConfirmMasterPin, setShowConfirmMasterPin] = useState(false);
   const [profile, setProfile] = useState<SetupProfile>('express');
   const [serviceModel, setServiceModel] = useState<ServiceModel>('qsr');
-  const [language, setLanguage] = useState<Language>(() => getBrowserLanguage());
+  // The wizard's language follows the shared store so the atomic provider
+  // (and therefore useTranslations below) renders the chosen language
+  // immediately — the #375 manual loadedLanguage gate is no longer needed.
+  const language = usePosSettingsStore((s) => s.language);
+  const setStoreLanguage = usePosSettingsStore((s) => s.setLanguage);
   const [browserLanguage] = useState<Language>(() => getBrowserLanguage());
-  // #375: translations load on demand; render once the locale bundle is ready
-  // so the setup flow shows the browser language instead of a brief English pass.
-  const [loadedLanguage, setLoadedLanguage] = useState<Language | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    loadLocaleMessages(language)
-      .then(() => {
-        if (!cancelled) setLoadedLanguage(language);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [language]);
   const [country, setCountry] = useState<string>('IN');
   const [countryQuery, setCountryQuery] = useState<string>('');
   const [form, setForm] = useState({
@@ -106,7 +118,7 @@ export default function SetupPage() {
     return true;
   };
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
-  const t = (key: string) => translate(key, loadedLanguage ?? 'en');
+  const t = useTranslations('setup');
 
   useEffect(() => {
     let mounted = true;
@@ -118,7 +130,7 @@ export default function SetupPage() {
         // so bail out immediately instead of letting the user fill the whole wizard
         // and only find out at the final submit.
         if (!data.needsSetup) {
-          toast.error(t('setup.alreadyCompleted'));
+          toast.error(t('alreadyCompleted'));
           window.location.replace('/auth/login');
         }
       })
@@ -134,7 +146,12 @@ export default function SetupPage() {
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
   const q = countryQuery.trim().toLowerCase();
-  const languageOptions: Language[] = browserLanguage === 'es' ? ['es', 'pt', 'en'] : browserLanguage === 'pt' ? ['pt', 'es', 'en'] : browserLanguage === 'fa' ? ['fa', 'en', 'es', 'pt'] : ['en', 'es', 'pt'];
+  const languageOptions: Language[] =
+    browserLanguage === 'fa'
+      ? ['fa', ...SELECTABLE_LANGUAGES]
+      : SELECTABLE_LANGUAGES.includes(browserLanguage)
+        ? [browserLanguage, ...SELECTABLE_LANGUAGES.filter((l) => l !== browserLanguage)]
+        : SELECTABLE_LANGUAGES;
   const filteredCountries = COUNTRIES.filter((c) => {
     if (!q) return true;
     return (
@@ -152,29 +169,29 @@ export default function SetupPage() {
       console.warn('[Setup] Failed to persist language setting:', err);
     });
     logout();
-    toast.success(t('setup.completeSetupSuccess'));
+    toast.success(t('completeSetupSuccess'));
     window.location.replace('/auth/login');
   };
 
   const validateOwner = () => {
     if (!form.name.trim() || !form.email.trim() || !form.password) {
-      toast.error(t('setup.errorNameRequired'));
+      toast.error(t('errorNameRequired'));
       return false;
     }
     if (!isValidOwnerEmail(form.email.trim())) {
-      toast.error(t('setup.errorInvalidEmail'));
+      toast.error(t('errorInvalidEmail'));
       return false;
     }
     if (!isPasswordValid(form.password)) {
-      toast.error(t('setup.errorPasswordRequirementsNotMet'));
+      toast.error(t('errorPasswordRequirementsNotMet'));
       return false;
     }
     if (form.password !== form.confirmPassword) {
-      toast.error(t('setup.errorPasswordMismatch'));
+      toast.error(t('errorPasswordMismatch'));
       return false;
     }
     if (!termsAccepted) {
-      toast.error(t('setup.errorTermsRequired'));
+      toast.error(t('errorTermsRequired'));
       return false;
     }
     return true;
@@ -192,7 +209,7 @@ export default function SetupPage() {
       return;
     }
     if (masterPinAvailable && !masterPinValid) {
-      toast.error(t('setup.masterPinRequired'));
+      toast.error(t('masterPinRequired'));
       setStep(2);
       return;
     }
@@ -203,12 +220,12 @@ export default function SetupPage() {
         const localHttp = parsed.protocol === 'http:'
           && ['localhost', '127.0.0.1', '::1', '[::1]'].includes(parsed.hostname);
         if (parsed.protocol !== 'https:' && !localHttp) {
-          toast.error(t('setup.cloudUrlHttpsRequired'));
+          toast.error(t('cloudUrlHttpsRequired'));
           setStep(5);
           return;
         }
       } catch {
-        toast.error(t('setup.cloudUrlInvalid'));
+        toast.error(t('cloudUrlInvalid'));
         setStep(5);
         return;
       }
@@ -243,7 +260,7 @@ export default function SetupPage() {
       });
       completeSetup();
     } catch {
-      toast.error(t('setup.errorGeneric'));
+      toast.error(t('errorGeneric'));
     } finally {
       setLoading(false);
     }
@@ -254,8 +271,8 @@ export default function SetupPage() {
       <div className="w-full max-w-2xl">
         <div className="text-center mb-8">
           <img src="/logo.png" alt="Flo" width={80} height={52} className="mx-auto mb-4" />
-          <h1 className="text-3xl font-bold">{t('setup.welcome')}</h1>
-          <p className="text-muted-foreground mt-2">{t('setup.tagline')}</p>
+          <h1 className="text-3xl font-bold">{t('welcome')}</h1>
+          <p className="text-muted-foreground mt-2">{t('tagline')}</p>
         </div>
 
         <div className="flex justify-center gap-2 mb-8">
@@ -274,20 +291,20 @@ export default function SetupPage() {
             {step === 1 && (
               <div className="space-y-6">
                 <div className="text-center">
-                  <h2 className="text-xl font-semibold mb-2">{t('setup.chooseLanguage')}</h2>
+                  <h2 className="text-xl font-semibold mb-2">{t('chooseLanguage')}</h2>
                   <p className="text-muted-foreground text-sm">
-                    {t('setup.chooseLanguageHint')}
+                    {t('chooseLanguageHint')}
                   </p>
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2">
                   {languageOptions.map((option) => {
                     const selected = language === option;
-                    const label = option === 'es' ? t('setup.languageSpanish') : option === 'pt' ? t('setup.languagePortuguese') : option === 'fa' ? t('setup.languagePersian') : t('setup.languageEnglish');
+                    const label = option === 'es' ? t('languageSpanish') : option === 'pt' ? t('languagePortuguese') : option === 'fa' ? t('languagePersian') : t('languageEnglish');
                     return (
                       <button
                         key={option}
-                        onClick={() => setLanguage(option)}
+                        onClick={() => setStoreLanguage(option)}
                         className={`p-4 rounded-xl border-2 text-start transition-all ${
                           selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
                         }`}
@@ -306,8 +323,8 @@ export default function SetupPage() {
 
                 <div className="space-y-3">
                   <div>
-                    <h3 className="text-sm font-medium">{t('setup.chooseCountry')}</h3>
-                    <p className="text-muted-foreground text-sm mt-1">{t('setup.chooseCountryHint')}</p>
+                    <h3 className="text-sm font-medium">{t('chooseCountry')}</h3>
+                    <p className="text-muted-foreground text-sm mt-1">{t('chooseCountryHint')}</p>
                   </div>
 
                   <div className="relative">
@@ -315,7 +332,7 @@ export default function SetupPage() {
                     <Input
                       value={countryQuery}
                       onChange={(e) => setCountryQuery(e.target.value)}
-                      placeholder={t('setup.searchPlaceholder')}
+                      placeholder={t('searchPlaceholder')}
                       className="ps-9"
                     />
                   </div>
@@ -335,7 +352,7 @@ export default function SetupPage() {
                         <div>
                           <div className="font-semibold">{countryName(c.code)}</div>
                           <div className="text-xs text-muted-foreground">
-                            {c.currency} · {c.taxIdLabel || t('setup.noTaxId')} · {c.locale}
+                            {c.currency} · {c.taxIdLabel || t('noTaxId')} · {c.locale}
                           </div>
                         </div>
                         {selected && <Check className="w-5 h-5 text-primary" />}
@@ -343,12 +360,12 @@ export default function SetupPage() {
                     );
                   })}
                   {q && filteredCountries.length === 0 && (
-                    <p className="text-center text-gray-500 py-6 text-sm">{t('setup.noMatches').replace('{query}', countryQuery)}</p>
+                    <p className="text-center text-gray-500 py-6 text-sm">{t('noMatches', { query: countryQuery })}</p>
                   )}
                 </div>
 
                 <Button onClick={() => setStep(2)} className="w-full" size="lg">
-                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
+                  {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>
             )}
@@ -359,30 +376,30 @@ export default function SetupPage() {
                   onClick={() => setStep(1)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('back')}
                 </button>
 
                 <div className="text-center">
                   <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                     <KeyRound className="w-5 h-5 text-primary" />
                   </div>
-                  <h2 className="text-xl font-semibold mb-2">{t('setup.setMasterPinTitle')}</h2>
+                  <h2 className="text-xl font-semibold mb-2">{t('setMasterPinTitle')}</h2>
                   <p className="text-muted-foreground text-sm">
-                    {t('setup.setMasterPinDescription')}
+                    {t('setMasterPinDescription')}
                   </p>
                   <p className="text-muted-foreground text-xs mt-2 bg-muted rounded-lg p-3">
-                    {t('setup.masterPinRecoveryNote')}
+                    {t('masterPinRecoveryNote')}
                   </p>
                 </div>
 
                 {masterPinAvailable === false ? (
                   <p className="text-sm text-center text-muted-foreground bg-muted rounded-lg p-4">
-                    {t('setup.masterPinNotAvailable')}
+                    {t('masterPinNotAvailable')}
                   </p>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="master-pin">{t('setup.pinLabel')}</Label>
+                      <Label htmlFor="master-pin">{t('pinLabel')}</Label>
                       <div className="relative">
                         <Input
                           id="master-pin"
@@ -406,7 +423,7 @@ export default function SetupPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="master-pin-confirm">{t('setup.confirmPinLabel')}</Label>
+                      <Label htmlFor="master-pin-confirm">{t('confirmPinLabel')}</Label>
                       <div className="relative">
                         <Input
                           id="master-pin-confirm"
@@ -438,7 +455,7 @@ export default function SetupPage() {
                   className="w-full"
                   size="lg"
                 >
-                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
+                  {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>
             )}
@@ -449,52 +466,52 @@ export default function SetupPage() {
                   onClick={() => setStep(2)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('back')}
                 </button>
 
                 <div className="text-center">
-                  <h2 className="text-xl font-semibold mb-2">{t('setup.createOwner')}</h2>
-                  <p className="text-muted-foreground text-sm">{t('setup.ownerSubtitle')}</p>
+                  <h2 className="text-xl font-semibold mb-2">{t('createOwner')}</h2>
+                  <p className="text-muted-foreground text-sm">{t('ownerSubtitle')}</p>
                 </div>
 
                 <form onSubmit={handleOwnerSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="name">{t('setup.ownerName')}</Label>
+                    <Label htmlFor="name">{t('ownerName')}</Label>
                     <Input
                       id="name"
                       value={form.name}
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
-                      placeholder={t('setup.ownerNamePlaceholder')}
+                      placeholder={t('ownerNamePlaceholder')}
                       required
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="email">{t('setup.ownerEmail')}</Label>
+                    <Label htmlFor="email">{t('ownerEmail')}</Label>
                     <Input
                       id="email"
                       type="email"
                       autoComplete="email"
                       value={form.email}
                       onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      placeholder={t('setup.ownerEmailPlaceholder')}
+                      placeholder={t('ownerEmailPlaceholder')}
                       aria-invalid={ownerEmailInvalid}
                       dir="ltr"
                       required
                     />
                     {ownerEmailInvalid && (
                       <p className="text-xs font-medium text-red-600">
-                        {t('setup.errorInvalidEmail')}
+                        {t('errorInvalidEmail')}
                       </p>
                     )}
                     {ownerEmailWarning && (
                       <p className="text-xs font-medium text-orange-600">
-                        {t('setup.ownerEmailDomainWarning')}
+                        {t('ownerEmailDomainWarning')}
                       </p>
                     )}
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="password">{t('setup.password')}</Label>
+                      <Label htmlFor="password">{t('password')}</Label>
                       <div className="relative">
                         <Input
                           id="password"
@@ -502,7 +519,7 @@ export default function SetupPage() {
                           autoComplete="new-password"
                           value={form.password}
                           onChange={(e) => setForm({ ...form, password: e.target.value })}
-                          placeholder={t('setup.passwordPlaceholder')}
+                          placeholder={t('passwordPlaceholder')}
                           className="pe-10"
                           required
                         />
@@ -517,7 +534,7 @@ export default function SetupPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="confirmPassword">{t('setup.confirmPassword')}</Label>
+                      <Label htmlFor="confirmPassword">{t('confirmPassword')}</Label>
                       <div className="relative">
                         <Input
                           id="confirmPassword"
@@ -525,7 +542,7 @@ export default function SetupPage() {
                           autoComplete="new-password"
                           value={form.confirmPassword}
                           onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })}
-                          placeholder={t('setup.confirmPasswordPlaceholder')}
+                          placeholder={t('confirmPasswordPlaceholder')}
                           className="pe-10"
                           required
                         />
@@ -547,16 +564,16 @@ export default function SetupPage() {
                   )}
                   {passwordsEntered && (
                     <p className={`text-xs font-medium ${passwordsMatch ? 'text-green-600' : 'text-red-600'}`}>
-                      {passwordsMatch ? t('setup.passwordsMatch') : t('setup.passwordsMismatch')}
+                      {passwordsMatch ? t('passwordsMatch') : t('passwordsMismatch')}
                     </p>
                   )}
                   <div className="space-y-2">
-                    <Label htmlFor="business_name">{t('setup.businessName')}</Label>
+                    <Label htmlFor="business_name">{t('businessName')}</Label>
                     <Input
                       id="business_name"
                       value={form.business_name}
                       onChange={(e) => setForm({ ...form, business_name: e.target.value })}
-                      placeholder={t('setup.businessNamePlaceholder')}
+                      placeholder={t('businessNamePlaceholder')}
                     />
                   </div>
 
@@ -569,28 +586,28 @@ export default function SetupPage() {
                       required
                     />
                     <span>
-                      {t('setup.termsIntro')}{' '}
+                      {t('termsIntro')}{' '}
                       <a href="https://flopos.com/terms" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                        {t('setup.terms')}
+                        {t('terms')}
                       </a>
                       ,{' '}
                       <a href="https://flopos.com/privacy" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                        {t('setup.privacy')}
+                        {t('privacy')}
                       </a>
                       , and{' '}
                       <a href="https://flopos.com/disclaimer" target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                        {t('setup.disclaimer')}
+                        {t('disclaimer')}
                       </a>
                       .
                     </span>
                   </label>
 
                   <div className="rounded-lg border border-border bg-muted/30 px-3 py-3 text-sm text-muted-foreground">
-                    <p className="font-medium text-foreground">{t('setup.anonymousDataTitle')}</p>
-                    <p className="mt-1">{t('setup.anonymousDataDescription')}</p>
+                    <p className="font-medium text-foreground">{t('anonymousDataTitle')}</p>
+                    <p className="mt-1">{t('anonymousDataDescription')}</p>
                     <details className="mt-2">
-                      <summary className="cursor-pointer text-primary">{t('setup.anonymousDataDetails')}</summary>
-                      <p className="mt-1">{t('setup.anonymousDataFields')}</p>
+                      <summary className="cursor-pointer text-primary">{t('anonymousDataDetails')}</summary>
+                      <p className="mt-1">{t('anonymousDataFields')}</p>
                     </details>
                   </div>
 
@@ -609,7 +626,7 @@ export default function SetupPage() {
 
 
                   <Button type="submit" disabled={ownerEmailInvalid || !passwordsMatch || !termsAccepted || !isPasswordValid(form.password)} className="w-full" size="lg">
-                    {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
+                    {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                   </Button>
                 </form>
               </div>
@@ -621,12 +638,12 @@ export default function SetupPage() {
                   onClick={() => setStep(3)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('back')}
                 </button>
 
                 <div className="text-center">
-                  <h2 className="text-xl font-semibold mb-2">{t('setup.setupDataTitle')}</h2>
-                  <p className="text-muted-foreground text-sm">{t('setup.setupDataSubtitle')}</p>
+                  <h2 className="text-xl font-semibold mb-2">{t('setupDataTitle')}</h2>
+                  <p className="text-muted-foreground text-sm">{t('setupDataSubtitle')}</p>
                 </div>
 
                 <div className="grid gap-4">
@@ -647,15 +664,15 @@ export default function SetupPage() {
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold">{t(`setup.${item.value}Label` as 'setup.emptyLabel' | 'setup.expressLabel' | 'setup.demoLabel')}</span>
+                              <span className="font-semibold">{t(SETUP_PROFILE_KEYS[item.value].label)}</span>
                               {item.badge && (
                                 <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
-                                  {t('setup.expressBadge')}
+                                  {t('expressBadge')}
                                 </span>
                               )}
                             </div>
-                            <div className="text-sm text-muted-foreground mt-1">{t(`setup.${item.value}Desc` as 'setup.emptyDesc' | 'setup.expressDesc' | 'setup.demoDesc')}</div>
-                            <div className="text-xs text-muted-foreground mt-2">{t(`setup.${item.value}Details` as 'setup.emptyDetails' | 'setup.expressDetails' | 'setup.demoDetails')}</div>
+                            <div className="text-sm text-muted-foreground mt-1">{t(SETUP_PROFILE_KEYS[item.value].desc)}</div>
+                            <div className="text-xs text-muted-foreground mt-2">{t(SETUP_PROFILE_KEYS[item.value].details)}</div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary" />}
                         </div>
@@ -665,7 +682,7 @@ export default function SetupPage() {
                 </div>
 
                 <Button onClick={() => setStep(5)} className="w-full" size="lg">
-                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
+                  {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>
             )}
@@ -676,15 +693,15 @@ export default function SetupPage() {
                   onClick={() => setStep(4)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('back')}
                 </button>
 
                 <div className="text-center">
                   <div className="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center mx-auto mb-3">
                     <Cloud className="w-5 h-5 text-primary" />
                   </div>
-                  <h2 className="text-xl font-semibold mb-2">{t('setup.cloudTitle')}</h2>
-                  <p className="text-muted-foreground text-sm">{t('setup.cloudSubtitle')}</p>
+                  <h2 className="text-xl font-semibold mb-2">{t('cloudTitle')}</h2>
+                  <p className="text-muted-foreground text-sm">{t('cloudSubtitle')}</p>
                 </div>
 
                 <label className="flex items-start gap-3 cursor-pointer p-4 rounded-xl border-2 border-gray-200">
@@ -702,7 +719,7 @@ export default function SetupPage() {
 
                 {cloudEnabled && (
                   <div className="space-y-2">
-                    <Label htmlFor="cloud-server-url">{t('setup.cloudUrlLabel')}</Label>
+                    <Label htmlFor="cloud-server-url">{t('cloudUrlLabel')}</Label>
                     <Input
                       id="cloud-server-url"
                       type="url"
@@ -711,16 +728,16 @@ export default function SetupPage() {
                       placeholder={DEFAULT_CLOUD_SERVER_URL}
                       dir="ltr"
                     />
-                    <p className="text-xs text-muted-foreground">{t('setup.cloudUrlHint')}</p>
+                    <p className="text-xs text-muted-foreground">{t('cloudUrlHint')}</p>
                   </div>
                 )}
 
                 <p className="text-xs text-muted-foreground bg-muted rounded-lg p-3">
-                  {cloudEnabled ? t('setup.cloudRecoveryNoteEnabled') : t('setup.cloudRecoveryNoteDisabled')}
+                  {cloudEnabled ? t('cloudRecoveryNoteEnabled') : t('cloudRecoveryNoteDisabled')}
                 </p>
 
                 <Button onClick={() => setStep(6)} className="w-full" size="lg">
-                  {t('setup.continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
+                  {t('continue')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                 </Button>
               </div>
             )}
@@ -731,12 +748,12 @@ export default function SetupPage() {
                   onClick={() => setStep(5)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('setup.back')}
+                  <ArrowLeft className="w-4 h-4 rtl-flip" /> {t('back')}
                 </button>
 
                 <div className="text-center">
-                  <h2 className="text-xl font-semibold mb-2">{t('setup.flowTitle')}</h2>
-                  <p className="text-muted-foreground text-sm">{t('setup.flowSubtitle')}</p>
+                  <h2 className="text-xl font-semibold mb-2">{t('flowTitle')}</h2>
+                  <p className="text-muted-foreground text-sm">{t('flowSubtitle')}</p>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -752,9 +769,9 @@ export default function SetupPage() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="font-semibold text-lg">{t(`setup.${item.value}Label` as 'setup.emptyLabel' | 'setup.expressLabel' | 'setup.demoLabel')}</div>
-                            <div className="text-sm text-muted-foreground mt-1">{t(`setup.${item.value}Desc` as 'setup.emptyDesc' | 'setup.expressDesc' | 'setup.demoDesc')}</div>
-                            <div className="text-xs text-muted-foreground mt-3">{t(`setup.${item.value}Details` as 'setup.emptyDetails' | 'setup.expressDetails' | 'setup.demoDetails')}</div>
+                            <div className="font-semibold text-lg">{t(SERVICE_MODEL_KEYS[item.value].label)}</div>
+                            <div className="text-sm text-muted-foreground mt-1">{t(SERVICE_MODEL_KEYS[item.value].desc)}</div>
+                            <div className="text-xs text-muted-foreground mt-3">{t(SERVICE_MODEL_KEYS[item.value].details)}</div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
                         </div>
@@ -764,9 +781,9 @@ export default function SetupPage() {
                 </div>
 
                 <Button onClick={handleCompleteSetup} disabled={loading} className="w-full" size="lg">
-                  {loading ? t('setup.completingSetup') : (
+                  {loading ? t('completingSetup') : (
                     <>
-                      {t('setup.completeSetup')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
+                      {t('completeSetup')} <ArrowRight className="w-4 h-4 ms-2 rtl-flip" />
                     </>
                   )}
                 </Button>

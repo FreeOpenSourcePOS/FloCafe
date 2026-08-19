@@ -7,6 +7,7 @@
  */
 
 import { Download, Sparkles } from 'lucide-react';
+import { useTranslations } from 'use-intl';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -17,11 +18,10 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
-import { useI18n } from '@/hooks/useI18n';
 
 export default function UpdateBadge() {
   const { updateStatus, appVersion, restartAndInstall } = useUpdateStatus();
-  const { t } = useI18n();
+  const t = useTranslations('update');
 
   const status = updateStatus?.status;
   if (!status || (status !== 'downloading' && status !== 'ready-to-install')) {
@@ -47,25 +47,25 @@ export default function UpdateBadge() {
             <Download size={12} />
           )}
           <span className="text-xs font-medium">
-            {isReady ? t('update.readyBadge') : t('update.downloadingBadge', { percent: Math.round(updateStatus?.percent || 0) })}
+            {isReady ? t('readyBadge') : t('downloadingBadge', { percent: Math.round(updateStatus?.percent || 0) })}
           </span>
         </Button>
       </DropdownMenuTrigger>
 
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="text-xs text-gray-500">
-          {t('update.sectionLabel')}
+          {t('sectionLabel')}
         </DropdownMenuLabel>
 
         <div className="px-2 py-1.5 text-xs text-gray-500">
           {isReady ? (
             <p className="flex items-center gap-1.5 text-gray-700">
               <Sparkles size={13} className="text-brand" />
-              {t('update.versionReady', { version: updateStatus?.version || '' })}
+              {t('versionReady', { version: updateStatus?.version || '' })}
             </p>
           ) : (
             <div>
-              <p className="text-gray-700">{t('update.downloadingDetail', { version: updateStatus?.version || '' })}</p>
+              <p className="text-gray-700">{t('downloadingDetail', { version: updateStatus?.version || '' })}</p>
               <div className="w-full bg-gray-200 rounded-full h-1.5 mt-2">
                 <div
                   className="bg-brand h-1.5 rounded-full transition-all"
@@ -74,14 +74,14 @@ export default function UpdateBadge() {
               </div>
             </div>
           )}
-          <p className="mt-1.5 text-gray-400">{t('update.currentVersion', { version: appVersion })}</p>
+          <p className="mt-1.5 text-gray-400">{t('currentVersion', { version: appVersion })}</p>
         </div>
 
         {isReady && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={restartAndInstall} className="text-sm cursor-pointer">
-              {t('update.restartNow')}
+              {t('restartNow')}
             </DropdownMenuItem>
           </>
         )}

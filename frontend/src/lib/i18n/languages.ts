@@ -58,6 +58,21 @@ export const LANGUAGES = {
 export type Language = keyof typeof LANGUAGES;
 export type Locale = (typeof LANGUAGES)[Language]['locale'];
 
+/**
+ * Reverse lookup: BCP-47 locale tag (as configured in {@link LANGUAGES})
+ * → registered language. Used by components that read the active locale
+ * from the i18n context (e.g. `useLocale()`) and need the language key to
+ * resolve direction or message metadata.
+ */
+const LOCALE_TO_LANGUAGE: Record<string, Language> = Object.fromEntries(
+  (Object.keys(LANGUAGES) as Language[]).map((lang) => [LANGUAGES[lang].locale, lang]),
+);
+
+/** Returns the registered language for a BCP-47 locale tag (undefined when unknown). */
+export function getLanguageFromLocale(locale: string): Language | undefined {
+  return LOCALE_TO_LANGUAGE[locale];
+}
+
 /** Returns the text direction of a UI language (defaults to `ltr`). */
 export function getLanguageDirection(lang: Language): LanguageDirection {
   return LANGUAGES[lang]?.direction ?? 'ltr';

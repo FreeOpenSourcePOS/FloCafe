@@ -18,12 +18,13 @@ import {
   UserCircle,
   MessageCircle,
   LifeBuoy,
+  type LucideIcon,
 } from 'lucide-react';
+import { useTranslations, type AppConfig } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { getLandingPage } from '@/components/layout/AuthGuard';
 import api from '@/lib/api';
-import { useI18n } from '@/hooks/useI18n';
 import { useConfirm } from '@/hooks/use-confirm';
 import {
   Sidebar,
@@ -39,18 +40,30 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 
+// Leaf keys of the `nav` message namespace (use-intl resolves leaf keys
+// within the namespace scope, so no dotted keys).
+type NavKey = keyof AppConfig['Messages']['nav'];
+
+interface NavItem {
+  href: string;
+  labelKey: NavKey;
+  icon: LucideIcon;
+  roles: string[];
+  businessTypes: string[] | null;
+}
+
 // null = show for all business types
-const ALL_NAV_ITEMS = [
-  { href: '/pos', labelKey: 'nav.pos', icon: ShoppingCart, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
-  { href: '/dashboard', labelKey: 'nav.dashboard', icon: LayoutDashboard, roles: ['owner'], businessTypes: null },
-  { href: '/orders', labelKey: 'nav.orders', icon: ClipboardList, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
-  { href: '/whatsapp', labelKey: 'nav.whatsapp', icon: MessageCircle, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
-  { href: '/products', labelKey: 'nav.products', icon: Package, roles: ['owner', 'manager'], businessTypes: null },
-  { href: '/tables', labelKey: 'nav.tables', icon: Grid3X3, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
-  { href: '/settings?tab=kds', labelKey: 'nav.kds', icon: ChefHat, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
-  { href: '/customers', labelKey: 'nav.customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
-  { href: '/staff', labelKey: 'nav.staff', icon: UserCog, roles: ['owner', 'manager'], businessTypes: null },
-  { href: '/settings', labelKey: 'nav.settings', icon: Settings, roles: ['owner', 'manager'], businessTypes: null },
+const ALL_NAV_ITEMS: NavItem[] = [
+  { href: '/pos', labelKey: 'pos', icon: ShoppingCart, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
+  { href: '/dashboard', labelKey: 'dashboard', icon: LayoutDashboard, roles: ['owner'], businessTypes: null },
+  { href: '/orders', labelKey: 'orders', icon: ClipboardList, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
+  { href: '/whatsapp', labelKey: 'whatsapp', icon: MessageCircle, roles: ['owner', 'manager', 'cashier'], businessTypes: null },
+  { href: '/products', labelKey: 'products', icon: Package, roles: ['owner', 'manager'], businessTypes: null },
+  { href: '/tables', labelKey: 'tables', icon: Grid3X3, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
+  { href: '/settings?tab=kds', labelKey: 'kds', icon: ChefHat, roles: ['owner', 'manager'], businessTypes: ['restaurant'] },
+  { href: '/customers', labelKey: 'customers', icon: Users, roles: ['owner', 'manager'], businessTypes: null },
+  { href: '/staff', labelKey: 'staff', icon: UserCog, roles: ['owner', 'manager'], businessTypes: null },
+  { href: '/settings', labelKey: 'settings', icon: Settings, roles: ['owner', 'manager'], businessTypes: null },
 ];
 
 export default function AppSidebar() {
@@ -58,7 +71,8 @@ export default function AppSidebar() {
   const { user, currentTenant, logout } = useAuthStore();
   const { tablesRequired, kdsEnabled, whatsappEnabled, setTablesRequired, setKdsEnabled, setWhatsappEnabled } = usePosSettingsStore();
   const { isMobile, setOpenMobile, toggleSidebar } = useSidebar();
-  const { t } = useI18n();
+  const t = useTranslations('nav');
+  const tCommon = useTranslations('common');
   const { confirm, ConfirmDialog } = useConfirm();
   const [emailNeedsAttention, setEmailNeedsAttention] = useState(false);
   const closeMobile = () => { if (isMobile) setOpenMobile(false); };
@@ -130,10 +144,10 @@ export default function AppSidebar() {
             <SidebarMenuButton size="lg" asChild>
               <Link href={homeHref}>
                 <div className="flex aspect-square size-8 shrink-0 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground font-semibold">
-                  {(currentTenant?.business_name || t('common.brandName')).charAt(0).toUpperCase()}
+                  {(currentTenant?.business_name || tCommon('brandName')).charAt(0).toUpperCase()}
                 </div>
                 <div className="flex flex-col gap-0.5 min-w-0 leading-none">
-                  <span className="font-semibold truncate">{currentTenant?.business_name || t('common.brandName')}</span>
+                  <span className="font-semibold truncate">{currentTenant?.business_name || tCommon('brandName')}</span>
                 </div>
               </Link>
             </SidebarMenuButton>
@@ -172,34 +186,34 @@ export default function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild isActive={pathname === '/support'} tooltip={t('nav.support')}>
+            <SidebarMenuButton asChild isActive={pathname === '/support'} tooltip={t('support')}>
               <Link href="/support" onClick={closeMobile}>
                 <LifeBuoy />
-                <span>{t('nav.support')}</span>
+                <span>{t('support')}</span>
               </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={toggleSidebar} tooltip={t('nav.toggleSidebar')}>
+            <SidebarMenuButton onClick={toggleSidebar} tooltip={t('toggleSidebar')}>
               <PanelLeft />
-              <span>{t('nav.collapse')}</span>
+              <span>{t('collapse')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
             {/* Identity label, not a button — nothing to click through to, so it
                 deliberately skips SidebarMenuButton's interactive/hover styling. */}
             <div
-              title={user?.name || user?.email || t('nav.user', { defaultValue: 'User' })}
+              title={user?.name || user?.email || t('user', { defaultValue: 'User' })}
               className="flex w-full items-center gap-2 rounded-md p-2 text-start text-sm text-sidebar-foreground/70 group-data-[collapsible=icon]:size-8! group-data-[collapsible=icon]:p-2! [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0"
             >
               <UserCircle />
-              <span className="truncate">{user?.name || user?.email || t('nav.user', { defaultValue: 'User' })}</span>
+              <span className="truncate">{user?.name || user?.email || t('user', { defaultValue: 'User' })}</span>
             </div>
           </SidebarMenuItem>
           <SidebarMenuItem>
-            <SidebarMenuButton onClick={async () => { if (await confirm(t('nav.confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) logout(); }} tooltip={t('nav.logoutTooltip')}>
+            <SidebarMenuButton onClick={async () => { if (await confirm(t('confirmLogout', { defaultValue: 'Are you sure you want to log out?' }))) logout(); }} tooltip={t('logoutTooltip')}>
               <LogOut />
-              <span>{t('nav.logout')}</span>
+              <span>{t('logout')}</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

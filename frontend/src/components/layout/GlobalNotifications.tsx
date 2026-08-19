@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
+import { useTranslations } from 'use-intl';
 import api from '@/lib/api';
-import { useI18n } from '@/hooks/useI18n';
 
 export default function GlobalNotifications() {
-  const { t } = useI18n();
+  const tCustomers = useTranslations('customers');
+  const tCommon = useTranslations('common');
   const [invalidPhonesCount, setInvalidPhonesCount] = useState(0);
 
   useEffect(() => {
@@ -26,7 +27,7 @@ export default function GlobalNotifications() {
 
   if (invalidPhonesCount === 0) return null;
 
-  const displayMsg = t('customers.invalidPhoneCount', { count: invalidPhonesCount });
+  const displayMsg = tCustomers('invalidPhoneCount', { count: invalidPhonesCount });
 
   return (
     <div className="bg-red-50 border-b border-red-100 px-4 py-2 flex items-center justify-between shrink-0">
@@ -39,7 +40,7 @@ export default function GlobalNotifications() {
           href="/customers?filter=invalid_phones" 
           className="text-sm text-red-600 hover:text-red-700 font-bold flex items-center underline underline-offset-2"
         >
-          {t('common.reviewFix') || 'Review & Fix'} <ChevronRight className="w-4 h-4 ms-0.5 rtl-flip" />
+          {tCommon('reviewFix')} <ChevronRight className="w-4 h-4 ms-0.5 rtl-flip" />
         </Link>
       </div>
     </div>

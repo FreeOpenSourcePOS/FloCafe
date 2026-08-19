@@ -1,6 +1,7 @@
 import {
   LANGUAGES,
   getLanguageDirection,
+  getLanguageFromLocale,
   getLanguageLocale,
   type Language,
   type LanguageDirection,
@@ -13,6 +14,7 @@ import {
 export {
   LANGUAGES,
   getLanguageDirection,
+  getLanguageFromLocale,
   getLanguageLocale,
   type Language,
   type LanguageDirection,
@@ -95,11 +97,17 @@ export function t(key: string, lang: Language, params?: Record<string, string | 
 }
 
 export function getBrowserLanguage(): Language {
-  if (typeof navigator !== 'undefined') {
-    const nav = navigator.language?.toLowerCase();
-    if (nav?.startsWith('es')) return 'es';
-    if (nav?.startsWith('pt')) return 'pt';
-    if (nav?.startsWith('fa')) return 'fa';
+  if (typeof navigator !== 'undefined' && navigator.language) {
+    try {
+      // #376: parse the tag with Intl.Locale so only the BCP-47 language
+      // subtag participates in matching (a raw string-prefix match could
+      // mis-handle tags like `falc` or region-first forms).
+      const parsed = new Intl.Locale(navigator.language);
+      const lang = parsed.language?.toLowerCase();
+      if (lang && lang in LANGUAGES) return lang as Language;
+    } catch {
+      // Malformed language tag — fall through to the packaged fallback.
+    }
   }
   return 'en';
 }

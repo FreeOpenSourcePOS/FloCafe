@@ -86,7 +86,7 @@ function main() {
       };
       const validation = validationChecklist(version);
       const failedChecks = validation.checks.filter((check: any) => !check.passed).map((check: any) => check.id);
-      assertEqual(failedChecks.join(','), '', `${pack.id} (real artifact) passes all 24 activation checks unsigned`);
+      assertEqual(failedChecks.join(','), '', `${pack.id} (real artifact) passes all 25 activation checks unsigned`);
       assertEqual(validation.valid, true, `${pack.id} (real artifact) is trusted end-to-end`);
     }
 

@@ -1163,7 +1163,10 @@ export default function SettingsPage() {
   const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
   const taxIdWarning = (() => {
     const value = form.taxRegistrationNumber.trim();
-    if (!taxIdFormat || !value) return null;
+    // taxIdFormat was resolved for savedBusiness.countryCode; if the country
+    // field has since been edited (not yet saved), the format is stale and
+    // must not be shown against the newly selected country's label.
+    if (!taxIdFormat || !value || form.countryCode !== savedBusiness.countryCode) return null;
     try {
       return new RegExp(taxIdFormat.pattern, 'i').test(value) ? null : taxIdFormat.description;
     } catch {

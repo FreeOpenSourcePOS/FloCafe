@@ -589,6 +589,16 @@ export function validationChecklist(
   try { vectorPassed = activationVectorPasses(pack); } catch { vectorPassed = false; }
   add(23, vectorPassed, 'Mandatory component, total, interstate, and rounding vectors are self-consistent');
   add(24, true, 'Activation uses one SQLite transaction and does not modify transactions');
+  let registrationFormatValid = true;
+  if (pack.registrationNumberFormat) {
+    const { pattern, description } = pack.registrationNumberFormat;
+    registrationFormatValid = typeof pattern === 'string' && pattern.length > 0
+      && typeof description === 'string' && description.length > 0;
+    if (registrationFormatValid) {
+      try { new RegExp(pattern, 'i'); } catch { registrationFormatValid = false; }
+    }
+  }
+  add(25, registrationFormatValid, 'Registration-number format, if declared, is a well-formed pattern and description');
   return { valid: checks.every((check) => check.passed), checks };
 }
 

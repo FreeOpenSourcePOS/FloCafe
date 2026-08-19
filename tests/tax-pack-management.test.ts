@@ -107,7 +107,7 @@ async function main() {
     assertEqual(detailRes.status, 200, 'manager can view active pack details');
     assert(detailRes.data.categories.length > 0, 'categories are available for reference');
     assert(detailRes.data.rules.length > 0, 'rules are available for reference');
-    assertEqual(detailRes.data.active_version.validation.checks.length, 24, 'all 24 activation checks are reported');
+    assertEqual(detailRes.data.active_version.validation.checks.length, 25, 'all 25 activation checks are reported');
     assertEqual(detailRes.data.active_version.validation.valid, true,
       'an exact legacy unsigned artifact remains trusted after upgrade');
     for (const packId of ['test-legacy-th-pack', 'local-generic']) {
@@ -115,8 +115,8 @@ async function main() {
       assertEqual(packDetail.status, 200, `${packId} details are readable`);
       assertEqual(
         packDetail.data.active_version.validation.checks.length,
-        24,
-        `${packId} reports all 24 activation checks`,
+        25,
+        `${packId} reports all 25 activation checks`,
       );
       const failedCheckIds = packDetail.data.active_version.validation.checks
         .filter((check: any) => !check.passed)
@@ -483,7 +483,7 @@ async function main() {
       publicKey,
     });
     assertEqual(installed.version, '1.1.0', 'verified downloaded version is installed');
-    assertEqual(installed.validation.checks.length, 24, 'download uses the existing 24-check validation');
+    assertEqual(installed.validation.checks.length, 25, 'download uses the existing 25-check validation');
     assertEqual(installed.validation.valid, true, 'signed download passes all activation validation');
 
     const storedVersion = db.prepare(

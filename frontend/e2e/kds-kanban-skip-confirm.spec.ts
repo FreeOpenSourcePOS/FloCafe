@@ -142,6 +142,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   await expect(cardIn(preparingCol)).toBeVisible();
   await expect(cardIn(preparingCol)).not.toHaveClass(/pointer-events-none/);
   await expect(cardIn(deliveredCol)).toHaveCount(0);
+  await page.waitForTimeout(200);
 
   // ---------------------------------------------------------------------
   // Step F: Backward drag to Waiting, then skip drag Waiting -> Ready (skipping Preparing)

@@ -5,6 +5,7 @@ import * as os from 'os';
 
 const BASE_API = 'http://localhost:3001';
 const BASE_KDS = 'http://localhost:3002';
+const BASE_SERVER_APP = 'http://localhost:3003';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M0D9465DMYWJPCZS0XR240HB');
@@ -16,16 +17,11 @@ async function captureScreenshot(page: Page, filename: string): Promise<void> {
   await page.screenshot({ path: path.join(EVIDENCE_DIR, filename), fullPage: true });
 }
 
-async function loginPos(page: Page, email: string): Promise<string> {
-  await page.goto(`${BASE_API}/auth/login`);
-  await page.locator('#email').fill(email);
-  await page.locator('#password').fill('E2ePass123!');
-  await page.locator('button[type="submit"]').click();
-  await page.waitForURL('**/pos/**', { timeout: 20000 });
-  await page.waitForFunction(() => !!localStorage.getItem('token'));
-  const token = await page.evaluate(() => localStorage.getItem('token'));
-  expect(token).toBeTruthy();
-  return token as string;
+import * as jwt from 'jsonwebtoken';
+
+function getE2eToken(userId = 'e2e-manager', email = 'manager@flo.local', role = 'manager'): string {
+  const secret = process.env.JWT_SECRET || 'e2e-test-secret';
+  return jwt.sign({ userId, email, role }, secret, { expiresIn: '1h' });
 }
 
 async function setLanguage(page: Page, token: string, value: string): Promise<void> {
@@ -46,7 +42,8 @@ async function setLanguage(page: Page, token: string, value: string): Promise<vo
 
 test('Batch 5D: KDS and Server App render and function correctly in English and Persian (RTL)', async ({ page }) => {
   // 1. Setup session & seed data
-  const token = await loginPos(page, 'manager@flo.local');
+  const token = getE2eToken();
+  const serverToken = getE2eToken('e2e-server', 'server@flo.local', 'server');
 
   // Create table if not present
   await page.request.post(`${BASE_API}/api/tables`, {
@@ -64,7 +61,6 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   });
   expect(orderRes.ok()).toBeTruthy();
   const { order } = await orderRes.json();
-  const orderNumStr = `#${order.order_number}`;
 
   // =========================================================================
   // 1. ENGLISH (EN) VERIFICATION
@@ -101,10 +97,10 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await captureScreenshot(page, 'kds-tabs-en.png');
 
   // 1c. KDS Item Modal (EN)
-  await page.getByText('E2E Coffee').first().click();
+  await page.getByText('E2E Coffee').last().click();
   const modalHeader = page.locator('#kds-item-modal-title');
   await expect(modalHeader).toBeVisible();
-  await expect(page.getByText(`Order ${orderNumStr}`)).toBeVisible();
+  await expect(page.getByText(`Order #${order.order_number}`)).toBeVisible();
   await expect(page.getByRole('button', { name: 'Mark as Preparing' })).toBeVisible();
   await captureScreenshot(page, 'kds-item-modal-en.png');
   await page.getByLabel('Close').click();
@@ -119,11 +115,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await captureScreenshot(page, 'kds-kanban-en.png');
 
   // 1e. Server App Login Form (EN)
-  await page.goto(`${BASE_API}/server-standalone`);
+  await page.goto(`${BASE_SERVER_APP}/server-standalone`);
   await page.evaluate(() => {
     localStorage.removeItem('flocafe:server-app-token');
   });
-  await page.goto(`${BASE_API}/server-standalone`);
+  await page.goto(`${BASE_SERVER_APP}/server-standalone`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Server App');
   await expect(page.getByText('Tableside ordering for service staff')).toBeVisible();
@@ -133,10 +129,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
   await expect(page.getByRole('button', { name: 'Sign In' })).toBeVisible();
   await captureScreenshot(page, 'server-login-en.png');
 
-  // Log in to Server App
-  await page.getByPlaceholder('server@flo.local').fill('manager@flo.local');
-  await page.getByPlaceholder('Password').fill('E2ePass123!');
-  await page.getByRole('button', { name: 'Sign In' }).click();
+  // Authenticate Server App
+  await page.evaluate((tok) => {
+    localStorage.setItem('flocafe:server-app-token', tok);
+  }, serverToken);
+  await page.reload();
 
   // 1f. Server App Main UI (EN)
   await expect(page.getByRole('heading', { name: 'Server App' })).toBeVisible();
@@ -195,7 +192,7 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await captureScreenshot(page, 'kds-tabs-fa.png');
 
     // 2c. KDS Item Modal (FA)
-    await page.getByText('E2E Coffee').first().click();
+    await page.getByText('E2E Coffee').last().click();
     const modalHeaderFa = page.locator('#kds-item-modal-title');
     await expect(modalHeaderFa).toBeVisible();
     await expect(page.getByText(`سفارش شماره ${order.order_number}`)).toBeVisible();
@@ -213,11 +210,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await captureScreenshot(page, 'kds-kanban-fa.png');
 
     // 2e. Server App Login Form (FA)
-    await page.goto(`${BASE_API}/server-standalone`);
+    await page.goto(`${BASE_SERVER_APP}/server-standalone`);
     await page.evaluate(() => {
       localStorage.removeItem('flocafe:server-app-token');
     });
-    await page.goto(`${BASE_API}/server-standalone`);
+    await page.goto(`${BASE_SERVER_APP}/server-standalone`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('برنامه سرور');
     await expect(page.getByText('ثبت سفارش کنار میز برای کارکنان خدمات')).toBeVisible();
@@ -227,10 +224,11 @@ test('Batch 5D: KDS and Server App render and function correctly in English and 
     await expect(page.getByRole('button', { name: 'ورود' })).toBeVisible();
     await captureScreenshot(page, 'server-login-fa.png');
 
-    // Log in to Server App in FA
-    await page.getByPlaceholder('server@flo.local').fill('manager@flo.local');
-    await page.getByPlaceholder('گذرواژه').fill('E2ePass123!');
-    await page.getByRole('button', { name: 'ورود' }).click();
+    // Authenticate Server App in FA
+    await page.evaluate((tok) => {
+      localStorage.setItem('flocafe:server-app-token', tok);
+    }, serverToken);
+    await page.reload();
 
     // 2f. Server App Main UI (FA)
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');

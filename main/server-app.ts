@@ -267,14 +267,14 @@ export function startServerApp(): Promise<void> {
           next();
         });
       }
-      app.use(express.static(staticDir, { index: false }));
+      app.use(express.static(staticDir, { dotfiles: 'allow', index: false }));
       app.get('/', (_req: Request, res: Response) => res.redirect('/server-standalone'));
       app.get('/*splat', staticRouteRateLimit(), (req: Request, res: Response) => {
         const routePath = resolveContainedPath(staticDir, `.${req.path}`, 'index.html');
         if (routePath && fs.existsSync(routePath)) {
-          res.sendFile(routePath);
+          res.sendFile(routePath, { dotfiles: 'allow' });
         } else {
-          res.sendFile(path.join(staticDir, 'server-standalone', 'index.html'));
+          res.sendFile(path.join(staticDir, 'server-standalone', 'index.html'), { dotfiles: 'allow' });
         }
       });
     } else {

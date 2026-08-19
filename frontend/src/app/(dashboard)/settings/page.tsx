@@ -1161,13 +1161,14 @@ export default function SettingsPage() {
   // one, else the static countries.ts fallback, else null. Never blocks
   // the save — just drives the non-blocking warning below the field.
   const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
-  // check 25 (main/routes/tax-packs.ts) only confirms a pack-declared
-  // pattern compiles — it can't rule out catastrophic backtracking. This
-  // runs on every keystroke, so cap the input actually tested: no real
-  // registration-number scheme is anywhere near this long, and bounding the
-  // input bounds a worst-case pattern's backtracking to a few milliseconds
-  // instead of freezing the tab.
-  const TAX_ID_WARNING_MAX_LENGTH = 40;
+  // check 25 (main/routes/tax-packs.ts) rejects the textbook nested-
+  // quantifier ReDoS shape at pack-activation time, but that's a known-shape
+  // heuristic, not a formal safety proof. This runs on every keystroke, so
+  // cap the input actually tested as a backstop too: the longest real
+  // registration-number scheme is 15 chars (India GSTIN), so 24 leaves
+  // generous headroom while bounding a worst-case pattern's backtracking to
+  // low milliseconds instead of freezing the tab.
+  const TAX_ID_WARNING_MAX_LENGTH = 24;
   const taxIdWarning = (() => {
     const value = form.taxRegistrationNumber.trim();
     // taxIdFormat was resolved for savedBusiness.countryCode; if the country

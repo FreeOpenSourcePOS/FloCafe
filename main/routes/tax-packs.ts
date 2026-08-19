@@ -597,8 +597,17 @@ export function validationChecklist(
     if (registrationFormatValid) {
       try { new RegExp(pattern, 'i'); } catch { registrationFormatValid = false; }
     }
+    // A syntactically valid pattern can still be catastrophically slow: the
+    // Settings page runs this pattern against the Tax ID field on every
+    // keystroke (frontend length-bounds the tested value as a backstop, see
+    // TAX_ID_WARNING_MAX_LENGTH), so a pack that ships a classic nested-
+    // quantifier shape — (x+)+, (x*)+, (x+b+)*, etc. — must never activate.
+    // This is a known-shape heuristic, not a formal safety proof (full ReDoS
+    // detection is undecidable in general); it catches the textbook case a
+    // trusted publisher could ship by mistake.
+    if (registrationFormatValid && /\([^()]*[+*][^()]*\)[+*]/.test(pattern)) registrationFormatValid = false;
   }
-  add(25, registrationFormatValid, 'Registration-number format, if declared, is a well-formed pattern and description');
+  add(25, registrationFormatValid, 'Registration-number format, if declared, is a well-formed, non-catastrophic pattern and description');
   return { valid: checks.every((check) => check.passed), checks };
 }
 

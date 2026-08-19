@@ -1021,6 +1021,29 @@ async function main() {
       'validateTaxRegistrationNumber rejects an over-length value before the pack-declared regex runs (ReDoS bound)',
     );
 
+    const formatOverrideRow = db.prepare(
+      'SELECT * FROM country_pack_versions WHERE id = ?'
+    ).get(`${formatOverridePack.id}@${formatOverridePack.version}`);
+    assertEqual(
+      validationChecklist(formatOverrideRow).checks.find((check: any) => check.id === 25)?.passed,
+      true,
+      'check 25 accepts a well-formed, non-catastrophic registrationNumberFormat pattern',
+    );
+    const catastrophicPackJson = JSON.stringify({
+      ...formatOverridePack,
+      registrationNumberFormat: { pattern: '^(A+)+$', description: 'Deliberately catastrophic for the test' },
+    });
+    const catastrophicValidation = validationChecklist({
+      ...formatOverrideRow,
+      pack_json: catastrophicPackJson,
+      digest: taxPackSha256(catastrophicPackJson),
+    });
+    assertEqual(
+      catastrophicValidation.checks.find((check: any) => check.id === 25)?.passed,
+      false,
+      'check 25 rejects a nested-quantifier (catastrophic-backtracking) registrationNumberFormat pattern',
+    );
+
     revokeAllInPacks();
     assertEqual(
       resolveTaxIdFormat('TH'),

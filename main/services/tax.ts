@@ -121,13 +121,14 @@ export function resolveTaxIdFormat(country: string): TaxIdFormat | null {
     || null;
 }
 
-// No known VAT/GST/tax-registration identifier scheme runs anywhere close to
-// this; bounding the value before it reaches a pack-declared (not codebase-
-// authored) regex keeps a catastrophic-backtracking pattern's worst case
-// imperceptible even though the pattern itself is untrusted content
-// (CodeQL js/polynomial-redos; same bound-before-regex approach as
-// isValidEmail in routes/auth.ts).
-export const MAX_TAX_ID_LENGTH = 40;
+// check 25 (routes/tax-packs.ts) rejects the textbook nested-quantifier
+// ReDoS shape at pack-activation time, but that's a known-shape heuristic,
+// not a formal safety proof — bound the value as a backstop too. The
+// longest real registration-number scheme is 15 chars (India GSTIN), so 24
+// leaves generous headroom while keeping a worst-case pattern's
+// backtracking imperceptible (CodeQL js/polynomial-redos; same
+// bound-before-regex approach as isValidEmail in routes/auth.ts).
+export const MAX_TAX_ID_LENGTH = 24;
 
 export function validateTaxRegistrationNumber(
   country: string,

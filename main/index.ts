@@ -17,6 +17,7 @@ import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShu
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
+import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -247,6 +248,14 @@ if (gotSingleInstanceLock) {
 }
 
 function createWindow(): void {
+  // Runs on every call, not just the initial one — the crash-recovery path
+  // below (render-process-gone) and the macOS 'activate' handler both call
+  // createWindow() again without going through initialize(). If a stale
+  // cache directory failed to clear on the previous attempt (e.g. a
+  // transient lock), retrying here means the app can still self-heal within
+  // the same run instead of only on the next full relaunch.
+  clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,

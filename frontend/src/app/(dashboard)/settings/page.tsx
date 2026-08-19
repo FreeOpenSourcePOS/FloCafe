@@ -688,7 +688,7 @@ export default function SettingsPage() {
     api.get('/server-app-info').then((res) => {
       setServerAppInfo(res.data);
     }).catch(() => {
-      toast.error(t('serverAppInfoFetchFailed', { defaultValue: 'Could not load Server App info' }));
+      toast.error(t('serverAppInfoFetchFailed'));
     }).finally(() => setServerAppInfoLoading(false));
   };
 
@@ -1824,7 +1824,7 @@ export default function SettingsPage() {
     setSavingKdsEnabled(true);
     try {
       await api.put('/settings/kds_enabled', { value: enabled ? 'true' : 'false' });
-      toast.success(enabled ? t('kdsEnabledOn', { defaultValue: 'Kitchen Display System enabled' }) : t('kdsEnabledOff', { defaultValue: 'Kitchen Display System disabled' }));
+      toast.success(enabled ? t('kdsEnabledOn') : t('kdsEnabledOff'));
     } catch {
       setKdsEnabledSetting(previous);
       posSettings.setKdsEnabled(previous);
@@ -1842,8 +1842,8 @@ export default function SettingsPage() {
       await api.put('/settings/server_app_enabled', { value: enabled ? 'true' : 'false' });
       if (!enabled) setServerAppInfo(null);
       toast.success(enabled
-        ? t('serverAppEnabledOn', { defaultValue: 'Server App enabled' })
-        : t('serverAppEnabledOff', { defaultValue: 'Server App disabled' }));
+        ? t('serverAppEnabledOn')
+        : t('serverAppEnabledOff'));
     } catch {
       setServerAppEnabledSetting(previous);
       toast.error(t('saveFailed'));
@@ -1859,7 +1859,7 @@ export default function SettingsPage() {
     setSavingKotPrintingEnabled(true);
     try {
       await api.put('/settings/kot_printing_enabled', { value: enabled ? 'true' : 'false' });
-      toast.success(enabled ? t('kotPrintingEnabledOn', { defaultValue: 'KOT printing enabled' }) : t('kotPrintingEnabledOff', { defaultValue: 'KOT printing disabled' }));
+      toast.success(enabled ? t('kotPrintingEnabledOn') : t('kotPrintingEnabledOff'));
     } catch {
       setKotPrintingEnabledSetting(previous);
       posSettings.setKotPrintingEnabled(previous);
@@ -1928,7 +1928,7 @@ export default function SettingsPage() {
   const saveBusinessInfo = async (silent = false) => {
     const norm = normalizeOptionalPhone(form.businessPhone, form.countryCode || 'IN');
     if (!norm.valid) {
-      toast.error(t('invalidPhoneFormat', { defaultValue: 'Invalid phone number format' }));
+      toast.error(t('invalidPhoneFormat'));
       return;
     }
     const normalizedBusinessPhone = norm.e164 ?? '';
@@ -2005,12 +2005,12 @@ export default function SettingsPage() {
   const saveOrderNumbering = async (silent = false) => {
     const prefix = orderNumberForm.prefix.trim();
     if (prefix && !/^[A-Za-z0-9_-]{0,12}$/.test(prefix)) {
-      toast.error(t('orderNumberPrefixInvalid', { defaultValue: 'Prefix must be up to 12 characters (letters, numbers, - or _)' }));
+      toast.error(t('orderNumberPrefixInvalid'));
       return;
     }
     const invoicePrefix = orderNumberForm.invoicePrefix.trim();
     if (invoicePrefix && !/^[A-Za-z0-9_-]{0,12}$/.test(invoicePrefix)) {
-      toast.error(t('invoiceNumberPrefixInvalid', { defaultValue: 'Invoice prefix must be up to 12 characters (letters, numbers, - or _)' }));
+      toast.error(t('invoiceNumberPrefixInvalid'));
       return;
     }
     setSavingOrderNumbering(true);
@@ -2028,7 +2028,7 @@ export default function SettingsPage() {
       const saved = { ...orderNumberForm, prefix, invoicePrefix };
       setOrderNumberForm(saved);
       setSavedOrderNumberForm(saved);
-      if (!silent) toast.success(t('orderNumberingSaved', { defaultValue: 'Numbering settings saved' }));
+      if (!silent) toast.success(t('orderNumberingSaved'));
     } catch (err) {
       if (!silent) toast.error(t('saveFailed'));
       throw err;
@@ -2145,7 +2145,7 @@ export default function SettingsPage() {
             </div>
             <SettingsNavItem label={t('storeDetails')} value="store" active={activeTab} onClick={setActiveTab} />
             <SettingsNavItem label={t('tabPrinters')} value="receipts-printers" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('paymentMethods', { defaultValue: 'Payments' })} value="payments" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('paymentMethods')} value="payments" active={activeTab} onClick={setActiveTab} />
             {canViewTaxConfiguration && (
               <SettingsNavItem label={t('taxConfiguration')} value="tax" active={activeTab} onClick={setActiveTab} />
             )}
@@ -2320,7 +2320,7 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('taxRegistered', { defaultValue: 'Tax Registered' })}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('taxRegistered')}</label>
                   {isAdmin ? (
                     <select
                       value={form.taxRegistered ? 'yes' : 'no'}
@@ -2358,7 +2358,7 @@ export default function SettingsPage() {
                   <label className="block text-sm text-gray-500 mb-1">{t('phone')}</label>
                   {isAdmin ? (
                     <input type="text" value={form.businessPhone} onChange={(e) => setForm((p) => ({ ...p, businessPhone: e.target.value }))}
-                      placeholder={t('phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1', defaultValue: '+1 555 000 0000' })}
+                      placeholder={t('phonePlaceholder', { dialCode: dialCodeFor(form.countryCode) || '+1' })}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand" dir="ltr" />
                   ) : (
                     <p className="font-medium text-gray-900"><Ltr>{form.businessPhone || '—'}</Ltr></p>
@@ -2397,7 +2397,7 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Hash size={20} className="text-gray-500" />
-                <h2 className="font-semibold text-gray-900">{t('orderNumberFormat', { defaultValue: 'Number Formats' })}</h2>
+                <h2 className="font-semibold text-gray-900">{t('orderNumberFormat')}</h2>
                 {!isAdmin && (
                   <span className="ms-auto flex items-center gap-1 text-xs text-gray-400">
                     <Lock size={12} /> {t('adminOnly')}
@@ -2405,10 +2405,10 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('orderNumbers', { defaultValue: 'Order numbers' })}</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('orderNumbers')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('orderNumberPrefix', { defaultValue: 'Prefix' })}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('orderNumberPrefix')}</label>
                   {isAdmin ? (
                     <input
                       type="text"
@@ -2423,7 +2423,7 @@ export default function SettingsPage() {
                   )}
                 </div>
                 <div>
-                  <label className="block text-sm text-gray-500 mb-1">{t('orderNumberPreview', { defaultValue: 'Preview' })}</label>
+                  <label className="block text-sm text-gray-500 mb-1">{t('orderNumberPreview')}</label>
                   <p className="font-mono font-medium text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
                     <Ltr>{[
                       orderNumberForm.prefix,
@@ -2437,8 +2437,8 @@ export default function SettingsPage() {
               <div className="mt-5 pt-5 border-t border-gray-100 space-y-3">
                 <div className="flex items-center justify-between py-2">
                   <div>
-                    <span className="text-sm text-gray-700">{t('orderNumberIncludeDate', { defaultValue: 'Include date in order number' })}</span>
-                    <p className="text-xs text-gray-500">{t('orderNumberIncludeDateHint', { defaultValue: 'Adds the current date (YYYYMMDD) after the prefix.' })}</p>
+                    <span className="text-sm text-gray-700">{t('orderNumberIncludeDate')}</span>
+                    <p className="text-xs text-gray-500">{t('orderNumberIncludeDateHint')}</p>
                   </div>
                   <Toggle
                     value={orderNumberForm.includeDate}
@@ -2447,8 +2447,8 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center justify-between py-2">
                   <div>
-                    <span className="text-sm text-gray-700">{t('orderNumberResetDaily', { defaultValue: 'Reset series every 24 hours' })}</span>
-                    <p className="text-xs text-gray-500">{t('orderNumberResetDailyHint', { defaultValue: 'Numbering restarts from 1 at midnight in the store’s timezone.' })}</p>
+                    <span className="text-sm text-gray-700">{t('orderNumberResetDaily')}</span>
+                    <p className="text-xs text-gray-500">{t('orderNumberResetDailyHint')}</p>
                   </div>
                   <Toggle
                     value={orderNumberForm.resetDaily}
@@ -2458,10 +2458,10 @@ export default function SettingsPage() {
               </div>
 
               <div className="mt-6 pt-5 border-t border-gray-100">
-                <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('invoiceNumbers', { defaultValue: 'Invoice numbers' })}</h3>
+                <h3 className="text-sm font-semibold text-gray-800 mb-3">{t('invoiceNumbers')}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceNumberPrefix', { defaultValue: 'Prefix' })}</label>
+                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceNumberPrefix')}</label>
                     {isAdmin ? (
                       <input
                         type="text"
@@ -2476,7 +2476,7 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceNumberPreview', { defaultValue: 'Preview' })}</label>
+                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceNumberPreview')}</label>
                     <p className="font-mono font-medium text-gray-900 px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
                       <Ltr>{[
                         orderNumberForm.invoicePrefix,
@@ -2490,17 +2490,17 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <div>
-                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceResetPeriod', { defaultValue: 'Reset series' })}</label>
+                    <label className="block text-sm text-gray-500 mb-1">{t('invoiceResetPeriod')}</label>
                     {isAdmin ? (
                       <select
                         value={orderNumberForm.invoiceResetPeriod}
                         onChange={(e) => setOrderNumberForm((p) => ({ ...p, invoiceResetPeriod: e.target.value as InvoiceResetPeriod }))}
                         className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
                       >
-                        <option value="daily">{t('invoiceResetDaily', { defaultValue: 'Daily' })}</option>
-                        <option value="monthly">{t('invoiceResetMonthly', { defaultValue: 'Monthly' })}</option>
-                        <option value="financial_year">{t('invoiceResetFinancialYear', { defaultValue: 'Financial year' })}</option>
-                        <option value="never">{t('invoiceResetNever', { defaultValue: 'Never' })}</option>
+                        <option value="daily">{t('invoiceResetDaily')}</option>
+                        <option value="monthly">{t('invoiceResetMonthly')}</option>
+                        <option value="financial_year">{t('invoiceResetFinancialYear')}</option>
+                        <option value="never">{t('invoiceResetNever')}</option>
                       </select>
                     ) : (
                       <p className="font-medium text-gray-900">{orderNumberForm.invoiceResetPeriod.replace('_', ' ')}</p>
@@ -2509,7 +2509,7 @@ export default function SettingsPage() {
                   {orderNumberForm.invoiceResetPeriod === 'financial_year' && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('financialYearStartMonth', { defaultValue: 'FY start month' })}</label>
+                        <label className="block text-sm text-gray-500 mb-1">{t('financialYearStartMonth')}</label>
                         <input
                           type="number"
                           min={1}
@@ -2521,7 +2521,7 @@ export default function SettingsPage() {
                         />
                       </div>
                       <div>
-                        <label className="block text-sm text-gray-500 mb-1">{t('financialYearStartDay', { defaultValue: 'FY start day' })}</label>
+                        <label className="block text-sm text-gray-500 mb-1">{t('financialYearStartDay')}</label>
                         <input
                           type="number"
                           min={1}
@@ -2539,8 +2539,8 @@ export default function SettingsPage() {
                 <div className="mt-5 pt-5 border-t border-gray-100">
                   <div className="flex items-center justify-between py-2">
                     <div>
-                      <span className="text-sm text-gray-700">{t('invoiceNumberIncludePeriod', { defaultValue: 'Include period in invoice number' })}</span>
-                      <p className="text-xs text-gray-500">{t('invoiceNumberIncludePeriodHint', { defaultValue: 'Adds the date, month, or financial year after the prefix.' })}</p>
+                      <span className="text-sm text-gray-700">{t('invoiceNumberIncludePeriod')}</span>
+                      <p className="text-xs text-gray-500">{t('invoiceNumberIncludePeriodHint')}</p>
                     </div>
                     <Toggle
                       value={orderNumberForm.invoiceIncludePeriod}
@@ -2619,7 +2619,7 @@ export default function SettingsPage() {
                 </div>
                 <Toggle value={posSettings.showProductImages} onChange={(v) => {
                   posSettings.setShowProductImages(v);
-                  toast.success(v ? t('productImagesEnabled', { defaultValue: 'Product images enabled' }) : t('productImagesDisabled', { defaultValue: 'Product images disabled' }), { id: 'pos-local' });
+                  toast.success(v ? t('productImagesEnabled') : t('productImagesDisabled'), { id: 'pos-local' });
                 }} />
               </div>
             </div>
@@ -2638,18 +2638,18 @@ export default function SettingsPage() {
                   </div>
                   <Toggle value={posSettings.customerMandatory} onChange={(v) => {
                     posSettings.setCustomerMandatory(v);
-                    toast.success(v ? t('customerMandatoryEnabled', { defaultValue: 'Mandatory customer enabled' }) : t('customerMandatoryDisabled', { defaultValue: 'Mandatory customer disabled' }), { id: 'pos-local' });
+                    toast.success(v ? t('customerMandatoryEnabled') : t('customerMandatoryDisabled'), { id: 'pos-local' });
                   }} />
                 </div>
                 <p className="text-sm text-gray-500">{t('phoneDigitsDerived')}</p>
                 <div className="flex items-center justify-between gap-4 pt-2 border-t border-gray-100">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('enforcePhoneLength', { defaultValue: 'Enforce Phone Number Length' })}</p>
-                    <p className="text-sm text-gray-500">{t('enforcePhoneLengthHint', { defaultValue: 'Automatically jump to the Name field once a valid phone number for your country has been typed — e.g. 10 digits for India.' })}</p>
+                    <p className="font-medium text-gray-900">{t('enforcePhoneLength')}</p>
+                    <p className="text-sm text-gray-500">{t('enforcePhoneLengthHint')}</p>
                   </div>
                   <Toggle value={posSettings.enforcePhoneLength} onChange={(v) => {
                     posSettings.setEnforcePhoneLength(v);
-                    toast.success(v ? t('enforcePhoneLengthEnabled', { defaultValue: 'Phone length enforcement enabled' }) : t('enforcePhoneLengthDisabled', { defaultValue: 'Phone length enforcement disabled' }), { id: 'pos-local' });
+                    toast.success(v ? t('enforcePhoneLengthEnabled') : t('enforcePhoneLengthDisabled'), { id: 'pos-local' });
                   }} />
                 </div>
               </div>
@@ -2768,8 +2768,8 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900">{t('kdsEnabledToggle', { defaultValue: 'Kitchen Display System' })}</p>
-                  <p className="text-sm text-gray-500">{t('kdsEnabledToggleHint', { defaultValue: 'Show the Kitchen Display and allow devices to pair over your network. Turn this off if this business doesn’t use a KDS.' })}</p>
+                  <p className="font-medium text-gray-900">{t('kdsEnabledToggle')}</p>
+                  <p className="text-sm text-gray-500">{t('kdsEnabledToggleHint')}</p>
                 </div>
                 <Toggle value={kdsEnabledSetting} onChange={(v) => { if (!savingKdsEnabled) saveKdsEnabled(v); }} />
               </div>
@@ -2777,7 +2777,7 @@ export default function SettingsPage() {
                 <div className="mt-4 flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                   <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                   <p className="text-xs text-amber-800">
-                    {t('kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
+                    {t('kitchenWorkflowBothOffNote')}
                   </p>
                 </div>
               )}
@@ -2785,7 +2785,7 @@ export default function SettingsPage() {
 
             {!kdsEnabledSetting && (
               <p className="text-sm text-gray-400 italic">
-                {t('kdsPairingHiddenHint', { defaultValue: 'Pairing is hidden while the Kitchen Display System is disabled.' })}
+                {t('kdsPairingHiddenHint')}
               </p>
             )}
 
@@ -2883,7 +2883,7 @@ export default function SettingsPage() {
               {!kdsInfo && !kdsInfoLoading && (
                 <>
                   <p className="text-sm text-gray-500 mb-3">
-                    {t('kdsLoadHint', { defaultValue: 'Load connection details to pair kitchen display devices on your local network.' })}
+                    {t('kdsLoadHint')}
                   </p>
                   <button onClick={fetchKdsInfo}
                     className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
@@ -3035,9 +3035,9 @@ export default function SettingsPage() {
             <div className="bg-white rounded-xl border border-gray-100 p-6">
               <div className="flex items-center justify-between gap-4">
                 <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-900">{t('serverApp', { defaultValue: 'Server App' })}</p>
+                  <p className="font-medium text-gray-900">{t('serverApp')}</p>
                   <p className="text-sm text-gray-500">
-                    {t('serverAppEnabledHint', { defaultValue: 'Let service staff open a mobile/tablet-friendly order pad for tableside ordering.' })}
+                    {t('serverAppEnabledHint')}
                   </p>
                 </div>
                 <Toggle value={serverAppEnabledSetting} onChange={(v) => { if (!savingServerAppEnabled) saveServerAppEnabled(v); }} />
@@ -3046,7 +3046,7 @@ export default function SettingsPage() {
 
             {!serverAppEnabledSetting && (
               <p className="text-sm text-gray-400 italic">
-                {t('serverAppPairingHiddenHint', { defaultValue: 'Pairing is hidden while the Server App is disabled.' })}
+                {t('serverAppPairingHiddenHint')}
               </p>
             )}
 
@@ -3054,10 +3054,10 @@ export default function SettingsPage() {
               <div className="bg-white rounded-xl border border-gray-100 p-6">
                 <div className="flex items-center gap-2 mb-4">
                   <Smartphone size={20} className="text-gray-500" />
-                  <h2 className="font-semibold text-gray-900">{t('tablesideOrdering', { defaultValue: 'Tableside Ordering' })}</h2>
+                  <h2 className="font-semibold text-gray-900">{t('tablesideOrdering')}</h2>
                 </div>
                 <p className="text-sm text-gray-500 mb-5">
-                  {t('serverAppPairingHint', { defaultValue: 'Pair servers’ phones or tablets on your local network. They can punch table orders and see compact kitchen status icons.' })}
+                  {t('serverAppPairingHint')}
                 </p>
 
                 {serverAppInfoLoading && (
@@ -3101,7 +3101,7 @@ export default function SettingsPage() {
                       <div className="flex flex-col sm:flex-row gap-6 items-start">
                         <div className="shrink-0">
                           {serverAppInfo.qr_data_url ? (
-                            <img src={serverAppInfo.qr_data_url} alt={t('serverAppQrAlt', { defaultValue: 'Server App QR code' })} className="w-48 h-48 rounded-xl border border-gray-200" />
+                            <img src={serverAppInfo.qr_data_url} alt={t('serverAppQrAlt')} className="w-48 h-48 rounded-xl border border-gray-200" />
                           ) : (
                             <div className="w-48 h-48 rounded-xl border border-gray-200 flex items-center justify-center text-gray-400">
                               <QrCode size={48} />
@@ -3138,11 +3138,11 @@ export default function SettingsPage() {
                 {!serverAppInfo && !serverAppInfoLoading && (
                   <>
                     <p className="text-sm text-gray-500 mb-3">
-                      {t('serverAppLoadHint', { defaultValue: 'Load connection details to pair tableside ordering devices on your local network.' })}
+                      {t('serverAppLoadHint')}
                     </p>
                     <button onClick={fetchServerAppInfo}
                       className="px-4 py-2 text-sm bg-brand text-white rounded-lg hover:opacity-90 font-medium">
-                      {t('loadServerAppInfo', { defaultValue: 'Load Server App Info' })}
+                      {t('loadServerAppInfo')}
                     </button>
                   </>
                 )}
@@ -3719,8 +3719,8 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center justify-between gap-4 border-t border-gray-100 pt-4">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-gray-900">{t('kotPrintingEnabledToggle', { defaultValue: 'KOT Ticket Printing' })}</p>
-                    <p className="text-sm text-gray-500">{t('kotPrintingEnabledToggleHint', { defaultValue: 'Allow KOT tickets to print at all, automatically or manually. Turn this off if this business doesn’t use a KOT printer.' })}</p>
+                    <p className="font-medium text-gray-900">{t('kotPrintingEnabledToggle')}</p>
+                    <p className="text-sm text-gray-500">{t('kotPrintingEnabledToggleHint')}</p>
                   </div>
                   <Toggle value={kotPrintingEnabledSetting} onChange={(v) => { if (!savingKotPrintingEnabled) saveKotPrintingEnabled(v); }} />
                 </div>
@@ -3730,7 +3730,7 @@ export default function SettingsPage() {
                     <p className="text-sm text-gray-500">
                       {kotPrintingEnabledSetting
                         ? t('autoPrintKotHint')
-                        : t('autoPrintKotDisabledHint', { defaultValue: 'KOT printing is turned off above, so this has no effect.' })}
+                        : t('autoPrintKotDisabledHint')}
                     </p>
                   </div>
                   <Toggle
@@ -3742,7 +3742,7 @@ export default function SettingsPage() {
                   <div className="flex items-start gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg">
                     <AlertTriangle size={16} className="text-amber-600 shrink-0 mt-0.5" />
                     <p className="text-xs text-amber-800">
-                      {t('kitchenWorkflowBothOffNote', { defaultValue: 'Both the Kitchen Display and KOT printing are off. Kitchen items won’t display or print anywhere — orders will need to be marked served directly at the counter.' })}
+                      {t('kitchenWorkflowBothOffNote')}
                     </p>
                   </div>
                 )}
@@ -4805,10 +4805,10 @@ export default function SettingsPage() {
       {isAdmin && isDirty && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none animate-in slide-in-from-bottom-5 duration-300">
           <div className={`bg-gray-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 pointer-events-auto ${shakeSaveBar ? 'animate-shake' : ''}`}>
-            <span className="text-sm font-medium">{t('unsavedChanges', { defaultValue: 'You have unsaved changes' })}</span>
+            <span className="text-sm font-medium">{t('unsavedChanges')}</span>
             <div className="flex items-center gap-2">
-              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard', { defaultValue: 'Discard' })}</button>
-              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering) ? t('saving') : t('saveChanges', { defaultValue: 'Save Changes' })}</button>
+              <button onClick={resetAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-gray-800 hover:bg-gray-700 rounded-full transition-colors disabled:opacity-50 text-white">{t('discard')}</button>
+              <button onClick={saveAllSettings} disabled={savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering} className="px-4 py-1.5 text-sm bg-brand hover:opacity-90 rounded-full font-medium transition-colors disabled:opacity-50 text-white">{(savingBusiness || savingLoyalty || savingDiscount || savingCloud || savingOrderNumbering) ? t('saving') : t('saveChanges')}</button>
             </div>
           </div>
         </div>

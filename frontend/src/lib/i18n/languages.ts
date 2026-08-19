@@ -48,15 +48,20 @@ export const LANGUAGES = {
     locale: 'fa-IR',
     nativeName: 'فارسی',
     direction: 'rtl',
-    // Governed by #241 acceptance: technical readiness only until Persian is
-    // enabled for end users, so keep it hidden from the language selector.
-    selectable: false,
+    // Persian has complete message parity and RTL coverage, so it is ready
+    // for end-user selection (#241 / #372).
+    selectable: true,
     load: () => import('./messages/fa.json'),
   },
 } as const satisfies Record<string, LanguageConfig>;
 
 export type Language = keyof typeof LANGUAGES;
 export type Locale = (typeof LANGUAGES)[Language]['locale'];
+
+/** Returns whether an unknown value is a registered language key. */
+export function isLanguage(value: unknown): value is Language {
+  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(LANGUAGES, value);
+}
 
 /**
  * Reverse lookup: BCP-47 locale tag (as configured in {@link LANGUAGES})

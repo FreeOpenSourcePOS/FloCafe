@@ -10,6 +10,7 @@ const { isFloProcess, FLO_PATTERNS } = require('../kill-ports.js');
 
 const rootDir = path.resolve(__dirname, '..');
 const resetScript = path.join(rootDir, 'scripts/dev/nuclear-reset.sh');
+const i18nAddScript = path.join(rootDir, 'scripts/i18n-add.cjs');
 
 function mkdirp(target: string) {
   fs.mkdirSync(target, { recursive: true });
@@ -29,6 +30,26 @@ function runReset(platform: string, env: NodeJS.ProcessEnv) {
 }
 
 function runTest() {
+  console.log('Testing i18n:add scaffolding validation...');
+  const existingLanguage = spawnSync(process.execPath, [i18nAddScript, 'en'], {
+    encoding: 'utf8',
+    cwd: rootDir,
+  });
+  assert.strictEqual(existingLanguage.status, 1, 'i18n:add must refuse to overwrite an existing language file');
+  assert.match(
+    existingLanguage.stderr,
+    /Refusing to overwrite existing messages file/,
+    'i18n:add must explain why an existing language file was not overwritten',
+  );
+
+  const invalidLanguage = spawnSync(process.execPath, [i18nAddScript, 'EN'], {
+    encoding: 'utf8',
+    cwd: rootDir,
+  });
+  assert.strictEqual(invalidLanguage.status, 1, 'i18n:add must reject non-canonical language codes');
+  assert.match(invalidLanguage.stderr, /Invalid language code/);
+  console.log('✓ i18n:add validation and no-overwrite guard verified');
+
   console.log('Testing kill-ports.js process identity matching...');
 
   // Positive cases (should match as Flo processes)

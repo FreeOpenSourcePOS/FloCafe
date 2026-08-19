@@ -146,12 +146,9 @@ export default function SetupPage() {
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
   const q = countryQuery.trim().toLowerCase();
-  const languageOptions: Language[] =
-    browserLanguage === 'fa'
-      ? ['fa', ...SELECTABLE_LANGUAGES]
-      : SELECTABLE_LANGUAGES.includes(browserLanguage)
-        ? [browserLanguage, ...SELECTABLE_LANGUAGES.filter((l) => l !== browserLanguage)]
-        : SELECTABLE_LANGUAGES;
+  const languageOptions: Language[] = SELECTABLE_LANGUAGES.includes(browserLanguage)
+    ? [browserLanguage, ...SELECTABLE_LANGUAGES.filter((l) => l !== browserLanguage)]
+    : SELECTABLE_LANGUAGES;
   const filteredCountries = COUNTRIES.filter((c) => {
     if (!q) return true;
     return (
@@ -559,7 +556,7 @@ export default function SetupPage() {
                   </div>
                   {!passwordMeetsRequirements && (
                     <p className="text-xs font-medium text-red-600">
-                      Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, and one number.
+                      {t('errorPasswordRequirementsNotMet')}
                     </p>
                   )}
                   {passwordsEntered && (
@@ -594,7 +591,7 @@ export default function SetupPage() {
                       <a href="https://flopos.com/privacy" target="_blank" rel="noopener noreferrer" className="text-primary underline">
                         {t('privacy')}
                       </a>
-                      , and{' '}
+                      , {t('termsAnd')}{' '}
                       <a href="https://flopos.com/disclaimer" target="_blank" rel="noopener noreferrer" className="text-primary underline">
                         {t('disclaimer')}
                       </a>
@@ -612,15 +609,15 @@ export default function SetupPage() {
                   </div>
 
                   <div className="space-y-3 rounded-lg border border-border px-3 py-3 text-sm">
-                    <p className="font-medium text-foreground">Email communication</p>
-                    <p className="text-muted-foreground">We will send a welcome email immediately so you can verify this address. Essential account, service, and security notices are not promotional and cannot be disabled here.</p>
+                    <p className="font-medium text-foreground">{t('emailCommunicationTitle')}</p>
+                    <p className="text-muted-foreground">{t('emailCommunicationDescription')}</p>
                     <label className="flex items-start gap-2">
                       <input type="checkbox" checked={productUpdates} onChange={(e) => setProductUpdates(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
-                      <span>Receive product updates and release notes (optional)</span>
+                      <span>{t('productUpdatesOptional')}</span>
                     </label>
                     <label className="flex items-start gap-2">
                       <input type="checkbox" checked={marketing} onChange={(e) => setMarketing(e.target.checked)} className="mt-0.5 h-4 w-4 rounded border-gray-300" />
-                      <span>Receive marketing messages, offers, and surveys (optional)</span>
+                      <span>{t('marketingOptional')}</span>
                     </label>
                   </div>
 
@@ -712,8 +709,8 @@ export default function SetupPage() {
                     className="mt-0.5 h-4 w-4 rounded border-gray-300"
                   />
                   <span>
-                    <span className="font-medium text-foreground">Cloud Services are enabled automatically</span>
-                    <span className="block text-sm text-muted-foreground mt-1">FloCafe connects automatically so RevFlo pairing and support work without a manual approval step.</span>
+                    <span className="font-medium text-foreground">{t('cloudManagedAutomaticallyTitle')}</span>
+                    <span className="block text-sm text-muted-foreground mt-1">{t('cloudManagedAutomaticallyDescription')}</span>
                   </span>
                 </label>
 

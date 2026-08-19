@@ -69,6 +69,7 @@ npm test                 # Run standard test suite
 npm run test:url-allowlist
 npm run audit:db
 npm run i18n:check
+npm run i18n:add -- de   # scaffold an approved new language locally
 ```
 
 ## Verification

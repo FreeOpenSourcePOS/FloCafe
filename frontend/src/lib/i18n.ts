@@ -3,6 +3,7 @@ import {
   getLanguageDirection,
   getLanguageFromLocale,
   getLanguageLocale,
+  isLanguage,
   type Language,
   type LanguageDirection,
 } from './i18n/languages';
@@ -16,6 +17,7 @@ export {
   getLanguageDirection,
   getLanguageFromLocale,
   getLanguageLocale,
+  isLanguage,
   type Language,
   type LanguageDirection,
 };
@@ -97,16 +99,27 @@ export function t(key: string, lang: Language, params?: Record<string, string | 
 }
 
 export function getBrowserLanguage(): Language {
-  if (typeof navigator !== 'undefined' && navigator.language) {
+  if (typeof navigator === 'undefined') return 'en';
+
+  // Prefer the browser's ordered language list, while retaining
+  // navigator.language as a compatibility fallback for older/webview
+  // implementations that do not expose navigator.languages.
+  const candidates = [
+    ...(Array.isArray(navigator.languages) ? navigator.languages : []),
+    navigator.language,
+  ].filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+
+  for (const candidate of candidates) {
     try {
       // #376: parse the tag with Intl.Locale so only the BCP-47 language
       // subtag participates in matching (a raw string-prefix match could
-      // mis-handle tags like `falc` or region-first forms).
-      const parsed = new Intl.Locale(navigator.language);
+      // mis-handle tags like `falc` or region-first forms). Skip technical
+      // registry entries that are not user-selectable.
+      const parsed = new Intl.Locale(candidate);
       const lang = parsed.language?.toLowerCase();
-      if (lang && lang in LANGUAGES) return lang as Language;
+      if (isLanguage(lang) && LANGUAGES[lang].selectable) return lang;
     } catch {
-      // Malformed language tag — fall through to the packaged fallback.
+      // Malformed language tag — try the next browser preference.
     }
   }
   return 'en';
@@ -171,7 +184,7 @@ export async function fetchServerInfo(baseUrl = '', timeoutMs = 1500, infoPath =
       kds_default_view?: string | null;
     };
     return {
-      language: data.language === 'fa' ? 'fa' : data.language === 'es' ? 'es' : data.language === 'pt' ? 'pt' : data.language === 'en' ? 'en' : null,
+      language: isLanguage(data.language) ? data.language : null,
       country: data.country || null,
       kdsDefaultView:
         data.kds_default_view === 'kanban' ? 'kanban' : data.kds_default_view === 'tabs' ? 'tabs' : null,

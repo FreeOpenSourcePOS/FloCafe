@@ -183,12 +183,12 @@ async function run(): Promise<void> {
     }
   })();
 
-  function withNavigatorLanguage(lang: string | undefined, fn: () => void): void {
+  function withNavigatorLanguage(lang: string | undefined, fn: () => void, languages?: string[]): void {
     const originalDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
     const originalNav = (globalThis as any).navigator;
     try {
       Object.defineProperty(globalThis, 'navigator', {
-        value: lang !== undefined ? { language: lang } : undefined,
+        value: lang !== undefined ? { language: lang, languages: languages ?? [lang] } : undefined,
         configurable: true,
         writable: true,
       });
@@ -227,6 +227,12 @@ async function run(): Promise<void> {
   withNavigatorLanguage('fr-FR', () => {
     assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must fallback to "en" for unsupported locales');
   });
+  withNavigatorLanguage('en-US', () => {
+    assert(i18nModule.getBrowserLanguage() === 'es', 'getBrowserLanguage must honor the first supported navigator.languages preference');
+  }, ['es-ES', 'en-US']);
+  withNavigatorLanguage('zz-ZZ', () => {
+    assert(i18nModule.getBrowserLanguage() === 'pt', 'getBrowserLanguage must skip unsupported navigator.languages preferences');
+  }, ['zz-ZZ', 'pt-BR']);
   withNavigatorLanguage(undefined, () => {
     assert(i18nModule.getBrowserLanguage() === 'en', 'getBrowserLanguage must fallback to "en" when navigator is undefined');
   });

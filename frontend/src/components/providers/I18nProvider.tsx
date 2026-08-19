@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { IntlProvider } from 'use-intl';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
+import { LANGUAGES, getBrowserLanguage, isLanguage, type Language } from '@/lib/i18n';
 import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 
 /**
@@ -24,8 +24,8 @@ function resolveInitialLanguage(): Language {
       if (raw) {
         const parsed = JSON.parse(raw);
         const savedLang = parsed?.state?.language;
-        if (savedLang && savedLang in LANGUAGES) {
-          return savedLang as Language;
+        if (isLanguage(savedLang)) {
+          return savedLang;
         }
       }
     } catch {

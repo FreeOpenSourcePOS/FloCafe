@@ -2,13 +2,14 @@ import { create } from 'zustand';
 import api from '@/lib/api';
 import type { User, Tenant } from '@/lib/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import type { Language } from '@/lib/i18n';
-
-const SUPPORTED_LANGUAGES = new Set<Language>(['en', 'es', 'pt', 'fa']);
+// Keep this registry import relative: auth tests load the store without the
+// frontend alias resolver, and language validation does not need the legacy
+// i18n module or its React/store dependencies.
+import { isLanguage } from '../lib/i18n/languages';
 
 function syncTenantLanguage(t: Tenant | null | undefined) {
   const lang = t?.language;
-  if (lang && SUPPORTED_LANGUAGES.has(lang)) {
+  if (isLanguage(lang)) {
     usePosSettingsStore.getState().setLanguage(lang);
   }
 }

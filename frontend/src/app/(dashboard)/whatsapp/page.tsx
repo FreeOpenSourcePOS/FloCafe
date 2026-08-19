@@ -479,15 +479,11 @@ export default function WhatsAppPage() {
             <Card>
               <CardContent className="text-sm text-muted-foreground flex items-center justify-between gap-4 py-4">
                 <span>
-                  {tConnection('notEnabled', {
-                    defaultValue: 'WhatsApp is not enabled on this tenant.',
-                  })}
+                  {tConnection('notEnabled')}
                 </span>
                 <Button asChild variant="outline" size="sm">
                   <Link href="/settings?tab=whatsapp">
-                    {tConnection('enableInSettings', {
-                      defaultValue: 'Enable in Settings',
-                    })}
+                    {tConnection('enableInSettings')}
                   </Link>
                 </Button>
               </CardContent>

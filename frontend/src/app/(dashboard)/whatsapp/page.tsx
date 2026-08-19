@@ -91,7 +91,7 @@ function StatusStepper({ status, t }: { status: string; t: (k: string) => string
   const failed = status === 'failed';
   const current = failed ? -1 : stepIndex(status);
   return (
-    <div className="flex items-center gap-1" title={failed ? t('whatsapp.status.failed') : t(`whatsapp.status.${status}`)}>
+    <div className="flex items-center gap-1" title={failed ? t('whatsapp.status.failed') : t(`whatsapp.status.${status}` as 'whatsapp.status.queued' | 'whatsapp.status.typing' | 'whatsapp.status.sent' | 'whatsapp.status.delivered' | 'whatsapp.status.read')}>
       {STATUS_STEPS.map((step, i) => {
         const reached = !failed && i <= current;
         return (
@@ -679,7 +679,7 @@ export default function WhatsAppPage() {
                             <Ltr>{m.phone_e164}</Ltr>
                           </button>
                         </TableCell>
-                        <TableCell className="text-xs">{t(`whatsapp.kind.${m.kind}`)}</TableCell>
+                        <TableCell className="text-xs">{t(`whatsapp.kind.${m.kind}` as 'whatsapp.kind.bill_receipt' | 'whatsapp.kind.manual_reply' | 'whatsapp.kind.auto_followup')}</TableCell>
                         <TableCell>
                           <div className="flex flex-col gap-1">
                             <StatusStepper status={m.status} t={t} />

@@ -1,6 +1,6 @@
 {
   "addonGroups": {
-    "addCount": "{count} adicionales",
+    "addCount": "{count, plural, one {# adicional} other {# adicionales}}",
     "addGroup": "Agregar grupo",
     "addonAdded": "Adicional agregado",
     "addonDeleted": "Adicional eliminado",

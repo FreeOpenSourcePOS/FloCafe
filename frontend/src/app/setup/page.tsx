@@ -633,15 +633,15 @@ export default function SetupPage() {
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <span className="font-semibold">{t(`setup.${item.value}Label`)}</span>
+                              <span className="font-semibold">{t(`setup.${item.value}Label` as 'setup.emptyLabel' | 'setup.expressLabel' | 'setup.demoLabel')}</span>
                               {item.badge && (
                                 <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
                                   {t('setup.expressBadge')}
                                 </span>
                               )}
                             </div>
-                            <div className="text-sm text-muted-foreground mt-1">{t(`setup.${item.value}Desc`)}</div>
-                            <div className="text-xs text-muted-foreground mt-2">{t(`setup.${item.value}Details`)}</div>
+                            <div className="text-sm text-muted-foreground mt-1">{t(`setup.${item.value}Desc` as 'setup.emptyDesc' | 'setup.expressDesc' | 'setup.demoDesc')}</div>
+                            <div className="text-xs text-muted-foreground mt-2">{t(`setup.${item.value}Details` as 'setup.emptyDetails' | 'setup.expressDetails' | 'setup.demoDetails')}</div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary" />}
                         </div>
@@ -738,9 +738,9 @@ export default function SetupPage() {
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <div className="font-semibold text-lg">{t(`setup.${item.value}Label`)}</div>
-                            <div className="text-sm text-muted-foreground mt-1">{t(`setup.${item.value}Desc`)}</div>
-                            <div className="text-xs text-muted-foreground mt-3">{t(`setup.${item.value}Details`)}</div>
+                            <div className="font-semibold text-lg">{t(`setup.${item.value}Label` as 'setup.emptyLabel' | 'setup.expressLabel' | 'setup.demoLabel')}</div>
+                            <div className="text-sm text-muted-foreground mt-1">{t(`setup.${item.value}Desc` as 'setup.emptyDesc' | 'setup.expressDesc' | 'setup.demoDesc')}</div>
+                            <div className="text-xs text-muted-foreground mt-3">{t(`setup.${item.value}Details` as 'setup.emptyDetails' | 'setup.expressDetails' | 'setup.demoDetails')}</div>
                           </div>
                           {selected && <Check className="w-5 h-5 text-primary shrink-0" />}
                         </div>

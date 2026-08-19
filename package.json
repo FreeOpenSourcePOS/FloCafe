@@ -126,6 +126,7 @@
     "test:phone-search-integration": "node tests/run-electron-node-test.cjs tests/phone-search-integration.test.ts",
     "test:e2e-argentina-flow": "ts-node --transpile-only -P tests/tsconfig.json tests/e2e-argentina-flow.test.ts",
     "test:translations": "ts-node --transpile-only -P tests/tsconfig.json tests/translations.test.ts",
+    "i18n:check": "npm run test:translations",
     "test:rtl-foundation": "ts-node --transpile-only -P tests/tsconfig.json tests/rtl-foundation.test.ts",
     "test:rtl-setup-auth-settings": "ts-node --transpile-only -P tests/tsconfig.json tests/rtl-setup-auth-settings.test.ts",
     "test:rtl-dashboard-pos-common": "ts-node --transpile-only -P tests/tsconfig.json tests/rtl-dashboard-pos-common.test.ts",
@@ -164,6 +165,7 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
+    "@formatjs/icu-messageformat-parser": "^3.5.17",
     "@types/bcryptjs": "^3.0.0",
     "@types/better-sqlite3": "^7.6.11",
     "@types/bonjour": "^3.5.13",

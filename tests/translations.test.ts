@@ -537,6 +537,15 @@ async function run(): Promise<void> {
     console.log(`  ${lang}.json: ${keys.length} leaf keys`);
   }
 
+  if (dups.size) {
+    console.error(`\nDuplicate keys detected in translation files:`);
+    for (const [lang, dupList] of dups.entries()) {
+      for (const d of dupList) console.error(`  - [${lang}] duplicate key: "${d}"`);
+    }
+    assert(false, 'duplicate keys found in translation JSON');
+  }
+  console.log('  ✓ no duplicate keys within translation files');
+
   const enKeys = sets.get('en')!;
 
   // 2. Exact nested leaf key parity — en.json is canonical (zero missing,
@@ -718,6 +727,7 @@ function runNegativeTests(): void {
   );
   expectDetected('leaf: real newline', leafStringErrors({ 'a.b': 'line1\nline2' }, 'es'));
   expectDetected('leaf: unbalanced braces', leafStringErrors({ 'a.b': 'one { two' }, 'es'));
+  expectDetected('leaf: duplicate keys', findDuplicateKeys('{"a": {"b": 1, "b": 2}}'));
 
   // 4. ICU syntax.
   expectDetected('icu: unclosed bracket', icuSyntaxErrors({ 'a.b': 'Hello {name' }, 'es'));

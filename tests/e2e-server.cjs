@@ -20,6 +20,7 @@ const bcrypt = require('bcryptjs');
 const { initDatabase, getDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests, now } = require('../dist/db');
 const { createExitCodeAwareShutdown, waitForHttpShutdownWork, isShutdownTimeout } = require('../dist/shutdown');
 const { startServer, stopServer } = require('../dist/server');
+const { startServerApp, stopServerApp } = require('../dist/server-app');
 const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } = require('../dist/services/whatsapp');
 const { startStandaloneServers } = require('../dist/standalone-startup');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
@@ -144,6 +145,12 @@ let shutdownRequested = false;
 const requestStop = createExitCodeAwareShutdown(async () => {
   let cleanupFailed = false;
   let databaseBlocked = false;
+  try { await stopServerApp(); } catch (error) {
+    cleanupFailed = true;
+    databaseBlocked = true;
+    console.error('[E2E] Server App cleanup failed:', error);
+    if (isShutdownTimeout(error)) throw error;
+  }
   try { await stopServer(); } catch (error) {
     cleanupFailed = true;
     databaseBlocked = true;
@@ -206,13 +213,15 @@ async function stop(exitCode = 0) {
     prepare: () => {
       seedUser('e2e-owner', 'owner@flo.local', 'owner');
       seedUser('e2e-manager', 'manager@flo.local', 'manager');
+      seedUser('e2e-server', 'server@flo.local', 'server');
       seedPosFixture();
     },
     startServer,
     startKdsServer,
+    startServerApp,
     isShutdownRequested: () => shutdownRequested,
   });
-  console.log('[E2E] Main and KDS servers ready');
+  console.log('[E2E] Main, KDS, and Server App servers ready');
 })().catch((error) => {
   console.error(error);
   stop(1);

@@ -7,8 +7,9 @@
  * translator (`useTranslations()` leaf keys or legacy `t()` dotted keys) so
  * every language shows a localized label.
  *
- * Status, role, tenant, and payment maps in this module are exhaustively
- * typed against use-intl leaf keys (`AppConfig['Messages']`).
+ * All maps in this module are exhaustively typed against use-intl leaf keys
+ * (`AppConfig['Messages']`), including `ORDER_TYPE_LABEL_KEYS` re-exported
+ * from `order-types.ts`.
  *
  * Unknown values fall back to the raw string, so a new backend status never
  * crashes the UI — it just shows in English until a translation key is added.

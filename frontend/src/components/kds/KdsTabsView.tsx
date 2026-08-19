@@ -13,8 +13,8 @@ import {
   type KdsOrder,
   type KdsOrderItem,
 } from '@/hooks/useKdsConnection';
-import { ORDER_TYPE_LABEL_KEYS } from '@/lib/order-types';
-import { useI18n } from '@/hooks/useI18n';
+import { ORDER_TYPE_LABEL_KEYS, type OrderType } from '@/lib/order-types';
+import { useTranslations } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 
 export interface KdsTabsViewProps {
@@ -29,7 +29,8 @@ interface ModalItem {
 }
 
 export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewProps) {
-  const { t } = useI18n();
+  const t = useTranslations('kds');
+  const tOrders = useTranslations('orders');
   const [activeTab, setActiveTab] = useState<KitchenStatus>('pending');
   const [modalItem, setModalItem] = useState<ModalItem | null>(null);
   const resolvedModalItem = modalItem
@@ -90,10 +91,12 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
                     variant="outline"
                     className={ORDER_TYPE_BADGE_STYLES[order.type] || 'bg-gray-50 text-gray-700 border-gray-200'}
                   >
-                    {t(ORDER_TYPE_LABEL_KEYS[order.type] ?? order.type)}
+                    {ORDER_TYPE_LABEL_KEYS[order.type as OrderType]
+                      ? tOrders(ORDER_TYPE_LABEL_KEYS[order.type as OrderType])
+                      : order.type}
                   </Badge>
                   {order.table?.name && (
-                    <Badge variant="secondary">{t('kds.tableLabel', { name: order.table.name })}</Badge>
+                    <Badge variant="secondary">{t('tableLabel', { name: order.table.name })}</Badge>
                   )}
                 </div>
                 <div className="flex items-center gap-1 text-sm text-gray-400 font-mono shrink-0">
@@ -157,8 +160,8 @@ export function KdsTabsView({ orders, updating, updateItemStatus }: KdsTabsViewP
 
         {filteredOrders.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-            <p className="text-lg">{t('kds.emptyItems', { status: statusLabel(activeTab).toLowerCase() })}</p>
-            <p className="text-sm">{t('kds.emptyHint')}</p>
+            <p className="text-lg">{t('emptyItems', { status: statusLabel(activeTab).toLowerCase() })}</p>
+            <p className="text-sm">{t('emptyHint')}</p>
           </div>
         )}
       </div>

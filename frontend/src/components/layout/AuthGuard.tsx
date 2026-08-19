@@ -10,7 +10,7 @@ export function getLandingPage(): string {
   return '/pos';
 }
 
-const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/auth/login', '/auth/register', '/auth/recover', '/setup'];
+const PUBLIC_PATHS = ['/kds', '/kds-standalone', '/server-standalone', '/auth/login', '/auth/register', '/auth/recover', '/setup'];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const t = useTranslations('common');
@@ -21,7 +21,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
 
   const isPublicPath = PUBLIC_PATHS.some(p => pathname === p || pathname?.startsWith(p + '/'));
   const isSetupPath = pathname === '/setup' || pathname?.startsWith('/setup/');
-  const isKdsPath = pathname?.startsWith('/kds');
+  const isStandalonePath = pathname?.startsWith('/kds') || pathname?.startsWith('/server-standalone');
 
   useEffect(() => {
     loadFromStorage();
@@ -32,7 +32,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     if (loading) return; // wait for auth state to load
 
     // If we don't know setup status yet, fetch it
-    if (!isKdsPath && needsSetup === null) {
+    if (!isStandalonePath && needsSetup === null) {
       const controller = new AbortController();
       let active = true;
       api.get('/auth/setup/status', { signal: controller.signal })
@@ -64,9 +64,9 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     } else if (!currentTenant) {
       router.push('/auth/login?select_tenant=true');
     }
-  }, [loading, user, currentTenant, isPublicPath, isSetupPath, isKdsPath, needsSetup, router]);
+  }, [loading, user, currentTenant, isPublicPath, isSetupPath, isStandalonePath, needsSetup, router]);
 
-  if (isKdsPath || isSetupPath) {
+  if (isStandalonePath || isSetupPath) {
     return <>{children}</>;
   }
 

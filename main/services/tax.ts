@@ -121,19 +121,29 @@ export function resolveTaxIdFormat(country: string): TaxIdFormat | null {
     || null;
 }
 
+// No known VAT/GST/tax-registration identifier scheme runs anywhere close to
+// this; bounding the value before it reaches a pack-declared (not codebase-
+// authored) regex keeps a catastrophic-backtracking pattern's worst case
+// imperceptible even though the pattern itself is untrusted content
+// (CodeQL js/polynomial-redos; same bound-before-regex approach as
+// isValidEmail in routes/auth.ts).
+export const MAX_TAX_ID_LENGTH = 40;
+
 export function validateTaxRegistrationNumber(
   country: string,
   value: string,
 ): { valid: boolean; format: TaxIdFormat | null } {
   const format = resolveTaxIdFormat(country);
   if (!format || !value) return { valid: true, format };
+  const trimmed = value.trim();
+  if (trimmed.length > MAX_TAX_ID_LENGTH) return { valid: false, format };
   let regex: RegExp;
   try {
     regex = new RegExp(format.pattern, 'i');
   } catch {
     return { valid: true, format: null };
   }
-  return { valid: regex.test(value.trim()), format };
+  return { valid: regex.test(trimmed), format };
 }
 
 // A representative rate for display only (product tax-category picker,

@@ -39,7 +39,7 @@ const {
   closeDatabase,
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
-const { calculateConfiguredChargeTaxes, resolveTaxIdFormat } = require('../main/services/tax');
+const { calculateConfiguredChargeTaxes, resolveTaxIdFormat, validateTaxRegistrationNumber, MAX_TAX_ID_LENGTH } = require('../main/services/tax');
 const { getCountryByCode } = require('../main/countries');
 const {
   installCatalogEntry,
@@ -1009,6 +1009,16 @@ async function main() {
       JSON.stringify(resolveTaxIdFormat('IN')),
       JSON.stringify(overrideFormat),
       'an active pack declaring registrationNumberFormat takes priority over the static countries.ts fallback',
+    );
+    assertEqual(
+      validateTaxRegistrationNumber('IN', 'TESTPACKFMT-1234').valid,
+      true,
+      'validateTaxRegistrationNumber accepts a matching value under the length bound',
+    );
+    assertEqual(
+      validateTaxRegistrationNumber('IN', 'a'.repeat(MAX_TAX_ID_LENGTH + 1)).valid,
+      false,
+      'validateTaxRegistrationNumber rejects an over-length value before the pack-declared regex runs (ReDoS bound)',
     );
 
     revokeAllInPacks();

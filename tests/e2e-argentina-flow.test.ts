@@ -236,9 +236,14 @@ async function runArgentinaTranslations(db) {
 
 function extractJsonKeys(jsonSrc) {
   const keys = new Set();
-  const re = /"([a-z]+\.[a-zA-Z]+)"\s*:/g;
-  let m;
-  while ((m = re.exec(jsonSrc)) !== null) keys.add(m[1]);
+  const walk = (node, prefix) => {
+    for (const [k, v] of Object.entries(node)) {
+      const full = prefix ? `${prefix}.${k}` : k;
+      if (v && typeof v === 'object' && !Array.isArray(v)) walk(v, full);
+      else keys.add(full);
+    }
+  };
+  walk(JSON.parse(jsonSrc), '');
   return keys;
 }
 

@@ -1538,6 +1538,7 @@
     "tablesRequiredYes": "Sí – requiere mesa para comer en el local",
     "tablesideOrdering": "Pedidos en mesa",
     "taxConfiguration": "Config. fiscal",
+    "taxIdFormatWarning": "No coincide con el formato de ID fiscal esperado para {country}: {format}",
     "taxIdLabel": "ID FISCAL",
     "taxIdPlaceholder": "Ingresá el ID fiscal",
     "taxRegistered": "Registrado para impuestos",

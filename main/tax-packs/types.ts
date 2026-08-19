@@ -1,3 +1,5 @@
+import type { TaxIdFormat } from '../countries';
+
 export type TaxBehavior = 'country_default' | 'inclusive' | 'exclusive' | 'exempt';
 export type TaxLineKind = 'product' | 'packaging' | 'delivery' | 'service_charge' | 'addon';
 export type RoundingMethod = 'half_up' | 'half_even' | 'floor' | 'ceiling';
@@ -54,6 +56,11 @@ export interface CountryPack {
   taxPoint: 'order_created' | 'finalized_at';
   inclusivePricingDefault: boolean;
   registrationNumberLabel: string;
+  // Optional: lets a signed pack update/correct the merchant-facing
+  // registration-number validation pattern without a FloCafe app release.
+  // Additive on schemaVersion 1 — absent on older/local packs, which fall
+  // back to the static main/countries.ts format (see resolveTaxIdFormat).
+  registrationNumberFormat?: TaxIdFormat;
   categories: TaxCategory[];
   defaultCategories: Record<TaxLineKind, string>;
   unclassifiedCategoryId: string;

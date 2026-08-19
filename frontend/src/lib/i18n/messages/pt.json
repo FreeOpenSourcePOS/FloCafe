@@ -1538,6 +1538,7 @@
     "tablesRequiredYes": "Sim – exigir mesa para no local",
     "tablesideOrdering": "Pedidos na mesa",
     "taxConfiguration": "Config. tributária",
+    "taxIdFormatWarning": "Não corresponde ao formato de ID fiscal esperado para {country}: {format}",
     "taxIdLabel": "TAX ID",
     "taxIdPlaceholder": "Insira a identificação fiscal",
     "taxRegistered": "Inscrito como Contribuinte",

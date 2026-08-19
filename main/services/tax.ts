@@ -116,7 +116,9 @@ export function isTaxModuleActiveForCountry(country: string): boolean {
 
 export function resolveTaxIdFormat(country: string): TaxIdFormat | null {
   if (!isTaxModuleActiveForCountry(country)) return null;
-  return getCountryByCode(country)?.taxIdFormat || null;
+  return getActiveCountryPack(country).registrationNumberFormat
+    || getCountryByCode(country)?.taxIdFormat
+    || null;
 }
 
 export function validateTaxRegistrationNumber(

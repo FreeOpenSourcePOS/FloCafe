@@ -1538,6 +1538,7 @@
     "tablesRequiredYes": "بله – میز برای سرو داخل رستوران لازم است",
     "tablesideOrdering": "سفارش‌گیری پشت میز",
     "taxConfiguration": "پیکربندی مالیات",
+    "taxIdFormatWarning": "با قالب مورد انتظار شناسه مالیاتی {country} مطابقت ندارد: {format}",
     "taxIdLabel": "کد اقتصادی",
     "taxIdPlaceholder": "کد اقتصادی را وارد کنید",
     "taxRegistered": "ثبت‌شده برای مالیات",

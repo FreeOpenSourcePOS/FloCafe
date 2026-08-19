@@ -39,7 +39,8 @@ const {
   closeDatabase,
 } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes/index');
-const { calculateConfiguredChargeTaxes } = require('../main/services/tax');
+const { calculateConfiguredChargeTaxes, resolveTaxIdFormat } = require('../main/services/tax');
+const { getCountryByCode } = require('../main/countries');
 const {
   installCatalogEntry,
   reinstallPackVersion,
@@ -966,6 +967,64 @@ async function main() {
       0,
       'failed validation leaves no installed version behind',
     );
+
+    console.log('\n9. resolveTaxIdFormat() versions registration-number format with the active country pack (#393)');
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'taxes_enabled'").run();
+    // getActiveCountryPack() picks the most-recently-updated 'active' pack
+    // per country; only one IN pack may be active at a time for these
+    // assertions to be unambiguous. test-legacy-in-pack (installed in step 1
+    // and touched again in step 8b) is still active at this point — revoke
+    // every IN pack before each install below so exactly one is active.
+    const revokeAllInPacks = () => db.prepare("UPDATE country_packs SET status = 'revoked' WHERE country = 'IN'").run();
+
+    revokeAllInPacks();
+    const noFormatPack = {
+      ...dualRatePackData,
+      id: 'test-in-no-format-pack',
+      country: 'IN',
+      currency: 'INR',
+      publisher: 'FreeOpenSourcePOS',
+    };
+    installAndActivateTestTaxPack(db, noFormatPack);
+    const staticFormat = getCountryByCode('IN')?.taxIdFormat;
+    assert(!!staticFormat, 'static countries.ts declares a taxIdFormat for IN (test precondition)');
+    assertEqual(
+      JSON.stringify(resolveTaxIdFormat('IN')),
+      JSON.stringify(staticFormat),
+      'a v1 pack lacking registrationNumberFormat falls back to the static countries.ts format',
+    );
+
+    revokeAllInPacks();
+    const overrideFormat = { pattern: '^TESTPACKFMT-[0-9]{4}$', description: 'Test pack override format' };
+    const formatOverridePack = {
+      ...dualRatePackData,
+      id: 'test-in-format-override-pack',
+      country: 'IN',
+      currency: 'INR',
+      publisher: 'FreeOpenSourcePOS',
+      registrationNumberFormat: overrideFormat,
+    };
+    installAndActivateTestTaxPack(db, formatOverridePack);
+    assertEqual(
+      JSON.stringify(resolveTaxIdFormat('IN')),
+      JSON.stringify(overrideFormat),
+      'an active pack declaring registrationNumberFormat takes priority over the static countries.ts fallback',
+    );
+
+    revokeAllInPacks();
+    assertEqual(
+      resolveTaxIdFormat('TH'),
+      null,
+      'a country with neither a pack format nor a static format resolves to null (pass-through, never rejects)',
+    );
+
+    db.prepare("UPDATE settings SET value = 'false' WHERE key = 'taxes_enabled'").run();
+    assertEqual(
+      resolveTaxIdFormat('IN'),
+      null,
+      'resolveTaxIdFormat never enforces a pattern while the taxes_enabled toggle is off',
+    );
+    db.prepare("UPDATE settings SET value = 'true' WHERE key = 'taxes_enabled'").run();
   } finally {
     server.close();
     closeDatabase();

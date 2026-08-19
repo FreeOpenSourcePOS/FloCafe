@@ -1538,6 +1538,7 @@
     "tablesRequiredYes": "Yes – require table for dine-in",
     "tablesideOrdering": "Tableside Ordering",
     "taxConfiguration": "Tax Config",
+    "taxIdFormatWarning": "Doesn't match the expected {country} tax ID format: {format}",
     "taxIdLabel": "TAX ID",
     "taxIdPlaceholder": "Enter tax ID",
     "taxRegistered": "Tax Registered",

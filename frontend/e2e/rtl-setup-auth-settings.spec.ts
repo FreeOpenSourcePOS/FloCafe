@@ -248,7 +248,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
       (page.viewportSize()?.width ?? 0) / 2
     );
 
-    // Verify language dropdown in Settings offers en, es, pt, and fa
+    // Verify language dropdown in Settings offers selectable languages (en, es, pt)
     const languageSelect = page.locator('select').filter({ has: page.locator('option[value="en"]') }).first();
     await expect(languageSelect).toBeVisible();
     const options = await languageSelect.locator('option').all();
@@ -256,7 +256,7 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     expect(optionValues).toContain('en');
     expect(optionValues).toContain('es');
     expect(optionValues).toContain('pt');
-    expect(optionValues).toContain('fa');
+    expect(optionValues).not.toContain('fa');
 
     // Check document does not overflow horizontally in RTL
     const storeOverflow = await page.evaluate(() => ({

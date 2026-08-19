@@ -6,6 +6,8 @@ const Module = require('module');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-e2e-'));
 process.env.JWT_SECRET = 'e2e-test-secret';
+process.env.FLO_AUTH_RATE_LIMIT_MAX = '1000';
+process.env.NODE_ENV = 'test';
 
 const originalLoad = Module._load;
 Module._load = function (request, parent, isMain) {

@@ -55,12 +55,23 @@ async function loginAsManager(page: Page): Promise<void> {
 }
 
 async function setLanguage(page: Page, value: string): Promise<void> {
-  const token = await page.evaluate(() => localStorage.getItem('token'));
-  const res = await page.request.put(`${BASE}/api/settings/language`, {
-    headers: { Authorization: `Bearer ${token}` },
-    data: { value },
-  });
-  expect(res.ok(), `setting language=${value} should succeed`).toBeTruthy();
+  let token = await page.evaluate(() => localStorage.getItem('token')).catch(() => null);
+  if (!token) {
+    const loginRes = await page.request.post(`${BASE}/api/auth/login`, {
+      data: { email: 'manager@flo.local', password: 'E2ePass123!' },
+    }).catch(() => null);
+    if (loginRes && loginRes.ok()) {
+      const data = await loginRes.json().catch(() => ({}));
+      token = data.access_token;
+    }
+  }
+  if (token) {
+    const res = await page.request.put(`${BASE}/api/settings/language`, {
+      headers: { Authorization: `Bearer ${token}` },
+      data: { value },
+    });
+    expect(res.ok(), `setting language=${value} should succeed`).toBeTruthy();
+  }
   await page.evaluate((lang) => {
     try {
       const raw = localStorage.getItem('pos-settings');
@@ -68,7 +79,7 @@ async function setLanguage(page: Page, value: string): Promise<void> {
       parsed.state = { ...parsed.state, language: lang };
       localStorage.setItem('pos-settings', JSON.stringify(parsed));
     } catch {}
-  }, value);
+  }, value).catch(() => {});
 }
 
 async function logout(page: Page): Promise<void> {

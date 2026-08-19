@@ -69,8 +69,7 @@ const paymentStatusBadge: Record<'paid' | 'partial' | 'unpaid', { bg: string; te
   unpaid: { bg: 'bg-red-100', text: 'text-red-700', labelKey: 'unpaidBadge' },
 };
 
-// Typed leaf-key order-type map. The shared ORDER_TYPE_LABEL_KEYS stays dotted
-// for the not-yet-migrated KDS batch (5D), so this page uses a local map.
+// Typed leaf-key order-type map.
 const ORDER_TYPE_KEYS = {
   dine_in: 'dineIn',
   takeaway: 'takeaway',
@@ -128,8 +127,8 @@ export default function OrdersPage() {
   const tNav = useTranslations('nav');
   const tWhatsappSend = useTranslations('whatsapp.send');
 
-  // sendBillViaFlo (shared with PaymentModal) still takes a legacy dotted-key
-  // translator; bridge the typed `whatsapp.send` namespace to that contract.
+  // sendBillViaFlo (shared with PaymentModal) takes a translator callback;
+  // bridge the typed `whatsapp.send` namespace to that contract.
   const whatsappSendT = (key: string): string =>
     tWhatsappSend(
       key.replace(/^whatsapp\.send\./, '') as

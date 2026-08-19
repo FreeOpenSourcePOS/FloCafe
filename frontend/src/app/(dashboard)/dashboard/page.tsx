@@ -125,8 +125,7 @@ const orderStatusColor: Record<string, string> = {
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 type PosKey = keyof AppConfig['Messages']['pos'];
 
-// Built-in payment method label keys (PAYMENT_METHODS keeps dotted keys for the
-// not-yet-migrated files, so the dashboard maps them to typed `pos` leaf keys).
+// Built-in payment method label keys mapped to typed `pos` leaf keys.
 const BUILT_IN_PAYMENT_KEYS = {
   cash: 'methodCash',
   card: 'methodCard',

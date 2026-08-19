@@ -68,6 +68,7 @@ npm run build:frontend   # Build and export static Next.js frontend
 npm test                 # Run standard test suite
 npm run test:url-allowlist
 npm run audit:db
+npm run i18n:check
 ```
 
 ## Verification
@@ -78,6 +79,7 @@ Select checks that cover the changed subsystem:
 | --- | --- |
 | Documentation / templates | `git diff --check` and relative markdown link verification |
 | Frontend | `npm run lint` and `npm run build:frontend` |
+| Translations / i18n | `npm run i18n:check` |
 | Backend / API | `npm run lint`, `npm run build`, and focused test suites |
 | Database migrations | Fresh database test and upgrade-path migration test |
 | Tax / Auth / Security | Relevant focused test suite plus broader integration tests |

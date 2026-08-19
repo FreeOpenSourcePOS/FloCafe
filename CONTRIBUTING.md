@@ -129,6 +129,7 @@ AI coding assistants and tools are welcome. FloCafe itself utilizes AI-assisted 
 Before opening a pull request, run checks appropriate to the affected subsystem:
 
 - **Frontend changes:** Run `npm run lint` and `npm run build:frontend`.
+- **Translation / i18n changes:** Run `npm run i18n:check`.
 - **Backend changes:** Run `npm run lint`, `npm run build`, and relevant focused test suites (e.g., `npm run test:printer`, `npm run test:tax-engine`).
 - **Behavior changes:** Add or update focused tests demonstrating the fix or feature.
 - **Cross-cutting or release-sensitive work:** Run the full `npm test` suite.
@@ -154,7 +155,7 @@ FloCafe runs on real business data that must survive software upgrades.
 
 FloCafe currently provides translations for English (`en`), Spanish (`es`), Brazilian Portuguese (`pt`), and Persian (`fa`, including RTL support).
 
-- **Existing languages:** Narrowly scoped fixes and improvements to existing translation strings are always welcome.
+- **Existing languages:** Narrowly scoped fixes and improvements to existing translation strings are always welcome. Verify changes with `npm run i18n:check`.
 - **New languages:** Adding an entirely new language requires maintainer coordination through an issue first while the broader internationalization architecture (#372) is being modernized.
 
 ---

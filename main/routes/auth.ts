@@ -734,6 +734,14 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
   try {
     if (!requireLocalSetup(req, res)) return;
 
+    // Guard the disabled-setup state before any payload validation: once an
+    // owner exists this endpoint must always answer 403, and an invalid field
+    // (e.g. a bad timezone) must not downgrade that to a 400.
+    const db = getDatabase();
+    if (getUserCount(db) > 0) {
+      return res.status(403).json({ error: 'Setup already complete. This endpoint is disabled.' });
+    }
+
     const {
       name,
       password,
@@ -824,12 +832,6 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
       } catch {
         return res.status(400).json({ error: 'Cloud server URL must be a valid HTTPS URL' });
       }
-    }
-
-    const db = getDatabase();
-    const beforeCount = getUserCount(db);
-    if (beforeCount > 0) {
-      return res.status(403).json({ error: 'Setup already complete. This endpoint is disabled.' });
     }
 
     let userId = '';

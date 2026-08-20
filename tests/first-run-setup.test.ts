@@ -234,6 +234,25 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(count('users'), 1, 'setup cannot create a second owner');
     console.log('   ✓ setup endpoint is disabled after the first user exists');
 
+    // A disabled setup endpoint must stay 403 even for a malformed payload —
+    // an invalid timezone must not downgrade the completed-setup guard to 400
+    // (regression for the Greptile review on #432).
+    const disabledWithBadTimezone = await request(baseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Third Owner',
+        email: 'third@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        terms_accepted: true,
+        timezone: 'Not/A_Real_Zone',
+      }),
+    });
+    assert.equal(disabledWithBadTimezone.status, 403, 'disabled setup keeps 403 even with an invalid timezone');
+    assert.equal(disabledWithBadTimezone.data.error, 'Setup already complete. This endpoint is disabled.');
+    assert.equal(count('users'), 1, 'disabled setup still cannot create a third owner');
+    console.log('   ✓ disabled setup returns 403 before timezone validation');
+
     // Cloud v2 coordination is automatic for new installs.
     // '1', not 'true' — cloud-sync.ts reads this key with a strict '1' check
     // everywhere, matching FloAdmin's own `stores` table.

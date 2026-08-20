@@ -15,11 +15,14 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'node:os';
 import * as path from 'path';
 import { spawnSync } from 'node:child_process';
 
 const ROOT = path.join(__dirname, '..');
-const EVIDENCE_DIR = '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M08VG78CNJN3CHGY6B42Q05W';
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR ||
+  path.join(os.tmpdir(), 'no-mistakes-evidence', '01M08VG78CNJN3CHGY6B42Q05W');
 
 const Module = require('module');
 const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));

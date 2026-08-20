@@ -957,9 +957,12 @@ Print the bill identified by `billId` or the bill associated with `orderId`.
 {
   "billId": 123,
   "useUnicode": false,
-  "isReprint": false
+  "isReprint": false,
+  "preview": false
 }
 ```
+
+Pass `preview: true` to generate receipt preview text, base64 ESC/POS payload, and column metrics without dispatching to a physical printer. If no hardware printer is configured, preview mode falls back to default 80 mm formatting.
 
 ### POST `/api/printers/print-kot`
 

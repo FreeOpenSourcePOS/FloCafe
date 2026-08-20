@@ -11,6 +11,8 @@ assertEqual(isAllowedLocalWindowUrl(`http://localhost:${port}/kds`, port, localI
 assertEqual(isAllowedLocalWindowUrl(`http://127.0.0.1:${port}/kds`, port, localIp), true, 'IPv4 loopback origin allowed');
 assertEqual(isAllowedLocalWindowUrl(`http://[::1]:${port}/kds`, port, localIp), true, 'IPv6 loopback origin allowed');
 assertEqual(isAllowedLocalWindowUrl(`http://${localIp}:${port}/kds`, port, localIp), true, 'configured local IP origin allowed');
+assertEqual(isAllowedLocalWindowUrl('about:blank', port, localIp), true, 'about:blank popup window allowed for printing');
+assertEqual(isAllowedLocalWindowUrl('', port, localIp), true, 'empty popup window allowed for printing');
 
 assertEqual(isAllowedLocalWindowUrl('http://attacker.com:3001/kds', port, localIp), false, 'attacker origin denied');
 assertEqual(isAllowedLocalWindowUrl('http://localhost:3001.attacker.com/kds', port, localIp), false, 'lookalike host denied');

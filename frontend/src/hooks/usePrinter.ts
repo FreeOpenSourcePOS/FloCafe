@@ -14,6 +14,7 @@ import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-e
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
 import type { PrintWarning } from '@/lib/printer/warnings';
 import api from '@/lib/api';
+import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order } from '@/lib/types';
 
 export type { PrintWarning } from '@/lib/printer/warnings';
@@ -46,7 +47,7 @@ interface PrinterState {
   paperWidth: PaperWidth;
   printMethod: PrintMode;
   hardwarePrinter: HardwarePrinter | null;
-
+  refreshHardwarePrinter: () => Promise<void>;
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   printBill: (bill: Bill, tenant: ReceiptTenant, opts?: ReceiptOptions) => Promise<PrintWarning[]>;
@@ -58,7 +59,6 @@ interface PrinterState {
   clearError: () => void;
   downloadLastReceipt: () => void;
   copyLastReceiptHex: () => Promise<void>;
-  refreshHardwarePrinter: () => Promise<void>;
 }
 
 export const usePrinterStore = create<PrinterState>()(
@@ -77,7 +77,10 @@ export const usePrinterStore = create<PrinterState>()(
         try {
           const res = await api.get('/printers');
           const list: HardwarePrinter[] = res.data.printers || [];
-          const defaultPrinter = list.find((p) => p.is_default === 1 && p.connection_type !== 'webusb') || null;
+          const defaultPrinter =
+            list.find((p) => p.is_default === 1 && p.connection_type !== 'webusb') ||
+            list.find((p) => p.connection_type !== 'webusb') ||
+            null;
           set({ hardwarePrinter: defaultPrinter });
         } catch {
           set({ hardwarePrinter: null });
@@ -112,19 +115,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const isReprint = opts?.isReprint ?? false;
 
-          const hw = get().hardwarePrinter;
-          if (hw && get().printMethod === 'escpos') {
-            try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, isReprint });
-              return response.data.warnings || [];
-            } catch (err: unknown) {
-              const e = err as { response?: { data?: { error?: string } }; message?: string };
-              throw new Error(e.response?.data?.error || e.message || 'Print failed');
-            }
-          }
-
-          if (get().printMethod === 'browser') {
-            // Browser / A4 print path
+          const executeBrowserPrint = async () => {
             const { printWebBill } = await import('@/lib/printer/web-print');
             await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
@@ -143,7 +134,30 @@ export const usePrinterStore = create<PrinterState>()(
               isReprint,
               trimDecimals: printerTrimDecimals,
             });
-            return [];
+            return [] as PrintWarning[];
+          };
+
+          const hw = get().hardwarePrinter;
+          if (hw && get().printMethod === 'escpos') {
+            try {
+              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, isReprint });
+              return response.data.warnings || [];
+            } catch (err: unknown) {
+              const e = err as { response?: { data?: { error?: string } }; message?: string };
+              const errorMsg = e.response?.data?.error || e.message || 'Print failed';
+              if (errorMsg.includes('No default printer configured')) {
+                toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
+                return await executeBrowserPrint();
+              }
+              throw new Error(errorMsg);
+            }
+          }
+
+          if (get().printMethod === 'browser' || (!hw && !printerService.isConnected && get().printMethod === 'escpos')) {
+            if (!hw && !printerService.isConnected && get().printMethod === 'escpos') {
+              toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
+            }
+            return await executeBrowserPrint();
           }
 
           // ESC/POS thermal path

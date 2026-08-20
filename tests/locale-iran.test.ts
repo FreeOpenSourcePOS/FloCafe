@@ -201,6 +201,21 @@ test('formatDateForTenant: IR Persian calendar with Latin digits', () => {
   assert.ok(out.includes('مرداد'), `expected Mordad month, got: ${out}`);
 });
 
+test('formatDateForTenant: locale defaults remain tenant-authoritative under a UI locale override', () => {
+  const date = new Date(Date.UTC(2026, 7, 17, 12, 30, 0));
+  const out = formatDateForTenant(
+    date,
+    'IR',
+    'Asia/Tehran',
+    { calendar: 'locale', digits: 'locale' },
+    { year: 'numeric', month: 'short', day: 'numeric' },
+    'en-US',
+  );
+  assert.ok(out.includes('مرداد') || out.includes('Mordad'), `expected tenant Persian calendar month, got: ${out}`);
+  assert.ok(!out.includes('2026'), `expected tenant Persian calendar year, got: ${out}`);
+  assert.match(out, /[۰-۹]/, `expected tenant Persian digits, got: ${out}`);
+});
+
 test('formatDateForTenant: non-Iran tenants stay Gregorian', () => {
   const date = new Date(Date.UTC(2026, 7, 17, 12, 30, 0));
   const out = formatDateForTenant(date, 'IN', 'Asia/Kolkata', {}, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -282,4 +297,3 @@ test('getCurrencyUnitAdapter: non-IR currencies default to 1:1 scale', () => {
   assert.equal(inrAdapter.toDisplay(500), 500);
   assert.equal(inrAdapter.toStored(500), 500);
 });
-

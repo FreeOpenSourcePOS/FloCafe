@@ -80,9 +80,21 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const config = LANGUAGES[active] ?? LANGUAGES.en;
   const messages = getCachedMessages(active) ?? getCachedMessages('en') ?? {};
+  const defaultTimeZone =
+    typeof Intl !== 'undefined'
+      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+      : 'UTC';
 
   return (
-    <IntlProvider locale={config.locale} messages={messages}>
+    <IntlProvider
+      locale={config.locale}
+      messages={messages}
+      timeZone={defaultTimeZone}
+      onError={(error) => {
+        if (error.code === 'ENVIRONMENT_FALLBACK') return;
+        console.error(error);
+      }}
+    >
       {children}
     </IntlProvider>
   );

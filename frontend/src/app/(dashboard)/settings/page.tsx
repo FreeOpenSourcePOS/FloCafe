@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
@@ -250,6 +250,7 @@ function KdsDefaultViewCard() {
 
 
 export default function SettingsPage() {
+  const router = useRouter();
   const { currentTenant, user, updateCurrentTenant } = useAuthStore();
   const posSettings = usePosSettingsStore();
   const whatsappEnabled = posSettings.whatsappEnabled;
@@ -313,6 +314,18 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveTab(requestedTab);
   }, [requestedTab]);
+
+  const handleSettingsTabChange = (value: string) => {
+    setActiveTab(value);
+    const nextParams = new URLSearchParams(searchParams?.toString());
+    if (value === 'store') {
+      nextParams.delete('tab');
+    } else {
+      nextParams.set('tab', value);
+    }
+    const query = nextParams.toString();
+    router.replace(query ? `/settings?${query}` : '/settings');
+  };
 
   // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'backup-custom'/
   // 'import'/'restore' open a verify prompt and, on success, run the pending action.
@@ -2138,7 +2151,7 @@ export default function SettingsPage() {
 
   return (
     <div className="md:h-full md:min-h-0">
-      <Tabs orientation="vertical" value={activeTab} onValueChange={setActiveTab} className="flex flex-col md:flex-row gap-6 items-start md:h-full md:min-h-0">
+      <Tabs orientation="vertical" value={activeTab} onValueChange={handleSettingsTabChange} className="flex flex-col md:flex-row gap-6 items-start md:h-full md:min-h-0">
 
         {/* Settings sidebar nav */}
         <div className="w-full md:w-40 md:min-w-[10rem] shrink-0 md:h-full md:min-h-0 md:flex md:flex-col">
@@ -2153,47 +2166,47 @@ export default function SettingsPage() {
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupGeneral')}</p>
             </div>
-            <SettingsNavItem label={t('storeDetails')} value="store" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('tabPrinters')} value="receipts-printers" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('paymentMethods')} value="payments" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('storeDetails')} value="store" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('tabPrinters')} value="receipts-printers" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('paymentMethods')} value="payments" active={activeTab} onClick={handleSettingsTabChange} />
             {canViewTaxConfiguration && (
-              <SettingsNavItem label={t('taxConfiguration')} value="tax" active={activeTab} onClick={setActiveTab} />
+              <SettingsNavItem label={t('taxConfiguration')} value="tax" active={activeTab} onClick={handleSettingsTabChange} />
             )}
 
             {/* Operations group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupOperations')}</p>
             </div>
-            <SettingsNavItem label={t('posWorkflow')} value="pos" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('tablesideOrdering')} value="server-app" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('posWorkflow')} value="pos" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('tabKds')} value="kds" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('tablesideOrdering')} value="server-app" active={activeTab} onClick={handleSettingsTabChange} />
             {/* WhatsApp opt-in lives under Operations because the receive-bill
                 workflow is what the cashier touches every time a customer pays. */}
-            <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabWhatsapp')} value="whatsapp" active={activeTab} onClick={handleSettingsTabChange} />
 
             {/* Customers group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupCustomers')}</p>
             </div>
-            <SettingsNavItem label={t('loyalty')} value="loyalty" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('discounts')} value="discounts" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('loyalty')} value="loyalty" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('discounts')} value="discounts" active={activeTab} onClick={handleSettingsTabChange} />
 
             {/* Integrations group (formerly "Data") */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupData')}</p>
             </div>
-            <SettingsNavItem label={t('tabMobileAccess')} value="mobile-access" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('tabOrderflow')} value="orderflow" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('tabMobileAccess')} value="mobile-access" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('tabBackupData')} value="data" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('tabOrderflow')} value="orderflow" active={activeTab} onClick={handleSettingsTabChange} />
 
             {/* Account group */}
             <div className="hidden md:block px-3 pt-4 pb-2 mt-3 mb-1 border-b border-gray-100">
               <p className="text-[11px] font-bold uppercase tracking-widest text-gray-400">{t('navGroupAccount')}</p>
             </div>
-            <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={setActiveTab} attention={cloudDeletionNeedsAction || (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))} />
-            <SettingsNavItem label={t('privacy')} value="privacy" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('tabUpdates')} value="updates" active={activeTab} onClick={setActiveTab} />
-            <SettingsNavItem label={t('tabAbout')} value="about" active={activeTab} onClick={setActiveTab} />
+            <SettingsNavItem label={t('account')} value="account" active={activeTab} onClick={handleSettingsTabChange} attention={cloudDeletionNeedsAction || (cloudAccountAvailable && Boolean(cloudAccount?.email && !cloudAccount?.verified))} />
+            <SettingsNavItem label={t('privacy')} value="privacy" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('tabUpdates')} value="updates" active={activeTab} onClick={handleSettingsTabChange} />
+            <SettingsNavItem label={t('tabAbout')} value="about" active={activeTab} onClick={handleSettingsTabChange} />
 
           </nav>
         </div>

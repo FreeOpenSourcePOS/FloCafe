@@ -41,11 +41,20 @@ function resolveInitialLanguage(): Language {
   return 'en';
 }
 
+/**
+ * Error handler passed to `IntlProvider` to suppress benign `ENVIRONMENT_FALLBACK`
+ * warnings in SSR while forwarding all genuine translation and formatting errors
+ * to `console.error`.
+ */
 export function handleI18nError(error: { code?: string; message?: string } | Error) {
   if ('code' in error && error.code === 'ENVIRONMENT_FALLBACK') return;
   console.error(error);
 }
 
+/**
+ * Resolves the default runtime timezone for `IntlProvider` using the host's
+ * Intl API when available, falling back to `'UTC'`.
+ */
 export function getDefaultTimeZone(): string {
   return typeof Intl !== 'undefined'
     ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'

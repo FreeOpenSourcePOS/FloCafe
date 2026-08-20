@@ -23,7 +23,7 @@ import {
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 import { createTranslator } from 'use-intl/core';
-import { getCachedMessages } from '@/lib/i18n/loader';
+import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
 import { usePosSettingsStore } from '@/store/pos-settings';
 import { parseDbTimestamp } from '@/lib/utils';
@@ -151,13 +151,22 @@ function resolvePaymentMethodLabel(method: string, lang: Language): string {
 }
 
 /**
+ * Ensure the requested receipt language messages are loaded in memory (#377).
+ */
+export async function ensureReceiptMessagesLoaded(lang: Language): Promise<void> {
+  await loadLocaleMessages(lang).catch(() => {});
+}
+
+/**
  * Generate HTML for A4/A5 printing and open print dialog.
  */
-export function printWebBill(
+export async function printWebBill(
   bill: Bill,
   tenant: ReceiptTenant,
   opts: WebPrintOptions = {}
-): void {
+): Promise<void> {
+  const lang = resolveLanguage(opts.language);
+  await ensureReceiptMessagesLoaded(lang);
   const html = generateBillHtml(bill, tenant, opts);
 
   // Create a new window with the bill HTML
@@ -206,6 +215,7 @@ export function generateBillHtml(
 
   const lang = resolveLanguage(opts.language);
   const dir = getLanguageDirection(lang);
+  const localeTag = LANGUAGES[lang]?.locale ?? lang;
   const L = receiptLabels(lang);
   const displayName = showBusinessName ? (businessName ?? tenant.business_name) : '';
   const taxIdLabel = resolveTaxIdLabel(tenant.country, lang);
@@ -225,7 +235,7 @@ export function generateBillHtml(
   );
 
   return `<!DOCTYPE html>
-<html lang="${lang}" dir="${dir}">
+<html lang="${localeTag}" dir="${dir}">
 <head>
   <meta charset="utf-8">
   <title>${L.billNumber} ${escapeHtml(bill.bill_number)}</title>

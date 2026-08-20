@@ -510,7 +510,6 @@ function collectUnsafeDynamicKeys(dir: string = FRONTEND_SRC): Array<{ file: str
 function legacyImportErrors(dir: string = FRONTEND_SRC): string[] {
   const errors: string[] = [];
   const allowed = new Set([
-    path.normalize(path.join(dir, 'hooks/useI18n.ts')),
     path.normalize(path.join(dir, 'lib/i18n.ts')),
   ]);
   for (const file of walkTypeScriptFiles(dir)) {
@@ -518,6 +517,9 @@ function legacyImportErrors(dir: string = FRONTEND_SRC): string[] {
     const source = fs.readFileSync(file, 'utf8');
     if (/\buseI18n\b/.test(source)) {
       errors.push(`${path.relative(ROOT, file)} uses the legacy useI18n bridge`);
+    }
+    if (/\bformatIcuPlural\b/.test(source)) {
+      errors.push(`${path.relative(ROOT, file)} uses the legacy formatIcuPlural helper`);
     }
     if (/import\s*\{[\s\S]*?\b(?:t|translate)\b[\s\S]*?\}\s*from\s*['"]@\/lib\/i18n['"]/.test(source)) {
       errors.push(`${path.relative(ROOT, file)} imports the legacy t() bridge`);
@@ -846,6 +848,7 @@ function runNegativeTests(): void {
         "const unsafe = t(`prefix.${value}`);",
         "const safe = t(`prefix.${value}` as 'prefix.a' | 'prefix.b');",
         "import { useI18n } from '@/hooks/useI18n';",
+        "const legacyPlural = formatIcuPlural('items', 5);",
       ].join('\n'),
     );
 

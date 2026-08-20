@@ -192,15 +192,21 @@ function buildHtmlDocument(title: string, bodyContent: string, lang: Lang): stri
 </html>`;
 }
 
-async function renderScreenshotWithPlaywright(html: string, outputPath: string, width = 640, height = 480): Promise<void> {
-  const { chromium } = frontendRequire('playwright');
-  const browser = await chromium.launch({ headless: true });
+async function renderScreenshotWithPlaywright(html: string, outputPath: string, width = 640, height = 480): Promise<boolean> {
+  let browser: any;
   try {
+    const { chromium } = frontendRequire('playwright');
+    browser = await chromium.launch({ headless: true });
     const page = await browser.newPage({ viewport: { width, height } });
     await page.setContent(html, { waitUntil: 'load' });
     await page.screenshot({ path: outputPath, fullPage: true });
+    return true;
+  } catch (err: any) {
+    if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
+    console.warn(`  ! Screenshot generation skipped: ${err?.message || err}`);
+    return false;
   } finally {
-    await browser.close();
+    await browser?.close().catch(() => undefined);
   }
 }
 
@@ -296,9 +302,9 @@ async function run(): Promise<void> {
     const htmlPath = path.join(EVIDENCE_DIR, `printer-status-dropdown-${lang}.html`);
     const pngPath = path.join(EVIDENCE_DIR, `printer-status-dropdown-${lang}.png`);
     fs.writeFileSync(htmlPath, docHtml, 'utf8');
-    await renderScreenshotWithPlaywright(docHtml, pngPath);
-
-    generatedArtifacts.push({ kind: 'screenshot', label: `PrinterStatus error dropdown (${lang.toUpperCase()})`, path: pngPath });
+    if (await renderScreenshotWithPlaywright(docHtml, pngPath)) {
+      generatedArtifacts.push({ kind: 'screenshot', label: `PrinterStatus error dropdown (${lang.toUpperCase()})`, path: pngPath });
+    }
   }
 
   // =========================================================================
@@ -373,9 +379,9 @@ async function run(): Promise<void> {
     const cardHtmlPath = path.join(EVIDENCE_DIR, `pos-printer-error-card-${lang}.html`);
     const cardPngPath = path.join(EVIDENCE_DIR, `pos-printer-error-card-${lang}.png`);
     fs.writeFileSync(cardHtmlPath, cardDocHtml, 'utf8');
-    await renderScreenshotWithPlaywright(cardDocHtml, cardPngPath);
-
-    generatedArtifacts.push({ kind: 'screenshot', label: `POS printer support-error card (${lang.toUpperCase()})`, path: cardPngPath });
+    if (await renderScreenshotWithPlaywright(cardDocHtml, cardPngPath)) {
+      generatedArtifacts.push({ kind: 'screenshot', label: `POS printer support-error card (${lang.toUpperCase()})`, path: cardPngPath });
+    }
   }
 
   // =========================================================================
@@ -412,9 +418,9 @@ async function run(): Promise<void> {
     const toastHtmlPath = path.join(EVIDENCE_DIR, `import-success-toast-${lang}.html`);
     const toastPngPath = path.join(EVIDENCE_DIR, `import-success-toast-${lang}.png`);
     fs.writeFileSync(toastHtmlPath, toastDocHtml, 'utf8');
-    await renderScreenshotWithPlaywright(toastDocHtml, toastPngPath, 500, 200);
-
-    generatedArtifacts.push({ kind: 'screenshot', label: `Settings import success toast (${lang.toUpperCase()})`, path: toastPngPath });
+    if (await renderScreenshotWithPlaywright(toastDocHtml, toastPngPath, 500, 200)) {
+      generatedArtifacts.push({ kind: 'screenshot', label: `Settings import success toast (${lang.toUpperCase()})`, path: toastPngPath });
+    }
   }
 
   // =========================================================================
@@ -446,9 +452,9 @@ async function run(): Promise<void> {
     const toastHtmlPath = path.join(EVIDENCE_DIR, `support-queued-toast-${lang}.html`);
     const toastPngPath = path.join(EVIDENCE_DIR, `support-queued-toast-${lang}.png`);
     fs.writeFileSync(toastHtmlPath, toastDocHtml, 'utf8');
-    await renderScreenshotWithPlaywright(toastDocHtml, toastPngPath, 500, 200);
-
-    generatedArtifacts.push({ kind: 'screenshot', label: `Support queued success toast (${lang.toUpperCase()})`, path: toastPngPath });
+    if (await renderScreenshotWithPlaywright(toastDocHtml, toastPngPath, 500, 200)) {
+      generatedArtifacts.push({ kind: 'screenshot', label: `Support queued success toast (${lang.toUpperCase()})`, path: toastPngPath });
+    }
   }
 
   console.log(`\n✅ All ${generatedArtifacts.length} visual evidence artifacts generated in ${EVIDENCE_DIR}`);

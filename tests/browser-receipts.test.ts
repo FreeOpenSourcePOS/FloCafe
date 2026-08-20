@@ -562,6 +562,7 @@ async function run() {
 
     await browser.close();
   } catch (err: any) {
+    if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`   Could not capture Playwright screenshot: ${err?.message || err}`);
   }
 

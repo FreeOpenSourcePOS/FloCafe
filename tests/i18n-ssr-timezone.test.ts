@@ -64,6 +64,7 @@ async function renderScreenshotWithPlaywright(html: string, outputPath: string, 
       await browser.close();
     }
   } catch (err: any) {
+    if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     // Non-fatal if headless browser cannot be spawned in restricted CI/sandbox
     console.log(`  ℹ Screenshot generation skipped (${err?.message?.split('\n')[0] || 'browser unavailable'})`);
   }

@@ -2015,14 +2015,17 @@ export default function SettingsPage() {
       posSettings.setTablesRequired(form.tablesRequired);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
       if (!silent) toast.success(t('storeSaved'));
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const responseData = (err as { response?: { data?: unknown } }).response?.data;
+      const serverError = responseData && typeof responseData === 'object'
+        ? responseData as { error?: string; tax_id_format?: { pattern: string; description: string } }
+        : null;
       if (!silent) {
-        const serverError = err?.response?.data;
         const message = serverError?.error || t('saveFailed');
         toast.error(message);
-        if (serverError?.tax_id_format) {
-          setTaxIdFormat(serverError.tax_id_format);
-        }
+      }
+      if (serverError?.tax_id_format) {
+        setTaxIdFormat(serverError.tax_id_format);
       }
       throw err;
     } finally {

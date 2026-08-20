@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 const Module = require('module');
@@ -239,7 +240,9 @@ async function run(): Promise<void> {
   log('\n✅ All KDS window hardening and IPC security checks passed successfully.');
 
   // Write evidence to output directory if present
-  const evidenceDir = '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M03SG09151P3VMMYNWFRVWA2';
+  const evidenceDir =
+    process.env.EVIDENCE_DIR ||
+    path.join(os.tmpdir(), 'no-mistakes-evidence', '01M03SG09151P3VMMYNWFRVWA2');
   try {
     fs.mkdirSync(evidenceDir, { recursive: true });
     const evidencePath = path.join(evidenceDir, 'kds-window-hardening-verification.txt');
@@ -258,4 +261,3 @@ run()
   .finally(() => {
     Module._load = originalLoad;
   });
-

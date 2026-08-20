@@ -383,23 +383,29 @@ async function captureEvidenceArtifacts() {
     console.log(`  ✓ Written HTML: ${htmlPath}`);
   }
 
-  // Use Playwright to capture pixel screenshots
-  const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
-  const browser = await playwright.chromium.launch({ headless: true });
-  const page = await browser.newPage({
-    viewport: { width: 600, height: 850 },
-    deviceScaleFactor: 2,
-  });
+  // Use Playwright to capture pixel screenshots when a browser is available.
+  let browser: any;
+  try {
+    const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
+    browser = await playwright.chromium.launch({ headless: true });
+    const page = await browser.newPage({
+      viewport: { width: 600, height: 850 },
+      deviceScaleFactor: 2,
+    });
 
-  for (const art of artifacts) {
-    const htmlPath = path.join(EVIDENCE_DIR, `${art.name}.html`);
-    const pngPath = path.join(EVIDENCE_DIR, `${art.name}.png`);
-    await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle' });
-    await page.screenshot({ path: pngPath, fullPage: true });
-    console.log(`  ✓ Captured PNG Screenshot: ${pngPath}`);
+    for (const art of artifacts) {
+      const htmlPath = path.join(EVIDENCE_DIR, `${art.name}.html`);
+      const pngPath = path.join(EVIDENCE_DIR, `${art.name}.png`);
+      await page.goto(`file://${htmlPath}`, { waitUntil: 'networkidle' });
+      await page.screenshot({ path: pngPath, fullPage: true });
+      console.log(`  ✓ Captured PNG Screenshot: ${pngPath}`);
+    }
+  } catch (err: any) {
+    if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
+    console.warn(`  ! Could not capture Playwright screenshots: ${err?.message || err}`);
+  } finally {
+    await browser?.close().catch(() => undefined);
   }
-
-  await browser.close();
 }
 
 async function main() {

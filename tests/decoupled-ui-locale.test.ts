@@ -76,6 +76,7 @@ async function captureScreenshot(html: string, outputPath: string, width = 800, 
       await browser.close();
     }
   } catch (err: any) {
+    if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`  ⚠️ Screenshot generation skipped: ${err?.message || err}`);
   }
 }

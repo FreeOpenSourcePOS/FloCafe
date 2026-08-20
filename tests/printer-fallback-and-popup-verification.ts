@@ -35,7 +35,7 @@ const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { printerRoutes } = require('../main/routes/printers');
 const { printReceipt, prepareReceipt } = require('../main/printers/thermal');
 
-const EVIDENCE_DIR = process.env.EVIDENCE_DIR || '/Users/gurkiratkhaira/.no-mistakes/evidence/01M0EKM3F11WJKFGM6FVP4QF3B';
+const EVIDENCE_DIR = process.env.EVIDENCE_DIR || path.join(os.tmpdir(), 'flo-printer-evidence', '01M0EKM3F11WJKFGM6FVP4QF3B');
 
 let passed = 0;
 let failed = 0;
@@ -579,6 +579,7 @@ async function run() {
 
     await browser.close();
   } catch (err: any) {
+    if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`   Could not capture Playwright screenshots: ${err?.message || err}`);
   }
 

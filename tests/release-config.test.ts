@@ -291,6 +291,19 @@ function run() {
     'Full Cross-Platform Matrix workflow must upload build artifacts with descriptive platform-arch names'
   );
 
+  const ciWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+  assert.ok(
+    ciWorkflow.includes('run: npm run test:release-regressions') &&
+    ciWorkflow.includes("REQUIRE_VISUAL_EVIDENCE: '1'") &&
+    ciWorkflow.includes('EVIDENCE_DIR: ${{ runner.temp }}/flocafe-release-regressions'),
+    'CI must run release regression suites with required visual evidence in a portable runner temp directory',
+  );
+  assert.ok(
+    ciWorkflow.includes('name: release-regression-evidence') &&
+    ciWorkflow.includes('path: ${{ runner.temp }}/flocafe-release-regressions/'),
+    'CI must upload release regression evidence artifacts when available',
+  );
+
   console.log('✅ Release config + workflow integrity checks passed');
 }
 

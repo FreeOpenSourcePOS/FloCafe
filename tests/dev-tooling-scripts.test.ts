@@ -308,6 +308,31 @@ exit 0
   const testScript = realPkg.scripts?.test;
   assert.ok(typeof testScript === 'string' && testScript.length > 0, 'package.json must define a "test" script');
 
+  const pretestScript = realPkg.scripts?.pretest;
+  const releaseRegressionScript = realPkg.scripts?.['test:release-regressions'];
+  assert.ok(
+    typeof pretestScript === 'string' && pretestScript.includes('npm run test:release-regressions'),
+    'npm pretest must run the release regression aggregate before the canonical suite',
+  );
+  assert.ok(
+    typeof releaseRegressionScript === 'string' && releaseRegressionScript.length > 0,
+    'package.json must define the release regression aggregate',
+  );
+  for (const requiredSuite of [
+    'test:browser-receipts',
+    'test:decoupled-ui-locale',
+    'test:i18n-audit-remediations',
+    'test:i18n-ssr-timezone',
+    'test:issue-241-localized-errors',
+    'test:payment-modal-currency-adapter',
+    'test:printer-fallback-and-popup-verification',
+  ]) {
+    assert.ok(
+      releaseRegressionScript.includes(`npm run ${requiredSuite}`),
+      `release regression aggregate must include ${requiredSuite}`,
+    );
+  }
+
   const suitePattern = /(?:bash\s+tests\/run-test\.sh\s+)?npm\s+run\s+(test:[\w-]+)/g;
   const allSuites: string[] = [];
   let match: RegExpExecArray | null;

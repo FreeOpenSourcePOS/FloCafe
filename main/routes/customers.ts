@@ -168,9 +168,17 @@ router.get('/', customerReadRateLimit, requireRole('owner', 'manager', 'cashier'
     const params: any[] = [];
 
     if (req.query.search) {
-      const search = `%${req.query.search}%`;
-      query += ' AND (c.name LIKE ? OR c.phone_digits LIKE ? OR c.email LIKE ?)';
-      params.push(search, search, search);
+      const rawSearch = String(req.query.search || '').trim();
+      const digitsSearch = stripPhoneDigits(rawSearch);
+      const search = `%${rawSearch}%`;
+
+      if (digitsSearch.length > 0) {
+        query += ' AND (c.name LIKE ? OR c.phone_digits LIKE ? OR c.email LIKE ?)';
+        params.push(search, `%${digitsSearch}%`, search);
+      } else {
+        query += ' AND (c.name LIKE ? OR c.email LIKE ?)';
+        params.push(search, search);
+      }
     }
 
     if (req.query.filter === 'invalid_phones') {

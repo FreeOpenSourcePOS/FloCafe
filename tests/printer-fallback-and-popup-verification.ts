@@ -199,13 +199,15 @@ async function run() {
     assert('direct printReceipt returns ok: false', directRes.ok === false);
     assert('direct printReceipt returns detail: "No printer configured"', directRes.detail === 'No printer configured');
 
-    // Scenario B: 2 printers configured, but neither is marked is_default = 1
+    // Scenario B: a WebUSB printer must never be selected by backend printing.
+    db.prepare('DELETE FROM printers').run();
     db.prepare(`INSERT INTO printers (name, connection_type, ip_address, port, paper_width, is_default, created_at, updated_at)
-                VALUES ('Kitchen USB', 'usb', null, null, '80mm', 0, datetime('now'), datetime('now')),
+                VALUES ('Browser WebUSB', 'webusb', null, null, '80mm', 0, datetime('now'), datetime('now')),
                        ('Front Desk Network', 'network', '192.168.1.50', 9100, '80mm', 0, datetime('now'), datetime('now'))`).run();
 
     const fallbackDefaultRes = await request(app).post('/api/printers/print-bill').send({ billId, preview: true });
-    assert('POST /print-bill with no default printer resolves first printer and returns 200', fallbackDefaultRes.status === 200);
+    assert('POST /print-bill with no default printer resolves a non-WebUSB printer and returns 200', fallbackDefaultRes.status === 200);
+    assert('backend fallback skips WebUSB and selects the first usable printer', fallbackDefaultRes.body.printer?.name === 'Front Desk Network');
 
     closeDatabase();
   }

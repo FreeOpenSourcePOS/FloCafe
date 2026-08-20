@@ -788,7 +788,12 @@ async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): 
 
 function getPrinterConfig(): any {
   const db = getDatabase();
-  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get() || db.prepare('SELECT * FROM printers ORDER BY id ASC LIMIT 1').get();
+  return db.prepare(
+    `SELECT * FROM printers
+     WHERE connection_type != 'webusb'
+     ORDER BY is_default DESC, name
+     LIMIT 1`,
+  ).get();
 }
 
 export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false): {

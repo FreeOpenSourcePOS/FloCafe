@@ -324,10 +324,12 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
     }
 
     const db = getDatabase();
-    let printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as { id?: unknown; name?: unknown; paper_width?: unknown } | undefined;
-    if (!printer) {
-      printer = db.prepare('SELECT * FROM printers ORDER BY id ASC LIMIT 1').get() as { id?: unknown; name?: unknown; paper_width?: unknown } | undefined;
-    }
+    let printer = db.prepare(
+      `SELECT * FROM printers
+       WHERE connection_type != 'webusb'
+       ORDER BY is_default DESC, name
+       LIMIT 1`,
+    ).get() as { id?: unknown; name?: unknown; paper_width?: unknown } | undefined;
     console.log('[Print Bill] Resolved printer:', printer ? { id: printer.id, name: printer.name } : undefined);
     
     if (!printer && preview === true) {

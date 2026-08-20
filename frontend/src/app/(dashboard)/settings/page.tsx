@@ -2127,17 +2127,17 @@ export default function SettingsPage() {
   }, [isDirty]);
 
   return (
-    <div>
-      <Tabs orientation="vertical" value={activeTab} onValueChange={setActiveTab} className="flex flex-col md:flex-row gap-6 items-start">
+    <div className="md:h-full md:min-h-0">
+      <Tabs orientation="vertical" value={activeTab} onValueChange={setActiveTab} className="flex flex-col md:flex-row gap-6 items-start md:h-full md:min-h-0">
 
         {/* Settings sidebar nav */}
-        <div className="w-full md:w-40 md:min-w-[10rem] shrink-0 md:sticky md:top-0">
-          <div className="flex items-center gap-3 mb-6">
+        <div className="w-full md:w-40 md:min-w-[10rem] shrink-0 md:h-full md:min-h-0 md:flex md:flex-col">
+          <div className="flex items-center gap-3 mb-6 shrink-0">
             <Settings size={28} className="text-brand" />
             <h1 className="text-2xl font-bold text-gray-900">{t('title')}</h1>
           </div>
 
-           <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:overflow-x-visible border-b md:border-b-0 md:border-e border-gray-200 pb-2 md:pb-0 md:pe-2">
+           <nav className="flex md:flex-col gap-0.5 overflow-x-auto md:flex-1 md:min-h-0 md:overflow-x-hidden md:overflow-y-auto md:overscroll-contain border-b md:border-b-0 md:border-e border-gray-200 pb-2 md:pb-0 md:pe-2">
 
             {/* General group */}
             <div className="hidden md:block px-3 pt-3 pb-2 mt-2 mb-1 border-b border-gray-100">
@@ -2188,7 +2188,7 @@ export default function SettingsPage() {
           </nav>
         </div>
 
-        <div className="flex-1 min-w-0 overflow-hidden pb-32">
+        <div className="flex-1 min-w-0 md:h-full md:min-h-0 md:overflow-y-auto md:overscroll-contain pb-32">
 
         <TabsContent value="store">
           <div className="pb-6 max-w-3xl space-y-6">

@@ -209,6 +209,16 @@ async function run() {
     assert('POST /print-bill with no default printer resolves a non-WebUSB printer and returns 200', fallbackDefaultRes.status === 200);
     assert('backend fallback skips WebUSB and selects the first usable printer', fallbackDefaultRes.body.printer?.name === 'Front Desk Network');
 
+    db.prepare('DELETE FROM printers').run();
+    db.prepare(`INSERT INTO printers (name, connection_type, ip_address, port, paper_width, is_default, created_at, updated_at)
+                VALUES ('Kitchen WebUSB', 'webusb', null, null, '80mm', 1, datetime('now'), datetime('now'))`).run();
+    const kotWebUsbOnlyRes = await request(app).post('/api/printers/print-kot').send({
+      orderId,
+      stationName: 'Kitchen',
+      items: [{ product_name: 'Cappuccino', quantity: 1, unit_price: 25, total: 27.5 }],
+    });
+    assert('KOT rejects a WebUSB-only printer list before backend dispatch', kotWebUsbOnlyRes.status === 400);
+
     closeDatabase();
   }
 

@@ -27,11 +27,12 @@ export function getWhatsAppShareUrl(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   customer: Pick<Customer, 'phone' | 'country_code'> | null,
-  opts: WhatsAppShareOptions = {}
+  opts: WhatsAppShareOptions = {},
+  localeOverride?: string,
 ): string {
   const { pointsEarned = 0, walletBalance, businessPhone } = opts;
   const currency = tenant.currency ?? 'INR';
-  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const locale = localeOverride || getCountryByCode(tenant.country ?? 'IN')?.locale || 'en-US';
 
   // Build the message
   const lines: string[] = [];
@@ -58,22 +59,21 @@ export function getWhatsAppShareUrl(
   }
 
   lines.push(``);
-  lines.push(`Thank you for your visit!`);
+  lines.push(`Thank you for your visit! 🙏`);
+
+  if (businessPhone) {
+    lines.push(`Contact: ${businessPhone}`);
+  }
 
   const message = lines.join('\n');
+  const encoded = encodeURIComponent(message);
 
-  // Determine phone number to send to
-  const phone = customer?.phone?.replace(/\D/g, '') || '';
+  if (customer && customer.phone) {
+    const cleanPhone = customer.phone.replace(/[^0-9]/g, '');
+    return `https://wa.me/${cleanPhone}?text=${encoded}`;
+  }
 
-
-  // Use wa.me API - works for both personal and business WhatsApp
-  // If businessPhone is provided, send to business account, otherwise to customer
-  const waPhone = businessPhone?.replace(/\D/g, '') || '';
-
-  // Build wa.me URL
-  const waUrl = `https://wa.me/${waPhone || phone}?text=${encodeURIComponent(message)}`;
-
-  return waUrl;
+  return `https://wa.me/?text=${encoded}`;
 }
 
 /**
@@ -83,9 +83,10 @@ export function shareBillViaWhatsApp(
   bill: Bill,
   customerInfo: Pick<Customer, 'phone' | 'country_code'> | null,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
-  opts: WhatsAppShareOptions = {}
+  opts: WhatsAppShareOptions = {},
+  localeOverride?: string,
 ): void {
-  const url = getWhatsAppShareUrl(bill, tenant, customerInfo, opts);
+  const url = getWhatsAppShareUrl(bill, tenant, customerInfo, opts, localeOverride);
   window.open(url, '_blank', 'noopener,noreferrer');
 }
 
@@ -95,17 +96,18 @@ export function shareBillViaWhatsApp(
 export function getWhatsAppMessage(
   bill: Bill,
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
-  opts: WhatsAppShareOptions = {}
+  opts: WhatsAppShareOptions = {},
+  localeOverride?: string,
 ): string {
   const { pointsEarned = 0, walletBalance } = opts;
   const currency = tenant.currency ?? 'INR';
-  const locale = getCountryByCode(tenant.country ?? 'IN')?.locale ?? 'en-US';
+  const locale = localeOverride || getCountryByCode(tenant.country ?? 'IN')?.locale || 'en-US';
 
   const lines: string[] = [];
 
   lines.push(`${tenant.business_name}`);
   lines.push(`Bill #: ${bill.bill_number}`);
-  lines.push(`Date: ${formatDate(bill.order?.created_at)}`);
+  lines.push(`Date: ${formatDate(bill.order?.created_at, locale)}`);
   const itemLines = formatItemsList(bill.order, currency, locale);
   if (itemLines.length > 0) {
     lines.push(``);

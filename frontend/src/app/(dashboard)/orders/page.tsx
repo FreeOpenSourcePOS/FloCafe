@@ -20,7 +20,7 @@ import { useHeldOrdersStore } from '@/store/held-orders';
 import { useRouter } from 'next/navigation';
 import { useCartStore } from '@/store/cart';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useTranslations, useLocale } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useWhatsAppReady } from '@/hooks/useWhatsAppReady';
@@ -140,6 +140,7 @@ export default function OrdersPage() {
         | 'error.rateLimited',
     );
   const { formatTime, formatDateTime } = useFormatDate();
+  const locale = useLocale();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewingBillId, setPreviewingBillId] = useState<number | null>(null);
@@ -685,7 +686,8 @@ export default function OrdersPage() {
           currency,
           country: currentTenant?.country || 'IN',
         },
-        { pointsEarned: order.bill.points_earned ?? 0 }
+        { pointsEarned: order.bill.points_earned ?? 0 },
+        locale,
       );
     } catch {
       toast.error(tOrders('whatsappFailed'));

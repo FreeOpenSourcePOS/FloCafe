@@ -22,7 +22,7 @@ import assert from 'node:assert/strict';
 const ROOT = path.join(__dirname, '..');
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
-  '/Users/gurkiratkhaira/.no-mistakes/evidence/01M0EMNYP33YP4MMCYE74KDA86';
+  path.join(os.tmpdir(), 'no-mistakes-evidence', '01M0EMNYP33YP4MMCYE74KDA86');
 
 // Ensure evidence directory exists
 if (!fs.existsSync(EVIDENCE_DIR)) {

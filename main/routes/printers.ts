@@ -483,7 +483,10 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
       } catch {
         categoryIds = [];
       }
-      const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(s.printer_id);
+      const printer = db.prepare(
+        `SELECT * FROM printers
+         WHERE id = ? AND connection_type != 'webusb'`,
+      ).get(s.printer_id);
       return { ...s, categoryIds, printer };
     })
     .filter((s) => s.categoryIds.length > 0 && s.printer);
@@ -531,7 +534,12 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
     }
 
     const db = getDatabase();
-    const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+    const printer = db.prepare(
+      `SELECT * FROM printers
+       WHERE connection_type != 'webusb'
+       ORDER BY is_default DESC, name
+       LIMIT 1`,
+    ).get();
 
     if (!printer) {
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });

@@ -323,10 +323,17 @@ export const formatDateForTenant = (
   localeOverride?: string,
 ): string => {
   const { digits, calendar } = normalizePreferences(prefs);
-  const locale = localeOverride || getCountryByCode(countryCode ?? 'IN')?.locale || 'en-US';
-  const numberingSystem = digits === 'latin' ? 'latn' : undefined;
-  const calendarValue = calendarOption(calendar);
+  const tenantLocale = getCountryByCode(countryCode ?? 'IN')?.locale || 'en-US';
+  const locale = localeOverride || tenantLocale;
   try {
+    // `locale` preferences belong to the tenant profile, not to the selected
+    // UI language. Resolve them from the tenant locale before applying a UI
+    // locale override so an Iran tenant keeps Persian digits/calendar in an
+    // English UI, for example.
+    const tenantDateDefaults = new Intl.DateTimeFormat(tenantLocale).resolvedOptions();
+    const tenantNumberDefaults = new Intl.NumberFormat(tenantLocale).resolvedOptions();
+    const numberingSystem = digits === 'latin' ? 'latn' : tenantNumberDefaults.numberingSystem;
+    const calendarValue = calendarOption(calendar) || tenantDateDefaults.calendar;
     return new Intl.DateTimeFormat(locale, {
       timeZone: timezone,
       ...(numberingSystem ? { numberingSystem } : {}),

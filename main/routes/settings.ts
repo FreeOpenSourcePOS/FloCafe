@@ -7,7 +7,7 @@ import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
-import { getCountryByCode, getCurrencySymbol } from '../countries';
+import { getCountryByCode, getCurrencySymbol, isValidTimeZone } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
@@ -39,10 +39,7 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
 }
 
 function validBusinessLocation(timezone: unknown, currency: unknown, country: unknown): boolean {
-  if (timezone !== undefined) {
-    if (typeof timezone !== 'string' || timezone.length > 100) return false;
-    try { new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(); } catch { return false; }
-  }
+  if (timezone !== undefined && !isValidTimeZone(timezone)) return false;
   if (currency !== undefined && (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency))) return false;
   if (country !== undefined && (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country))) return false;
   return true;

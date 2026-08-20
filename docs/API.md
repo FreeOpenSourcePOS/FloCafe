@@ -828,6 +828,7 @@ Get business settings.
   "business_name": "My Restaurant",
   "timezone": "Asia/Kolkata",
   "currency": "INR",
+  "country": "IN",
   "tax_registration_number": "22AAAAA0000A1Z5"
 }
 ```
@@ -836,6 +837,8 @@ Get business settings.
 
 ### PUT `/api/settings/business`
 Update business settings.
+
+`timezone` is validated as an IANA identifier; invalid values return HTTP 400 with `"Invalid timezone, currency, or country"`.
 
 ---
 

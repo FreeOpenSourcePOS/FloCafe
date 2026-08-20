@@ -1549,7 +1549,7 @@
     "testPrintSent": "Impressão de teste enviada!",
     "testing": "Testando…",
     "timezone": "Fuso horário",
-    "timezoneAutoFilled": "Fuso horário (preenchido automaticamente)",
+    "selectTimezone": "Selecione o fuso horário…",
     "title": "Configurações",
     "trimDecimals": "Remover decimais",
     "trimDecimalsHint": "Oculta .00 no fim dos valores em comprovantes impressos. Valores com centavos continuam mostrando decimais.",
@@ -1669,6 +1669,8 @@
     "terms": "Termos e Condições",
     "termsAnd": "e",
     "termsIntro": "Eu concordo com o FloPOS",
+    "timezoneHint": "Pré-preenchido pelo seu país. Lojas em países com vários fusos horários podem escolher seu fuso horário real.",
+    "timezoneLabel": "Fuso horário",
     "welcome": "Bem-vindo ao FloCafe"
   },
   "staff": {

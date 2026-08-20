@@ -1549,7 +1549,7 @@
     "testPrintSent": "Test print sent!",
     "testing": "Testing…",
     "timezone": "Timezone",
-    "timezoneAutoFilled": "Timezone (auto-filled)",
+    "selectTimezone": "Select timezone…",
     "title": "Settings",
     "trimDecimals": "Trim decimals",
     "trimDecimalsHint": "Hide trailing .00 on printed receipts. Values with cents still print decimals.",
@@ -1669,6 +1669,8 @@
     "terms": "Terms and Conditions",
     "termsAnd": "and",
     "termsIntro": "I agree to the FloPOS",
+    "timezoneHint": "Pre-filled from your country. Stores in multi-timezone countries can choose their actual local timezone.",
+    "timezoneLabel": "Timezone",
     "welcome": "Welcome to FloCafe"
   },
   "staff": {

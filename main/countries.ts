@@ -455,6 +455,39 @@ export const formatDateForTenant = (
 
 export const countryName = (code: string): string => dn.of(code.toUpperCase()) ?? code;
 
+/**
+ * Canonical IANA timezone identifiers available on this platform, sourced
+ * exclusively from the native Intl API (no external timezone data or
+ * network access). Used to populate the editable timezone selector without
+ * shipping a bundled tz database.
+ */
+export const listTimeZones = (): string[] => {
+  try {
+    const zones = Intl.supportedValuesOf('timeZone');
+    return Array.isArray(zones) ? zones.slice().sort() : [];
+  } catch {
+    // Extremely old runtimes may not expose supportedValuesOf; degrade to an
+    // empty list. The selected value is still rendered as a fallback option.
+    return [];
+  }
+};
+
+/**
+ * Validates an IANA timezone identifier using native Intl.DateTimeFormat.
+ * Mirrors the offline-first contract: no bundled tz data, no network calls.
+ * Legacy aliases accepted by Intl (e.g. US/Eastern) remain valid here, which
+ * keeps existing persisted values working during upgrades.
+ */
+export const isValidTimeZone = (value: unknown): boolean => {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 100) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 export const DEFAULT_COUNTRY_PROFILE = {
   dialCode: '+1',
   locale: 'en-US',

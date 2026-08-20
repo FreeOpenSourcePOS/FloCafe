@@ -291,6 +291,7 @@ function run() {
     'Full Cross-Platform Matrix workflow must upload build artifacts with descriptive platform-arch names'
   );
 
+
   const ciWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/ci.yml'), 'utf8');
   assert.ok(
     ciWorkflow.includes('run: npm run test:release-regressions') &&

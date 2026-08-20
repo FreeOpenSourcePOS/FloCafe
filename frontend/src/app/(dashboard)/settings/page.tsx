@@ -1182,8 +1182,8 @@ export default function SettingsPage() {
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
   // Server-resolved: the active country tax pack's format if it declares
-  // one, else the static countries.ts fallback, else null. Never blocks
-  // the save — just drives the non-blocking warning below the field.
+  // one, else the static countries.ts fallback, else null. The backend is
+  // authoritative; this drives immediate warning feedback below the field.
   const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
   // check 25 (main/routes/tax-packs.ts) rejects the textbook nested-
   // quantifier ReDoS shape at pack-activation time, but that's a known-shape
@@ -1973,11 +1973,13 @@ export default function SettingsPage() {
         number_digits: form.numberDigits,
         calendar: form.calendar,
       });
+      let resolvedTaxIdFormat = putRes.data?.tax_id_format || null;
       if (savedBusiness.countryCode !== form.countryCode) {
         const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
         if (taxSetting?.data.setting?.value === 'true') {
           try {
-            await api.post('/tax-packs/ensure-country', { country: form.countryCode });
+            const ensureRes = await api.post('/tax-packs/ensure-country', { country: form.countryCode });
+            resolvedTaxIdFormat = ensureRes.data?.tax_id_format || null;
           } catch (error) {
             const status = (error as { response?: { status?: number } }).response?.status;
             if (status === 404) {
@@ -2005,7 +2007,7 @@ export default function SettingsPage() {
       const updatedForm = { ...form, businessPhone: normalizedBusinessPhone };
       setSavedBusiness(updatedForm);
       setForm(updatedForm);
-      setTaxIdFormat(putRes.data?.tax_id_format || null);
+      setTaxIdFormat(resolvedTaxIdFormat);
       posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
       posSettings.setBillPhone(normalizedBusinessPhone);

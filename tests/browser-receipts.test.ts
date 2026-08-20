@@ -8,7 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Bill, Order, Tenant, OrderItem, Customer, Table } from '../frontend/src/lib/types';
 
-const EVIDENCE_DIR = '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M08RB2SB8PFH2S5J0748TA3V';
+const EVIDENCE_DIR = process.env.EVIDENCE_DIR || '/Users/gurkiratkhaira/.no-mistakes/evidence/01M0EAZP7Q6BWADVK3WPM4HZDV';
 
 // Dynamic resolver for frontend modules
 function loadFrontendModules() {
@@ -175,7 +175,7 @@ async function run() {
       includeTaxId: true,
     });
 
-    assert('HTML contains lang="fa" and dir="rtl"', html.includes('<html lang="fa" dir="rtl">'));
+    assert('HTML contains lang="fa-IR" and dir="rtl"', html.includes('<html lang="fa-IR" dir="rtl">'));
     assert('CSS contains RTL logical properties and bidi styles',
       html.includes('.text-end { text-align: end !important; }') &&
       html.includes('.num { unicode-bidi: isolate; white-space: nowrap; }') &&
@@ -333,7 +333,7 @@ async function run() {
       timezone: 'Europe/Lisbon',
     };
     const ptHtml = generateBillHtml(sampleEnBill, ptTenant, { language: 'pt', isReprint: true });
-    assert('PT receipt has lang="pt" and dir="ltr"', ptHtml.includes('<html lang="pt" dir="ltr">'));
+    assert('PT receipt has lang="pt-BR" and dir="ltr"', ptHtml.includes('<html lang="pt-BR" dir="ltr">'));
     assert('PT labels are Portuguese',
       ptHtml.includes('REIMPRESSÃO') &&
       ptHtml.includes('Conta #') &&

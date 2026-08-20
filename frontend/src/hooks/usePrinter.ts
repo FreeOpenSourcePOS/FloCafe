@@ -126,7 +126,7 @@ export const usePrinterStore = create<PrinterState>()(
           if (get().printMethod === 'browser') {
             // Browser / A4 print path
             const { printWebBill } = await import('@/lib/printer/web-print');
-            printWebBill(bill, tenant, {
+            await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
               includeTaxId: billShowTaxId,
               taxRegistrationNumber: billShowTaxId && billTaxRegistrationNumber ? billTaxRegistrationNumber : undefined,
@@ -198,7 +198,7 @@ export const usePrinterStore = create<PrinterState>()(
             // raw ESC/POS bytes (which would strip Persian digits/ریال to
             // printer ASCII). Mirrors the printBill browser path.
             const { printWebBill } = await import('@/lib/printer/web-print');
-            printWebBill(bill, tenant, {
+            await printWebBill(bill, tenant, {
               paperSize: printerPaperSize,
               includeTaxId: billShowTaxId,
               taxRegistrationNumber: billShowTaxId

@@ -21,14 +21,21 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 const OUT = path.join(__dirname, '..', 'frontend', 'out');
+const MESSAGES_DIR = path.join(__dirname, '..', 'frontend', 'src', 'lib', 'i18n', 'messages');
 
-// Distinctive leaf values from frontend/src/lib/i18n/messages (pos.cartEmpty).
-const MARKERS: Record<string, string> = {
-  en: 'Cart is empty',
-  es: 'El carrito está vacío',
-  pt: 'O carrinho está vazio',
-  fa: 'سبد خالی است',
-};
+function getLocaleMarkers(): Record<string, string> {
+  const markers: Record<string, string> = {};
+  for (const entry of fs.readdirSync(MESSAGES_DIR)) {
+    if (!entry.endsWith('.json')) continue;
+    const lang = path.basename(entry, '.json');
+    const content = JSON.parse(fs.readFileSync(path.join(MESSAGES_DIR, entry), 'utf8'));
+    // Distinctive leaf value from messages (pos.cartEmpty)
+    const marker = content?.pos?.cartEmpty;
+    assert(Boolean(marker), `Message file ${entry} must contain pos.cartEmpty marker`);
+    markers[lang] = marker;
+  }
+  return markers;
+}
 
 function assert(condition: boolean, msg: string): void {
   if (!condition) throw new Error(`Assertion failed: ${msg}`);
@@ -54,6 +61,9 @@ function run(): void {
     return;
   }
 
+  const MARKERS = getLocaleMarkers();
+  const nonEnglishLangs = Object.keys(MARKERS).filter((l) => l !== 'en');
+
   const chunks = walkFiles(chunksDir, (name) => name.endsWith('.js'));
   assert(chunks.length > 0, 'no chunks found in frontend/out/_next/static/chunks');
 
@@ -67,7 +77,7 @@ function run(): void {
   );
 
   const lazyByLang: Record<string, string> = {};
-  for (const lang of ['es', 'pt', 'fa'] as const) {
+  for (const lang of nonEnglishLangs) {
     const files = filesWith(MARKERS[lang]);
     assert(
       files.length === 1,
@@ -76,7 +86,10 @@ function run(): void {
     lazyByLang[lang] = path.basename(files[0]);
   }
   const lazyNames = new Set(Object.values(lazyByLang));
-  assert(lazyNames.size === 3, 'es/pt/fa must each have their own distinct chunk');
+  assert(
+    lazyNames.size === nonEnglishLangs.length,
+    `Non-English languages (${nonEnglishLangs.join(', ')}) must each have their own distinct chunk`,
+  );
 
   // 1. No page eagerly references the lazy locale chunks.
   const pages = walkFiles(OUT, (name) => name === 'index.html');
@@ -95,7 +108,7 @@ function run(): void {
   );
 
   // 2. Offline invariant: locale chunks are pure packaged assets.
-  for (const lang of ['es', 'pt', 'fa'] as const) {
+  for (const lang of nonEnglishLangs) {
     const file = chunks.find((f) => path.basename(f) === lazyByLang[lang]);
     const content = fs.readFileSync(file as string, 'utf8');
     assert(
@@ -107,7 +120,7 @@ function run(): void {
   const kb = (f: string): string => (fs.statSync(f).size / 1024).toFixed(0);
   console.log('Locale chunk splitting (#375):');
   console.log(`  ✓ packaged English eager (fallback) — ${enFiles.length} chunk(s)`);
-  for (const lang of ['es', 'pt', 'fa'] as const) {
+  for (const lang of nonEnglishLangs) {
     const file = chunks.find((f) => path.basename(f) === lazyByLang[lang]) as string;
     console.log(`  ✓ ${lang} lazy chunk (${lazyByLang[lang]}) — ${kb(file)} KB, not eager on any page, no external refs`);
   }

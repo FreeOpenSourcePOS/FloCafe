@@ -23,11 +23,8 @@ const statusColors: Record<string, string> = {
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
-// Runtime-safe item-status lookup keeps the raw-status fallback for the
-// `void_adjustment` status (which has no translation key) while the map
-// itself stays exhaustively typed.
-const itemStatusLabelKey = (status: OrderItem['status']): OrdersKey | undefined =>
-  (ITEM_STATUS_LABEL_KEYS as Record<string, OrdersKey | undefined>)[status];
+const itemStatusLabelKey = (status: OrderItem['status']): OrdersKey =>
+  ITEM_STATUS_LABEL_KEYS[status] ?? 'itemStatusPending';
 
 interface ReserveModalProps {
   table: Table;
@@ -195,6 +192,8 @@ const itemStatusColors: Record<string, { bg: string; text: string; dot: string }
   ready: { bg: 'bg-green-50', text: 'text-green-700', dot: 'bg-green-500' },
   served: { bg: 'bg-purple-50', text: 'text-purple-700', dot: 'bg-purple-500' },
   cancelled: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
+  voided: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
+  void_adjustment: { bg: 'bg-red-50', text: 'text-red-500', dot: 'bg-red-400' },
 };
 
 export default function TablesPage() {
@@ -387,7 +386,7 @@ export default function TablesPage() {
                                 <div className={`w-1.5 h-1.5 rounded-full ${sc.dot} flex-shrink-0`} />
                                 <span className="flex-1 truncate text-gray-700">{item.product_name}</span>
                                 <span className="text-gray-500">×{item.quantity}</span>
-                                <span className={`font-medium capitalize ${sc.text}`}>{(() => { const k = itemStatusLabelKey(item.status); return k ? tOrders(k) : item.status; })()}</span>
+                                <span className={`font-medium capitalize ${sc.text}`}>{tOrders(itemStatusLabelKey(item.status))}</span>
                               </div>
                             );
                           })}

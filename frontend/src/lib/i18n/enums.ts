@@ -16,7 +16,7 @@
  */
 
 import { ORDER_TYPE_LABEL_KEYS } from '../order-types';
-import type { Order, Table } from '../types';
+import type { Order, Table, OrderItem } from '../types';
 import type { AppConfig } from 'use-intl';
 
 export { ORDER_TYPE_LABEL_KEYS };
@@ -47,8 +47,7 @@ export const ORDER_STATUS_LABEL_KEYS = {
 } as const satisfies Record<Order['status'], OrdersKey>;
 
 /** Individual order-item status → label. Note `pending` ≠ `waiting`: the
- *  backend emits `pending` for fresh items; `waiting` is the KDS term.
- *  `void_adjustment` has no label key and falls back to the raw string. */
+ *  backend emits `pending` for fresh items; `waiting` is the KDS term. */
 export const ITEM_STATUS_LABEL_KEYS = {
   pending: 'itemStatusPending',
   waiting: 'itemStatusWaiting',
@@ -57,10 +56,8 @@ export const ITEM_STATUS_LABEL_KEYS = {
   served: 'itemStatusServed',
   cancelled: 'itemStatusCancelled',
   voided: 'itemStatusVoided',
-} as const satisfies Record<
-  'pending' | 'waiting' | 'preparing' | 'ready' | 'served' | 'cancelled' | 'voided',
-  OrdersKey
->;
+  void_adjustment: 'itemStatusVoidAdjustment',
+} as const satisfies Record<OrderItem['status'] | 'waiting', OrdersKey>;
 
 /** Table status → label (exhaustively typed against `Table['status']`). */
 export const TABLE_STATUS_LABEL_KEYS = {

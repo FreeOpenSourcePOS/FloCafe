@@ -219,6 +219,62 @@ async function run() {
     closedErrorThrown = err.message.includes('Print window was closed');
   }
   assert('printWebBill throws error when window is closed before print', closedErrorThrown === true);
+
+  // 1.6 printWebBill awaits deferred onload and rejects if window is closed during loading
+  let deferredPrintTriggered = false;
+  let mockOnloadCallback: (() => void) | null = null;
+  const deferredMockWindow: any = {
+    document: {
+      open: () => {},
+      write: (_html: string) => {},
+      close: () => {},
+      readyState: 'loading',
+    },
+    closed: false,
+    print: () => {
+      deferredPrintTriggered = true;
+    },
+    set onload(cb: () => void) {
+      mockOnloadCallback = cb;
+    },
+    get onload() {
+      return mockOnloadCallback;
+    },
+  };
+
+  (global as any).window = {
+    open: () => deferredMockWindow,
+  };
+
+  const printPromise = printWebBill(
+    sampleBill,
+    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+    { language: 'en' as any }
+  );
+
+  // Trigger onload callback
+  if (mockOnloadCallback) (mockOnloadCallback as any)();
+  await printPromise;
+  assert('printWebBill resolves after deferred onload triggers print', deferredPrintTriggered === true);
+
+  // Test deferred window close rejection
+  let deferredClosedErrorThrown = false;
+  deferredMockWindow.closed = true;
+  mockOnloadCallback = null;
+  const printClosedPromise = printWebBill(
+    sampleBill,
+    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+    { language: 'en' as any }
+  );
+  // Window closed before onload
+  try {
+    if (mockOnloadCallback) (mockOnloadCallback as any)();
+    await printClosedPromise;
+  } catch (err: any) {
+    deferredClosedErrorThrown = err.message.includes('Print window was closed');
+  }
+  assert('printWebBill rejects when deferred window is closed before onload', deferredClosedErrorThrown === true);
+
   (global as any).window = originalWindow;
 
   // ----------------------------------------------------------------

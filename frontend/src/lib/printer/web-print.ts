@@ -187,23 +187,40 @@ export async function printWebBill(
     throw new Error('Print window was closed before receipt could be printed');
   }
 
-  try {
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
+  return new Promise<void>((resolve, reject) => {
+    try {
+      printWindow.document.open();
+      printWindow.document.write(html);
+      printWindow.document.close();
 
-    if (printWindow.document.readyState === 'complete') {
-      printWindow.print();
-    } else {
-      printWindow.onload = () => {
-        printWindow.print();
+      const triggerPrint = () => {
+        try {
+          if (printWindow.closed) {
+            reject(new Error('Print window was closed before receipt could be printed'));
+            return;
+          }
+          printWindow.print();
+          resolve();
+        } catch (err) {
+          console.error('Failed to trigger print on window:', err);
+          toast.error('Failed to open print dialog');
+          reject(err);
+        }
       };
+
+      if (printWindow.document.readyState === 'complete') {
+        triggerPrint();
+      } else {
+        printWindow.onload = () => {
+          triggerPrint();
+        };
+      }
+    } catch (err) {
+      console.error('Failed to write receipt to print window:', err);
+      toast.error('Failed to open print dialog');
+      reject(err);
     }
-  } catch (err) {
-    console.error('Failed to write receipt to print window:', err);
-    toast.error('Failed to open print dialog');
-    throw err;
-  }
+  });
 }
 
 /**

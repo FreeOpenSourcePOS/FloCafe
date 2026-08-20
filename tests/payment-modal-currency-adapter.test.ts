@@ -14,6 +14,7 @@
  */
 
 import fs from 'node:fs';
+import * as os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import {
@@ -23,7 +24,9 @@ import {
   formatNumberForTenant,
 } from '../main/countries';
 
-const EVIDENCE_DIR = '/var/folders/y_/1ltcxtwj0zd_w1dg9jv4jl580000gn/T/no-mistakes-evidence/01M09EG8J030YCK62W10XAD7D6';
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR ||
+  path.join(os.tmpdir(), 'no-mistakes-evidence', '01M09EG8J030YCK62W10XAD7D6');
 
 function runUnitTests() {
   console.log('--- 1. Currency Unit Adapter Unit Tests ---');

@@ -3,7 +3,13 @@ function originFor(hostname: string, port: number): string {
   return `http://${host}:${port}`;
 }
 
+/**
+ * Checks whether a URL is permitted to open in a new local Electron window.
+ * Allows local server origins (localhost, loopback, configured local IP) as well
+ * as blank windows (`about:blank`, `""`) used for web printing popups.
+ */
 export function isAllowedLocalWindowUrl(rawUrl: string, port: number, localIp?: string): boolean {
+  if (rawUrl === 'about:blank' || rawUrl === '') return true;
   try {
     const parsed = new URL(rawUrl);
     if (parsed.protocol !== 'http:' || parsed.username || parsed.password) return false;

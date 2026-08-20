@@ -17,7 +17,7 @@ import { useAuthStore } from '@/store/auth';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useConfirm } from '@/hooks/use-confirm';
 import { usePosSettingsStore } from '@/store/pos-settings';
-import { formatDate, formatTime } from '@/lib/printer/format-date';
+import { useFormatDate } from '@/hooks/useFormatDate';
 import { dialCodeFor, parsePhone } from '@/lib/phone';
 import { Ltr } from '@/components/layout/Ltr';
 
@@ -203,16 +203,12 @@ export default function WhatsAppPage() {
   const tKind = useTranslations('whatsapp.kind');
   const tLastError = useTranslations('whatsapp.lastError');
   const tApiError = useTranslations('whatsapp.apiError');
-  const language = usePosSettingsStore((s) => s.language);
   const { confirm, ConfirmDialog } = useConfirm();
   const setWhatsappEnabled = usePosSettingsStore((s) => s.setWhatsappEnabled);
   const { currentTenant } = useAuthStore();
   const role = currentTenant?.role ?? '';
   const isAdmin = role === 'owner' || role === 'manager';
-
-  const locale = language === 'es' ? 'es-AR' : language === 'pt' ? 'pt-BR' : 'en-US';
-  const fmt = (iso: string | null | undefined) => formatDate(iso ?? undefined, locale);
-  const fmtClock = (iso: string | null | undefined) => formatTime(iso ?? undefined, locale);
+  const { formatDateTime: fmt, formatTime: fmtClock } = useFormatDate();
 
   const tenantCountry = currentTenant?.country || '';
   const dialCode = dialCodeFor(tenantCountry) || '';

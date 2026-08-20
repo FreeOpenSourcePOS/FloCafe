@@ -10,7 +10,7 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 | USB / OS Queue | Direct USB printers and OS-managed printer queues | Direct USB connection or a configured OS print queue (Windows Spooler or CUPS) |
 | WebUSB | A browser-connected printer | A compatible browser and a user-selected device; the browser sends the print bytes |
 
-Set the paper width to match the printer: 58 mm or 80 mm. The first configured printer becomes the default; choose another default in Settings when a different printer should receive ordinary receipts.
+Set the paper width to match the printer: 58 mm or 80 mm. The first configured printer becomes the default; choose another default in Settings when a different printer should receive ordinary receipts. If no hardware printer is configured, FloCafe automatically falls back to system print when printing bills.
 
 ## Kitchen printing
 

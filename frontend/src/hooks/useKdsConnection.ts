@@ -212,10 +212,12 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   const [user, setUser] = useState<KdsUser | null>(null);
   const [orders, setOrders] = useState<KdsOrder[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
-  // Starts true only if there's a saved token to check (we're about to fetch /auth/me);
-  // otherwise there's nothing to load. Lazy-initialized once on mount instead of being set
-  // synchronously inside the mount effect below.
-  const [loading, setLoading] = useState(() => typeof window !== 'undefined' && !!window.localStorage.getItem('token') && !isKdsAuthBlocked());
+  // Keep the initial render deterministic between the static server output and
+  // the browser. A saved token is only visible in the browser, so deriving
+  // this initial value from localStorage would hydrate a spinner over the
+  // server-rendered login form. The initial spinner is cleared asynchronously
+  // when there is no session to restore.
+  const [loading, setLoading] = useState(true);
   const [connected, setConnected] = useState(false);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>(null);
   const [updating, setUpdating] = useState<number | null>(null);
@@ -664,10 +666,10 @@ export function useKdsConnection(options: UseKdsConnectionOptions): UseKdsConnec
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const savedToken = window.localStorage.getItem('token');
-    if (!savedToken) {
-      return;
+    if (!savedToken || isKdsAuthBlocked()) {
+      const resetTimer = window.setTimeout(() => setLoading(false), 0);
+      return () => window.clearTimeout(resetTimer);
     }
-    if (isKdsAuthBlocked()) return;
     const generation = sessionGenerationRef.current;
     api.get(mePath)
       .then(({ data }) => {

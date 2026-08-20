@@ -292,17 +292,27 @@ export default function SettingsPage() {
   const [tableInfo, setTableInfo] = useState<{ name: string; rows: number }[]>([]);
 
   const searchParams = useSearchParams();
+  const requestedTab = searchParams?.get('tab') || 'store';
   // ── DB tools: master PIN, health check, initialize ──────────────────────
-  // activeTab/healthCheckOpen/initializeDbOpen/pinGate all read their initial value from the
-  // ?tab=/?action= deep-link params directly (lazy init, once at mount) instead of being set
-  // by the mount effect below — that effect now only owns the actual async fetches.
-  const [activeTab, setActiveTab] = useState(() => searchParams?.get('tab') || 'store');
+  // activeTab/healthCheckOpen/initializeDbOpen/pinGate read their initial value from the
+  // ?tab=/?action= deep-link params directly. activeTab also stays synchronized below when
+  // the sidebar changes the query string without remounting this page.
+  const [activeTab, setActiveTab] = useState(requestedTab);
   const [masterPinStatus, setMasterPinStatus] = useState<{ available: boolean; isSet: boolean; schemaVersion: number | null }>({ available: false, isSet: false, schemaVersion: null });
   const [healthCheckOpen, setHealthCheckOpen] = useState(() => searchParams?.get('action') === 'health-check');
   const [healthReport, setHealthReport] = useState<HealthCheckReport | null>(null);
   const [applyingFixes, setApplyingFixes] = useState(false);
   const [initializeDbOpen, setInitializeDbOpen] = useState(() => searchParams?.get('action') === 'initialize-db');
   const [shakeSaveBar, setShakeSaveBar] = useState(false);
+
+  // Sidebar links can change only the query string while this page stays mounted.
+  // Keep the rendered Settings tab in sync with those deep-link changes (including
+  // returning to the default Store tab when ?tab= is removed).
+  useEffect(() => {
+    // This is navigation state arriving from Next.js, not an async data effect.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveTab(requestedTab);
+  }, [requestedTab]);
 
   // Unified PIN gate: 'set' opens the set/change-PIN dialog; 'backup'/'backup-custom'/
   // 'import'/'restore' open a verify prompt and, on success, run the pending action.

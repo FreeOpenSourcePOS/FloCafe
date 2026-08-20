@@ -23,6 +23,7 @@ import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
+import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import type { HealthCheckReport } from '@/types/electron';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
@@ -1352,10 +1353,9 @@ export default function SettingsPage() {
       ]);
 
       const d = businessRes.data;
-      const matchedCountry = COUNTRIES.find(c => c.currency === d.currency && c.timezone === d.timezone);
       const loaded: BusinessForm = {
         businessName: d.business_name || '',
-        countryCode: matchedCountry?.code || '',
+        countryCode: d.country || '',
         timezone: d.timezone || '',
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
@@ -1629,10 +1629,9 @@ export default function SettingsPage() {
 
     api.get('/settings/business').then((res) => {
       const d = res.data;
-      const matchedCountry = COUNTRIES.find(c => c.currency === d.currency && c.timezone === d.timezone);
       const loaded: BusinessForm = {
         businessName: d.business_name || '',
-        countryCode: matchedCountry?.code || '',
+        countryCode: d.country || '',
         timezone: d.timezone || '',
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
@@ -2252,13 +2251,22 @@ export default function SettingsPage() {
                       <select
                         value={form.countryCode}
                         onChange={(e) => {
-                          const country = COUNTRIES.find(c => c.code === e.target.value);
-                          setForm((p) => ({
-                            ...p,
-                            countryCode: e.target.value,
-                            currency: country?.currency || p.currency,
-                            timezone: country?.timezone || p.timezone,
-                          }));
+                          const nextCountry = COUNTRIES.find(c => c.code === e.target.value);
+                          setForm((p) => {
+                            const previousCountry = getCountryByCode(p.countryCode);
+                            const timezoneWasDefault = !previousCountry || p.timezone === previousCountry.timezone;
+                            return {
+                              ...p,
+                              countryCode: e.target.value,
+                              currency: nextCountry?.currency || p.currency,
+                              // The country profile timezone is only a suggestion.
+                              // Only replace it when the user has not explicitly
+                              // chosen a different timezone for the previous country.
+                              timezone: timezoneWasDefault
+                                ? (nextCountry?.timezone || p.timezone)
+                                : p.timezone,
+                            };
+                          });
                         }}
                         aria-label={tCommon('search')}
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
@@ -2268,14 +2276,12 @@ export default function SettingsPage() {
                           <option key={c.code} value={c.code}>{countryName(c.code)}</option>
                         ))}
                       </select>
-                      <input 
-                        type="text" 
-                        value={form.timezone} 
-                        onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
-                        placeholder={t('timezoneAutoFilled')}
-                        className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-gray-50" 
-                        readOnly
-                        dir="ltr"
+                      <TimeZoneSelect
+                        value={form.timezone}
+                        onChange={(timezone) => setForm((p) => ({ ...p, timezone }))}
+                        placeholder={t('selectTimezone')}
+                        className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                        ariaLabel={t('timezone')}
                       />
                       <input 
                         type="text" 

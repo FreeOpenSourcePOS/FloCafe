@@ -1550,6 +1550,7 @@
     "testing": "Probando…",
     "timezone": "Zona Horaria",
     "timezoneAutoFilled": "Zona horaria (autocompletada)",
+    "selectTimezone": "Seleccioná la zona horaria…",
     "title": "Configuración",
     "trimDecimals": "Quitar decimales",
     "trimDecimalsHint": "Oculta .00 al final en los comprobantes impresos. Los valores con centavos siguen mostrando decimales.",
@@ -1669,6 +1670,8 @@
     "terms": "Términos y Condiciones",
     "termsAnd": "y",
     "termsIntro": "Acepto los",
+    "timezoneHint": "Se completa con tu país. Los locales en países con varias zonas horarias pueden elegir su zona horaria real.",
+    "timezoneLabel": "Zona horaria",
     "welcome": "Bienvenido a FloCafe"
   },
   "staff": {

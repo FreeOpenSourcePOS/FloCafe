@@ -7,7 +7,7 @@ import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
 import { getCurrentSchemaVersion, getDatabase, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
-import { getCurrencySymbol, getCountryByCode } from '../countries';
+import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
@@ -767,6 +767,9 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
     const normalizedSetupProfile = String(setup_profile || 'express').trim().toLowerCase();
     const normalizedServiceModel = String(service_model || 'qsr').trim().toLowerCase();
     const normalizedCurrency = String(currency || 'INR').trim().toUpperCase();
+    if (!isValidTimeZone(timezone)) {
+      return res.status(400).json({ error: 'Invalid timezone' });
+    }
     const storeName = String(store_name || business_name || '').trim();
     const resolvedStoreName = storeName || 'Store';
     const outletAddress = String(business_address || address || '').trim();

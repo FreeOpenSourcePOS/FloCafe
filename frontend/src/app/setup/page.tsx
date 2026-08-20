@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { COUNTRIES, getCountryByCode, countryName, type Country } from '@/lib/countries';
+import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
 
@@ -85,6 +86,9 @@ export default function SetupPage() {
   const [browserLanguage] = useState<Language>(() => getBrowserLanguage());
   const [country, setCountry] = useState<string>('IN');
   const [countryQuery, setCountryQuery] = useState<string>('');
+  // The country profile timezone is only a suggested default; the owner can
+  // override it here for multi-timezone countries before completing setup.
+  const [timezone, setTimezone] = useState<string>(() => getCountryByCode('IN')?.timezone || 'Asia/Kolkata');
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -235,7 +239,7 @@ export default function SetupPage() {
       const countryPayload = {
         country: countryCode,
         currency: countryProfile?.currency,
-        timezone: countryProfile?.timezone,
+        timezone,
         language,
       };
 
@@ -341,7 +345,16 @@ export default function SetupPage() {
                     return (
                       <button
                         key={c.code}
-                        onClick={() => setCountry(c.code)}
+                        onClick={() => {
+                          const previousCountry = getCountryByCode(country);
+                          setCountry(c.code);
+                          // Only follow the new country's default timezone while
+                          // the current value is still the previous country's
+                          // default — never clobber an explicit override.
+                          if (!previousCountry || timezone === previousCountry.timezone) {
+                            setTimezone(c.timezone || timezone);
+                          }
+                        }}
                         className={`p-3 rounded-xl border-2 text-start transition-all flex items-center justify-between ${
                           selected ? 'border-primary bg-primary/5' : 'border-gray-200 hover:border-gray-300'
                         }`}
@@ -359,6 +372,17 @@ export default function SetupPage() {
                   {q && filteredCountries.length === 0 && (
                     <p className="text-center text-gray-500 py-6 text-sm">{t('noMatches', { query: countryQuery })}</p>
                   )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="setup-timezone">{t('timezoneLabel')}</Label>
+                  <TimeZoneSelect
+                    id="setup-timezone"
+                    value={timezone}
+                    onChange={setTimezone}
+                    className="h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-base shadow-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] md:text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">{t('timezoneHint')}</p>
                 </div>
 
                 <Button onClick={() => setStep(2)} className="w-full" size="lg">

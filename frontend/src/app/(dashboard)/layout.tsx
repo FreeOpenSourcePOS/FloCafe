@@ -10,6 +10,7 @@ import GlobalNotifications from '@/components/layout/GlobalNotifications';
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isPos = pathname === '/pos' || pathname === '/kds';
+  const isSettings = pathname === '/settings';
 
   return (
     <AuthGuard>
@@ -24,6 +25,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {!isPos && <GlobalNotifications />}
           <div className={isPos
             ? 'flex-1 min-h-0 flex flex-col overflow-hidden p-4'
+            : isSettings
+            ? 'flex-1 min-h-0 p-4 overflow-auto md:overflow-hidden min-w-0'
             : 'flex-1 p-4 overflow-auto min-w-0'
           }>
             {children}

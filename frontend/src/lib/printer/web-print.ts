@@ -331,7 +331,7 @@ export function generateBillHtml(
       <table>
         <tr>
           <td><strong>${escapeHtml(L.billNumber)}</strong> ${ltrSpan(bill.bill_number)}</td>
-          <td class="text-end"><strong>${escapeHtml(L.date)}</strong> ${escapeHtml(formatReceiptDate(order?.created_at, tenant))}</td>
+          <td class="text-end"><strong>${escapeHtml(L.date)}</strong> ${escapeHtml(formatReceiptDate(order?.created_at, tenant, LANGUAGES[lang].locale))}</td>
         </tr>
         ${showTableNumber && order?.table?.name ? `<tr><td><strong>${escapeHtml(L.table)}</strong> ${escapeHtml(order.table.name)}</td><td></td></tr>` : ''}
         ${showCustomerName && order?.customer?.name ? `<tr><td><strong>${escapeHtml(L.customer)}</strong> ${escapeHtml(order.customer.name)}</td><td></td></tr>` : ''}
@@ -501,7 +501,7 @@ function formatAmount(value: number | string, tenant: ReceiptTenant, trimDecimal
   return formatCurrencyForTenant(numeric, tenant.country, tenant.currency, prefs);
 }
 
-function formatReceiptDate(iso: string | undefined, tenant: ReceiptTenant): string {
+function formatReceiptDate(iso: string | undefined, tenant: ReceiptTenant, locale?: string): string {
   if (!iso) return '';
   try {
     const d = parseDbTimestamp(iso);
@@ -512,6 +512,7 @@ function formatReceiptDate(iso: string | undefined, tenant: ReceiptTenant): stri
       tenant.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone,
       { digits: tenant.number_digits, calendar: tenant.calendar },
       { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+      locale,
     );
   } catch {
     return iso;

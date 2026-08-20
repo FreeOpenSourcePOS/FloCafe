@@ -6,11 +6,10 @@ import Link from 'next/link';
 import { useAuthStore } from '@/store/auth';
 import api from '@/lib/api';
 import { Banknote, ChefHat, Clock, LayoutGrid, TrendingUp, ClipboardList, ArrowRight, Timer, Trophy, Tags, BarChart3, Wallet } from 'lucide-react';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
-import { getCountryByCode } from '@/lib/countries';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { ORDER_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 
@@ -147,7 +146,7 @@ export default function DashboardPage() {
 
   const isOwner = currentTenant?.role === 'owner';
   const fmt = useFormatCurrency();
-  const locale = currentTenant?.country ? (getCountryByCode(currentTenant.country)?.locale ?? 'en-US') : 'en-US';
+  const locale = useLocale();
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const todayLocal = getLocalDateString(new Date(), timeZone);
   const [selectedDate, setSelectedDate] = useState(todayLocal);

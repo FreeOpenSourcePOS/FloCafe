@@ -537,9 +537,10 @@ async function run() {
   }
 
   // Use Playwright to capture screenshots of each receipt
+  let browser: { close: () => Promise<void> } | undefined;
   try {
     const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
-    const browser = await playwright.chromium.launch({ headless: true });
+    browser = await playwright.chromium.launch({ headless: true });
     const context = await browser.newContext({
       viewport: { width: 480, height: 900 },
       deviceScaleFactor: 2,
@@ -560,10 +561,11 @@ async function run() {
       console.log(`   Captured screenshot artifact: ${pngPath}`);
     }
 
-    await browser.close();
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`   Could not capture Playwright screenshot: ${err?.message || err}`);
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
   }
 
   console.log(`\n==================================================`);

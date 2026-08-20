@@ -1185,6 +1185,7 @@ export default function SettingsPage() {
   // one, else the static countries.ts fallback, else null. The backend is
   // authoritative; this drives immediate warning feedback below the field.
   const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
+  const [taxIdFormatCountryCode, setTaxIdFormatCountryCode] = useState('');
   // check 25 (main/routes/tax-packs.ts) rejects the textbook nested-
   // quantifier ReDoS shape at pack-activation time, but that's a known-shape
   // heuristic, not a formal safety proof. This runs on every keystroke, so
@@ -1195,10 +1196,10 @@ export default function SettingsPage() {
   const TAX_ID_WARNING_MAX_LENGTH = 24;
   const taxIdWarning = (() => {
     const value = form.taxRegistrationNumber.trim();
-    // taxIdFormat was resolved for savedBusiness.countryCode; if the country
-    // field has since been edited (not yet saved), the format is stale and
-    // must not be shown against the newly selected country's label.
-    if (!taxIdFormat || !value || form.countryCode !== savedBusiness.countryCode) return null;
+    // Do not show a format against a country other than the one for which the
+    // server resolved it. This also keeps a rejected country-change response
+    // visible for the submitted country without mislabeling it after a revert.
+    if (!taxIdFormat || !value || form.countryCode !== taxIdFormatCountryCode) return null;
     if (value.length > TAX_ID_WARNING_MAX_LENGTH) return null;
     try {
       return new RegExp(taxIdFormat.pattern, 'i').test(value) ? null : taxIdFormat.description;
@@ -1372,6 +1373,7 @@ export default function SettingsPage() {
       setSavedBusiness(loaded);
       setForm(loaded);
       setTaxIdFormat(d.tax_id_format || null);
+      setTaxIdFormatCountryCode(loaded.countryCode);
       const billDisplay = {
         billShowName: d.bill_show_name !== false,
         billShowAddress: d.bill_show_address !== false,
@@ -1648,6 +1650,7 @@ export default function SettingsPage() {
       setSavedBusiness(loaded);
       setForm(loaded);
       setTaxIdFormat(d.tax_id_format || null);
+      setTaxIdFormatCountryCode(loaded.countryCode);
       // Sync to pos-settings store for bill printing
       const billDisplay = {
         billShowName: d.bill_show_name !== false,
@@ -2008,6 +2011,7 @@ export default function SettingsPage() {
       setSavedBusiness(updatedForm);
       setForm(updatedForm);
       setTaxIdFormat(resolvedTaxIdFormat);
+      setTaxIdFormatCountryCode(form.countryCode);
       posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
       posSettings.setBillPhone(normalizedBusinessPhone);
@@ -2026,6 +2030,7 @@ export default function SettingsPage() {
       }
       if (serverError?.tax_id_format) {
         setTaxIdFormat(serverError.tax_id_format);
+        setTaxIdFormatCountryCode(form.countryCode);
       }
       throw err;
     } finally {

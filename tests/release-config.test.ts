@@ -260,17 +260,49 @@ function run() {
   );
 
   // ── nightly matrix workflow integrity ──
-  const matrixWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/nightly-release.yml'), 'utf8');
+  const yaml = require('js-yaml');
+  const matrixWorkflow = yaml.load(
+    fs.readFileSync(path.join(__dirname, '../.github/workflows/nightly-release.yml'), 'utf8')
+  ) as any;
+
   assert.ok(
-    matrixWorkflow.includes('branches: [main]') && matrixWorkflow.includes('workflow_dispatch:'),
+    matrixWorkflow?.on?.push?.branches?.includes('main') && 'workflow_dispatch' in (matrixWorkflow?.on || {}),
     'Full Cross-Platform Matrix workflow must trigger on merges to main and workflow_dispatch'
   );
-  assert.ok(
-    !/^\s*pull_request\s*:/m.test(matrixWorkflow),
+  assert.strictEqual(
+    matrixWorkflow?.on?.pull_request,
+    undefined,
     'Full Cross-Platform Matrix workflow must NOT run on pull_request to conserve CI runner minutes'
   );
-  assert.ok(
-    matrixWorkflow.includes('name: flocafe-build-${{ matrix.name }}'),
+
+  const buildMatrixJob = matrixWorkflow?.jobs?.['build-matrix'];
+  assert.ok(buildMatrixJob, 'Full Cross-Platform Matrix workflow must define a "build-matrix" job');
+  assert.strictEqual(
+    buildMatrixJob.name,
+    'build-${{ matrix.name }}',
+    'build-matrix job name should be parameterized by matrix.name'
+  );
+
+  const matrixIncludes = (buildMatrixJob.strategy?.matrix?.include || []) as Array<{
+    name: string;
+    os: string;
+    arch: string;
+    target: string;
+  }>;
+  const matrixNames = matrixIncludes.map((entry) => entry.name);
+  assert.deepStrictEqual(
+    [...matrixNames].sort(),
+    ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64'].sort(),
+    'build-matrix strategy must include linux-x64, macos-x64, macos-arm64, and windows-x64 targets'
+  );
+
+  const uploadStep = (buildMatrixJob.steps || []).find((step: any) =>
+    typeof step?.uses === 'string' && step.uses.startsWith('actions/upload-artifact')
+  );
+  assert.ok(uploadStep, 'Full Cross-Platform Matrix workflow must include an upload-artifact step');
+  assert.strictEqual(
+    uploadStep.with?.name,
+    'flocafe-build-${{ matrix.name }}',
     'Full Cross-Platform Matrix workflow must upload build artifacts with descriptive platform-arch names'
   );
 

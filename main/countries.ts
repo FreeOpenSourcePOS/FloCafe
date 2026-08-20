@@ -319,9 +319,10 @@ export const formatDateForTenant = (
   timezone: string,
   prefs?: LocalePreferences,
   options: Intl.DateTimeFormatOptions = {},
+  localeOverride?: string,
 ): string => {
   const { digits, calendar } = normalizePreferences(prefs);
-  const locale = getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US';
+  const locale = localeOverride || getCountryByCode(countryCode ?? 'IN')?.locale || 'en-US';
   const numberingSystem = digits === 'latin' ? 'latn' : undefined;
   const calendarValue = calendarOption(calendar);
   try {

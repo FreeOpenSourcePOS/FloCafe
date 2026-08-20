@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useAuthStore } from '@/store/auth';
+import { useLocale } from 'use-intl';
 import { formatDateForTenant } from '@/lib/countries';
 import { parseDbTimestamp } from '@/lib/utils';
 
@@ -12,6 +13,7 @@ function toDate(date: string | Date | number): Date {
 
 export function useFormatDate() {
   const currentTenant = useAuthStore((s) => s.currentTenant);
+  const locale = useLocale();
 
   const country = currentTenant?.country;
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -26,8 +28,8 @@ export function useFormatDate() {
     return formatDateForTenant(d, country, timeZone, {
       calendar: currentTenant?.calendar,
       digits: currentTenant?.number_digits,
-    }, options);
-  }, [country, timeZone, currentTenant?.calendar, currentTenant?.number_digits]);
+    }, options, locale);
+  }, [country, timeZone, currentTenant?.calendar, currentTenant?.number_digits, locale]);
 
   const formatDate = useCallback((date?: string | Date | number | null, options?: Intl.DateTimeFormatOptions) =>
     format(date, { year: 'numeric', month: 'short', day: 'numeric', ...options }),

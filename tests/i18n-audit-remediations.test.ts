@@ -184,6 +184,41 @@ async function run() {
     { language: 'fa' as any }
   );
   assert('printWebBill opens popup window synchronously to preserve user activation', windowOpenedSync === true);
+
+  // 1.5 printWebBill throws when popup is blocked or closed
+  (global as any).window = {
+    open: () => null,
+  };
+  let blockedErrorThrown = false;
+  try {
+    await printWebBill(
+      sampleBill,
+      { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+      { language: 'en' as any }
+    );
+  } catch (err: any) {
+    blockedErrorThrown = err.message.includes('Popup window was blocked');
+  }
+  assert('printWebBill throws error when popup is blocked', blockedErrorThrown === true);
+
+  (global as any).window = {
+    open: () => ({
+      document: openedWindowDoc,
+      closed: true,
+      print: () => {},
+    }),
+  };
+  let closedErrorThrown = false;
+  try {
+    await printWebBill(
+      sampleBill,
+      { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+      { language: 'en' as any }
+    );
+  } catch (err: any) {
+    closedErrorThrown = err.message.includes('Print window was closed');
+  }
+  assert('printWebBill throws error when window is closed before print', closedErrorThrown === true);
   (global as any).window = originalWindow;
 
   // ----------------------------------------------------------------

@@ -175,7 +175,7 @@ export async function printWebBill(
   const printWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'width=800,height=600') : null;
   if (!printWindow) {
     toast.error('Please allow popups to print bills');
-    return;
+    throw new Error('Popup window was blocked by browser');
   }
 
   // 2. Ensure the requested language messages are loaded in memory
@@ -183,8 +183,11 @@ export async function printWebBill(
   const html = generateBillHtml(bill, tenant, opts);
 
   // 3. Write HTML and trigger print
+  if (printWindow.closed) {
+    throw new Error('Print window was closed before receipt could be printed');
+  }
+
   try {
-    if (printWindow.closed) return;
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
@@ -199,6 +202,7 @@ export async function printWebBill(
   } catch (err) {
     console.error('Failed to write receipt to print window:', err);
     toast.error('Failed to open print dialog');
+    throw err;
   }
 }
 

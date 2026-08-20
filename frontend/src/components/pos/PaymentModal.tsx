@@ -10,7 +10,7 @@ import TaxBreakdown from '@/components/pos/TaxBreakdown';
 import { resolveTaxComponents } from '@/lib/printer/tax-components';
 import { useCartStore } from '@/store/cart';
 import { useConfirm } from '@/hooks/use-confirm';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useTranslations, useLocale, type AppConfig } from 'use-intl';
 import { PAYMENT_METHODS, type CustomPaymentMethod } from '@/lib/payment-methods';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { useFormatNumber } from '@/hooks/useFormatNumber';
@@ -59,6 +59,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
   const effectiveCustomerId = bill.customer_id || cartCustomerId || null;
   const { confirm, ConfirmDialog } = useConfirm();
   const t = useTranslations('pos');
+  const locale = useLocale();
   const tCommon = useTranslations('common');
   const tOrders = useTranslations('orders');
   const tWhatsappSend = useTranslations('whatsapp.send');
@@ -354,7 +355,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     }
     setSendingWa(true);
     try {
-      await sendBillViaFlo(bill, phone, tenantForShare, whatsappSendT, { pointsEarned });
+      await sendBillViaFlo(bill, phone, tenantForShare, whatsappSendT, { pointsEarned }, locale);
     } finally {
       setSendingWa(false);
     }
@@ -370,7 +371,8 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
         bill,
         { phone: cartCustomer.phone, country_code: cartCustomer.country_code },
         tenantForShare,
-        { pointsEarned }
+        { pointsEarned },
+        locale,
       );
     } catch {
       toast.error(tOrders('whatsappFailed'));

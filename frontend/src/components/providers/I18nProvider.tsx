@@ -41,6 +41,17 @@ function resolveInitialLanguage(): Language {
   return 'en';
 }
 
+export function handleI18nError(error: { code?: string; message?: string } | Error) {
+  if ('code' in error && error.code === 'ENVIRONMENT_FALLBACK') return;
+  console.error(error);
+}
+
+export function getDefaultTimeZone(): string {
+  return typeof Intl !== 'undefined'
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    : 'UTC';
+}
+
 export function I18nProvider({ children }: { children: ReactNode }) {
   const language = usePosSettingsStore((s) => s.language);
   const [active, setActive] = useState<Language>('en');
@@ -84,20 +95,13 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const config = LANGUAGES[active] ?? LANGUAGES.en;
   const messages = getCachedMessages(active) ?? getCachedMessages('en') ?? {};
-  const defaultTimeZone =
-    typeof Intl !== 'undefined'
-      ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-      : 'UTC';
 
   return (
     <IntlProvider
       locale={config.locale}
       messages={messages}
-      timeZone={defaultTimeZone}
-      onError={(error) => {
-        if (error.code === 'ENVIRONMENT_FALLBACK') return;
-        console.error(error);
-      }}
+      timeZone={getDefaultTimeZone()}
+      onError={handleI18nError}
     >
       {children}
     </IntlProvider>

@@ -11,12 +11,13 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 
 const ROOT = path.join(__dirname, '..');
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
-  '/Users/gurkiratkhaira/.no-mistakes/evidence/01M0E94MSPDREJX69TDGS6PBRE';
+  path.join(os.tmpdir(), 'flo-ssr-evidence');
 
 const Module = require('module');
 const frontendRequire = Module.createRequire(path.join(ROOT, 'frontend/package.json'));
@@ -42,7 +43,7 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
 };
 
 const { IntlProvider, useFormatter, useTranslations } = frontendRequire('use-intl');
-const { I18nProvider } = require('../frontend/src/components/providers/I18nProvider');
+const { I18nProvider, handleI18nError, getDefaultTimeZone } = require('../frontend/src/components/providers/I18nProvider');
 const { LANGUAGES } = require('../frontend/src/lib/i18n/languages');
 const { loadLocaleMessages, getCachedMessages } = require('../frontend/src/lib/i18n/loader');
 const { usePosSettingsStore } = require('../frontend/src/store/pos-settings');
@@ -52,14 +53,19 @@ function assert(condition: boolean, msg: string): void {
 }
 
 async function renderScreenshotWithPlaywright(html: string, outputPath: string, width = 700, height = 400): Promise<void> {
-  const { chromium } = frontendRequire('playwright');
-  const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage({ viewport: { width, height } });
-    await page.setContent(html, { waitUntil: 'load' });
-    await page.screenshot({ path: outputPath, fullPage: true });
-  } finally {
-    await browser.close();
+    const { chromium } = frontendRequire('playwright');
+    const browser = await chromium.launch({ headless: true });
+    try {
+      const page = await browser.newPage({ viewport: { width, height } });
+      await page.setContent(html, { waitUntil: 'load' });
+      await page.screenshot({ path: outputPath, fullPage: true });
+    } finally {
+      await browser.close();
+    }
+  } catch (err: any) {
+    // Non-fatal if headless browser cannot be spawned in restricted CI/sandbox
+    console.log(`  ℹ Screenshot generation skipped (${err?.message?.split('\n')[0] || 'browser unavailable'})`);
   }
 }
 
@@ -176,7 +182,27 @@ async function run(): Promise<void> {
       );
     }
 
-    // SSR render inside I18nProvider
+    // 1. Verify getDefaultTimeZone produces a valid non-empty timezone
+    const tz = getDefaultTimeZone();
+    assert(typeof tz === 'string' && tz.length > 0, 'getDefaultTimeZone must return a non-empty string');
+    console.log(`  ✓ getDefaultTimeZone() returns "${tz}"`);
+
+    // 2. Exercise the production handleI18nError callback exported by I18nProvider
+    assert(typeof handleI18nError === 'function', 'handleI18nError must be exported by I18nProvider');
+
+    // Verify ENVIRONMENT_FALLBACK is suppressed by production callback
+    loggedErrors = [];
+    handleI18nError({ code: 'ENVIRONMENT_FALLBACK', message: 'Environment fallback warning' });
+    assert(loggedErrors.length === 0, 'ENVIRONMENT_FALLBACK must be suppressed by handleI18nError without calling console.error');
+    console.log('  ✓ ENVIRONMENT_FALLBACK suppressed by production handleI18nError');
+
+    // Verify non-ENVIRONMENT_FALLBACK errors are forwarded to console.error by production callback
+    loggedErrors = [];
+    handleI18nError({ code: 'MISSING_MESSAGE', message: 'Missing message test error' });
+    assert(loggedErrors.length > 0, 'Non-ENVIRONMENT_FALLBACK errors must be forwarded to console.error by handleI18nError');
+    console.log('  ✓ Other error codes (e.g. MISSING_MESSAGE) are forwarded to console.error by production handleI18nError');
+
+    // 3. SSR render inside I18nProvider
     loggedErrors = [];
     const ssrHtml = ReactDOMServer.renderToString(
       React.createElement(I18nProvider, null, React.createElement(DateDisplay)),
@@ -185,25 +211,6 @@ async function run(): Promise<void> {
     assert(ssrHtml.includes('date-val'), 'SSR render of DateDisplay inside I18nProvider must produce valid HTML');
     assert(loggedErrors.length === 0, `SSR render produced unexpected console errors: ${JSON.stringify(loggedErrors)}`);
     console.log('  ✓ I18nProvider rendered DateDisplay in SSR with zero console errors or warnings');
-
-    // Test onError handler filtering behavior directly
-    // Let's create an onError callback as defined in I18nProvider and test both branches
-    const testErrorHandler = (error: { code?: string; message?: string }) => {
-      if (error.code === 'ENVIRONMENT_FALLBACK') return;
-      console.error(error);
-    };
-
-    // Verify ENVIRONMENT_FALLBACK is ignored
-    loggedErrors = [];
-    testErrorHandler({ code: 'ENVIRONMENT_FALLBACK', message: 'Environment fallback warning' });
-    assert(loggedErrors.length === 0, 'ENVIRONMENT_FALLBACK error should be ignored and not call console.error');
-    console.log('  ✓ ENVIRONMENT_FALLBACK error suppressed without calling console.error');
-
-    // Verify other errors ARE forwarded to console.error
-    loggedErrors = [];
-    testErrorHandler({ code: 'MISSING_MESSAGE', message: 'Missing message test error' });
-    assert(loggedErrors.length > 0, 'Non-ENVIRONMENT_FALLBACK errors must be forwarded to console.error');
-    console.log('  ✓ Other error codes (e.g. MISSING_MESSAGE) are properly logged');
   } finally {
     console.error = originalConsoleError;
   }
@@ -291,7 +298,7 @@ async function run(): Promise<void> {
     });
   }
 
-  console.log(`\n✅ All ${generatedArtifacts.length} evidence screenshots generated in ${EVIDENCE_DIR}`);
+  console.log(`\n✅ All ${generatedArtifacts.length} evidence artifacts generated in ${EVIDENCE_DIR}`);
 }
 
 run().catch((err) => {

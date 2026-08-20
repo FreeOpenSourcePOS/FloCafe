@@ -257,7 +257,8 @@
           ]
         }
       ],
-      "icon": "assets/icon.ico"
+      "icon": "assets/icon.ico",
+      "artifactName": "flocafe-${version}-win-${arch}.${ext}"
     },
     "appx": {
       "applicationId": "FloCafe",
@@ -294,7 +295,8 @@
       "entitlementsInherit": "build/entitlements.plist",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
-      "notarize": true
+      "notarize": true,
+      "artifactName": "flocafe-${version}-mac-${arch}.${ext}"
     },
     "mas": {
       "category": "public.app-category.business",

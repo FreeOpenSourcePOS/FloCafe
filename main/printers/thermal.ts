@@ -582,7 +582,12 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     console.log('[Printer] printReceipt called, template:', template, 'useUnicode:', useUnicode, 'isReprint:', isReprint);
-    const { printer, data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint);
+    const printer = getPrinterConfig();
+    if (!printer) {
+      console.log('[Printer] No printer configured');
+      return { ok: false, detail: 'No printer configured' };
+    }
+    const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint);
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
     console.log('[Printer] Receipt data length:', data.length, 'bytes');
     console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
@@ -783,7 +788,12 @@ async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): 
 
 function getPrinterConfig(): any {
   const db = getDatabase();
-  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+  return db.prepare(
+    `SELECT * FROM printers
+     WHERE connection_type != 'webusb'
+     ORDER BY is_default DESC, name
+     LIMIT 1`,
+  ).get();
 }
 
 export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false): {
@@ -792,8 +802,14 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   warnings: PrintWarning[];
   columns: number;
 } {
-  const printer = getPrinterConfig();
-  if (!printer) throw new Error('No printer configured');
+  let printer = getPrinterConfig();
+  if (!printer) {
+    printer = {
+      id: 0,
+      name: 'Default 80mm Preview',
+      paper_width: '80mm',
+    };
+  }
 
   const profile = resolvePrinterProfile(printer);
   const columns = getColumnsForPrinter(printer, profile);

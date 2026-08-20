@@ -310,8 +310,9 @@ function calendarOption(calendar: CalendarMode): 'gregory' | 'persian' | undefin
 }
 
 /**
- * Formats a date with the tenant's locale, timezone, and calendar/digit
- * preferences. Dates are stored as UTC timestamps; this is display-only.
+ * Formats a date with the tenant's timezone, calendar/digit preferences, and
+ * an optional UI locale override (falling back to the tenant country's locale).
+ * Dates are stored as UTC timestamps; this is display-only.
  */
 export const formatDateForTenant = (
   date: Date,
@@ -319,12 +320,20 @@ export const formatDateForTenant = (
   timezone: string,
   prefs?: LocalePreferences,
   options: Intl.DateTimeFormatOptions = {},
+  localeOverride?: string,
 ): string => {
   const { digits, calendar } = normalizePreferences(prefs);
-  const locale = getCountryByCode(countryCode ?? 'IN')?.locale ?? 'en-US';
-  const numberingSystem = digits === 'latin' ? 'latn' : undefined;
-  const calendarValue = calendarOption(calendar);
+  const tenantLocale = getCountryByCode(countryCode ?? 'IN')?.locale || 'en-US';
+  const locale = localeOverride || tenantLocale;
   try {
+    // `locale` preferences belong to the tenant profile, not to the selected
+    // UI language. Resolve them from the tenant locale before applying a UI
+    // locale override so an Iran tenant keeps Persian digits/calendar in an
+    // English UI, for example.
+    const tenantDateDefaults = new Intl.DateTimeFormat(tenantLocale).resolvedOptions();
+    const tenantNumberDefaults = new Intl.NumberFormat(tenantLocale).resolvedOptions();
+    const numberingSystem = digits === 'latin' ? 'latn' : tenantNumberDefaults.numberingSystem;
+    const calendarValue = calendarOption(calendar) || tenantDateDefaults.calendar;
     return new Intl.DateTimeFormat(locale, {
       timeZone: timezone,
       ...(numberingSystem ? { numberingSystem } : {}),

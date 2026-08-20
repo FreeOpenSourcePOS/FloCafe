@@ -201,10 +201,52 @@ test('formatDateForTenant: IR Persian calendar with Latin digits', () => {
   assert.ok(out.includes('مرداد'), `expected Mordad month, got: ${out}`);
 });
 
+test('formatDateForTenant: locale defaults remain tenant-authoritative under a UI locale override', () => {
+  const date = new Date(Date.UTC(2026, 7, 17, 12, 30, 0));
+  const out = formatDateForTenant(
+    date,
+    'IR',
+    'Asia/Tehran',
+    { calendar: 'locale', digits: 'locale' },
+    { year: 'numeric', month: 'short', day: 'numeric' },
+    'en-US',
+  );
+  assert.ok(out.includes('مرداد') || out.includes('Mordad'), `expected tenant Persian calendar month, got: ${out}`);
+  assert.ok(!out.includes('2026'), `expected tenant Persian calendar year, got: ${out}`);
+  assert.match(out, /[۰-۹]/, `expected tenant Persian digits, got: ${out}`);
+});
+
 test('formatDateForTenant: non-Iran tenants stay Gregorian', () => {
   const date = new Date(Date.UTC(2026, 7, 17, 12, 30, 0));
   const out = formatDateForTenant(date, 'IN', 'Asia/Kolkata', {}, { year: 'numeric', month: 'short', day: 'numeric' });
   assert.ok(out.includes('2026'), `expected Gregorian year 2026, got: ${out}`);
+});
+
+test('formatDateForTenant: UI locale override decouples display language from tenant country', () => {
+  const date = new Date(Date.UTC(2026, 7, 20, 15, 30, 0));
+  // Argentina store (America/Argentina/Buenos_Aires) with English UI
+  const enOut = formatDateForTenant(
+    date,
+    'AR',
+    'America/Argentina/Buenos_Aires',
+    {},
+    { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+    'en-US',
+  );
+  assert.ok(enOut.includes('Aug') || enOut.includes('August'), `expected English month in en-US output, got: ${enOut}`);
+  assert.ok(enOut.includes('PM') || enOut.includes('pm'), `expected English 12-hour period in en-US output, got: ${enOut}`);
+  assert.ok(!enOut.includes('de ago'), `unexpected Spanish preposition in en-US output: ${enOut}`);
+
+  // Argentina store with Spanish UI
+  const esOut = formatDateForTenant(
+    date,
+    'AR',
+    'America/Argentina/Buenos_Aires',
+    {},
+    { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' },
+    'es-AR',
+  );
+  assert.ok(esOut.includes('ago'), `expected Spanish month in es-AR output, got: ${esOut}`);
 });
 
 test('getCurrencyUnitAdapter: IR with toman display scales amounts and labels correctly', () => {
@@ -255,4 +297,3 @@ test('getCurrencyUnitAdapter: non-IR currencies default to 1:1 scale', () => {
   assert.equal(inrAdapter.toDisplay(500), 500);
   assert.equal(inrAdapter.toStored(500), 500);
 });
-

@@ -115,6 +115,18 @@ function main() {
     assertEqual(groups[0].stationName, 'Kitchen', 'E: unlinked Dessert station is ignored in favor of the configured one');
   }
 
+  console.log('\n─── Scenario F: WebUSB station printer is skipped for backend KOT routing ───');
+  {
+    db.prepare('UPDATE kitchen_stations SET is_active = 0').run();
+    db.prepare(`INSERT INTO printers (id, name, connection_type, ip_address, port) VALUES ('pr-webusb', 'Browser WebUSB', 'webusb', null, null)`).run();
+    db.prepare(`INSERT INTO kitchen_stations (id, name, category_ids, printer_id, is_active) VALUES ('stn-webusb', 'Browser Bar', ?, 'pr-webusb', 1)`).run(JSON.stringify(['cat-bev']));
+
+    const groups = routeItemsToStations(db, [{ product_id: 'prod-bev' }]);
+    assertEqual(groups.length, 1, 'F: WebUSB station falls back to one generic Kitchen group');
+    assertEqual(groups[0].stationName, 'Kitchen', 'F: WebUSB station does not receive backend KOT items');
+    assert(groups[0].printer === null, 'F: fallback group leaves printer selection to the backend fallback');
+  }
+
   closeDatabase();
   fs.rmSync(testDir, { recursive: true, force: true });
 

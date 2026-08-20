@@ -783,7 +783,7 @@ async function dispatchPrint(printer: any, data: Buffer, signal?: AbortSignal): 
 
 function getPrinterConfig(): any {
   const db = getDatabase();
-  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get();
+  return db.prepare('SELECT * FROM printers WHERE is_default = 1').get() || db.prepare('SELECT * FROM printers ORDER BY id ASC LIMIT 1').get();
 }
 
 export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false): {
@@ -792,8 +792,17 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   warnings: PrintWarning[];
   columns: number;
 } {
-  const printer = getPrinterConfig();
-  if (!printer) throw new Error('No printer configured');
+  let printer = getPrinterConfig();
+  if (!printer) {
+    printer = {
+      id: 0,
+      name: 'Default 80mm Preview',
+      paper_width: '80mm',
+      connection_type: 'network',
+      ip_address: '127.0.0.1',
+      port: 9100,
+    };
+  }
 
   const profile = resolvePrinterProfile(printer);
   const columns = getColumnsForPrinter(printer, profile);

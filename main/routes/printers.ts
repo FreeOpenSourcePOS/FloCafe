@@ -324,9 +324,16 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
     }
 
     const db = getDatabase();
-    const printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as { id?: unknown; name?: unknown } | undefined;
-    console.log('[Print Bill] Default printer:', printer ? { id: printer.id, name: printer.name } : undefined);
+    let printer = db.prepare('SELECT * FROM printers WHERE is_default = 1').get() as { id?: unknown; name?: unknown; paper_width?: unknown } | undefined;
+    if (!printer) {
+      printer = db.prepare('SELECT * FROM printers ORDER BY id ASC LIMIT 1').get() as { id?: unknown; name?: unknown; paper_width?: unknown } | undefined;
+    }
+    console.log('[Print Bill] Resolved printer:', printer ? { id: printer.id, name: printer.name } : undefined);
     
+    if (!printer && preview === true) {
+      printer = { id: 0, name: 'Default 80mm Preview', paper_width: '80mm' };
+    }
+
     if (!printer) {
       console.log('[Print Bill] Error: No default printer');
       return res.status(400).json({ error: 'No default printer configured. Add a printer in Settings.' });

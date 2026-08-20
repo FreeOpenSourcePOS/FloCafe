@@ -285,14 +285,16 @@ function createWindow(): void {
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page).
   // External URLs are sent to the system browser instead.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    const isBlank = url === 'about:blank' || url === '';
     const isLocal = isAllowedLocalWindowUrl(url, getServerPort(), getLocalIP());
     if (isLocal) {
       return {
         action: 'allow',
         overrideBrowserWindowOptions: {
-          width: 1280,
-          height: 800,
-          title: 'Flo - Kitchen Display',
+          width: isBlank ? 800 : 1280,
+          height: isBlank ? 600 : 800,
+          title: isBlank ? 'Print Receipt' : 'Flo - Kitchen Display',
+          autoHideMenuBar: isBlank,
           webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,

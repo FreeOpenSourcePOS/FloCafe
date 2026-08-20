@@ -199,6 +199,42 @@ async function runTests() {
     assert(cleared?.printer_id === null, 'the cleared station has a null printer_id');
   }
 
+  // ── Test 8: print-bill preview fallback when no printer exists ──────────
+  console.log('\nTest 8: print-bill preview fallback when 0 printers exist');
+  {
+    // Clear all printers directly to simulate zero-printer installation state
+    db.prepare('DELETE FROM printers').run();
+
+    // Create a dummy order, order item, and bill
+    const orderRes = db.prepare(
+      `INSERT INTO orders (order_number, status, type, subtotal, total, created_at, updated_at)
+       VALUES ('ORD-PREVIEW-1', 'completed', 'dine_in', 100, 100, datetime('now'), datetime('now'))`
+    ).run();
+    const orderId = Number(orderRes.lastInsertRowid);
+
+    db.prepare(
+      `INSERT INTO order_items (order_id, product_id, product_name, unit_price, quantity, subtotal, total, created_at, updated_at)
+       VALUES (?, 'prod-preview-1', 'Espresso', 100, 1, 100, 100, datetime('now'), datetime('now'))`
+    ).run(orderId);
+
+    const billRes = db.prepare(
+      `INSERT INTO bills (bill_number, order_id, subtotal, total, balance, payment_status, created_at, updated_at)
+       VALUES ('BILL-PREVIEW-1', ?, 100, 100, 100, 'paid', datetime('now'), datetime('now'))`
+    ).run(orderId);
+    const billId = Number(billRes.lastInsertRowid);
+
+    // Preview request should succeed with fallback 80mm preview format
+    const previewRes = await request(app).post('/api/printers/print-bill').send({ billId, preview: true });
+    assert(previewRes.status === 200, `preview generation with 0 printers succeeds (got ${previewRes.status})`);
+    assert(previewRes.body.columns === 42 || previewRes.body.columns === 48, `preview generation returns valid 80mm columns (got ${previewRes.body.columns})`);
+    assert(typeof previewRes.body.text === 'string' && previewRes.body.text.length > 0, 'preview contains formatted receipt text');
+
+    // Real hardware print request without preview should still reject with 400
+    const realPrintRes = await request(app).post('/api/printers/print-bill').send({ billId, preview: false });
+    assert(realPrintRes.status === 400, `direct hardware print with 0 printers fails with 400 (got ${realPrintRes.status})`);
+    assert(realPrintRes.body.error === 'No default printer configured. Add a printer in Settings.', 'proper error message returned');
+  }
+
   console.log('\n' + '='.repeat(50));
   console.log(`${passed}/${passed + failed} passed, ${failed} failed`);
 

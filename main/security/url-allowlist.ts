@@ -4,6 +4,7 @@ function originFor(hostname: string, port: number): string {
 }
 
 export function isAllowedLocalWindowUrl(rawUrl: string, port: number, localIp?: string): boolean {
+  if (rawUrl === 'about:blank' || rawUrl === '') return true;
   try {
     const parsed = new URL(rawUrl);
     if (parsed.protocol !== 'http:' || parsed.username || parsed.password) return false;

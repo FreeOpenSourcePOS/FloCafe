@@ -127,7 +127,7 @@ jobs:
   # instead of just the job's own wall time. Shards MUST be separate runners:
   # several auth suites interfere when run concurrently on one machine.
   linux-tests:
-    name: Core Test Suite (Shard ${{ matrix.shard }}/2)
+    name: Core Test Suite (Shard ${{ matrix.shard + 1 }}/2)
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
     runs-on: ubuntu-latest

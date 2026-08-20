@@ -5,10 +5,13 @@
  */
 
 import fs from 'node:fs';
+import * as os from 'node:os';
 import path from 'node:path';
 import type { Bill, Order, Tenant, OrderItem, Customer, Table } from '../frontend/src/lib/types';
 
-const EVIDENCE_DIR = process.env.EVIDENCE_DIR || '/Users/gurkiratkhaira/.no-mistakes/evidence/01M0EAZP7Q6BWADVK3WPM4HZDV';
+const EVIDENCE_DIR =
+  process.env.EVIDENCE_DIR ||
+  path.join(os.tmpdir(), 'no-mistakes-evidence', '01M0EAZP7Q6BWADVK3WPM4HZDV');
 
 // Dynamic resolver for frontend modules
 function loadFrontendModules() {

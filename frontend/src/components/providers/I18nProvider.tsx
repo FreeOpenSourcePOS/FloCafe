@@ -16,6 +16,10 @@ import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
  * locale's bundle is fetched on demand and applied atomically when ready.
  * Rapid language switches ignore stale loads (latest request wins), and a
  * failed switch keeps the current language and reverts the store request.
+ *
+ * Supplies a resolved system timeZone (or UTC) to `IntlProvider` and suppresses
+ * `ENVIRONMENT_FALLBACK` error codes during SSR/development pre-rendering while
+ * forwarding other formatting errors to `console.error`.
  */
 function resolveInitialLanguage(): Language {
   if (typeof window !== 'undefined') {

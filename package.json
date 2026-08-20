@@ -128,6 +128,7 @@
     "test:e2e-argentina-flow": "ts-node --transpile-only -P tests/tsconfig.json tests/e2e-argentina-flow.test.ts",
     "test:translations": "ts-node --transpile-only -P tests/tsconfig.json tests/translations.test.ts",
     "test:locale-chunks": "ts-node --transpile-only -P tests/tsconfig.json tests/locale-chunk-splitting.test.ts",
+    "test:i18n-ssr-timezone": "ts-node --transpile-only -P tests/tsconfig.json tests/i18n-ssr-timezone.test.ts",
     "i18n:add": "node scripts/i18n-add.cjs",
     "i18n:check": "npm run test:translations && tsc --noEmit -p frontend/tsconfig.json",
     "test:rtl-foundation": "ts-node --transpile-only -P tests/tsconfig.json tests/rtl-foundation.test.ts",

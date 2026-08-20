@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { COUNTRIES, countryName, getCountryByCode, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
+import { COUNTRIES, getCountryByCode, getLocalizedCountryName, sortCountriesByLocalizedName, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -24,7 +24,7 @@ import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPan
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
 import type { HealthCheckReport } from '@/types/electron';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useLocale, useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
@@ -258,6 +258,8 @@ export default function SettingsPage() {
   usePrinterStatusSync();
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
+  const locale = useLocale();
+  const sortedCountries = sortCountriesByLocalizedName(COUNTRIES, locale);
   const tRestore = useTranslations('restore');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const language = posSettings.language;
@@ -2264,8 +2266,8 @@ export default function SettingsPage() {
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
                       >
                         <option value="">{t('selectCountry')}</option>
-                        {COUNTRIES.map((c) => (
-                          <option key={c.code} value={c.code}>{countryName(c.code)}</option>
+                        {sortedCountries.map((c) => (
+                          <option key={c.code} value={c.code}>{getLocalizedCountryName(c.code, locale)}</option>
                         ))}
                       </select>
                       <input 
@@ -2290,7 +2292,7 @@ export default function SettingsPage() {
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
                       <p className="font-medium text-gray-900">
-                        {form.countryCode ? countryName(form.countryCode) : '—'}
+                        {form.countryCode ? getLocalizedCountryName(form.countryCode, locale) : '—'}
                       </p>
                       <p className="font-medium text-gray-900">
                         <Ltr>{form.timezone || '—'}</Ltr>

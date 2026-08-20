@@ -10,8 +10,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { ArrowLeft, ArrowRight, Check, Cloud, Database, KeyRound, Search, Sparkles, UtensilsCrossed, Eye, EyeOff } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { COUNTRIES, getCountryByCode, countryName, type Country } from '@/lib/countries';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { COUNTRIES, getCountryByCode, getLocalizedCountryName, countryMatchesQuery, sortCountriesByLocalizedName, type Country } from '@/lib/countries';
+import { useLocale, useTranslations, type AppConfig } from 'use-intl';
 import { LANGUAGES, getBrowserLanguage, type Language } from '@/lib/i18n';
 
 type SetupProfile = 'empty' | 'express' | 'demo';
@@ -119,6 +119,7 @@ export default function SetupPage() {
   };
   const passwordMeetsRequirements = form.password.length === 0 || isPasswordValid(form.password);
   const t = useTranslations('setup');
+  const locale = useLocale();
 
   useEffect(() => {
     let mounted = true;
@@ -145,19 +146,12 @@ export default function SetupPage() {
   }, []);
 
   const selectedCountry: Country | undefined = getCountryByCode(country);
-  const q = countryQuery.trim().toLowerCase();
+  const q = countryQuery.trim().toLocaleLowerCase(locale);
   const languageOptions: Language[] = SELECTABLE_LANGUAGES.includes(browserLanguage)
     ? [browserLanguage, ...SELECTABLE_LANGUAGES.filter((l) => l !== browserLanguage)]
     : SELECTABLE_LANGUAGES;
-  const filteredCountries = COUNTRIES.filter((c) => {
-    if (!q) return true;
-    return (
-      countryName(c.code).toLowerCase().includes(q) ||
-      c.code.toLowerCase().includes(q) ||
-      c.currency.toLowerCase().includes(q) ||
-      (c.locale ?? '').toLowerCase().includes(q)
-    );
-  });
+  const filteredCountries = sortCountriesByLocalizedName(COUNTRIES, locale)
+    .filter((c) => countryMatchesQuery(c, countryQuery, locale));
 
   const completeSetup = () => {
     usePosSettingsStore.getState().setLanguage(language);
@@ -347,7 +341,7 @@ export default function SetupPage() {
                         }`}
                       >
                         <div>
-                          <div className="font-semibold">{countryName(c.code)}</div>
+                          <div className="font-semibold">{getLocalizedCountryName(c.code, locale)}</div>
                           <div className="text-xs text-muted-foreground">
                             {c.currency} · {c.taxIdLabel || t('noTaxId')} · {c.locale}
                           </div>

@@ -582,7 +582,12 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     console.log('[Printer] printReceipt called, template:', template, 'useUnicode:', useUnicode, 'isReprint:', isReprint);
-    const { printer, data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint);
+    const printer = getPrinterConfig();
+    if (!printer) {
+      console.log('[Printer] No printer configured');
+      return { ok: false, detail: 'No printer configured' };
+    }
+    const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint);
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
     console.log('[Printer] Receipt data length:', data.length, 'bytes');
     console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
@@ -798,9 +803,6 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
       id: 0,
       name: 'Default 80mm Preview',
       paper_width: '80mm',
-      connection_type: 'network',
-      ip_address: '127.0.0.1',
-      port: 9100,
     };
   }
 

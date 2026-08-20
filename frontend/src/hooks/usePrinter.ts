@@ -153,8 +153,8 @@ export const usePrinterStore = create<PrinterState>()(
             }
           }
 
-          if (get().printMethod === 'browser' || (!hw && get().printMethod === 'escpos')) {
-            if (!hw && get().printMethod === 'escpos') {
+          if (get().printMethod === 'browser' || (!hw && !printerService.isConnected && get().printMethod === 'escpos')) {
+            if (!hw && !printerService.isConnected && get().printMethod === 'escpos') {
               toast('No thermal printer configured — printing via system print', { icon: 'ℹ️' });
             }
             return await executeBrowserPrint();

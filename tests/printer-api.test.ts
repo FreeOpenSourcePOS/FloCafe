@@ -32,6 +32,7 @@ const request = require('supertest');
 const { initDatabase, getDatabase, closeDatabase, now } = require('../main/db');
 const { printerRoutes } = require('../main/routes/printers');
 const { kitchenStationRoutes } = require('../main/routes/kitchen-stations');
+const { printReceipt } = require('../main/printers/thermal');
 
 let passed = 0;
 let failed = 0;
@@ -233,6 +234,10 @@ async function runTests() {
     const realPrintRes = await request(app).post('/api/printers/print-bill').send({ billId, preview: false });
     assert(realPrintRes.status === 400, `direct hardware print with 0 printers fails with 400 (got ${realPrintRes.status})`);
     assert(realPrintRes.body.error === 'No default printer configured. Add a printer in Settings.', 'proper error message returned');
+
+    // Direct call to printReceipt with 0 printers should fail fast without attempting dispatch
+    const directPrintRes = await printReceipt({ order_number: 'ORD-PREVIEW-1', items: [] }, { bill_number: 'BILL-PREVIEW-1' });
+    assert(directPrintRes.ok === false && directPrintRes.detail === 'No printer configured', 'direct printReceipt without printers fails fast');
   }
 
   console.log('\n' + '='.repeat(50));

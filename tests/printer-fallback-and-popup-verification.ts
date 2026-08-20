@@ -537,7 +537,7 @@ async function run() {
   console.log(`   Saved HTML: ${popupSimPath}`);
 
   // 4. Capture PNG Screenshots using Playwright
-  let browser: { close: () => Promise<void> } | undefined;
+  let browser: any;
   try {
     const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
     browser = await playwright.chromium.launch({ headless: true });

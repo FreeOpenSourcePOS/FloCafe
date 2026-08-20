@@ -635,7 +635,7 @@ async function run() {
   }
 
   // Use Playwright to capture screenshots
-  let browser: { close: () => Promise<void> } | undefined;
+  let browser: any;
   try {
     const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
     browser = await playwright.chromium.launch({ headless: true });

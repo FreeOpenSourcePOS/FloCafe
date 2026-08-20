@@ -247,6 +247,50 @@ function run() {
     'release-windows job must publish the built AppX packages to the configured Microsoft Store product and check the exit code'
   );
 
+  const macArtifact = build?.mac?.artifactName;
+  assert.ok(
+    typeof macArtifact === 'string' && macArtifact.includes('${arch}') && macArtifact.includes('mac') && !/\s/.test(macArtifact.replace(/\$\{[^}]+\}/g, '')),
+    `mac.artifactName must be a single lowercased template using \${arch} and mac identifier (got ${JSON.stringify(macArtifact)})`
+  );
+
+  const winArtifact = build?.win?.artifactName;
+  assert.ok(
+    typeof winArtifact === 'string' && winArtifact.includes('${arch}') && winArtifact.includes('win') && !/\s/.test(winArtifact.replace(/\$\{[^}]+\}/g, '')),
+    `win.artifactName must be a single lowercased template using \${arch} and win identifier (got ${JSON.stringify(winArtifact)})`
+  );
+
+  // ── nightly matrix workflow integrity ──
+  const matrixWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/nightly-release.yml'), 'utf8');
+
+  assert.ok(
+    /push:\s*\n\s*branches:\s*\[main\]/.test(matrixWorkflow) && matrixWorkflow.includes('workflow_dispatch:'),
+    'Full Cross-Platform Matrix workflow must trigger on merges to main and workflow_dispatch'
+  );
+  assert.ok(
+    !/^\s*pull_request\s*:/m.test(matrixWorkflow),
+    'Full Cross-Platform Matrix workflow must NOT run on pull_request to conserve CI runner minutes'
+  );
+  assert.ok(
+    matrixWorkflow.includes('cancel-in-progress: false'),
+    'Full Cross-Platform Matrix workflow must not cancel in-progress builds on main'
+  );
+  assert.ok(
+    matrixWorkflow.includes('name: build-${{ matrix.name }}'),
+    'build-matrix job name should be parameterized by matrix.name'
+  );
+
+  for (const targetName of ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64']) {
+    assert.ok(
+      matrixWorkflow.includes(`name: ${targetName}`),
+      `build-matrix strategy must include ${targetName} target`
+    );
+  }
+
+  assert.ok(
+    matrixWorkflow.includes('name: flocafe-build-${{ matrix.name }}'),
+    'Full Cross-Platform Matrix workflow must upload build artifacts with descriptive platform-arch names'
+  );
+
   console.log('✅ Release config + workflow integrity checks passed');
 }
 

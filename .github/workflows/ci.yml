@@ -21,6 +21,7 @@ permissions:
 jobs:
   # 1. Dependency Review (Security)
   dependency-review:
+    name: Security & Dependency Review
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -32,6 +33,7 @@ jobs:
 
   # 2. Path Filtering
   changes:
+    name: Path Filtering
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
@@ -76,6 +78,7 @@ jobs:
 
   # 4. Linux Baseline
   linux-baseline:
+    name: Lint & Build Validation (Linux)
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
     runs-on: ubuntu-latest
@@ -124,6 +127,7 @@ jobs:
   # instead of just the job's own wall time. Shards MUST be separate runners:
   # several auth suites interfere when run concurrently on one machine.
   linux-tests:
+    name: Core Test Suite (Shard ${{ matrix.shard_number }}/2)
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
     runs-on: ubuntu-latest
@@ -132,6 +136,11 @@ jobs:
       fail-fast: false
       matrix:
         shard: [0, 1]
+        include:
+          - shard: 0
+            shard_number: 1
+          - shard: 1
+            shard_number: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -166,6 +175,7 @@ jobs:
 
   # 5. Playwright E2E
   e2e-playwright:
+    name: End-to-End Playwright Tests
     needs: changes
     if: ${{ needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.kds == 'true' || needs.changes.outputs.db == 'true' }}
     runs-on: ubuntu-latest
@@ -223,6 +233,7 @@ jobs:
 
   # 6. Windows Uninstaller Pester Suite
   windows-uninstaller:
+    name: Windows Uninstaller Tests
     needs: changes
     if: ${{ needs.changes.outputs.uninstaller == 'true' }}
     runs-on: windows-latest

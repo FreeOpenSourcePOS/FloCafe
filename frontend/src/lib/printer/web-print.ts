@@ -188,25 +188,46 @@ export async function printWebBill(
   }
 
   return new Promise<void>((resolve, reject) => {
+    let settled = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const cleanup = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+
+    const settle = (err?: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (err) {
+        reject(err);
+      } else {
+        resolve();
+      }
+    };
+
+    const triggerPrint = () => {
+      try {
+        if (printWindow.closed) {
+          settle(new Error('Print window was closed before receipt could be printed'));
+          return;
+        }
+        printWindow.print();
+        settle();
+      } catch (err) {
+        console.error('Failed to trigger print on window:', err);
+        toast.error('Failed to open print dialog');
+        settle(err instanceof Error ? err : new Error(String(err)));
+      }
+    };
+
     try {
       printWindow.document.open();
       printWindow.document.write(html);
       printWindow.document.close();
-
-      const triggerPrint = () => {
-        try {
-          if (printWindow.closed) {
-            reject(new Error('Print window was closed before receipt could be printed'));
-            return;
-          }
-          printWindow.print();
-          resolve();
-        } catch (err) {
-          console.error('Failed to trigger print on window:', err);
-          toast.error('Failed to open print dialog');
-          reject(err);
-        }
-      };
 
       if (printWindow.document.readyState === 'complete') {
         triggerPrint();
@@ -214,11 +235,22 @@ export async function printWebBill(
         printWindow.onload = () => {
           triggerPrint();
         };
+
+        // Poll window state to prevent hanging promise if user closes popup while loading
+        let elapsed = 0;
+        pollTimer = setInterval(() => {
+          elapsed += 50;
+          if (printWindow.closed) {
+            settle(new Error('Print window was closed before receipt could be printed'));
+          } else if (printWindow.document.readyState === 'complete' || elapsed >= 3000) {
+            triggerPrint();
+          }
+        }, 50);
       }
     } catch (err) {
       console.error('Failed to write receipt to print window:', err);
       toast.error('Failed to open print dialog');
-      reject(err);
+      settle(err instanceof Error ? err : new Error(String(err)));
     }
   });
 }

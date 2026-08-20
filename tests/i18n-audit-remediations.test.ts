@@ -275,6 +275,42 @@ async function run() {
   }
   assert('printWebBill rejects when deferred window is closed before onload', deferredClosedErrorThrown === true);
 
+  // 1.7 printWebBill rejects via poll timer when onload NEVER fires and window is closed
+  let pollClosedErrorThrown = false;
+  const pollMockWindow: any = {
+    document: {
+      open: () => {},
+      write: (_html: string) => {},
+      close: () => {},
+      readyState: 'loading',
+    },
+    closed: false,
+    print: () => {},
+    onload: null,
+  };
+
+  (global as any).window = {
+    open: () => pollMockWindow,
+  };
+
+  const pollPrintPromise = printWebBill(
+    sampleBill,
+    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+    { language: 'en' as any }
+  );
+
+  // Close window after 60ms without triggering onload
+  setTimeout(() => {
+    pollMockWindow.closed = true;
+  }, 60);
+
+  try {
+    await pollPrintPromise;
+  } catch (err: any) {
+    pollClosedErrorThrown = err.message.includes('Print window was closed');
+  }
+  assert('printWebBill rejects via polling watcher when window closes during loading', pollClosedErrorThrown === true);
+
   (global as any).window = originalWindow;
 
   // ----------------------------------------------------------------

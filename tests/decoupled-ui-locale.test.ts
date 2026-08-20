@@ -58,7 +58,8 @@ React.useSyncExternalStore = function (subscribe: any, getSnapshot: any, getServ
 const { IntlProvider, useLocale } = frontendRequire('use-intl');
 const { formatDateForTenant, getCountryByCode } = require('../main/countries');
 const { generateBillHtml } = require('../frontend/src/lib/printer/web-print');
-const { getWhatsAppMessage, getWhatsAppShareUrl } = require('../frontend/src/lib/whatsapp-share');
+const { getWhatsAppMessage, getWhatsAppShareUrl, sendBillViaFlo } = require('../frontend/src/lib/whatsapp-share');
+const whatsappApi = frontendRequire('./src/lib/api').default;
 const { LANGUAGES } = require('../frontend/src/lib/i18n/languages');
 const { useFormatDate } = require('../frontend/src/hooks/useFormatDate');
 const { useAuthStore } = require('../frontend/src/store/auth');
@@ -296,6 +297,28 @@ async function runTests() {
     'en-US',
   );
   assert.ok(enWaUrl.startsWith('https://wa.me/1155551234?text='), `Expected valid wa.me URL, got: ${enWaUrl}`);
+
+  // Connected Flo sends must use the same active UI locale as browser shares.
+  const originalPost = whatsappApi.post;
+  let sentBody: Record<string, unknown> | undefined;
+  whatsappApi.post = async (_url: string, body: Record<string, unknown>) => {
+    sentBody = body;
+    return { data: { ok: false } };
+  };
+  try {
+    await sendBillViaFlo(
+      mockBill as any,
+      '+541155551234',
+      mockArgentinaTenant,
+      (key: string) => key,
+      {},
+      'en-US',
+    );
+  } finally {
+    whatsappApi.post = originalPost;
+  }
+  assert.ok(typeof sentBody?.body === 'string', 'Expected connected Flo request body');
+  assert.ok(String(sentBody?.body).includes('Aug'), `Expected English date in connected Flo message, got: ${sentBody?.body}`);
 
   // Build WhatsApp preview artifact
   const whatsappPreviewHtml = `<!DOCTYPE html>

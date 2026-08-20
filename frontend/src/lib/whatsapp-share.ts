@@ -163,8 +163,9 @@ export async function sendBillViaFlo(
   tenant: Pick<Tenant, 'business_name' | 'currency' | 'country'>,
   t: (key: string, params?: Record<string, string | number>) => string,
   opts: WhatsAppShareOptions = {},
+  localeOverride?: string,
 ): Promise<void> {
-  const message = getWhatsAppMessage(bill, tenant, opts);
+  const message = getWhatsAppMessage(bill, tenant, opts, localeOverride);
   try {
     const { data } = await api.post('/whatsapp/send', {
       bill_id: bill.id,

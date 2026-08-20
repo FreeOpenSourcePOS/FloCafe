@@ -355,7 +355,7 @@ export default function PaymentModal({ bill, onClose, onPaid, onBillUpdate }: Pr
     }
     setSendingWa(true);
     try {
-      await sendBillViaFlo(bill, phone, tenantForShare, whatsappSendT, { pointsEarned });
+      await sendBillViaFlo(bill, phone, tenantForShare, whatsappSendT, { pointsEarned }, locale);
     } finally {
       setSendingWa(false);
     }

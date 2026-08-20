@@ -714,7 +714,8 @@ export default function OrdersPage() {
           country: currentTenant?.country || 'IN',
         },
         whatsappSendT,
-        { pointsEarned: order.bill.points_earned ?? 0 }
+        { pointsEarned: order.bill.points_earned ?? 0 },
+        locale,
       );
     } finally {
       setSendingWaOrderId(null);

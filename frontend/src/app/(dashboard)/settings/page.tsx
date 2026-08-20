@@ -2265,20 +2265,29 @@ export default function SettingsPage() {
                       <select
                         value={form.countryCode}
                         onChange={(e) => {
-                          const nextCountry = COUNTRIES.find(c => c.code === e.target.value);
-                          setForm((p) => {
-                            const previousCountry = getCountryByCode(p.countryCode);
-                            const timezoneWasDefault = !previousCountry || p.timezone === previousCountry.timezone;
-                            return {
-                              ...p,
-                              countryCode: e.target.value,
-                              currency: nextCountry?.currency || p.currency,
-                              // The country profile timezone is only a suggestion.
-                              // Only replace it when the user has not explicitly
-                              // chosen a different timezone for the previous country.
-                              timezone: timezoneWasDefault
-                                ? (nextCountry?.timezone || p.timezone)
-                                : p.timezone,
+                           const country = COUNTRIES.find(c => c.code === e.target.value);
+                           setForm((p) => {
+                             const options = country?.localeOptions;
+                             // Re-evaluate locale display preferences against the
+                             // newly selected country (#390): keep supported values
+                             // and reset unsupported ones to their neutral defaults.
+                             const currencyDisplay = (options?.currencyDisplay?.includes(p.currencyDisplay) || p.currencyDisplay === 'rial')
+                               ? p.currencyDisplay
+                               : 'rial';
+                             const numberDigits = (options?.digits?.includes(p.numberDigits) || p.numberDigits === 'locale')
+                               ? p.numberDigits
+                               : 'locale';
+                             const calendar = (options?.calendar?.includes(p.calendar) || p.calendar === 'locale')
+                               ? p.calendar
+                               : 'locale';
+                             return {
+                               ...p,
+                               countryCode: e.target.value,
+                               currency: country?.currency || p.currency,
+                               timezone: country?.timezone || p.timezone,
+                               currencyDisplay,
+                               numberDigits,
+                               calendar,
                             };
                           });
                         }}

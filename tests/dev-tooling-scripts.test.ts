@@ -347,8 +347,16 @@ exit 0
   const ciWorkflow = fs.readFileSync(path.join(rootDir, '.github/workflows/ci.yml'), 'utf8');
 
   assert.ok(ciWorkflow.includes('linux-tests:'), 'ci.yml must define a "linux-tests" job');
+  assert.ok(
+    ciWorkflow.includes('name: Core Test Suite (Shard ${{ matrix.shard_number }}/2)'),
+    'linux-tests must display 1-indexed shard numbers in job name',
+  );
   assert.ok(ciWorkflow.includes('fail-fast: false'), 'linux-tests strategy.fail-fast must be false');
   assert.ok(/shard:\s*\[0,\s*1\]/.test(ciWorkflow), 'linux-tests matrix.shard must be [0, 1]');
+  assert.ok(
+    ciWorkflow.includes('shard_number: 1') && ciWorkflow.includes('shard_number: 2'),
+    'linux-tests matrix must include 1-indexed shard_number mappings',
+  );
 
   assert.ok(ciWorkflow.includes('if: matrix.shard == 0'), 'Payment method split check must run only on shard 0');
   assert.ok(ciWorkflow.includes('working-directory: frontend'), 'linux-tests must include frontend dependencies installation step');

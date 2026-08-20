@@ -282,8 +282,8 @@ function createWindow(): void {
   // This avoids file:// protocol issues and keeps dev/prod behaviour identical.
   mainWindow.loadURL(`http://localhost:${getServerPort()}`);
 
-  // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page).
-  // External URLs are sent to the system browser instead.
+  // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page)
+  // and blank popup windows (e.g. browser print popups). External URLs are sent to the system browser.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     const isBlank = url === 'about:blank' || url === '';
     const isLocal = isAllowedLocalWindowUrl(url, getServerPort(), getLocalIP());

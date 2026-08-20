@@ -54,6 +54,12 @@ function walkFiles(dir: string, predicate: (name: string) => boolean): string[] 
   return found;
 }
 
+function decodeJavaScriptEscapes(value: string): string {
+  return value.replace(/\\x([0-9a-f]{2})|\\u([0-9a-f]{4})/gi, (_match, hex8, hex16) => {
+    return String.fromCharCode(parseInt(hex8 ?? hex16, 16));
+  });
+}
+
 function run(): void {
   const chunksDir = path.join(OUT, '_next', 'static', 'chunks');
   if (!fs.existsSync(chunksDir)) {
@@ -67,8 +73,10 @@ function run(): void {
   const chunks = walkFiles(chunksDir, (name) => name.endsWith('.js'));
   assert(chunks.length > 0, 'no chunks found in frontend/out/_next/static/chunks');
 
-  const filesWith = (marker: string): string[] =>
-    chunks.filter((f) => fs.readFileSync(f, 'utf8').includes(marker));
+  const filesWith = (marker: string): string[] => chunks.filter((f) => {
+    const content = fs.readFileSync(f, 'utf8');
+    return content.includes(marker) || decodeJavaScriptEscapes(content).includes(marker);
+  });
 
   const enFiles = filesWith(MARKERS.en);
   assert(

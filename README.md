@@ -155,3 +155,4 @@ If FloCafe is useful to you, consider starring the repository.
 ## License
 
 FloCafe is open-source software licensed under the [MIT License](LICENSE).
+[![Greptile: The War on Bugs](https://www.greptile.com/badge.svg)](https://www.greptile.com/?utm_source=oss_badge&utm_medium=readme&utm_campaign=greptile_for_open_source)

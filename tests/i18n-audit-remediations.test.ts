@@ -10,9 +10,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import type { Bill, Order, OrderItem, Table } from '../frontend/src/lib/types';
 
-const EVIDENCE_DIR = process.env.EVIDENCE_DIR || '/Users/gurkiratkhaira/.no-mistakes/evidence/01M0EAZP7Q6BWADVK3WPM4HZDV';
+const EVIDENCE_DIR = process.env.EVIDENCE_DIR || path.join(os.tmpdir(), 'flo-audit-evidence');
 
 // Module alias resolver for frontend imports
 function setupModuleResolver() {
@@ -156,6 +157,34 @@ async function run() {
       html.includes(`<html lang="${tag}" dir="${dir}">`),
     );
   }
+
+  // 1.4 printWebBill opens popup synchronously within user gesture turn
+  const originalWindow = (global as any).window;
+  let windowOpenedSync = false;
+  const openedWindowDoc = {
+    open: () => {},
+    write: (_html: string) => {},
+    close: () => {},
+    readyState: 'complete',
+  };
+  (global as any).window = {
+    open: () => {
+      windowOpenedSync = true;
+      return {
+        document: openedWindowDoc,
+        closed: false,
+        print: () => {},
+      };
+    },
+  };
+  windowOpenedSync = false;
+  await printWebBill(
+    sampleBill,
+    { business_name: 'FloCafe Audit Test', currency: 'USD', country: 'US', timezone: 'UTC' } as any,
+    { language: 'fa' as any }
+  );
+  assert('printWebBill opens popup window synchronously to preserve user activation', windowOpenedSync === true);
+  (global as any).window = originalWindow;
 
   // ----------------------------------------------------------------
   // Section 2: Void adjustment status typing, translations, & Tables UI

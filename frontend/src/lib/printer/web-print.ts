@@ -159,6 +159,10 @@ export async function ensureReceiptMessagesLoaded(lang: Language): Promise<void>
 
 /**
  * Generate HTML for A4/A5 printing and open print dialog.
+ *
+ * NOTE: The popup window is opened synchronously within the initiating user gesture
+ * to preserve browser user activation (preventing popup blocker suppression), and
+ * HTML is written into the window once requested language messages are ready.
  */
 export async function printWebBill(
   bill: Bill,
@@ -166,25 +170,36 @@ export async function printWebBill(
   opts: WebPrintOptions = {}
 ): Promise<void> {
   const lang = resolveLanguage(opts.language);
-  await ensureReceiptMessagesLoaded(lang);
-  const html = generateBillHtml(bill, tenant, opts);
 
-  // Create a new window with the bill HTML
-  const printWindow = window.open('', '_blank', 'width=800,height=600');
+  // 1. Open popup window synchronously to maintain transient user activation
+  const printWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'width=800,height=600') : null;
   if (!printWindow) {
     toast.error('Please allow popups to print bills');
     return;
   }
 
-  printWindow.document.write(html);
-  printWindow.document.close();
+  // 2. Ensure the requested language messages are loaded in memory
+  await ensureReceiptMessagesLoaded(lang);
+  const html = generateBillHtml(bill, tenant, opts);
 
-  // Wait for content to load then print
-  printWindow.onload = () => {
-    printWindow.print();
-    // Close after print dialog is dismissed (optional)
-    // printWindow.close();
-  };
+  // 3. Write HTML and trigger print
+  try {
+    if (printWindow.closed) return;
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
+
+    if (printWindow.document.readyState === 'complete') {
+      printWindow.print();
+    } else {
+      printWindow.onload = () => {
+        printWindow.print();
+      };
+    }
+  } catch (err) {
+    console.error('Failed to write receipt to print window:', err);
+    toast.error('Failed to open print dialog');
+  }
 }
 
 /**

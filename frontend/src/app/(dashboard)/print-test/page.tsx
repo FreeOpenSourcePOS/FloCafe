@@ -91,7 +91,7 @@ export default function PrintTestPage() {
           }
           break;
         case 'web-print':
-          printWebBill(testBill, testTenant, { paperSize: printerPaperSize, includeTaxId: true });
+          await printWebBill(testBill, testTenant, { paperSize: printerPaperSize, includeTaxId: true });
           toast.success(t('webPrintDialogOpened'));
           break;
         case 'whatsapp':

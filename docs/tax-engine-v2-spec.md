@@ -28,9 +28,10 @@ history but are superseded for country-specific packs. New installers bundle and
 auto-activate only the generic/manual no-tax profile. They do not bundle, install, or
 activate an official country profile, including India or Thailand.
 
-Country selection during first-run setup remains an offline locale, currency, and
-timezone choice; setup does not contact the tax-pack catalog or display tax-pack
-availability. An owner who wants official rules explicitly chooses **Enable taxes**
+Country selection during first-run setup remains an offline locale and currency
+choice; timezone is pre-filled from the selected country but owners in
+multi-timezone countries can override it before completing setup. Setup does not
+contact the tax-pack catalog or display tax-pack availability. An owner who wants official rules explicitly chooses **Enable taxes**
 in Settings → Tax Configuration. FloCafe then checks the signed catalog for the
 store country, downloads and verifies the matching pack, and activates it through
 the existing owner-only flow. Stores may instead remain on the generic profile or

@@ -274,6 +274,11 @@ function run() {
     undefined,
     'Full Cross-Platform Matrix workflow must NOT run on pull_request to conserve CI runner minutes'
   );
+  assert.strictEqual(
+    matrixWorkflow?.concurrency?.['cancel-in-progress'],
+    false,
+    'Full Cross-Platform Matrix workflow must not cancel in-progress builds on main'
+  );
 
   const buildMatrixJob = matrixWorkflow?.jobs?.['build-matrix'];
   assert.ok(buildMatrixJob, 'Full Cross-Platform Matrix workflow must define a "build-matrix" job');

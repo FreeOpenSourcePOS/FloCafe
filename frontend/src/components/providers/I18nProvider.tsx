@@ -16,6 +16,10 @@ import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
  * locale's bundle is fetched on demand and applied atomically when ready.
  * Rapid language switches ignore stale loads (latest request wins), and a
  * failed switch keeps the current language and reverts the store request.
+ *
+ * Supplies a resolved system timeZone (or UTC) to `IntlProvider` and suppresses
+ * `ENVIRONMENT_FALLBACK` error codes during SSR/development pre-rendering while
+ * forwarding other formatting errors to `console.error`.
  */
 function resolveInitialLanguage(): Language {
   if (typeof window !== 'undefined') {
@@ -35,6 +39,26 @@ function resolveInitialLanguage(): Language {
   const browser = getBrowserLanguage();
   if (LANGUAGES[browser]) return browser;
   return 'en';
+}
+
+/**
+ * Error handler passed to `IntlProvider` to suppress benign `ENVIRONMENT_FALLBACK`
+ * warnings in SSR while forwarding all genuine translation and formatting errors
+ * to `console.error`.
+ */
+export function handleI18nError(error: { code?: string; message?: string } | Error) {
+  if ('code' in error && error.code === 'ENVIRONMENT_FALLBACK') return;
+  console.error(error);
+}
+
+/**
+ * Resolves the default runtime timezone for `IntlProvider` using the host's
+ * Intl API when available, falling back to `'UTC'`.
+ */
+export function getDefaultTimeZone(): string {
+  return typeof Intl !== 'undefined'
+    ? Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    : 'UTC';
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
@@ -82,7 +106,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   const messages = getCachedMessages(active) ?? getCachedMessages('en') ?? {};
 
   return (
-    <IntlProvider locale={config.locale} messages={messages}>
+    <IntlProvider
+      locale={config.locale}
+      messages={messages}
+      timeZone={getDefaultTimeZone()}
+      onError={handleI18nError}
+    >
       {children}
     </IntlProvider>
   );

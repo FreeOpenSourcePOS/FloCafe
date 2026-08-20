@@ -170,9 +170,10 @@ router.get('/', customerReadRateLimit, requireRole('owner', 'manager', 'cashier'
     if (req.query.search) {
       const rawSearch = String(req.query.search || '').trim();
       const digitsSearch = stripPhoneDigits(rawSearch);
+      const isPhoneLikeSearch = digitsSearch.length > 0 && !/\p{L}/u.test(rawSearch);
       const search = `%${rawSearch}%`;
 
-      if (digitsSearch.length > 0) {
+      if (isPhoneLikeSearch) {
         query += ' AND (c.name LIKE ? OR c.phone_digits LIKE ? OR c.email LIKE ?)';
         params.push(search, `%${digitsSearch}%`, search);
       } else {

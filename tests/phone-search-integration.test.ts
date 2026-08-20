@@ -51,6 +51,7 @@ async function main() {
   insertCustomer(db, 'ci-ar',        'Carlos AR',    '+541143210000',    '+54', 1);
   insertCustomer(db, 'ci-inactive',  'Inactive',     '+911111111111',    '+91', 0);
   insertCustomer(db, 'ci-alice',     'Alice Smith',   null,               null,  1, 'alice@example.com');
+  insertCustomer(db, 'ci-digit-text', 'Alice 2',      null,               null,  1, 'user2@example.com');
 
   const app = createApp({});
   registerRoutes(app);
@@ -139,6 +140,16 @@ async function main() {
     list = (res.data?.data || []);
     assertEqual(list.length, 1, 'list filter continues matching customer emails');
     assertEqual(list[0]?.id, 'ci-alice', 'email search returns Alice Smith');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('Alice 2')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'digit-bearing name search does not overmatch phone digits');
+    assertEqual(list[0]?.id, 'ci-digit-text', 'digit-bearing name search returns the named customer');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('user2@example.com')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'digit-bearing email search does not overmatch phone digits');
+    assertEqual(list[0]?.id, 'ci-digit-text', 'digit-bearing email search returns the emailed customer');
 
     res = await api(apiBase, '/customers?search=anita&sort=name&order=asc&per_page=2', { headers: authHeader });
     list = (res.data?.data || []);

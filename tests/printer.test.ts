@@ -876,6 +876,21 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     }
   }
 
+  const frontendPersianBill = {
+    ...frontendBill,
+    order: {
+      ...frontendBill.order,
+      items: [{ product_name: 'چای زعفرانی', quantity: 1, unit_price: 250000, total: 250000, addons: [], special_instructions: '' }],
+    },
+  };
+  const frontendPersianTenant = { ...frontendTenant, business_name: 'کافه فلو تهران' };
+  for (const enc of encoders) {
+    const warnings: Array<{ field: string; text: string; message: string }> = [];
+    const bytes = enc.fn(frontendPersianBill, frontendPersianTenant, { useUnicode: true, arabicShaping: true }, warnings);
+    assert(`[frontend ${enc.name}] emits Persian item with shaping enabled`, Buffer.from(bytes).toString('utf8').includes('چای زعفرانی'));
+    assert(`[frontend ${enc.name}] emits no warning for shaped Persian item`, warnings.length === 0);
+  }
+
   // The frontend classic template also needs to keep the three-character IRR
   // prefix inside the 58mm (42-column) raw layout.
   for (const useUnicode of [false, true]) {

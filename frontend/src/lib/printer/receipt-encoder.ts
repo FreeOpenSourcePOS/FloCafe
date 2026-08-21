@@ -263,11 +263,11 @@ export function buildClassicReceiptBytes(
 
   if (showTableNumber && order?.table?.name) {
     enc.bold(true);
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, arabicShaping);
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping);
     enc.bold(false).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, order.customer.name, warnings, arabicShaping).newline();
+    safePrinterText(enc, order.customer.name, warnings, false, arabicShaping).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
     enc.text(maskPhoneOnReceipt(order.customer.phone)).newline();
@@ -289,7 +289,7 @@ export function buildClassicReceiptBytes(
   const items = order?.items ?? [];
   for (const item of items) {
     for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
-      safePrinterText(enc, row, warnings, arabicShaping).newline();
+      safePrinterText(enc, row, warnings, false, arabicShaping).newline();
     }
 
     // Addons
@@ -299,16 +299,16 @@ export function buildClassicReceiptBytes(
         const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
         if (addon.price && Number(addon.price) > 0) {
           const addonTotal = Number(addon.price) * qty * item.quantity;
-          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings, arabicShaping).newline();
+          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings, false, arabicShaping).newline();
         } else {
-          safePrinterText(enc, addonLabel, warnings, arabicShaping).newline();
+          safePrinterText(enc, addonLabel, warnings, false, arabicShaping).newline();
         }
       }
     }
 
     // Special instructions
     if (item.special_instructions) {
-      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings, arabicShaping).newline();
+      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings, false, arabicShaping).newline();
     }
   }
 
@@ -358,22 +358,22 @@ export function buildClassicReceiptBytes(
   // Footer
   if (showFooter) {
     if (taxRegistrationNumber) {
-      safePrinterText(enc, padRow(`${taxIdLabel}: ${taxRegistrationNumber}`, `Bill #${bill.bill_number}`, cols), warnings, arabicShaping).newline();
+      safePrinterText(enc, padRow(`${taxIdLabel}: ${taxRegistrationNumber}`, `Bill #${bill.bill_number}`, cols), warnings, false, arabicShaping).newline();
     }
     if (address) {
       enc.align('center');
-      safePrinterText(enc, truncate(address, cols), warnings, arabicShaping).newline();
+      safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping).newline();
       enc.align('left');
     }
     if (phone) {
       enc.align('center');
-      safePrinterText(enc, `Call: ${phone}`, warnings, arabicShaping).newline();
+      safePrinterText(enc, `Call: ${phone}`, warnings, false, arabicShaping).newline();
       enc.align('left');
     }
     enc.newline();
     enc.align('center').text('Thank you! Please visit again').newline();
     if (footerNote) {
-      safePrinterText(enc, truncate(footerNote, cols), warnings, arabicShaping).newline();
+      safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping).newline();
     }
   }
   printPoweredByFooter(enc);
@@ -436,13 +436,13 @@ export function buildCompactReceiptBytes(
     .newline();
 
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, `Cust: ${truncate(order.customer.name, cols - 6)}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `Cust: ${truncate(order.customer.name, cols - 6)}`, warnings, false, arabicShaping).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
-    safePrinterText(enc, `No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping).newline();
   }
 
   enc.rule({ style: 'single' });
@@ -499,13 +499,13 @@ export function buildCompactReceiptBytes(
 
   enc.newline().align('center');
   if (taxRegistrationNumber) {
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping).newline();
   }
-  if (address) safePrinterText(enc, truncate(address, cols), warnings, arabicShaping).newline();
-  if (phone) safePrinterText(enc, `Ph: ${phone}`, warnings, arabicShaping).newline();
+  if (address) safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping).newline();
+  if (phone) safePrinterText(enc, `Ph: ${phone}`, warnings, false, arabicShaping).newline();
   enc.text('Thank you!').newline();
   if (footerNote) {
-    safePrinterText(enc, truncate(footerNote, cols), warnings, arabicShaping).newline();
+    safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping).newline();
   }
   printPoweredByFooter(enc);
 
@@ -565,17 +565,17 @@ export function buildDetailedReceiptBytes(
 
   if (taxRegistrationNumber) {
     enc.bold(true);
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, arabicShaping);
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping);
     enc.bold(false).newline();
   }
 
   enc.bold(true).text('TAX INVOICE').bold(false).newline();
 
   if (address) {
-    safePrinterText(enc, truncate(address, cols), warnings, arabicShaping).newline();
+    safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping).newline();
   }
   if (phone) {
-    safePrinterText(enc, phone, warnings, arabicShaping).newline();
+    safePrinterText(enc, phone, warnings, false, arabicShaping).newline();
   }
 
   enc.align('left').rule({ style: 'single' });
@@ -599,10 +599,10 @@ export function buildDetailedReceiptBytes(
     ).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
-    safePrinterText(enc, `Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping).newline();
   }
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping).newline();
   }
 
   enc.rule({ style: 'single' });
@@ -614,7 +614,7 @@ export function buildDetailedReceiptBytes(
   const items = order?.items ?? [];
   for (const item of items) {
     for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
-      safePrinterText(enc, row, warnings, arabicShaping).newline();
+      safePrinterText(enc, row, warnings, false, arabicShaping).newline();
     }
 
     if (item.addons && item.addons.length > 0) {
@@ -623,15 +623,15 @@ export function buildDetailedReceiptBytes(
         const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
         if (addon.price && Number(addon.price) > 0) {
           const addonTotal = Number(addon.price) * qty * item.quantity;
-          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings, arabicShaping).newline();
+          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings, false, arabicShaping).newline();
         } else {
-          safePrinterText(enc, addonLabel, warnings, arabicShaping).newline();
+          safePrinterText(enc, addonLabel, warnings, false, arabicShaping).newline();
         }
       }
     }
 
     if (item.special_instructions) {
-      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings, arabicShaping).newline();
+      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings, false, arabicShaping).newline();
     }
   }
 
@@ -679,7 +679,7 @@ export function buildDetailedReceiptBytes(
     .align('left');
 
   if (footerNote) {
-    safePrinterText(enc, truncate(footerNote, cols), warnings, arabicShaping).newline();
+    safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping).newline();
   }
   printPoweredByFooter(enc);
 

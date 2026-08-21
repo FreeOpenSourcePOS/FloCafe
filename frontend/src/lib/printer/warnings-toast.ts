@@ -11,7 +11,7 @@
 import toast from 'react-hot-toast';
 import { createTranslator } from 'use-intl/core';
 import type { PrintWarning } from './warnings';
-import { hasArabicScript } from './warnings';
+import { isArabicShapingSafeLine } from './warnings';
 import { getCachedMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import { usePosSettingsStore } from '@/store/pos-settings';
@@ -40,14 +40,14 @@ export function showPrintWarningsToast(warnings: PrintWarning[]): void {
   if (warnings.length === 0) return;
 
   const t = getTranslator(resolveLanguage());
-  const hasArabic = warnings.some((warning) => hasArabicScript(warning.text));
+  const hasArabic = warnings.some((warning) => isArabicShapingSafeLine(warning.text));
 
   const sections = [
     t('printWarnings.title', { count: warnings.length }),
     hasArabic ? t('printWarnings.arabicShapingHint') : t('printWarnings.genericHint'),
   ];
 
-  const texts = warnings.map((warning) => warning.text).filter(Boolean);
+  const texts = warnings.map((warning) => warning.message || warning.text).filter(Boolean);
   if (texts.length > 0) {
     const listed = texts.slice(0, MAX_LISTED_LINES);
     if (texts.length > MAX_LISTED_LINES) {

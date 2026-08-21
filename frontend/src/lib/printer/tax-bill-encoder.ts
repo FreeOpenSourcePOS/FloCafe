@@ -148,13 +148,13 @@ export function buildTaxBillBytes(
   }
 
   if (address) {
-    safePrinterText(enc, truncate(address, cols), warnings, arabicShaping).newline();
+    safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping).newline();
   }
   if (phone) {
-    safePrinterText(enc, `Ph: ${phone}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `Ph: ${phone}`, warnings, false, arabicShaping).newline();
   }
   if (taxRegistrationNumber) {
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping).newline();
   }
 
   enc.newline();
@@ -165,10 +165,10 @@ export function buildTaxBillBytes(
   enc.text(`Date: ${formatDate(bill.order?.created_at, locale)}`).newline();
 
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, arabicShaping).newline();
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
     enc.text(`Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`).newline();
@@ -184,7 +184,7 @@ export function buildTaxBillBytes(
   for (const item of items) {
     const line = `${item.product_name}`;
 
-    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos), cols), warnings, arabicShaping).newline();
+    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos), cols), warnings, false, arabicShaping).newline();
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
@@ -200,7 +200,7 @@ export function buildTaxBillBytes(
         const addonPrice = addon.price && Number(addon.price) > 0
           ? formatAmount(Number(addon.price) * qty * item.quantity, currency, amountLocale, trimDecimals, rawEscPos)
           : '';
-        safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings, arabicShaping).newline();
+        safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings, false, arabicShaping).newline();
       }
     }
   }

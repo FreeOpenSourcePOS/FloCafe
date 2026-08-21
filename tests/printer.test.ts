@@ -283,7 +283,12 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
     feWarnings.safePrinterText(mixedEnc, 'کافه Café', mixedFeWarnings, false, true);
     assert('frontend safePrinterText still skips mixed-script line with shaping on', mixedEnc.out.length === 0 && mixedFeWarnings.length === 1);
 
-    for (const [label, value] of [['ZWNJ', 'می\u200Cرود'], ['ZWJ', 'می\u200Dرود']] as const) {
+    for (const [label, value] of [
+      ['ZWNJ', 'می\u200Cرود'],
+      ['ZWJ', 'می\u200Dرود'],
+      ['RLM', 'می\u200Fرود'],
+      ['ellipsis', 'می\u200Cرود\u2026'],
+    ] as const) {
       const formatControlEnc = makeEnc();
       const formatControlWarnings: any[] = [];
       feWarnings.safePrinterText(formatControlEnc, value, formatControlWarnings, false, true);
@@ -311,7 +316,12 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('with flag, Persian line with Unicode currency is emitted', shapedCurrencyBuf.toString('utf8').includes('چای زعفرانی ₹500.00'));
   assert('with flag, Persian line with Unicode currency emits no warning', shapedCurrencyWarnings.length === 0);
 
-  for (const [label, value] of [['ZWNJ', 'می\u200Cرود'], ['ZWJ', 'می\u200Dرود']] as const) {
+  for (const [label, value] of [
+    ['ZWNJ', 'می\u200Cرود'],
+    ['ZWJ', 'می\u200Dرود'],
+    ['RLM', 'می\u200Fرود'],
+    ['ellipsis', 'می\u200Cرود\u2026'],
+  ] as const) {
     const formatControlWarnings: Array<{ field: string; text: string; message: string }> = [];
     const formatControlBuf = buildEscPos([value], true, { arabicShaping: true }, formatControlWarnings);
     assert(`backend shaping accepts Persian ${label}`, formatControlBuf.toString('utf8').includes(value) && formatControlWarnings.length === 0);
@@ -890,6 +900,18 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     assert(`[frontend ${enc.name}] emits Persian item with shaping enabled`, Buffer.from(bytes).toString('utf8').includes('چای زعفرانی'));
     assert(`[frontend ${enc.name}] emits no warning for shaped Persian item`, warnings.length === 0);
   }
+
+  const longPersianWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const longPersianBytes = buildCompactReceiptBytes({
+    ...frontendPersianBill,
+    order: {
+      ...frontendPersianBill.order,
+      items: [{ product_name: 'چای زعفرانی مخصوص دارچین هل گلاب پسته', quantity: 1, unit_price: 250000, total: 250000, addons: [], special_instructions: '' }],
+    },
+  } as any, frontendPersianTenant, { paperWidth: 58, useUnicode: true, arabicShaping: true }, longPersianWarnings);
+  const longPersianText = Buffer.from(longPersianBytes).toString('utf8');
+  assert('frontend shaping preserves truncated Persian item output', longPersianText.includes('…') && longPersianText.includes('چای زعفرانی'));
+  assert('frontend shaping emits no warning for truncated Persian item', longPersianWarnings.length === 0);
 
   // The frontend classic template also needs to keep the three-character IRR
   // prefix inside the 58mm (42-column) raw layout.

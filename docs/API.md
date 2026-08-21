@@ -828,6 +828,7 @@ Get business settings.
   "business_name": "My Restaurant",
   "timezone": "Asia/Kolkata",
   "currency": "INR",
+  "country": "IN",
   "tax_registration_number": "22AAAAA0000A1Z5"
 }
 ```
@@ -837,10 +838,28 @@ Get business settings.
 ### PUT `/api/settings/business`
 Update business settings.
 
+`timezone` is validated as an IANA identifier; invalid values return HTTP 400 with `"Invalid timezone, currency, or country"`.
+
+When `tax_registration_number` is provided, the backend validates it against the active country pack's registration format. A mismatch returns HTTP 400:
+
+```json
+{
+  "error": "Tax ID does not match the expected IN format: 15-digit GSTIN",
+  "tax_id_format": { "pattern": "...", "description": "..." }
+}
+```
+
 ---
 
 ### GET `/api/settings/tax`
 Get tax settings.
+
+---
+
+### PUT `/api/settings/tax`
+Update tax settings (owner/manager only).
+
+Validates `tax_registration_number` against the active country pack format, same as `PUT /api/settings/business`.
 
 ---
 

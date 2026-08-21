@@ -5,9 +5,9 @@ import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '..
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
-import { resolveTaxIdFormat } from '../services/tax';
+import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
-import { getCountryByCode, getCurrencySymbol } from '../countries';
+import { getCountryByCode, getCurrencySymbol, isValidTimeZone } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
@@ -39,10 +39,7 @@ function upsertSettings(db: ReturnType<typeof getDatabase>, entries: Record<stri
 }
 
 function validBusinessLocation(timezone: unknown, currency: unknown, country: unknown): boolean {
-  if (timezone !== undefined) {
-    if (typeof timezone !== 'string' || timezone.length > 100) return false;
-    try { new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(); } catch { return false; }
-  }
+  if (timezone !== undefined && !isValidTimeZone(timezone)) return false;
   if (currency !== undefined && (typeof currency !== 'string' || !/^[A-Z]{3}$/.test(currency))) return false;
   if (country !== undefined && (typeof country !== 'string' || !/^[A-Z]{2}$/.test(country))) return false;
   return true;
@@ -143,9 +140,9 @@ function businessShape(s: Record<string, string>) {
     currency_display: s.currency_display || 'rial',
     number_digits: s.number_digits || 'locale',
     calendar: s.calendar || 'locale',
-    // Informational only — the active country pack's format if it declares
-    // one, else the static main/countries.ts fallback, else null. Never
-    // blocks the save; the UI uses this to show a non-blocking warning.
+    // The active country pack's format if it declares one, else the static
+    // main/countries.ts fallback, else null. The backend validates submitted
+    // tax IDs against this format; the UI also uses it for immediate feedback.
     tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
   };
 }
@@ -195,6 +192,16 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
     const currentSettings = getAllSettings(db);
     const effectiveCountry = country || currentSettings.country || 'IN';
     const effectiveCurrency = currency || currentSettings.currency || 'INR';
+
+    if (tax_registration_number) {
+      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
+      if (!valid && format) {
+        return res.status(400).json({
+          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
+          tax_id_format: format,
+        });
+      }
+    }
 
     let normalizedPhone: string | undefined = undefined;
     if (business_phone !== undefined) {
@@ -247,6 +254,16 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
+    const effectiveCountry = country || currentSettings.country || 'IN';
+    if (tax_registration_number) {
+      const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
+      if (!valid && format) {
+        return res.status(400).json({
+          error: `Tax ID does not match the expected ${effectiveCountry} format: ${format.description}`,
+          tax_id_format: format,
+        });
+      }
+    }
     upsertSettings(db, {
       tax_registered,
       tax_registration_number,

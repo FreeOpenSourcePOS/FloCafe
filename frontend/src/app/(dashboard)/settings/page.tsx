@@ -2267,6 +2267,8 @@ export default function SettingsPage() {
                         onChange={(e) => {
                            const country = COUNTRIES.find(c => c.code === e.target.value);
                            setForm((p) => {
+                             const previousCountry = getCountryByCode(p.countryCode);
+                             const timezoneWasDefault = !previousCountry || p.timezone === previousCountry.timezone;
                              const options = country?.localeOptions;
                              // Re-evaluate locale display preferences against the
                              // newly selected country (#390): keep supported values
@@ -2284,12 +2286,14 @@ export default function SettingsPage() {
                                ...p,
                                countryCode: e.target.value,
                                currency: country?.currency || p.currency,
-                               timezone: country?.timezone || p.timezone,
+                               timezone: timezoneWasDefault
+                                 ? (country?.timezone || p.timezone)
+                                 : p.timezone,
                                currencyDisplay,
                                numberDigits,
                                calendar,
-                            };
-                          });
+                             };
+                           });
                         }}
                         aria-label={tCommon('search')}
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"

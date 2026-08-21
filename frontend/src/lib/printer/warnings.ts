@@ -66,6 +66,22 @@ function shapedDisplayWidth(text: string): number {
   return [...text.replace(SHAPING_ZERO_WIDTH_RE, '')].length;
 }
 
+function boundShapedText(text: string, maxCols?: number): string {
+  if (!maxCols || maxCols <= 0 || shapedDisplayWidth(text) <= maxCols) return text;
+
+  const ellipsis = '…';
+  const targetCols = Math.max(0, maxCols - shapedDisplayWidth(ellipsis));
+  let bounded = '';
+  let width = 0;
+  for (const character of text) {
+    const characterWidth = shapedDisplayWidth(character);
+    if (width + characterWidth > targetCols) break;
+    bounded += character;
+    width += characterWidth;
+  }
+  return bounded + ellipsis;
+}
+
 /**
  * Writes `value` to an ESC/POS encoder only if a generic thermal printer can
  * render every character; otherwise records a warning and skips it entirely
@@ -85,7 +101,8 @@ export function safePrinterText<T extends { text(value: string): T }>(
   warnings: PrintWarning[] | undefined,
   isStoreName = false,
   arabicShaping = false,
-  centerCols?: number
+  centerCols?: number,
+  maxCols?: number
 ): T {
   if (!value) return enc;
   if (hasUnsupportedPrinterChars(value)) {
@@ -95,10 +112,10 @@ export function safePrinterText<T extends { text(value: string): T }>(
         warnings?.push(makePrintWarning(value, isStoreName));
         return enc;
       }
-      let payloadText = sanitized;
+      let payloadText = boundShapedText(sanitized, maxCols ?? centerCols);
       if (centerCols && centerCols > 0) {
-        const pad = Math.max(0, Math.floor((centerCols - shapedDisplayWidth(sanitized)) / 2));
-        payloadText = ' '.repeat(pad) + sanitized;
+        const pad = Math.max(0, Math.floor((centerCols - shapedDisplayWidth(payloadText)) / 2));
+        payloadText = ' '.repeat(pad) + payloadText;
       }
       if ('raw' in enc && typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function') {
         return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(payloadText));

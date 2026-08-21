@@ -51,14 +51,14 @@ export function buildKotBytes(
   enc.text(`Order #${order.order_number}`).newline();
 
   if (order.table) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
 
   const orderType = order.type.replace('_', ' ').toUpperCase();
   enc.text(`Type: ${orderType}`).newline();
 
   if (order.customer) {
-    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
 
   enc.bold(false);

@@ -263,11 +263,11 @@ export function buildClassicReceiptBytes(
 
   if (showTableNumber && order?.table?.name) {
     enc.bold(true);
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping);
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, cols);
     enc.bold(false).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, order.customer.name, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, order.customer.name, warnings, false, arabicShaping, cols).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
     enc.text(maskPhoneOnReceipt(order.customer.phone)).newline();
@@ -436,10 +436,10 @@ export function buildCompactReceiptBytes(
     .newline();
 
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, `Cust: ${truncate(order.customer.name, cols - 6)}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `Cust: ${truncate(order.customer.name, cols - 6)}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
     safePrinterText(enc, `No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping).newline();
@@ -456,7 +456,9 @@ export function buildCompactReceiptBytes(
       padRow(truncate(item.product_name, nameMax), formatAmount(item.total, currency, locale, trimDecimals), cols),
       warnings,
       false,
-      arabicShaping
+      arabicShaping,
+      undefined,
+      cols
     ).newline();
 
     if (item.quantity > 1) {
@@ -595,14 +597,16 @@ export function buildDetailedReceiptBytes(
       ),
       warnings,
       false,
-      arabicShaping
+      arabicShaping,
+      undefined,
+      cols
     ).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
     safePrinterText(enc, `Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, false, arabicShaping).newline();
   }
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
 
   enc.rule({ style: 'single' });

@@ -295,6 +295,15 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
       assert(`frontend shaping accepts Persian ${label}`, formatControlEnc.out.length === 1 && formatControlEnc.out[0] === value && formatControlWarnings.length === 0);
     }
 
+    const boundedEnc: any = {
+      out: [] as string[],
+      text(v: string) { this.out.push(v); return this; },
+      raw(data: Uint8Array) { this.out.push(new TextDecoder().decode(data)); return this; },
+    };
+    const boundedWarnings: any[] = [];
+    feWarnings.safePrinterText(boundedEnc, 'Table: میز غذای مخصوص', boundedWarnings, false, true, undefined, 16);
+    assert('frontend shaping bounds raw text to the layout width', boundedEnc.out.length === 1 && Array.from(boundedEnc.out[0]).length <= 16 && boundedEnc.out[0].endsWith('…') && boundedWarnings.length === 0);
+
     assert('isArabicShapingSafeLine accepts ASCII+Persian', feWarnings.isArabicShapingSafeLine('2x چای - Rs50.00') === true);
     assert('isArabicShapingSafeLine rejects other non-ASCII', feWarnings.isArabicShapingSafeLine('کافé') === false);
   }
@@ -326,6 +335,12 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
     const formatControlBuf = buildEscPos([value], true, { arabicShaping: true }, formatControlWarnings);
     assert(`backend shaping accepts Persian ${label}`, formatControlBuf.toString('utf8').includes(value) && formatControlWarnings.length === 0);
   }
+
+  const backendControlWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const backendControlBuf = buildEscPos(['چای\x07زعفرانی'], true, { arabicShaping: true }, backendControlWarnings);
+  assert('backend shaping strips embedded printer-control bytes', !bytesContain(backendControlBuf, [0x07]));
+  assert('backend shaping still prints sanitized Persian text', backendControlBuf.toString('utf8').includes('چایزعفرانی'));
+  assert('backend shaping emits no warning for sanitized text', backendControlWarnings.length === 0);
 
   // Mixed-script lines (Persian + Latin é) are still skipped even with the flag,
   // so the flag cannot be used to emit unshapeable mixed text.

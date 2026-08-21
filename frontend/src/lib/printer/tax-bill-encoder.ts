@@ -165,10 +165,10 @@ export function buildTaxBillBytes(
   enc.text(`Date: ${formatDate(bill.order?.created_at, locale)}`).newline();
 
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
     enc.text(`Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`).newline();

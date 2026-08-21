@@ -283,6 +283,13 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
     feWarnings.safePrinterText(mixedEnc, 'کافه Café', mixedFeWarnings, false, true);
     assert('frontend safePrinterText still skips mixed-script line with shaping on', mixedEnc.out.length === 0 && mixedFeWarnings.length === 1);
 
+    for (const [label, value] of [['ZWNJ', 'می\u200Cرود'], ['ZWJ', 'می\u200Dرود']] as const) {
+      const formatControlEnc = makeEnc();
+      const formatControlWarnings: any[] = [];
+      feWarnings.safePrinterText(formatControlEnc, value, formatControlWarnings, false, true);
+      assert(`frontend shaping accepts Persian ${label}`, formatControlEnc.out.length === 1 && formatControlEnc.out[0] === value && formatControlWarnings.length === 0);
+    }
+
     assert('isArabicShapingSafeLine accepts ASCII+Persian', feWarnings.isArabicShapingSafeLine('2x چای - Rs50.00') === true);
     assert('isArabicShapingSafeLine rejects other non-ASCII', feWarnings.isArabicShapingSafeLine('کافé') === false);
   }
@@ -303,6 +310,12 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   const shapedCurrencyBuf = buildEscPos(['چای زعفرانی ₹500.00'], true, { arabicShaping: true }, shapedCurrencyWarnings);
   assert('with flag, Persian line with Unicode currency is emitted', shapedCurrencyBuf.toString('utf8').includes('چای زعفرانی ₹500.00'));
   assert('with flag, Persian line with Unicode currency emits no warning', shapedCurrencyWarnings.length === 0);
+
+  for (const [label, value] of [['ZWNJ', 'می\u200Cرود'], ['ZWJ', 'می\u200Dرود']] as const) {
+    const formatControlWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const formatControlBuf = buildEscPos([value], true, { arabicShaping: true }, formatControlWarnings);
+    assert(`backend shaping accepts Persian ${label}`, formatControlBuf.toString('utf8').includes(value) && formatControlWarnings.length === 0);
+  }
 
   // Mixed-script lines (Persian + Latin é) are still skipped even with the flag,
   // so the flag cannot be used to emit unshapeable mixed text.

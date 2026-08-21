@@ -1634,6 +1634,7 @@ function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
 // implement — a printer profile must declare `arabicShaping` before they are
 // emitted as UTF-8 bytes.
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+const PERSIAN_FORMATTING_CONTROLS_GLOBAL_RE = /[\u200C\u200D]/g;
 
 function hasArabicScript(text: string): boolean {
   return /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/.test(text);
@@ -1693,7 +1694,11 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       // other non-ASCII script. Otherwise skip it — never emit unshaped text.
       const arabicOnly = options.arabicShaping === true
         && hasArabicScript(printableLine)
-        && !/[^\x00-\x7F]/.test(textWithoutSupportedCurrency.replace(ARABIC_SCRIPT_GLOBAL_RE, ''));
+        && !/[^\x00-\x7F]/.test(
+          textWithoutSupportedCurrency
+            .replace(ARABIC_SCRIPT_GLOBAL_RE, '')
+            .replace(PERSIAN_FORMATTING_CONTROLS_GLOBAL_RE, '')
+        );
       if (!arabicOnly) {
         if (warnings) {
           const text = printableLine.trim();

@@ -27,6 +27,7 @@ export function hasUnsupportedPrinterChars(text: string): boolean {
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
 const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+const PERSIAN_FORMATTING_CONTROLS_GLOBAL_RE = /[\u200C\u200D]/g;
 
 export function hasArabicScript(text: string): boolean {
   return ARABIC_SCRIPT_RE.test(text);
@@ -41,7 +42,9 @@ export function hasArabicScript(text: string): boolean {
 export function isArabicShapingSafeLine(text: string): boolean {
   if (!hasArabicScript(text)) return false;
   return !/[^\x00-\x7F]/.test(
-    text.replace(SUPPORTED_CURRENCY_SYMBOLS, '').replace(ARABIC_SCRIPT_GLOBAL_RE, '')
+    text.replace(SUPPORTED_CURRENCY_SYMBOLS, '')
+      .replace(ARABIC_SCRIPT_GLOBAL_RE, '')
+      .replace(PERSIAN_FORMATTING_CONTROLS_GLOBAL_RE, '')
   );
 }
 

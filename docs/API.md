@@ -820,7 +820,7 @@ Z Report (close shift).
 ## Settings
 
 ### GET `/api/settings/business`
-Get business settings.
+Get business settings. Locale display preferences (`currency_display`, `number_digits`, `calendar`) are resolved against the active country's declared `localeOptions`; stale or unsupported stored values are normalized to neutral defaults.
 
 **Response:**
 ```json
@@ -829,7 +829,10 @@ Get business settings.
   "timezone": "Asia/Kolkata",
   "currency": "INR",
   "country": "IN",
-  "tax_registration_number": "22AAAAA0000A1Z5"
+  "tax_registration_number": "22AAAAA0000A1Z5",
+  "currency_display": "rial",
+  "number_digits": "locale",
+  "calendar": "locale"
 }
 ```
 
@@ -848,6 +851,8 @@ When `tax_registration_number` is provided, the backend validates it against the
   "tax_id_format": { "pattern": "...", "description": "..." }
 }
 ```
+
+Locale display preferences (`currency_display`, `number_digits`, `calendar`) are validated against the effective country's `localeOptions`. Unsupported values return HTTP 400 with `"Invalid <key> for country <code>"`. Changing the country normalizes any previously stored preferences that are not supported by the new country to their neutral defaults (`rial`, `locale`, `locale`).
 
 ---
 

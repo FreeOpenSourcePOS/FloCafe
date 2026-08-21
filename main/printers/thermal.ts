@@ -1693,7 +1693,7 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
       // other non-ASCII script. Otherwise skip it — never emit unshaped text.
       const arabicOnly = options.arabicShaping === true
         && hasArabicScript(printableLine)
-        && !/[^\x00-\x7F]/.test(printableLine.replace(ARABIC_SCRIPT_GLOBAL_RE, ''));
+        && !/[^\x00-\x7F]/.test(textWithoutSupportedCurrency.replace(ARABIC_SCRIPT_GLOBAL_RE, ''));
       if (!arabicOnly) {
         if (warnings) {
           const text = printableLine.trim();

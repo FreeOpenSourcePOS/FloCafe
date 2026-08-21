@@ -299,6 +299,11 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('with flag, Persian line is emitted', shapedBuf.toString('utf8').includes('مطعم فلوس'));
   assert('with flag, pure Persian line emits no warning', shapedWarnings.length === 0);
 
+  const shapedCurrencyWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const shapedCurrencyBuf = buildEscPos(['چای زعفرانی ₹500.00'], true, { arabicShaping: true }, shapedCurrencyWarnings);
+  assert('with flag, Persian line with Unicode currency is emitted', shapedCurrencyBuf.toString('utf8').includes('چای زعفرانی ₹500.00'));
+  assert('with flag, Persian line with Unicode currency emits no warning', shapedCurrencyWarnings.length === 0);
+
   // Mixed-script lines (Persian + Latin é) are still skipped even with the flag,
   // so the flag cannot be used to emit unshapeable mixed text.
   const mixedWarnings: Array<{ field: string; text: string; message: string }> = [];

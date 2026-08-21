@@ -26,6 +26,25 @@ export function hasUnsupportedPrinterChars(text: string): boolean {
 
 const ARABIC_SCRIPT_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 
+const ARABIC_SCRIPT_GLOBAL_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/g;
+
+export function hasArabicScript(text: string): boolean {
+  return ARABIC_SCRIPT_RE.test(text);
+}
+
+/**
+ * True when a line contains nothing but ASCII plus Arabic/Persian script, so
+ * a printer whose firmware shapes Arabic can render it (#437). Mirrors the
+ * backend buildEscPos arabic-only rule: any other non-ASCII script on the
+ * same line still blocks it, even with shaping enabled.
+ */
+export function isArabicShapingSafeLine(text: string): boolean {
+  if (!hasArabicScript(text)) return false;
+  return !/[^\x00-\x7F]/.test(
+    text.replace(SUPPORTED_CURRENCY_SYMBOLS, '').replace(ARABIC_SCRIPT_GLOBAL_RE, '')
+  );
+}
+
 export function makePrintWarning(text: string, isStoreName = false): PrintWarning {
   const field = isStoreName ? 'store name' : 'receipt line';
   const label = isStoreName ? 'Store name' : 'Receipt line';
@@ -39,15 +58,23 @@ export function makePrintWarning(text: string, isStoreName = false): PrintWarnin
  * Writes `value` to an ESC/POS encoder only if a generic thermal printer can
  * render every character; otherwise records a warning and skips it entirely
  * so the rest of the receipt/ticket still prints and cuts normally.
+ *
+ * When `arabicShaping` is true (printer firmware shapes Arabic/Persian,
+ * #437), pure ASCII+Arabic lines pass through instead of being skipped —
+ * mirroring the desktop path's profile/request override.
  */
 export function safePrinterText<T extends { text(value: string): T }>(
   enc: T,
   value: string,
   warnings: PrintWarning[] | undefined,
-  isStoreName = false
+  isStoreName = false,
+  arabicShaping = false
 ): T {
   if (!value) return enc;
   if (hasUnsupportedPrinterChars(value)) {
+    if (arabicShaping && isArabicShapingSafeLine(value)) {
+      return enc.text(value);
+    }
     warnings?.push(makePrintWarning(value, isStoreName));
     return enc;
   }

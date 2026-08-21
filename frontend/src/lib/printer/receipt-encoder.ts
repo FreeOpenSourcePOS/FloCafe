@@ -46,6 +46,12 @@ export interface ReceiptOptions {
   showTableNumber?: boolean;
   /** If false (default), replace ₹/€/£/etc. with ASCII (Rs, EUR, GBP…). */
   useUnicode?: boolean;
+  /**
+   * Printer firmware performs Arabic/Persian contextual shaping (#437).
+   * Lets pure ASCII+Arabic lines through the unsupported-character guard;
+   * other non-ASCII scripts stay blocked. Default: false.
+   */
+  arabicShaping?: boolean;
   /** Print a large "REPRINT" banner at the top so a reprinted receipt can't be mistaken for the original. */
   isReprint?: boolean;
   /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
@@ -230,6 +236,7 @@ export function buildClassicReceiptBytes(
     showCustomerPhone = true,
     showTableNumber = true,
     useUnicode = false,
+    arabicShaping = false,
     isReprint = false,
     trimDecimals = false,
   } = opts;
@@ -250,17 +257,17 @@ export function buildClassicReceiptBytes(
   // Header
   if (showBusinessName && tenant.business_name) {
     enc.align('center').bold(true).width(2).height(2);
-    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
+    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping);
     enc.width(1).height(1).bold(false).newline();
   }
 
   if (showTableNumber && order?.table?.name) {
     enc.bold(true);
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings);
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, arabicShaping);
     enc.bold(false).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, order.customer.name, warnings).newline();
+    safePrinterText(enc, order.customer.name, warnings, arabicShaping).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
     enc.text(maskPhoneOnReceipt(order.customer.phone)).newline();
@@ -282,7 +289,7 @@ export function buildClassicReceiptBytes(
   const items = order?.items ?? [];
   for (const item of items) {
     for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
-      safePrinterText(enc, row, warnings).newline();
+      safePrinterText(enc, row, warnings, arabicShaping).newline();
     }
 
     // Addons
@@ -292,16 +299,16 @@ export function buildClassicReceiptBytes(
         const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
         if (addon.price && Number(addon.price) > 0) {
           const addonTotal = Number(addon.price) * qty * item.quantity;
-          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings).newline();
+          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings, arabicShaping).newline();
         } else {
-          safePrinterText(enc, addonLabel, warnings).newline();
+          safePrinterText(enc, addonLabel, warnings, arabicShaping).newline();
         }
       }
     }
 
     // Special instructions
     if (item.special_instructions) {
-      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings).newline();
+      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings, arabicShaping).newline();
     }
   }
 
@@ -351,22 +358,22 @@ export function buildClassicReceiptBytes(
   // Footer
   if (showFooter) {
     if (taxRegistrationNumber) {
-      safePrinterText(enc, padRow(`${taxIdLabel}: ${taxRegistrationNumber}`, `Bill #${bill.bill_number}`, cols), warnings).newline();
+      safePrinterText(enc, padRow(`${taxIdLabel}: ${taxRegistrationNumber}`, `Bill #${bill.bill_number}`, cols), warnings, arabicShaping).newline();
     }
     if (address) {
       enc.align('center');
-      safePrinterText(enc, truncate(address, cols), warnings).newline();
+      safePrinterText(enc, truncate(address, cols), warnings, arabicShaping).newline();
       enc.align('left');
     }
     if (phone) {
       enc.align('center');
-      safePrinterText(enc, `Call: ${phone}`, warnings).newline();
+      safePrinterText(enc, `Call: ${phone}`, warnings, arabicShaping).newline();
       enc.align('left');
     }
     enc.newline();
     enc.align('center').text('Thank you! Please visit again').newline();
     if (footerNote) {
-      safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
+      safePrinterText(enc, truncate(footerNote, cols), warnings, arabicShaping).newline();
     }
   }
   printPoweredByFooter(enc);
@@ -398,6 +405,7 @@ export function buildCompactReceiptBytes(
     showCustomerPhone = true,
     showTableNumber = true,
     useUnicode = false,
+    arabicShaping = false,
     isReprint = false,
     trimDecimals = false,
   } = opts;
@@ -417,7 +425,7 @@ export function buildCompactReceiptBytes(
   // Header
   if (showBusinessName && tenant.business_name) {
     enc.align('center').bold(true);
-    safePrinterText(enc, truncate(tenant.business_name, cols), warnings, true);
+    safePrinterText(enc, truncate(tenant.business_name, cols), warnings, true, arabicShaping);
     enc.bold(false).newline();
   }
   enc.align('left').rule({ style: 'single' });
@@ -428,13 +436,13 @@ export function buildCompactReceiptBytes(
     .newline();
 
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, arabicShaping).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, `Cust: ${truncate(order.customer.name, cols - 6)}`, warnings).newline();
+    safePrinterText(enc, `Cust: ${truncate(order.customer.name, cols - 6)}`, warnings, arabicShaping).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
-    safePrinterText(enc, `No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings).newline();
+    safePrinterText(enc, `No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, arabicShaping).newline();
   }
 
   enc.rule({ style: 'single' });
@@ -446,7 +454,9 @@ export function buildCompactReceiptBytes(
     safePrinterText(
       enc,
       padRow(truncate(item.product_name, nameMax), formatAmount(item.total, currency, locale, trimDecimals), cols),
-      warnings
+      warnings,
+      false,
+      arabicShaping
     ).newline();
 
     if (item.quantity > 1) {
@@ -489,13 +499,13 @@ export function buildCompactReceiptBytes(
 
   enc.newline().align('center');
   if (taxRegistrationNumber) {
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings).newline();
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, arabicShaping).newline();
   }
-  if (address) safePrinterText(enc, truncate(address, cols), warnings).newline();
-  if (phone) safePrinterText(enc, `Ph: ${phone}`, warnings).newline();
+  if (address) safePrinterText(enc, truncate(address, cols), warnings, arabicShaping).newline();
+  if (phone) safePrinterText(enc, `Ph: ${phone}`, warnings, arabicShaping).newline();
   enc.text('Thank you!').newline();
   if (footerNote) {
-    safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
+    safePrinterText(enc, truncate(footerNote, cols), warnings, arabicShaping).newline();
   }
   printPoweredByFooter(enc);
 
@@ -528,6 +538,7 @@ export function buildDetailedReceiptBytes(
     showCustomerPhone = true,
     showTableNumber = true,
     useUnicode = false,
+    arabicShaping = false,
     isReprint = false,
     trimDecimals = false,
   } = opts;
@@ -548,23 +559,23 @@ export function buildDetailedReceiptBytes(
   // Header
   if (showBusinessName && tenant.business_name) {
     enc.align('center').bold(true).width(2).height(2);
-    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
+    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping);
     enc.width(1).height(1).bold(false).newline();
   }
 
   if (taxRegistrationNumber) {
     enc.bold(true);
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings);
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, arabicShaping);
     enc.bold(false).newline();
   }
 
   enc.bold(true).text('TAX INVOICE').bold(false).newline();
 
   if (address) {
-    safePrinterText(enc, truncate(address, cols), warnings).newline();
+    safePrinterText(enc, truncate(address, cols), warnings, arabicShaping).newline();
   }
   if (phone) {
-    safePrinterText(enc, phone, warnings).newline();
+    safePrinterText(enc, phone, warnings, arabicShaping).newline();
   }
 
   enc.align('left').rule({ style: 'single' });
@@ -582,14 +593,16 @@ export function buildDetailedReceiptBytes(
         '',
         cols
       ),
-      warnings
+      warnings,
+      false,
+      arabicShaping
     ).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
-    safePrinterText(enc, `Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings).newline();
+    safePrinterText(enc, `Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`, warnings, arabicShaping).newline();
   }
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, arabicShaping).newline();
   }
 
   enc.rule({ style: 'single' });
@@ -601,7 +614,7 @@ export function buildDetailedReceiptBytes(
   const items = order?.items ?? [];
   for (const item of items) {
     for (const row of col4Rows(item.product_name, item.quantity, item.unit_price, item.total, currency, col4Layout, locale, trimDecimals)) {
-      safePrinterText(enc, row, warnings).newline();
+      safePrinterText(enc, row, warnings, arabicShaping).newline();
     }
 
     if (item.addons && item.addons.length > 0) {
@@ -610,15 +623,15 @@ export function buildDetailedReceiptBytes(
         const addonLabel = truncate(`  + ${addon.name}${qty > 1 ? ` x${qty}` : ''}`, cols - 8);
         if (addon.price && Number(addon.price) > 0) {
           const addonTotal = Number(addon.price) * qty * item.quantity;
-          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings).newline();
+          safePrinterText(enc, padRow(addonLabel, formatAmount(addonTotal, currency, locale, trimDecimals), cols), warnings, arabicShaping).newline();
         } else {
-          safePrinterText(enc, addonLabel, warnings).newline();
+          safePrinterText(enc, addonLabel, warnings, arabicShaping).newline();
         }
       }
     }
 
     if (item.special_instructions) {
-      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings).newline();
+      safePrinterText(enc, truncate(`  >> ${item.special_instructions}`, cols), warnings, arabicShaping).newline();
     }
   }
 
@@ -666,7 +679,7 @@ export function buildDetailedReceiptBytes(
     .align('left');
 
   if (footerNote) {
-    safePrinterText(enc, truncate(footerNote, cols), warnings).newline();
+    safePrinterText(enc, truncate(footerNote, cols), warnings, arabicShaping).newline();
   }
   printPoweredByFooter(enc);
 

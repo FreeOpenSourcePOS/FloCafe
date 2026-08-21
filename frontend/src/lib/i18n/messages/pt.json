@@ -667,6 +667,12 @@
     "whatsappCopied": "Mensagem do WhatsApp copiada para a área de transferência",
     "whatsappOpened": "WhatsApp aberto"
   },
+  "printWarnings": {
+    "title": "{count, plural, one {# linha não foi impressa} other {# linhas não foram impressas}}",
+    "arabicShapingHint": "Sua impressora não conseguiu imprimir o texto em persa/árabe. Ative \"Impressora suporta moldagem de árabe/persa\" em Configurações → Impressão ou imprima pelo navegador.",
+    "genericHint": "As linhas abaixo contêm caracteres que esta impressora térmica não consegue renderizar.",
+    "moreLines": "…e mais {count}"
+  },
   "products": {
     "addAddon": "Adicionar Adicional",
     "addAddonGroup": "Adicionar Grupo de Adicionais",
@@ -1412,6 +1418,8 @@
     "printerOffline": "Offline",
     "printerOnline": "Online",
     "printerPrinting": "Imprimindo",
+    "printerArabicShaping": "Impressora suporta moldagem de árabe/persa",
+    "printerArabicShapingHint": "Se ATIVADO, as linhas com texto em persa/árabe são enviadas à impressora como estão — ative apenas se a sua impressora imprime persa corretamente. Se DESATIVADO, essas linhas são ignoradas.",
     "printerQuickAdded": "{name} adicionada",
     "printerSaveFailed": "Falha ao salvar a impressora",
     "printerSaved": "Impressora adicionada",

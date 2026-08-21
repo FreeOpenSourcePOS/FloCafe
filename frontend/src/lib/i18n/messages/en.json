@@ -667,6 +667,12 @@
     "whatsappCopied": "WhatsApp message copied to clipboard",
     "whatsappOpened": "WhatsApp opened"
   },
+  "printWarnings": {
+    "title": "{count, plural, one {# line was not printed} other {# lines were not printed}}",
+    "arabicShapingHint": "Your printer could not print the Persian/Arabic text. Enable \"Printer supports Arabic/Persian shaping\" in Settings → Printing, or print via the browser.",
+    "genericHint": "The lines below contain characters this thermal printer cannot render.",
+    "moreLines": "…and {count} more"
+  },
   "products": {
     "addAddon": "Add Addon",
     "addAddonGroup": "Add Addon Group",
@@ -1412,6 +1418,8 @@
     "printerOffline": "Offline",
     "printerOnline": "Online",
     "printerPrinting": "Printing",
+    "printerArabicShaping": "Printer supports Arabic/Persian shaping",
+    "printerArabicShapingHint": "If ON, receipt lines containing Persian/Arabic text are sent to the printer as-is — enable only if your printer prints Persian correctly. If OFF, those lines are skipped.",
     "printerQuickAdded": "{name} added",
     "printerSaveFailed": "Failed to save printer",
     "printerSaved": "Printer added",

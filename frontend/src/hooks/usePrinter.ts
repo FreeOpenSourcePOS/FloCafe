@@ -110,6 +110,7 @@ export const usePrinterStore = create<PrinterState>()(
             billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
             printerPaperSize,
             printerUseUnicode,
+            printerArabicShaping,
             printerTrimDecimals,
           } = usePosSettingsStore.getState();
 
@@ -140,7 +141,7 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, isReprint });
+              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-bill', { billId: bill.id, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping, isReprint });
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string } }; message?: string };
@@ -175,6 +176,7 @@ export const usePrinterStore = create<PrinterState>()(
             showCustomerPhone: billShowCustomerPhone,
             showTableNumber: billShowTableNumber,
             useUnicode: printerUseUnicode,
+            arabicShaping: printerArabicShaping,
             isReprint,
             trimDecimals: printerTrimDecimals,
           };
@@ -200,7 +202,7 @@ export const usePrinterStore = create<PrinterState>()(
         set({ lastError: null });
         try {
           const {
-            printerUseUnicode, printerTrimDecimals, printerPaperSize,
+            printerUseUnicode, printerArabicShaping, printerTrimDecimals, printerPaperSize,
             billTaxRegistrationNumber, billAddress, billPhone, billFooterMessage,
             billShowName, billShowAddress, billShowPhone, billShowTaxId,
             billShowTaxBreakdown, billShowCustomerName, billShowCustomerPhone, billShowTableNumber,
@@ -248,6 +250,7 @@ export const usePrinterStore = create<PrinterState>()(
             showCustomerPhone: billShowCustomerPhone,
             showTableNumber: billShowTableNumber,
             useUnicode: printerUseUnicode,
+            arabicShaping: printerArabicShaping,
             trimDecimals: printerTrimDecimals,
             rawEscPos: true,
           }, warnings);
@@ -266,7 +269,7 @@ export const usePrinterStore = create<PrinterState>()(
         // kot_printing_enabled is off, no KOT print command may ever go out
         // (issue #133) — coarser than auto_print_kot, which only gates
         // automatic printing on order placement.
-        const { kotPrintingEnabled, printerUseUnicode } = usePosSettingsStore.getState();
+        const { kotPrintingEnabled, printerUseUnicode, printerArabicShaping } = usePosSettingsStore.getState();
         if (!kotPrintingEnabled) {
           const err = new Error('KOT printing is disabled for this business');
           set({ lastError: err.message });
@@ -276,7 +279,7 @@ export const usePrinterStore = create<PrinterState>()(
           const hw = get().hardwarePrinter;
           if (hw && get().printMethod === 'escpos') {
             try {
-              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, useUnicode: printerUseUnicode });
+              const response = await api.post<{ warnings?: PrintWarning[] }>('/printers/print-kot', { orderId: order.id, useUnicode: printerUseUnicode, arabicShaping: printerArabicShaping });
               return response.data.warnings || [];
             } catch (err: unknown) {
               const e = err as { response?: { data?: { error?: string } }; message?: string };
@@ -286,7 +289,7 @@ export const usePrinterStore = create<PrinterState>()(
 
           const { paperWidth } = get();
           const warnings: PrintWarning[] = [];
-          const bytes = buildKotBytes(order, { ...opts, paperWidth }, warnings);
+          const bytes = buildKotBytes(order, { ...opts, paperWidth, arabicShaping: printerArabicShaping }, warnings);
           set({ lastPrintedBytes: bytes });
 
           if (get().printMethod === 'escpos') {

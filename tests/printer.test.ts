@@ -258,6 +258,35 @@ console.log('\n✅ Test 1b: Unsupported receipt text is skipped with a warning')
 
 console.log('\n✅ Test 1b2: Arabic shaping capability gate');
 {
+  // Frontend safePrinterText mirrors the backend rule: default skip, shaping
+  // override passes pure ASCII+Persian lines, mixed-script lines stay blocked.
+  {
+    const { warnings: feWarnings } = loadFrontendPrinterModules();
+    const makeEnc = () => {
+      const out: string[] = [];
+      const enc: any = { out, text(v: string) { out.push(v); return enc; } };
+      return enc;
+    };
+
+    const plainEnc = makeEnc();
+    const plainWarnings: any[] = [];
+    feWarnings.safePrinterText(plainEnc, 'چای زعفرانی', plainWarnings);
+    assert('frontend safePrinterText skips Persian by default', plainEnc.out.length === 0 && plainWarnings.length === 1);
+
+    const shapedEnc = makeEnc();
+    const shapedFeWarnings: any[] = [];
+    feWarnings.safePrinterText(shapedEnc, 'چای زعفرانی', shapedFeWarnings, false, true);
+    assert('frontend safePrinterText emits Persian with shaping on', shapedEnc.out.length === 1 && shapedEnc.out[0].includes('چای زعفرانی') && shapedFeWarnings.length === 0);
+
+    const mixedEnc = makeEnc();
+    const mixedFeWarnings: any[] = [];
+    feWarnings.safePrinterText(mixedEnc, 'کافه Café', mixedFeWarnings, false, true);
+    assert('frontend safePrinterText still skips mixed-script line with shaping on', mixedEnc.out.length === 0 && mixedFeWarnings.length === 1);
+
+    assert('isArabicShapingSafeLine accepts ASCII+Persian', feWarnings.isArabicShapingSafeLine('2x چای - Rs50.00') === true);
+    assert('isArabicShapingSafeLine rejects other non-ASCII', feWarnings.isArabicShapingSafeLine('کافé') === false);
+  }
+
   // Default (no capability): Persian is skipped with a precise warning.
   const defaultWarnings: Array<{ field: string; text: string; message: string }> = [];
   const defaultBuf = buildEscPos(['{STORE_NAME}{CENTER}مطعم فلوس{/CENTER}', 'TOTAL        ₹100.00'], true, {}, defaultWarnings);

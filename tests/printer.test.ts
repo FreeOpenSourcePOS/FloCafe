@@ -913,6 +913,43 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   assert('frontend shaping preserves truncated Persian item output', longPersianText.includes('…') && longPersianText.includes('چای زعفرانی'));
   assert('frontend shaping emits no warning for truncated Persian item', longPersianWarnings.length === 0);
 
+  // Greptile P2: ESC/POS control bytes hidden inside an Arabic-bearing label
+  // must never reach the raw byte path. BEL (0x07) never occurs in legitimate
+  // encoder output, unlike ESC/FS command bytes.
+  {
+    const controlWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const controlBytes = buildCompactReceiptBytes({
+      ...frontendPersianBill,
+      order: {
+        ...frontendPersianBill.order,
+        items: [{ product_name: 'چای\x07زعفرانی', quantity: 1, unit_price: 250, total: 250, addons: [], special_instructions: '' }],
+      },
+    } as any, frontendPersianTenant, { paperWidth: 80, useUnicode: true, arabicShaping: true }, controlWarnings);
+    const raw = Buffer.from(controlBytes);
+    assert('frontend shaping strips embedded printer-control bytes', !bytesContain(raw, [0x07]));
+    assert('frontend shaping still prints sanitized Persian item', raw.toString('utf8').includes('چایزعفرانی'));
+    assert('frontend shaping emits no warning for sanitized item', controlWarnings.length === 0);
+  }
+
+  // Greptile P1: shaped centered lines must keep their heading padding even
+  // though raw() bypasses encoder layout.
+  {
+    const centeredBytes = buildClassicReceiptBytes(
+      frontendBill,
+      { ...frontendTenant, business_name: 'کافه فلو تهران' },
+      { paperWidth: 80, useUnicode: true, arabicShaping: true },
+      [],
+    );
+    const centeredLines = Buffer.from(centeredBytes).toString('utf8').split('\n');
+    const nameLine = centeredLines.find((l) => l.includes('کافه فلو تهران'));
+    // Double-width store name at 48 columns leaves a 24-column budget; the
+    // 14-code-point name should get floor((24-14)/2) = 5 leading spaces.
+    const leadMatch = nameLine?.match(/^(.*?)کافه/);
+    const prefix = leadMatch?.[1] ?? '';
+    const leadSpaces = prefix.length - prefix.replace(/ +$/, '').length;
+    assert('frontend shaping centers the Persian business name', leadSpaces >= 3 && leadSpaces <= 7, `${leadSpaces} :: ${JSON.stringify(nameLine)}`);
+  }
+
   // The frontend classic template also needs to keep the three-character IRR
   // prefix inside the 58mm (42-column) raw layout.
   for (const useUnicode of [false, true]) {

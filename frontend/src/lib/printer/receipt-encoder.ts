@@ -257,7 +257,7 @@ export function buildClassicReceiptBytes(
   // Header
   if (showBusinessName && tenant.business_name) {
     enc.align('center').bold(true).width(2).height(2);
-    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping);
+    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping, Math.floor(cols / 2));
     enc.width(1).height(1).bold(false).newline();
   }
 
@@ -362,18 +362,18 @@ export function buildClassicReceiptBytes(
     }
     if (address) {
       enc.align('center');
-      safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping).newline();
+      safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping, cols).newline();
       enc.align('left');
     }
     if (phone) {
       enc.align('center');
-      safePrinterText(enc, `Call: ${phone}`, warnings, false, arabicShaping).newline();
+      safePrinterText(enc, `Call: ${phone}`, warnings, false, arabicShaping, cols).newline();
       enc.align('left');
     }
     enc.newline();
     enc.align('center').text('Thank you! Please visit again').newline();
     if (footerNote) {
-      safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping).newline();
+      safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping, cols).newline();
     }
   }
   printPoweredByFooter(enc);
@@ -425,7 +425,7 @@ export function buildCompactReceiptBytes(
   // Header
   if (showBusinessName && tenant.business_name) {
     enc.align('center').bold(true);
-    safePrinterText(enc, truncate(tenant.business_name, cols), warnings, true, arabicShaping);
+    safePrinterText(enc, truncate(tenant.business_name, cols), warnings, true, arabicShaping, cols);
     enc.bold(false).newline();
   }
   enc.align('left').rule({ style: 'single' });
@@ -499,13 +499,13 @@ export function buildCompactReceiptBytes(
 
   enc.newline().align('center');
   if (taxRegistrationNumber) {
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping, cols).newline();
   }
-  if (address) safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping).newline();
-  if (phone) safePrinterText(enc, `Ph: ${phone}`, warnings, false, arabicShaping).newline();
+  if (address) safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping, cols).newline();
+  if (phone) safePrinterText(enc, `Ph: ${phone}`, warnings, false, arabicShaping, cols).newline();
   enc.text('Thank you!').newline();
   if (footerNote) {
-    safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping).newline();
+    safePrinterText(enc, truncate(footerNote, cols), warnings, false, arabicShaping, cols).newline();
   }
   printPoweredByFooter(enc);
 
@@ -559,23 +559,23 @@ export function buildDetailedReceiptBytes(
   // Header
   if (showBusinessName && tenant.business_name) {
     enc.align('center').bold(true).width(2).height(2);
-    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping);
+    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping, Math.floor(cols / 2));
     enc.width(1).height(1).bold(false).newline();
   }
 
   if (taxRegistrationNumber) {
     enc.bold(true);
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping);
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping, cols);
     enc.bold(false).newline();
   }
 
   enc.bold(true).text('TAX INVOICE').bold(false).newline();
 
   if (address) {
-    safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping).newline();
+    safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping, cols).newline();
   }
   if (phone) {
-    safePrinterText(enc, phone, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, phone, warnings, false, arabicShaping, cols).newline();
   }
 
   enc.align('left').rule({ style: 'single' });

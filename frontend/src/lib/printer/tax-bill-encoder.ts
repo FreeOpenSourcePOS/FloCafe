@@ -142,19 +142,19 @@ export function buildTaxBillBytes(
   enc.initialize().align('center');
   if (showBusinessName && tenant.business_name) {
     enc.bold(true).width(2).height(2);
-    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping);
+    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping, Math.floor(cols / 2));
     enc.width(1).height(1);
     enc.bold(false).newline();
   }
 
   if (address) {
-    safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping).newline();
+    safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping, cols).newline();
   }
   if (phone) {
-    safePrinterText(enc, `Ph: ${phone}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `Ph: ${phone}`, warnings, false, arabicShaping, cols).newline();
   }
   if (taxRegistrationNumber) {
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping).newline();
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping, cols).newline();
   }
 
   enc.newline();

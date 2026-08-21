@@ -57,6 +57,15 @@ export function makePrintWarning(text: string, isStoreName = false): PrintWarnin
   return { field, text, message: `${label} was not printed because ${why}: ${text}` };
 }
 
+/** C0 controls and DEL must never reach raw ESC/POS output (#437 review). */
+const ESCPOS_TEXT_CONTROL_RE = /[\x00-\x1F\x7F]/g;
+/** Arabic combining marks and bidi/format controls consume no print column. */
+const SHAPING_ZERO_WIDTH_RE = /[\u0610-\u061A\u064B-\u065F\u0670\u06D6-\u06ED\u200B-\u200F]/g;
+
+function shapedDisplayWidth(text: string): number {
+  return [...text.replace(SHAPING_ZERO_WIDTH_RE, '')].length;
+}
+
 /**
  * Writes `value` to an ESC/POS encoder only if a generic thermal printer can
  * render every character; otherwise records a warning and skips it entirely
@@ -65,21 +74,36 @@ export function makePrintWarning(text: string, isStoreName = false): PrintWarnin
  * When `arabicShaping` is true (printer firmware shapes Arabic/Persian,
  * #437), pure ASCII+Arabic lines pass through instead of being skipped —
  * mirroring the desktop path's profile/request override.
+ *
+ * `centerCols` gives the printable column budget for a centered line so the
+ * raw byte path can reproduce the encoder's centering (raw() bypasses layout).
+ * Pass `Math.floor(cols / 2)` when the caller switched on double-width text.
  */
 export function safePrinterText<T extends { text(value: string): T }>(
   enc: T,
   value: string,
   warnings: PrintWarning[] | undefined,
   isStoreName = false,
-  arabicShaping = false
+  arabicShaping = false,
+  centerCols?: number
 ): T {
   if (!value) return enc;
   if (hasUnsupportedPrinterChars(value)) {
     if (arabicShaping && isArabicShapingSafeLine(value)) {
-      if ('raw' in enc && typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function') {
-        return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(value));
+      const sanitized = value.replace(ESCPOS_TEXT_CONTROL_RE, '');
+      if (!sanitized) {
+        warnings?.push(makePrintWarning(value, isStoreName));
+        return enc;
       }
-      return enc.text(value);
+      let payloadText = sanitized;
+      if (centerCols && centerCols > 0) {
+        const pad = Math.max(0, Math.floor((centerCols - shapedDisplayWidth(sanitized)) / 2));
+        payloadText = ' '.repeat(pad) + sanitized;
+      }
+      if ('raw' in enc && typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function') {
+        return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(payloadText));
+      }
+      return enc.text(payloadText);
     }
     warnings?.push(makePrintWarning(value, isStoreName));
     return enc;

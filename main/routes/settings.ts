@@ -7,7 +7,7 @@ import { requireRole } from '../middleware/security';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
-import { getCountryByCode, getCurrencySymbol, isValidTimeZone } from '../countries';
+import { getCountryByCode, getCurrencySymbol, isValidTimeZone, type CountryLocaleOptions } from '../countries';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
@@ -86,16 +86,36 @@ function boolFlag(value: unknown): string | undefined {
   return value ? 'true' : 'false';
 }
 
-const LOCALE_PREFERENCE_VALUES: Record<string, Set<string>> = {
-  currency_display: new Set(['rial', 'toman', 'toman_short']),
-  number_digits: new Set(['locale', 'latin']),
-  calendar: new Set(['locale', 'persian', 'gregorian']),
+// Country-scoped locale display preferences (#390). A region without declared
+// localeOptions supports only the neutral default for each group: canonical
+// currency unit (rial), locale digits, and locale calendar.
+const NEUTRAL_LOCALE_PREFERENCES = {
+  currency_display: 'rial',
+  number_digits: 'locale',
+  calendar: 'locale',
+} as const;
+
+type LocalePreferenceKey = keyof typeof NEUTRAL_LOCALE_PREFERENCES;
+
+const LOCALE_OPTION_FIELDS: Record<LocalePreferenceKey, keyof CountryLocaleOptions> = {
+  currency_display: 'currencyDisplay',
+  number_digits: 'digits',
+  calendar: 'calendar',
 };
 
-function validLocalePreference(key: string, value: unknown): boolean {
-  const allowed = LOCALE_PREFERENCE_VALUES[key];
-  if (!allowed) return true;
-  return typeof value === 'string' && allowed.has(value);
+function isLocalePreferenceKey(key: string): key is LocalePreferenceKey {
+  return key === 'currency_display' || key === 'number_digits' || key === 'calendar';
+}
+
+function isLocalePreferenceSupported(key: LocalePreferenceKey, value: string, countryCode: string): boolean {
+  if (value === NEUTRAL_LOCALE_PREFERENCES[key]) return true;
+  const options = getCountryByCode(countryCode)?.localeOptions?.[LOCALE_OPTION_FIELDS[key]];
+  return Array.isArray(options) && (options as readonly string[]).includes(value);
+}
+
+function resolveStoredLocalePreference(key: LocalePreferenceKey, stored: string | undefined, countryCode: string): string {
+  if (stored && isLocalePreferenceSupported(key, stored, countryCode)) return stored;
+  return NEUTRAL_LOCALE_PREFERENCES[key];
 }
 
 // cloud_sync_enabled/cloud_orders_enabled/cloud_reports_enabled/cloud_command_polling_enabled
@@ -137,12 +157,12 @@ function businessShape(s: Record<string, string>) {
     bill_show_customer_name: s.bill_show_customer_name !== 'false',
     bill_show_customer_phone: s.bill_show_customer_phone !== 'false',
     bill_show_table_number: s.bill_show_table_number !== 'false',
-    currency_display: s.currency_display || 'rial',
-    number_digits: s.number_digits || 'locale',
-    calendar: s.calendar || 'locale',
-    // The active country pack's format if it declares one, else the static
-    // main/countries.ts fallback, else null. The backend validates submitted
-    // tax IDs against this format; the UI also uses it for immediate feedback.
+    currency_display: resolveStoredLocalePreference('currency_display', s.currency_display, s.country || 'IN'),
+    number_digits: resolveStoredLocalePreference('number_digits', s.number_digits, s.country || 'IN'),
+    calendar: resolveStoredLocalePreference('calendar', s.calendar, s.country || 'IN'),
+    // Informational only — the active country pack's format if it declares
+    // one, else the static main/countries.ts fallback, else null. Never
+    // blocks the save; the UI uses this to show a non-blocking warning.
     tax_id_format: resolveTaxIdFormat(s.country || 'IN'),
   };
 }
@@ -182,16 +202,30 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
     if (!validBusinessLocation(timezone, currency, country)) {
       return res.status(400).json({ error: 'Invalid timezone, currency, or country' });
     }
-    for (const [key, value] of [['currency_display', currency_display], ['number_digits', number_digits], ['calendar', calendar]] as const) {
-      if (value !== undefined && !validLocalePreference(key, value)) {
-        return res.status(400).json({ error: `Invalid ${key} value` });
-      }
-    }
 
     const db = getDatabase();
     const currentSettings = getAllSettings(db);
     const effectiveCountry = country || currentSettings.country || 'IN';
     const effectiveCurrency = currency || currentSettings.currency || 'INR';
+
+    // Validate explicitly supplied locale preferences against the effective
+    // country's declared options, and normalize stale legacy values (e.g. a
+    // Toman/Persian preference left behind by an IR -> US transition).
+    const localeUpdates: Record<string, string> = {};
+    for (const { key, submitted } of [
+      { key: 'currency_display', submitted: currency_display },
+      { key: 'number_digits', submitted: number_digits },
+      { key: 'calendar', submitted: calendar },
+    ] as Array<{ key: LocalePreferenceKey; submitted: unknown }>) {
+      if (submitted !== undefined) {
+        if (typeof submitted !== 'string' || !isLocalePreferenceSupported(key, submitted, effectiveCountry)) {
+          return res.status(400).json({ error: `Invalid ${key} for country ${effectiveCountry}` });
+        }
+        localeUpdates[key] = submitted;
+      } else {
+        localeUpdates[key] = resolveStoredLocalePreference(key, currentSettings[key], effectiveCountry);
+      }
+    }
 
     if (tax_registration_number) {
       const { valid, format } = validateTaxRegistrationNumber(effectiveCountry, tax_registration_number);
@@ -223,7 +257,7 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       billing_type, tables_required, tax_registered,
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
-      currency_display, number_digits, calendar,
+      ...localeUpdates,
     });
     cloudSync.refreshRegistrationProfile();
 
@@ -891,10 +925,14 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
     if (req.params.key === 'bill_template' && !isAvailableBillTemplate(String(value))) {
       return res.status(400).json({ error: 'Unsupported bill template' });
     }
-    if (!validLocalePreference(String(req.params.key), value)) {
-      return res.status(400).json({ error: `Invalid ${req.params.key} value` });
-    }
     const db = getDatabase();
+    const wildcardKey = String(req.params.key);
+    if (isLocalePreferenceKey(wildcardKey)) {
+      const countryCode = getAllSettings(db).country || 'IN';
+      if (typeof value !== 'string' || !isLocalePreferenceSupported(wildcardKey, value, countryCode)) {
+        return res.status(400).json({ error: `Invalid ${wildcardKey} for country ${countryCode}` });
+      }
+    }
 
     // KDS turning off → invalidate any outstanding pairing tokens. Without
     // this, a token minted while KDS was on would still let a device pair

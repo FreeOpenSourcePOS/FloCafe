@@ -76,6 +76,9 @@ export function safePrinterText<T extends { text(value: string): T }>(
   if (!value) return enc;
   if (hasUnsupportedPrinterChars(value)) {
     if (arabicShaping && isArabicShapingSafeLine(value)) {
+      if (typeof (enc as any).raw === 'function') {
+        return (enc as any).raw(new TextEncoder().encode(value));
+      }
       return enc.text(value);
     }
     warnings?.push(makePrintWarning(value, isStoreName));

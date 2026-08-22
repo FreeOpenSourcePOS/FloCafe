@@ -13,7 +13,7 @@
     "dev:restart": "bash scripts/dev/restart.sh",
     "dev:reset": "bash scripts/dev/nuclear-reset.sh",
     "dev:frontend": "cd frontend && npm run dev",
-    "build": "tsc && node scripts/copy-runtime-assets.cjs",
+    "build": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\" && tsc && node scripts/copy-runtime-assets.cjs",
     "lint:backend": "eslint main/ shared/",
     "lint": "npm run lint:backend && npm --prefix frontend run lint",
     "build:frontend": "cd frontend && npm ci && npx cross-env NEXT_BUILD_MODE=desktop npm run build",

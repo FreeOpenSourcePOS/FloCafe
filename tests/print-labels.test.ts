@@ -174,7 +174,7 @@ function run(): void {
     const { normalizeEol, regenerate } = require('../scripts/generate-print-labels.cjs');
     assert('CRLF normalizes to LF', normalizeEol('a\r\nb\rc\n') === 'a\nb\nc\n');
     const committed = require('fs').readFileSync(require('path').join(__dirname, '..', 'main/print/print-labels.generated.ts'), 'utf8');
-    const crlfCommitted = committed.replace(/\n/g, '\r\n');
+    const crlfCommitted = normalizeEol(committed).replace(/\n/g, '\r\n');
     assert('CRLF-checked-out file matches regenerated content', normalizeEol(crlfCommitted) === regenerate());
   }
 

@@ -166,6 +166,18 @@ function run(): void {
     assert('unknown method keeps capitalize fallback', text.includes('Voucher'));
   }
 
+  console.log('\n✅ Test 7: drift check is line-ending deterministic');
+  {
+    // Windows runners with git's default core.autocrlf rewrite the committed
+    // LF file to CRLF on disk; the drift compare must not read that as drift
+    // (regression for the build-windows-x64 matrix failure on ef92eeb).
+    const { normalizeEol, regenerate } = require('../scripts/generate-print-labels.cjs');
+    assert('CRLF normalizes to LF', normalizeEol('a\r\nb\rc\n') === 'a\nb\nc\n');
+    const committed = require('fs').readFileSync(require('path').join(__dirname, '..', 'main/print/print-labels.generated.ts'), 'utf8');
+    const crlfCommitted = committed.replace(/\n/g, '\r\n');
+    assert('CRLF-checked-out file matches regenerated content', normalizeEol(crlfCommitted) === regenerate());
+  }
+
   console.log('\n' + '='.repeat(56));
   console.log(`Print label tests: ${passed} passed, ${failed} failed`);
   if (failures.length > 0) {

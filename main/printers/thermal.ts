@@ -929,7 +929,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     const name = payload?.header?.businessNameTransform === 'uppercase'
       ? String(biz.name).toUpperCase()
       : String(biz.name);
-    lines.push('{STORE_NAME}{CENTER}{BOLD}' + name + '{/BOLD}{/CENTER}');
+    lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(name, cols, arabicShaping) + '{/BOLD}{/CENTER}');
   }
   lines.push(bar);
   lines.push(`{CENTER}${title}{/CENTER}`);
@@ -937,8 +937,8 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   lines.push('Invoice #: ' + (bill.bill_number || order.order_number));
   lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions));
   lines.push('Time: ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  if (biz.show_table_number !== false && order.table?.name) lines.push('Table: ' + order.table.name);
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push('Customer: ' + biz.customer_name);
+  if (biz.show_table_number !== false && order.table?.name) lines.push(truncateShapedLine('Table: ' + order.table.name, cols, arabicShaping));
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push(truncateShapedLine('Customer: ' + biz.customer_name, cols, arabicShaping));
   if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('Customer No: ' + biz.customer_phone);
   lines.push(dash);
   lines.push(pluginItemHeader(layout, cols));
@@ -1007,7 +1007,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
 }
 
 function appendPoweredByFooter(lines: string[]): void {
@@ -1036,12 +1036,12 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   lines.push('{INIT}');
   if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** REPRINT **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + biz.name + '{/BOLD}{/CENTER}');
+  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(String(biz.name), cols, arabicShaping) + '{/BOLD}{/CENTER}');
   lines.push(bar);
   lines.push('Bill #: ' + (bill.bill_number || order.order_number));
   lines.push('Date: ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  if (biz.show_table_number !== false && order.table?.name) lines.push('Table: ' + order.table.name);
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push('Customer: ' + biz.customer_name);
+  if (biz.show_table_number !== false && order.table?.name) lines.push(truncateShapedLine('Table: ' + order.table.name, cols, arabicShaping));
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push(truncateShapedLine('Customer: ' + biz.customer_name, cols, arabicShaping));
   if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('Customer No: ' + biz.customer_phone);
   lines.push(dash);
   lines.push(itemHeader(itemNameLen, amtLen));
@@ -1104,7 +1104,7 @@ function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
 }
 
 function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false): Buffer {
@@ -1129,14 +1129,14 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
 
   // Header: store name (Font A, big + bold), then customer name (Font B) and
   // mobile number, each only if the bill actually has that data.
-  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + biz.name + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push('{CENTER}{FONT_B}' + biz.customer_name + '{/FONT_B}{/CENTER}');
+  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + truncateShapedLine(String(biz.name), Math.floor(cols / 2), arabicShaping) + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  if (biz.show_customer_name !== false && biz.customer_name) lines.push('{CENTER}{FONT_B}' + truncateShapedLine(String(biz.customer_name), cols, arabicShaping) + '{/FONT_B}{/CENTER}');
   if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('{CENTER}' + biz.customer_phone + '{/CENTER}');
 
   lines.push(dash);
   lines.push('{CENTER}Invoice #: ' + (bill.bill_number || order.order_number) + '{/CENTER}');
   lines.push('{CENTER}' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
-  if (biz.show_table_number !== false && order.table?.name) lines.push('{CENTER}Table: ' + order.table.name + '{/CENTER}');
+  if (biz.show_table_number !== false && order.table?.name) lines.push('{CENTER}' + truncateShapedLine('Table: ' + order.table.name, cols, arabicShaping) + '{/CENTER}');
   lines.push(dash);
 
   lines.push(itemHeader(itemNameLen, amtLen));
@@ -1221,7 +1221,7 @@ function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48
   appendPoweredByFooter(lines);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
 }
 
 type PluginColumnAlign = 'left' | 'right' | 'center';
@@ -1492,6 +1492,10 @@ function truncate(text: string, length: number): string {
   return text.length > length ? text.substring(0, length - 2) + '..' : text;
 }
 
+function truncateShapedLine(text: string, length: number, arabicShaping: boolean): string {
+  return arabicShaping && hasArabicScript(text) ? truncate(text, Math.max(1, length)) : text;
+}
+
 function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
@@ -1541,17 +1545,18 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   lines.push('{INIT}');
   lines.push('{CENTER}{BOLD}KITCHEN ORDER TICKET{/BOLD}{/CENTER}');
   lines.push('');
-  lines.push('Station: ' + stationName);
+  lines.push(truncateShapedLine('Station: ' + stationName, cols, arabicShaping));
   lines.push('Order: ' + order.order_number);
   if (order.table) {
-    lines.push('Table: ' + order.table.name);
+    lines.push(truncateShapedLine('Table: ' + order.table.name, cols, arabicShaping));
   }
   lines.push('Time: ' + parseDbTimestamp(order.created_at).toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
   lines.push(bar);
   lines.push('');
 
   for (const item of items) {
-    lines.push('{DOUBLE_HEIGHT}{BOLD}' + item.quantity + 'x  ' + item.product_name + '{/BOLD}{/DOUBLE_HEIGHT}');
+    const itemPrefix = item.quantity + 'x  ';
+    lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(String(item.product_name), Math.max(1, cols - itemPrefix.length), arabicShaping) + '{/BOLD}{/DOUBLE_HEIGHT}');
     const addons = parseAddons(item.addons);
     for (const addon of addons) {
       if (addon?.name) {
@@ -1559,7 +1564,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
       }
     }
     if (item.special_instructions) {
-      lines.push('  ** ' + item.special_instructions + ' **');
+      lines.push('  ** ' + truncateShapedLine(String(item.special_instructions), Math.max(1, cols - 8), arabicShaping) + ' **');
     }
   }
 
@@ -1567,7 +1572,7 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   lines.push(bar);
   lines.push('{CUT}');
 
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping }, warnings);
+  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
 }
 
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full'): Buffer {
@@ -1650,7 +1655,7 @@ function makeUnsupportedLineWarning(isStoreName: boolean, text: string): string 
   return `${label} was not printed because ${why}: ${text}`;
 }
 
-export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean } = {}, warnings?: PrintWarning[]): Buffer {
+export function buildEscPos(lines: string[], _useUnicode: boolean = false, options: { cutMode?: PrinterCutMode; arabicShaping?: boolean; columns?: number } = {}, warnings?: PrintWarning[]): Buffer {
   const buf: number[] = [];
 
   const resetAllStyles = () => {
@@ -1685,6 +1690,11 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
     line = line.replace(/\{STORE_NAME\}/g, '');
     line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
     let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
+    const lineBold = line.includes('{BOLD}');
+    const lineDH = line.includes('{DOUBLE_HEIGHT}');
+    const lineDW = line.includes('{DOUBLE_WIDTH}');
+    const lineFontB = line.includes('{FONT_B}');
+    const center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
     // Currency symbols are an existing, explicit printer option. Do not treat
     // them as a conflicting line; unsupported scripts (Arabic, CJK, emoji,
     // etc.) are different because generic ESC/POS printers cannot shape or
@@ -1712,15 +1722,14 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         }
         continue;
       }
+      if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
+        const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);
+        line = truncate(printableLine, Math.max(1, maxCols));
+      }
     }
 
-    let lineBold = line.includes('{BOLD}');
-    let lineDH = line.includes('{DOUBLE_HEIGHT}');
-    let lineDW = line.includes('{DOUBLE_WIDTH}');
     // ESC/POS mode byte bit 0 selects the character font: 0 = Font A (12x24,
     // the default), 1 = Font B (9x17, condensed). No token means Font A.
-    let lineFontB = line.includes('{FONT_B}');
-    let center = line.startsWith('{CENTER}') && line.includes('{/CENTER}');
 
     line = line.replace(/\{CENTER\}/g, '').replace(/\{\/CENTER\}/g, '');
     line = line.replace(/\{BOLD\}/g, '').replace(/\{\/BOLD\}/g, '');

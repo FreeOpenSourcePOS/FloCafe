@@ -395,6 +395,54 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('formatKOT with arabicShaping prints Persian addons', shapedKot.toString('utf8').includes('هل اضافه'));
   assert('formatKOT with arabicShaping prints Persian notes', shapedKot.toString('utf8').includes('بدون قند'));
   assert('formatKOT with arabicShaping emits no unsupported warning', shapedKotWarnings.length === 0);
+
+  const boundedBackendWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const boundedBackend = buildEscPos(['{DOUBLE_WIDTH}این خط فارسی خیلی طولانی است{/DOUBLE_WIDTH}'], true, { arabicShaping: true, columns: 32 }, boundedBackendWarnings);
+  const boundedBackendLines = visiblePreview(boundedBackend, 32).split('\n').slice(1, -1);
+  assert('backend shaping bounds raw double-width lines', boundedBackendLines.every((line) => line.length <= 16) && boundedBackendWarnings.length === 0);
+
+  const narrowPersianOrder = {
+    ...persianReceiptOrder,
+    table: { name: 'میز شماره بسیار طولانی' },
+    items: [{
+      product_name: 'محصول فارسی بسیار طولانی برای چاپ',
+      quantity: 2,
+      unit_price: 250000,
+      total: 500000,
+      tax_amount: 0,
+      addons: [],
+      special_instructions: 'لطفا این توضیحات فارسی طولانی را کوتاه کنید',
+    }],
+  };
+  const narrowPersianBusiness = {
+    ...persianBiz,
+    name: 'کافه فارسی بسیار طولانی تهران مرکزی',
+    customer_name: 'مشتری فارسی با نام بسیار طولانی',
+  };
+  for (const template of ['compact', 'classic'] as const) {
+    const narrowWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const narrowReceipt = formatReceipt(narrowPersianOrder, fixtureBill, narrowPersianBusiness, template, 32, true, false, 'full', narrowWarnings, true);
+    const narrowLines = visiblePreview(narrowReceipt, 32).split('\n').slice(1, -1);
+    assert(`shaped ${template} receipt stays within 32 columns`, narrowLines.every((line) => line.length <= 32), narrowLines.filter((line) => line.length > 32).join(' | '));
+    assert(`shaped ${template} receipt emits no width warnings`, narrowWarnings.length === 0);
+  }
+
+  const narrowKotWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const narrowKot = formatKOT(
+    narrowPersianOrder,
+    narrowPersianOrder.items,
+    'آشپزخانه فارسی بسیار طولانی مرکزی',
+    32,
+    true,
+    'full',
+    'en-US',
+    undefined,
+    narrowKotWarnings,
+    true,
+  );
+  const narrowKotLines = visiblePreview(narrowKot, 32).split('\n').slice(1, -1);
+  assert('shaped KOT stays within 32 columns', narrowKotLines.every((line) => line.length <= 32), narrowKotLines.filter((line) => line.length > 32).join(' | '));
+  assert('shaped KOT emits no width warnings', narrowKotWarnings.length === 0);
 }
 
 console.log('\n✅ Test 1c: ESC/POS output can be previewed without a printer');

@@ -858,7 +858,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   }
 }
 
-function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' {
+export function normalizeReceiptTemplate(template?: string): 'classic' | 'compact' {
   const normalized = String(template || 'classic').toLowerCase().replace(/[^a-z]/g, '');
   if (normalized.includes('compact') || normalized.includes('minimal')) return 'compact';
   return 'classic';
@@ -1016,7 +1016,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
 }
 
-function appendPoweredByFooter(lines: string[]): void {
+export function appendPoweredByFooter(lines: string[]): void {
   lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_NAME + '{/FONT_B}{/CENTER}');
   lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
 }
@@ -1407,11 +1407,11 @@ function itemHeader(lang: string, nameLen: number, amtLen: number): string {
   );
 }
 
-function itemNameWidth(cols: number, amtLen: number): number {
+export function itemNameWidth(cols: number, amtLen: number): number {
   return Math.max(1, cols - 4 - amtLen);
 }
 
-function itemAmountWidth(
+export function itemAmountWidth(
   order: { items?: Array<{ total?: number; addons?: unknown }> } | null | undefined,
   prefix: string,
   locale: string,
@@ -1432,7 +1432,7 @@ function itemAmountWidth(
   return Math.min(width, Math.max(1, cols - 5));
 }
 
-function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
+export function itemRows(item: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
   const qtyW = 4;
   const name = truncate(item.product_name, nameLen).padEnd(nameLen);
   const qty = String(item.quantity).padEnd(qtyW);
@@ -1443,7 +1443,7 @@ function itemRows(item: any, nameLen: number, amtLen: number, cols: number, pref
   return [label.trimEnd(), ...wrapValue(amount, cols)];
 }
 
-function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
+export function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string[] {
   const label = truncate('  + ' + addon.name, nameLen).padEnd(nameLen);
   if (!addon.price) return [label + ' '.repeat(Math.max(0, cols - label.length))];
   const price = formatCurrency(addon.price, prefix, locale, trimDecimals);
@@ -1452,7 +1452,7 @@ function addonRows(addon: any, nameLen: number, amtLen: number, cols: number, pr
   return [label.trimEnd(), ...wrapValue(price, cols)];
 }
 
-function financialRows(label: string, value: string, cols: number): string[] {
+export function financialRows(label: string, value: string, cols: number): string[] {
   const safeLabel = label.slice(0, Math.max(1, cols - 1));
   const inlineWidth = Math.max(1, cols - safeLabel.length - 1);
   if (value.length <= inlineWidth) {
@@ -1485,7 +1485,7 @@ function getSafeLatnLocale(locale: string | undefined): string {
   return `${locale}-u-nu-latn`;
 }
 
-function formatCurrency(amount: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string {
+export function formatCurrency(amount: number, prefix: string, locale: string = 'en-US', trimDecimals: boolean = false): string {
   const numeric = Number(amount) || 0;
   const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
   const safeLocale = getSafeLatnLocale(locale);
@@ -1496,15 +1496,15 @@ function formatCurrency(amount: number, prefix: string, locale: string = 'en-US'
   return prefix + formattedNum;
 }
 
-function rightAlign(text: string, width: number = 24): string {
+export function rightAlign(text: string, width: number = 24): string {
   return ' '.repeat(Math.max(1, width - text.length)) + text;
 }
 
-function truncate(text: string, length: number): string {
+export function truncate(text: string, length: number): string {
   return text.length > length ? text.substring(0, length - 2) + '..' : text;
 }
 
-function truncateShapedLine(text: string, length: number, arabicShaping: boolean): string {
+export function truncateShapedLine(text: string, length: number, arabicShaping: boolean): string {
   return arabicShaping && hasArabicScript(text) ? truncate(text, Math.max(1, length)) : text;
 }
 
@@ -1512,7 +1512,7 @@ function truncateShapedLine(text: string, length: number, arabicShaping: boolean
  * Receipt label language resolution (#440). Unknown or ungenerated languages
  * fall back to English so receipts always render real labels.
  */
-function normalizePrintLanguage(language?: string): string {
+export function normalizePrintLanguage(language?: string): string {
   return language && isGeneratedPrintLanguage(language) ? language : 'en';
 }
 
@@ -1523,14 +1523,14 @@ const PAYMENT_METHOD_CONCEPTS: Record<string, PrintConceptId> = {
 };
 
 /** Ported from web-print.ts (#440): known methods localize; unknown keep the capitalize fallback. */
-function resolvePaymentMethodLabel(method: string, lang: string): string {
+export function resolvePaymentMethodLabel(method: string, lang: string): string {
   const concept = PAYMENT_METHOD_CONCEPTS[String(method || '').toLowerCase()];
   if (concept) return printLabel(lang, concept);
   return capitalize(String(method || ''));
 }
 
 /** pos.tableLabel carries an ICU {name} placeholder; backend rendering swaps it inline. */
-function formatTableLabel(tableName: string, lang: string): string {
+export function formatTableLabel(tableName: string, lang: string): string {
   return printLabel(lang, 'pos.tableLabel').replace('{name}', tableName);
 }
 
@@ -1538,7 +1538,7 @@ function capitalize(text: string): string {
   return text.length > 0 ? text.charAt(0).toUpperCase() + text.slice(1) : text;
 }
 
-function wrapText(text: string, cols: number): string[] {
+export function wrapText(text: string, cols: number): string[] {
   const words = String(text || '').trim().split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let current = '';
@@ -1568,11 +1568,11 @@ function wrapText(text: string, cols: number): string[] {
   return lines.length > 0 ? lines : [''];
 }
 
-function pushWrapped(lines: string[], text: string, cols: number): void {
+export function pushWrapped(lines: string[], text: string, cols: number): void {
   for (const line of wrapText(text, cols)) lines.push(line);
 }
 
-function pushCenteredWrapped(lines: string[], text: string, cols: number): void {
+export function pushCenteredWrapped(lines: string[], text: string, cols: number): void {
   for (const line of wrapText(text, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
@@ -1660,7 +1660,7 @@ const CURRENCY_ASCII_MAP: Record<string, string> = {
 // symbol). Must run BEFORE rightAlign() computes padding — swapping the
 // symbol out afterwards (e.g. '₹' -> 'Rs') changes the string length and
 // pushes trailing digits onto the next line.
-function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
+export function resolveCurrencyPrefix(symbol: string, useUnicode: boolean): string {
   // fa-IR resolves IRR to the textual token "ریال". Generic ESC/POS printers
   // cannot shape that token, so normalize this known currency even when the
   // caller requests Unicode. Preserve the existing useUnicode behavior for

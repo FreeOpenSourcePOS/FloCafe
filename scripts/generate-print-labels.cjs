@@ -30,59 +30,10 @@ const path = require('path');
 
 const ROOT = path.join(__dirname, '..');
 const MESSAGES_DIR = path.join(ROOT, 'frontend/src/lib/i18n/messages');
-const LANGUAGE_REGISTRY_FILE = path.join(ROOT, 'frontend/src/lib/i18n/languages.ts');
 const OUT_FILE = path.join(ROOT, 'main/print/print-labels.generated.ts');
 
-function propertyName(property) {
-  return property.name?.getText() ?? '';
-}
-
-/** Read selectable language keys from the authoritative frontend registry. */
-function registryLanguages() {
-  const ts = require('typescript');
-  const source = ts.createSourceFile(
-    LANGUAGE_REGISTRY_FILE,
-    fs.readFileSync(LANGUAGE_REGISTRY_FILE, 'utf8'),
-    ts.ScriptTarget.Latest,
-    true,
-  );
-  let languagesObject;
-  function visit(node) {
-    if (
-      ts.isVariableDeclaration(node)
-      && propertyName(node.name) === 'LANGUAGES'
-      && ts.isObjectLiteralExpression(node.initializer)
-    ) {
-      languagesObject = node.initializer;
-    }
-    ts.forEachChild(node, visit);
-  }
-  visit(source);
-  if (!languagesObject) throw new Error('Could not find LANGUAGES registry');
-
-  return languagesObject.properties.flatMap((entry) => {
-    if (!ts.isPropertyAssignment(entry) || !ts.isObjectLiteralExpression(entry.initializer)) return [];
-    const selectable = entry.initializer.properties.find((property) => propertyName(property) === 'selectable');
-    return selectable?.initializer.kind === ts.SyntaxKind.TrueKeyword ? [propertyName(entry)] : [];
-  });
-}
-
-function generatedLanguageOrder() {
-  if (!fs.existsSync(OUT_FILE)) return [];
-  const source = fs.readFileSync(OUT_FILE, 'utf8');
-  const match = source.match(/export const PRINT_LABEL_LANGUAGES = \[([\s\S]*?)\] as const;/);
-  return match ? [...match[1].matchAll(/'([^']+)'/g)].map((item) => item[1]) : [];
-}
-
-/** Selectable languages, preserving the committed output order when possible. */
-const LANGUAGES = (() => {
-  const selectable = registryLanguages();
-  const previous = generatedLanguageOrder();
-  return [
-    ...previous.filter((language) => selectable.includes(language)),
-    ...selectable.filter((language) => !previous.includes(language)),
-  ];
-})();
+/** Committed languages, in stable generation order (keep in sync with languages.ts). */
+const LANGUAGES = ['en', 'fa', 'es', 'pt'];
 
 /**
  * New `print.*` keys owned by issue #440, in contract order. Dotted leaf

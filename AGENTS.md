@@ -24,6 +24,16 @@ For minor typos or isolated one-line edits, formal planning is not required.
 
 If a task or design doc contradicts current code or references files that no longer exist, investigate and report the discrepancy rather than inventing unapproved architecture.
 
+## Repository layout
+
+```text
+main/           Electron main process, Express API, SQLite access, ESC/POS printing, and services
+frontend/src/   Next.js/React renderer, Zustand state, UI components, and translations
+tests/          Backend unit, integration, and release test suites
+docs/           Documentation, design specifications, and audits (see docs/README.md)
+.github/        Issue/PR templates, CODEOWNERS, and CI/CD workflows
+```
+
 ## Core invariants
 
 1. **Offline-first operation:** Core POS operation (orders, billing, KDS, printing) must function without internet connectivity. Optional network features (Google Drive, WhatsApp, cloud reporting) run only when explicitly configured and must fail gracefully when offline.

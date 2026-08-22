@@ -12,6 +12,9 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import * as ts from 'typescript';
+
+import { LANGUAGES } from '../frontend/src/lib/i18n/languages';
 
 const KERNEL_DIR = path.resolve(__dirname, '../shared/print');
 const ALLOWED_IMPORT_PREFIXES = ['./', '../'];
@@ -63,18 +66,40 @@ for (const file of sources) {
 
 console.log('✓ no IO/framework imports in shared/print');
 
-// No hardcoded language unions: the kernel must not enumerate specific codes.
-console.log('Auditing shared/print for hardcoded language unions...');
-const UNION_RE = /['"](en|fa|es|pt)['"]\s*\|/;
-for (const file of sources) {
-  const src = fs.readFileSync(file, 'utf8');
-  // Test fixtures and error messages may mention codes; type unions must not.
-  const codeOnly = src
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('//'))
-    .join('\n');
-  assert.ok(!UNION_RE.test(codeOnly), `${path.basename(file)} contains a hardcoded language union`);
+// No hardcoded language codes: registered UI language keys must never appear
+// as string-literal types anywhere in the kernel (single literals and union
+// members alike, in any formatting). The forbidden set comes from the
+// authoritative central registry, not from this test.
+console.log('Auditing shared/print for hardcoded language codes in type positions...');
+const LANGUAGE_CODES: ReadonlySet<string> = new Set(Object.keys(LANGUAGES));
+assert.ok(LANGUAGE_CODES.size > 0, 'language registry should expose registered codes');
+
+function typePositionStringLiterals(source: ts.SourceFile): string[] {
+  const found: string[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isLiteralTypeNode(node)) {
+      const literal = node.literal;
+      if (ts.isStringLiteral(literal) || ts.isNoSubstitutionTemplateLiteral(literal)) {
+        found.push(literal.text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(source, visit);
+  return found;
 }
 
-console.log('✓ no hardcoded language unions');
+for (const file of sources) {
+  const rel = path.relative(path.dirname(KERNEL_DIR), file);
+  const src = fs.readFileSync(file, 'utf8');
+  const sourceFile = ts.createSourceFile(file, src, ts.ScriptTarget.Latest, /* setParentNodes */ true);
+  for (const literalText of typePositionStringLiterals(sourceFile)) {
+    assert.ok(
+      !LANGUAGE_CODES.has(literalText),
+      `${rel} hardcodes language code "${literalText}" in a type position — use PrintLanguageCode`,
+    );
+  }
+}
+
+console.log('✓ no hardcoded language codes in type positions');
 console.log('\nPrint kernel purity audit passed.');

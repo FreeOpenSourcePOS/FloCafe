@@ -37,6 +37,40 @@ export const TEMPLATE_LABELS_MAX_ENTRIES = 64;
 export const TEMPLATE_LABELS_MAX_VALUE_LENGTH = 120;
 
 /**
+ * Printer control grammar recognized by the receipt builder (`buildEscPos`
+ * in `main/printers/thermal.ts`): `{CUT}`, `{FEED}`, `{INIT}` execute
+ * hardware actions and the uppercase styling/alignment braces (including
+ * `{/CENTER}`-style closers) change layout. Pack-supplied label copy is
+ * untrusted text, so every sequence matching this grammar is stripped from
+ * resolved labels — a malicious or careless label can never cut paper,
+ * feed, reinitialize, or restyle mid-receipt.
+ */
+const PRINTER_TOKEN_PATTERN = /\{[A-Z_/]+\}/g;
+
+/**
+ * Strip reserved printer tokens from template label text (#445 review F1).
+ * Applied to every label resolved through this module before it reaches the
+ * renderer; trusted catalog defaults contain no tokens, so this is a no-op
+ * for built-in fallbacks and byte-compatible EN output is preserved.
+ */
+export function sanitizeTemplateLabelText(text: string): string {
+  return String(text ?? '').replace(PRINTER_TOKEN_PATTERN, '');
+}
+
+/**
+ * Sanitize a template label and clamp it to the selected width profile's
+ * printable column count (#445 review F2, 32-48 columns). Over-long labels
+ * are truncated with the codebase's `..` ellipsis convention so row-label
+ * alignment math (`rightAlign(amount, cols - label.length)`) can never
+ * overflow the physical receipt width.
+ */
+export function fitTemplateLabel(text: string, columns: number): string {
+  const clean = sanitizeTemplateLabelText(text);
+  if (!Number.isInteger(columns) || columns < 1 || clean.length <= columns) return clean;
+  return columns <= 3 ? clean.slice(0, columns) : clean.slice(0, columns - 2) + '..';
+}
+
+/**
  * Validate the optional payload-root `labels` map of an
  * `escpos-line-template-v1` payload at install time (#445).
  *
@@ -74,12 +108,18 @@ export function validateTemplateLabelsMap(labels: unknown): void {
  * entry wins; otherwise the localized built-in default resolves through the
  * canonical catalog using the receipt language. Non-string or empty entries
  * are ignored at render time (install already rejects them), so a partially
- * damaged payload still renders real labels, never raw keys.
+ * damaged payload still renders real labels, never raw keys. Resolved labels
+ * are always sanitized against reserved printer tokens; when the selected
+ * width profile's column count is supplied, they are additionally clamped to
+ * fit within it.
  */
-export function resolveTemplateLabel(labels: unknown, id: TemplateLabelId, lang: string): string {
+export function resolveTemplateLabel(labels: unknown, id: TemplateLabelId, lang: string, columns?: number): string {
   const override = labels && typeof labels === 'object' && !Array.isArray(labels)
     ? (labels as Record<string, unknown>)[id]
     : undefined;
-  if (typeof override === 'string' && override.length > 0) return override;
-  return printLabel(lang, TEMPLATE_LABEL_IDS[id]);
+  let resolved = typeof override === 'string' && override.length > 0
+    ? sanitizeTemplateLabelText(override)
+    : '';
+  if (!resolved) resolved = printLabel(lang, TEMPLATE_LABEL_IDS[id]);
+  return columns === undefined ? resolved : fitTemplateLabel(resolved, columns);
 }

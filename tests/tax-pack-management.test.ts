@@ -53,6 +53,7 @@ const {
   escPosToText,
   formatReceipt,
 } = require('../main/printers/thermal');
+const { resolveTemplateLabel } = require('../main/print/template-labels');
 const { LEGACY_TRUSTED_PACK_DIGESTS } = require('../main/routes/tax-packs');
 const dualRatePackData = require('./fixtures/synthetic-dual-rate-pack.json');
 const flatRatePackData = require('./fixtures/synthetic-flat-rate-pack.json');
@@ -821,6 +822,42 @@ async function main() {
         widthProfiles: [{ columns: 48, layout: {} }],
       },
     };
+    const hostileLabelsTemplate = {
+      id: 'in.gst.hostile-labels.v1',
+      displayName: 'India GST Hostile Labels',
+      country: 'IN',
+      jurisdiction: '*',
+      paperColumns: [48],
+      renderer: { id: 'flocafe-thermal-receipt-template', version: 1 },
+      // #445 review F1: reserved printer tokens in pack labels must be
+      // stripped at render time, never executed by the receipt builder.
+      templatePayload: {
+        format: 'escpos-line-template-v1',
+        widthProfiles: [{ columns: 48, layout: {} }],
+        labels: {
+          invoice: '{CUT}NOTA',
+          subtotal: 'SUBTOTAL{FEED}',
+          total: '{INIT}SUMA TOTAL',
+          footerThanks: 'Gracias{/BOLD}{CUT}!',
+        },
+      },
+    };
+    const oversizedLabelValue = 'SUBTOTAL DEMASIADO LARGO PARA TREINTA Y DOS COLUMNAS';
+    const oversizedLabelsTemplate = {
+      id: 'in.gst.oversized-labels.v1',
+      displayName: 'India GST Oversized Labels',
+      country: 'IN',
+      jurisdiction: '*',
+      paperColumns: [32],
+      renderer: { id: 'flocafe-thermal-receipt-template', version: 1 },
+      // #445 review F2: over-long template labels must be clamped to fit the
+      // selected width profile (32 columns here).
+      templatePayload: {
+        format: 'escpos-line-template-v1',
+        widthProfiles: [{ columns: 32, layout: {} }],
+        labels: { subtotal: oversizedLabelValue, total: 'SUMA TOTAL' },
+      },
+    };
     const labelsPack = { ...testIndiaPack, id: 'test-labels-in-pack', version: '2.0.0', publishedAt: '2026-08-02' };
     const labelsArtifactJson = JSON.stringify({
       schemaVersion: 1,
@@ -834,7 +871,7 @@ async function main() {
       publishedAt: labelsPack.publishedAt,
       minFloVersion: labelsPack.minFloVersion,
       taxPack: labelsPack,
-      printTemplates: [localizedLabelsTemplate, labelsTotalTemplate, fallbackTemplate],
+      printTemplates: [localizedLabelsTemplate, labelsTotalTemplate, fallbackTemplate, hostileLabelsTemplate, oversizedLabelsTemplate],
     }, null, 2);
     const labelsSignature = sign(null, Buffer.from(labelsArtifactJson, 'utf8'), privateKey).toString('base64');
     const labelsTag = 'tax-pack-test-labels-in-pack-v2.0.0';
@@ -864,17 +901,17 @@ async function main() {
     assertEqual(
       db.prepare('SELECT COUNT(*) AS count FROM installed_print_templates WHERE pack_version_id = ?')
         .get(labelsInstalled.versionId).count,
-      3,
+      5,
       'all labeled templates install',
     );
 
-    const renderLabeled = (templateId: string, billOverrides: Record<string, unknown> = {}, language?: string) => escPosToText(formatReceipt(
+    const renderLabeledBuffer = (templateId: string, billOverrides: Record<string, unknown> = {}, language?: string, billNumber?: string) => formatReceipt(
       {
         order_number: `ORD-LABELS-${templateId}`,
         created_at: '2026-08-02T10:30:00.000Z',
         items: [{ product_name: 'Chai', quantity: 1, total: 100 }],
       },
-      { bill_number: `BILL-LABELS-${templateId}`, subtotal: 100, discount_amount: 0, tax_amount: 0, total: 100, ...billOverrides },
+      { bill_number: billNumber || `BILL-LABELS-${templateId}`, subtotal: 100, discount_amount: 0, tax_amount: 0, total: 100, ...billOverrides },
       { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹', show_tax_breakdown: false },
       templateId,
       48,
@@ -884,7 +921,8 @@ async function main() {
       [],
       false,
       language,
-    ));
+    );
+    const renderLabeled = (templateId: string, billOverrides: Record<string, unknown> = {}, language?: string, billNumber?: string) => escPosToText(renderLabeledBuffer(templateId, billOverrides, language, billNumber));
 
     const labelsReceipt = renderLabeled('in.gst.localized-labels.v1');
     assert(labelsReceipt.includes('NOTA'), 'labels.invoice overrides the no-tax title');
@@ -914,6 +952,35 @@ async function main() {
     assert(fallbackPtReceipt.includes('Obrigado!'), 'built-in fallbacks localize through the canonical catalog (pt footer)');
     const fallbackUnknownLangReceipt = renderLabeled('in.gst.label-fallback.v1', {}, 'xx');
     assert(fallbackUnknownLangReceipt.includes('INVOICE'), 'unknown receipt languages fall back to the EN catalog');
+
+    // #445 review F1: reserved printer tokens in pack labels must never be
+    // executed by the receipt builder — one regression per token ({CUT},
+    // {FEED}, {INIT}) plus styling braces.
+    const hostileReceipt = renderLabeled('in.gst.hostile-labels.v1');
+    assert(hostileReceipt.includes('NOTA'), 'sanitized labels.invoice still renders its text');
+    assert(hostileReceipt.includes('SUBTOTAL'), 'sanitized labels.subtotal still renders its text');
+    assert(hostileReceipt.includes('SUMA TOTAL'), 'sanitized labels.total still renders its text');
+    assert(hostileReceipt.includes('Gracias!'), 'sanitized labels.footerThanks still renders its text');
+    const countByteSequence = (haystack: Buffer, needle: Buffer): number => {
+      let count = 0;
+      for (let index = 0; (index = haystack.indexOf(needle, index)) !== -1; index += needle.length) count += 1;
+      return count;
+    };
+    const hostileBuffer = renderLabeledBuffer('in.gst.hostile-labels.v1');
+    assertEqual(countByteSequence(hostileBuffer, Buffer.from([0x1d, 0x56])), 1, 'hostile labels cannot inject extra paper cuts');
+    assertEqual(countByteSequence(hostileBuffer, Buffer.from([0x1b, 0x40])), 1, 'hostile labels cannot reinitialize the printer mid-receipt');
+    assertEqual(countByteSequence(hostileBuffer, Buffer.from([0x1b, 0x64])), 1, 'hostile labels cannot inject extra paper feeds');
+    for (const token of ['{CUT}', '{FEED}', '{INIT}']) {
+      const resolved = resolveTemplateLabel({ total: `${token}TOTAL` }, 'total', 'en');
+      assert(!resolved.includes(token), `printer token ${token} is stripped from pack-supplied labels`);
+    }
+
+    // #445 review F2: over-long template labels are clamped to the selected
+    // width profile (32 columns here; row labels reserve amount width).
+    const oversizedReceipt = renderLabeled('in.gst.oversized-labels.v1', {}, undefined, 'B-OVR');
+    const oversizedLines = oversizedReceipt.split('\n').filter((line) => line.length > 0);
+    assert(oversizedLines.every((line) => line.length <= 32), 'over-long template labels keep every rendered line within the 32-column profile');
+    assert(oversizedReceipt.includes(oversizedLabelValue.slice(0, 18) + '..'), 'over-long subtotal label is truncated with the ellipsis convention');
 
     const labelsRejectCases: Array<{ name: string; labels: unknown; messagePart: string }> = [
       {

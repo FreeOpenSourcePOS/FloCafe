@@ -15,7 +15,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import { printLabel, isGeneratedPrintLanguage } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../print/print-labels.generated';
-import { resolveTemplateLabel } from '../print/template-labels';
+import { fitTemplateLabel, resolveTemplateLabel, sanitizeTemplateLabelText } from '../print/template-labels';
 
 export type PrintResult = {
   ok: boolean;
@@ -918,13 +918,17 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
   const trimDecimals = biz.trim_decimals === true;
   const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const configuredTaxLabel = String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID');
+  const configuredTaxLabel = sanitizeTemplateLabelText(String(payload?.fields?.taxRegistrationNumberLabel || getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID'));
   const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
   const hasTax = Number(bill.tax_amount) !== 0
     || taxComponents.some((component) => component.amount !== 0);
+  // Pack-supplied strings (#445 review): sanitized against reserved printer
+  // tokens ({CUT}/{FEED}/{INIT} and styling braces) and clamped to the selected
+  // width profile before they reach the receipt builder; the localized resolver
+  // fallback applies the same treatment.
   const title = hasTax
-    ? String(payload?.header?.taxTitleWhenTaxPresent || resolveTemplateLabel(payload?.labels, 'taxInvoice', lang))
-    : String(payload?.header?.titleWhenTaxAbsent || resolveTemplateLabel(payload?.labels, 'invoice', lang));
+    ? fitTemplateLabel(String(payload?.header?.taxTitleWhenTaxPresent || ''), cols) || resolveTemplateLabel(payload?.labels, 'taxInvoice', lang, cols)
+    : fitTemplateLabel(String(payload?.header?.titleWhenTaxAbsent || ''), cols) || resolveTemplateLabel(payload?.labels, 'invoice', lang, cols);
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
   lines.push('{INIT}');
@@ -963,12 +967,17 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   }
 
   lines.push(dash);
+  // Row labels share their line with a right-aligned amount, so they are
+  // clamped to the width profile minus the same 12-column amount reserve the
+  // payment-method rows already use; title/footer labels clamp to the full
+  // width (#445 review F2).
+  const rowLabelWidth = Math.max(8, cols - 12);
   if (payload?.totals?.showSubtotal !== false) {
-    const label = resolveTemplateLabel(payload?.labels, 'subtotal', lang);
+    const label = resolveTemplateLabel(payload?.labels, 'subtotal', lang, rowLabelWidth);
     lines.push(label + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - label.length));
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
-    const label = resolveTemplateLabel(payload?.labels, 'discount', lang);
+    const label = resolveTemplateLabel(payload?.labels, 'discount', lang, rowLabelWidth);
     lines.push(label + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - label.length));
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
@@ -978,7 +987,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals), layout, cols));
     }
   } else if (Number(bill.tax_amount) !== 0) {
-    const label = resolveTemplateLabel(payload?.labels, 'tax', lang);
+    const label = resolveTemplateLabel(payload?.labels, 'tax', lang, rowLabelWidth);
     lines.push(label + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), Math.max(4, cols - label.length)));
   }
   lines.push(bar);
@@ -986,7 +995,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   // totals.grandTotalLabel) is most specific and wins first; the additive
   // payload-root `labels` map overrides next; otherwise the built-in default
   // resolves localized through the canonical print-labels catalog (#440).
-  const totalLabel = String(payload?.totals?.grandTotalLabel || resolveTemplateLabel(payload?.labels, 'total', lang));
+  const totalLabel = fitTemplateLabel(String(payload?.totals?.grandTotalLabel || ''), rowLabelWidth) || resolveTemplateLabel(payload?.labels, 'total', lang, rowLabelWidth);
   lines.push('{BOLD}' + totalLabel + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - totalLabel.length) + '{/BOLD}');
 
   if (bill.payment_details) {
@@ -1014,7 +1023,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     : biz.show_tax_id === true;
   if (showTaxRegistration && biz.taxRegistrationNumber) pushWrapped(lines, configuredTaxLabel + ': ' + biz.taxRegistrationNumber, cols);
   if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
-  else lines.push('{CENTER}' + String(payload?.footer?.defaultMessage || resolveTemplateLabel(payload?.labels, 'footerThanks', lang)) + '{/CENTER}');
+  else lines.push('{CENTER}' + (fitTemplateLabel(String(payload?.footer?.defaultMessage || ''), cols) || resolveTemplateLabel(payload?.labels, 'footerThanks', lang, cols)) + '{/CENTER}');
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 

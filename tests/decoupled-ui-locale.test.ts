@@ -41,6 +41,8 @@ moduleApi._resolveFilename = function (request: string, parent: any, isMain: boo
   let resolvedRequest = request;
   if (request.startsWith('@/')) {
     resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
+  } else if (request.startsWith('@print/')) {
+    resolvedRequest = path.resolve(ROOT, 'shared/print', request.slice('@print/'.length));
   } else if (request === '@countries') {
     resolvedRequest = path.resolve(ROOT, 'main/countries');
   }

@@ -70,13 +70,13 @@ Module._load = function (request, parent, isMain) {
 };
 
 // ── Now load and start the compiled backend ───────────────────────────────────
-const { initDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests } = require('./dist/db');
-const { createExitCodeAwareShutdown, waitForHttpShutdownWork, isShutdownTimeout } = require('./dist/shutdown');
-const { startServer, stopServer, getServerPort } = require('./dist/server');
-const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/kds-server');
-const { startServerApp, stopServerApp, getServerAppPort } = require('./dist/server-app');
-const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } = require('./dist/services/whatsapp');
-const { startStandaloneServers } = require('./dist/standalone-startup');
+const { initDatabase, closeDatabase, beginDatabaseShutdown, waitForDatabaseRequests } = require('./dist/main/db');
+const { createExitCodeAwareShutdown, waitForHttpShutdownWork, isShutdownTimeout } = require('./dist/main/shutdown');
+const { startServer, stopServer, getServerPort } = require('./dist/main/server');
+const { startKdsServer, stopKdsServer, getKdsPort } = require('./dist/main/kds-server');
+const { startServerApp, stopServerApp, getServerAppPort } = require('./dist/main/server-app');
+const { shutdown: shutdownWhatsApp, requestShutdown: requestWhatsAppShutdown } = require('./dist/main/services/whatsapp');
+const { startStandaloneServers } = require('./dist/main/standalone-startup');
 
 let exitRequested = false;
 let shutdownRequested = false;

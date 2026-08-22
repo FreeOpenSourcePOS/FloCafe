@@ -121,7 +121,7 @@ export default function OrdersPage() {
   const heldOrdersStore = useHeldOrdersStore();
   const router = useRouter();
   const cartStore = useCartStore();
-  const { setTablesRequired, autoPrintBill, printerUseUnicode } = usePosSettingsStore();
+  const { setTablesRequired, autoPrintBill, printerUseUnicode, printerArabicShaping } = usePosSettingsStore();
   const tOrders = useTranslations('orders');
   const tCommon = useTranslations('common');
   const tNav = useTranslations('nav');
@@ -605,6 +605,7 @@ export default function OrdersPage() {
       }>('/printers/print-bill', {
         billId,
         useUnicode: printerUseUnicode,
+        arabicShaping: printerArabicShaping,
         isReprint,
         preview: true,
       });

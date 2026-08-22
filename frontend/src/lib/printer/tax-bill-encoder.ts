@@ -44,6 +44,12 @@ export interface TaxBillOptions {
   rawEscPos?: boolean;
   /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
   trimDecimals?: boolean;
+  /**
+   * Printer firmware performs Arabic/Persian contextual shaping (#437).
+   * Lets pure ASCII+Arabic lines through the unsupported-character guard.
+   * Default: false.
+   */
+  arabicShaping?: boolean;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
@@ -117,6 +123,7 @@ export function buildTaxBillBytes(
     useUnicode = false,
     trimDecimals = false,
     rawEscPos = true,
+    arabicShaping = false,
   } = opts;
   const cols = CHARS[paperWidth];
   const rawCurrency = getCurrencySymbol(tenant.currency ?? 'INR', getCountryByCode(tenant.country ?? 'IN')?.locale);
@@ -135,19 +142,19 @@ export function buildTaxBillBytes(
   enc.initialize().align('center');
   if (showBusinessName && tenant.business_name) {
     enc.bold(true).width(2).height(2);
-    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true);
+    safePrinterText(enc, truncate(tenant.business_name, 16), warnings, true, arabicShaping, Math.floor(cols / 2));
     enc.width(1).height(1);
     enc.bold(false).newline();
   }
 
   if (address) {
-    safePrinterText(enc, truncate(address, cols), warnings).newline();
+    safePrinterText(enc, truncate(address, cols), warnings, false, arabicShaping, cols).newline();
   }
   if (phone) {
-    safePrinterText(enc, `Ph: ${phone}`, warnings).newline();
+    safePrinterText(enc, `Ph: ${phone}`, warnings, false, arabicShaping, cols).newline();
   }
   if (taxRegistrationNumber) {
-    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings).newline();
+    safePrinterText(enc, `${taxIdLabel}: ${taxRegistrationNumber}`, warnings, false, arabicShaping, cols).newline();
   }
 
   enc.newline();
@@ -158,10 +165,10 @@ export function buildTaxBillBytes(
   enc.text(`Date: ${formatDate(bill.order?.created_at, locale)}`).newline();
 
   if (showTableNumber && order?.table?.name) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (showCustomerName && order?.customer?.name) {
-    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings).newline();
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
   if (showCustomerPhone && order?.customer?.phone) {
     enc.text(`Customer No: ${maskPhoneOnReceipt(order.customer.phone)}`).newline();
@@ -177,7 +184,7 @@ export function buildTaxBillBytes(
   for (const item of items) {
     const line = `${item.product_name}`;
 
-    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos), cols), warnings).newline();
+    safePrinterText(enc, padRow(line, formatAmount(item.total, currency, amountLocale, trimDecimals, rawEscPos), cols), warnings, false, arabicShaping).newline();
 
     // Show HSN if available
     const hsnCode = 'hsn_code' in item ? (item as { hsn_code?: string }).hsn_code : undefined;
@@ -193,7 +200,7 @@ export function buildTaxBillBytes(
         const addonPrice = addon.price && Number(addon.price) > 0
           ? formatAmount(Number(addon.price) * qty * item.quantity, currency, amountLocale, trimDecimals, rawEscPos)
           : '';
-        safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings).newline();
+        safePrinterText(enc, padRow(addonLine, addonPrice, cols), warnings, false, arabicShaping).newline();
       }
     }
   }

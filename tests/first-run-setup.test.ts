@@ -147,6 +147,27 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(count('users'), 0, 'no user is created when terms are not accepted');
     console.log('   ✓ setup endpoint requires terms_accepted before creating the owner account');
 
+    const invalidTimezone = await request(baseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'First Owner',
+        email: 'owner@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        business_name: 'First Cafe',
+        setup_profile: 'express',
+        service_model: 'qsr',
+        terms_accepted: true,
+        country: 'CA',
+        currency: 'CAD',
+        timezone: 'Not/A_Real_Zone',
+      }),
+    });
+    assert.equal(invalidTimezone.status, 400, 'setup rejects an invalid IANA timezone');
+    assert.equal(invalidTimezone.data.error, 'Invalid timezone', 'setup reports a timezone-specific validation error');
+    assert.equal(count('users'), 0, 'no owner is created when the timezone is invalid');
+    console.log('   ✓ setup rejects an invalid IANA timezone');
+
     const first = await request(baseUrl, '/setup/initialize', {
       method: 'POST',
       body: JSON.stringify({
@@ -158,6 +179,11 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
         setup_profile: 'express',
         service_model: 'qsr',
         terms_accepted: true,
+        // A Canadian store on the west coast selects its true timezone rather
+        // than the country profile's America/Toronto default (#389).
+        country: 'CA',
+        currency: 'CAD',
+        timezone: 'America/Vancouver',
         // Deliberately sent as false: first-run setup no longer asks about
         // telemetry, it discloses it. The route must ignore this field
         // entirely rather than let a stale client switch telemetry off.
@@ -175,6 +201,9 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(setting('business_type'), 'restaurant');
     assert.equal(setting('setup_profile'), 'express');
     assert.equal(setting('service_model'), 'qsr');
+    assert.equal(setting('country'), 'CA', 'setup persists the chosen country');
+    assert.equal(setting('currency'), 'CAD', 'setup persists the chosen currency');
+    assert.equal(setting('timezone'), 'America/Vancouver', 'setup persists a custom tenant timezone independently of the country default');
     assert.equal(setting('billing_type'), 'prepaid');
     assert.equal(setting('tables_required'), 'false');
     assert.equal(setting('onboarding_completed'), 'true');
@@ -204,6 +233,25 @@ assert.equal(getCurrentSchemaVersion(), MIGRATIONS[MIGRATIONS.length - 1].versio
     assert.equal(second.status, 403);
     assert.equal(count('users'), 1, 'setup cannot create a second owner');
     console.log('   ✓ setup endpoint is disabled after the first user exists');
+
+    // A disabled setup endpoint must stay 403 even for a malformed payload —
+    // an invalid timezone must not downgrade the completed-setup guard to 400
+    // (regression for the Greptile review on #432).
+    const disabledWithBadTimezone = await request(baseUrl, '/setup/initialize', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: 'Third Owner',
+        email: 'third@example.com',
+        password: 'TestPass123',
+        business_type: 'restaurant',
+        terms_accepted: true,
+        timezone: 'Not/A_Real_Zone',
+      }),
+    });
+    assert.equal(disabledWithBadTimezone.status, 403, 'disabled setup keeps 403 even with an invalid timezone');
+    assert.equal(disabledWithBadTimezone.data.error, 'Setup already complete. This endpoint is disabled.');
+    assert.equal(count('users'), 1, 'disabled setup still cannot create a third owner');
+    console.log('   ✓ disabled setup returns 403 before timezone validation');
 
     // Cloud v2 coordination is automatic for new installs.
     // '1', not 'true' — cloud-sync.ts reads this key with a strict '1' check

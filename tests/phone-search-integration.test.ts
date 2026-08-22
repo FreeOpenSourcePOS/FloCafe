@@ -31,10 +31,10 @@ Module._load = function (request, parent, isMain) {
 const { initTestDb, closeDatabase, seedOwnerUser, api, assertEqual, assert, getResults, createApp, startServer } = require('./helpers/test-setup');
 const { registerRoutes } = require('../main/routes');
 
-function insertCustomer(db, id, name, phone, countryCode, isActive) {
+function insertCustomer(db, id, name, phone, countryCode, isActive, email = null) {
   db.prepare(
-    "INSERT INTO customers (id, name, phone, country_code, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
-  ).run(id, name, phone, countryCode, isActive);
+    "INSERT INTO customers (id, name, email, phone, country_code, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))"
+  ).run(id, name, email, phone, countryCode, isActive);
 }
 
 async function main() {
@@ -50,6 +50,8 @@ async function main() {
   insertCustomer(db, 'ci-us',        'Bob US',       '+1 (555) 123-4567', '+1',  1);
   insertCustomer(db, 'ci-ar',        'Carlos AR',    '+541143210000',    '+54', 1);
   insertCustomer(db, 'ci-inactive',  'Inactive',     '+911111111111',    '+91', 0);
+  insertCustomer(db, 'ci-alice',     'Alice Smith',   null,               null,  1, 'alice@example.com');
+  insertCustomer(db, 'ci-digit-text', 'Alice 2',      null,               null,  1, 'user2@example.com');
 
   const app = createApp({});
   registerRoutes(app);
@@ -104,6 +106,21 @@ async function main() {
     assertEqual(list.length, 1, `list filter intl query excludes local (got ${list.length})`);
     assert(list.some((c: any) => c.id === 'ci-e164'), 'list returns e164 for intl query');
 
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('+1 (555) 123-4567')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'list filter formatted US query matches ci-us only');
+    assertEqual(list[0]?.id, 'ci-us', 'list filter matches US row for formatted international query');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('555-123-4567')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'list filter formatted US local query matches ci-us only');
+    assertEqual(list[0]?.id, 'ci-us', 'list filter matches US row for formatted local query');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('+91 98765-43210')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'list filter formatted India query matches ci-e164 only');
+    assertEqual(list[0]?.id, 'ci-e164', 'list filter matches India row for formatted query');
+
     res = await api(apiBase, '/customers?search=5551234567&per_page=10', { headers: authHeader });
     list = (res.data?.data || []);
     assertEqual(list.length, 1, `list filter US short query matches ci-us only (got ${list.length})`);
@@ -113,6 +130,35 @@ async function main() {
     list = (res.data?.data || []);
     assertEqual(list.length, 1, `list filter US intl query matches ci-us only (got ${list.length})`);
     assertEqual(list[0]?.id, 'ci-us', 'list filter matches US pretty-format row for intl query');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('Alice Smith')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'list filter continues matching customer names');
+    assertEqual(list[0]?.id, 'ci-alice', 'name search returns Alice Smith');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('alice@example.com')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'list filter continues matching customer emails');
+    assertEqual(list[0]?.id, 'ci-alice', 'email search returns Alice Smith');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('Alice 2')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'digit-bearing name search does not overmatch phone digits');
+    assertEqual(list[0]?.id, 'ci-digit-text', 'digit-bearing name search returns the named customer');
+
+    res = await api(apiBase, `/customers?search=${encodeURIComponent('user2@example.com')}&per_page=10`, { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 1, 'digit-bearing email search does not overmatch phone digits');
+    assertEqual(list[0]?.id, 'ci-digit-text', 'digit-bearing email search returns the emailed customer');
+
+    res = await api(apiBase, '/customers?search=anita&sort=name&order=asc&per_page=2', { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 2, 'list filter preserves pagination');
+    assertEqual(list.map((c: any) => c.name).join('|'), 'Anita E164|Anita Local', 'list filter preserves ascending name sorting');
+
+    res = await api(apiBase, '/customers?search=Inactive&per_page=10', { headers: authHeader });
+    list = (res.data?.data || []);
+    assertEqual(list.length, 0, 'list filter preserves is_active = 1 filtering');
 
     server.close();
     closeDatabase();

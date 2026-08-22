@@ -2,6 +2,14 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.3.0] - 2026-08-21
+
+### Added
+- Expanded locale/currency/dial-code coverage from 33 to 117 countries in the country registry, including Guatemala (GTQ, +502) and full Eurozone coverage (EUR), broadening the Setup wizard's country list and currency formatting. Tax-pack compliance remains a separate, per-country opt-in and is unaffected by this change.
+
+### Changed
+- Removed the Greptile badge from the README.
+
 ## [3.2.3] - 2026-08-17
 
 ### Added

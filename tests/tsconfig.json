@@ -12,5 +12,5 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["../tests/**/*", "../main/**/*"]
+  "include": ["../tests/**/*", "../main/**/*", "../shared/**/*"]
 }

@@ -263,6 +263,48 @@ async function runTests() {
     }
   }
 
+  // ── Test 9: prepareReceipt honors the arabicShaping request override (#437) ──
+  console.log('\nTest 9: prepareReceipt arabicShaping override (#437)');
+  {
+    const { prepareReceipt } = require('../main/printers/thermal');
+
+    const persianOrder = {
+      order_number: 'ORD-FA-437',
+      created_at: '2026-08-21 10:00:00',
+      items: [
+        { product_name: 'چای زعفرانی مخصوص', quantity: 2, unit_price: 250000, total: 500000, tax_amount: 0, addons: [], special_instructions: '' },
+        { product_name: 'Espresso', quantity: 1, unit_price: 200000, total: 200000, tax_amount: 0, addons: [], special_instructions: '' },
+      ],
+    };
+    const persianBill = {
+      bill_number: 'INV-FA-437',
+      subtotal: 700000,
+      discount_amount: 0,
+      tax_amount: 0,
+      service_charge: 0,
+      delivery_charge: 0,
+      total: 700000,
+    };
+    const iranBiz = { name: 'کافه فلو', currency_symbol: 'IRR', country: 'IR' };
+
+    // No override and no profile capability: Persian lines are skipped with a
+    // precise warning while ASCII lines keep printing.
+    const withoutOverride = prepareReceipt(persianOrder, persianBill, iranBiz, 'compact', true);
+    const withoutText = withoutOverride.data.toString('utf8');
+    assert(!withoutText.includes('چای زعفرانی'), 'without override, Persian item line is skipped');
+    assert(
+      withoutOverride.warnings.some((w: any) => /Persian\/Arabic/.test(w.message)),
+      'without override, skipped Persian line reports Arabic-shaping warning'
+    );
+    assert(withoutText.includes('Espresso'), 'without override, English item line still prints');
+
+    // Explicit request-body override (renderer global setting): Persian prints.
+    const withOverride = prepareReceipt(persianOrder, persianBill, iranBiz, 'compact', true, false, true);
+    const withText = withOverride.data.toString('utf8');
+    assert(withText.includes('چای زعفرانی'), 'with arabicShaping:true override, Persian item line is emitted');
+    assert(withOverride.warnings.length === 0, 'with override, no unsupported-line warnings remain');
+  }
+
   console.log('\n' + '='.repeat(50));
   console.log(`${passed}/${total} passed, ${failed} failed`);
 

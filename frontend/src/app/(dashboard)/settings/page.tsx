@@ -6,8 +6,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
-import { parseKotLanguagePolicy, parsePrintLanguagePolicy } from '@print/policy';
 import type { KotLanguagePolicy, PrimaryLanguageSelection, ReceiptLanguagePolicy } from '@print/types';
+import {
+  parseStoredKotLanguagePolicy,
+  parseStoredReceiptLanguagePolicy,
+} from '@/lib/print-language-policies';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -37,35 +40,6 @@ import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
   (lang) => LANGUAGES[lang].selectable,
 );
-
-// Registry facts injected into the shared print kernel's policy parser (#441):
-// a code is valid exactly when it is registered AND selectable in the central
-// language registry. New languages appear automatically — no hardcoded unions.
-const PRINT_LANGUAGE_REGISTRY_FACTS = {
-  isSelectableLanguage: (code: string) =>
-    Object.prototype.hasOwnProperty.call(LANGUAGES, code)
-    && LANGUAGES[code as Language].selectable,
-};
-
-function parseStoredReceiptPolicy(value: unknown): ReceiptLanguagePolicy | null {
-  if (typeof value !== 'string') return null;
-  try {
-    const result = parsePrintLanguagePolicy(JSON.parse(value), PRINT_LANGUAGE_REGISTRY_FACTS);
-    return result.ok ? result.policy : null;
-  } catch {
-    return null;
-  }
-}
-
-function parseStoredKotPolicy(value: unknown): KotLanguagePolicy | null {
-  if (typeof value !== 'string') return null;
-  try {
-    const result = parseKotLanguagePolicy(JSON.parse(value), PRINT_LANGUAGE_REGISTRY_FACTS);
-    return result.ok ? result.policy : null;
-  } catch {
-    return null;
-  }
-}
 
 function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' | 'inactive') => string): string {
   const key = (TENANT_STATUS_LABEL_KEYS as Record<string, 'active' | 'inactive' | undefined>)[status ?? ''];
@@ -1613,7 +1587,7 @@ export default function SettingsPage() {
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
     api.get('/settings/bill_language_policy').then((res) => {
-      const policy = parseStoredReceiptPolicy(res.data?.setting?.value);
+      const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
       if (!policy) return;
       posSettings.setBillLanguagePolicy(policy);
       const formPatch = {
@@ -1624,7 +1598,7 @@ export default function SettingsPage() {
       setSavedPrinting((p) => ({ ...p, ...formPatch }));
     }).catch(() => {});
     api.get('/settings/kot_language_policy').then((res) => {
-      const policy = parseStoredKotPolicy(res.data?.setting?.value);
+      const policy = parseStoredKotLanguagePolicy(res.data?.setting?.value);
       if (!policy) return;
       posSettings.setKotLanguagePolicy(policy);
       const formPatch = {

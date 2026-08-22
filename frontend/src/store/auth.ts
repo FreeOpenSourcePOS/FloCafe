@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import api from '@/lib/api';
 import type { User, Tenant } from '@/lib/types';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import { defaultPrintLanguagePolicy } from '@print/policy';
+import {
+  parseStoredKotLanguagePolicy,
+  parseStoredReceiptLanguagePolicy,
+} from '@/lib/print-language-policies';
 // Keep this registry import relative: auth tests load the store without the
 // frontend alias resolver, and language validation does not need the legacy
 // i18n module or its React/store dependencies.
@@ -12,6 +17,29 @@ function syncTenantLanguage(t: Tenant | null | undefined) {
   if (isLanguage(lang)) {
     usePosSettingsStore.getState().setLanguage(lang);
   }
+}
+
+async function syncTenantPrintLanguagePolicies(tenant: Tenant | null | undefined): Promise<void> {
+  const settings = usePosSettingsStore.getState();
+  const fallback = defaultPrintLanguagePolicy();
+  settings.setBillLanguagePolicy(fallback);
+  settings.setKotLanguagePolicy(fallback);
+  if (!tenant) return;
+
+  await Promise.all([
+    api.get('/settings/bill_language_policy')
+      .then((response) => {
+        const policy = parseStoredReceiptLanguagePolicy(response.data?.setting?.value);
+        if (policy) usePosSettingsStore.getState().setBillLanguagePolicy(policy);
+      })
+      .catch(() => {}),
+    api.get('/settings/kot_language_policy')
+      .then((response) => {
+        const policy = parseStoredKotLanguagePolicy(response.data?.setting?.value);
+        if (policy) usePosSettingsStore.getState().setKotLanguagePolicy(policy);
+      })
+      .catch(() => {}),
+  ]);
 }
 
 interface AuthState {
@@ -75,6 +103,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       currentTenant,
     });
     syncTenantLanguage(currentTenant);
+    await syncTenantPrintLanguagePolicies(currentTenant);
   },
 
   selectTenant: async (tenantId: number) => {
@@ -85,6 +114,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       currentTenant: data.tenant,
     });
     syncTenantLanguage(data.tenant);
+    await syncTenantPrintLanguagePolicies(data.tenant);
   },
 
   logout: () => {
@@ -126,7 +156,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
     if (token) {
       api.get('/auth/me')
-        .then(({ data }) => {
+        .then(async ({ data }) => {
           const tenants: Tenant[] = data.tenants;
           // Find the fresh version of the currently selected tenant, or default to the first one
           const freshTenant = currentTenant ? tenants.find((t: Tenant) => t.id === currentTenant.id) : null;
@@ -137,9 +167,11 @@ export const useAuthStore = create<AuthState>((set) => ({
             token,
             tenants,
             currentTenant: resolved,
-            loading: false,
+            loading: true,
           });
           syncTenantLanguage(resolved);
+          await syncTenantPrintLanguagePolicies(resolved);
+          set({ loading: false });
         })
         .catch(() => {
           localStorage.removeItem('token');

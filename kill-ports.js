@@ -36,7 +36,7 @@ const FLO_PATTERNS = [
   /(?:^|\s)com\.flo\.desktop(?:\.\S*)?(?:$|\s)/i,
   /(?:^|\s)flo[_\-]?pos(?:-service)?(?:\.exe)?(?:$|\s)/i,
   /(?:^|\s)electron(?:\s+\S+)*\s+--appName=flo[_\-]?desktop(?:$|\s)/i,
-  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]FloCafe[\\/](?:dev-server\.js|dist[\\/](?:main[\/])?index\.js)(?:$|\s)/i,
+  /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*[\\/]FloCafe[\\/](?:dev-server\.js|dist[\\/](?:main[\\/])?index\.js)(?:$|\s)/i,
   /(?:^|\s)(?:node|nodejs)(?:\s+\S+)*\s+dev-server\.js(?:$|\s)/i,
 ];
 

@@ -130,6 +130,7 @@ const badCases: Array<[unknown, RegExp]> = [
     /duplicates the fixed primary/,
   ],
   [{ primary: { mode: 'inherit' }, extra: true }, /unknown policy key "extra"/],
+  [{ primary: { mode: 'inherit' }, additional: null }, /additional must be an array/],
 ];
 for (const [payload, pattern] of badCases) {
   const result = parsePrintLanguagePolicy(payload, FACTS);

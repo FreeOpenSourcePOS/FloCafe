@@ -87,6 +87,9 @@ function parsePrimarySelection(raw: unknown, facts: LanguageRegistryFacts):
 
 function parseAdditional(raw: unknown, maxEntries: number, facts: LanguageRegistryFacts):
   { ok: true; value: readonly PrintLanguageCode[] } | { ok: false; error: string } {
+  if (raw === null) {
+    return { ok: false, error: 'policy.additional must be an array' };
+  }
   if (!Array.isArray(raw)) {
     return { ok: false, error: 'policy.additional must be an array' };
   }
@@ -126,7 +129,7 @@ function parsePolicyBody(raw: unknown, maxAdditional: number, facts: LanguageReg
   }
   const primary = parsePrimarySelection(shape.primary, facts);
   if (!primary.ok) return primary;
-  const additional = parseAdditional(shape.additional ?? [], maxAdditional, facts);
+  const additional = parseAdditional(shape.additional === undefined ? [] : shape.additional, maxAdditional, facts);
   if (!additional.ok) return additional;
   if (
     primary.value.mode === 'fixed'

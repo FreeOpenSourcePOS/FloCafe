@@ -282,7 +282,7 @@ router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (re
     if (!printer) return res.status(404).json({ error: 'Printer not found' });
 
     const profile = resolvePrinterProfile(printer);
-    const testData = buildTestPage(printer.paper_width || profile.defaultPaperWidth, profile.cutMode);
+    const testData = buildTestPage(printer.paper_width || profile.defaultPaperWidth, profile.cutMode, tenantLanguage(db));
     let result: { ok: boolean; detail?: string } = { ok: false };
 
     switch (printer.connection_type) {
@@ -436,10 +436,13 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
       footer_note: settings.bill_footer_message || '',
     };
     const billTemplate = settings.bill_template;
+    // Tenant language drives receipt label selection (#440); full print-language
+    // policy arrives with the shared kernel (#441).
+    const receiptLanguage = settings.language || 'en';
     console.log('[Print Bill] Preparing receipt', { template: billTemplate || 'classic' });
 
     if (preview === true) {
-      const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, arabicShapingOverride);
+      const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, arabicShapingOverride, receiptLanguage);
       return res.json({
         success: true,
         preview: true,
@@ -453,7 +456,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
-    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req), arabicShapingOverride);
+    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req), arabicShapingOverride, receiptLanguage);
     console.log('[Print Bill] Print completed', result);
 
     if (result.ok) {
@@ -556,6 +559,8 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
       return res.status(404).json({ error: 'Order not found' });
     }
 
+    const kotLanguage = tenantLanguage(db);
+
     // Fetch order items from database
     const orderItems: any[] = getEffectiveOrderItems(db, orderId);
 
@@ -576,14 +581,14 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
     if (stationName || items) {
       const kotItems = items || orderItems;
       const station = stationName || 'Kitchen';
-      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), arabicShapingOverride);
+      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), arabicShapingOverride, kotLanguage);
       success = result.ok;
       failure = result.ok ? null : result;
       warnings.push(...(result.warnings || []));
     } else {
       const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
       for (const group of groups) {
-        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req), arabicShapingOverride);
+        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req), arabicShapingOverride, kotLanguage);
         success = success && result.ok;
         warnings.push(...(result.warnings || []));
         if (!result.ok && !failure) failure = result;
@@ -603,3 +608,16 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
 }));
 
 export const printerRoutes = router;
+
+/**
+ * Tenant-configured language for print label selection (#440). Defaults to
+ * 'en' when unset; unknown values fall back to English at render time.
+ */
+function tenantLanguage(db: ReturnType<typeof getDatabase>): string {
+  try {
+    const row = db.prepare("SELECT value FROM settings WHERE key = 'language'").get() as { value?: string } | undefined;
+    return row?.value || 'en';
+  } catch {
+    return 'en';
+  }
+}

@@ -673,6 +673,44 @@
     "genericHint": "خط‌های زیر نویسه‌هایی دارند که این چاپگر حرارتی نمی‌تواند نمایش دهد.",
     "moreLines": "…و {count} خط دیگر"
   },
+  "print": {
+    "taxInvoiceTitle": "صورتحساب مالیاتی",
+    "invoiceTitle": "صورتحساب",
+    "invoiceNumber": "شماره صورتحساب:",
+    "time": "ساعت",
+    "customerShort": "مشتری",
+    "numberShort": "شماره مشتری",
+    "address": "نشانی",
+    "call": "تماس",
+    "note": "یادداشت",
+    "phoneLong": "تلفن",
+    "subtotalExclTax": "جمع جزء بدون مالیات",
+    "serviceChargeShort": "کارمزد خدمات",
+    "grandTotal": "جمع کل",
+    "thankYouShort": "سپاسگزاریم!",
+    "thankYouVisitAgain": "از بازدید شما سپاسگزاریم!",
+    "pleaseComeAgain": "دوباره تشریف بیاورید!",
+    "ratesInclusiveNote": "نرخ‌ها شامل مالیات است",
+    "pointsEarned": "امتیازهای کسب‌شده",
+    "pointsBalance": "موجودی امتیاز",
+    "pointsRedeemed": "امتیازهای استفاده‌شده",
+    "kot": {
+      "title": "برگ سفارش آشپزخانه",
+      "banner": "برگ سفارش آشپزخانه",
+      "station": "ایستگاه",
+      "type": "نوع",
+      "noPendingItems": "مورد در انتظاری نیست",
+      "end": "پایان"
+    },
+    "hsn": "کد کالا",
+    "test": {
+      "title": "آزمون چاپگر Flo",
+      "networkUsb": "چاپ آزمایشی شبکه / USB",
+      "columns": "ستون‌ها",
+      "wrapHint": "اگر خط بعدی شکسته شد، مقدار ستون کوچک‌تری انتخاب کنید.",
+      "success": "اگر این را می‌خوانید، چاپگر شما کار می‌کند!"
+    }
+  },
   "products": {
     "addAddon": "افزودن افزودنی",
     "addAddonGroup": "افزودن گروه افزودنی",

@@ -2,7 +2,9 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
 import { getOrderWithItems } from './bills';
 import { v4 as uuidv4 } from 'uuid';
-import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
+import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText, normalizeReceiptTemplate } from '../printers/thermal';
+import { renderClassicReceiptViaDocument } from '../printers/document-classic';
+import { loadInstalledPrintTemplate } from '../services/print-templates';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
@@ -443,14 +445,37 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
 
     if (preview === true) {
       const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, arabicShapingOverride, receiptLanguage);
+      // Document-driven classic preview (#442): the core classic template
+      // (no installed plugin template) renders through PrintDocument:
+      // authoritative data → PrintData/PrintContext → document → token lines
+      // → bytes. Actual printing keeps the legacy path this issue.
+      let data = prepared.data;
+      let warnings = prepared.warnings;
+      if (normalizeReceiptTemplate(billTemplate) === 'classic'
+        && !loadInstalledPrintTemplate(String(billTemplate || 'classic'))) {
+        const previewProfile = resolvePrinterProfile(prepared.printer);
+        const previewShaping = typeof arabicShapingOverride === 'boolean'
+          ? arabicShapingOverride
+          : (previewProfile.arabicShaping ?? false);
+        const documentResult = renderClassicReceiptViaDocument(order, bill, business, {
+          columns: prepared.columns,
+          language: receiptLanguage,
+          isReprint,
+          useUnicode,
+          arabicShaping: previewShaping,
+          cutMode: previewProfile.cutMode,
+        });
+        data = documentResult.data;
+        warnings = documentResult.warnings;
+      }
       return res.json({
         success: true,
         preview: true,
         columns: prepared.columns,
         printer: { id: prepared.printer.id, name: prepared.printer.name },
-        text: escPosToText(prepared.data),
-        escpos_base64: prepared.data.toString('base64'),
-        warnings: prepared.warnings,
+        text: escPosToText(data),
+        escpos_base64: data.toString('base64'),
+        warnings,
       });
     }
 

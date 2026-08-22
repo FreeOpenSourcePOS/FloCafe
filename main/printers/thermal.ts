@@ -1585,8 +1585,8 @@ export function formatKOT(order: any, items: any[], stationName: string, cols: n
   lines.push('{CENTER}{BOLD}' + printLabel(lang, 'print.kot.banner') + '{/BOLD}{/CENTER}');
   lines.push('');
   lines.push(truncateShapedLine(printLabel(lang, 'print.kot.station') + ': ' + stationName, cols, arabicShaping));
-  // NOTE (#440): the 'Order: ' prefix has no key in the audited concept split;
-  // it stays verbatim until the shared print kernel issue assigns it one.
+  // NOTE (#440/#441): keep this unaudited technical prefix verbatim; label
+  // adoption remains outside this renderer change.
   lines.push(truncateShapedLine('Order: ' + order.order_number, cols, arabicShaping));
   if (order.table) {
     lines.push(truncateShapedLine(formatTableLabel(order.table.name, lang), cols, arabicShaping));

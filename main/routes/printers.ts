@@ -436,8 +436,8 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
       footer_note: settings.bill_footer_message || '',
     };
     const billTemplate = settings.bill_template;
-    // Tenant language drives receipt label selection (#440); full print-language
-    // policy arrives with the shared kernel (#441).
+    // Tenant language still drives receipt label selection (#440); renderer
+    // adoption of the shared print-language policy is deferred to #442+.
     const receiptLanguage = settings.language || 'en';
     console.log('[Print Bill] Preparing receipt', { template: billTemplate || 'classic' });
 

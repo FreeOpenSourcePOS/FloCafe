@@ -10,8 +10,8 @@ issue #441 (epic #438).
 
 - No Electron, DOM, React, Node built-ins (`node:*`, `fs`, `path`, …),
   database, filesystem, network, or transport IO.
-- No imports from `frontend/` or `main/`. Nothing outside `shared/print/`
-  may be imported at all.
+- The kernel imports nothing outside `shared/print/`; in particular, it has no
+  imports from `frontend/` or `main/`.
 - No hardcoded language unions (`'en' | 'fa' | …`). The central language
   registry (`frontend/src/lib/i18n/languages.ts`) is authoritative; the
   kernel treats codes as structural strings (`PrintLanguageCode = string`).

@@ -4,9 +4,8 @@
  * Bridges the neutral shared print kernel to the tenant settings store.
  * The kernel stays registry-independent: this module injects the backend's
  * registry-derived view — the generated print-label language table
- * (main/print/print-labels.generated.ts). When the central frontend registry
- * gains a selectable language, regenerating print labels (#440 generator)
- * adds it here automatically, so no language union is ever hardcoded.
+ * (main/print/print-labels.generated.ts). The print-label generation workflow
+ * owns that backend view; no language union is hardcoded here.
  */
 
 import { PRINT_LABEL_LANGUAGES } from '../print/print-labels.generated';

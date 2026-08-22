@@ -12,10 +12,25 @@ import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
 import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates } from '../services/print-templates';
+import {
+  BILL_LANGUAGE_POLICY_KEY,
+  KOT_LANGUAGE_POLICY_KEY,
+  LANGUAGE_POLICY_SETTING_KEYS,
+  defaultLanguagePolicySettingJson,
+  validateLanguagePolicySetting,
+} from '../lib/print-language-settings';
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
-const settingsWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
+const configuredSettingsWriteLimit = Number.parseInt(process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX || '', 10);
+const settingsWriteRateLimit = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: Number.isFinite(configuredSettingsWriteLimit) && configuredSettingsWriteLimit > 0
+    ? configuredSettingsWriteLimit
+    : 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -58,6 +73,10 @@ const OPTIONAL_SETTING_DEFAULTS: Record<string, string> = {
   bill_footer_message: '',
   printer_trim_decimals: 'false',
   split_checks_enabled: 'false',
+  // Print language policies (#441) — inherit store language, no second
+  // language. Defaults preserve pre-policy behavior for existing tenants.
+  [BILL_LANGUAGE_POLICY_KEY]: defaultLanguagePolicySettingJson(),
+  [KOT_LANGUAGE_POLICY_KEY]: defaultLanguagePolicySettingJson(),
   // Iran locale display preferences (Batch G, Refs #241) — display-only.
   currency_display: 'rial',
   number_digits: 'locale',
@@ -844,6 +863,7 @@ const ALLOWED_WILDCARD_KEYS = new Set([
   'diagnostics_consent',
   'kds_enabled', 'server_app_enabled', 'kot_printing_enabled',
   'split_checks_enabled',
+  BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY,
   'currency_display', 'number_digits', 'calendar',
 ]);
 
@@ -925,6 +945,14 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
     if (req.params.key === 'bill_template' && !isAvailableBillTemplate(String(value))) {
       return res.status(400).json({ error: 'Unsupported bill template' });
     }
+    let valueToPersist: unknown = value;
+    if (typeof req.params.key === 'string' && LANGUAGE_POLICY_SETTING_KEYS.has(req.params.key)) {
+      const validation = validateLanguagePolicySetting(req.params.key, value);
+      if (!validation.ok) {
+        return res.status(400).json({ error: validation.error });
+      }
+      valueToPersist = validation.stored;
+    }
     const db = getDatabase();
     const wildcardKey = String(req.params.key);
     if (isLocalePreferenceKey(wildcardKey)) {
@@ -932,6 +960,15 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
       if (typeof value !== 'string' || !isLocalePreferenceSupported(wildcardKey, value, countryCode)) {
         return res.status(400).json({ error: `Invalid ${wildcardKey} for country ${countryCode}` });
       }
+    }
+
+    if (req.params.key === 'business_phone') {
+      const effectiveCountry = getAllSettings(db).country || 'IN';
+      const phoneRes = normalizeOptionalPhone(value, effectiveCountry);
+      if (!phoneRes.valid) {
+        return res.status(400).json({ error: phoneRes.error || 'Invalid business phone number' });
+      }
+      valueToPersist = phoneRes.e164 || '';
     }
 
     // KDS turning off → invalidate any outstanding pairing tokens. Without
@@ -945,20 +982,10 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
       }
     }
 
-    let valueToPersist = value;
-    if (req.params.key === 'business_phone') {
-      const effectiveCountry = getAllSettings(db).country || 'IN';
-      const phoneRes = normalizeOptionalPhone(value, effectiveCountry);
-      if (!phoneRes.valid) {
-        return res.status(400).json({ error: phoneRes.error || 'Invalid business phone number' });
-      }
-      valueToPersist = phoneRes.e164 || '';
-    }
-
     db.prepare(`
       INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)
       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
-    `).run(req.params.key, valueToPersist, now());
+    `).run(req.params.key, valueToPersist as string, now());
 
     // Keep the legacy setting as a compatibility mirror. The canonical runtime
     // switch is telemetry_enabled; this route is the only user-facing writer,

@@ -51,6 +51,19 @@ async function setLanguage(page: Page, value: string): Promise<void> {
 }
 
 async function setPosSetting(page: Page, key: string, value: boolean | string): Promise<void> {
+  // Keep the override in place before the next document initializes the
+  // persisted Zustand store. The settings page also fetches the server value
+  // asynchronously, so changing localStorage only after that page has loaded
+  // can be overwritten by its late response before print-test mounts.
+  await page.addInitScript(({ key: initKey, value: initValue }) => {
+    try {
+      const raw = localStorage.getItem('pos-settings');
+      const parsed = raw ? JSON.parse(raw) : { state: {}, version: 3 };
+      parsed.state = { ...parsed.state, [initKey]: initValue };
+      parsed.version ??= 3;
+      localStorage.setItem('pos-settings', JSON.stringify(parsed));
+    } catch {}
+  }, { key, value });
   await page.evaluate(({ key, value }) => {
     try {
       const raw = localStorage.getItem('pos-settings');
@@ -236,6 +249,9 @@ test.describe('Localized Error Fallbacks', () => {
       });
 
       await page.goto(`${BASE}/settings?tab=account`);
+      // The account card is populated asynchronously; wait for its fetches to
+      // settle before clicking a conditionally rendered verification action.
+      await page.waitForLoadState('networkidle');
       const sendVerifyBtn = page.locator('button', { hasText: /Send verification email|ارسال ایمیل/ }).first();
       if (await sendVerifyBtn.isVisible()) {
         await sendVerifyBtn.click();
@@ -287,7 +303,9 @@ test.describe('Localized Error Fallbacks', () => {
         }
       }
     } finally {
-      await setLanguage(page, 'en');
+      // Preserve the original assertion failure if Playwright has already
+      // closed the page while timing out; cleanup must not mask it.
+      await setLanguage(page, 'en').catch(() => {});
     }
   });
 });

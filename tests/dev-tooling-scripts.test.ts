@@ -55,6 +55,8 @@ function runTest() {
   // Positive cases (should match as Flo processes)
   const positiveCases = [
     'node /Users/dev/FloCafe/dist/index.js',
+    'node /Users/dev/FloCafe/dist/main/index.js',
+    'node C:\\FloCafe\\dist\\main\\index.js',
     '/Applications/Flo Cafe.app/Contents/MacOS/Flo Cafe',
     '/usr/bin/flocafe --no-sandbox',
     'electron . --appName=flo-desktop',

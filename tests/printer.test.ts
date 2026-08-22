@@ -65,6 +65,8 @@ function loadFrontendPrinterModules(): {
       resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
     } else if (request.startsWith('@/')) {
       resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    } else if (request.startsWith('@print/')) {
+      resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
     }
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
   };
@@ -106,6 +108,8 @@ function loadWarningsToastWithCapture(captured: string[]): typeof import('../fro
       resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
     } else if (request.startsWith('@/')) {
       resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    } else if (request.startsWith('@print/')) {
+      resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
     }
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
   };

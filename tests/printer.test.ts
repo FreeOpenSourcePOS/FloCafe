@@ -83,6 +83,42 @@ function loadFrontendPrinterModules(): {
   }
 }
 
+function loadWarningsToastWithCapture(captured: string[]): typeof import('../frontend/src/lib/printer/warnings-toast') {
+  const path = require('path');
+  const moduleApi = require('module') as {
+    _resolveFilename: (...args: any[]) => string;
+  };
+  const toastPath = require.resolve('react-hot-toast', { paths: [path.resolve(__dirname, '../frontend')] });
+  const previousToastModule = require.cache[toastPath];
+  require.cache[toastPath] = {
+    id: toastPath,
+    filename: toastPath,
+    loaded: true,
+    exports: {
+      __esModule: true,
+      default: (message: string) => captured.push(message),
+    },
+  } as any;
+  const originalResolveFilename = moduleApi._resolveFilename;
+  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+    let resolvedRequest = request;
+    if (request === '@countries') {
+      resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
+    } else if (request.startsWith('@/')) {
+      resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    }
+    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  try {
+    return require('../frontend/src/lib/printer/warnings-toast');
+  } finally {
+    moduleApi._resolveFilename = originalResolveFilename;
+    if (previousToastModule) require.cache[toastPath] = previousToastModule;
+    else delete require.cache[toastPath];
+  }
+}
+
 function bytesContain(buf: Buffer, needle: number[]): boolean {
   outer: for (let i = 0; i <= buf.length - needle.length; i++) {
     for (let j = 0; j < needle.length; j++) {
@@ -344,12 +380,22 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('backend shaping still prints sanitized Persian text', backendControlBuf.toString('utf8').includes('چایزعفرانی'));
   assert('backend shaping emits no warning for sanitized text', backendControlWarnings.length === 0);
 
+  const asciiControlLine = 'No onions\x07\nNo garlic\x7f';
+  const asciiShaped = buildEscPos([asciiControlLine], true, { arabicShaping: true });
+  const asciiUnshaped = buildEscPos([asciiControlLine], true, { arabicShaping: false });
+  assert('ASCII output stays byte-identical with shaping enabled', asciiShaped.equals(asciiUnshaped) && bytesContain(asciiShaped, Array.from(Buffer.from(asciiControlLine))));
+
   // Mixed-script lines (Persian + Latin é) are still skipped even with the flag,
   // so the flag cannot be used to emit unshapeable mixed text.
   const mixedWarnings: Array<{ field: string; text: string; message: string }> = [];
   const mixedBuf = buildEscPos(['{CENTER}کافه Café{/CENTER}'], true, { arabicShaping: true }, mixedWarnings);
   assert('mixed Persian+Latin line is skipped even with flag', !mixedBuf.toString('utf8').includes('کافه') && !mixedBuf.toString('utf8').includes('Café'));
   assert('mixed-script line still emits a warning', mixedWarnings.length === 1);
+
+  const toastMessages: string[] = [];
+  const { showPrintWarningsToast } = loadWarningsToastWithCapture(toastMessages);
+  showPrintWarningsToast([{ field: 'receipt line', text: 'کافه Café', message: 'mixed-script warning' }]);
+  assert('mixed Arabic warnings show the shaping remedy', toastMessages.length === 1 && toastMessages[0].includes('Enable "Printer supports Arabic/Persian shaping"'));
 
   // The full receipt path threads the flag into the encoder.
   const persianBiz = { ...fixtureBusiness, name: 'کافه فلو تهران', currency_symbol: 'IRR', country: 'IR' };

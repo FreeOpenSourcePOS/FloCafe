@@ -1688,7 +1688,6 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
 
     const isStoreName = line.includes('{STORE_NAME}');
     line = line.replace(/\{STORE_NAME\}/g, '');
-    line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
     let printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
     const lineBold = line.includes('{BOLD}');
     const lineDH = line.includes('{DOUBLE_HEIGHT}');
@@ -1722,6 +1721,8 @@ export function buildEscPos(lines: string[], _useUnicode: boolean = false, optio
         }
         continue;
       }
+      line = line.replace(ESCPOS_TEXT_CONTROL_RE, '');
+      printableLine = line.replace(/\{[A-Z_/]+\}/g, '');
       if (Number.isInteger(options.columns) && (options.columns as number) > 0) {
         const maxCols = lineDW ? Math.floor((options.columns as number) / 2) : (options.columns as number);
         line = truncate(printableLine, Math.max(1, maxCols));

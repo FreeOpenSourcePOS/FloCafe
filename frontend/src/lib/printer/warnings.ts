@@ -112,15 +112,22 @@ export function safePrinterText<T extends { text(value: string): T }>(
         warnings?.push(makePrintWarning(value, isStoreName));
         return enc;
       }
-      let payloadText = boundShapedText(sanitized, maxCols ?? centerCols);
-      if (centerCols && centerCols > 0) {
-        const pad = Math.max(0, Math.floor((centerCols - shapedDisplayWidth(payloadText)) / 2));
-        payloadText = ' '.repeat(pad) + payloadText;
-      }
       if ('raw' in enc && typeof (enc as { raw?: (data: Uint8Array) => T }).raw === 'function') {
-        return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(payloadText));
+        let payloadText = boundShapedText(sanitized, maxCols ?? centerCols);
+        const alignableEnc = enc as T & { align?: (alignment: 'left' | 'center') => T };
+        const centerRawLine = centerCols !== undefined && centerCols > 0 && typeof alignableEnc.align === 'function';
+        if (centerRawLine) {
+          const pad = Math.max(0, Math.floor((centerCols - shapedDisplayWidth(payloadText)) / 2));
+          payloadText = ' '.repeat(pad) + payloadText;
+          alignableEnc.align('left');
+        }
+        try {
+          return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(payloadText));
+        } finally {
+          if (centerRawLine) alignableEnc.align('center');
+        }
       }
-      return enc.text(payloadText);
+      return enc.text(boundShapedText(sanitized, maxCols));
     }
     warnings?.push(makePrintWarning(value, isStoreName));
     return enc;

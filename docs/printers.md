@@ -12,6 +12,10 @@ FloCafe prints receipts and kitchen order tickets from the desktop app. Configur
 
 Set the paper width to match the printer: 58 mm or 80 mm. The first configured printer becomes the default; choose another default in Settings when a different printer should receive ordinary receipts. If no hardware printer is configured, FloCafe automatically falls back to system print when printing bills.
 
+## Arabic and Persian text
+
+In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping** only for a thermal printer whose firmware performs Arabic/Persian contextual shaping and bidirectional ordering. With this setting enabled, receipt, tax-bill, and kitchen-ticket lines containing Arabic or Persian text are sent to the printer for it to shape; the setting is off by default for generic ESC/POS hardware. Without it, unsupported lines are skipped instead of being sent as garbled bytes, and FloCafe displays a warning after printing. Lines that also contain another unsupported script remain skipped.
+
 ## Kitchen printing
 
 FloCafe can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs an active printer and the product categories it handles. Items without a matching station fall back to the default kitchen route.

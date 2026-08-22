@@ -9,3 +9,9 @@ fs.copyFileSync(
   // shared/print was added, #441); whatsapp.js requires this sibling file.
   path.join(__dirname, '../dist/main/baileys-loader.cjs'),
 );
+
+// Runtime modules resolve the app version from this sibling package manifest.
+fs.copyFileSync(
+  path.join(__dirname, '../package.json'),
+  path.join(__dirname, '../dist/package.json'),
+);

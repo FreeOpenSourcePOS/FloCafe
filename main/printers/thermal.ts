@@ -16,6 +16,9 @@ import { randomUUID } from 'crypto';
 import { printLabel, isGeneratedPrintLanguage } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../print/print-labels.generated';
 import { fitTemplateLabel, resolveTemplateLabel, sanitizeTemplateLabelText } from '../print/template-labels';
+import { renderClassicReceiptViaDocument } from './document-classic';
+import { renderCompactReceiptViaDocument } from './document-compact';
+import { renderKotViaDocument } from './document-kot';
 
 export type PrintResult = {
   ok: boolean;
@@ -581,7 +584,7 @@ export async function initPrinter(): Promise<void> {
   }
 }
 
-export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, signal?: AbortSignal, arabicShapingOverride?: boolean, language?: string): Promise<DispatchResult> {
+export async function printReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, signal?: AbortSignal, arabicShapingOverride?: boolean, language?: string, additionalLanguage?: string): Promise<DispatchResult> {
   try {
     if (signal?.aborted) return { ok: false, detail: 'Print cancelled during shutdown' };
     console.log('[Printer] printReceipt called, template:', template, 'useUnicode:', useUnicode, 'isReprint:', isReprint);
@@ -590,7 +593,7 @@ export async function printReceipt(order: any, bill: any, business?: any, templa
       console.log('[Printer] No printer configured');
       return { ok: false, detail: 'No printer configured' };
     }
-    const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language);
+    const { data, warnings, columns } = prepareReceipt(order, bill, business, template, useUnicode, isReprint, arabicShapingOverride, language, additionalLanguage);
     console.log('[Printer] Using printer:', printer.name, printer.connection_type, 'columns:', columns);
     console.log('[Printer] Receipt data length:', data.length, 'bytes');
     console.log('[Printer] First 100 bytes:', Array.from(data.slice(0, 100)).map(b => b.toString(16)).join(' '));
@@ -805,7 +808,7 @@ function getPrinterConfig(): any {
   ).get();
 }
 
-export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, arabicShapingOverride?: boolean, language?: string): {
+export function prepareReceipt(order: any, bill: any, business?: any, template: string = 'classic', useUnicode: boolean = false, isReprint: boolean = false, arabicShapingOverride?: boolean, language?: string, additionalLanguage?: string): {
   printer: any;
   data: Buffer;
   warnings: PrintWarning[];
@@ -829,11 +832,11 @@ export function prepareReceipt(order: any, bill: any, business?: any, template: 
   const arabicShaping = typeof arabicShapingOverride === 'boolean'
     ? arabicShapingOverride
     : (profile.arabicShaping ?? false);
-  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, arabicShaping, language);
+  const data = formatReceipt(order, bill, business, template, columns, useUnicode, isReprint, profile.cutMode, warnings, arabicShaping, language, additionalLanguage);
   return { printer, data, warnings, columns };
 }
 
-export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string): Buffer {
+export function formatReceipt(order: any, bill: any, business?: any, template?: string, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string, additionalLanguage?: string): Buffer {
   console.log('[Printer] formatReceipt - template:', template);
   console.log('[Printer] formatReceipt - order:', order?.order_number, 'bill:', bill?.bill_number);
   console.log('[Printer] formatReceipt - items count:', order?.items?.length || 0, 'cols:', cols);
@@ -849,9 +852,9 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
   try {
     switch (tpl) {
       case 'classic':
-        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang);
+        return formatClassicReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, additionalLanguage);
       default:
-        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang);
+        return formatCompactReceipt(order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang, additionalLanguage);
     }
   } catch (err) {
     console.error('[Printer] formatReceipt error:', err);
@@ -1035,219 +1038,41 @@ export function appendPoweredByFooter(lines: string[]): void {
   lines.push('{CENTER}{FONT_B}' + RECEIPT_BRANDING_URL + '{/FONT_B}{/CENTER}');
 }
 
-function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en'): Buffer {
-  const lines: string[] = [];
-  const date = parseDbTimestamp(order.created_at);
-
-  const bar = '='.repeat(cols);
-  const dash = '-'.repeat(cols);
-
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
-  const trimDecimals = biz.trim_decimals === true;
-  const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols);
-  const itemNameLen = itemNameWidth(cols, amtLen);
-  const taxIdLabel = getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID';
-  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
-  const hasTax = Number(bill.tax_amount) !== 0
-    || taxComponents.some((component) => component.amount !== 0);
-
-  const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
-
-  lines.push('{INIT}');
-  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + printLabel(lang, 'receipt.reprint') + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}' + truncateShapedLine(String(biz.name), cols, arabicShaping) + '{/BOLD}{/CENTER}');
-  lines.push(bar);
-  lines.push(printLabel(lang, 'receipt.billNumber') + ': ' + (bill.bill_number || order.order_number));
-  lines.push(printLabel(lang, 'receipt.date') + ': ' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  if (biz.show_table_number !== false && order.table?.name) lines.push(truncateShapedLine(formatTableLabel(order.table.name, lang), cols, arabicShaping));
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push(truncateShapedLine(printLabel(lang, 'pos.customer') + ': ' + biz.customer_name, cols, arabicShaping));
-  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push(printLabel(lang, 'print.numberShort') + ': ' + biz.customer_phone);
-  lines.push(dash);
-  lines.push(itemHeader(lang, itemNameLen, amtLen));
-  lines.push(dash);
-
-  if (order.items) {
-    for (const item of order.items) {
-      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
-
-      const addons = parseAddons(item.addons);
-      for (const addon of addons) {
-        lines.push(...addonRows(addon, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
-      }
-      if (item.special_instructions) {
-        lines.push('  ' + printLabel(lang, 'print.note') + ': ' + truncate(item.special_instructions, cols - 8));
-      }
-    }
-  }
-
-  lines.push(dash);
-  lines.push(...financialRows(printLabel(lang, 'pos.subtotal'), formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
-  if (bill.discount_amount > 0) {
-    lines.push(...financialRows(printLabel(lang, 'pos.discount'), '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
-  }
-  if (biz.show_tax_breakdown === true && taxComponents.length > 0) {
-    for (const tax of taxComponents) {
-      if (tax.amount === 0) continue;
-      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      const label = truncate(rawLabel, cols - 12);
-      lines.push(...financialRows(label, formatCurrency(tax.amount, prefix, locale, trimDecimals), cols));
-    }
-  } else if (Number(bill.tax_amount) !== 0) {
-    lines.push(...financialRows(printLabel(lang, 'pos.tax'), formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols));
-  }
-  lines.push(...financialRows(printLabel(lang, 'print.grandTotal'), formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
-
-  if (bill.payment_details) {
-    lines.push(dash);
-    try {
-      const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
-      if (payments && Array.isArray(payments)) {
-        for (const payment of payments) {
-          if (payment && payment.method) {
-            const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12);
-            lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals), cols));
-          }
-        }
-      }
-    } catch (err: any) {
-      console.warn('[Printer] Failed to parse payment details JSON:', err.message);
-    }
-  }
-
-  lines.push(bar);
-  if (biz.show_address !== false && biz.address) pushWrapped(lines, biz.address, cols);
-  if (biz.show_phone !== false && biz.phone) pushWrapped(lines, printLabel(lang, 'receipt.phone') + ': ' + biz.phone, cols);
-  if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) pushWrapped(lines, taxIdLabel + ': ' + biz.taxRegistrationNumber, cols);
-  if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
-  else lines.push('{CENTER}' + printLabel(lang, 'print.thankYouShort') + '{/CENTER}');
-  appendPoweredByFooter(lines);
-  lines.push('{CUT}');
-
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
+/**
+ * Compact thermal receipt (#443): builds a PrintDocument from normalized
+ * print data and renders it through the document pipeline (document-compact).
+ */
+export function formatCompactReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string): Buffer {
+  const result = renderCompactReceiptViaDocument(order, bill, biz, {
+    columns: cols,
+    language: lang,
+    ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+    isReprint,
+    useUnicode,
+    arabicShaping,
+    cutMode,
+  });
+  if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
+  return result.data;
 }
 
-function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en'): Buffer {
-  const lines: string[] = [];
-  const date = parseDbTimestamp(order.created_at);
-
-  const dash = '-'.repeat(cols);
-
-  const prefix = resolveCurrencyPrefix(biz.currency_symbol || '₹', useUnicode);
-  const trimDecimals = biz.trim_decimals === true;
-  const locale = getCountryByCode(biz.country)?.locale ?? 'en-US';
-  const amtLen = itemAmountWidth(order, prefix, locale, trimDecimals, cols);
-  const itemNameLen = itemNameWidth(cols, amtLen);
-  const taxComponents = resolveTaxComponents({ ...bill, items: order.items });
-  const hasTax = Number(bill.tax_amount) !== 0
-    || taxComponents.some((component) => component.amount !== 0);
-
-  const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
-
-  lines.push('{INIT}');
-  if (isReprint) lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + printLabel(lang, 'receipt.reprint') + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-
-  // Header: store name (Font A, big + bold), then customer name (Font B) and
-  // mobile number, each only if the bill actually has that data.
-  if (biz.show_name !== false && biz.name) lines.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + truncateShapedLine(String(biz.name), Math.floor(cols / 2), arabicShaping) + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
-  if (biz.show_customer_name !== false && biz.customer_name) lines.push('{CENTER}{FONT_B}' + truncateShapedLine(String(biz.customer_name), cols, arabicShaping) + '{/FONT_B}{/CENTER}');
-  if (biz.show_customer_phone !== false && biz.customer_phone) lines.push('{CENTER}' + biz.customer_phone + '{/CENTER}');
-
-  lines.push(dash);
-  lines.push('{CENTER}' + printLabel(lang, 'print.invoiceNumber') + ' ' + (bill.bill_number || order.order_number) + '{/CENTER}');
-  lines.push('{CENTER}' + date.toLocaleDateString(locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
-  if (biz.show_table_number !== false && order.table?.name) lines.push('{CENTER}' + truncateShapedLine(formatTableLabel(order.table.name, lang), cols, arabicShaping) + '{/CENTER}');
-  lines.push(dash);
-
-  lines.push(itemHeader(lang, itemNameLen, amtLen));
-  lines.push(dash);
-
-  if (order.items) {
-    for (const item of order.items) {
-      lines.push(...itemRows(item, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
-
-      const addons = parseAddons(item.addons);
-      for (const addon of addons) {
-        lines.push(...addonRows(addon, itemNameLen, amtLen, cols, prefix, locale, trimDecimals));
-      }
-      if (item.special_instructions) {
-        lines.push('  ' + printLabel(lang, 'print.note') + ': ' + truncate(item.special_instructions, cols - 8));
-      }
-    }
-  }
-
-  lines.push(dash);
-
-  // Redeemed points sit above the subtotal, only if present.
-  if (biz.points_redeemed > 0) {
-    const label = printLabel(lang, 'print.pointsRedeemed');
-    lines.push(label + rightAlign('-' + biz.points_redeemed + ' pts', cols - label.length));
-  }
-
-  lines.push(...financialRows(printLabel(lang, 'pos.subtotal'), formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols));
-  if (bill.discount_amount > 0) {
-    lines.push(...financialRows(printLabel(lang, 'pos.discount'), '-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols));
-  }
-  if (biz.show_tax_breakdown === true && taxComponents.length > 0) {
-    for (const tax of taxComponents) {
-      if (tax.amount === 0) continue;
-      const rawLabel = tax.rate === null ? tax.title : `${tax.title} @${tax.rate}%`;
-      const label = truncate(rawLabel, cols - 12);
-      lines.push(...financialRows(label, formatCurrency(tax.amount, prefix, locale, trimDecimals), cols));
-    }
-  } else if (Number(bill.tax_amount) !== 0) {
-    lines.push(...financialRows(printLabel(lang, 'pos.tax'), formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), cols));
-  }
-  lines.push(...financialRows(printLabel(lang, 'print.grandTotal'), formatCurrency(bill.total, prefix, locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
-
-  if (bill.payment_details) {
-    try {
-      const payments = typeof bill.payment_details === 'string' ? JSON.parse(bill.payment_details) : bill.payment_details;
-      if (payments && Array.isArray(payments)) {
-        for (const payment of payments) {
-          if (payment && payment.method) {
-            const methodLabel = truncate(resolvePaymentMethodLabel(String(payment.method), lang), cols - 12);
-            lines.push(...financialRows(methodLabel, formatCurrency(payment.amount, prefix, locale, trimDecimals), cols));
-          }
-        }
-      }
-    } catch (err: any) {
-      console.warn('[Printer] Failed to parse payment details JSON:', err.message);
-    }
-  }
-
-  // Earned points this bill + running balance, each only if nonzero.
-  const hasEarned = biz.points_earned > 0;
-  const hasBalance = biz.points_balance !== null && biz.points_balance !== undefined && biz.points_balance !== 0;
-  if (hasEarned || hasBalance) {
-    lines.push(dash);
-    if (hasEarned) {
-      const earnedLabel = printLabel(lang, 'print.pointsEarned');
-      lines.push(earnedLabel + rightAlign(String(biz.points_earned), cols - earnedLabel.length));
-    }
-    if (hasBalance) {
-      const balanceLabel = printLabel(lang, 'print.pointsBalance');
-      lines.push(balanceLabel + rightAlign(String(biz.points_balance), cols - balanceLabel.length));
-    }
-  }
-
-  // Footer: store contact details, only the ones actually configured.
-  const footerLines: string[] = [];
-  if (biz.show_address !== false && biz.address) footerLines.push(biz.address);
-  if (biz.show_phone !== false && biz.phone) footerLines.push(printLabel(lang, 'receipt.phone') + ': ' + biz.phone);
-  if ((biz.show_tax_id === true || (biz.show_tax_id !== false && hasTax)) && biz.taxRegistrationNumber) footerLines.push((getCountryByCode(biz.country)?.taxIdLabel || 'Tax ID') + ': ' + biz.taxRegistrationNumber);
-  if (biz.instagram_handle) footerLines.push(biz.instagram_handle);
-  if (footerLines.length > 0) {
-    lines.push(dash);
-    for (const footerLine of footerLines) pushCenteredWrapped(lines, footerLine, cols);
-  }
-
-  if (biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
-
-  appendPoweredByFooter(lines);
-  lines.push('{CUT}');
-
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
+/**
+ * Classic thermal receipt (#443): builds a PrintDocument from normalized
+ * print data and renders it through the document pipeline (document-classic).
+ * Token-line emission stays an implementation detail of the ESC/POS renderer.
+ */
+export function formatClassicReceipt(order: any, bill: any, biz: any, cols: number = 48, useUnicode: boolean = false, isReprint: boolean = false, cutMode: PrinterCutMode = 'full', warnings?: PrintWarning[], arabicShaping: boolean = false, lang: string = 'en', additionalLanguage?: string): Buffer {
+  const result = renderClassicReceiptViaDocument(order, bill, biz, {
+    columns: cols,
+    language: lang,
+    ...(additionalLanguage !== undefined ? { additionalLanguage } : {}),
+    isReprint,
+    useUnicode,
+    arabicShaping,
+    cutMode,
+  });
+  if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
+  return result.data;
 }
 
 type PluginColumnAlign = 'left' | 'right' | 'center';
@@ -1405,22 +1230,10 @@ function truncateCell(text: string, length: number, ellipsis: boolean): string {
 }
 
 // Item row layout: [ name (nameLen) ][ qty (4) ][ amount right-aligned (amtLen) ].
-// Tax components belong in the document-level breakdown, not a redundant
-// per-item column derived from deprecated product tax fields.
 // Item rows keep [ name ][ qty ][ amount ] inline when the value fits; an
 // oversized amount continues on full-width lines. Tax components belong in
 // the document-level breakdown, not a redundant per-item column derived from
 // deprecated product tax fields.
-function itemHeader(lang: string, nameLen: number, amtLen: number): string {
-  const qtyW = 4;
-  const item = printLabel(lang, 'receipt.item').slice(0, nameLen).padEnd(nameLen);
-  const qty = printLabel(lang, 'receipt.qty').slice(0, qtyW).padEnd(qtyW);
-  const amount = printLabel(lang, 'receipt.amount').slice(0, Math.max(1, amtLen - 1));
-  return (
-    item + qty + ' '.repeat(amtLen - amount.length) + amount
-  );
-}
-
 export function itemNameWidth(cols: number, amtLen: number): number {
   return Math.max(1, cols - 4 - amtLen);
 }
@@ -1590,44 +1403,24 @@ export function pushCenteredWrapped(lines: string[], text: string, cols: number)
   for (const line of wrapText(text, cols)) lines.push('{CENTER}' + line + '{/CENTER}');
 }
 
+/**
+ * Kitchen order ticket (#443): builds a KotDocument (single-language policy
+ * resolved by the caller through the kernel) and renders it via the document
+ * pipeline (document-kot).
+ */
 export function formatKOT(order: any, items: any[], stationName: string, cols: number = 48, useUnicode: boolean = false, cutMode: PrinterCutMode = 'full', locale: string = 'en-US', tzOptions?: any, warnings?: PrintWarning[], arabicShaping: boolean = false, language?: string): Buffer {
   const lang = normalizePrintLanguage(language);
-  const lines: string[] = [];
-  const bar = '='.repeat(cols);
-
-  lines.push('{INIT}');
-  lines.push('{CENTER}{BOLD}' + printLabel(lang, 'print.kot.banner') + '{/BOLD}{/CENTER}');
-  lines.push('');
-  lines.push(truncateShapedLine(printLabel(lang, 'print.kot.station') + ': ' + stationName, cols, arabicShaping));
-  // NOTE (#440/#441): keep this unaudited technical prefix verbatim; label
-  // adoption remains outside this renderer change.
-  lines.push(truncateShapedLine('Order: ' + order.order_number, cols, arabicShaping));
-  if (order.table) {
-    lines.push(truncateShapedLine(formatTableLabel(order.table.name, lang), cols, arabicShaping));
-  }
-  lines.push(printLabel(lang, 'print.time') + ': ' + parseDbTimestamp(order.created_at).toLocaleTimeString(locale + '-u-nu-latn', tzOptions));
-  lines.push(bar);
-  lines.push('');
-
-  for (const item of items) {
-    const itemPrefix = item.quantity + 'x  ';
-    lines.push('{DOUBLE_HEIGHT}{BOLD}' + itemPrefix + truncateShapedLine(String(item.product_name), Math.max(1, cols - itemPrefix.length), arabicShaping) + '{/BOLD}{/DOUBLE_HEIGHT}');
-    const addons = parseAddons(item.addons);
-    for (const addon of addons) {
-      if (addon?.name) {
-        lines.push('  + ' + truncate(String(addon.name), cols - 4));
-      }
-    }
-    if (item.special_instructions) {
-      lines.push('  ** ' + truncateShapedLine(String(item.special_instructions), Math.max(1, cols - 8), arabicShaping) + ' **');
-    }
-  }
-
-  lines.push('');
-  lines.push(bar);
-  lines.push('{CUT}');
-
-  return buildEscPos(lines, useUnicode, { cutMode, arabicShaping, columns: cols }, warnings);
+  const result = renderKotViaDocument(order, items, stationName, {
+    columns: cols,
+    language: lang,
+    ...(locale ? { locale } : {}),
+    ...(tzOptions?.timeZone ? { timezone: String(tzOptions.timeZone) } : {}),
+    useUnicode,
+    arabicShaping,
+    cutMode,
+  });
+  if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
+  return result.data;
 }
 
 export function buildTestPage(paperWidth: string = '80mm', cutMode: PrinterCutMode = 'full', language?: string): Buffer {

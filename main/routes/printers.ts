@@ -2,9 +2,14 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, attachEffectiveAddons, isKotPrintingEnabled, parseItemJson } from '../db';
 import { getOrderWithItems } from './bills';
 import { v4 as uuidv4 } from 'uuid';
-import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText, normalizeReceiptTemplate } from '../printers/thermal';
-import { renderClassicReceiptViaDocument } from '../printers/document-classic';
-import { loadInstalledPrintTemplate } from '../services/print-templates';
+import { printViaNetwork, printViaUSB, buildTestPage, printReceiptDetailed, printKOTDetailed, detectConnectedPrinters, prepareReceipt, escPosToText } from '../printers/thermal';
+import { BILL_LANGUAGE_POLICY_KEY, KOT_LANGUAGE_POLICY_KEY, parseStoredLanguagePolicy } from '../lib/print-language-settings';
+import {
+  resolveKotLanguage,
+  resolveReceiptLanguages,
+  type KotLanguagePolicy,
+  type ReceiptLanguagePolicy,
+} from '../../shared/print';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
@@ -438,50 +443,31 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
       footer_note: settings.bill_footer_message || '',
     };
     const billTemplate = settings.bill_template;
-    // Tenant language still drives receipt label selection (#440); renderer
-    // adoption of the shared print-language policy is deferred to #442+.
-    const receiptLanguage = settings.language || 'en';
+    // Receipt label languages (#443): the tenant's `bill_language_policy`
+    // (kernel B) resolves against the tenant `language` setting through the
+    // shared kernel; primary first, optional additional second.
+    const receiptLanguages = resolveTenantReceiptLanguages(db);
     console.log('[Print Bill] Preparing receipt', { template: billTemplate || 'classic' });
 
     if (preview === true) {
-      const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, arabicShapingOverride, receiptLanguage);
-      // Document-driven classic preview (#442): the core classic template
-      // (no installed plugin template) renders through PrintDocument:
-      // authoritative data → PrintData/PrintContext → document → token lines
-      // → bytes. Actual printing keeps the legacy path this issue.
-      let data = prepared.data;
-      let warnings = prepared.warnings;
-      if (normalizeReceiptTemplate(billTemplate) === 'classic'
-        && !loadInstalledPrintTemplate(String(billTemplate || 'classic'))) {
-        const previewProfile = resolvePrinterProfile(prepared.printer);
-        const previewShaping = typeof arabicShapingOverride === 'boolean'
-          ? arabicShapingOverride
-          : (previewProfile.arabicShaping ?? false);
-        const documentResult = renderClassicReceiptViaDocument(order, bill, business, {
-          columns: prepared.columns,
-          language: receiptLanguage,
-          isReprint,
-          useUnicode,
-          arabicShaping: previewShaping,
-          cutMode: previewProfile.cutMode,
-        });
-        data = documentResult.data;
-        warnings = documentResult.warnings;
-      }
+      // Preview and production share one code path (#443): prepareReceipt →
+      // formatReceipt renders through PrintDocument for classic + compact
+      // (plugin templates keep their dedicated renderer).
+      const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, arabicShapingOverride, receiptLanguages.primary, receiptLanguages.additional);
       return res.json({
         success: true,
         preview: true,
         columns: prepared.columns,
         printer: { id: prepared.printer.id, name: prepared.printer.name },
-        text: escPosToText(data),
-        escpos_base64: data.toString('base64'),
-        warnings,
+        text: escPosToText(prepared.data),
+        escpos_base64: prepared.data.toString('base64'),
+        warnings: prepared.warnings,
       });
     }
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
-    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req), arabicShapingOverride, receiptLanguage);
+    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req), arabicShapingOverride, receiptLanguages.primary, receiptLanguages.additional);
     console.log('[Print Bill] Print completed', result);
 
     if (result.ok) {
@@ -584,7 +570,7 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
       return res.status(404).json({ error: 'Order not found' });
     }
 
-    const kotLanguage = tenantLanguage(db);
+    const kotLanguage = resolveTenantKotLanguage(db);
 
     // Fetch order items from database
     const orderItems: any[] = getEffectiveOrderItems(db, orderId);
@@ -645,4 +631,42 @@ function tenantLanguage(db: ReturnType<typeof getDatabase>): string {
   } catch {
     return 'en';
   }
+}
+
+function tenantSettingValue(db: ReturnType<typeof getDatabase>, key: string): string | undefined {
+  try {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as { value?: string } | undefined;
+    return row?.value;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Receipt label languages for one print request (#443). The stored
+ * `bill_language_policy` is resolved through the shared kernel against the
+ * tenant `language` setting; malformed stored values fall back to the
+ * inherit/none default (read-side parse never breaks printing).
+ */
+function resolveTenantReceiptLanguages(db: ReturnType<typeof getDatabase>): { primary: string; additional?: string } {
+  const policy = parseStoredLanguagePolicy(
+    BILL_LANGUAGE_POLICY_KEY,
+    tenantSettingValue(db, BILL_LANGUAGE_POLICY_KEY),
+  ) as ReceiptLanguagePolicy;
+  const languages = resolveReceiptLanguages(policy, tenantLanguage(db));
+  return languages.length > 1
+    ? { primary: languages[0], additional: languages[1] }
+    : { primary: languages[0] };
+}
+
+/**
+ * Kitchen ticket label language (#443): `kot_language_policy` resolved
+ * through the kernel, independently of the receipt language policy.
+ */
+function resolveTenantKotLanguage(db: ReturnType<typeof getDatabase>): string {
+  const policy = parseStoredLanguagePolicy(
+    KOT_LANGUAGE_POLICY_KEY,
+    tenantSettingValue(db, KOT_LANGUAGE_POLICY_KEY),
+  ) as KotLanguagePolicy;
+  return resolveKotLanguage(policy, tenantLanguage(db));
 }

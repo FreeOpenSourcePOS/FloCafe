@@ -244,6 +244,10 @@ export interface DocumentMetaBlock {
   readonly title: SemanticLabel;
   /** Label rendered alongside the invoice/order number. */
   readonly invoiceNumberLabel: SemanticLabel;
+  /** Alternate bill-number label; layouts that head the receipt with "Bill #". */
+  readonly billNumberLabel: SemanticLabel;
+  /** Date label for layouts that print a labeled date line (e.g. compact). */
+  readonly dateLabel: SemanticLabel;
   readonly invoiceNumber: DirectionalText;
   /** Canonical stored timestamp; presentation formatting is a renderer duty. */
   readonly timestamp: DirectionalText;
@@ -257,6 +261,9 @@ export interface CustomerBlock {
   readonly direction: TextDirection;
   readonly name: DirectionalText | null;
   readonly phone: DirectionalText | null;
+  /** Labels for layouts that render labeled customer lines (compact). */
+  readonly nameLabel: SemanticLabel;
+  readonly phoneLabel: SemanticLabel;
 }
 
 /** One addon under an item row. `price === 0` means unpriced extra. */
@@ -475,6 +482,8 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     direction: base,
     title: resolveSemanticLabel(labels, hasTax ? 'print.taxInvoiceTitle' : 'print.invoiceTitle'),
     invoiceNumberLabel: resolveSemanticLabel(labels, 'print.invoiceNumber'),
+    billNumberLabel: resolveSemanticLabel(labels, 'receipt.billNumber'),
+    dateLabel: resolveSemanticLabel(labels, 'receipt.date'),
     invoiceNumber: directionalText(
       bill.billNumber.length > 0 ? bill.billNumber : order.orderNumber,
       base,
@@ -493,6 +502,8 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     direction: base,
     name: business.showCustomerName ? optionalDirectional(business.customerName, base) : null,
     phone: business.showCustomerPhone ? optionalDirectional(business.customerPhone, base) : null,
+    nameLabel: resolveSemanticLabel(labels, 'pos.customer'),
+    phoneLabel: resolveSemanticLabel(labels, 'print.numberShort'),
   });
 
   const items: ItemTableBlock = Object.freeze({
@@ -587,7 +598,7 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     direction: base,
     reprintBanner: printData.isReprint ? resolveSemanticLabel(labels, 'receipt.reprint') : null,
     footerNote: business.footerNote.length > 0 ? directionalText(business.footerNote, base) : null,
-    thankYou: null,
+    thankYou: resolveSemanticLabel(labels, 'print.thankYouShort'),
   });
 
   return Object.freeze({
@@ -604,5 +615,132 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       payments,
       messages,
     ] as readonly PrintDocumentBlock[]),
+  });
+}
+
+// ---------------------------------------------------------------------------
+// KOT document variant (kitchen order ticket) — #443
+// ---------------------------------------------------------------------------
+
+/** One addon under a KOT item row. Kitchen tickets print names only. */
+export interface KotAddonSnapshot {
+  readonly name: string;
+}
+/** One item on the kitchen ticket, as printed truth. */
+export interface KotItemSnapshot {
+  readonly productName: string;
+  readonly quantity: number;
+  readonly addons: readonly KotAddonSnapshot[];
+  readonly specialInstructions: string;
+}
+
+/** The order behind the ticket (order number, canonical timestamp, table). */
+export interface KotOrderSnapshot {
+  readonly orderNumber: string;
+  readonly createdAt: string;
+  readonly tableName: string;
+}
+
+/**
+ * Normalized authoritative values for one kitchen ticket. Pure snapshot —
+ * no live rows; callers normalize before building.
+ */
+export interface KotPrintData {
+  readonly stationName: string;
+  readonly order: KotOrderSnapshot;
+  readonly items: readonly KotItemSnapshot[];
+}
+
+/** Ticket header: banner, station, order number, table, time. */
+export interface KotHeaderBlock {
+  readonly kind: 'kot-header';
+  readonly direction: TextDirection;
+  readonly banner: SemanticLabel;
+  readonly stationLabel: SemanticLabel;
+  readonly stationName: DirectionalText;
+  /**
+   * Order reference. The legacy renderer keeps an unaudited literal
+   * `Order:` prefix (#440/#441 note); label adoption is a later decision,
+   * so the document carries only the value here.
+   */
+  readonly orderNumber: DirectionalText;
+  /** Table reference with its (uninterpolated) label concept. */
+  readonly table: { readonly label: SemanticLabel; readonly name: DirectionalText } | null;
+  readonly timeLabel: SemanticLabel;
+  /** Canonical stored timestamp; presentation formatting is a renderer duty. */
+  readonly timestamp: DirectionalText;
+}
+
+/** Ordered kitchen item rows with addons and preparation instructions. */
+export interface KotItemsBlock {
+  readonly kind: 'kot-items';
+  readonly direction: TextDirection;
+  readonly rows: readonly {
+    readonly quantity: number;
+    readonly name: DirectionalText;
+    readonly addons: readonly DirectionalText[];
+    readonly specialInstructions: DirectionalText | null;
+  }[];
+}
+
+/** Ordered union of KOT v1 block kinds. */
+export type KotDocumentBlock = KotHeaderBlock | KotItemsBlock;
+
+/**
+ * Renderer-independent semantic kitchen-ticket document, version 1.
+ * KOT language policy is single-primary (v1): exactly one resolved language.
+ */
+export interface KotDocument {
+  readonly version: 1;
+  readonly direction: DirectionSpec;
+  readonly languages: ResolvedPrintLanguages;
+  readonly blocks: readonly KotDocumentBlock[];
+}
+
+/**
+ * Build a KotDocument v1 from normalized kitchen-ticket data. Pure: reads
+ * only its arguments and performs no IO or recomputation.
+ */
+export function buildKotDocument(printData: KotPrintData, printContext: PrintContext): KotDocument {
+  const base = printContext.baseDirection;
+  const primary = printContext.languages[0];
+
+  const labels: LabelContext = { ctx: printContext, primary };
+
+  const header: KotHeaderBlock = Object.freeze({
+    kind: 'kot-header',
+    direction: base,
+    banner: resolveSemanticLabel(labels, 'print.kot.banner'),
+    stationLabel: resolveSemanticLabel(labels, 'print.kot.station'),
+    stationName: directionalText(String(printData.stationName ?? ''), base),
+    orderNumber: directionalText(String(printData.order?.orderNumber ?? ''), base),
+    table: typeof printData.order?.tableName === 'string' && printData.order.tableName.length > 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'pos.tableLabel'),
+        name: directionalText(printData.order.tableName, base),
+      })
+      : null,
+    timeLabel: resolveSemanticLabel(labels, 'print.time'),
+    timestamp: directionalText(String(printData.order?.createdAt ?? ''), base),
+  });
+
+  const items: KotItemsBlock = Object.freeze({
+    kind: 'kot-items',
+    direction: base,
+    rows: Object.freeze((Array.isArray(printData.items) ? printData.items : []).map((item) => Object.freeze({
+      quantity: Number(item?.quantity) || 0,
+      name: directionalText(String(item?.productName ?? ''), base),
+      addons: Object.freeze((item?.addons ?? new Array<KotAddonSnapshot>())
+        .filter((addon: KotAddonSnapshot) => typeof addon?.name === 'string' && addon.name.length > 0)
+        .map((addon: KotAddonSnapshot) => directionalText(String(addon.name), base))),
+      specialInstructions: optionalDirectional(item?.specialInstructions, base),
+    }))),
+  });
+
+  return Object.freeze({
+    version: 1 as const,
+    direction: resolveDirectionSpec(base),
+    languages: printContext.languages,
+    blocks: Object.freeze([header, items] as readonly KotDocumentBlock[]),
   });
 }

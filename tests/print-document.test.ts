@@ -327,7 +327,90 @@ console.log('\n▶ Backend PrintData normalization (main layer)');
 }
 
 // ---------------------------------------------------------------------------
-// 5. Purity: no IO imports in kernel document modules
+// 5. KOT document variant (#443)
+// ---------------------------------------------------------------------------
+
+import {
+  buildKotDocument,
+  type KotPrintData,
+} from '../shared/print';
+
+console.log('\n▶ KOT document builder (#443)');
+{
+  const kotData: KotPrintData = {
+    stationName: 'Main Kitchen',
+    order: {
+      orderNumber: 'ORD-PARITY-001',
+      createdAt: '2026-08-21 18:42:00',
+      tableName: '4',
+    },
+    items: [
+      {
+        productName: 'Espresso Doppio',
+        quantity: 2,
+        addons: [{ name: 'Oat milk' }, { name: '' }],
+        specialInstructions: 'Less sugar',
+      },
+      {
+        productName: PERSIAN_ITEM,
+        quantity: 1,
+        addons: [],
+        specialInstructions: '',
+      },
+    ],
+  };
+
+  const document = buildKotDocument(kotData, makeContext({ languages: ['en'], baseDirection: 'ltr' }));
+  assert.equal(document.version, 1, 'KOT document version is 1');
+  assert.deepEqual(
+    document.blocks.map((block) => block.kind),
+    ['kot-header', 'kot-items'],
+    'KOT canonical block order',
+  );
+
+  const header = getBlock(document as any, 'kot-header' as any) as ReturnType<typeof document.blocks.find> | undefined;
+  assert(header, 'kot-header block present');
+  assert.equal(header.banner.conceptId, 'print.kot.banner');
+  assert.equal(header.stationName.text, 'Main Kitchen');
+  assert.equal(header.orderNumber.text, 'ORD-PARITY-001');
+  assert.equal(header.orderNumber.direction, 'ltr', 'order number is an LTR island under rtl base');
+  assert.equal(header.table?.label.conceptId, 'pos.tableLabel');
+  assert.equal(header.table?.name.text, '4');
+  assert.equal(header.timestamp.text, '2026-08-21 18:42:00');
+  ok('KOT header carries banner/station/order/table/time semantics');
+
+  const noTable = buildKotDocument(
+    { ...kotData, order: { ...kotData.order, tableName: '' } },
+    makeContext(),
+  );
+  assert.equal((getBlock(noTable as any, 'kot-header' as any) as any)?.table, null, 'empty table name omits the table reference');
+  ok('table block presence follows snapshot data');
+
+  const items = getBlock(document as any, 'kot-items' as any) as any;
+  assert(items, 'kot-items block present');
+  assert.equal(items.rows.length, 2);
+  assert.equal(items.rows[0].quantity, 2);
+  assert.equal(items.rows[0].name.text, 'Espresso Doppio');
+  assert.deepEqual(items.rows[0].addons.map((addon) => addon.text), ['Oat milk'], 'blank addon names are dropped');
+  assert.equal(items.rows[0].specialInstructions?.text, 'Less sugar');
+  assert.equal(items.rows[1].specialInstructions, null);
+  ok('KOT item rows carry quantity/name/addons/instructions');
+
+  // Direction annotations follow the injected base direction.
+  const rtlDoc = buildKotDocument(kotData, makeContext({ languages: ['fa'], baseDirection: 'rtl' }));
+  assert.equal(rtlDoc.direction.base, 'rtl');
+  const rtlItems = getBlock(rtlDoc as any, 'kot-items' as any) as any;
+  assert.equal(rtlItems?.rows[1].name.direction, 'rtl', 'Persian item name follows rtl base');
+  assert.equal((getBlock(rtlDoc as any, 'kot-header' as any) as any)?.orderNumber.direction, 'ltr', 'order number stays an LTR island in rtl tickets');
+  ok('direction-aware annotations for RTL-primary kitchen tickets');
+
+  // Single-language policy shape (kernel kot_language_policy).
+  assert.equal(document.languages.length, 1, 'KOT documents carry exactly one language in v1');
+  ok('single-language policy reflected in resolved languages');
+}
+
+// ---------------------------------------------------------------------------
+// 6. Purity: no IO imports in kernel document modules
 // ---------------------------------------------------------------------------
 
 console.log('\n▶ Kernel purity (static import audit)');

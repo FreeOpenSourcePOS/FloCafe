@@ -24,9 +24,20 @@
 
 import {
   formatReceipt,
+  formatKOT,
   escPosToText,
 } from '../main/printers/thermal';
 import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
+import {
+  formatClassicReceiptLegacy,
+  formatCompactReceiptLegacy,
+  formatKOTLegacy,
+} from './helpers/legacy-thermal-oracle';
+import { printLabel } from '../main/print/print-labels.generated';
+import {
+  resolveKotLanguage,
+  resolveReceiptLanguages,
+} from '../shared/print';
 
 // ---------------------------------------------------------------------------
 // Frontend module loading (same technique as tests/printer.test.ts: the
@@ -391,10 +402,17 @@ function run(): void {
   }
 
   // ------------------------------------------------------------------
-  // 4. PrintDocument pipeline vs legacy classic (#442): the document-
-  //    driven preview renderer must reproduce the legacy classic output
-  //    exactly at every tested width, including Persian-item skip rules.
+  // 4. PrintDocument pipeline vs LEGACY ORACLE (#443): every migrated
+  //    backend surface (classic, compact, KOT) must reproduce its frozen
+  //    pre-migration output BYTE FOR BYTE at every tested width, including
+  //    Persian-item skip rules and reprint banners.
   // ------------------------------------------------------------------
+  const kotOrder = {
+    order_number: order.order_number,
+    created_at: order.created_at,
+    table: { name: '4' },
+  };
+
   section('PrintDocument vs legacy classic');
   for (const cols of [32, 42, 48]) {
     for (const isReprint of [false, true] as const) {
@@ -402,7 +420,7 @@ function run(): void {
       section(label);
       const legacyWarnings: Warnings = [];
       const legacyText = escPosToText(
-        formatReceipt(order, bill, business, 'classic', cols, false, isReprint, 'full', legacyWarnings, false, 'en'),
+        formatClassicReceiptLegacy(order, bill, business, cols, false, isReprint, 'full', legacyWarnings, false, 'en'),
       );
       const docResult = renderClassicReceiptViaDocument(order, bill, business, {
         columns: cols,
@@ -427,6 +445,81 @@ function run(): void {
           `${label}: skip produced explicit Persian/Arabic warning`);
       }
     }
+  }
+
+  section('PrintDocument vs legacy compact');
+  for (const cols of [32, 42, 48]) {
+    for (const isReprint of [false, true] as const) {
+      const label = `compact-document/${cols}${isReprint ? '/reprint' : ''}`;
+      section(label);
+      const legacyWarnings: Warnings = [];
+      const legacyBuf = formatCompactReceiptLegacy(order, bill, business, cols, false, isReprint, 'full', legacyWarnings, false, 'en');
+      // Production entry point: formatReceipt('compact') is document-driven
+      // since #443, so this compares the migrated pipeline against the oracle.
+      const migratedBuf = formatReceipt(order, bill, business, 'compact', cols, false, isReprint, 'full', [], false, 'en');
+      warn(legacyBuf.equals(migratedBuf), `${label}: byte-identical output to legacy compact`);
+      expectContent(label, escPosToText(migratedBuf), {
+        ...baseExpect,
+        absentItems: [PERSIAN_ITEM],
+        ...(isReprint ? { reprint: true } : {}),
+      }, warn);
+    }
+  }
+
+  section('PrintDocument vs legacy KOT');
+  for (const cols of [32, 42, 48]) {
+    const label = `kot-document/${cols}`;
+    section(label);
+    const legacyWarnings: Warnings = [];
+    const legacyBuf = formatKOTLegacy(kotOrder, order.items, 'Main Kitchen', cols, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, legacyWarnings, false, 'en');
+    const migratedBuf = formatKOT(kotOrder, order.items, 'Main Kitchen', cols, false, 'full', 'en-US', { timeZone: 'Asia/Kolkata' }, [], false, 'en');
+    warn(legacyBuf.equals(migratedBuf), `${label}: byte-identical output to legacy KOT`);
+    const kotText = escPosToText(migratedBuf);
+    warn(kotText.includes('Main Kitchen'), `${label}: station block rendered`);
+    warn(kotText.includes('2x  Espresso Doppio'), `${label}: item rows with quantity prefix`);
+    warn(kotText.includes('+ Oat milk'), `${label}: addon lines rendered`);
+    warn(kotText.includes('** Less sugar **'), `${label}: instruction lines rendered`);
+    if (cols >= 42) warn(!kotText.includes(PERSIAN_ITEM), `${label}: unsupported-script item skipped with warning only`);
+  }
+
+  // ------------------------------------------------------------------
+  // 5. Receipt/KOT language routing (#443): fa/es tenants get localized
+  //    labels end-to-end through the resolved policy; the KOT kitchen
+  //    policy resolves independently of the receipt language.
+  // ------------------------------------------------------------------
+  section('Localized receipt labels end-to-end');
+  for (const language of ['fa', 'es'] as const) {
+    for (const template of ['classic', 'compact'] as const) {
+      const label = `${template}/${language}`;
+      const warnings: Warnings = [];
+      // Shaping-capable profile: localized label text may actually print.
+      const text = escPosToText(
+        formatReceipt(order, bill, business, template, 42, false, false, 'full', warnings, true, language),
+      );
+      const totalLabel = printLabel(language, 'print.grandTotal');
+      warn(text.includes(totalLabel), `${label}: grand-total label localized (${totalLabel})`);
+      const subtotalLabel = printLabel(language, 'pos.subtotal');
+      warn(text.includes(subtotalLabel), `${label}: subtotal label localized (${subtotalLabel})`);
+    }
+  }
+
+  section('KOT language policy independence');
+  {
+    // Store language fa + inherit KOT policy → kitchen tickets follow the store.
+    const inherited = resolveKotLanguage({ primary: { mode: 'inherit' }, additional: [] as const }, 'fa');
+    warn(inherited === 'fa', 'KOT inherit policy follows the store language');
+    // Fixed kitchen policy overrides the store language independently.
+    const fixedEn = resolveKotLanguage({ primary: { mode: 'fixed', language: 'en' }, additional: [] as const }, 'fa');
+    warn(fixedEn === 'en', 'KOT fixed policy overrides the store language');
+    // Receipt policy with an additional language resolves primary first.
+    const receiptLangs = resolveReceiptLanguages(
+      { primary: { mode: 'inherit' }, additional: ['es'] as const },
+      'fa',
+    );
+    warn(receiptLangs[0] === 'fa' && receiptLangs[1] === 'es', 'receipt policy resolves primary + additional');
+    // A fixed-en KOT ticket stays English even for a fa store (#443).
+    const kotTextEn = escPosToText(formatKOT(kotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', undefined, [], false, fixedEn));
+    warn(kotTextEn.includes('Time:'), 'fixed-en KOT ticket renders English time label');
   }
 
   console.log('\n' + '='.repeat(56));

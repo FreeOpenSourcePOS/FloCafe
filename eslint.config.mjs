@@ -22,6 +22,37 @@ export default [
     },
   },
   {
+    // Shared print kernel (#441): purity boundary — types + pure functions
+    // only. No Node builtins, frameworks, or cross-boundary imports; see
+    // shared/print/README.md. Also enforced by tests/kernel-purity.test.ts.
+    files: ['shared/**/*.ts'],
+    languageOptions: {
+      parser: tsparser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+    },
+    rules: {
+      ...tseslint.configs.recommended.rules,
+      'no-restricted-imports': ['error', {
+        patterns: [
+          {
+            group: [
+              'node:*', 'fs', 'path', 'crypto', 'net', 'http', 'https', 'os', 'child_process',
+              'electron', 'react', 'react-dom', 'express', 'next',
+              'frontend/**', 'main/**', '@/__', '@countries',
+            ],
+            message: 'shared/print is a pure kernel: no IO or framework imports (see shared/print/README.md).',
+          },
+        ],
+      }],
+    },
+  },
+  {
     ignores: ['node_modules/', 'dist/', 'release/', 'frontend/', 'tests/'],
   },
 ];

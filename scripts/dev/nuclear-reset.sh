@@ -192,14 +192,14 @@ echo ""
 echo -e "${BLUE}Step 4: Verify routes are compiled${NC}"
 echo "----------------------------------------"
 
-if grep -q "customers-search" dist/routes/index.js; then
+if grep -q "customers-search" dist/main/routes/index.js; then
     echo -e "${GREEN}✓ customers-search route found in compiled code${NC}"
 else
     echo -e "${RED}✗ customers-search route NOT found!${NC}"
     exit 1
 fi
 
-if grep -q "crm/lookup" dist/routes/index.js; then
+if grep -q "crm/lookup" dist/main/routes/index.js; then
     echo -e "${GREEN}✓ crm/lookup route found in compiled code${NC}"
 else
     echo -e "${RED}✗ crm/lookup route NOT found!${NC}"

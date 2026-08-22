@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
+import { setLanguage } from './helpers/test-auth';
 
 const EVIDENCE_DIR = process.env.EVIDENCE_DIR || path.join(os.tmpdir(), 'no-mistakes-evidence', '01M017SAY4WPNZWT0YAB197D9H');
 if (!fs.existsSync(EVIDENCE_DIR)) {
@@ -15,6 +16,7 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
   await page.waitForURL((url) => !url.pathname.includes('/auth/login'), { timeout: 15000 });
+  await setLanguage(page, 'en');
 
   // ── 1. Customer Management: validates, normalizes, clears, and updates phone numbers ──
     await page.goto('http://localhost:3001/customers');

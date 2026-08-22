@@ -26,6 +26,8 @@ function loadFrontendModules() {
       resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
     } else if (request.startsWith('@/')) {
       resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    } else if (request.startsWith('@print/')) {
+      resolvedRequest = path.resolve(__dirname, '../shared/print', request.slice('@print/'.length));
     }
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
   };
@@ -537,9 +539,10 @@ async function run() {
   }
 
   // Use Playwright to capture screenshots of each receipt
+  let browser: any;
   try {
     const playwright = require(path.resolve(__dirname, '../frontend/node_modules/@playwright/test'));
-    const browser = await playwright.chromium.launch({ headless: true });
+    browser = await playwright.chromium.launch({ headless: true });
     const context = await browser.newContext({
       viewport: { width: 480, height: 900 },
       deviceScaleFactor: 2,
@@ -560,10 +563,11 @@ async function run() {
       console.log(`   Captured screenshot artifact: ${pngPath}`);
     }
 
-    await browser.close();
   } catch (err: any) {
     if (process.env.REQUIRE_VISUAL_EVIDENCE === '1') throw err;
     console.warn(`   Could not capture Playwright screenshot: ${err?.message || err}`);
+  } finally {
+    if (browser) await browser.close().catch(() => undefined);
   }
 
   console.log(`\n==================================================`);

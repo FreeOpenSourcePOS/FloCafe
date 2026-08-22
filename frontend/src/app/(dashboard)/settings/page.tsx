@@ -6,6 +6,11 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
+import type { KotLanguagePolicy, PrimaryLanguageSelection, ReceiptLanguagePolicy } from '@print/types';
+import {
+  parseStoredKotLanguagePolicy,
+  parseStoredReceiptLanguagePolicy,
+} from '@/lib/print-language-policies';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -13,7 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Button } from '@/components/ui/button';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
-import { COUNTRIES, countryName, getCountryByCode, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
+import { COUNTRIES, getCountryByCode, getLocalizedCountryName, sortCountriesByLocalizedName, type CurrencyDisplay, type DigitMode, type CalendarMode } from '@/lib/countries';
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
@@ -23,8 +28,9 @@ import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
 import { TaxConfigurationPanel } from '@/components/settings/TaxConfigurationPanel';
 import { PaymentMethodsSettings } from '@/components/settings/PaymentMethodsSettings';
 import { LocalePreferencesPanel } from '@/components/settings/LocalePreferencesPanel';
+import { TimeZoneSelect } from '@/components/TimeZoneSelect';
 import type { HealthCheckReport } from '@/types/electron';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useLocale, useTranslations, type AppConfig } from 'use-intl';
 import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
@@ -258,6 +264,8 @@ export default function SettingsPage() {
   usePrinterStatusSync();
   const t = useTranslations('settings');
   const tCommon = useTranslations('common');
+  const locale = useLocale();
+  const sortedCountries = sortCountriesByLocalizedName(COUNTRIES, locale);
   const tRestore = useTranslations('restore');
   const tWhatsappSettings = useTranslations('whatsapp.settings');
   const language = posSettings.language;
@@ -1078,7 +1086,12 @@ export default function SettingsPage() {
     autoPrintKot: boolean; autoPrintBill: boolean;
     whatsappShareEnabled: boolean;
     printerUseUnicode: boolean;
+    printerArabicShaping: boolean;
     printerTrimDecimals: boolean;
+    // Print language policies (#441): 'inherit'/'none' sentinels or registry codes.
+    receiptPrimaryLanguage: string; // 'inherit' | selectable code
+    receiptSecondLanguage: string; // 'none' | selectable code
+    kotLanguage: string; // 'inherit' | selectable code
     billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
     billShowTaxBreakdown: boolean; billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
   };
@@ -1090,7 +1103,15 @@ export default function SettingsPage() {
     autoPrintBill: posSettings.autoPrintBill,
     whatsappShareEnabled: posSettings.whatsappShareEnabled,
     printerUseUnicode: posSettings.printerUseUnicode,
+    printerArabicShaping: posSettings.printerArabicShaping,
     printerTrimDecimals: posSettings.printerTrimDecimals,
+    receiptPrimaryLanguage: posSettings.billLanguagePolicy.primary.mode === 'fixed'
+      ? posSettings.billLanguagePolicy.primary.language
+      : 'inherit',
+    receiptSecondLanguage: posSettings.billLanguagePolicy.additional[0] ?? 'none',
+    kotLanguage: posSettings.kotLanguagePolicy.primary.mode === 'fixed'
+      ? posSettings.kotLanguagePolicy.primary.language
+      : 'inherit',
     billShowName: posSettings.billShowName,
     billShowAddress: posSettings.billShowAddress,
     billShowPhone: posSettings.billShowPhone,
@@ -1103,6 +1124,22 @@ export default function SettingsPage() {
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
   const savePrinting = async (silent: boolean = false) => {
+    // Build typed policies from the form and mirror them into the store for
+    // renderer-side reads (renderers adopt them in #442+).
+    const receiptPrimary: PrimaryLanguageSelection = printingForm.receiptPrimaryLanguage === 'inherit'
+      ? { mode: 'inherit' }
+      : { mode: 'fixed', language: printingForm.receiptPrimaryLanguage };
+    const dedupedSecond = printingForm.receiptSecondLanguage !== 'none'
+      && !(receiptPrimary.mode === 'fixed' && receiptPrimary.language === printingForm.receiptSecondLanguage)
+      ? printingForm.receiptSecondLanguage
+      : null;
+    const billLanguagePolicy: ReceiptLanguagePolicy = dedupedSecond !== null
+      ? { primary: receiptPrimary, additional: [dedupedSecond] as const }
+      : { primary: receiptPrimary, additional: [] as const };
+    const kotLanguagePolicy: KotLanguagePolicy = {
+      primary: printingForm.kotLanguage === 'inherit' ? { mode: 'inherit' } : { mode: 'fixed', language: printingForm.kotLanguage },
+      additional: [] as const,
+    };
     posSettings.setPrinterEnabled(printingForm.printerEnabled);
     posSettings.setPrinterPaperSize(printingForm.printerPaperSize);
     setPrintMethod(printingForm.printMethod);
@@ -1110,7 +1147,10 @@ export default function SettingsPage() {
     posSettings.setAutoPrintBill(printingForm.autoPrintBill);
     posSettings.setWhatsappShareEnabled(printingForm.whatsappShareEnabled);
     posSettings.setPrinterUseUnicode(printingForm.printerUseUnicode);
+    posSettings.setPrinterArabicShaping(printingForm.printerArabicShaping);
     posSettings.setPrinterTrimDecimals(printingForm.printerTrimDecimals);
+    posSettings.setBillLanguagePolicy(billLanguagePolicy);
+    posSettings.setKotLanguagePolicy(kotLanguagePolicy);
     posSettings.setBillShowName(printingForm.billShowName);
     posSettings.setBillShowAddress(printingForm.billShowAddress);
     posSettings.setBillShowPhone(printingForm.billShowPhone);
@@ -1121,6 +1161,8 @@ export default function SettingsPage() {
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
     await Promise.all([
       api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
+      api.put('/settings/bill_language_policy', { value: JSON.stringify(billLanguagePolicy) }),
+      api.put('/settings/kot_language_policy', { value: JSON.stringify(kotLanguagePolicy) }),
       ...([
         ['bill_show_name', printingForm.billShowName],
         ['bill_show_address', printingForm.billShowAddress],
@@ -1181,9 +1223,10 @@ export default function SettingsPage() {
   const [form, setForm] = useState<BusinessForm>(savedBusiness);
   const [savingBusiness, setSavingBusiness] = useState(false);
   // Server-resolved: the active country tax pack's format if it declares
-  // one, else the static countries.ts fallback, else null. Never blocks
-  // the save — just drives the non-blocking warning below the field.
+  // one, else the static countries.ts fallback, else null. The backend is
+  // authoritative; this drives immediate warning feedback below the field.
   const [taxIdFormat, setTaxIdFormat] = useState<{ pattern: string; description: string } | null>(null);
+  const [taxIdFormatCountryCode, setTaxIdFormatCountryCode] = useState('');
   // check 25 (main/routes/tax-packs.ts) rejects the textbook nested-
   // quantifier ReDoS shape at pack-activation time, but that's a known-shape
   // heuristic, not a formal safety proof. This runs on every keystroke, so
@@ -1194,10 +1237,10 @@ export default function SettingsPage() {
   const TAX_ID_WARNING_MAX_LENGTH = 24;
   const taxIdWarning = (() => {
     const value = form.taxRegistrationNumber.trim();
-    // taxIdFormat was resolved for savedBusiness.countryCode; if the country
-    // field has since been edited (not yet saved), the format is stale and
-    // must not be shown against the newly selected country's label.
-    if (!taxIdFormat || !value || form.countryCode !== savedBusiness.countryCode) return null;
+    // Do not show a format against a country other than the one for which the
+    // server resolved it. This also keeps a rejected country-change response
+    // visible for the submitted country without mislabeling it after a revert.
+    if (!taxIdFormat || !value || form.countryCode !== taxIdFormatCountryCode) return null;
     if (value.length > TAX_ID_WARNING_MAX_LENGTH) return null;
     try {
       return new RegExp(taxIdFormat.pattern, 'i').test(value) ? null : taxIdFormat.description;
@@ -1352,10 +1395,9 @@ export default function SettingsPage() {
       ]);
 
       const d = businessRes.data;
-      const matchedCountry = COUNTRIES.find(c => c.currency === d.currency && c.timezone === d.timezone);
       const loaded: BusinessForm = {
         businessName: d.business_name || '',
-        countryCode: matchedCountry?.code || '',
+        countryCode: d.country || '',
         timezone: d.timezone || '',
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
@@ -1372,6 +1414,7 @@ export default function SettingsPage() {
       setSavedBusiness(loaded);
       setForm(loaded);
       setTaxIdFormat(d.tax_id_format || null);
+      setTaxIdFormatCountryCode(loaded.countryCode);
       const billDisplay = {
         billShowName: d.bill_show_name !== false,
         billShowAddress: d.bill_show_address !== false,
@@ -1543,6 +1586,27 @@ export default function SettingsPage() {
       setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
     }).catch(() => {});
+    api.get('/settings/bill_language_policy').then((res) => {
+      const policy = parseStoredReceiptLanguagePolicy(res.data?.setting?.value);
+      if (!policy) return;
+      posSettings.setBillLanguagePolicy(policy);
+      const formPatch = {
+        receiptPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+        receiptSecondLanguage: policy.additional[0] ?? 'none',
+      };
+      setPrintingForm((p) => ({ ...p, ...formPatch }));
+      setSavedPrinting((p) => ({ ...p, ...formPatch }));
+    }).catch(() => {});
+    api.get('/settings/kot_language_policy').then((res) => {
+      const policy = parseStoredKotLanguagePolicy(res.data?.setting?.value);
+      if (!policy) return;
+      posSettings.setKotLanguagePolicy(policy);
+      const formPatch = {
+        kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+      };
+      setPrintingForm((p) => ({ ...p, ...formPatch }));
+      setSavedPrinting((p) => ({ ...p, ...formPatch }));
+    }).catch(() => {});
     Promise.all([
       api.get('/settings/bill-templates').catch(() => null),
       api.get('/settings/bill_template').catch(() => null),
@@ -1629,10 +1693,9 @@ export default function SettingsPage() {
 
     api.get('/settings/business').then((res) => {
       const d = res.data;
-      const matchedCountry = COUNTRIES.find(c => c.currency === d.currency && c.timezone === d.timezone);
       const loaded: BusinessForm = {
         businessName: d.business_name || '',
-        countryCode: matchedCountry?.code || '',
+        countryCode: d.country || '',
         timezone: d.timezone || '',
         currency: d.currency || '',
         billingType: d.billing_type === 'prepaid' ? 'prepaid' : 'postpaid',
@@ -1649,6 +1712,7 @@ export default function SettingsPage() {
       setSavedBusiness(loaded);
       setForm(loaded);
       setTaxIdFormat(d.tax_id_format || null);
+      setTaxIdFormatCountryCode(loaded.countryCode);
       // Sync to pos-settings store for bill printing
       const billDisplay = {
         billShowName: d.bill_show_name !== false,
@@ -1974,11 +2038,13 @@ export default function SettingsPage() {
         number_digits: form.numberDigits,
         calendar: form.calendar,
       });
+      let resolvedTaxIdFormat = putRes.data?.tax_id_format || null;
       if (savedBusiness.countryCode !== form.countryCode) {
         const taxSetting = await api.get('/settings/taxes_enabled').catch(() => null);
         if (taxSetting?.data.setting?.value === 'true') {
           try {
-            await api.post('/tax-packs/ensure-country', { country: form.countryCode });
+            const ensureRes = await api.post('/tax-packs/ensure-country', { country: form.countryCode });
+            resolvedTaxIdFormat = ensureRes.data?.tax_id_format || null;
           } catch (error) {
             const status = (error as { response?: { status?: number } }).response?.status;
             if (status === 404) {
@@ -2006,7 +2072,8 @@ export default function SettingsPage() {
       const updatedForm = { ...form, businessPhone: normalizedBusinessPhone };
       setSavedBusiness(updatedForm);
       setForm(updatedForm);
-      setTaxIdFormat(putRes.data?.tax_id_format || null);
+      setTaxIdFormat(resolvedTaxIdFormat);
+      setTaxIdFormatCountryCode(form.countryCode);
       posSettings.setBillTaxRegistrationNumber(form.taxRegistrationNumber);
       posSettings.setBillAddress(form.businessAddress);
       posSettings.setBillPhone(normalizedBusinessPhone);
@@ -2014,10 +2081,18 @@ export default function SettingsPage() {
       posSettings.setTablesRequired(form.tablesRequired);
       updateCurrentTenant({ currency: form.currency, timezone: form.timezone, country: form.countryCode, currency_display: form.currencyDisplay, number_digits: form.numberDigits, calendar: form.calendar });
       if (!silent) toast.success(t('storeSaved'));
-    } catch (err) {
+    } catch (err: unknown) {
+      const responseData = (err as { response?: { data?: unknown } }).response?.data;
+      const serverError = responseData && typeof responseData === 'object'
+        ? responseData as { error?: string; tax_id_format?: { pattern: string; description: string } }
+        : null;
       if (!silent) {
-        const message = t('saveFailed');
+        const message = serverError?.error || t('saveFailed');
         toast.error(message);
+      }
+      if (serverError?.tax_id_format) {
+        setTaxIdFormat(serverError.tax_id_format);
+        setTaxIdFormatCountryCode(form.countryCode);
       }
       throw err;
     } finally {
@@ -2252,30 +2327,50 @@ export default function SettingsPage() {
                       <select
                         value={form.countryCode}
                         onChange={(e) => {
-                          const country = COUNTRIES.find(c => c.code === e.target.value);
-                          setForm((p) => ({
-                            ...p,
-                            countryCode: e.target.value,
-                            currency: country?.currency || p.currency,
-                            timezone: country?.timezone || p.timezone,
-                          }));
+                           const country = COUNTRIES.find(c => c.code === e.target.value);
+                           setForm((p) => {
+                             const previousCountry = getCountryByCode(p.countryCode);
+                             const timezoneWasDefault = !previousCountry || p.timezone === previousCountry.timezone;
+                             const options = country?.localeOptions;
+                             // Re-evaluate locale display preferences against the
+                             // newly selected country (#390): keep supported values
+                             // and reset unsupported ones to their neutral defaults.
+                             const currencyDisplay = (options?.currencyDisplay?.includes(p.currencyDisplay) || p.currencyDisplay === 'rial')
+                               ? p.currencyDisplay
+                               : 'rial';
+                             const numberDigits = (options?.digits?.includes(p.numberDigits) || p.numberDigits === 'locale')
+                               ? p.numberDigits
+                               : 'locale';
+                             const calendar = (options?.calendar?.includes(p.calendar) || p.calendar === 'locale')
+                               ? p.calendar
+                               : 'locale';
+                             return {
+                               ...p,
+                               countryCode: e.target.value,
+                               currency: country?.currency || p.currency,
+                               timezone: timezoneWasDefault
+                                 ? (country?.timezone || p.timezone)
+                                 : p.timezone,
+                               currencyDisplay,
+                               numberDigits,
+                               calendar,
+                             };
+                           });
                         }}
                         aria-label={tCommon('search')}
                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
                       >
                         <option value="">{t('selectCountry')}</option>
-                        {COUNTRIES.map((c) => (
-                          <option key={c.code} value={c.code}>{countryName(c.code)}</option>
+                        {sortedCountries.map((c) => (
+                          <option key={c.code} value={c.code}>{getLocalizedCountryName(c.code, locale)}</option>
                         ))}
                       </select>
-                      <input 
-                        type="text" 
-                        value={form.timezone} 
-                        onChange={(e) => setForm((p) => ({ ...p, timezone: e.target.value }))}
-                        placeholder={t('timezoneAutoFilled')}
-                        className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-gray-50" 
-                        readOnly
-                        dir="ltr"
+                      <TimeZoneSelect
+                        value={form.timezone}
+                        onChange={(timezone) => setForm((p) => ({ ...p, timezone }))}
+                        placeholder={t('selectTimezone')}
+                        className="px-3 py-2 text-sm border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-brand bg-white"
+                        ariaLabel={t('timezone')}
                       />
                       <input 
                         type="text" 
@@ -2290,7 +2385,7 @@ export default function SettingsPage() {
                   ) : (
                     <div className="grid grid-cols-3 gap-2">
                       <p className="font-medium text-gray-900">
-                        {form.countryCode ? countryName(form.countryCode) : '—'}
+                        {form.countryCode ? getLocalizedCountryName(form.countryCode, locale) : '—'}
                       </p>
                       <p className="font-medium text-gray-900">
                         <Ltr>{form.timezone || '—'}</Ltr>
@@ -3787,10 +3882,66 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900">{t('printerArabicShaping')}</p>
+                    <p className="text-sm text-gray-500">{t('printerArabicShapingHint')}</p>
+                  </div>
+                  <Toggle value={printingForm.printerArabicShaping} onChange={(v) => setPrintingForm((p) => ({ ...p, printerArabicShaping: v }))} />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900">{t('trimDecimals')}</p>
                     <p className="text-sm text-gray-500">{t('trimDecimalsHint')}</p>
                   </div>
                   <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }))} />
+                </div>
+                <div className="pt-4 border-t border-gray-100">
+                  <p className="font-medium text-gray-900 mb-1">{t('receiptLanguage')}</p>
+                  <p className="text-sm text-gray-500 mb-3">{t('receiptLanguageHint')}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+                    <div>
+                      <label htmlFor="receipt-primary-language" className="block text-sm font-medium text-gray-700 mb-1">{t('receiptLanguage')}</label>
+                      <select
+                        id="receipt-primary-language"
+                        value={printingForm.receiptPrimaryLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, receiptPrimaryLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-gray-200 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="inherit">{t('sameAsStore')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="receipt-second-language" className="block text-sm font-medium text-gray-700 mb-1">{t('secondReceiptLanguage')}</label>
+                      <select
+                        id="receipt-second-language"
+                        value={printingForm.receiptSecondLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, receiptSecondLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-gray-200 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="none">{t('secondLanguageNone')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="kot-language" className="block text-sm font-medium text-gray-700 mb-1">{t('kotPrintLanguage')}</label>
+                      <select
+                        id="kot-language"
+                        value={printingForm.kotLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, kotLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-gray-200 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="inherit">{t('sameAsStore')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">{t('kotPrintLanguageHint')}</p>
                 </div>
                 <div className="pt-4 border-t border-gray-100">
                   <p className="font-medium text-gray-900 mb-1">{t('billContent')}</p>

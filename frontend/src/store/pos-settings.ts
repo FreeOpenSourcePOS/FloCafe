@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { Language } from '@/lib/i18n';
+import { defaultPrintLanguagePolicy } from '@print/policy';
+import type {
+  KotLanguagePolicy,
+  ReceiptLanguagePolicy,
+} from '@print/types';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 export type PrinterPrintMode = 'escpos' | 'browser';
@@ -45,6 +50,10 @@ export interface PosSettingsState {
   billShowTableNumber: boolean;
   // Thermal printer unicode support
   printerUseUnicode: boolean;
+  // Printer firmware performs Arabic/Persian contextual shaping and
+  // bidirectional ordering (#437). Off by default so generic ESC/POS
+  // hardware never receives unshaped Persian bytes.
+  printerArabicShaping: boolean;
   // Receipt amount formatting
   printerTrimDecimals: boolean;
   // Kitchen workflow toggles (issue #133) — business-level settings, synced
@@ -55,6 +64,10 @@ export interface PosSettingsState {
   // the backend on auth load so the sidebar can hide the nav entry when the
   // feature is off, and updated by the WhatsApp page after the user toggles.
   whatsappEnabled: boolean;
+  // Print language policies (#441). Backend-authoritative tenant settings
+  // mirrored here for renderer-side reads (renderers adopt them in #442+).
+  billLanguagePolicy: ReceiptLanguagePolicy;
+  kotLanguagePolicy: KotLanguagePolicy;
   // Actions
   setShowProductImages: (show: boolean) => void;
   setCustomerMandatory: (mandatory: boolean) => void;
@@ -83,10 +96,13 @@ export interface PosSettingsState {
   setBillingType: (v: 'postpaid' | 'prepaid') => void;
   setTablesRequired: (v: boolean) => void;
   setPrinterUseUnicode: (v: boolean) => void;
+  setPrinterArabicShaping: (v: boolean) => void;
   setPrinterTrimDecimals: (v: boolean) => void;
   setKdsEnabled: (v: boolean) => void;
   setKotPrintingEnabled: (v: boolean) => void;
   setWhatsappEnabled: (v: boolean) => void;
+  setBillLanguagePolicy: (policy: ReceiptLanguagePolicy) => void;
+  setKotLanguagePolicy: (policy: KotLanguagePolicy) => void;
 }
 
 export const usePosSettingsStore = create<PosSettingsState>()(
@@ -122,6 +138,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowCustomerPhone: true,
       billShowTableNumber: true,
       printerUseUnicode: false,
+      printerArabicShaping: false,
       printerTrimDecimals: false,
       kdsEnabled: true,
       kotPrintingEnabled: true,
@@ -130,6 +147,10 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       // on auth load (see Sidebar.tsx) and updated by the WhatsApp page after
       // a successful enable/disable toggle.
       whatsappEnabled: false,
+      // Print language policies default to inherit/none until synced from
+      // the backend settings API (#441).
+      billLanguagePolicy: defaultPrintLanguagePolicy(),
+      kotLanguagePolicy: defaultPrintLanguagePolicy(),
       // Actions
       setShowProductImages: (show) => set({ showProductImages: show }),
       setCustomerMandatory: (mandatory) => set({ customerMandatory: mandatory }),
@@ -158,19 +179,21 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillingType: (v) => set({ billingType: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
       setPrinterUseUnicode: (v) => set({ printerUseUnicode: v }),
+      setPrinterArabicShaping: (v) => set({ printerArabicShaping: v }),
       setPrinterTrimDecimals: (v) => set({ printerTrimDecimals: v }),
       setKdsEnabled: (v) => set({ kdsEnabled: v }),
       setKotPrintingEnabled: (v) => set({ kotPrintingEnabled: v }),
       setWhatsappEnabled: (v: boolean) => set({ whatsappEnabled: v }),
+      setBillLanguagePolicy: (billLanguagePolicy) => set({ billLanguagePolicy }),
+      setKotLanguagePolicy: (kotLanguagePolicy) => set({ kotLanguagePolicy }),
     }),
     {
       name: 'pos-settings',
-      // Don't persist whatsappEnabled — it's always synced from the
-      // backend (Sidebar fetches /whatsapp/status on mount, WhatsApp page
-      // updates on toggle). Stale persisted values would mask the real
-      // state for tenants who enable/disable across devices.
+      // Don't persist whatsappEnabled or the print language policies — both
+      // are always synced from the backend. Stale persisted values would mask
+      // the real state for tenants who change settings across devices.
       partialize: (s) => Object.fromEntries(
-        Object.entries(s).filter(([k]) => k !== 'whatsappEnabled'),
+        Object.entries(s).filter(([k]) => k !== 'whatsappEnabled' && k !== 'billLanguagePolicy' && k !== 'kotLanguagePolicy'),
       ) as PosSettingsState,
       // v1: billGstin/billShowGstn (India-specific names) renamed to the
       // generic billTaxRegistrationNumber/billShowTaxId. Carry existing

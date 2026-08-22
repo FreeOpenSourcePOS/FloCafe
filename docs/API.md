@@ -820,7 +820,7 @@ Z Report (close shift).
 ## Settings
 
 ### GET `/api/settings/business`
-Get business settings.
+Get business settings. Locale display preferences (`currency_display`, `number_digits`, `calendar`) are resolved against the active country's declared `localeOptions`; stale or unsupported stored values are normalized to neutral defaults.
 
 **Response:**
 ```json
@@ -828,7 +828,11 @@ Get business settings.
   "business_name": "My Restaurant",
   "timezone": "Asia/Kolkata",
   "currency": "INR",
-  "tax_registration_number": "22AAAAA0000A1Z5"
+  "country": "IN",
+  "tax_registration_number": "22AAAAA0000A1Z5",
+  "currency_display": "rial",
+  "number_digits": "locale",
+  "calendar": "locale"
 }
 ```
 
@@ -837,10 +841,30 @@ Get business settings.
 ### PUT `/api/settings/business`
 Update business settings.
 
+`timezone` is validated as an IANA identifier; invalid values return HTTP 400 with `"Invalid timezone, currency, or country"`.
+
+When `tax_registration_number` is provided, the backend validates it against the active country pack's registration format. A mismatch returns HTTP 400:
+
+```json
+{
+  "error": "Tax ID does not match the expected IN format: 15-digit GSTIN",
+  "tax_id_format": { "pattern": "...", "description": "..." }
+}
+```
+
+Locale display preferences (`currency_display`, `number_digits`, `calendar`) are validated against the effective country's `localeOptions`. Unsupported values return HTTP 400 with `"Invalid <key> for country <code>"`. Changing the country normalizes any previously stored preferences that are not supported by the new country to their neutral defaults (`rial`, `locale`, `locale`).
+
 ---
 
 ### GET `/api/settings/tax`
 Get tax settings.
+
+---
+
+### PUT `/api/settings/tax`
+Update tax settings (owner/manager only).
+
+Validates `tax_registration_number` against the active country pack format, same as `PUT /api/settings/business`.
 
 ---
 
@@ -958,7 +982,8 @@ Print the bill identified by `billId` or the bill associated with `orderId`.
   "billId": 123,
   "useUnicode": false,
   "isReprint": false,
-  "preview": false
+  "preview": false,
+  "arabicShaping": false
 }
 ```
 
@@ -971,7 +996,8 @@ Print a kitchen order ticket for `orderId`. A caller may provide `stationName` a
 ```json
 {
   "orderId": 123,
-  "useUnicode": false
+  "useUnicode": false,
+  "arabicShaping": false
 }
 ```
 

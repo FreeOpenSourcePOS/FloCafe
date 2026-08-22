@@ -39,7 +39,7 @@ export function isServerAppRunning(): boolean {
 
 function getStaticDir(): string | null {
   const candidates = [
-    path.join(__dirname, '../frontend/out'),
+    path.join(__dirname, '../../frontend/out'),
     path.join(process.resourcesPath || '', 'frontend-out'),
   ];
 

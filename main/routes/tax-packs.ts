@@ -4,6 +4,7 @@ import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue, now, upsertSettings, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
 import { TaxEngine } from '../services/tax-engine';
+import { resolveTaxIdFormat } from '../services/tax';
 import type { CountryPack, PluginPrintTemplate, TaxBehavior, TaxCategory, TaxRule } from '../tax-packs/types';
 import { BUNDLED_COUNTRY_PACKS } from '../tax-packs/bundled';
 import {
@@ -915,7 +916,13 @@ router.post('/ensure-country', requireRole('owner', 'manager'), asyncHandler(asy
         .run(definition.defaultCategories.addon);
     });
     upsertSettings({ taxes_enabled: 'true' });
-    return res.json({ enabled: true, country, pack_id: pack.id, version: version.version });
+    return res.json({
+      enabled: true,
+      country,
+      pack_id: pack.id,
+      version: version.version,
+      tax_id_format: resolveTaxIdFormat(country),
+    });
   } catch (error: any) {
     const statusCode = error.statusCode || 502;
     return res.status(statusCode).json({ error: error.message || 'Could not install the country tax plugin' });

@@ -1004,7 +1004,52 @@ async function main() {
       publisher: 'FreeOpenSourcePOS',
       registrationNumberFormat: overrideFormat,
     };
+    LEGACY_TRUSTED_PACK_DIGESTS[formatOverridePack.id] = taxPackSha256(JSON.stringify(formatOverridePack));
     installAndActivateTestTaxPack(db, formatOverridePack);
+
+    const invalidBusinessRes = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { country: 'IN', tax_registration_number: 'GSTIN-INVALID' },
+    });
+    assertEqual(invalidBusinessRes.status, 400, 'business settings reject a tax ID that fails the active pack format');
+    assertEqual(
+      JSON.stringify(invalidBusinessRes.data.tax_id_format),
+      JSON.stringify(overrideFormat),
+      'business validation returns the active pack format for the caller',
+    );
+    assertEqual(
+      db.prepare("SELECT value FROM settings WHERE key = 'tax_registration_number'").get()?.value || '',
+      '',
+      'rejected business settings do not persist the invalid tax ID',
+    );
+
+    const validBusinessRes = await api(baseUrl, '/api/settings/business', {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { country: 'IN', tax_registration_number: 'TESTPACKFMT-1234' },
+    });
+    assertEqual(validBusinessRes.status, 200, 'business settings accept a tax ID matching the active pack format');
+
+    const invalidTaxRes = await api(baseUrl, '/api/settings/tax', {
+      method: 'PUT',
+      headers: owner.authHeader,
+      body: { country: 'IN', tax_registration_number: 'GSTIN-INVALID' },
+    });
+    assertEqual(invalidTaxRes.status, 400, 'tax settings reject a tax ID that fails the active pack format');
+
+    const ensuredCountryRes = await api(baseUrl, '/api/tax-packs/ensure-country', {
+      method: 'POST',
+      headers: owner.authHeader,
+      body: { country: 'IN' },
+    });
+    assertEqual(ensuredCountryRes.status, 200, 'ensuring an already-installed country pack succeeds');
+    assertEqual(
+      JSON.stringify(ensuredCountryRes.data.tax_id_format),
+      JSON.stringify(overrideFormat),
+      'country-pack activation returns the newly active registration format',
+    );
+
     assertEqual(
       JSON.stringify(resolveTaxIdFormat('IN')),
       JSON.stringify(overrideFormat),

@@ -50,6 +50,31 @@ async function setLanguage(page: Page, value: string): Promise<void> {
   });
 }
 
+async function setPosSetting(page: Page, key: string, value: boolean | string): Promise<void> {
+  // Keep the override in place before the next document initializes the
+  // persisted Zustand store. The settings page also fetches the server value
+  // asynchronously, so changing localStorage only after that page has loaded
+  // can be overwritten by its late response before print-test mounts.
+  await page.addInitScript(({ key: initKey, value: initValue }) => {
+    try {
+      const raw = localStorage.getItem('pos-settings');
+      const parsed = raw ? JSON.parse(raw) : { state: {}, version: 3 };
+      parsed.state = { ...parsed.state, [initKey]: initValue };
+      parsed.version ??= 3;
+      localStorage.setItem('pos-settings', JSON.stringify(parsed));
+    } catch {}
+  }, { key, value });
+  await page.evaluate(({ key, value }) => {
+    try {
+      const raw = localStorage.getItem('pos-settings');
+      const parsed = raw ? JSON.parse(raw) : { state: {}, version: 3 };
+      parsed.state = { ...parsed.state, [key]: value };
+      parsed.version ??= 3;
+      localStorage.setItem('pos-settings', JSON.stringify(parsed));
+    } catch {}
+  }, { key, value });
+}
+
 test.describe('Localized Error Fallbacks', () => {
   test('Login failure renders localized fallback across all 4 locales (EN, ES, PT, FA)', async ({ page }) => {
     await page.route('**/api/auth/login', (route) => {
@@ -224,6 +249,9 @@ test.describe('Localized Error Fallbacks', () => {
       });
 
       await page.goto(`${BASE}/settings?tab=account`);
+      // The account card is populated asynchronously; wait for its fetches to
+      // settle before clicking a conditionally rendered verification action.
+      await page.waitForLoadState('networkidle');
       const sendVerifyBtn = page.locator('button', { hasText: /Send verification email|ارسال ایمیل/ }).first();
       if (await sendVerifyBtn.isVisible()) {
         await sendVerifyBtn.click();
@@ -232,57 +260,21 @@ test.describe('Localized Error Fallbacks', () => {
         await captureScreenshot(page, 'error-settings-verification-email-fa.png');
       }
 
-      // 3. Print test KOT disabled error toast in English and Persian
+      // 3. Print test hides the manual KOT action when KOT printing is disabled.
       await setLanguage(page, 'en');
-      await page.route('**/api/settings', (route) => {
-        if (route.request().method() === 'GET') {
-          route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              kot_enabled: 'false',
-              kds_enabled: 'false',
-              language: 'en',
-            }),
-          });
-        } else {
-          route.continue();
-        }
-      });
+      await setPosSetting(page, 'kotPrintingEnabled', false);
 
       await page.goto(`${BASE}/print-test`);
-      const kotBtnEn = page.locator('button', { hasText: /KOT/ }).first();
-      if (await kotBtnEn.isVisible()) {
-        await kotBtnEn.click();
-        await expect(page.locator('text=KOT disabled')).toBeVisible({ timeout: 5000 });
-        await captureScreenshot(page, 'error-print-test-kot-disabled-en.png');
-      }
+      await expect(page.getByRole('button', { name: /KOT \(Kitchen Ticket\)/ })).toHaveCount(0);
+      await captureScreenshot(page, 'error-print-test-kot-disabled-en.png');
 
       // Persian print test KOT disabled
       await setLanguage(page, 'fa');
-      await page.route('**/api/settings', (route) => {
-        if (route.request().method() === 'GET') {
-          route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            body: JSON.stringify({
-              kot_enabled: 'false',
-              kds_enabled: 'false',
-              language: 'fa',
-            }),
-          });
-        } else {
-          route.continue();
-        }
-      });
+      await setPosSetting(page, 'kotPrintingEnabled', false);
 
       await page.goto(`${BASE}/print-test`);
-      const kotBtnFa = page.locator('button', { hasText: /KOT/ }).first();
-      if (await kotBtnFa.isVisible()) {
-        await kotBtnFa.click();
-        await expect(page.locator('text=KOT غیرفعال است')).toBeVisible({ timeout: 5000 });
-        await captureScreenshot(page, 'error-print-test-kot-disabled-fa.png');
-      }
+      await expect(page.getByRole('button', { name: /KOT \(Kitchen Ticket\)/ })).toHaveCount(0);
+      await captureScreenshot(page, 'error-print-test-kot-disabled-fa.png');
 
       // 4. POS Hold Order error toast
       await page.route('**/api/orders/hold', (route) => {
@@ -311,7 +303,9 @@ test.describe('Localized Error Fallbacks', () => {
         }
       }
     } finally {
-      await setLanguage(page, 'en');
+      // Preserve the original assertion failure if Playwright has already
+      // closed the page while timing out; cleanup must not mask it.
+      await setLanguage(page, 'en').catch(() => {});
     }
   });
 });

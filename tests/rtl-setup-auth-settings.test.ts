@@ -82,6 +82,8 @@ function loadLtrComponent(): {
     let resolvedRequest = request;
     if (request.startsWith('@/')) {
       resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
+    } else if (request.startsWith('@print/')) {
+      resolvedRequest = path.resolve(ROOT, 'shared/print', request.slice('@print/'.length));
     }
     return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
   };
@@ -173,6 +175,8 @@ async function run(): Promise<void> {
       let resolvedRequest = request;
       if (request.startsWith('@/')) {
         resolvedRequest = path.resolve(ROOT, 'frontend/src', request.slice(2));
+      } else if (request.startsWith('@print/')) {
+        resolvedRequest = path.resolve(ROOT, 'shared/print', request.slice('@print/'.length));
       }
       return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
     };

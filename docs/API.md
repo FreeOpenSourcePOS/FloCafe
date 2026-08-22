@@ -982,7 +982,8 @@ Print the bill identified by `billId` or the bill associated with `orderId`.
   "billId": 123,
   "useUnicode": false,
   "isReprint": false,
-  "preview": false
+  "preview": false,
+  "arabicShaping": false
 }
 ```
 
@@ -995,7 +996,8 @@ Print a kitchen order ticket for `orderId`. A caller may provide `stationName` a
 ```json
 {
   "orderId": 123,
-  "useUnicode": false
+  "useUnicode": false,
+  "arabicShaping": false
 }
 ```
 

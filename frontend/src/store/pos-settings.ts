@@ -45,6 +45,10 @@ export interface PosSettingsState {
   billShowTableNumber: boolean;
   // Thermal printer unicode support
   printerUseUnicode: boolean;
+  // Printer firmware performs Arabic/Persian contextual shaping and
+  // bidirectional ordering (#437). Off by default so generic ESC/POS
+  // hardware never receives unshaped Persian bytes.
+  printerArabicShaping: boolean;
   // Receipt amount formatting
   printerTrimDecimals: boolean;
   // Kitchen workflow toggles (issue #133) — business-level settings, synced
@@ -83,6 +87,7 @@ export interface PosSettingsState {
   setBillingType: (v: 'postpaid' | 'prepaid') => void;
   setTablesRequired: (v: boolean) => void;
   setPrinterUseUnicode: (v: boolean) => void;
+  setPrinterArabicShaping: (v: boolean) => void;
   setPrinterTrimDecimals: (v: boolean) => void;
   setKdsEnabled: (v: boolean) => void;
   setKotPrintingEnabled: (v: boolean) => void;
@@ -122,6 +127,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       billShowCustomerPhone: true,
       billShowTableNumber: true,
       printerUseUnicode: false,
+      printerArabicShaping: false,
       printerTrimDecimals: false,
       kdsEnabled: true,
       kotPrintingEnabled: true,
@@ -158,6 +164,7 @@ export const usePosSettingsStore = create<PosSettingsState>()(
       setBillingType: (v) => set({ billingType: v }),
       setTablesRequired: (v) => set({ tablesRequired: v }),
       setPrinterUseUnicode: (v) => set({ printerUseUnicode: v }),
+      setPrinterArabicShaping: (v) => set({ printerArabicShaping: v }),
       setPrinterTrimDecimals: (v) => set({ printerTrimDecimals: v }),
       setKdsEnabled: (v) => set({ kdsEnabled: v }),
       setKotPrintingEnabled: (v) => set({ kotPrintingEnabled: v }),

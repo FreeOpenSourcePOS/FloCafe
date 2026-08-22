@@ -15,6 +15,12 @@ export interface KotOptions {
   paperWidth?: 58 | 80;
   /** Kitchen station name to print on KOT */
   stationName?: string;
+  /**
+   * Printer firmware performs Arabic/Persian contextual shaping (#437).
+   * Lets pure ASCII+Arabic lines through the unsupported-character guard.
+   * Default: false.
+   */
+  arabicShaping?: boolean;
 }
 
 // Must match main/printers/profiles.ts generic-escpos-58/80 fontAColumns.
@@ -29,7 +35,7 @@ export function buildKotBytes(
   opts: KotOptions = {},
   warnings?: PrintWarning[]
 ): Uint8Array {
-  const { paperWidth = 58 } = opts;
+  const { paperWidth = 58, arabicShaping = false } = opts;
   const cols = CHARS[paperWidth];
 
   const enc = new ReceiptPrinterEncoder({ columns: cols });
@@ -45,14 +51,14 @@ export function buildKotBytes(
   enc.text(`Order #${order.order_number}`).newline();
 
   if (order.table) {
-    safePrinterText(enc, `Table: ${order.table.name}`, warnings).newline();
+    safePrinterText(enc, `Table: ${order.table.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
 
   const orderType = order.type.replace('_', ' ').toUpperCase();
   enc.text(`Type: ${orderType}`).newline();
 
   if (order.customer) {
-    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings).newline();
+    safePrinterText(enc, `Customer: ${order.customer.name}`, warnings, false, arabicShaping, undefined, cols).newline();
   }
 
   enc.bold(false);
@@ -74,7 +80,7 @@ export function buildKotBytes(
     // Item name with quantity
     const qtyName = `${item.quantity}x ${item.product_name}`;
     enc.bold(true);
-    safePrinterText(enc, truncate(qtyName, cols), warnings).newline();
+    safePrinterText(enc, truncate(qtyName, cols), warnings, false, arabicShaping).newline();
     enc.bold(false);
 
     // Addons can come from older/API paths as a JSON string. Normalize before
@@ -85,14 +91,14 @@ export function buildKotBytes(
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
           const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
-          safePrinterText(enc, `   + ${truncate(addonText, cols - 4)}`, warnings).newline();
+          safePrinterText(enc, `   + ${truncate(addonText, cols - 5)}`, warnings, false, arabicShaping).newline();
         }
       }
     }
 
     // Special instructions
     if (item.special_instructions) {
-      safePrinterText(enc, `   >> ${truncate(item.special_instructions, cols - 6)}`, warnings).newline();
+      safePrinterText(enc, `   >> ${truncate(item.special_instructions, cols - 6)}`, warnings, false, arabicShaping).newline();
     }
 
     enc.newline();

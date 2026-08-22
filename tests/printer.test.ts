@@ -47,6 +47,7 @@ function assert(label: string, cond: boolean, detail?: string) {
  */
 function loadFrontendPrinterModules(): {
   receiptEncoder: typeof import('../frontend/src/lib/printer/receipt-encoder');
+  kotEncoder: typeof import('../frontend/src/lib/printer/kot-encoder');
   taxBillEncoder: typeof import('../frontend/src/lib/printer/tax-bill-encoder');
   unicode: typeof import('../frontend/src/lib/printer/unicode');
   warnings: typeof import('../frontend/src/lib/printer/warnings');
@@ -71,6 +72,7 @@ function loadFrontendPrinterModules(): {
   try {
     return {
       receiptEncoder: require('../frontend/src/lib/printer/receipt-encoder'),
+      kotEncoder: require('../frontend/src/lib/printer/kot-encoder'),
       taxBillEncoder: require('../frontend/src/lib/printer/tax-bill-encoder'),
       unicode: require('../frontend/src/lib/printer/unicode'),
       warnings: require('../frontend/src/lib/printer/warnings'),
@@ -78,6 +80,42 @@ function loadFrontendPrinterModules(): {
     };
   } finally {
     moduleApi._resolveFilename = originalResolveFilename;
+  }
+}
+
+function loadWarningsToastWithCapture(captured: string[]): typeof import('../frontend/src/lib/printer/warnings-toast') {
+  const path = require('path');
+  const moduleApi = require('module') as {
+    _resolveFilename: (...args: any[]) => string;
+  };
+  const toastPath = require.resolve('react-hot-toast', { paths: [path.resolve(__dirname, '../frontend')] });
+  const previousToastModule = require.cache[toastPath];
+  require.cache[toastPath] = {
+    id: toastPath,
+    filename: toastPath,
+    loaded: true,
+    exports: {
+      __esModule: true,
+      default: (message: string) => captured.push(message),
+    },
+  } as any;
+  const originalResolveFilename = moduleApi._resolveFilename;
+  moduleApi._resolveFilename = function (request: string, parent: any, isMain: boolean, options?: any) {
+    let resolvedRequest = request;
+    if (request === '@countries') {
+      resolvedRequest = path.resolve(__dirname, '../main/countries.ts');
+    } else if (request.startsWith('@/')) {
+      resolvedRequest = path.resolve(__dirname, '../frontend/src', request.slice(2));
+    }
+    return originalResolveFilename.call(this, resolvedRequest, parent, isMain, options);
+  };
+
+  try {
+    return require('../frontend/src/lib/printer/warnings-toast');
+  } finally {
+    moduleApi._resolveFilename = originalResolveFilename;
+    if (previousToastModule) require.cache[toastPath] = previousToastModule;
+    else delete require.cache[toastPath];
   }
 }
 
@@ -258,6 +296,56 @@ console.log('\n✅ Test 1b: Unsupported receipt text is skipped with a warning')
 
 console.log('\n✅ Test 1b2: Arabic shaping capability gate');
 {
+  // Frontend safePrinterText mirrors the backend rule: default skip, shaping
+  // override passes pure ASCII+Persian lines, mixed-script lines stay blocked.
+  {
+    const { warnings: feWarnings } = loadFrontendPrinterModules();
+    const makeEnc = () => {
+      const out: string[] = [];
+      const enc: any = { out, text(v: string) { out.push(v); return enc; } };
+      return enc;
+    };
+
+    const plainEnc = makeEnc();
+    const plainWarnings: any[] = [];
+    feWarnings.safePrinterText(plainEnc, 'چای زعفرانی', plainWarnings);
+    assert('frontend safePrinterText skips Persian by default', plainEnc.out.length === 0 && plainWarnings.length === 1);
+
+    const shapedEnc = makeEnc();
+    const shapedFeWarnings: any[] = [];
+    feWarnings.safePrinterText(shapedEnc, 'چای زعفرانی', shapedFeWarnings, false, true);
+    assert('frontend safePrinterText emits Persian with shaping on', shapedEnc.out.length === 1 && shapedEnc.out[0].includes('چای زعفرانی') && shapedFeWarnings.length === 0);
+
+    const mixedEnc = makeEnc();
+    const mixedFeWarnings: any[] = [];
+    feWarnings.safePrinterText(mixedEnc, 'کافه Café', mixedFeWarnings, false, true);
+    assert('frontend safePrinterText still skips mixed-script line with shaping on', mixedEnc.out.length === 0 && mixedFeWarnings.length === 1);
+
+    for (const [label, value] of [
+      ['ZWNJ', 'می\u200Cرود'],
+      ['ZWJ', 'می\u200Dرود'],
+      ['RLM', 'می\u200Fرود'],
+      ['ellipsis', 'می\u200Cرود\u2026'],
+    ] as const) {
+      const formatControlEnc = makeEnc();
+      const formatControlWarnings: any[] = [];
+      feWarnings.safePrinterText(formatControlEnc, value, formatControlWarnings, false, true);
+      assert(`frontend shaping accepts Persian ${label}`, formatControlEnc.out.length === 1 && formatControlEnc.out[0] === value && formatControlWarnings.length === 0);
+    }
+
+    const boundedEnc: any = {
+      out: [] as string[],
+      text(v: string) { this.out.push(v); return this; },
+      raw(data: Uint8Array) { this.out.push(new TextDecoder().decode(data)); return this; },
+    };
+    const boundedWarnings: any[] = [];
+    feWarnings.safePrinterText(boundedEnc, 'Table: میز غذای مخصوص', boundedWarnings, false, true, undefined, 16);
+    assert('frontend shaping bounds raw text to the layout width', boundedEnc.out.length === 1 && Array.from(boundedEnc.out[0]).length <= 16 && boundedEnc.out[0].endsWith('…') && boundedWarnings.length === 0);
+
+    assert('isArabicShapingSafeLine accepts ASCII+Persian', feWarnings.isArabicShapingSafeLine('2x چای - Rs50.00') === true);
+    assert('isArabicShapingSafeLine rejects other non-ASCII', feWarnings.isArabicShapingSafeLine('کافé') === false);
+  }
+
   // Default (no capability): Persian is skipped with a precise warning.
   const defaultWarnings: Array<{ field: string; text: string; message: string }> = [];
   const defaultBuf = buildEscPos(['{STORE_NAME}{CENTER}مطعم فلوس{/CENTER}', 'TOTAL        ₹100.00'], true, {}, defaultWarnings);
@@ -270,12 +358,44 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('with flag, Persian line is emitted', shapedBuf.toString('utf8').includes('مطعم فلوس'));
   assert('with flag, pure Persian line emits no warning', shapedWarnings.length === 0);
 
+  const shapedCurrencyWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const shapedCurrencyBuf = buildEscPos(['چای زعفرانی ₹500.00'], true, { arabicShaping: true }, shapedCurrencyWarnings);
+  assert('with flag, Persian line with Unicode currency is emitted', shapedCurrencyBuf.toString('utf8').includes('چای زعفرانی ₹500.00'));
+  assert('with flag, Persian line with Unicode currency emits no warning', shapedCurrencyWarnings.length === 0);
+
+  for (const [label, value] of [
+    ['ZWNJ', 'می\u200Cرود'],
+    ['ZWJ', 'می\u200Dرود'],
+    ['RLM', 'می\u200Fرود'],
+    ['ellipsis', 'می\u200Cرود\u2026'],
+  ] as const) {
+    const formatControlWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const formatControlBuf = buildEscPos([value], true, { arabicShaping: true }, formatControlWarnings);
+    assert(`backend shaping accepts Persian ${label}`, formatControlBuf.toString('utf8').includes(value) && formatControlWarnings.length === 0);
+  }
+
+  const backendControlWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const backendControlBuf = buildEscPos(['چای\x07زعفرانی'], true, { arabicShaping: true }, backendControlWarnings);
+  assert('backend shaping strips embedded printer-control bytes', !bytesContain(backendControlBuf, [0x07]));
+  assert('backend shaping still prints sanitized Persian text', backendControlBuf.toString('utf8').includes('چایزعفرانی'));
+  assert('backend shaping emits no warning for sanitized text', backendControlWarnings.length === 0);
+
+  const asciiControlLine = 'No onions\x07\nNo garlic\x7f';
+  const asciiShaped = buildEscPos([asciiControlLine], true, { arabicShaping: true });
+  const asciiUnshaped = buildEscPos([asciiControlLine], true, { arabicShaping: false });
+  assert('ASCII output stays byte-identical with shaping enabled', asciiShaped.equals(asciiUnshaped) && bytesContain(asciiShaped, Array.from(Buffer.from(asciiControlLine))));
+
   // Mixed-script lines (Persian + Latin é) are still skipped even with the flag,
   // so the flag cannot be used to emit unshapeable mixed text.
   const mixedWarnings: Array<{ field: string; text: string; message: string }> = [];
   const mixedBuf = buildEscPos(['{CENTER}کافه Café{/CENTER}'], true, { arabicShaping: true }, mixedWarnings);
   assert('mixed Persian+Latin line is skipped even with flag', !mixedBuf.toString('utf8').includes('کافه') && !mixedBuf.toString('utf8').includes('Café'));
   assert('mixed-script line still emits a warning', mixedWarnings.length === 1);
+
+  const toastMessages: string[] = [];
+  const { showPrintWarningsToast } = loadWarningsToastWithCapture(toastMessages);
+  showPrintWarningsToast([{ field: 'receipt line', text: 'کافه Café', message: 'mixed-script warning' }]);
+  assert('mixed Arabic warnings show the shaping remedy', toastMessages.length === 1 && toastMessages[0].includes('Enable "Printer supports Arabic/Persian shaping"'));
 
   // The full receipt path threads the flag into the encoder.
   const persianBiz = { ...fixtureBusiness, name: 'کافه فلو تهران', currency_symbol: 'IRR', country: 'IR' };
@@ -321,6 +441,54 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
   assert('formatKOT with arabicShaping prints Persian addons', shapedKot.toString('utf8').includes('هل اضافه'));
   assert('formatKOT with arabicShaping prints Persian notes', shapedKot.toString('utf8').includes('بدون قند'));
   assert('formatKOT with arabicShaping emits no unsupported warning', shapedKotWarnings.length === 0);
+
+  const boundedBackendWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const boundedBackend = buildEscPos(['{DOUBLE_WIDTH}این خط فارسی خیلی طولانی است{/DOUBLE_WIDTH}'], true, { arabicShaping: true, columns: 32 }, boundedBackendWarnings);
+  const boundedBackendLines = visiblePreview(boundedBackend, 32).split('\n').slice(1, -1);
+  assert('backend shaping bounds raw double-width lines', boundedBackendLines.every((line) => line.length <= 16) && boundedBackendWarnings.length === 0);
+
+  const narrowPersianOrder = {
+    ...persianReceiptOrder,
+    table: { name: 'میز شماره بسیار طولانی' },
+    items: [{
+      product_name: 'محصول فارسی بسیار طولانی برای چاپ',
+      quantity: 2,
+      unit_price: 250000,
+      total: 500000,
+      tax_amount: 0,
+      addons: [],
+      special_instructions: 'لطفا این توضیحات فارسی طولانی را کوتاه کنید',
+    }],
+  };
+  const narrowPersianBusiness = {
+    ...persianBiz,
+    name: 'کافه فارسی بسیار طولانی تهران مرکزی',
+    customer_name: 'مشتری فارسی با نام بسیار طولانی',
+  };
+  for (const template of ['compact', 'classic'] as const) {
+    const narrowWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const narrowReceipt = formatReceipt(narrowPersianOrder, fixtureBill, narrowPersianBusiness, template, 32, true, false, 'full', narrowWarnings, true);
+    const narrowLines = visiblePreview(narrowReceipt, 32).split('\n').slice(1, -1);
+    assert(`shaped ${template} receipt stays within 32 columns`, narrowLines.every((line) => line.length <= 32), narrowLines.filter((line) => line.length > 32).join(' | '));
+    assert(`shaped ${template} receipt emits no width warnings`, narrowWarnings.length === 0);
+  }
+
+  const narrowKotWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const narrowKot = formatKOT(
+    narrowPersianOrder,
+    narrowPersianOrder.items,
+    'آشپزخانه فارسی بسیار طولانی مرکزی',
+    32,
+    true,
+    'full',
+    'en-US',
+    undefined,
+    narrowKotWarnings,
+    true,
+  );
+  const narrowKotLines = visiblePreview(narrowKot, 32).split('\n').slice(1, -1);
+  assert('shaped KOT stays within 32 columns', narrowKotLines.every((line) => line.length <= 32), narrowKotLines.filter((line) => line.length > 32).join(' | '));
+  assert('shaped KOT emits no width warnings', narrowKotWarnings.length === 0);
 }
 
 console.log('\n✅ Test 1c: ESC/POS output can be previewed without a printer');
@@ -766,6 +934,7 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     buildCompactReceiptBytes,
     buildDetailedReceiptBytes,
   } = frontendModules.receiptEncoder;
+  const { buildKotBytes } = frontendModules.kotEncoder;
   const { buildTaxBillBytes } = frontendModules.taxBillEncoder;
   const { normalizeCurrencyToAscii } = frontendModules.unicode;
   const { hasUnsupportedPrinterChars } = frontendModules.warnings;
@@ -827,6 +996,91 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
       }
       assert(`[frontend ${enc.name} unicode=${useUnicode}] leaves zero warnings for numeric lines`, warnings.length === 0);
     }
+  }
+
+  const frontendPersianBill = {
+    ...frontendBill,
+    order: {
+      ...frontendBill.order,
+      items: [{ product_name: 'چای زعفرانی', quantity: 1, unit_price: 250000, total: 250000, addons: [], special_instructions: '' }],
+    },
+  };
+  const frontendPersianTenant = { ...frontendTenant, business_name: 'کافه فلو تهران' };
+  for (const enc of encoders) {
+    const warnings: Array<{ field: string; text: string; message: string }> = [];
+    const bytes = enc.fn(frontendPersianBill, frontendPersianTenant, { useUnicode: true, arabicShaping: true }, warnings);
+    assert(`[frontend ${enc.name}] emits Persian item with shaping enabled`, Buffer.from(bytes).toString('utf8').includes('چای زعفرانی'));
+    assert(`[frontend ${enc.name}] emits no warning for shaped Persian item`, warnings.length === 0);
+  }
+
+  const longPersianWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const longPersianBytes = buildCompactReceiptBytes({
+    ...frontendPersianBill,
+    order: {
+      ...frontendPersianBill.order,
+      items: [{ product_name: 'چای زعفرانی مخصوص دارچین هل گلاب پسته', quantity: 1, unit_price: 250000, total: 250000, addons: [], special_instructions: '' }],
+    },
+  } as any, frontendPersianTenant, { paperWidth: 58, useUnicode: true, arabicShaping: true }, longPersianWarnings);
+  const longPersianText = Buffer.from(longPersianBytes).toString('utf8');
+  assert('frontend shaping preserves truncated Persian item output', longPersianText.includes('…') && longPersianText.includes('چای زعفرانی'));
+  assert('frontend shaping emits no warning for truncated Persian item', longPersianWarnings.length === 0);
+
+  const kotWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const kotBytes = buildKotBytes({
+    order_number: 'KOT-LONG-ADDON',
+    created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+    type: 'dine_in',
+    items: [{
+      quantity: 1,
+      product_name: 'چای',
+      status: 'pending',
+      addons: [{ name: 'افزودنی بسیار طولانی برای آزمایش عرض چاپگر در آشپزخانه' }],
+    }],
+  } as any, { paperWidth: 58, arabicShaping: true }, kotWarnings);
+  const kotAddonLine = Buffer.from(kotBytes)
+    .toString('utf8')
+    .split('\n')
+    .map((line) => line.replace(/[\x00-\x1F\x7F]/g, ''))
+    .find((line) => line.includes('   + '));
+  const kotAddonText = kotAddonLine && kotAddonLine.slice(kotAddonLine.indexOf('   + '));
+  assert('frontend shaped KOT add-on stays within 42 columns', !!kotAddonText && Array.from(kotAddonText).length <= 42, `${kotAddonText?.length ?? 0} :: ${JSON.stringify(kotAddonText)}`);
+  assert('frontend shaped KOT add-on emits no warning', kotWarnings.length === 0);
+
+  // Greptile P2: ESC/POS control bytes hidden inside an Arabic-bearing label
+  // must never reach the raw byte path. BEL (0x07) never occurs in legitimate
+  // encoder output, unlike ESC/FS command bytes.
+  {
+    const controlWarnings: Array<{ field: string; text: string; message: string }> = [];
+    const controlBytes = buildCompactReceiptBytes({
+      ...frontendPersianBill,
+      order: {
+        ...frontendPersianBill.order,
+        items: [{ product_name: 'چای\x07زعفرانی', quantity: 1, unit_price: 250, total: 250, addons: [], special_instructions: '' }],
+      },
+    } as any, frontendPersianTenant, { paperWidth: 80, useUnicode: true, arabicShaping: true }, controlWarnings);
+    const raw = Buffer.from(controlBytes);
+    assert('frontend shaping strips embedded printer-control bytes', !bytesContain(raw, [0x07]));
+    assert('frontend shaping still prints sanitized Persian item', raw.toString('utf8').includes('چایزعفرانی'));
+    assert('frontend shaping emits no warning for sanitized item', controlWarnings.length === 0);
+  }
+
+  // Greptile P1: shaped centered lines must keep their heading padding even
+  // though raw() bypasses encoder layout.
+  {
+    const centeredBytes = buildClassicReceiptBytes(
+      frontendBill,
+      { ...frontendTenant, business_name: 'کافه فلو تهران' },
+      { paperWidth: 80, useUnicode: true, arabicShaping: true },
+      [],
+    );
+    const centeredLines = Buffer.from(centeredBytes).toString('utf8').split('\n');
+    const nameLine = centeredLines.find((l) => l.includes('کافه فلو تهران'));
+    // Double-width store name at 48 columns leaves a 24-column budget; the
+    // 14-code-point name should get floor((24-14)/2) = 5 leading spaces.
+    const leadMatch = nameLine?.match(/^(.*?)کافه/);
+    const prefix = leadMatch?.[1] ?? '';
+    const leadSpaces = prefix.length - prefix.replace(/ +$/, '').length;
+    assert('frontend shaping centers the Persian business name', leadSpaces >= 3 && leadSpaces <= 7, `${leadSpaces} :: ${JSON.stringify(nameLine)}`);
   }
 
   // The frontend classic template also needs to keep the three-character IRR

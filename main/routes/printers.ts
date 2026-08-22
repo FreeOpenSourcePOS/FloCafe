@@ -316,6 +316,9 @@ router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (re
 router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
+    // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
+    // explicit boolean overrides the printer profile's declared capability.
+    const arabicShapingOverride = typeof req.body?.arabicShaping === 'boolean' ? req.body.arabicShaping : undefined;
     console.log('[Print Bill] Request received', { useUnicode, isReprint, preview });
     
     if (!billId && !orderId) {
@@ -436,7 +439,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
     console.log('[Print Bill] Preparing receipt', { template: billTemplate || 'classic' });
 
     if (preview === true) {
-      const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint);
+      const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, arabicShapingOverride);
       return res.json({
         success: true,
         preview: true,
@@ -450,7 +453,7 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
 
     // Use existing printReceipt function with template support
     console.log('[Print Bill] Calling printReceipt...');
-    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req));
+    const result = await printReceiptDetailed(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, getHttpRequestSignal(req), arabicShapingOverride);
     console.log('[Print Bill] Print completed', result);
 
     if (result.ok) {
@@ -528,6 +531,9 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
   }
   try {
     const { orderId, stationName, items, useUnicode = false } = req.body;
+    // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
+    // explicit boolean overrides the printer profile's declared capability.
+    const arabicShapingOverride = typeof req.body?.arabicShaping === 'boolean' ? req.body.arabicShaping : undefined;
 
     if (!orderId) {
       return res.status(400).json({ error: 'orderId is required' });
@@ -570,14 +576,14 @@ router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandl
     if (stationName || items) {
       const kotItems = items || orderItems;
       const station = stationName || 'Kitchen';
-      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req));
+      const result = await printKOTDetailed(order, kotItems, station, useUnicode, undefined, getHttpRequestSignal(req), arabicShapingOverride);
       success = result.ok;
       failure = result.ok ? null : result;
       warnings.push(...(result.warnings || []));
     } else {
       const groups = routeItemsToStations(db, orderItems).filter((g) => g.items.length > 0);
       for (const group of groups) {
-        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req));
+        const result = await printKOTDetailed(order, group.items, group.stationName, useUnicode, group.printer || undefined, getHttpRequestSignal(req), arabicShapingOverride);
         success = success && result.ok;
         warnings.push(...(result.warnings || []));
         if (!result.ok && !failure) failure = result;

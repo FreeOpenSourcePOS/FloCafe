@@ -1081,6 +1081,7 @@ export default function SettingsPage() {
     autoPrintKot: boolean; autoPrintBill: boolean;
     whatsappShareEnabled: boolean;
     printerUseUnicode: boolean;
+    printerArabicShaping: boolean;
     printerTrimDecimals: boolean;
     billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
     billShowTaxBreakdown: boolean; billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
@@ -1093,6 +1094,7 @@ export default function SettingsPage() {
     autoPrintBill: posSettings.autoPrintBill,
     whatsappShareEnabled: posSettings.whatsappShareEnabled,
     printerUseUnicode: posSettings.printerUseUnicode,
+    printerArabicShaping: posSettings.printerArabicShaping,
     printerTrimDecimals: posSettings.printerTrimDecimals,
     billShowName: posSettings.billShowName,
     billShowAddress: posSettings.billShowAddress,
@@ -1113,6 +1115,7 @@ export default function SettingsPage() {
     posSettings.setAutoPrintBill(printingForm.autoPrintBill);
     posSettings.setWhatsappShareEnabled(printingForm.whatsappShareEnabled);
     posSettings.setPrinterUseUnicode(printingForm.printerUseUnicode);
+    posSettings.setPrinterArabicShaping(printingForm.printerArabicShaping);
     posSettings.setPrinterTrimDecimals(printingForm.printerTrimDecimals);
     posSettings.setBillShowName(printingForm.billShowName);
     posSettings.setBillShowAddress(printingForm.billShowAddress);
@@ -3819,6 +3822,13 @@ export default function SettingsPage() {
                     </p>
                   </div>
                   <Toggle value={printingForm.printerUseUnicode} onChange={(v) => setPrintingForm((p) => ({ ...p, printerUseUnicode: v }))} />
+                </div>
+                <div className="flex items-center justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-900">{t('printerArabicShaping')}</p>
+                    <p className="text-sm text-gray-500">{t('printerArabicShapingHint')}</p>
+                  </div>
+                  <Toggle value={printingForm.printerArabicShaping} onChange={(v) => setPrintingForm((p) => ({ ...p, printerArabicShaping: v }))} />
                 </div>
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">

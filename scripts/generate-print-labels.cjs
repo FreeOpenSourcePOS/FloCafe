@@ -121,20 +121,6 @@ function getLeaf(messages, dottedKey) {
   return node;
 }
 
-function pascal(identifier) {
-  return identifier
-    .split(/[^A-Za-z0-9]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join('');
-}
-
-function conceptTypeName(dottedKey) {
-  // print.kot.banner -> KotBanner ; receipt.billNumber -> ReceiptBillNumber
-  const withoutPrintPrefix = dottedKey.replace(/^print\./, '');
-  return pascal(withoutPrintPrefix);
-}
-
 function buildTable() {
   const tables = {};
   for (const lang of LANGUAGES) {

@@ -28,6 +28,7 @@ If a task or design doc contradicts current code or references files that no lon
 
 ```text
 main/           Electron main process, Express API, SQLite access, ESC/POS printing, and services
+shared/         Neutral pure kernel code (shared/print: print language policy, direction, bilingual labels). No IO, no imports from main/ or frontend/ — see shared/print/README.md
 frontend/src/   Next.js/React renderer, Zustand state, UI components, and translations
 tests/          Backend unit, integration, and release test suites
 docs/           Documentation, design specifications, and audits (see docs/README.md)

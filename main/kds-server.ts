@@ -45,7 +45,9 @@ export function isKdsServerRunning(): boolean {
  */
 function getStaticDir(): string | null {
   const candidates = [
-    path.join(__dirname, '../frontend/out'),
+    // Development / unpackaged: relative to dist/main/ (compiled output of
+    // main/, see tsconfig rootDir covering shared/ since #441)
+    path.join(__dirname, '../../frontend/out'),
     path.join(process.resourcesPath || '', 'frontend-out'),
   ];
 

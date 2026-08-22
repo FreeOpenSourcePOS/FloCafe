@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/auth';
 import { usePosSettingsStore, type PaperSize, type BillTemplate } from '@/store/pos-settings';
 import { LANGUAGES, type Language } from '@/lib/i18n';
+import { parseKotLanguagePolicy, parsePrintLanguagePolicy } from '@print/policy';
+import type { KotLanguagePolicy, PrimaryLanguageSelection, ReceiptLanguagePolicy } from '@print/types';
 import { usePrinterStore, usePrinterStatusSync } from '@/hooks/usePrinter';
 import { Settings, Building2, CreditCard, Monitor, Users, Gift, Printer, Share2, FileText, Lock, Smartphone, RefreshCw, Copy, Check, Wifi, Usb, Trash2, Plus, Star, TestTube2, ChefHat, QrCode, CheckCircle2, Database, Cloud, CloudOff, Zap, Percent, KeyRound, AlertTriangle, Wrench, HardDrive, UploadCloud, Hash, ChevronDown } from 'lucide-react';
 import { Tabs, TabsContent } from '@/components/ui/tabs';
@@ -35,6 +37,35 @@ import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
   (lang) => LANGUAGES[lang].selectable,
 );
+
+// Registry facts injected into the shared print kernel's policy parser (#441):
+// a code is valid exactly when it is registered AND selectable in the central
+// language registry. New languages appear automatically — no hardcoded unions.
+const PRINT_LANGUAGE_REGISTRY_FACTS = {
+  isSelectableLanguage: (code: string) =>
+    Object.prototype.hasOwnProperty.call(LANGUAGES, code)
+    && LANGUAGES[code as Language].selectable,
+};
+
+function parseStoredReceiptPolicy(value: unknown): ReceiptLanguagePolicy | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const result = parsePrintLanguagePolicy(JSON.parse(value), PRINT_LANGUAGE_REGISTRY_FACTS);
+    return result.ok ? result.policy : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseStoredKotPolicy(value: unknown): KotLanguagePolicy | null {
+  if (typeof value !== 'string') return null;
+  try {
+    const result = parseKotLanguagePolicy(JSON.parse(value), PRINT_LANGUAGE_REGISTRY_FACTS);
+    return result.ok ? result.policy : null;
+  } catch {
+    return null;
+  }
+}
 
 function tenantStatusLabel(status: string | undefined, tCommon: (key: 'active' | 'inactive') => string): string {
   const key = (TENANT_STATUS_LABEL_KEYS as Record<string, 'active' | 'inactive' | undefined>)[status ?? ''];
@@ -1083,6 +1114,10 @@ export default function SettingsPage() {
     printerUseUnicode: boolean;
     printerArabicShaping: boolean;
     printerTrimDecimals: boolean;
+    // Print language policies (#441): 'inherit'/'none' sentinels or registry codes.
+    receiptPrimaryLanguage: string; // 'inherit' | selectable code
+    receiptSecondLanguage: string; // 'none' | selectable code
+    kotLanguage: string; // 'inherit' | selectable code
     billShowName: boolean; billShowAddress: boolean; billShowPhone: boolean; billShowTaxId: boolean;
     billShowTaxBreakdown: boolean; billShowCustomerName: boolean; billShowCustomerPhone: boolean; billShowTableNumber: boolean;
   };
@@ -1096,6 +1131,13 @@ export default function SettingsPage() {
     printerUseUnicode: posSettings.printerUseUnicode,
     printerArabicShaping: posSettings.printerArabicShaping,
     printerTrimDecimals: posSettings.printerTrimDecimals,
+    receiptPrimaryLanguage: posSettings.billLanguagePolicy.primary.mode === 'fixed'
+      ? posSettings.billLanguagePolicy.primary.language
+      : 'inherit',
+    receiptSecondLanguage: posSettings.billLanguagePolicy.additional[0] ?? 'none',
+    kotLanguage: posSettings.kotLanguagePolicy.primary.mode === 'fixed'
+      ? posSettings.kotLanguagePolicy.primary.language
+      : 'inherit',
     billShowName: posSettings.billShowName,
     billShowAddress: posSettings.billShowAddress,
     billShowPhone: posSettings.billShowPhone,
@@ -1108,6 +1150,22 @@ export default function SettingsPage() {
   const [printingForm, setPrintingForm] = useState<PrintingForm>(initPrinting);
   const [savedPrinting, setSavedPrinting] = useState<PrintingForm>(initPrinting);
   const savePrinting = async (silent: boolean = false) => {
+    // Build typed policies from the form and mirror them into the store for
+    // renderer-side reads (renderers adopt them in #442+).
+    const receiptPrimary: PrimaryLanguageSelection = printingForm.receiptPrimaryLanguage === 'inherit'
+      ? { mode: 'inherit' }
+      : { mode: 'fixed', language: printingForm.receiptPrimaryLanguage };
+    const dedupedSecond = printingForm.receiptSecondLanguage !== 'none'
+      && !(receiptPrimary.mode === 'fixed' && receiptPrimary.language === printingForm.receiptSecondLanguage)
+      ? printingForm.receiptSecondLanguage
+      : null;
+    const billLanguagePolicy: ReceiptLanguagePolicy = dedupedSecond !== null
+      ? { primary: receiptPrimary, additional: [dedupedSecond] as const }
+      : { primary: receiptPrimary, additional: [] as const };
+    const kotLanguagePolicy: KotLanguagePolicy = {
+      primary: printingForm.kotLanguage === 'inherit' ? { mode: 'inherit' } : { mode: 'fixed', language: printingForm.kotLanguage },
+      additional: [] as const,
+    };
     posSettings.setPrinterEnabled(printingForm.printerEnabled);
     posSettings.setPrinterPaperSize(printingForm.printerPaperSize);
     setPrintMethod(printingForm.printMethod);
@@ -1117,6 +1175,8 @@ export default function SettingsPage() {
     posSettings.setPrinterUseUnicode(printingForm.printerUseUnicode);
     posSettings.setPrinterArabicShaping(printingForm.printerArabicShaping);
     posSettings.setPrinterTrimDecimals(printingForm.printerTrimDecimals);
+    posSettings.setBillLanguagePolicy(billLanguagePolicy);
+    posSettings.setKotLanguagePolicy(kotLanguagePolicy);
     posSettings.setBillShowName(printingForm.billShowName);
     posSettings.setBillShowAddress(printingForm.billShowAddress);
     posSettings.setBillShowPhone(printingForm.billShowPhone);
@@ -1127,6 +1187,8 @@ export default function SettingsPage() {
     posSettings.setBillShowTableNumber(printingForm.billShowTableNumber);
     await Promise.all([
       api.put('/settings/printer_trim_decimals', { value: printingForm.printerTrimDecimals ? 'true' : 'false' }),
+      api.put('/settings/bill_language_policy', { value: JSON.stringify(billLanguagePolicy) }),
+      api.put('/settings/kot_language_policy', { value: JSON.stringify(kotLanguagePolicy) }),
       ...([
         ['bill_show_name', printingForm.billShowName],
         ['bill_show_address', printingForm.billShowAddress],
@@ -1549,6 +1611,27 @@ export default function SettingsPage() {
       posSettings.setPrinterTrimDecimals(enabled);
       setPrintingForm((p) => ({ ...p, printerTrimDecimals: enabled }));
       setSavedPrinting((p) => ({ ...p, printerTrimDecimals: enabled }));
+    }).catch(() => {});
+    api.get('/settings/bill_language_policy').then((res) => {
+      const policy = parseStoredReceiptPolicy(res.data?.setting?.value);
+      if (!policy) return;
+      posSettings.setBillLanguagePolicy(policy);
+      const formPatch = {
+        receiptPrimaryLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+        receiptSecondLanguage: policy.additional[0] ?? 'none',
+      };
+      setPrintingForm((p) => ({ ...p, ...formPatch }));
+      setSavedPrinting((p) => ({ ...p, ...formPatch }));
+    }).catch(() => {});
+    api.get('/settings/kot_language_policy').then((res) => {
+      const policy = parseStoredKotPolicy(res.data?.setting?.value);
+      if (!policy) return;
+      posSettings.setKotLanguagePolicy(policy);
+      const formPatch = {
+        kotLanguage: policy.primary.mode === 'fixed' ? policy.primary.language : 'inherit',
+      };
+      setPrintingForm((p) => ({ ...p, ...formPatch }));
+      setSavedPrinting((p) => ({ ...p, ...formPatch }));
     }).catch(() => {});
     Promise.all([
       api.get('/settings/bill-templates').catch(() => null),
@@ -3836,6 +3919,55 @@ export default function SettingsPage() {
                     <p className="text-sm text-gray-500">{t('trimDecimalsHint')}</p>
                   </div>
                   <Toggle value={printingForm.printerTrimDecimals} onChange={(v) => setPrintingForm((p) => ({ ...p, printerTrimDecimals: v }))} />
+                </div>
+                <div className="pt-4 border-t border-gray-100">
+                  <p className="font-medium text-gray-900 mb-1">{t('receiptLanguage')}</p>
+                  <p className="text-sm text-gray-500 mb-3">{t('receiptLanguageHint')}</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
+                    <div>
+                      <label htmlFor="receipt-primary-language" className="block text-sm font-medium text-gray-700 mb-1">{t('receiptLanguage')}</label>
+                      <select
+                        id="receipt-primary-language"
+                        value={printingForm.receiptPrimaryLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, receiptPrimaryLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-gray-200 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="inherit">{t('sameAsStore')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="receipt-second-language" className="block text-sm font-medium text-gray-700 mb-1">{t('secondReceiptLanguage')}</label>
+                      <select
+                        id="receipt-second-language"
+                        value={printingForm.receiptSecondLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, receiptSecondLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-gray-200 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="none">{t('secondLanguageNone')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="kot-language" className="block text-sm font-medium text-gray-700 mb-1">{t('kotPrintLanguage')}</label>
+                      <select
+                        id="kot-language"
+                        value={printingForm.kotLanguage}
+                        onChange={(e) => setPrintingForm((p) => ({ ...p, kotLanguage: e.target.value }))}
+                        className="block w-full rounded-md border-gray-200 shadow-sm focus:border-brand focus:ring-brand sm:text-sm px-3 py-2 border"
+                      >
+                        <option value="inherit">{t('sameAsStore')}</option>
+                        {SELECTABLE_LANGUAGES.map((lang) => (
+                          <option key={lang} value={lang}>{LANGUAGES[lang].nativeName}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">{t('kotPrintLanguageHint')}</p>
                 </div>
                 <div className="pt-4 border-t border-gray-100">
                   <p className="font-medium text-gray-900 mb-1">{t('billContent')}</p>

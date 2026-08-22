@@ -63,6 +63,8 @@ function loadFrontendModules() {
       resolved = path.resolve(__dirname, '../main/countries.ts');
     } else if (req.startsWith('@/')) {
       resolved = path.resolve(__dirname, '../frontend/src', req.slice(2));
+    } else if (req.startsWith('@print/')) {
+      resolved = path.resolve(__dirname, '../shared/print', req.slice('@print/'.length));
     }
     return originalResolveFilename.call(this, resolved, parent, isMain, options);
   };

@@ -72,6 +72,15 @@ function hasDigit(text: string): boolean {
 
 /** Contains letters from an RTL script → never an LTR island. */
 function hasRtlScript(text: string): boolean {
+  return containsRtlScript(text);
+}
+
+/**
+ * True when `text` carries any RTL-script letters (Hebrew/Arabic blocks).
+ * Exported so registry owners can derive a language's base direction from
+ * its own label strings without hardcoding language unions in the kernel.
+ */
+export function containsRtlScript(text: string): boolean {
   return /[\u0591-\u07FF\u08A0-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/.test(text);
 }
 

@@ -44,6 +44,7 @@ never kernel → registry.
 | `policy.ts`   | Resolution (`resolveReceiptLanguages`, `resolveKotLanguage`) and validation (`parsePrintLanguagePolicy`, `parseKotLanguagePolicy`); max-2 documents enforced at type level for v1 |
 | `direction.ts`| Per-scope direction (`document` / `block` / `value`), LTR-island classification |
 | `bilingual.ts`| `BilingualLabel` + width-fit strategies (`inline` vs `stacked`) parameterized by column count |
+| `document.ts` | Renderer-independent `PrintDocument` v1 (#442): block types (`BusinessHeaderBlock`, `DocumentMetaBlock`, `CustomerBlock`, `ItemTableBlock`, `TaxBreakdownBlock`, `TotalsBlock`, `PaymentsBlock`, `MessageBlock`), `PrintData`/`PrintContext` snapshots, pure `buildBillDocument`. Schema documentation summary is owned by #449 |
 
 Consumers: `main/*` imports the relative path `../../shared/print` and gets
 one compiled runtime copy under `dist/shared/print`; `frontend/*` imports

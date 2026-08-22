@@ -26,6 +26,7 @@ import {
   formatReceipt,
   escPosToText,
 } from '../main/printers/thermal';
+import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 
 // ---------------------------------------------------------------------------
 // Frontend module loading (same technique as tests/printer.test.ts: the
@@ -390,6 +391,44 @@ function run(): void {
   }
 
   // ------------------------------------------------------------------
+  // 4. PrintDocument pipeline vs legacy classic (#442): the document-
+  //    driven preview renderer must reproduce the legacy classic output
+  //    exactly at every tested width, including Persian-item skip rules.
+  // ------------------------------------------------------------------
+  section('PrintDocument vs legacy classic');
+  for (const cols of [32, 42, 48]) {
+    for (const isReprint of [false, true] as const) {
+      const label = `document/${cols}${isReprint ? '/reprint' : ''}`;
+      section(label);
+      const legacyWarnings: Warnings = [];
+      const legacyText = escPosToText(
+        formatReceipt(order, bill, business, 'classic', cols, false, isReprint, 'full', legacyWarnings, false, 'en'),
+      );
+      const docResult = renderClassicReceiptViaDocument(order, bill, business, {
+        columns: cols,
+        language: 'en',
+        isReprint,
+        useUnicode: false,
+        arabicShaping: false,
+        cutMode: 'full' as const,
+      });
+      const docText = escPosToText(docResult.data);
+      warn(legacyText === docText, `${label}: identical output to legacy classic`);
+      const withSubtotal = { subtotal: 1220 };
+      expectContent(label, docText, {
+        ...baseExpect,
+        ...withSubtotal,
+        absentItems: [PERSIAN_ITEM],
+        ...(isReprint ? { reprint: true } : {}),
+      }, warn);
+      warn(docResult.document.version === 1 && docResult.document.blocks.length > 0, `${label}: PrintDocument v1 with blocks`);
+      if (!isReprint) {
+        warn(docResult.warnings.some((w) => (w.message ?? w.text ?? '').includes('Persian/Arabic')),
+          `${label}: skip produced explicit Persian/Arabic warning`);
+      }
+    }
+  }
+
   console.log('\n' + '='.repeat(56));
   console.log(`Parity contract: ${passed} assertions passed, ${failed} failed`);
   if (failures.length > 0) {

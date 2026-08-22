@@ -673,6 +673,44 @@
     "genericHint": "Las líneas siguientes contienen caracteres que esta impresora térmica no puede mostrar.",
     "moreLines": "…y {count} más"
   },
+  "print": {
+    "taxInvoiceTitle": "FACTURA CON IMPUESTOS",
+    "invoiceTitle": "FACTURA",
+    "invoiceNumber": "Factura N.º:",
+    "time": "Hora",
+    "customerShort": "Cliente",
+    "numberShort": "Cliente N.º",
+    "address": "Dirección",
+    "call": "Llamar",
+    "note": "Nota",
+    "phoneLong": "Teléfono",
+    "subtotalExclTax": "Subtotal (sin impuestos)",
+    "serviceChargeShort": "Cargo serv.",
+    "grandTotal": "TOTAL",
+    "thankYouShort": "¡Gracias!",
+    "thankYouVisitAgain": "¡Gracias por su visita!",
+    "pleaseComeAgain": "¡Vuelva pronto!",
+    "ratesInclusiveNote": "Tarifas con impuestos incluidos",
+    "pointsEarned": "Puntos ganados",
+    "pointsBalance": "Saldo de puntos",
+    "pointsRedeemed": "Puntos canjeados",
+    "kot": {
+      "title": "Comanda de cocina",
+      "banner": "COMANDA DE COCINA",
+      "station": "Estación",
+      "type": "Tipo",
+      "noPendingItems": "Sin pendientes",
+      "end": "FIN"
+    },
+    "hsn": "HSN",
+    "test": {
+      "title": "Prueba de impresora Flo",
+      "networkUsb": "Impresión de prueba de red / USB",
+      "columns": "Columnas",
+      "wrapHint": "Si la siguiente línea se corta, elija un valor de columnas menor.",
+      "success": "¡Si puede leer esto, su impresora funciona!"
+    }
+  },
   "products": {
     "addAddon": "Agregar adicional",
     "addAddonGroup": "Agregar grupo de adicionales",

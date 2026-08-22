@@ -673,6 +673,44 @@
     "genericHint": "The lines below contain characters this thermal printer cannot render.",
     "moreLines": "…and {count} more"
   },
+  "print": {
+    "taxInvoiceTitle": "TAX INVOICE",
+    "invoiceTitle": "INVOICE",
+    "invoiceNumber": "Invoice #:",
+    "time": "Time",
+    "customerShort": "Customer",
+    "numberShort": "Customer No",
+    "address": "Address",
+    "call": "Call",
+    "note": "Note",
+    "phoneLong": "Phone",
+    "subtotalExclTax": "Subtotal (excl. tax)",
+    "serviceChargeShort": "Service Chg",
+    "grandTotal": "TOTAL",
+    "thankYouShort": "Thank you!",
+    "thankYouVisitAgain": "Thank you for your visit!",
+    "pleaseComeAgain": "Please come again!",
+    "ratesInclusiveNote": "Rates are inclusive of taxes",
+    "pointsEarned": "Points Earned",
+    "pointsBalance": "Points Balance",
+    "pointsRedeemed": "Points Redeemed",
+    "kot": {
+      "title": "Kitchen Order Ticket",
+      "banner": "KITCHEN ORDER TICKET",
+      "station": "Station",
+      "type": "Type",
+      "noPendingItems": "No pending items",
+      "end": "END"
+    },
+    "hsn": "HSN",
+    "test": {
+      "title": "Flo Printer Test",
+      "networkUsb": "Network / USB test print",
+      "columns": "Columns",
+      "wrapHint": "If the next line wraps, choose a smaller column value.",
+      "success": "If you can read this, your printer is working!"
+    }
+  },
   "products": {
     "addAddon": "Add Addon",
     "addAddonGroup": "Add Addon Group",

@@ -51,26 +51,12 @@ async function run() {
       }
       throw new Error(`unexpected POST ${url}`);
     },
-    get: async (url: string) => {
-      assert.ok(
-        url === '/settings/bill_language_policy' || url === '/settings/kot_language_policy',
-        `unexpected GET ${url}`,
-      );
-      return { data: { setting: { value: '{"primary":{"mode":"inherit"},"additional":[]}' } } };
-    },
   };
-  const posSettingsMock = {
-    getState: () => ({
-      setLanguage: () => {},
-      setBillLanguagePolicy: () => {},
-      setKotLanguagePolicy: () => {},
-    }),
-  };
+  const posSettingsMock = { getState: () => ({ setLanguage: () => {} }) };
 
   Module._load = function (request: string, parent: unknown, isMain: boolean) {
     if (request === '@/lib/api') return serverApi;
     if (request === '@/store/pos-settings') return { usePosSettingsStore: posSettingsMock };
-    if (request === '@print/policy') return originalLoad.call(this, path.join(process.cwd(), 'shared/print/policy.ts'), parent, isMain);
     if (request === 'zustand') return originalLoad.call(this, frontendRequire.resolve('zustand'), parent, isMain);
     return originalLoad.apply(this, arguments as any);
   };

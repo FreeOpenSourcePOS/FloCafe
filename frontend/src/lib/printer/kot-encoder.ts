@@ -91,7 +91,7 @@ export function buildKotBytes(
         if (addon.name) {
           const qty = ('quantity' in addon && typeof addon.quantity === 'number') ? addon.quantity : 1;
           const addonText = `${addon.name}${qty > 1 ? ` x${qty}` : ''}`;
-          safePrinterText(enc, `   + ${truncate(addonText, cols - 4)}`, warnings, false, arabicShaping).newline();
+          safePrinterText(enc, `   + ${truncate(addonText, cols - 5)}`, warnings, false, arabicShaping).newline();
         }
       }
     }

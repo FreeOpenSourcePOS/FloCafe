@@ -47,6 +47,7 @@ function assert(label: string, cond: boolean, detail?: string) {
  */
 function loadFrontendPrinterModules(): {
   receiptEncoder: typeof import('../frontend/src/lib/printer/receipt-encoder');
+  kotEncoder: typeof import('../frontend/src/lib/printer/kot-encoder');
   taxBillEncoder: typeof import('../frontend/src/lib/printer/tax-bill-encoder');
   unicode: typeof import('../frontend/src/lib/printer/unicode');
   warnings: typeof import('../frontend/src/lib/printer/warnings');
@@ -71,6 +72,7 @@ function loadFrontendPrinterModules(): {
   try {
     return {
       receiptEncoder: require('../frontend/src/lib/printer/receipt-encoder'),
+      kotEncoder: require('../frontend/src/lib/printer/kot-encoder'),
       taxBillEncoder: require('../frontend/src/lib/printer/tax-bill-encoder'),
       unicode: require('../frontend/src/lib/printer/unicode'),
       warnings: require('../frontend/src/lib/printer/warnings'),
@@ -838,6 +840,7 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
     buildCompactReceiptBytes,
     buildDetailedReceiptBytes,
   } = frontendModules.receiptEncoder;
+  const { buildKotBytes } = frontendModules.kotEncoder;
   const { buildTaxBillBytes } = frontendModules.taxBillEncoder;
   const { normalizeCurrencyToAscii } = frontendModules.unicode;
   const { hasUnsupportedPrinterChars } = frontendModules.warnings;
@@ -927,6 +930,27 @@ console.log('\n✅ Test 11: IR country thermal receipt financial-line preservati
   const longPersianText = Buffer.from(longPersianBytes).toString('utf8');
   assert('frontend shaping preserves truncated Persian item output', longPersianText.includes('…') && longPersianText.includes('چای زعفرانی'));
   assert('frontend shaping emits no warning for truncated Persian item', longPersianWarnings.length === 0);
+
+  const kotWarnings: Array<{ field: string; text: string; message: string }> = [];
+  const kotBytes = buildKotBytes({
+    order_number: 'KOT-LONG-ADDON',
+    created_at: new Date('2026-04-21T10:30:00Z').toISOString(),
+    type: 'dine_in',
+    items: [{
+      quantity: 1,
+      product_name: 'چای',
+      status: 'pending',
+      addons: [{ name: 'افزودنی بسیار طولانی برای آزمایش عرض چاپگر در آشپزخانه' }],
+    }],
+  } as any, { paperWidth: 58, arabicShaping: true }, kotWarnings);
+  const kotAddonLine = Buffer.from(kotBytes)
+    .toString('utf8')
+    .split('\n')
+    .map((line) => line.replace(/[\x00-\x1F\x7F]/g, ''))
+    .find((line) => line.includes('   + '));
+  const kotAddonText = kotAddonLine && kotAddonLine.slice(kotAddonLine.indexOf('   + '));
+  assert('frontend shaped KOT add-on stays within 42 columns', !!kotAddonText && Array.from(kotAddonText).length <= 42, `${kotAddonText?.length ?? 0} :: ${JSON.stringify(kotAddonText)}`);
+  assert('frontend shaped KOT add-on emits no warning', kotWarnings.length === 0);
 
   // Greptile P2: ESC/POS control bytes hidden inside an Arabic-bearing label
   // must never reach the raw byte path. BEL (0x07) never occurs in legitimate

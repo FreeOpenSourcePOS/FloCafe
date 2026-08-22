@@ -171,6 +171,29 @@ function digitsOf(text: string): string {
   return text.replace(/[^\d]/g, '');
 }
 
+/**
+ * Split rendered output into logical rows so amount assertions can be scoped
+ * to the row carrying their label. ESC/POS text is newline-separated; the
+ * browser HTML path is split into <tr> rows with tags stripped.
+ */
+function contentRows(text: string): string[] {
+  const raw = /<tr[\s>]/i.test(text)
+    ? (text.match(/<tr[\s\S]*?<\/tr>/gi) ?? [])
+    : text.split(/\r?\n/);
+  return raw.map((row) => row.replace(/<[^>]+>/g, ' '));
+}
+
+/** First row whose label matches `pattern` (optionally excluding `except`). */
+function labeledRow(rows: string[], pattern: RegExp, except?: RegExp): string | undefined {
+  return rows.find((row) => pattern.test(row) && !(except && except.test(row)));
+}
+
+/** Amount digits must appear inside the specific labeled row, not anywhere. */
+function rowAmountPresent(rows: string[], pattern: RegExp, amount: number, except?: RegExp): boolean {
+  const row = labeledRow(rows, pattern, except);
+  return row != null && digitsOf(row).includes(String(amount));
+}
+
 function expectContent(
   label: string,
   text: string,
@@ -196,13 +219,17 @@ function expectContent(
   for (const absent of expectations.absentItems ?? []) {
     warn(!text.includes(absent), `${label}: known-absent item correctly not rendered verbatim`);
   }
+  // Amount assertions are field-scoped: each expected amount must appear on
+  // the row carrying its own label (Subtotal / Discount / TOTAL), so stray
+  // digits elsewhere (item rows, payments, phone numbers) cannot satisfy them.
+  const rows = contentRows(text);
   if (expectations.subtotal != null) {
-    warn(digitsOf(normalized).includes(String(expectations.subtotal)), `${label}: subtotal ${expectations.subtotal}`);
+    warn(rowAmountPresent(rows, /sub\s*total/i, expectations.subtotal), `${label}: subtotal ${expectations.subtotal} on Subtotal row`);
   }
   if (expectations.discount != null) {
-    warn(digitsOf(normalized).includes(String(expectations.discount)), `${label}: discount ${expectations.discount}`);
+    warn(rowAmountPresent(rows, /discount/i, expectations.discount), `${label}: discount ${expectations.discount} on Discount row`);
   }
-  warn(digitsOf(normalized).includes(String(expectations.total)), `${label}: total ${expectations.total}`);
+  warn(rowAmountPresent(rows, /total/i, expectations.total, /sub\s*total/i), `${label}: total ${expectations.total} on TOTAL row`);
   for (const p of expectations.payments ?? []) {
     warn(text.includes(p), `${label}: payment "${p}"`);
   }

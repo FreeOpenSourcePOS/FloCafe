@@ -204,6 +204,7 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@point-of-sale/receipt-printer-encoder": "^3.0.3",
     "@whiskeysockets/baileys": "^7.0.0-rc14",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^13.0.3",

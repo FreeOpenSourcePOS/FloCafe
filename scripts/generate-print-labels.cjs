@@ -194,19 +194,30 @@ function regenerate() {
   return generateTypeScript(buildTable());
 }
 
+/**
+ * Normalize CRLF/CR to LF before byte-comparing. Windows checkouts with
+ * git's default core.autocrlf rewrite the committed LF file to CRLF on
+ * disk, which must not read as generator drift.
+ */
+function normalizeEol(text) {
+  return text.replace(/\r\n?/g, '\n');
+}
+
 function main() {
   const checkOnly = process.argv.includes('--check');
   const content = regenerate();
 
   if (!checkOnly) {
     fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
-    fs.writeFileSync(OUT_FILE, content);
+    fs.writeFileSync(OUT_FILE, content, 'utf8');
     console.log(`[generate-print-labels] wrote ${path.relative(ROOT, OUT_FILE)}`);
     return;
   }
 
-  const committed = fs.existsSync(OUT_FILE) ? fs.readFileSync(OUT_FILE, 'utf8') : '';
-  if (committed !== content) {
+  const committed = fs.existsSync(OUT_FILE)
+    ? normalizeEol(fs.readFileSync(OUT_FILE, 'utf8'))
+    : '';
+  if (committed !== normalizeEol(content)) {
     console.error('[generate-print-labels] DRIFT DETECTED: main/print/print-labels.generated.ts is stale.');
     console.error('Run `npm run generate:print-labels` after editing messages and commit the result.');
     process.exit(1);
@@ -223,4 +234,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { LANGUAGES, PRINT_NAMESPACE_KEYS, BORROWED_KEYS, ALL_CONCEPTS, OUT_FILE };
+module.exports = { LANGUAGES, PRINT_NAMESPACE_KEYS, BORROWED_KEYS, ALL_CONCEPTS, OUT_FILE, normalizeEol, regenerate };

@@ -119,12 +119,12 @@ export function safePrinterText<T extends { text(value: string): T }>(
         if (centerRawLine) {
           const pad = Math.max(0, Math.floor((centerCols - shapedDisplayWidth(payloadText)) / 2));
           payloadText = ' '.repeat(pad) + payloadText;
-          alignableEnc.align('left');
+          alignableEnc.align?.('left');
         }
         try {
           return (enc as { raw: (data: Uint8Array) => T }).raw(new TextEncoder().encode(payloadText));
         } finally {
-          if (centerRawLine) alignableEnc.align('center');
+          if (centerRawLine) alignableEnc.align?.('center');
         }
       }
       return enc.text(boundShapedText(sanitized, maxCols));

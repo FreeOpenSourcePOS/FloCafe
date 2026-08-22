@@ -10,6 +10,10 @@ import {
   type ReceiptOptions,
 } from '@/lib/printer/receipt-encoder';
 import { usePosSettingsStore } from '@/store/pos-settings';
+import {
+  ensurePrintLanguagesLoaded,
+  resolveBillPrintLanguages,
+} from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
 import type { PrintWarning } from '@/lib/printer/warnings';
@@ -161,8 +165,12 @@ export const usePrinterStore = create<PrinterState>()(
             return await executeBrowserPrint();
           }
 
-          // ESC/POS thermal path
+          // ESC/POS thermal path — labels are resolved from the receipt
+          // language policy through the shared PrintDocument (#444), so the
+          // requested language bundles must be in memory first.
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
+          const languages = resolveBillPrintLanguages();
+          await ensurePrintLanguagesLoaded(languages);
           const builderOpts: ReceiptOptions = {
             ...opts,
             paperWidth: opts?.paperWidth ?? configuredPaperWidth,
@@ -179,6 +187,7 @@ export const usePrinterStore = create<PrinterState>()(
             arabicShaping: printerArabicShaping,
             isReprint,
             trimDecimals: printerTrimDecimals,
+            languages,
           };
 
           const warnings: PrintWarning[] = [];
@@ -287,19 +296,23 @@ export const usePrinterStore = create<PrinterState>()(
             }
           }
 
-          const { paperWidth } = get();
-          const warnings: PrintWarning[] = [];
-          const bytes = buildKotBytes(order, { ...opts, paperWidth, arabicShaping: printerArabicShaping }, warnings);
-          set({ lastPrintedBytes: bytes });
-
           if (get().printMethod === 'escpos') {
+            const { paperWidth } = get();
+            const warnings: PrintWarning[] = [];
+            const bytes = buildKotBytes(order, { ...opts, paperWidth, arabicShaping: printerArabicShaping }, warnings);
+            set({ lastPrintedBytes: bytes });
             await printerService.print(bytes);
-          } else {
-            const paperWidth = get().paperWidth || 80;
-            const html = `<html><body style="font-family:monospace;white-space:pre;padding:10px;">${new TextDecoder().decode(bytes)}</body></html>`;
-            await printerService.printViaBrowser(html, paperWidth);
+            return warnings;
           }
-          return warnings;
+
+          // Browser fallback: render semantic KOT HTML instead of decoding
+          // raw ESC/POS bytes (#444). The ticket is built from the order's
+          // fields with resolved labels and kernel direction annotations.
+          const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
+          const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
+          const html = generateKotHtml(order, { paperWidth });
+          await printerService.printViaBrowser(html, paperWidth);
+          return [] as PrintWarning[];
         } catch (err) {
           set({ lastError: (err as Error).message });
           throw err;

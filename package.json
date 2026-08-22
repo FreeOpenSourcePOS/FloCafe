@@ -187,7 +187,7 @@
     "@electron/rebuild": "^4.2.0",
     "@formatjs/icu-messageformat-parser": "^3.5.17",
     "@types/bcryptjs": "^3.0.0",
-    "@types/better-sqlite3": "^7.6.11",
+    "@types/better-sqlite3": "^9.6.0",
     "@types/bonjour": "^3.5.13",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",

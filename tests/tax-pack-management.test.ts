@@ -766,6 +766,232 @@ async function main() {
       assert(contentLines.every((line) => line.length <= columns), `plugin renderer keeps ${columns}-column profile within printable width`);
     }
 
+    console.log('\n8a. escpos-line-template-v1 optional labels map (#445)');
+    const localizedLabelsTemplate = {
+      id: 'in.gst.localized-labels.v1',
+      displayName: 'India GST Localized Labels',
+      country: 'IN',
+      jurisdiction: '*',
+      paperColumns: [48],
+      renderer: { id: 'flocafe-thermal-receipt-template', version: 1 },
+      templatePayload: {
+        format: 'escpos-line-template-v1',
+        widthProfiles: [{ columns: 48, layout: {} }],
+        labels: {
+          invoice: 'NOTA',
+          taxInvoice: 'FACTURA FISCAL',
+          subtotal: 'SUBTOTAL LOCAL',
+          discount: 'DESCUENTO',
+          tax: 'IMPUESTO',
+          total: 'SUMA TOTAL',
+          footerThanks: 'Gracias por su visita!',
+        },
+        totals: {
+          // Structural author literals are the most specific override (#445):
+          // this must win over labels.total.
+          grandTotalLabel: 'GRAND TOTAL',
+        },
+      },
+    };
+    const labelsTotalTemplate = {
+      id: 'in.gst.labels-total.v1',
+      displayName: 'India GST Labels Total Only',
+      country: 'IN',
+      jurisdiction: '*',
+      paperColumns: [48],
+      renderer: { id: 'flocafe-thermal-receipt-template', version: 1 },
+      templatePayload: {
+        format: 'escpos-line-template-v1',
+        widthProfiles: [{ columns: 48, layout: {} }],
+        labels: { total: 'SUMA TOTAL' },
+      },
+    };
+    const fallbackTemplate = {
+      id: 'in.gst.label-fallback.v1',
+      displayName: 'India GST Label Fallbacks',
+      country: 'IN',
+      jurisdiction: '*',
+      paperColumns: [48],
+      renderer: { id: 'flocafe-thermal-receipt-template', version: 1 },
+      // No labels map and no author strings: built-in fallbacks must resolve
+      // localized through the canonical print-labels catalog (#440), with EN
+      // output byte-equivalent to the pre-#445 hardcoded English defaults.
+      templatePayload: {
+        format: 'escpos-line-template-v1',
+        widthProfiles: [{ columns: 48, layout: {} }],
+      },
+    };
+    const labelsPack = { ...testIndiaPack, id: 'test-labels-in-pack', version: '2.0.0', publishedAt: '2026-08-02' };
+    const labelsArtifactJson = JSON.stringify({
+      schemaVersion: 1,
+      artifactType: 'country-tax-pack-plugin',
+      id: labelsPack.id,
+      displayName: 'Test labels plugin',
+      publisher: labelsPack.publisher,
+      version: labelsPack.version,
+      country: labelsPack.country,
+      jurisdiction: labelsPack.jurisdiction,
+      publishedAt: labelsPack.publishedAt,
+      minFloVersion: labelsPack.minFloVersion,
+      taxPack: labelsPack,
+      printTemplates: [localizedLabelsTemplate, labelsTotalTemplate, fallbackTemplate],
+    }, null, 2);
+    const labelsSignature = sign(null, Buffer.from(labelsArtifactJson, 'utf8'), privateKey).toString('base64');
+    const labelsTag = 'tax-pack-test-labels-in-pack-v2.0.0';
+    const labelsBase = `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${labelsTag}`;
+    const labelsEntry = {
+      id: labelsPack.id,
+      publisher: labelsPack.publisher,
+      country: labelsPack.country,
+      jurisdiction: labelsPack.jurisdiction,
+      version: labelsPack.version,
+      publishedAt: labelsPack.publishedAt,
+      minFloVersion: labelsPack.minFloVersion,
+      downloadUrl: `${labelsBase}/test-labels-in-pack-v2.0.0.json`,
+      signatureUrl: `${labelsBase}/test-labels-in-pack-v2.0.0.json.sig`,
+      digest: taxPackSha256(labelsArtifactJson),
+    };
+    const labelsFetch = async (input: string | URL | Request) => new Response(
+      String(input) === labelsEntry.downloadUrl ? labelsArtifactJson : labelsSignature,
+      { status: 200 },
+    );
+    const labelsInstalled = await installCatalogEntry(labelsEntry, {
+      actorUserId: owner.userId,
+      fetchImpl: labelsFetch,
+      publicKey,
+    });
+    assertEqual(labelsInstalled.version, '2.0.0', 'pack with optional labels map installs');
+    assertEqual(
+      db.prepare('SELECT COUNT(*) AS count FROM installed_print_templates WHERE pack_version_id = ?')
+        .get(labelsInstalled.versionId).count,
+      3,
+      'all labeled templates install',
+    );
+
+    const renderLabeled = (templateId: string, billOverrides: Record<string, unknown> = {}, language?: string) => escPosToText(formatReceipt(
+      {
+        order_number: `ORD-LABELS-${templateId}`,
+        created_at: '2026-08-02T10:30:00.000Z',
+        items: [{ product_name: 'Chai', quantity: 1, total: 100 }],
+      },
+      { bill_number: `BILL-LABELS-${templateId}`, subtotal: 100, discount_amount: 0, tax_amount: 0, total: 100, ...billOverrides },
+      { name: 'Flo Test Cafe', country: 'IN', currency_symbol: '₹', show_tax_breakdown: false },
+      templateId,
+      48,
+      true,
+      false,
+      'full',
+      [],
+      false,
+      language,
+    ));
+
+    const labelsReceipt = renderLabeled('in.gst.localized-labels.v1');
+    assert(labelsReceipt.includes('NOTA'), 'labels.invoice overrides the no-tax title');
+    assert(labelsReceipt.includes('SUBTOTAL LOCAL'), 'labels.subtotal overrides the subtotal label');
+    assert(labelsReceipt.includes('GRAND TOTAL'), 'author-supplied grandTotalLabel still wins over labels.total');
+    assert(labelsReceipt.includes('Gracias por su visita!'), 'labels.footerThanks overrides the footer default');
+    const labelsTaxReceipt = renderLabeled('in.gst.localized-labels.v1', { tax_amount: 10 });
+    assert(labelsTaxReceipt.includes('FACTURA FISCAL'), 'labels.taxInvoice overrides the tax title');
+    assert(labelsTaxReceipt.includes('IMPUESTO'), 'labels.tax overrides the tax row label');
+    const labelsDiscountReceipt = renderLabeled('in.gst.localized-labels.v1', { discount_amount: 10, total: 90 });
+    assert(labelsDiscountReceipt.includes('DESCUENTO'), 'labels.discount overrides the discount row label');
+    const labelsTotalReceipt = renderLabeled('in.gst.labels-total.v1');
+    assert(labelsTotalReceipt.includes('SUMA TOTAL'), 'labels.total overrides the grand total when no structural label exists');
+
+    const fallbackEnReceipt = renderLabeled('in.gst.label-fallback.v1', {}, 'en');
+    assert(fallbackEnReceipt.includes('INVOICE'), 'EN fallback title matches the pre-#445 hardcoded default');
+    assert(fallbackEnReceipt.includes('Subtotal'), 'EN fallback subtotal matches the pre-#445 hardcoded default');
+    assert(fallbackEnReceipt.includes('TOTAL'), 'EN fallback total matches the pre-#445 hardcoded default');
+    assert(fallbackEnReceipt.includes('Thank you!'), 'EN fallback footer matches the pre-#445 hardcoded default');
+    const fallbackEsReceipt = renderLabeled('in.gst.label-fallback.v1', {}, 'es');
+    assert(fallbackEsReceipt.includes('FACTURA'), 'built-in fallbacks localize through the canonical catalog (es title)');
+    assert(fallbackEsReceipt.includes('Subtotal'), 'built-in fallbacks localize through the canonical catalog (es subtotal)');
+    // The legacy unsupported-script filter drops non-ASCII footer lines
+    // ("¡Gracias!") before they reach the printer, so the localized-footer
+    // assertion uses the ASCII-safe pt catalog entry instead.
+    const fallbackPtReceipt = renderLabeled('in.gst.label-fallback.v1', {}, 'pt');
+    assert(fallbackPtReceipt.includes('Obrigado!'), 'built-in fallbacks localize through the canonical catalog (pt footer)');
+    const fallbackUnknownLangReceipt = renderLabeled('in.gst.label-fallback.v1', {}, 'xx');
+    assert(fallbackUnknownLangReceipt.includes('INVOICE'), 'unknown receipt languages fall back to the EN catalog');
+
+    const labelsRejectCases: Array<{ name: string; labels: unknown; messagePart: string }> = [
+      {
+        name: 'oversized labels map',
+        labels: Object.fromEntries(Array.from({ length: 65 }, (_, index) => [`k${index}`, `v${index}`])),
+        messagePart: 'maximum of 64',
+      },
+      { name: 'oversized label value', labels: { total: 'x'.repeat(121) }, messagePart: 'at most 120 characters' },
+      { name: 'non-object labels map', labels: ['total'], messagePart: 'must be an object' },
+      { name: 'unknown semantic id', labels: { grandTotal: 'TOTAL' }, messagePart: 'Unknown print template label id' },
+      { name: 'non-string label value', labels: { total: 42 }, messagePart: 'must be a non-empty string' },
+    ];
+    for (const rejectCase of labelsRejectCases) {
+      const rejectTemplate = {
+        id: 'in.gst.labels-reject.v1',
+        displayName: 'India GST Labels Reject',
+        country: 'IN',
+        jurisdiction: '*',
+        paperColumns: [48],
+        renderer: { id: 'flocafe-thermal-receipt-template', version: 1 },
+        templatePayload: {
+          format: 'escpos-line-template-v1',
+          widthProfiles: [{ columns: 48, layout: {} }],
+          labels: rejectCase.labels,
+        },
+      };
+      const rejectPack = { ...testIndiaPack, id: 'test-labels-reject-pack', version: '9.0.0', publishedAt: '2026-08-02' };
+      const rejectArtifactJson = JSON.stringify({
+        schemaVersion: 1,
+        artifactType: 'country-tax-pack-plugin',
+        id: rejectPack.id,
+        displayName: 'Test labels reject plugin',
+        publisher: rejectPack.publisher,
+        version: rejectPack.version,
+        country: rejectPack.country,
+        jurisdiction: rejectPack.jurisdiction,
+        publishedAt: rejectPack.publishedAt,
+        minFloVersion: rejectPack.minFloVersion,
+        taxPack: rejectPack,
+        printTemplates: [rejectTemplate],
+      }, null, 2);
+      const rejectSignature = sign(null, Buffer.from(rejectArtifactJson, 'utf8'), privateKey).toString('base64');
+      const rejectTag = 'tax-pack-test-labels-reject-pack-v9.0.0';
+      const rejectBase = `https://github.com/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/${rejectTag}`;
+      const rejectEntry = {
+        id: rejectPack.id,
+        publisher: rejectPack.publisher,
+        country: rejectPack.country,
+        jurisdiction: rejectPack.jurisdiction,
+        version: rejectPack.version,
+        publishedAt: rejectPack.publishedAt,
+        minFloVersion: rejectPack.minFloVersion,
+        downloadUrl: `${rejectBase}/test-labels-reject-pack-v9.0.0.json`,
+        signatureUrl: `${rejectBase}/test-labels-reject-pack-v9.0.0.json.sig`,
+        digest: taxPackSha256(rejectArtifactJson),
+      };
+      const rejectFetch = async (input: string | URL | Request) => new Response(
+        String(input) === rejectEntry.downloadUrl ? rejectArtifactJson : rejectSignature,
+        { status: 200 },
+      );
+      let rejectedWithMessage = '';
+      try {
+        await installCatalogEntry(rejectEntry, { actorUserId: owner.userId, fetchImpl: rejectFetch, publicKey });
+      } catch (error: any) {
+        rejectedWithMessage = String(error?.message || '');
+      }
+      assert(
+        rejectedWithMessage.includes(rejectCase.messagePart),
+        `${rejectCase.name} is rejected with a clear error (got: ${rejectedWithMessage || 'no error'})`,
+      );
+    }
+    assertEqual(
+      db.prepare('SELECT COUNT(*) AS count FROM country_pack_versions WHERE pack_id = ?')
+        .get('test-labels-reject-pack').count,
+      0,
+      'rejected labels misuse never persists a pack version',
+    );
+
     console.log('\n8b. Reinstalling a plugin repairs a missing billing template without changing its version');
     db.prepare('DELETE FROM installed_print_templates WHERE pack_version_id = ?').run(wrappedInstalled.versionId);
     assertEqual(

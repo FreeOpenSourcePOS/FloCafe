@@ -1,6 +1,7 @@
 import { createHash, verify, type KeyLike } from 'crypto';
 import type { CountryPack, CountryTaxPackPluginArtifact, PluginPrintTemplate } from './types';
 import { TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY } from './trusted-signing-key';
+import { validateTemplateLabelsMap } from '../print/template-labels';
 
 const RELEASES_API_URL = 'https://api.github.com/repos/FreeOpenSourcePOS/FloCafe-Plugins/releases';
 const RELEASE_DOWNLOAD_PATH_PREFIX = '/FreeOpenSourcePOS/FloCafe-Plugins/releases/download/';
@@ -279,6 +280,10 @@ function validPluginPrintTemplate(value: unknown): value is PluginPrintTemplate 
   const hasPaperColumns = paperColumns.length > 0
     && paperColumns.every((width) => Number.isInteger(width) && [32, 36, 40, 42, 44, 48].includes(width as number));
   const payloadObject = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  // Additive optional `labels` map (#445): validated fail-closed at install
+  // time. A malformed map throws with a clear rejection message instead of
+  // failing silently; templates without labels behave exactly as before.
+  validateTemplateLabelsMap(payloadObject.labels);
   const payloadProfiles = Array.isArray(payloadObject.widthProfiles) ? payloadObject.widthProfiles : [];
   const hasMatchingProfiles = payloadObject.format === 'escpos-line-template-v1'
     && payloadProfiles.length > 0

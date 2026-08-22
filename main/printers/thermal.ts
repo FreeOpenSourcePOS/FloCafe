@@ -15,6 +15,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { randomUUID } from 'crypto';
 import { printLabel, isGeneratedPrintLanguage } from '../print/print-labels.generated';
 import type { PrintConceptId } from '../print/print-labels.generated';
+import { resolveTemplateLabel } from '../print/template-labels';
 
 export type PrintResult = {
   ok: boolean;
@@ -922,8 +923,8 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
   const hasTax = Number(bill.tax_amount) !== 0
     || taxComponents.some((component) => component.amount !== 0);
   const title = hasTax
-    ? String(payload?.header?.taxTitleWhenTaxPresent || printLabel(lang, 'print.taxInvoiceTitle'))
-    : String(payload?.header?.titleWhenTaxAbsent || printLabel(lang, 'print.invoiceTitle'));
+    ? String(payload?.header?.taxTitleWhenTaxPresent || resolveTemplateLabel(payload?.labels, 'taxInvoice', lang))
+    : String(payload?.header?.titleWhenTaxAbsent || resolveTemplateLabel(payload?.labels, 'invoice', lang));
   const tzOptions = biz.timezone ? { timeZone: biz.timezone } : undefined;
 
   lines.push('{INIT}');
@@ -963,11 +964,11 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
 
   lines.push(dash);
   if (payload?.totals?.showSubtotal !== false) {
-    const label = printLabel(lang, 'pos.subtotal');
+    const label = resolveTemplateLabel(payload?.labels, 'subtotal', lang);
     lines.push(label + rightAlign(formatCurrency(bill.subtotal, prefix, locale, trimDecimals), cols - label.length));
   }
   if (Number(bill.discount_amount) > 0 && payload?.totals?.showDiscount !== false) {
-    const label = printLabel(lang, 'pos.discount');
+    const label = resolveTemplateLabel(payload?.labels, 'discount', lang);
     lines.push(label + rightAlign('-' + formatCurrency(bill.discount_amount, prefix, locale, trimDecimals), cols - label.length));
   }
   if (biz.show_tax_breakdown !== false && taxComponents.length > 0) {
@@ -977,11 +978,15 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
       lines.push(pluginSummaryRow(rawLabel, formatCurrency(tax.amount, prefix, locale, trimDecimals), layout, cols));
     }
   } else if (Number(bill.tax_amount) !== 0) {
-    const label = printLabel(lang, 'pos.tax');
+    const label = resolveTemplateLabel(payload?.labels, 'tax', lang);
     lines.push(label + rightAlign(formatCurrency(bill.tax_amount, prefix, locale, trimDecimals), Math.max(4, cols - label.length)));
   }
   lines.push(bar);
-  const totalLabel = String(payload?.totals?.grandTotalLabel || printLabel(lang, 'print.grandTotal'));
+  // Label precedence (#445): the author's structural literal (e.g.
+  // totals.grandTotalLabel) is most specific and wins first; the additive
+  // payload-root `labels` map overrides next; otherwise the built-in default
+  // resolves localized through the canonical print-labels catalog (#440).
+  const totalLabel = String(payload?.totals?.grandTotalLabel || resolveTemplateLabel(payload?.labels, 'total', lang));
   lines.push('{BOLD}' + totalLabel + rightAlign(formatCurrency(bill.total, prefix, locale, trimDecimals), cols - totalLabel.length) + '{/BOLD}');
 
   if (bill.payment_details) {
@@ -1009,7 +1014,7 @@ function renderEscposLineTemplateV1(payload: any, profile: { columns: number; la
     : biz.show_tax_id === true;
   if (showTaxRegistration && biz.taxRegistrationNumber) pushWrapped(lines, configuredTaxLabel + ': ' + biz.taxRegistrationNumber, cols);
   if (payload?.footer?.useConfiguredFooterNote !== false && biz.footer_note) pushCenteredWrapped(lines, biz.footer_note, cols);
-  else lines.push('{CENTER}' + String(payload?.footer?.defaultMessage || printLabel(lang, 'print.thankYouShort')) + '{/CENTER}');
+  else lines.push('{CENTER}' + String(payload?.footer?.defaultMessage || resolveTemplateLabel(payload?.labels, 'footerThanks', lang)) + '{/CENTER}');
   if (payload?.footer?.includePoweredByFloPOS !== false) appendPoweredByFooter(lines);
   lines.push('{CUT}');
 

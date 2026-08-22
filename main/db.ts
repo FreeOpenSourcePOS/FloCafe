@@ -351,7 +351,10 @@ export function getDbHealth(): { ok: boolean; error?: string } {
 }
 
 export function getDbPath(): string {
-  const userDataPath = app.isPackaged ? app.getPath('userData') : path.join(__dirname, '../../');
+  const projectRoot = path.basename(path.dirname(__dirname)) === 'dist'
+    ? path.resolve(__dirname, '../..')
+    : path.resolve(__dirname, '..');
+  const userDataPath = app.isPackaged ? app.getPath('userData') : projectRoot;
   return path.join(userDataPath, 'flo.db');
 }
 

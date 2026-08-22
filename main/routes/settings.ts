@@ -22,7 +22,15 @@ import {
 
 const router = Router();
 const settingsReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
-const settingsWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
+const configuredSettingsWriteLimit = Number.parseInt(process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX || '', 10);
+const settingsWriteRateLimit = expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: Number.isFinite(configuredSettingsWriteLimit) && configuredSettingsWriteLimit > 0
+    ? configuredSettingsWriteLimit
+    : 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 

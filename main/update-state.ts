@@ -161,6 +161,12 @@ export function oneShotUpdateState(state: OneShotUpdateState): StoredUpdateStatu
   return { status: state };
 }
 
+export function missingUpdateConfigState(isDevelopmentArtifact: boolean, detail: string): StoredUpdateStatus {
+  return isDevelopmentArtifact
+    ? oneShotUpdateState('dev-mode')
+    : { status: 'check-failed', reason: 'manifest-missing', error: detail };
+}
+
 export function isInstallReady(stored: StoredUpdateStatus, stagedUpdateReady: boolean): boolean {
   return stagedUpdateReady || stored.status === 'ready-to-install';
 }

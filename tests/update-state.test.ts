@@ -20,6 +20,7 @@ import {
   isInstallReady,
   isUpdateCheckInFlight,
   isOneShotUpdateState,
+  missingUpdateConfigState,
   oneShotUpdateState,
   toIpcUpdateStatus,
   type StoredUpdateStatus,
@@ -187,6 +188,16 @@ test('oneShotUpdateState seeds each one-shot startup state cleanly', () => {
   for (const state of ['store-managed', 'linux-managed', 'dev-mode'] as const) {
     assert.deepEqual(oneShotUpdateState(state), { status: state });
   }
+});
+
+test('missingUpdateConfigState distinguishes development and packaged artifacts', () => {
+  const detail = 'app-update.yml not found at /resources/app-update.yml';
+  assert.deepEqual(missingUpdateConfigState(true, detail), { status: 'dev-mode' });
+  assert.deepEqual(missingUpdateConfigState(false, detail), {
+    status: 'check-failed',
+    reason: 'manifest-missing',
+    error: detail,
+  });
 });
 
 test('isInstallReady protects both persisted and separately staged updates', () => {

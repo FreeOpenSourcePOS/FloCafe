@@ -22,6 +22,7 @@ import {
   initialUpdateState,
   isUpdateCheckInFlight,
   isInstallReady,
+  missingUpdateConfigState,
   oneShotUpdateState,
   toIpcUpdateStatus,
   type StoredUpdateStatus,
@@ -222,30 +223,30 @@ function checkForUpdates(): void {
     return;
   }
 
-  // Unpacked dev builds (electron-builder --dir) don't ship app-update.yml.
-  // app.isPackaged can still be true for unpacked builds, so check for the
-  // file directly — if it's missing, skip the update check gracefully.
   const configPath = path.join(process.resourcesPath, 'app-update.yml');
-  if (!fs.existsSync(configPath)) {
-    // Unpacked builds cannot self-update; surface that honestly as dev-mode
-    // instead of pretending to be up to date (#467).
-    log.debug('[Update] app-update.yml not found at', configPath, '— skipping (unpacked build)');
-    setUpdateStatus(oneShotUpdateState('dev-mode'));
+  const configMissing = !fs.existsSync(configPath);
+  const configDetail = `app-update.yml not found at ${configPath}`;
+  if (isDev) {
+    log.debug('[Update] Skipping update check in dev mode');
+    setUpdateStatus(configMissing
+      ? missingUpdateConfigState(true, configDetail)
+      : oneShotUpdateState('dev-mode'));
     return;
   }
 
-  if (!isDev) {
-    updaterPhase = 'check';
-    setUpdateStatus({ status: 'checking' });
-    autoUpdater.checkForUpdates().catch((err) => {
-      // The `error` event above records the honest classified state; this
-      // catch only prevents an unhandled promise rejection.
-      console.error('[Update] Check failed:', err);
-    });
-  } else {
-    log.debug('[Update] Skipping update check in dev mode');
-    setUpdateStatus(oneShotUpdateState('dev-mode'));
+  if (configMissing) {
+    log.info('[Update] Packaged build is missing app-update.yml at', configPath);
+    setUpdateStatus(missingUpdateConfigState(false, configDetail));
+    return;
   }
+
+  updaterPhase = 'check';
+  setUpdateStatus({ status: 'checking' });
+  autoUpdater.checkForUpdates().catch((err) => {
+    // The `error` event above records the honest classified state; this
+    // catch only prevents an unhandled promise rejection.
+    console.error('[Update] Check failed:', err);
+  });
 }
 
 // Separate from the app self-updater above: tax packs are the only plugin

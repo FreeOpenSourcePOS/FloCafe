@@ -1031,8 +1031,8 @@ Terminal state; archived templates stop being selectable.
 
 ### POST `/api/print-templates/:id/rollback`
 Restore `previous_payload_json` after verifying the current checksum; clears
-the rollback point. 409 when there is nothing to roll back to or when the
-restored payload fails current validation.
+the rollback point. 409 when there is nothing to roll back to, when the
+restored payload fails current validation, or when the template is archived.
 
 ### GET `/api/print-templates/:id/payload`
 Read the stored payload (owner or manager).

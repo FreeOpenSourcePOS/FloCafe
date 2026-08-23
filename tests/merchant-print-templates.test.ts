@@ -105,6 +105,9 @@ console.log('\n▶ Validation: negative fixtures');
     ['negative/duplicate-block.json', 'duplicate block "totals"'],
     ['negative/empty-blocks.json', 'non-empty array'],
     ['negative/non-string-label.json', 'expected a literal string'],
+    ['negative/unknown-block-kind.json', 'unknown block kind'],
+    ['negative/non-object-block.json', 'each block entry must be a JSON object'],
+    ['negative/non-boolean-visible.json', 'expected a boolean'],
   ];
   for (const [fixture, expectedFragment] of expectations) {
     const raw = fs.readFileSync(path.join(FIXTURE_DIR, fixture), 'utf8');
@@ -423,6 +426,13 @@ async function runLifecycle(): Promise<void> {
     assert.equal(noRollbackTwice.status, 409, 'second rollback has nothing to restore');
     ok('rollback without a previous payload is rejected');
 
+    // Capture a fresh rollback point while ACTIVE so the archived-rollback
+    // refusal below can only come from the status guard, not from an empty
+    // rollback point.
+    const reEdit = await request(app).put(`/api/print-templates/${templateId}`)
+      .set('Authorization', OWNER).send({ payload: PAYLOAD_LABELED });
+    assert.equal(reEdit.status, 200);
+
     const archived = await request(app).post(`/api/print-templates/${templateId}/archive`)
       .set('Authorization', OWNER);
     assert.equal(archived.status, 200);
@@ -433,6 +443,7 @@ async function runLifecycle(): Promise<void> {
     const rollbackArchived = await request(app).post(`/api/print-templates/${templateId}/rollback`)
       .set('Authorization', OWNER);
     assert.equal(rollbackArchived.status, 409, 'rollback is refused on archived templates');
+    assert.equal(rollbackArchived.body.error, 'Archived templates cannot be rolled back');
     ok('archive terminalizes the lifecycle');
   }
 

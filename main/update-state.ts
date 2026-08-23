@@ -75,6 +75,8 @@ const NETWORK_ERROR_CODES: ReadonlySet<string> = new Set([
   'ENETUNREACH',
 ]);
 
+const NETWORK_ERROR_CODE_PATTERN = /^(?:ERR_NETWORK_|ERR_INTERNET_)/;
+
 /** electron-updater-specific code for a missing/unreachable latest.yml channel manifest. */
 const CHANNEL_FILE_NOT_FOUND = 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND';
 
@@ -98,21 +100,27 @@ function errorMessage(err: unknown): string {
 /**
  * Classify an electron-updater error into an honest user-facing state.
  *
- * Order of precedence:
- *  1. Manifest/channel problems (404-class, missing app-update.yml) — these
- *     were historically masked as "up to date"; they are check failures.
- *  2. Network reachability problems — the machine may simply be offline,
- *     which is expected in an offline-first POS and is not a defect.
- *  3. Everything else — attributed to the current phase (check vs download).
+ * Network errors are classified before phase-specific failures, and download
+ * failures are classified before check-time manifest failures.
  */
 export function classifyUpdateError(err: unknown, phase: UpdateErrorPhase = 'check'): ClassifiedUpdateError {
   const detail = errorMessage(err);
   const code = errorCode(err);
 
-  // 1. Manifest-missing class: no channel file (latest.yml) or no release
-  // artifacts published for this channel yet. Matched by the updater's own
-  // error code first, then by the historical message patterns so older
-  // electron-updater builds that drop the code still classify honestly.
+  // Network class: DNS/routing/timeouts mean offline, not a broken build.
+  if (
+    (code !== undefined && (NETWORK_ERROR_CODES.has(code) || NETWORK_ERROR_CODE_PATTERN.test(code))) ||
+    /ENOTFOUND|ERR_NETWORK_[A-Z_]+|ERR_INTERNET_[A-Z_]+|getaddrinfo|network.*(unreachable|timeout)|socket hang up/i.test(detail)
+  ) {
+    return { state: 'offline', reason: 'unknown', detail };
+  }
+
+  if (phase === 'download') {
+    return { state: 'check-failed', reason: 'download-failed', detail };
+  }
+
+  // Manifest-missing class: no channel file (latest.yml) or no release
+  // artifacts published for this channel yet.
   if (
     code === CHANNEL_FILE_NOT_FOUND ||
     code === 'ENOENT' ||
@@ -121,18 +129,6 @@ export function classifyUpdateError(err: unknown, phase: UpdateErrorPhase = 'che
     return { state: 'check-failed', reason: 'manifest-missing', detail };
   }
 
-  // 2. Network class: DNS/routing/timeouts mean offline, not a broken build.
-  if (
-    (code !== undefined && NETWORK_ERROR_CODES.has(code)) ||
-    /ENOTFOUND|getaddrinfo|network.*(unreachable|timeout)|socket hang up/i.test(detail)
-  ) {
-    return { state: 'offline', reason: 'unknown', detail };
-  }
-
-  // 3. Phase-attributed failure.
-  if (phase === 'download') {
-    return { state: 'check-failed', reason: 'download-failed', detail };
-  }
   return { state: 'check-failed', reason: 'unknown', detail };
 }
 

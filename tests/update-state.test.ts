@@ -87,10 +87,30 @@ test('classifyUpdateError: other network codes -> offline', () => {
   }
 });
 
+test('classifyUpdateError: Electron network codes -> offline', () => {
+  for (const code of ['ERR_NETWORK_IO_SUSPENDED', 'ERR_NETWORK_CHANGED', 'ERR_INTERNET_DISCONNECTED']) {
+    const err = updaterError(code, `request failed while reading app-update.yml (${code})`);
+    const out = classifyUpdateError(err);
+    assert.equal(out.state, 'offline', code);
+  }
+});
+
 test('classifyUpdateError: network failure during download still -> offline', () => {
   const err = updaterError('ECONNRESET', 'socket hang up');
   const out = classifyUpdateError(err, 'download');
   assert.equal(out.state, 'offline');
+});
+
+test('classifyUpdateError: manifest-looking download failures -> download-failed', () => {
+  for (const err of [
+    updaterError('ENOENT', 'ENOENT: package file missing'),
+    new Error('Request failed: 404 Not Found'),
+    new Error('Cannot find latest-linux.yml'),
+  ]) {
+    const out = classifyUpdateError(err, 'download');
+    assert.equal(out.state, 'check-failed');
+    assert.equal(out.reason, 'download-failed');
+  }
 });
 
 test('classifyUpdateError: generic error during download phase -> check-failed/download-failed', () => {

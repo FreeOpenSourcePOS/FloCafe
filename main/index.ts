@@ -77,6 +77,7 @@ console.log('[Log] Log files location:', logPath);
 // startup states and failures) goes through here so a renderer reload can
 // recover the truth via get-update-status instead of racing push events.
 let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
+let updaterPhase: UpdateErrorPhase = 'check';
 let startupFailure = false;
 
 function configureAutoUpdaterChannel(): void {
@@ -116,9 +117,6 @@ function setUpdateStatus(next: StoredUpdateStatus): void {
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
   configureAutoUpdaterChannel();
-  // Which updater phase we are in, so the single `error` event can be
-  // attributed to a check failure vs a download failure.
-  let updaterPhase: UpdateErrorPhase = 'check';
   // Downloading is harmless and lets the user see a ready-to-install build,
   // but installation must always be an explicit action. A POS may be closed
   // while a payment, printer job, or end-of-day workflow is still in flight.
@@ -173,7 +171,9 @@ function setupAutoUpdater(): void {
     // #467: classify by error code/phase — never emit up-to-date from an
     // error path. The historical substring mask (404 / Cannot find latest /
     // ENOENT => "up to date") hid real check failures from users.
-    const classified = classifyUpdateError(err, updaterPhase);
+    const errorPhase = updaterPhase;
+    const classified = classifyUpdateError(err, errorPhase);
+    updaterPhase = 'check';
     log.info(
       `[Update] Updater error classified as ${classified.state}` +
       `/${classified.reason}:`, classified.detail
@@ -187,6 +187,11 @@ function setupAutoUpdater(): void {
 }
 
 function checkForUpdates(): void {
+  if (updaterPhase === 'download') {
+    log.info('[Update] Ignoring check while an update download is in progress');
+    return;
+  }
+
   // Linux: only AppImage supports self-update via electron-updater (it sets
   // the APPIMAGE env var at launch). deb/rpm/snap are managed by their
   // package manager / the snap daemon instead — electron-updater can't
@@ -217,6 +222,7 @@ function checkForUpdates(): void {
   }
 
   if (!isDev) {
+    updaterPhase = 'check';
     setUpdateStatus({ status: 'checking' });
     autoUpdater.checkForUpdates().catch((err) => {
       // The `error` event above records the honest classified state; this

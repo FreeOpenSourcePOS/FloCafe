@@ -56,4 +56,5 @@ export type ElectronApiContractModels = [
   Expect<Equal<keyof KdsInfo, 'url' | 'wsUrl' | 'localIP' | 'port'>>,
   Expect<Equal<keyof DailySummary, 'date' | 'revenue' | 'bill_count' | 'covers' | 'pending_orders'>>,
   Expect<Equal<ElectronPrinter['connection_type'], 'network' | 'usb' | 'webusb'>>,
+  Expect<Equal<ElectronPrinter['port'], number | null>>,
 ];

@@ -30,7 +30,7 @@
     "release:linux": "npm run build:frontend && npm run build && electron-builder --linux --publish never",
     "release:mac": "npm run build:frontend && npm run build && electron-builder --mac --publish never",
     "release:win": "npm run build:frontend && npm run build && electron-builder --win --publish never",
-    "pack": "electron-builder --dir",
+    "pack": "electron-builder --dir && node scripts/mark-unpacked-artifact.cjs",
     "pretest": "bash tests/run-test.sh npm run test:payment-methods-split && bash tests/run-test.sh npm run test:release-regressions",
     "start": "electron .",
     "rebuild": "HOME=~/.electron-gyp node-gyp rebuild --target=$(node -p \"require('./node_modules/electron/package.json').version\") --arch=$(node -p \"process.arch\") --dist-url=https://electronjs.org/headers --runtime=electron --directory node_modules/better-sqlite3",

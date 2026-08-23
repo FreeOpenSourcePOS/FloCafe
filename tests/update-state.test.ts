@@ -212,14 +212,22 @@ test('isDevelopmentOrUnpackedArtifact distinguishes runtime artifact boundaries'
   assert.equal(isDevelopmentOrUnpackedArtifact({
     defaultApp: true,
     packaged: false,
+    unpackedMarker: false,
   }), true);
   assert.equal(isDevelopmentOrUnpackedArtifact({
     defaultApp: false,
     packaged: false,
+    unpackedMarker: false,
   }), true);
   assert.equal(isDevelopmentOrUnpackedArtifact({
     defaultApp: false,
     packaged: true,
+    unpackedMarker: true,
+  }), true);
+  assert.equal(isDevelopmentOrUnpackedArtifact({
+    defaultApp: false,
+    packaged: true,
+    unpackedMarker: false,
   }), false);
 });
 

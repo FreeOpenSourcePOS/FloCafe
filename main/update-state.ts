@@ -35,10 +35,11 @@ export type UpdateState = (typeof UPDATE_STATES)[number];
 export interface RuntimeArtifactDescriptor {
   defaultApp: boolean;
   packaged: boolean;
+  unpackedMarker: boolean;
 }
 
 export function isDevelopmentOrUnpackedArtifact(artifact: RuntimeArtifactDescriptor): boolean {
-  return artifact.defaultApp || !artifact.packaged;
+  return artifact.defaultApp || !artifact.packaged || artifact.unpackedMarker;
 }
 
 /** Why a check or download failed, when known. */

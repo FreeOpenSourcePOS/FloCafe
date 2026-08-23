@@ -71,6 +71,7 @@ const isMsixBuild =
 
 // Either store build: skip third-party auto-updater entirely.
 const isStoreBuild = isMasBuild || isMsixBuild;
+const UNPACKED_DEV_MARKER = 'flo-unpacked-dev.marker';
 
 log.initialize();
 log.transports.file.level = 'info';
@@ -228,6 +229,7 @@ function checkForUpdates(): void {
   const isUpdaterDevelopmentArtifact = isDevelopmentOrUnpackedArtifact({
     defaultApp: (process as NodeJS.Process & { defaultApp?: boolean }).defaultApp === true,
     packaged: app.isPackaged,
+    unpackedMarker: fs.existsSync(path.join(process.resourcesPath, UNPACKED_DEV_MARKER)),
   });
   const configPath = path.join(process.resourcesPath, 'app-update.yml');
   let configMissing = false;

@@ -1,6 +1,6 @@
 # Merchant print templates
 
-Status: CURRENT (model shipped in issue #447; file import/export UX is #448)
+Status: CURRENT (model shipped in issue #447; offline import/export shipped in issue #448; visual editor remains future work)
 
 Merchant print templates are tenant-owned, versioned descriptions of receipt
 SEMANTIC STRUCTURE. They let a merchant choose which PrintDocument v1 blocks
@@ -83,7 +83,8 @@ Table `merchant_print_templates` (migration v72):
 - `id` uuid PK; `business_id` tenant scope (the embedded database is
   single-store, so rows are scoped to `'local'`).
 - `origin`: `created | imported | cloned`; `derived_from` nullable structured
-  reference `{ type, templateId }`.
+  reference (`{ type, templateId }`, plus optional `fileName` for
+  offline-import sources).
 - `document_type` (`receipt`), `schema_version`, canonical `payload_json`.
 - `status`: `draft → active → archived`. Only ACTIVE rows are selectable as
   the bill template.
@@ -95,6 +96,55 @@ Table `merchant_print_templates` (migration v72):
 CRUD API (owner role): `/api/print-templates` — create draft, update draft /
 active (active edits snapshot the previous payload), `activate`, `archive`,
 `rollback`.
+
+## Offline transfer format (public contract, #448)
+
+Templates travel as self-describing `.json` files (`*.flocafe-template.json`),
+built by `GET /api/print-templates/:id/export` and consumed by
+`POST /api/print-templates/import` (both owner-role only):
+
+```jsonc
+{
+  "format": "flocafe-merchant-template",      // envelope discriminator, constant
+  "schemaVersion": 1,                          // ENVELOPE version, fail-closed on unknown majors
+  "exportedAt": "2026-02-14T09:00:00.000Z",    // ISO-8601
+  "appVersion": "3.3.0",                       // optional, informational
+  "origin": {                                  // optional, informational provenance of the export
+    "sourceTemplateId": "<uuid>",
+    "sourceName": "Front Counter Receipt",
+    "sourceChecksum": "<sha256 hex>"
+  },
+  "checksum": "<sha256 hex>",                  // integrity of the embedded payload (see below)
+  "template": { /* the #447 payload, exactly as stored */ }
+}
+```
+
+Contract promises:
+
+- Field names above are stable. Unknown root/origin fields are REJECTED on
+  import (stricter than render tolerance) so typos cannot change meaning.
+- The envelope major gate is independent of the payload's `schemaVersion`:
+  unknown envelope majors fail closed before the payload is even inspected.
+- `checksum` is the sha256 hex of the CANONICAL payload text —
+  `JSON.stringify(validatedPayload)` — which is exactly what the table's
+  `checksum` column stores. Whitespace/key-order reformatting of the file
+  does not break verification; any semantic modification does.
+- Import treats every file as untrusted input: raw byte cap 256 KB, single
+  JSON document, structural envelope validation, then the SAME shared
+  payload validator used on every write path (#447), then checksum
+  verification. No network access, registry lookup, or fetch happens anywhere
+  in the import/export path.
+- Imports ALWAYS land as a NEW draft row (`origin: 'imported'`, fresh uuid)
+  — never auto-activated, never overwriting an existing identity. Duplicate
+  names are allowed; `derived_from` records `{ type: 'offline-import',
+  templateId: <sha256 of the exact source file text>, fileName?: <sanitized
+  source file name> }` as provenance.
+- Exportable states are `active` and `archived`; drafts are refused (they
+  have never passed activation, the checksum-verified review point). A row
+  whose stored checksum no longer matches its payload can never be exported.
+- Only minor-version forward migration would be introduced together with an
+  explicit compatibility policy; today integer `schemaVersion` values other
+  than `1` are rejected in both envelope and payload positions.
 
 ## Provenance & trust
 

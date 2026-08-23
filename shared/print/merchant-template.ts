@@ -28,6 +28,14 @@
  * a different contract on purpose; do not converge them. See
  * docs/merchant-print-templates.md.
  *
+ * OFFLINE TRANSFER (#448): templates travel as `.json` envelopes carrying the
+ * validated payload plus integrity checksum and informational origin metadata.
+ * Import treats every file as untrusted input: size-capped, single JSON
+ * document, structurally validated envelope, then the SAME fail-closed
+ * payload validator used on every write path, then checksum verification.
+ * Imports always land as a NEW draft row (`origin: 'imported'`) — never as
+ * an activation, never overwriting an existing identity.
+ *
  * PURITY RULES (same contract as the rest of `shared/print/`, see README.md):
  * types + pure functions only — no Electron, DOM, Node built-ins, DB,
  * filesystem, network, or transport IO.
@@ -51,6 +59,23 @@ export const MERCHANT_TEMPLATE_SCHEMA_VERSION = 1;
 
 /** Hard payload size cap (~256 KB) enforced on write/import. */
 export const MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES = 256 * 1024;
+
+/** Same cap applied to the whole offline transfer ENVELOPE (#448). */
+export const MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES = 256 * 1024;
+
+/**
+ * Discriminator of the offline transfer file format (#448, epic #438).
+ *
+ * The envelope is a self-describing portable wrapper around one validated
+ * merchant template payload: `{ format, schemaVersion, exportedAt,
+ * appVersion?, origin?, checksum, template }`. It is a PUBLIC CONTRACT
+ * (documented in docs/merchant-print-templates.md): stable field names,
+ * fail-closed on unknown majors, unknown fields rejected on import.
+ */
+export const MERCHANT_TEMPLATE_EXPORT_FORMAT = 'flocafe-merchant-template';
+
+/** Current transfer-envelope schema major version. Breaking when bumped. */
+export const MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION = 1;
 
 /** Ordered union of every PrintDocument v1 block kind — the allowed set. */
 export const MERCHANT_TEMPLATE_BLOCK_KINDS = [
@@ -84,6 +109,124 @@ export const MERCHANT_TEMPLATE_LABEL_FIELDS: Readonly<
   'payments': [],
   'message': ['reprintBanner', 'thankYou'],
 });
+
+// ---------------------------------------------------------------------------
+// Offline transfer envelope (#448) — shape + pure structural validation
+// ---------------------------------------------------------------------------
+
+/** Optional informational provenance recorded inside an exported envelope. */
+export interface MerchantTemplateEnvelopeOrigin {
+  /** Merchant-template row id at export time (informational only; import
+   *  always creates a NEW identity and never overwrites by id). */
+  readonly sourceTemplateId?: string;
+  /** Template name at export time; importers may reuse it as a label. */
+  readonly sourceName?: string;
+  /** Payload checksum at export time (sha256 hex of canonical payload text). */
+  readonly sourceChecksum?: string;
+}
+
+/** Structural view of a validated envelope. Checksum VERIFICATION (hashing)
+ * happens at the IO boundary: compare `claimedChecksum` against the sha256 of
+ * `JSON.stringify(payload)` (the same canonical text the service persists). */
+export interface ValidatedMerchantTemplateEnvelope {
+  readonly exportedAt: string;
+  readonly appVersion?: string;
+  readonly origin?: MerchantTemplateEnvelopeOrigin;
+  /** Claimed integrity checksum (verified by the caller). */
+  readonly claimedChecksum: string;
+  readonly payload: MerchantPrintTemplatePayload;
+}
+
+export type MerchantTemplateEnvelopeValidation =
+  | { readonly ok: true; readonly envelope: ValidatedMerchantTemplateEnvelope }
+  | { readonly ok: false; readonly errors: readonly string[] };
+
+const ENVELOPE_ROOT_FIELDS = ['format', 'schemaVersion', 'exportedAt', 'appVersion', 'origin', 'checksum', 'template'];
+const ENVELOPE_ORIGIN_FIELDS = ['sourceTemplateId', 'sourceName', 'sourceChecksum'];
+
+function isSha256Hex(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-fA-F]{64}$/.test(value);
+}
+
+/**
+ * Structurally validate a PARSED offline transfer envelope (pure). Enforces
+ * the #448 unknown-field-reject policy on the root and origin objects, the
+ * format discriminator, the fail-closed envelope schema-major gate, and a
+ * well-formed ISO-8601 `exportedAt`. The embedded TEMPLATE payload is NOT
+ * validated here — run {@link validateMerchantTemplate} on it so exactly one
+ * validator owns payload rules. Checksum equality is likewise verified by
+ * the caller (it needs hashing); this function only checks its SHA-256 shape.
+ */
+export function validateMerchantTemplateEnvelope(value: unknown): MerchantTemplateEnvelopeValidation {
+  const errors: string[] = [];
+  if (!isPlainObject(value)) {
+    return { ok: false, errors: ['transfer file must be a single JSON object'] };
+  }
+
+  for (const key of Object.keys(value)) {
+    if (!ENVELOPE_ROOT_FIELDS.includes(key)) {
+      reject(errors, `root: unknown field "${key}" (allowed: ${ENVELOPE_ROOT_FIELDS.join(', ')})`);
+    }
+  }
+
+  if (value.format !== MERCHANT_TEMPLATE_EXPORT_FORMAT) {
+    reject(errors, `root.format: expected "${MERCHANT_TEMPLATE_EXPORT_FORMAT}", got ${JSON.stringify(value.format)}`);
+  }
+  if (value.schemaVersion !== MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION) {
+    reject(errors, `root.schemaVersion: unsupported transfer-file version ${JSON.stringify(value.schemaVersion)}; this build supports major version ${MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION} only`);
+  }
+  if (typeof value.exportedAt !== 'string' || Number.isNaN(Date.parse(value.exportedAt))) {
+    reject(errors, 'root.exportedAt: expected an ISO-8601 date-time string');
+  }
+  if (value.appVersion !== undefined && typeof value.appVersion !== 'string') {
+    reject(errors, 'root.appVersion: expected a string');
+  }
+  if (!isSha256Hex(value.checksum)) {
+    reject(errors, 'root.checksum: expected a sha256 hex digest of the template payload');
+  }
+
+  if (!isPlainObject(value.template)) {
+    reject(errors, 'root.template: expected the merchant template payload as a JSON object');
+  }
+
+  let origin: MerchantTemplateEnvelopeOrigin | undefined;
+  if (value.origin !== undefined) {
+    if (!isPlainObject(value.origin)) {
+      reject(errors, 'root.origin: expected an object with informational source metadata');
+    } else {
+      for (const key of Object.keys(value.origin)) {
+        if (!ENVELOPE_ORIGIN_FIELDS.includes(key)) {
+          reject(errors, `root.origin: unknown field "${key}" (allowed: ${ENVELOPE_ORIGIN_FIELDS.join(', ')})`);
+        }
+      }
+      for (const key of ENVELOPE_ORIGIN_FIELDS) {
+        const entry = value.origin[key];
+        if (entry !== undefined && typeof entry !== 'string') {
+          reject(errors, `root.origin.${key}: expected a string`);
+        }
+      }
+      origin = {
+        ...(typeof value.origin.sourceTemplateId === 'string' ? { sourceTemplateId: value.origin.sourceTemplateId } : {}),
+        ...(typeof value.origin.sourceName === 'string' ? { sourceName: value.origin.sourceName } : {}),
+        ...(typeof value.origin.sourceChecksum === 'string' ? { sourceChecksum: value.origin.sourceChecksum } : {}),
+      };
+    }
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
+  return {
+    ok: true,
+    envelope: {
+      exportedAt: value.exportedAt as string,
+      ...(typeof value.appVersion === 'string' ? { appVersion: value.appVersion } : {}),
+      ...(origin ? { origin } : {}),
+      claimedChecksum: value.checksum as string,
+      // Placeholder replaced by the caller after payload validation; the
+      // structural contract above is what this function owns.
+      payload: value.template as unknown as MerchantPrintTemplatePayload,
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Payload shape (what merchants store)

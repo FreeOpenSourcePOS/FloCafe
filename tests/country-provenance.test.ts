@@ -71,8 +71,8 @@ async function run() {
   const originalFetch = globalThis.fetch;
 
   try {
-    initTestDb();
-    seedOwnerUser();
+    const db = initTestDb();
+    seedOwnerUser(db);
 
     // ── A fresh install declares nothing ──────────────────────────────────
     // seedInstallDefaults() has put country='IN' in settings, and nobody has
@@ -136,8 +136,12 @@ async function run() {
 
     // ── The register payload carries all of it ────────────────────────────
     let body: any = null;
-    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-      body = JSON.parse(String(init?.body || '{}'));
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      // Capture only the registration call. A successful register also fires a
+      // welcome-email request, which would otherwise clobber the body under test.
+      if (String(url).includes('/api/pos/register')) {
+        body = JSON.parse(String(init?.body || '{}'));
+      }
       return new Response(
         JSON.stringify({ api_key: 'fac_live_test', store_id: '1', pos_id: 'pos_1' }),
         { status: 200, headers: { 'Content-Type': 'application/json' } }
@@ -145,7 +149,9 @@ async function run() {
     }) as typeof fetch;
 
     clearSettings('country_confirmed_at', 'onboarding_completed');
-    setSettings({ country: 'IN', cloud_sync_enabled: '1' });
+    // Suppresses the post-registration welcome email so this test exercises the
+    // register call and nothing else.
+    setSettings({ country: 'IN', cloud_sync_enabled: '1', cloud_verification_welcome_requested: '1' });
     await cloudSync.register();
     assertEqual(body?.business?.country, null, 'an unconfirmed install registers without a country');
     assertEqual(body?.business?.country_source, 'default', 'the payload says the value is a default');

@@ -218,8 +218,9 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
 - **UI language** drives the interface and is the `inherit` fallback for printing.
 - **Receipt language policy** (`bill_language_policy`): `{ primary: inherit | fixed, additional?: [one] }`.
   Max 2 languages per receipt in v1, enforced at type level
-  (`ReceiptLanguagePolicy` tuple) and by validation (`MAX_RECEIPT_LANGUAGES`)
-  in [`shared/print/policy.ts`](../shared/print/policy.ts).
+  (`ReceiptLanguagePolicy` tuple) and by the
+  `parsePrintLanguagePolicy`/`parsePolicyBody` validation rule in
+  [`shared/print/policy.ts`](../shared/print/policy.ts).
 - **Kitchen ticket policy** (`kot_language_policy`): single-primary, resolved
   independently of the receipt. The backend document path and browser HTML KOT
   path honor a fixed language — for example, an English kitchen keeps English

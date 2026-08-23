@@ -10,8 +10,9 @@
  * Layering: this module lives in `main/` (it touches transport token syntax
  * and the generated label catalog); all SEMANTICS come from the document —
  * no bill/order row is read here beyond the caller's normalization step
- * (`buildBillPrintData`). The legacy classic path stays untouched for actual
- * printing this issue (#442).
+ * (`buildBillPrintData`). Since #443 the classic receipt surface (preview AND
+ * actual printing) renders through this pipeline; `formatClassicReceipt`
+ * delegates here.
  */
 
 import { parseDbTimestamp } from '../db';
@@ -178,12 +179,18 @@ export function buildBillPrintContext(opts: {
   columns: number;
   /** Receipt language (already resolved from settings/policy by the caller). */
   language: string;
+  /** Optional second receipt language from the resolved policy (max 2, v1). */
+  additionalLanguage?: string;
   business: any;
 }): PrintContext {
   const lang = normalizePrintLanguage(opts.language);
+  const languages: PrintContext['languages'] = opts.additionalLanguage !== undefined
+    && opts.additionalLanguage !== lang
+    ? [lang, normalizePrintLanguage(opts.additionalLanguage)]
+    : [lang];
   return {
     columns: opts.columns,
-    languages: [lang],
+    languages,
     baseDirection: detectPrintLanguageDirection(lang),
     locale: getCountryByCode(String(opts.business?.country ?? ''))?.locale ?? 'en-US',
     currencySymbol: String(opts.business?.currency_symbol || '₹'),
@@ -402,6 +409,7 @@ export function renderClassicReceiptViaDocument(
   opts: {
     columns: number;
     language: string;
+    additionalLanguage?: string;
     isReprint: boolean;
     useUnicode: boolean;
     arabicShaping: boolean;
@@ -412,6 +420,7 @@ export function renderClassicReceiptViaDocument(
   const printContext = buildBillPrintContext({
     columns: opts.columns,
     language: opts.language,
+    ...(opts.additionalLanguage !== undefined ? { additionalLanguage: opts.additionalLanguage } : {}),
     business,
   });
   const document = buildBillDocument(printData, printContext);

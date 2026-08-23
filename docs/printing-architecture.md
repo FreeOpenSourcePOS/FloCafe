@@ -28,12 +28,11 @@ Companion documents:
  PrintData snapshot + PrintContext          (shared/print/document.ts)
  (printed truth, no recomputation)          (columns, languages, direction,
         │                                    locale, label resolver)
-        ▼
- buildBillDocument() / buildKotDocument()   pure builders → PrintDocument v1
-        │
-        │  optional semantic transform
-        ▼
- applyMerchantTemplate(document, payload)   shared/print/merchant-template.ts
+        ├── buildBillDocument() → PrintDocument v1
+        │          │
+        │          └── receipt-only optional transform:
+        │              applyMerchantTemplate(document, payload)
+        └── buildKotDocument() → KotDocument v1
         │
         ▼
         Renderer  — migrated paths walk BLOCKS;    main/printers/document-*.ts,
@@ -174,7 +173,7 @@ Invariants every consumer may rely on:
 
 The block-extension contract spans the `PrintDocumentBlock` union, the
 builder, the merchant-template block and label-field/override registries, and
-every renderer that consumes the document. See [Part II](#part-ii--contributor-recipes)
+every renderer that consumes the document. See [Part II](#part-ii-contributor-recipes)
 for the step-by-step recipe.
 
 ### Direction & bidi handling
@@ -328,7 +327,7 @@ These formats are deliberately **not converged**: [#445](https://github.com/Free
 the compliance contract; the merchant format is semantic-only. A
 `derivedFrom` reference to a pack template is user information only — no
 compliance trust ever transfers ([`shared/print/merchant-template.ts`](../shared/print/merchant-template.ts) header,
-[merchant-print-templates.md § Provenance & trust](merchant-print-templates.md#provenance--trust)).
+[merchant-print-templates.md § Provenance & trust](merchant-print-templates.md#provenance-trust)).
 
 ### Merchant template validation pipeline (fail-closed rules)
 

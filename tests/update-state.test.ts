@@ -18,6 +18,7 @@ import {
   classifyUpdateError,
   initialUpdateState,
   isInstallReady,
+  isMissingUpdateConfigError,
   isUpdateCheckInFlight,
   isOneShotUpdateState,
   missingUpdateConfigState,
@@ -83,6 +84,11 @@ test('classifyUpdateError: unreadable app-update.yml -> check-failed/unknown', (
     reason: 'unknown',
     detail: 'EACCES: permission denied, open app-update.yml',
   });
+});
+
+test('isMissingUpdateConfigError distinguishes absent and unreadable config', () => {
+  assert.equal(isMissingUpdateConfigError(updaterError('ENOENT', 'no such file app-update.yml')), true);
+  assert.equal(isMissingUpdateConfigError(updaterError('EACCES', 'permission denied app-update.yml')), false);
 });
 
 test('classifyUpdateError: DNS failure code ENOTFOUND -> offline', () => {

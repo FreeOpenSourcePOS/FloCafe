@@ -102,6 +102,10 @@ function errorMessage(err: unknown): string {
   return String(err);
 }
 
+export function isMissingUpdateConfigError(err: unknown): boolean {
+  return errorCode(err) === 'ENOENT';
+}
+
 /**
  * Classify an electron-updater error into an honest user-facing state.
  *

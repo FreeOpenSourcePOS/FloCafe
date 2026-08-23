@@ -20,6 +20,7 @@ import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allow
 import {
   classifyUpdateError,
   initialUpdateState,
+  isMissingUpdateConfigError,
   isUpdateCheckInFlight,
   isInstallReady,
   missingUpdateConfigState,
@@ -224,13 +225,39 @@ function checkForUpdates(): void {
   }
 
   const configPath = path.join(process.resourcesPath, 'app-update.yml');
-  const configMissing = !fs.existsSync(configPath);
+  let configMissing = false;
+  let configProbeFailed = false;
+  let configProbeError: unknown;
+  if (!isDev) {
+    try {
+      fs.statSync(configPath);
+    } catch (error) {
+      if (isMissingUpdateConfigError(error)) {
+        configMissing = true;
+      } else {
+        configProbeFailed = true;
+        configProbeError = error;
+      }
+    }
+  }
   const configDetail = `app-update.yml not found at ${configPath}`;
   if (isDev) {
     log.debug('[Update] Skipping update check in dev mode');
-    setUpdateStatus(configMissing
-      ? missingUpdateConfigState(true, configDetail)
-      : oneShotUpdateState('dev-mode'));
+    setUpdateStatus(oneShotUpdateState('dev-mode'));
+    return;
+  }
+
+  if (configProbeFailed) {
+    const classified = classifyUpdateError(configProbeError, 'check');
+    log.info(
+      `[Update] Update configuration probe classified as ${classified.state}` +
+      `/${classified.reason}:`, classified.detail
+    );
+    setUpdateStatus({
+      status: classified.state,
+      reason: classified.reason,
+      error: classified.detail
+    });
     return;
   }
 

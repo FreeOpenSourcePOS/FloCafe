@@ -73,9 +73,13 @@ const NETWORK_ERROR_CODES: ReadonlySet<string> = new Set([
   'ECONNRESET',
   'EHOSTUNREACH',
   'ENETUNREACH',
+  'ERR_NAME_NOT_RESOLVED',
+  'ERR_TIMED_OUT',
+  'ERR_ADDRESS_UNREACHABLE',
+  'ERR_PROXY_CONNECTION_FAILED',
 ]);
 
-const NETWORK_ERROR_CODE_PATTERN = /^(?:ERR_NETWORK_|ERR_INTERNET_)/;
+const NETWORK_ERROR_CODE_PATTERN = /^(?:ERR_NETWORK_|ERR_INTERNET_|ERR_CONNECTION_)/;
 
 /** electron-updater-specific code for a missing/unreachable latest.yml channel manifest. */
 const CHANNEL_FILE_NOT_FOUND = 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND';
@@ -110,7 +114,7 @@ export function classifyUpdateError(err: unknown, phase: UpdateErrorPhase = 'che
   // Network class: DNS/routing/timeouts mean offline, not a broken build.
   if (
     (code !== undefined && (NETWORK_ERROR_CODES.has(code) || NETWORK_ERROR_CODE_PATTERN.test(code))) ||
-    /ENOTFOUND|ERR_NETWORK_[A-Z_]+|ERR_INTERNET_[A-Z_]+|getaddrinfo|network.*(unreachable|timeout)|socket hang up/i.test(detail)
+    /ENOTFOUND|ERR_NETWORK_[A-Z_]+|ERR_INTERNET_[A-Z_]+|ERR_CONNECTION_[A-Z_]+|ERR_NAME_NOT_RESOLVED|ERR_TIMED_OUT|ERR_ADDRESS_UNREACHABLE|ERR_PROXY_CONNECTION_FAILED|getaddrinfo|network.*(unreachable|timeout)|socket hang up/i.test(detail)
   ) {
     return { state: 'offline', reason: 'unknown', detail };
   }

@@ -89,7 +89,16 @@ test('classifyUpdateError: other network codes -> offline', () => {
 });
 
 test('classifyUpdateError: Electron network codes -> offline', () => {
-  for (const code of ['ERR_NETWORK_IO_SUSPENDED', 'ERR_NETWORK_CHANGED', 'ERR_INTERNET_DISCONNECTED']) {
+  for (const code of [
+    'ERR_NETWORK_IO_SUSPENDED',
+    'ERR_NETWORK_CHANGED',
+    'ERR_INTERNET_DISCONNECTED',
+    'ERR_CONNECTION_REFUSED',
+    'ERR_CONNECTION_RESET',
+    'ERR_NAME_NOT_RESOLVED',
+    'ERR_TIMED_OUT',
+    'ERR_ADDRESS_UNREACHABLE',
+  ]) {
     const err = updaterError(code, `request failed while reading app-update.yml (${code})`);
     const out = classifyUpdateError(err);
     assert.equal(out.state, 'offline', code);

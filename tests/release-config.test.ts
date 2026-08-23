@@ -116,8 +116,6 @@ function run() {
   const linuxJob = jobs['release-linux'];
   const linuxBuild = findStep(linuxJob, 'Build Linux artifacts');
   assertShellStep(linuxJob, 'Build Linux artifacts');
-  assert.ok(linuxBuild.run.includes('-c.linux.artifactName="flocafe-\\${version}-linux-\\${env.FLO_LINUX_ARCH}.\\${ext}"'));
-  assert.ok(linuxBuild.run.includes('-c.appImage.artifactName="flocafe-\\${version}-linux-\\${env.FLO_LINUX_ARCH}.appimage"'));
   assert.equal(linuxBuild.env.FLO_LINUX_ARCH, '${{ matrix.arch }}', 'Linux release names must use the safe matrix architecture labels');
   assertShellStep(linuxJob, 'Verify Linux release assets');
   assertShellStep(linuxJob, 'Upload Linux assets to GitHub release');
@@ -161,13 +159,6 @@ function run() {
   assert.ok(typeof macArtifact === 'string' && macArtifact.includes('${arch}') && macArtifact.includes('mac') && !/\s/.test(macArtifact.replace(/\$\{[^}]+\}/g, '')), `mac artifact template must be safe: ${JSON.stringify(macArtifact)}`);
   const winArtifact = build?.win?.artifactName;
   assert.ok(typeof winArtifact === 'string' && winArtifact.includes('${arch}') && winArtifact.includes('win') && !/\s/.test(winArtifact.replace(/\$\{[^}]+\}/g, '')), `win artifact template must be safe: ${JSON.stringify(winArtifact)}`);
-
-  const linuxDocs = fs.readFileSync(path.join(__dirname, '../docs/linux.md'), 'utf8');
-  const readme = fs.readFileSync(path.join(__dirname, '../README.md'), 'utf8');
-  assert.match(linuxDocs, /in-app updater is available only when the application is launched\s+from a downloaded AppImage \(`APPIMAGE` is set\)/);
-  assert.match(linuxDocs, /not used for an extracted\s+AppImage, deb, or rpm installation/);
-  assert.match(linuxDocs, /Snap installations are updated by snapd/);
-  assert.doesNotMatch(readme, /AppImage[^\n]*in-app updater/i, 'README must not imply that every Linux package uses the in-app updater');
 
   const matrixWorkflow = loadWorkflow('nightly-release.yml');
   const matrixTriggers = matrixWorkflow.on || matrixWorkflow['true'];

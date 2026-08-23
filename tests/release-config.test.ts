@@ -19,7 +19,16 @@ function run() {
 
   assert.equal(pkg.engines?.node, '>=22.12.0', 'root Node engine must match Electron 43 minimum');
   assert.equal(pkg.scripts?.['verify:electron'], 'node scripts/verify-electron-runtime.cjs', 'Electron runtime verification must be cross-platform');
+  assert.equal(pkg.scripts?.['verify:release-artifacts'], 'node scripts/assert-release-artifact-names.cjs', 'release artifact filename assertion must be available to CI');
   assert.ok(fs.existsSync(path.join(__dirname, '../scripts/verify-electron-runtime.cjs')), 'cross-platform Electron runtime verifier must exist');
+  assert.ok(fs.existsSync(path.join(__dirname, '../scripts/assert-release-artifact-names.cjs')), 'release artifact filename verifier must exist');
+  const releaseVerifierPath = path.join(__dirname, '../scripts/verify-release-assets.cjs');
+  assert.ok(fs.existsSync(releaseVerifierPath), 'draft release asset verifier must exist');
+  const releaseVerifier = fs.readFileSync(releaseVerifierPath, 'utf8');
+  assert.ok(releaseVerifier.includes('assertReleaseAssetInventory') && releaseVerifier.includes('verifyAssetAvailability'), 'draft release verification must cover the uploaded asset inventory as well as manifest references');
+  assert.equal(build?.publish?.channel, 'latest', 'stable builds must default to the latest update channel');
+  assert.equal(build?.detectUpdateChannel, false, 'GitHub release channels must be selected explicitly by the release pipeline');
+  assert.equal(build?.generateUpdatesFilesForAllChannels, true, 'electron-builder must support channel update manifests');
 
   // ── electron-builder config ──────────────────────────────────────────
   assert.ok(build?.publish?.provider === 'github', 'build.publish must target GitHub releases');
@@ -83,15 +92,19 @@ function run() {
     `linux.synopsis must be set and ≤78 chars (got ${JSON.stringify(linuxSynopsis)})`
   );
 
-  // ── Linux AppImage: AppImageHub catalog compatibility ────────────
-  // The AppImageHub catalog auto-discovers AppImages whose filename
-  // matches <AppName>-<Version>-<arch>.AppImage. The productName
-  // ("Flo Cafe") default would produce "Flo Cafe-2.0.4-x86_64.AppImage"
-  // (space + capital letter) which the catalog regex won't match.
+  // ── Linux artifacts: safe filenames for release URLs ─────────────
+  // The productName ("Flo Cafe") default would produce spaces and uppercase
+  // characters. Keep the platform templates explicitly lowercase so every
+  // published filename satisfies the no-renaming release contract (#463).
   const linuxArtifact = build?.linux?.artifactName;
   assert.ok(
-    typeof linuxArtifact === 'string' && linuxArtifact.includes('${arch}') && !/\s/.test(linuxArtifact.replace(/\$\{[^}]+\}/g, '')),
-    `linux.artifactName must be a single lowercased template using \${arch} (got ${JSON.stringify(linuxArtifact)})`
+    typeof linuxArtifact === 'string' && linuxArtifact.includes('${version}') && linuxArtifact.includes('-linux.') && !linuxArtifact.includes('${arch}') && !/\s/.test(linuxArtifact.replace(/\$\{[^}]+\}/g, '')),
+    `linux.artifactName must be a safe lowercased template (got ${JSON.stringify(linuxArtifact)})`
+  );
+  const appImageArtifact = build?.appImage?.artifactName;
+  assert.ok(
+    typeof appImageArtifact === 'string' && appImageArtifact.includes('${version}') && appImageArtifact.endsWith('.appimage') && !appImageArtifact.includes('${arch}') && !/\s/.test(appImageArtifact.replace(/\$\{[^}]+\}/g, '')),
+    `appImage.artifactName must use a lowercase .appimage extension and safe template (got ${JSON.stringify(appImageArtifact)})`
   );
 
   const linuxTargets = (build?.linux?.target || []) as Array<{ target: string; arch?: string[] }>;
@@ -155,12 +168,31 @@ function run() {
   // release titled after whatever package.json says under an unrelated ref.
   const createReleaseJob = workflow.split(/^\s*create-release:/m)[1]?.split(/^\s*release-linux:/m)[0] || '';
   assert.ok(
-    /\[\[\s*"\$TAG"\s*=~\s*\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\$\s*\]\]/.test(createReleaseJob),
-    'create-release job must validate the pushed tag against a strict X.Y.Z pattern before creating a release'
+    /\[\[\s*"\$TAG"\s*=~\s*\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\(-/.test(createReleaseJob),
+    'create-release job must validate the pushed tag against stable and prerelease semver before creating a release'
   );
   assert.ok(
     /"\$TAG"\s*!=\s*"\$VERSION"/.test(createReleaseJob),
     'create-release job must reject a tag that does not equal package.json\'s version'
+  );
+  assert.ok(
+    createReleaseJob.includes('RELEASE_REF_NAME: ${{ github.ref_name }}') &&
+    createReleaseJob.includes('RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}') &&
+    !createReleaseJob.includes('TAG="${{ github.ref_name }}"') &&
+    !createReleaseJob.includes('TAG="${{ steps.release-metadata.outputs.tag }}"'),
+    'untrusted tag refs must enter release shell steps through environment variables, not source interpolation'
+  );
+  assert.ok(
+    createReleaseJob.includes('workflow_dispatch') || workflow.includes('promote_stable'),
+    'release workflow must expose an explicit channel/latest-promotion control'
+  );
+  assert.ok(
+    createReleaseJob.includes('--draft') && createReleaseJob.includes('--latest=false'),
+    'release creation must remain a draft and must not move GitHub Latest before verification'
+  );
+  assert.ok(
+    workflow.includes('options:\n          - stable\n          - beta\n          - nightly') && workflow.includes('promote_stable'),
+    'release workflow must expose stable, beta, and nightly channels plus explicit stable promotion'
   );
 
   const linuxJob = workflow.split(/^\s*release-linux:/m)[1]?.split(/^\s*release-mac:/m)[0] || '';
@@ -169,13 +201,21 @@ function run() {
     'release-linux job must run scripts/update-metainfo.js before the electron-builder build.'
   );
   assert.ok(
+    linuxJob.includes('assert-release-artifact-names.cjs') &&
+    linuxJob.includes('manifest_prefix') &&
+    linuxJob.includes('-c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}"') &&
+    linuxJob.includes('-c.linux.artifactName=') && linuxJob.includes('FLO_LINUX_ARCH') &&
+    /-linux\*\.yml/.test(linuxJob),
+    'release-linux must assert safe produced filenames, use latest for stable, and upload channel Linux manifests'
+  );
+  assert.ok(
     /ubuntu-24\.04-arm\b/.test(linuxJob),
     'release-linux job must include an ubuntu-24.04-arm matrix entry (the actual GitHub-hosted ' +
     'arm64 Linux runner label — note: no "64" suffix) so arm64 AppImages are actually built. ' +
     'declaring arm64 in build.linux.target is not enough without a runner, and the wrong label ' +
     '(e.g. ubuntu-24.04-arm64) leaves the job stuck queued forever with no matching runner.'
   );
-  const snapPublishStep = linuxJob.split(/^\s*- name: Publish snap to Snap Store/m)[1]?.split(/^\s*- name:/m)[0] || '';
+  const snapPublishStep = linuxJob.split(/^\s*- name: Publish snap to/m)[1]?.split(/^\s*- name:/m)[0] || '';
   assert.ok(
     !/matrix\.arch\s*==/.test(snapPublishStep),
     'Snap Store publication must not be x64-gated; the release matrix publishes x64 and arm64 snap revisions.'
@@ -188,12 +228,14 @@ function run() {
   );
 
   const macJob = workflow.split(/^\s*release-mac:/m)[1]?.split(/^\s*release-windows:/m)[0] || '';
-  assert.ok(macJob.includes('latest-mac.yml'), 'release-mac job must upload latest-mac.yml');
+  assert.ok(macJob.includes('latest-mac.yml'), 'release-mac job must document/upload the stable latest-mac.yml manifest');
+  assert.ok(macJob.includes('assert-release-artifact-names.cjs') && macJob.includes('manifest_prefix'), 'release-mac must assert safe produced filenames and select the channel manifest');
   assert.ok(/release\/\*\.zip\b/.test(macJob), 'release-mac job must upload the .zip artifact');
   assert.ok(macJob.includes('.zip.blockmap'), 'release-mac job must upload the .zip.blockmap');
 
   const winJob = workflow.split(/^\s*release-windows:/m)[1] || '';
-  assert.ok(winJob.includes('latest.yml'), 'release-windows job must upload latest.yml');
+  assert.ok(winJob.includes('latest.yml'), 'release-windows job must document/upload the stable latest.yml manifest');
+  assert.ok(winJob.includes('assert-release-artifact-names.cjs') && winJob.includes('manifest_prefix'), 'release-windows must assert safe produced filenames and select the channel manifest');
   assert.ok(winJob.includes('.exe.blockmap'), 'release-windows job must upload the .exe.blockmap');
   assert.ok(
     /electron-builder --win --publish never --config\.npmRebuild=false/.test(winJob),
@@ -245,6 +287,25 @@ function run() {
     /msstore publish @publishArgs/.test(winJob) &&
     /if \(\$LASTEXITCODE -ne 0\) \{ throw "Microsoft Store publish failed/.test(winJob),
     'release-windows job must publish the built AppX packages to the configured Microsoft Store product and check the exit code'
+  );
+
+  const verifyJob = workflow.split(/^\s*verify-release:/m)[1]?.split(/^\s*publish-release:/m)[0] || '';
+  const publishJob = workflow.split(/^\s*publish-release:/m)[1] || '';
+  assert.ok(
+    verifyJob.includes('needs: [create-release, release-linux, release-mac, release-windows]') &&
+    verifyJob.includes('verify-release-assets.cjs') &&
+    publishJob.includes('needs: [create-release, release-linux, release-mac, release-windows, verify-release]') &&
+    publishJob.includes('draft=false') && publishJob.includes('make_latest=false'),
+    'release must verify all platform assets from the draft before a separate publish job can run'
+  );
+  assert.ok(
+    publishJob.includes('make_latest=true') && publishJob.includes('outputs.make_latest'),
+    'stable GitHub Latest selection must be an explicit post-verification promotion'
+  );
+  assert.ok(
+    createReleaseJob.includes('MANIFEST_PREFIX=latest') &&
+    workflow.includes('--channel "${{ needs.create-release.outputs.manifest_prefix }}"'),
+    'stable release verification must normalize the stable channel to latest manifest filenames'
   );
 
   const macArtifact = build?.mac?.artifactName;

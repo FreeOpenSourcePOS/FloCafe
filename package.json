@@ -20,6 +20,7 @@
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",
     "verify:electron": "node scripts/verify-electron-runtime.cjs",
+    "verify:release-artifacts": "node scripts/assert-release-artifact-names.cjs",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
     "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx --x64 --arm64 --config.npmRebuild=false",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",
@@ -55,7 +56,7 @@
     "test:kds-frontend-conflict": "ts-node --transpile-only -P tests/tsconfig.json tests/kds-frontend-conflict.test.ts",
     "test:kds-window-hardening": "ts-node --transpile-only -P tests/tsconfig.json tests/kds-window-hardening.test.ts",
     "test:e2e": "npm run build && npm run build:frontend && cd frontend && npx playwright install chromium && npx playwright test",
-    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts",
+    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts && node tests/release-asset-verifier.test.cjs",
     "test:windows-uninstaller": "node tests/run-windows-uninstaller-tests.cjs",
     "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts",
     "test:static-routes": "ts-node --transpile-only -P tests/tsconfig.json tests/path-containment.test.ts && node tests/run-electron-node-test.cjs tests/static-route-resolution.test.ts",
@@ -250,8 +251,11 @@
       "provider": "github",
       "owner": "FreeOpenSourcePOS",
       "repo": "FloCafe",
-      "releaseType": "release"
+      "releaseType": "release",
+      "channel": "latest"
     },
+    "detectUpdateChannel": false,
+    "generateUpdatesFilesForAllChannels": true,
     "extraResources": [
       {
         "from": "assets",
@@ -379,7 +383,7 @@
       "icon": "assets",
       "category": "Office",
       "executableName": "flocafe",
-      "artifactName": "flocafe-${version}-${arch}.${ext}",
+      "artifactName": "flocafe-${version}-linux.${ext}",
       "extraFiles": [
         {
           "from": "assets/com.flo.desktop.metainfo.xml",
@@ -399,6 +403,9 @@
           "StartupWMClass": "flo-desktop"
         }
       }
+    },
+    "appImage": {
+      "artifactName": "flocafe-${version}-linux.appimage"
     },
     "snapcraft": {
       "base": "core24",

@@ -42,8 +42,8 @@ Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`, `.r
 
 ```sh
 # AppImage
-chmod +x flocafe-*.AppImage
-./flocafe-*.AppImage
+chmod +x flocafe-*.appimage
+./flocafe-*.appimage
 
 # Debian or Ubuntu
 sudo apt install ./flocafe-*.deb

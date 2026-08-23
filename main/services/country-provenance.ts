@@ -44,15 +44,22 @@ function normalizeCountry(value: string | null | undefined): string | null {
 /**
  * Has a human ever set this store's country?
  *
- * `country_confirmed_at` is stamped wherever a country is chosen — the setup
- * wizard and Settings → Business. `onboarding_completed` is the fallback for
- * installs that finished setup before that stamp existed: they chose a country
- * too, they just did it before anything recorded the fact, and reporting them
- * as unconfirmed would be a downgrade rather than honesty.
+ * Only `country_confirmed_at` counts, and only countryConfirmationPatch() below
+ * writes it. Completing onboarding deliberately does NOT: the setup wizard
+ * preselects IN in its country picker and submits it whether or not anyone
+ * touches the control, so treating setup completion as proof of a choice would
+ * launder the install default into "the merchant chose India" — the exact bug
+ * this module exists to stop.
+ *
+ * An install that genuinely chose a country but predates the stamp reports as
+ * unconfirmed until someone next saves a country. That withholds the country
+ * from registration, which is harmless: FloAdmin COALESCEs, so it keeps the
+ * value it already has. Under-claiming is the safe direction here — the OS and
+ * geo signals arbitrate, and a wrong "the merchant chose this" is far more
+ * expensive than a missing one.
  */
 export function isCountryConfirmed(): boolean {
-  if ((getSettingValue('country_confirmed_at') || '').trim() !== '') return true;
-  return (getSettingValue('onboarding_completed') || '') === 'true';
+  return (getSettingValue('country_confirmed_at') || '').trim() !== '';
 }
 
 /**
@@ -94,7 +101,31 @@ export function readCountryProvenance(): CountryProvenance {
   };
 }
 
-/** Settings patch that records a country as human-chosen. */
-export function countryConfirmationStamp(): Record<string, string> {
-  return { country_confirmed_at: new Date().toISOString() };
+/**
+ * Settings patch that records a country as human-chosen — empty when the
+ * submission is not evidence of a choice.
+ *
+ * Both places a country can be saved submit one unconditionally: the setup
+ * wizard preselects IN, and Settings → Business PUTs its whole form, so a
+ * merchant saving their phone number re-sends the country untouched. Presence
+ * of the field therefore proves nothing, and stamping on presence would mark
+ * every install as having chosen India.
+ *
+ * A change from the stored value is affirmative — nothing else moves it. The
+ * case this cannot see is a merchant who deliberately picks the country already
+ * selected; `explicit` exists for clients that can report that interaction
+ * directly. Absent such a signal that merchant stays unconfirmed, which is
+ * accurate: from here it is indistinguishable from one who never looked.
+ */
+export function countryConfirmationPatch(
+  submitted: unknown,
+  stored: string | null | undefined,
+  explicit?: unknown
+): Record<string, string> {
+  const stamp = { country_confirmed_at: new Date().toISOString() };
+  if (explicit === true) return stamp;
+
+  const code = normalizeCountry(typeof submitted === 'string' ? submitted : null);
+  if (!code) return {};
+  return code === normalizeCountry(stored) ? {} : stamp;
 }

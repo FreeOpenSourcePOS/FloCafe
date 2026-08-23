@@ -8,7 +8,7 @@ import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
 import { getCountryByCode, getCurrencySymbol, isValidTimeZone, type CountryLocaleOptions } from '../countries';
-import { countryConfirmationStamp } from '../services/country-provenance';
+import { countryConfirmationPatch } from '../services/country-provenance';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
@@ -279,9 +279,10 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
       bill_show_name, bill_show_address, bill_show_phone, bill_show_tax_id,
       bill_show_tax_breakdown, bill_show_customer_name, bill_show_customer_phone, bill_show_table_number,
       ...localeUpdates,
-      // Only when a country was actually submitted: saving an unrelated
-      // business field must not promote the install default to a choice.
-      ...(country !== undefined ? countryConfirmationStamp() : {}),
+      // This form PUTs every field, so a merchant saving their phone number
+      // re-sends the country untouched. Only a country that actually changed
+      // is evidence anyone chose it.
+      ...countryConfirmationPatch(country, currentSettings.country, req.body.country_selected),
     });
     cloudSync.refreshRegistrationProfile();
 

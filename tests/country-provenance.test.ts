@@ -47,7 +47,11 @@ const {
   getDatabase,
   now,
 } = require('./helpers/test-setup');
-const { readCountryProvenance, isCountryConfirmed } = require('../main/services/country-provenance');
+const {
+  readCountryProvenance,
+  isCountryConfirmed,
+  countryConfirmationPatch,
+} = require('../main/services/country-provenance');
 const { cloudSync } = require('../main/services/cloud-sync');
 
 function setSettings(entries: Record<string, string>) {
@@ -95,7 +99,7 @@ async function run() {
       'a resolved IANA timezone is always available'
     );
 
-    // ── Completing setup makes the choice real ────────────────────────────
+    // ── The confirmation stamp makes the choice real ──────────────────────
     setSettings({ country_confirmed_at: new Date().toISOString() });
     assertEqual(isCountryConfirmed(), true, 'the confirmation stamp marks the country as chosen');
     provenance = readCountryProvenance();
@@ -107,13 +111,46 @@ async function run() {
     setSettings({ country: 'DO' });
     assertEqual(readCountryProvenance().country, 'DO', 'the confirmed country tracks settings');
 
-    // ── Installs that predate the stamp are not downgraded ────────────────
-    // They completed the wizard before anything recorded the fact; treating
-    // them as unconfirmed would lose real data rather than reveal fake data.
+    // ── Completing setup is not itself a choice ───────────────────────────
+    // The wizard preselects IN and submits it whether or not the picker was
+    // touched, so onboarding_completed must not launder the install default
+    // into "the merchant chose India".
     clearSettings('country_confirmed_at');
     setSettings({ onboarding_completed: 'true' });
-    assertEqual(isCountryConfirmed(), true, 'a completed onboarding counts as confirmation');
-    assertEqual(readCountryProvenance().countrySource, 'user', 'legacy installs report as user');
+    assertEqual(isCountryConfirmed(), false, 'completing onboarding is not a country choice');
+    assertEqual(readCountryProvenance().countrySource, 'default', 'setup completion alone stays default');
+
+    // ── What does and does not count as an affirmative selection ──────────
+    const changed = countryConfirmationPatch('DO', 'IN');
+    assert(typeof changed.country_confirmed_at === 'string', 'a changed country is a choice');
+
+    assertEqual(
+      Object.keys(countryConfirmationPatch('IN', 'IN')).length, 0,
+      'resubmitting the stored country is not a choice'
+    );
+    // The whole-form PUT from Settings -> Business, with the country untouched.
+    assertEqual(
+      Object.keys(countryConfirmationPatch('IN', 'IN', undefined)).length, 0,
+      'a full-form save that echoes the default does not confirm it'
+    );
+    assertEqual(
+      Object.keys(countryConfirmationPatch(undefined, 'IN')).length, 0,
+      'omitting the country is not a choice'
+    );
+    assertEqual(
+      Object.keys(countryConfirmationPatch('not-a-code', 'IN')).length, 0,
+      'an unparseable country is not a choice'
+    );
+    // Case and whitespace must not read as a change.
+    assertEqual(
+      Object.keys(countryConfirmationPatch(' do ', 'DO')).length, 0,
+      'a differently-cased resubmission is not a choice'
+    );
+    // The one case a diff cannot see: deliberately picking the current value.
+    assert(
+      typeof countryConfirmationPatch('IN', 'IN', true).country_confirmed_at === 'string',
+      'an explicit selection signal confirms even without a change'
+    );
 
     // ── Malformed codes never reach the wire ──────────────────────────────
     setSettings({ country: 'Dominican Republic' });

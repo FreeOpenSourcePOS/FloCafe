@@ -1,0 +1,6 @@
+{
+  "format": "flocafe-merchant-print-template",
+  "documentType": "invoice",
+  "schemaVersion": 1,
+  "blocks": [{ "kind": "totals" }]
+}

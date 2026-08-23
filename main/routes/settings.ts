@@ -11,7 +11,8 @@ import { getCountryByCode, getCurrencySymbol, isValidTimeZone, type CountryLocal
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
-import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates } from '../services/print-templates';
+import { CORE_BILL_TEMPLATES, isAvailableBillTemplate, listInstalledPrintTemplates, upgradeBillTemplateValue } from '../services/print-templates';
+import { listMerchantPrintTemplates } from '../services/merchant-print-templates';
 import {
   BILL_LANGUAGE_POLICY_KEY,
   KOT_LANGUAGE_POLICY_KEY,
@@ -904,7 +905,20 @@ router.get('/bill-templates', requireRole('owner', 'manager'), (_req: Request, r
         packVersionId: template.pack_version_id,
       };
     });
-    res.json({ core: [...CORE_BILL_TEMPLATES], plugins });
+    // Merchant templates (#447): provenance is informational only — a cloned
+    // origin references a compliance-pack template id WITHOUT transferring
+    // any compliance trust. Only active rows are selectable.
+    const merchant = listMerchantPrintTemplates().map((template) => ({
+      id: template.id,
+      displayName: template.name,
+      origin: template.origin,
+      derivedFrom: template.derived_from ? JSON.parse(template.derived_from) : null,
+      documentType: template.document_type,
+      schemaVersion: template.schema_version,
+      status: template.status,
+      updatedAt: template.updated_at,
+    }));
+    res.json({ core: [...CORE_BILL_TEMPLATES], plugins, merchant });
   } catch (error: any) {
     console.error("[API] Internal error:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -942,10 +956,17 @@ router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (re
     if (value === undefined) {
       return res.status(400).json({ error: 'Value is required' });
     }
-    if (req.params.key === 'bill_template' && !isAvailableBillTemplate(String(value))) {
+    // bill_template accepts every legacy bare value AND the structured
+    // { source, id } form; whichever the client sends, the canonical
+    // structured JSON is persisted — legacy strings upgrade transparently on
+    // their next save (#447).
+    if (req.params.key === 'bill_template' && !isAvailableBillTemplate(value)) {
       return res.status(400).json({ error: 'Unsupported bill template' });
     }
     let valueToPersist: unknown = value;
+    if (req.params.key === 'bill_template') {
+      valueToPersist = upgradeBillTemplateValue(value);
+    }
     if (typeof req.params.key === 'string' && LANGUAGE_POLICY_SETTING_KEYS.has(req.params.key)) {
       const validation = validateLanguagePolicySetting(req.params.key, value);
       if (!validation.ok) {

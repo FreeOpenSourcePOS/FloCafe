@@ -1003,6 +1003,42 @@ Print a kitchen order ticket for `orderId`. A caller may provide `stationName` a
 
 ---
 
+## Merchant Print Templates
+
+Owner-role CRUD for tenant-owned semantic receipt templates (#447). See
+[Merchant print templates](merchant-print-templates.md) for the payload schema, validation policy,
+and provenance/trust model. Payloads are validated fail-closed on every write.
+
+### GET `/api/print-templates`
+List merchant templates (all statuses). Owner or manager.
+
+### POST `/api/print-templates`
+Create a template in `draft` status. Body: `{ name, payload, origin?, derivedFrom? }`.
+`origin` is one of `created | imported | cloned`; `cloned` requires a
+`derivedFrom` reference `{ type: 'compliance-pack-template' | 'merchant-template', templateId }`
+(informational only — no compliance trust transfers).
+
+### PUT `/api/print-templates/:id`
+Update name and/or payload. Editing an ACTIVE template snapshots its current
+payload into the single-step rollback point. Archived templates are immutable.
+
+### POST `/api/print-templates/:id/activate`
+Promote to `active`. Fails closed (409) if the stored checksum does not match
+the payload.
+
+### POST `/api/print-templates/:id/archive`
+Terminal state; archived templates stop being selectable.
+
+### POST `/api/print-templates/:id/rollback`
+Restore `previous_payload_json` after verifying the current checksum; clears
+the rollback point. 409 when there is nothing to roll back to, when the
+restored payload fails current validation, or when the template is archived.
+
+### GET `/api/print-templates/:id/payload`
+Read the stored payload (owner or manager).
+
+---
+
 ## Mobile Pairing
 
 ### GET `/api/mobile/pairing-code`

@@ -671,7 +671,8 @@
     "title": "{count, plural, one {# خط چاپ نشد} other {# خط چاپ نشد}}",
     "arabicShapingHint": "چاپگر شما نتوانست متن فارسی/عربی را چاپ کند. در تنظیمات ← چاپ، گزینهٔ «چاپگر از شکل‌دهی عربی/فارسی پشتیبانی می‌کند» را روشن کنید یا از طریق مرورگر چاپ کنید.",
     "genericHint": "خط‌های زیر نویسه‌هایی دارند که این چاپگر حرارتی نمی‌تواند نمایش دهد.",
-    "moreLines": "…و {count} خط دیگر"
+    "moreLines": "…و {count} خط دیگر",
+    "templateFallback": "قالب صورت‌حساب انتخاب‌شده در این مسیر چاپ پشتیبانی نمی‌شود؛ از طرح رسید داخلی استفاده شد."
   },
   "print": {
     "taxInvoiceTitle": "صورتحساب مالیاتی",
@@ -1027,6 +1028,10 @@
     "billTemplateCompactName": "فشرده",
     "billTemplateDetailedDesc": "صورتحساب مالیاتی کامل با برچسب ثبت مخصوص کشور و تفکیک مالیات بر پایه هر جزء.",
     "billTemplateDetailedName": "مالیاتی کامل",
+    "billTemplateMerchantCloned": "همتاسازی‌شده از قالب انطباق",
+    "billTemplateMerchantCreated": "ساخته‌شده",
+    "billTemplateMerchantDesc": "چیدمان رسید سفارشی شما.",
+    "billTemplateMerchantImported": "واردشده",
     "billTemplateSaved": "قالب صورتحساب ذخیره شد",
     "billingType": "نوع صورتحساب",
     "billingTypePostpaid": "پس‌پرداخت – پرداخت هنگام تسویه (نگه‌داشتن سفارش‌ها)",

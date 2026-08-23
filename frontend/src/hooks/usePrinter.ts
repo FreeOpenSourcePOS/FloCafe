@@ -16,7 +16,7 @@ import {
 } from '@/lib/printer/print-document';
 import { buildTaxBillBytes, type TaxBillOptions } from '@/lib/printer/tax-bill-encoder';
 import { buildKotBytes, type KotOptions } from '@/lib/printer/kot-encoder';
-import type { PrintWarning } from '@/lib/printer/warnings';
+import { makeBillTemplateFallbackWarning, type PrintWarning } from '@/lib/printer/warnings';
 import api from '@/lib/api';
 import toast from 'react-hot-toast';
 import type { Bill, Tenant, Order } from '@/lib/types';
@@ -119,6 +119,7 @@ export const usePrinterStore = create<PrinterState>()(
           } = usePosSettingsStore.getState();
 
           const isReprint = opts?.isReprint ?? false;
+          const billTemplateWarning = makeBillTemplateFallbackWarning(billTemplate);
 
           const executeBrowserPrint = async () => {
             const { printWebBill } = await import('@/lib/printer/web-print');
@@ -139,7 +140,7 @@ export const usePrinterStore = create<PrinterState>()(
               isReprint,
               trimDecimals: printerTrimDecimals,
             });
-            return [] as PrintWarning[];
+            return billTemplateWarning ? [billTemplateWarning] : [];
           };
 
           const hw = get().hardwarePrinter;
@@ -178,6 +179,7 @@ export const usePrinterStore = create<PrinterState>()(
             text: language,
             message: `Receipt language "${language}" could not be loaded, so English labels were used.`,
           }));
+          if (billTemplateWarning) warnings.push(billTemplateWarning);
           const builderOpts: ReceiptOptions = {
             ...opts,
             paperWidth: opts?.paperWidth ?? configuredPaperWidth,

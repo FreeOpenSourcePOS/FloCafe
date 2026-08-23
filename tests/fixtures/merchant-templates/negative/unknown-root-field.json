@@ -1,0 +1,7 @@
+{
+  "format": "flocafe-merchant-print-template",
+  "documentType": "receipt",
+  "schemaVersion": 1,
+  "blocks": [{ "kind": "totals" }],
+  "renderer": "{CENTER}escpos commands do not belong here{/CENTER}"
+}

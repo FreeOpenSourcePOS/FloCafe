@@ -1,0 +1,13 @@
+{
+  "format": "flocafe-merchant-print-template",
+  "documentType": "receipt",
+  "schemaVersion": 1,
+  "blocks": [
+    { "kind": "document-meta", "labels": { "title": "SALES RECEIPT", "invoiceNumber": "Receipt No" } },
+    { "kind": "item-table", "labels": { "item": "Product", "quantity": "Qty", "amount": "Total", "note": "Instructions" } },
+    { "kind": "totals", "labels": { "grandTotal": "AMOUNT DUE", "subtotal": "Net" } },
+    { "kind": "payments" },
+    { "kind": "message" },
+    { "kind": "tax-breakdown", "visible": false }
+  ]
+}

@@ -16,6 +16,7 @@ export interface PrintWarning {
   field: string;
   text: string;
   message: string;
+  kind?: 'line' | 'configuration';
 }
 
 const SUPPORTED_CURRENCY_SYMBOLS = new RegExp(`[${Object.keys(CURRENCY_ASCII_MAP).join('')}]`, 'g');
@@ -54,7 +55,35 @@ export function makePrintWarning(text: string, isStoreName = false): PrintWarnin
   const why = ARABIC_SCRIPT_RE.test(text)
     ? 'it contains Persian/Arabic script and the printer cannot shape it'
     : 'it contains unsupported characters';
-  return { field, text, message: `${label} was not printed because ${why}: ${text}` };
+  return { field, text, message: `${label} was not printed because ${why}: ${text}`, kind: 'line' };
+}
+
+function billTemplateSource(value: unknown): 'core' | 'non-core' {
+  let selection: unknown = value;
+  if (typeof selection === 'string') {
+    const trimmed = selection.trim();
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try { selection = JSON.parse(trimmed); } catch { selection = trimmed; }
+    } else {
+      selection = trimmed.toLowerCase();
+    }
+  }
+  if (selection && typeof selection === 'object' && !Array.isArray(selection)) {
+    const source = (selection as { source?: unknown }).source;
+    return source === 'core' ? 'core' : 'non-core';
+  }
+  return selection === 'classic' || selection === 'compact' ? 'core' : 'non-core';
+}
+
+export function makeBillTemplateFallbackWarning(value: unknown): PrintWarning | null {
+  if (billTemplateSource(value) === 'core') return null;
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return {
+    field: 'bill_template',
+    text: text || 'unknown',
+    message: 'The selected bill template is not supported on this print path, so the built-in receipt layout was used.',
+    kind: 'configuration',
+  };
 }
 
 /** C0 controls and DEL must never reach raw ESC/POS output (#437 review). */

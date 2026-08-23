@@ -671,7 +671,8 @@
     "title": "{count, plural, one {# line was not printed} other {# lines were not printed}}",
     "arabicShapingHint": "Your printer could not print the Persian/Arabic text. Enable \"Printer supports Arabic/Persian shaping\" in Settings → Printing, or print via the browser.",
     "genericHint": "The lines below contain characters this thermal printer cannot render.",
-    "moreLines": "…and {count} more"
+    "moreLines": "…and {count} more",
+    "templateFallback": "The selected bill template is not supported on this print path, so the built-in receipt layout was used."
   },
   "print": {
     "taxInvoiceTitle": "TAX INVOICE",
@@ -1027,6 +1028,10 @@
     "billTemplateCompactName": "Compact",
     "billTemplateDetailedDesc": "Detailed tax invoice with the country-specific registration label and per-component tax breakdown.",
     "billTemplateDetailedName": "Detailed Tax",
+    "billTemplateMerchantCloned": "Cloned from compliance template",
+    "billTemplateMerchantCreated": "Created",
+    "billTemplateMerchantDesc": "Your custom receipt layout.",
+    "billTemplateMerchantImported": "Imported",
     "billTemplateSaved": "Bill template saved",
     "billingType": "Billing Type",
     "billingTypePostpaid": "Postpaid – Pay at checkout (hold orders)",

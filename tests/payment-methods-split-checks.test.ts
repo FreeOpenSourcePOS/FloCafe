@@ -43,7 +43,8 @@ async function main() {
     const missingPrinterTrimSetting = await api(baseUrl, '/api/settings/printer_trim_decimals', { headers: authHeader });
     assertEqual(missingPrinterTrimSetting.status, 200, 'missing printer decimal-trim setting reads as a safe default');
     assertEqual(missingPrinterTrimSetting.data.setting.value, 'false', 'fallback keeps printer decimal trimming disabled');
-    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value, 'classic', 'fresh database seeds the classic bill template');
+    // #447: the persisted value is the structured selection identity.
+    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value, '{"source":"core","id":"classic"}', 'fresh database seeds the classic bill template');
     assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any).value, '', 'fresh database seeds an empty bill footer');
     db.prepare("UPDATE settings SET value = 'compact' WHERE key = 'bill_template'").run();
     db.prepare("UPDATE settings SET value = 'See you soon' WHERE key = 'bill_footer_message'").run();
@@ -73,7 +74,7 @@ async function main() {
     const saveFooter = await api(baseUrl, '/api/settings/bill_footer_message', { method: 'PUT', body: { value: 'Please visit us again' }, headers: authHeader });
     assertEqual(saveTemplate.status, 200, 'bill template setting can be saved for backend invoice printing');
     assertEqual(saveFooter.status, 200, 'bill footer setting can be saved for backend invoice printing');
-    assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value, 'compact', 'backend printer reads the persisted template choice');
+    assertEqual(JSON.parse((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as any).value).id, 'compact', 'backend printer reads the persisted template choice (upgraded to structured form)');
     assertEqual((db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as any).value, 'Please visit us again', 'backend printer reads the persisted footer message');
     const printerColumns = db.prepare('PRAGMA table_info(printers)').all().map((column: any) => column.name);
     assert(!printerColumns.includes('usb_device_path'), 'fresh printer schema does not keep ignored USB device path column');

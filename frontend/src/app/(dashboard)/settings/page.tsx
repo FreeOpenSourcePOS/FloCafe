@@ -101,13 +101,17 @@ interface TemplateCard {
   nameKey?: SettingsKey;
   displayName?: string;
   preview: string;
-  source: 'core' | 'plugin';
+  source: 'core' | 'plugin' | 'merchant';
+  /** Selection-identity source persisted in bill_template (#447). */
+  selectionSource: 'core' | 'pack' | 'merchant';
   description?: string;
+  /** Provenance badge text for merchant cards (#447). */
+  originBadgeKey?: 'billTemplateMerchantCreated' | 'billTemplateMerchantImported' | 'billTemplateMerchantCloned';
 }
 
 const TEMPLATE_CARDS: TemplateCard[] = [
-  { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core' },
-  { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core' },
+  { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core', selectionSource: 'core' },
+  { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core', selectionSource: 'core' },
 ];
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -1179,10 +1183,18 @@ export default function SettingsPage() {
   };
   const resetPrinting = () => setPrintingForm(savedPrinting);
 
-  // Bill template local state
-  type BillTemplateForm = { billTemplate: BillTemplate; billFooterMessage: string };
+  // Bill template local state. billTemplateSource carries the resolved
+  // selection identity alongside the bare id so a pack template_id that
+  // collides with a core name (classic/compact) keeps its {source: 'pack'}
+  // qualifier through both display-selection and save round-trips (#447).
+  type BillTemplateForm = {
+    billTemplate: BillTemplate;
+    billTemplateSource: 'core' | 'pack' | 'merchant';
+    billFooterMessage: string;
+  };
   const initBillTemplate = (): BillTemplateForm => ({
     billTemplate: posSettings.billTemplate,
+    billTemplateSource: 'core',
     billFooterMessage: posSettings.billFooterMessage,
   });
   const [billForm, setBillForm] = useState<BillTemplateForm>(initBillTemplate);
@@ -1191,8 +1203,15 @@ export default function SettingsPage() {
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
+    // Persist the resolved selection identity captured at selection time
+    // (NOT re-derived by first-id match, which a colliding pack id would
+    // fail): bare id for core templates, structured { source, id } for
+    // pack and merchant.
+    const templateValue = billForm.billTemplateSource === 'core'
+      ? billForm.billTemplate
+      : JSON.stringify({ source: billForm.billTemplateSource, id: billForm.billTemplate });
     await Promise.all([
-      api.put('/settings/bill_template', { value: billForm.billTemplate }),
+      api.put('/settings/bill_template', { value: templateValue }),
       api.put('/settings/bill_footer_message', { value: billForm.billFooterMessage }),
     ]);
     setSavedBillForm(billForm);
@@ -1622,16 +1641,66 @@ export default function SettingsPage() {
         displayName: template.displayName,
         preview: `  ${template.displayName}\n-----------\nTax invoice\n${template.country} · ${template.paperColumns.join('/')} cols\n-----------\nTOTAL`,
         source: 'plugin' as const,
+        selectionSource: 'pack' as const,
         description: `${template.country} tax template · ${template.paperColumns.join(', ')} columns`,
       }));
-      const availableTemplateIds = new Set([...TEMPLATE_CARDS, ...pluginCards].map((card) => card.id));
-      setBillTemplateCards([...TEMPLATE_CARDS, ...pluginCards]);
-      const storedTemplate = templateResponse?.data.setting?.value;
-      const billTemplate: BillTemplate = availableTemplateIds.has(storedTemplate)
-        ? storedTemplate as BillTemplate
-        : 'classic';
+      // Merchant templates (#447): provenance is informational only — a
+      // cloned origin references a compliance-pack template WITHOUT any
+      // trust claim; the copy is an ordinary editable document.
+      const merchantCards: TemplateCard[] = (templatesResponse?.data?.merchant || [])
+        .filter((template: { status: string }) => template.status === 'active')
+        .map((template: {
+          id: string;
+          displayName: string;
+          origin: 'created' | 'imported' | 'cloned';
+          documentType: string;
+        }) => ({
+          id: template.id,
+          displayName: template.displayName,
+          preview: `  ${template.displayName}\n-----------\nReceipt\n${template.documentType} · custom blocks\n-----------\nTOTAL`,
+          source: 'merchant' as const,
+          selectionSource: 'merchant' as const,
+          description: t('billTemplateMerchantDesc'),
+          originBadgeKey: template.origin === 'cloned'
+            ? ('billTemplateMerchantCloned' as const)
+            : template.origin === 'imported'
+              ? ('billTemplateMerchantImported' as const)
+              : ('billTemplateMerchantCreated' as const),
+        }));
+      const cards = [...TEMPLATE_CARDS, ...pluginCards, ...merchantCards];
+      setBillTemplateCards(cards);
+      // The persisted value may be a legacy bare id or a structured
+      // { source, id } JSON string (#447). Resolve it back to a picker card,
+      // preferring the card whose selection source matches the stored source
+      // so a pack template_id that collides with a core name keeps its
+      // qualifier on the next save.
+      let storedId: unknown = templateResponse?.data.setting?.value;
+      let storedSource: string | null = null;
+      if (typeof storedId === 'string' && storedId.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(storedId) as { source?: unknown; id?: unknown };
+          if (
+            parsed && typeof parsed === 'object'
+            && typeof parsed.id === 'string'
+            && (parsed.source === 'core' || parsed.source === 'pack' || parsed.source === 'merchant')
+          ) {
+            storedId = parsed.id;
+            storedSource = parsed.source;
+          }
+        } catch { /* keep raw value */ }
+      }
+      const candidateCard = typeof storedId === 'string'
+        ? cards.find((card) => card.id === storedId)
+        : undefined;
+      const matchedCard = candidateCard && storedSource !== null && candidateCard.selectionSource !== storedSource
+        ? cards.find((card) => card.id === candidateCard.id && card.selectionSource === storedSource)
+        : candidateCard;
+      const billTemplate: BillTemplate = matchedCard ? matchedCard.id : 'classic';
+      const billTemplateSource: 'core' | 'pack' | 'merchant' = matchedCard
+        ? matchedCard.selectionSource
+        : 'core';
       const billFooterMessage = footerResponse?.data.setting?.value ?? posSettings.billFooterMessage;
-      const loadedBillForm = { billTemplate, billFooterMessage };
+      const loadedBillForm = { billTemplate, billTemplateSource, billFooterMessage };
       posSettings.setBillTemplate(billTemplate);
       posSettings.setBillFooterMessage(billFooterMessage);
       setBillForm(loadedBillForm);
@@ -4004,18 +4073,23 @@ export default function SettingsPage() {
                 {billTemplateCards.map((card) => {
                   const isSelected = billForm.billTemplate === card.id;
                   return (
-                    <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id }))}
+                    <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id, billTemplateSource: card.selectionSource }))}
                       className={`text-start rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}>
-                      <p className="font-semibold text-gray-900 mb-2">
-                        {card.nameKey ? t(card.nameKey) : card.displayName}
+                      <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className="flex-1">{card.nameKey ? t(card.nameKey) : card.displayName}</span>
+                        {card.source === 'merchant' && card.originBadgeKey && (
+                          <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
+                            {t(card.originBadgeKey)}
+                          </span>
+                        )}
                       </p>
                       <pre className="font-mono text-[9px] leading-tight text-gray-600 bg-gray-50 p-2 rounded overflow-hidden mb-3 whitespace-pre">
                         {card.preview}
                       </pre>
                       <p className="text-xs text-gray-500">
-                        {card.source === 'plugin'
+                        {card.source === 'plugin' || card.source === 'merchant'
                           ? card.description
                           : card.id === 'classic'
                             ? t('billTemplateClassicDesc')

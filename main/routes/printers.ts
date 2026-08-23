@@ -452,7 +452,9 @@ router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHand
     if (preview === true) {
       // Preview and production share one code path (#443): prepareReceipt →
       // formatReceipt renders through PrintDocument for classic + compact
-      // (plugin templates keep their dedicated renderer).
+      // (plugin templates keep their dedicated renderer). Merchant templates
+      // (#447) resolve through the same document pipeline inside
+      // formatReceipt, so previews need no special-casing here.
       const prepared = prepareReceipt(order, bill, business, billTemplate || 'classic', useUnicode, isReprint, arabicShapingOverride, receiptLanguages.primary, receiptLanguages.additional);
       return res.json({
         success: true,

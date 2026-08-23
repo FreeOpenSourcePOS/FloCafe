@@ -635,11 +635,11 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
     languages: printContext.languages,
     blocks: Object.freeze([
       header,
-      meta,
       customer,
+      meta,
       items,
-      breakdown,
       totals,
+      breakdown,
       payments,
       messages,
     ] as readonly PrintDocumentBlock[]),

@@ -200,9 +200,12 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
   Max 2 languages per receipt in v1, enforced at type level
   (`ReceiptLanguagePolicy` tuple) and by validation (`MAX_RECEIPT_LANGUAGES`).
 - **Kitchen ticket policy** (`kot_language_policy`): single-primary, resolved
-  independently of the receipt — a fixed English kitchen keeps English tickets
-  even in a Persian storefront (asserted in `tests/print-parity.test.ts`,
-  section "KOT language policy independence").
+  independently of the receipt. The backend document path and browser HTML KOT
+  path honor a fixed language — for example, an English kitchen keeps English
+  tickets in a Persian storefront (asserted in `tests/print-parity.test.ts`,
+  section "KOT language policy independence"). The frontend WebUSB
+  `kot-encoder.ts` is a legacy exception: its raw `buildKotBytes` path has no
+  language input and emits its historical English labels.
 
 Thermal receipt paths resolve the receipt policy before building the document.
 The browser receipt path is an active exception: `usePrinter.ts` calls
@@ -429,8 +432,9 @@ them as shipped:
 
 # Part II — Contributor recipes
 
-Each recipe lists the files that MUST move together. If your change touches
-one without the others, a test above will fail — that is the point.
+Each recipe lists the files and checks that govern that contribution. Follow
+all listed steps; the verification commands below cover the relationships they
+name, but not every omitted update is automatically detected.
 
 ## Add a print label
 
@@ -489,9 +493,10 @@ All five steps are required; the whitelist and fixtures are load-bearing:
    `SemanticLabel` labels (concept ids from the catalog), no layout widths,
    no byte tokens.
 2. Add the kind to `MERCHANT_TEMPLATE_BLOCK_KINDS` in
-   `shared/print/merchant-template.ts`; add per-slot entries to
-   `MERCHANT_TEMPLATE_LABEL_FIELDS` only if merchants may override labels,
-   and wire overrides into `applyLabelOverrides`.
+   `shared/print/merchant-template.ts`; add a corresponding entry to
+   `MERCHANT_TEMPLATE_LABEL_FIELDS` for every whitelisted kind, using `[]` when
+   merchants have no labels to override, and wire overrideable slots into
+   `applyLabelOverrides`.
 3. Teach every renderer: the classic line renderer switch
    (`main/printers/document-classic.ts`, `renderBillDocumentToClassicLines`),
    compact/KOT where relevant, and the frontend renderers

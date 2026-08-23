@@ -122,7 +122,7 @@ export function generateKotHtml(
     : `<div style="margin:${padding} 0;">${escapeHtml(tr('print.kot.noPendingItems'))}</div>`;
 
   return `
-    <div class="kot-container" style="text-align:start;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
+    <div class="kot-container" dir="${base}" style="text-align:start;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
       <h2 style="margin:0 0 ${padding} 0;font-size:${paperWidth === 58 ? '14px' : '16px'};text-align:center;">${escapeHtml(tr('print.kot.banner'))}</h2>
       <p style="margin:2px 0;font-weight:bold;">${directionalValue(orderNumber, base)}</p>
       ${order.table?.name ? `<p style="margin:2px 0;">${escapeHtml(labelWithoutPlaceholder(tr('pos.tableLabel')))}: ${directionalValue(directionalText(String(order.table.name), base), base)}</p>` : ''}

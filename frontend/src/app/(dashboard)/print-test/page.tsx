@@ -9,6 +9,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { createTestBill, createTestOrder, createTestTenant, createTestCustomer } from '@/lib/printer/test-data';
 import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
+import { ensurePrintLanguagesLoaded } from '@/lib/printer/print-document';
 import { generateKotHtml } from '@/lib/printer/kot-web-print';
 import { shareBillViaWhatsApp, getWhatsAppMessage } from '@/lib/whatsapp-share';
 import toast from 'react-hot-toast';
@@ -82,7 +83,12 @@ export default function PrintTestPage() {
           }
           if (printMethod === 'browser') {
             // Semantic KOT HTML (#444): resolved labels + kernel direction
-            // annotations instead of decoded ESC/POS bytes.
+            // annotations instead of decoded ESC/POS bytes. Preload the
+            // ticket locale so a fixed KOT language ≠ UI language still
+            // renders translated labels on cold start (mirrors usePrinter).
+            const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+            await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
+            const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
             const html = generateKotHtml(testOrder, { paperWidth });
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));

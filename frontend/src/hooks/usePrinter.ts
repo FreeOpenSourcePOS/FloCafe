@@ -169,7 +169,7 @@ export const usePrinterStore = create<PrinterState>()(
           // language policy through the shared PrintDocument (#444), so the
           // requested language bundles must be in memory first.
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
-          const languages = resolveBillPrintLanguages();
+          const languages = opts?.languages ?? resolveBillPrintLanguages();
           await ensurePrintLanguagesLoaded(languages);
           const builderOpts: ReceiptOptions = {
             ...opts,

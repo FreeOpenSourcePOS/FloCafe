@@ -7,6 +7,7 @@ import { cloudSync } from '../services/cloud-sync';
 import { getDatabase } from '../db';
 import { getHttpRequestSignal } from '../shutdown';
 import { normalizeOptionalPhone } from '../lib/phone';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -73,18 +74,16 @@ function buildSystemDiagnostics(req: Request, category: string) {
   };
 }
 
-const supportRoles = ['owner', 'manager', 'cashier', 'server', 'chef'] as const;
-
-router.get('/profile', requireRole(...supportRoles), (req: Request, res: Response) => {
+router.get('/profile', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   const profile = supportProfile(req);
   res.json({ ...profile, app_version: require('../../package.json').version, platform: process.platform });
 });
 
-router.get('/diagnostics-preview', requireRole(...supportRoles), (req: Request, res: Response) => {
+router.get('/diagnostics-preview', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   res.json(buildSystemDiagnostics(req, resolveCategory(req.query.category)));
 });
 
-router.get('/:clientTicketId/status', requireRole(...supportRoles), (req: Request, res: Response) => {
+router.get('/:clientTicketId/status', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   const clientTicketId = String(req.params.clientTicketId || '');
   if (!CLIENT_TICKET_ID_RE.test(clientTicketId)) return res.status(400).json({ error: 'invalid client_ticket_id' });
   const row = getDatabase().prepare(
@@ -94,7 +93,7 @@ router.get('/:clientTicketId/status', requireRole(...supportRoles), (req: Reques
   res.json({ status: row.status, support_code: row.support_code, last_error: row.last_error });
 });
 
-router.post('/', requireRole(...supportRoles), asyncHandler(async (req: Request, res: Response) => {
+router.post('/', requireRole(...ROLE_ACCESS.allStaff), asyncHandler(async (req: Request, res: Response) => {
   const body = req.body && typeof req.body === 'object' ? req.body : {};
   const subject = String(body.subject || '').trim().slice(0, 255);
   const message = String(body.message || '').trim().slice(0, 20000);

@@ -382,7 +382,7 @@ voided, and accounting-adjustment items are excluded.
 ## Held Orders
 
 ### GET `/api/held-orders`
-List held orders. Requires an authenticated owner, manager, cashier, or waiter.
+List held orders. Requires an authenticated owner, manager, cashier, or server.
 
 **Response (200):**
 ```json
@@ -413,7 +413,7 @@ List held orders. Requires an authenticated owner, manager, cashier, or waiter.
 ### POST `/api/held-orders`
 Create or replace the held order for a table. The response `id` identifies the
 specific row returned to the client; replacing an existing held order creates a
-new identity. Requires an authenticated owner, manager, cashier, or waiter.
+new identity. Requires an authenticated owner, manager, cashier, or server.
 
 **Request:**
 ```json
@@ -449,7 +449,7 @@ matching request deletes the row, releases the table, and returns
 already-consumed row, or for a replacement row return
 `{"success":true,"deleted":false}` without deleting the current row or
 releasing the table. Requires an authenticated owner, manager, cashier, or
-waiter.
+server.
 
 ---
 
@@ -1122,13 +1122,7 @@ Each item in an order has its own status, allowing:
 
 ## Role-Based Access
 
-| Role | Access |
-|------|--------|
-| `owner` | Full access, user management, settings |
-| `manager` | Most features, limited settings |
-| `cashier` | POS, orders, bills |
-| `waiter` | Orders, tables |
-| `chef` | KDS only |
+See [Roles and permissions](roles-and-permissions.md) for the complete current role matrix. The database accepts `owner`, `manager`, `cashier`, `server`, and `chef`; the historical `waiter` label is no longer a valid role.
 
 ---
 

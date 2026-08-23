@@ -9,21 +9,21 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, now } from '../db';
 import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
+import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
 
-const OPERATIONAL_ROLES = ['cashier', 'server', 'chef'];
-const VALID_ROLES = ['owner', 'manager', ...OPERATIONAL_ROLES];
+const VALID_ROLES: readonly string[] = ROLE_KEYS;
 const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
 
 function canModifyTargetStaff(requesterRole: string, targetRole: string): boolean {
   if (requesterRole === 'owner') return true;
-  if (requesterRole === 'manager') return !['owner', 'manager'].includes(targetRole);
+  if (requesterRole === 'manager') return !hasRole(targetRole, ROLE_ACCESS.ownerManager);
   return false;
 }
 
 function isOperationalRole(role: string): boolean {
-  return OPERATIONAL_ROLES.includes(role);
+  return hasRole(role, OPERATIONAL_ROLES);
 }
 
 function hasNonEmptyPin(pin: unknown): boolean {
@@ -36,7 +36,7 @@ function isValidPin(pin: unknown): boolean {
 
 // ── List ──────────────────────────────────────────────────────────────────────
 
-router.get('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = `SELECT ${STAFF_SELECT_FIELDS} FROM users WHERE 1=1`;
@@ -68,7 +68,7 @@ router.get('/', requireRole('owner', 'manager'), (req: Request, res: Response) =
 
 // ── Get one ───────────────────────────────────────────────────────────────────
 
-router.get('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare(
@@ -94,7 +94,7 @@ router.get('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 
 // ── Create ────────────────────────────────────────────────────────────────────
 
-router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request, res: Response) => {
+router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin } = req.body;
 
@@ -111,7 +111,7 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
 
     const requesterRole = (req as any).user.role;
     if (requesterRole === 'manager' && !isOperationalRole(role)) {
-      return res.status(403).json({ error: 'Managers can only create operational staff accounts (cashier, server, chef)' });
+      return res.status(403).json({ error: `Managers can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
     }
 
     if (isOperationalRole(role) && hasNonEmptyPin(pin)) {
@@ -153,7 +153,7 @@ router.post('/', requireRole('owner', 'manager'), authRateLimit(), (req: Request
 
 // ── Update ────────────────────────────────────────────────────────────────────
 
-router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Request, res: Response) => {
+router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req: Request, res: Response) => {
   try {
     const { name, email, password, role, pin, is_active } = req.body;
     const db = getDatabase();
@@ -254,7 +254,7 @@ router.put('/:id', requireRole('owner', 'manager'), authRateLimit(), (req: Reque
 // them, and losing the row would orphan historical order/print records.
 // Deactivating is the only removal path.
 
-router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:id/deactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as any;
@@ -285,7 +285,7 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
   }
 });
 
-router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:id/reactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const member = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id) as any;

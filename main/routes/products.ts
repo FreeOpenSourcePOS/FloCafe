@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { requireRole, isBlockedSsrfTarget } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getHttpRequestSignal } from '../shutdown';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 import * as crypto from 'crypto';
@@ -572,7 +573,7 @@ router.get('/:id', (req: Request, res: Response) => {
 // When a user pastes an https:// URL, the backend fetches the image and
 // returns it as a Base64 data URI. The frontend then runs it through the
 // same crop → compress pipeline as a local upload.
-router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/fetch-url', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { url } = req.body;
 
@@ -701,7 +702,7 @@ router.post('/fetch-url', requireRole('owner', 'manager'), asyncHandler(async (r
   }
 }));
 
-router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const {
       category_id, name, sku, barcode, description, price, cost_price,
@@ -795,7 +796,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
   }
 });
 
-router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -950,7 +951,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
   }
 });
 
-router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const product = db.prepare('SELECT * FROM products WHERE id = ? AND deleted_at IS NULL').get(req.params.id);
@@ -966,7 +967,7 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
   }
 });
 
-router.post('/:id/stock', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:id/stock', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { action, quantity } = req.body;
 
@@ -1017,7 +1018,7 @@ router.post('/:id/stock', requireRole('owner', 'manager'), (req: Request, res: R
 // would silently start paying out on products a merchant had excluded. These
 // two routes are the explicit, counted alternative — the owner sees how many
 // products are affected, then chooses.
-router.get('/loyalty/global-rate-candidates', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+router.get('/loyalty/global-rate-candidates', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
     const row = getDatabase().prepare(
       'SELECT COUNT(*) AS count FROM products WHERE cb_percent = 0 AND deleted_at IS NULL'
@@ -1029,7 +1030,7 @@ router.get('/loyalty/global-rate-candidates', requireRole('owner', 'manager'), (
   }
 });
 
-router.post('/loyalty/apply-global-rate', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+router.post('/loyalty/apply-global-rate', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
     const result = getDatabase().prepare(
       'UPDATE products SET cb_percent = NULL, updated_at = ? WHERE cb_percent = 0 AND deleted_at IS NULL'

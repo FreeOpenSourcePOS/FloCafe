@@ -5,6 +5,7 @@ import { randomUUID } from 'crypto';
 import { requireRole, requireKdsEnabled, requireKdsEnabledOr404, isTokenRevoked, isTokenStale } from '../middleware/security';
 import { parseCategoryIds } from './auth';
 import { notifyKdsUpdate } from '../services/kds';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -30,8 +31,8 @@ function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request)
     category_ids: string | null;
     is_active: number;
   } | undefined;
-  if (!user?.is_active || !['chef', 'manager', 'owner'].includes(user.role)) return null;
-  return user.role === 'manager' || user.role === 'owner' ? [] : parseCategoryIds(user.category_ids);
+  if (!user?.is_active || !hasRole(user.role, ROLE_ACCESS.kitchen)) return null;
+  return hasRole(user.role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(user.category_ids);
 }
 
 // KDS disabled → 404 the pairing surface, checked before the role gate below
@@ -39,7 +40,7 @@ function getKdsUserCategoryIds(db: ReturnType<typeof getDatabase>, req: Request)
 // the route exists either (issue #133).
 router.use('/pairing', requireKdsEnabledOr404);
 
-router.use(requireRole('chef', 'manager', 'owner'));
+router.use(requireRole(...ROLE_ACCESS.kitchen));
 
 router.get('/orders', requireKdsEnabled, (req: Request, res: Response) => {
   try {
@@ -207,7 +208,7 @@ router.get('/pairing', (req: Request, res: Response) => {
   }
 });
 
-router.post('/pairing', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/pairing', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { station_id } = req.body;
 

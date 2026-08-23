@@ -317,7 +317,7 @@ export function clearRevokedTokens(): void {
  * Role-based authorization middleware.
  * Must be used after requireAuth.
  */
-export function requireRole(...roles: string[]) {
+export function requireRole(...roles: readonly string[]) {
   return (req: Request, res: Response, next: () => void) => {
     const user = (req as any).user;
     if (!user) {

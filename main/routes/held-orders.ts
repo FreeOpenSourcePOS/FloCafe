@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, withTxn } from '../db';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { randomUUID } from 'crypto';
 import { validateItemNotes, validateOrderNotes } from './orders-validation';
 
@@ -111,7 +112,7 @@ function parseStoredHeldOrder(row: HeldOrderRow): Record<string, unknown> | null
   }
 }
 
-router.get('/', heldOrderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/', heldOrderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const rows = db.prepare('SELECT * FROM held_orders ORDER BY updated_at DESC').all() as HeldOrderRow[];
@@ -132,7 +133,7 @@ router.get('/', heldOrderReadRateLimit, requireRole('owner', 'manager', 'cashier
   }
 });
 
-router.post('/', heldOrderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/', heldOrderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let input;
@@ -175,7 +176,7 @@ router.post('/', heldOrderWriteRateLimit, requireRole('owner', 'manager', 'cashi
   }
 });
 
-router.delete('/:tableId', heldOrderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.delete('/:tableId', heldOrderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const tableId = req.params.tableId;
     const expectedHeldOrderId = typeof req.query.heldOrderId === 'string' && req.query.heldOrderId.length > 0

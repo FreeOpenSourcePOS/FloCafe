@@ -21,7 +21,8 @@
     "paths": {
       "@/*": ["./src/*"],
       "@countries": ["../main/countries.ts"],
-      "@print/*": ["../shared/print/*"]
+      "@print/*": ["../shared/print/*"],
+      "@shared/*": ["../shared/*"]
     }
   },
   "include": [

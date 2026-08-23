@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, now } from '../db';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -40,7 +41,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { name, description, category_ids, printer_id, printer_ip, printer_port, printer_name, sort_order } = req.body;
 
@@ -78,7 +79,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
   }
 });
 
-router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { name, description, category_ids, printer_id, printer_ip, printer_port, printer_name, sort_order, is_active } = req.body;
     const db = getDatabase();
@@ -130,7 +131,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 });
 
 // PUT /api/kitchen-stations/:id/users — replace the full set of staff logins assigned to this station
-router.put('/:id/users', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:id/users', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { user_ids } = req.body;
     if (!Array.isArray(user_ids)) {
@@ -181,7 +182,7 @@ router.put('/:id/users', requireRole('owner', 'manager'), (req: Request, res: Re
   }
 });
 
-router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const station = db.prepare('SELECT * FROM kitchen_stations WHERE id = ?').get(req.params.id);

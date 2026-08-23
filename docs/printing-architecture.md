@@ -187,9 +187,11 @@ LTR-island classification (`isLtrIsland`) is deliberately conservative:
 phone numbers, URLs/emails, identifiers (SKU/invoice/order/tax-ID-like tokens
 carrying at least one digit and at most three whitespace-separated words),
 and amounts resolve `'ltr'` even inside RTL documents; anything containing
-RTL script letters or reading as natural language stays in the base
-direction. Mixed natural-language text is never an island. Behavior is
-covered by the direction tests in [`tests/print-kernel.test.ts`](../tests/print-kernel.test.ts).
+RTL script letters stays in the base direction. Plain natural-language text
+generally stays in the base direction, but the identifier heuristic can classify
+short ASCII-ish, digit-bearing phrases with at most three whitespace-separated
+words (for example, `SKU 0042` or `123 Main Street`) as LTR islands. Behavior
+is covered by the direction tests in [`tests/print-kernel.test.ts`](../tests/print-kernel.test.ts).
 
 The browser HTML path consumes `DirectionalText.direction` to mark elements
 and isolate LTR islands (`directionalValue` in
@@ -242,8 +244,9 @@ Policy payloads are untrusted input: `parsePrintLanguagePolicy` /
 nested `primary`/`additional` values, but extra fields inside a primary
 selection object are ignored. They require registered + selectable codes via
 the injected registry facts, dedupe, reject duplicate primaries, and return
-shallow-frozen normalized policies safe to persist (the outer policy and
-`additional` array are frozen; nested primary selections are not deep-frozen).
+shallow-frozen normalized policies safe to persist (only the outer policy
+object is frozen; nested primary selections and the `additional` array are not
+deep-frozen).
 Invalid or missing settings fall back to the store language; printing never
 fails because of a malformed policy ([`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts),
 [`tests/print-language-settings.test.ts`](../tests/print-language-settings.test.ts)).
@@ -478,9 +481,11 @@ Parity harness usage and fixture matrix ([`tests/print-parity.test.ts`](../tests
   behavior at these widths.
 - **Merchant-template mode**: the golden fixture
   ([`tests/fixtures/merchant-templates/golden-receipt-v1.json`](../tests/fixtures/merchant-templates/golden-receipt-v1.json), all blocks,
-  canonical order) must be an identity transform on rendered bytes at every
-  width; labeled variants live beside it with a negative fixture or focused
-  executable test per rejection class.
+  canonical order) must be an identity transform on rendered bytes for the
+  currently covered classic ESC/POS renderer at 32, 42, and 48 columns
+  ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)); labeled variants
+  live beside it with a negative fixture or focused executable test per
+  rejection class.
 
 ## 9. Documented future work (not present tense)
 

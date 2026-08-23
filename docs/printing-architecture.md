@@ -48,7 +48,7 @@ Layer ownership:
 
 | Layer | Lives in | May do | May never do |
 | --- | --- | --- | --- |
-| Normalization | `main/printers/document-classic.ts` (`buildBillPrintData`), `main/printers/document-kot.ts` (`buildKotPrintData`), `frontend/src/lib/printer/print-document.ts` | read raw rows once, coerce to typed snapshots | recompute taxes/totals beyond legacy addon-line extension |
+| Normalization | `main/printers/document-classic.ts` (`buildBillPrintData`), `main/printers/document-kot.ts` (`buildKotPrintData`), `frontend/src/lib/printer/print-document.ts` | read raw rows once, coerce to typed snapshots, reconcile display-only tax components to the persisted tax total | recompute financial totals or persisted tax liability beyond legacy addon-line extension |
 | Kernel (`shared/print/`) | `shared/print/` | types + pure functions over injected facts | any IO (Electron, DOM, Node built-ins, DB, filesystem, network); import from `frontend/` or `main/`; hardcode language unions |
 | Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | on migrated paths, read bill/order rows directly; invent labels outside the catalog; the documented raw-path exceptions below are not a model boundary |
 | Transports | `main/printers/thermal.ts`, browser APIs | move bytes/paper | change document semantics |
@@ -71,6 +71,14 @@ These paths retain their own raw-field and warning behavior outside the shared
 document boundary. New document features must use the migrated paths below;
 the exceptions must not be treated as evidence that their raw inputs are
 `PrintDocument` v1 data.
+
+Tax-component reconciliation is a separate display exception inside the
+normalizers: both document-data builders call `resolveTaxComponents`; its
+backend `reconcileTotal` and equivalent frontend reconciliation logic may
+rescale or add display breakdown lines so they reconcile to the persisted bill
+tax amount. It does not rewrite persisted subtotal, tax, charge, or total
+fields (`main/services/tax-components.ts`,
+`frontend/src/lib/printer/tax-components.ts`).
 
 The purity boundary of the kernel is binding: see
 [shared/print/README.md](../shared/print/README.md), enforced by the kernel
@@ -128,11 +136,12 @@ Kitchen tickets use a separate smaller vocabulary, `KotDocument` v1
 
 Invariants every consumer may rely on:
 
-- **No financial recomputation.** Builders copy amounts verbatim from the
-  `PrintData` snapshots; they only apply presence/show decisions
-  (`buildBillDocument` doc comment, asserted in `tests/print-document.test.ts`
-  and byte-compared against the frozen pre-migration oracle in
-  `tests/print-parity.test.ts`).
+- **Financial totals are not recomputed.** Builders copy persisted financial
+  amounts verbatim from the `PrintData` snapshots; they apply presence/show
+  decisions and the display-only tax-component reconciliation documented
+  above (`buildBillDocument` doc comment, asserted in
+  `tests/print-document.test.ts` and byte-compared against the frozen
+  pre-migration oracle in `tests/print-parity.test.ts`).
 - **Labels are never pre-concatenated** `"A / B"` strings. Catalog-backed
   label slots are `SemanticLabel` values with a concept reference plus
   already-resolved primary text and an optional secondary-language rendering
@@ -173,7 +182,8 @@ direction. Mixed natural-language text is never an island. Behavior is
 covered by the direction tests in `tests/print-kernel.test.ts`.
 
 The browser HTML path consumes `DirectionalText.direction` to mark elements
-and isolate LTR islands (`frontend/src/lib/printer/web-print.ts` lines 77–82,
+and isolate LTR islands (`directionalValue` in
+[`frontend/src/lib/printer/web-print.ts`](../frontend/src/lib/printer/web-print.ts),
 since #444). ESC/POS document renderers currently consume the text values and
 use width-aware shaping/truncation helpers, but do not consume the kernel's
 direction annotations or provide bidi/LTR-island handling
@@ -202,8 +212,9 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
 - **Kitchen ticket policy** (`kot_language_policy`): single-primary, resolved
   independently of the receipt. The backend document path and browser HTML KOT
   path honor a fixed language — for example, an English kitchen keeps English
-  tickets in a Persian storefront (asserted in `tests/print-parity.test.ts`,
-  section "KOT language policy independence"). The frontend WebUSB
+  tickets in a Persian storefront (asserted in the backend policy section of
+  `tests/print-parity.test.ts` and the browser cold-start regression
+  `tests/kot-locale-cold-start.test.ts`). The frontend WebUSB
   `kot-encoder.ts` is a legacy exception: its raw `buildKotBytes` path has no
   language input and emits its historical English labels.
 
@@ -241,6 +252,16 @@ main/print/print-labels.generated.ts            (committed derived view)
         ▼
 backend renderers + backend registry facts for policy validation
 ```
+
+Browser receipt label exception (legacy, follow-up alignment):
+`generateBillHtml` builds the document for business values, but its visible
+receipt labels still come directly from `web-print.ts`'s `t()` catalog lookups
+for `receipt.*` and `pos.*` keys. For example, the browser uses
+`receipt.billNumber` and `receipt.grandTotal` instead of the corresponding
+document concepts used by the migrated renderers. This path remains on the
+canonical locale catalog but is not yet aligned to the document label slots;
+future work should converge the browser label surface without changing the
+merchant/compliance format boundaries.
 
 Rules:
 
@@ -376,7 +397,7 @@ broader script coverage is future work
 | `receipt-encoder.ts` (#444) | WebUSB thermal receipts | PrintDocument v1 via `print-document.ts` bridge | ESC/POS bytes | WebUSB device |
 | `kot-encoder.ts` (#444, legacy exception) | WebUSB thermal KOT | raw `Order` data; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
 | `tax-bill-encoder.ts` (#444, LEGACY-FROZEN diagnostic exception) | WebUSB print-test tax bill | raw `Bill`/`Tenant` data; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
-| `web-print.ts` (#444) | system print dialog receipts | PrintDocument v1 | HTML | browser print |
+| `web-print.ts` (#444, browser-label legacy exception) | system print dialog receipts | PrintDocument v1 for values + direct `receipt.*`/`pos.*` catalog labels | HTML | browser print |
 | `kot-web-print.ts` | system print dialog kitchen tickets | raw `Order` data; shared catalog/direction helpers, no KotDocument bridge | HTML | browser print |
 
 Desktop byte-level transports (Windows spooler RAW datatype, CUPS, sockets) are

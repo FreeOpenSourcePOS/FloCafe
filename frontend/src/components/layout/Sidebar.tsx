@@ -111,7 +111,7 @@ export default function AppSidebar() {
   }, [currentTenant, setTablesRequired, setKdsEnabled, setWhatsappEnabled]);
 
   useEffect(() => {
-    if (role !== 'owner') return;
+    if (!hasRole(role, ROLE_ACCESS.owner)) return;
     let active = true;
     const refreshCloudAttention = async () => {
       try {

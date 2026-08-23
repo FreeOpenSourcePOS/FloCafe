@@ -20,6 +20,7 @@ const router = Router();
 const orderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 const orderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
+const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 
 function orderIdempotencyKey(req: Request): string | null {
   const raw = req.get('Idempotency-Key');
@@ -962,8 +963,8 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orde
           throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
         }
 
-        const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-          .all()
+        const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
+          .all(...ROLE_ACCESS.ownerManager)
           .find((u: any) => verifyPin(u.pin_hash, override_pin));
 
         if (!user) {
@@ -1178,8 +1179,8 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ow
         if (!checkPinRateLimit(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-          .all()
+        const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
+          .all(...ROLE_ACCESS.ownerManager)
           .find((u: any) => verifyPin(u.pin_hash, override_pin));
         if (!user) {
           return res.status(403).json({ error: 'Invalid manager PIN' });
@@ -1383,8 +1384,8 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
-      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-        .all()
+      const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
+        .all(...ROLE_ACCESS.ownerManager)
         .find((u: any) => verifyPin(u.pin_hash, override_pin));
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });

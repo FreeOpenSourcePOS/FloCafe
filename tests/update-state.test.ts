@@ -75,6 +75,15 @@ test('classifyUpdateError: legacy masked messages now classify as failures, not 
   }
 });
 
+test('classifyUpdateError: unreadable app-update.yml -> check-failed/unknown', () => {
+  const err = updaterError('EACCES', 'EACCES: permission denied, open app-update.yml');
+  assert.deepEqual(classifyUpdateError(err, 'check'), {
+    state: 'check-failed',
+    reason: 'unknown',
+    detail: 'EACCES: permission denied, open app-update.yml',
+  });
+});
+
 test('classifyUpdateError: DNS failure code ENOTFOUND -> offline', () => {
   const err = updaterError('ENOTFOUND', 'getaddrinfo EAI_AGAIN releases.github.com');
   const out = classifyUpdateError(err);

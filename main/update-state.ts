@@ -83,6 +83,7 @@ const NETWORK_ERROR_CODE_PATTERN = /^(?:ERR_NETWORK_|ERR_INTERNET_|ERR_CONNECTIO
 
 /** electron-updater-specific code for a missing/unreachable latest.yml channel manifest. */
 const CHANNEL_FILE_NOT_FOUND = 'ERR_UPDATER_CHANNEL_FILE_NOT_FOUND';
+const MISSING_UPDATE_CONFIG_PATTERN = /(?:\bENOENT\b|no such file|file not found|cannot find).*app-update\.yml|app-update\.yml.*(?:\bENOENT\b|no such file|file not found)/i;
 
 function errorCode(err: unknown): string | undefined {
   if (typeof err === 'object' && err !== null && 'code' in err) {
@@ -128,7 +129,8 @@ export function classifyUpdateError(err: unknown, phase: UpdateErrorPhase = 'che
   if (
     code === CHANNEL_FILE_NOT_FOUND ||
     code === 'ENOENT' ||
-    /\b404\b|Cannot find latest|app-update\.yml/i.test(detail)
+    /\b404\b|Cannot find latest/i.test(detail) ||
+    MISSING_UPDATE_CONFIG_PATTERN.test(detail)
   ) {
     return { state: 'check-failed', reason: 'manifest-missing', detail };
   }

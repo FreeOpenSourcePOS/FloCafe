@@ -15,8 +15,10 @@ issue #441 (epic #438).
 - No hardcoded language unions (`'en' | 'fa' | …`). The central language
   registry (`frontend/src/lib/i18n/languages.ts`) is authoritative; the
   kernel treats codes as structural strings (`PrintLanguageCode = string`).
-- Enforced in CI by `tests/kernel-purity.test.ts` (static import audit) and
-  ESLint (`npm run lint` covers `shared/` with import restrictions).
+- Enforced in CI by the public consumer-boundary checks in
+  `tests/kernel-purity.test.ts`, the static forbidden-import audit in
+  `tests/print-document.test.ts`, and ESLint (`npm run lint` covers `shared/`
+  with import restrictions).
 
 ## Registry-injection pattern
 

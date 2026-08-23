@@ -155,6 +155,10 @@ export function oneShotUpdateState(state: OneShotUpdateState): StoredUpdateStatu
   return { status: state };
 }
 
+export function isInstallReady(stored: StoredUpdateStatus, stagedUpdateReady: boolean): boolean {
+  return stagedUpdateReady || stored.status === 'ready-to-install';
+}
+
 /** Payload shape returned by the `get-update-status` IPC handler. */
 export interface IpcUpdateStatusPayload {
   status: StoredUpdateStatus['status'];

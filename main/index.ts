@@ -20,6 +20,7 @@ import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allow
 import {
   classifyUpdateError,
   initialUpdateState,
+  isInstallReady,
   oneShotUpdateState,
   toIpcUpdateStatus,
   type StoredUpdateStatus,
@@ -78,6 +79,7 @@ console.log('[Log] Log files location:', logPath);
 // recover the truth via get-update-status instead of racing push events.
 let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
 let updaterPhase: UpdateErrorPhase = 'check';
+let stagedUpdateReady = false;
 let startupFailure = false;
 
 function configureAutoUpdaterChannel(): void {
@@ -160,6 +162,7 @@ function setupAutoUpdater(): void {
     // The renderer's update badge shows a "Restart Now" prompt. Because
     // autoInstallOnAppQuit is disabled, only that explicit action installs it.
     console.log('[Update] Download complete:', info.version);
+    stagedUpdateReady = true;
     updaterPhase = 'check';
     setUpdateStatus({
       status: 'ready-to-install',
@@ -178,6 +181,10 @@ function setupAutoUpdater(): void {
       `[Update] Updater error classified as ${classified.state}` +
       `/${classified.reason}:`, classified.detail
     );
+    if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
+      log.info('[Update] Preserving ready-to-install status while staged update awaits installation');
+      return;
+    }
     setUpdateStatus({
       status: classified.state,
       reason: classified.reason,
@@ -187,6 +194,11 @@ function setupAutoUpdater(): void {
 }
 
 function checkForUpdates(): void {
+  if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
+    log.info('[Update] Ignoring check while a staged update awaits installation');
+    return;
+  }
+
   if (updaterPhase === 'download') {
     log.info('[Update] Ignoring check while an update download is in progress');
     return;
@@ -758,7 +770,7 @@ async function initialize(): Promise<void> {
     });
 
     ipcMain.handle('restart-and-install', () => {
-      if (storedUpdateStatus.status !== 'ready-to-install') {
+      if (!isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
         log.warn('[Update] Ignoring install request before an update is downloaded');
         return;
       }

@@ -17,6 +17,7 @@ import {
   UPDATE_STATES,
   classifyUpdateError,
   initialUpdateState,
+  isInstallReady,
   isOneShotUpdateState,
   oneShotUpdateState,
   toIpcUpdateStatus,
@@ -167,6 +168,12 @@ test('oneShotUpdateState seeds each one-shot startup state cleanly', () => {
   for (const state of ['store-managed', 'linux-managed', 'dev-mode'] as const) {
     assert.deepEqual(oneShotUpdateState(state), { status: state });
   }
+});
+
+test('isInstallReady protects both persisted and separately staged updates', () => {
+  assert.equal(isInstallReady({ status: 'ready-to-install' }, false), true);
+  assert.equal(isInstallReady({ status: 'offline' }, true), true);
+  assert.equal(isInstallReady({ status: 'downloading' }, false), false);
 });
 
 test('isOneShotUpdateState discriminates one-shot states from runtime states', () => {

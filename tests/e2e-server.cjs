@@ -12,8 +12,16 @@ if (process.env.E2E_TASK_LOCAL_PORTS) {
     const basePort = new URL(baseUrl).port;
     if (basePort) process.env.PORT = basePort;
   }
-  if (process.env.E2E_KDS_PORT) process.env.KDS_PORT = process.env.E2E_KDS_PORT;
-  if (process.env.E2E_SERVER_APP_PORT) process.env.SERVER_APP_PORT = process.env.E2E_SERVER_APP_PORT;
+
+  const kdsPort = process.env.E2E_KDS_BASE_URL
+    ? new URL(process.env.E2E_KDS_BASE_URL).port
+    : process.env.E2E_KDS_PORT;
+  if (kdsPort) process.env.KDS_PORT = kdsPort;
+
+  const serverAppPort = process.env.E2E_SERVER_APP_BASE_URL
+    ? new URL(process.env.E2E_SERVER_APP_BASE_URL).port
+    : process.env.E2E_SERVER_APP_PORT;
+  if (serverAppPort) process.env.SERVER_APP_PORT = serverAppPort;
 }
 
 process.env.JWT_SECRET = 'e2e-test-secret';

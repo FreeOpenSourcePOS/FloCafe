@@ -145,6 +145,16 @@ console.log('\n▶ Envelope validation: negative fixtures');
   assert(invalidExportedAtResult.errors.some((message) => message.includes('root.exportedAt')));
   ok('non-ISO exportedAt values fail closed');
 
+  for (const exportedAt of ['2024-02-30T00:00:00Z', '2023-02-29T00:00:00Z']) {
+    const invalidCalendarDate = golden() as Record<string, unknown>;
+    invalidCalendarDate.exportedAt = exportedAt;
+    assert(!validateMerchantTemplateEnvelope(invalidCalendarDate).ok, `${exportedAt} is rejected`);
+  }
+  const validLeapDay = golden() as Record<string, unknown>;
+  validLeapDay.exportedAt = '2024-02-29T00:00:00Z';
+  assert(validateMerchantTemplateEnvelope(validLeapDay).ok, 'valid leap day is accepted');
+  ok('calendar-valid leap-year dates are enforced');
+
   for (const [label, value] of [['printer token', '{CUT}'], ['control character', '\u001b']] as const) {
     const unsafePayload = JSON.parse(JSON.stringify(golden().template)) as Record<string, any>;
     const totalsBlock = unsafePayload.blocks.find((block: Record<string, any>) => block.kind === 'totals');

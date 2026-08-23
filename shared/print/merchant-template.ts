@@ -145,7 +145,7 @@ export type MerchantTemplateEnvelopeValidation =
 
 const ENVELOPE_ROOT_FIELDS = ['format', 'schemaVersion', 'exportedAt', 'appVersion', 'origin', 'checksum', 'template'];
 const ENVELOPE_ORIGIN_FIELDS = ['sourceTemplateId', 'sourceName', 'sourceChecksum'];
-const ISO8601_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const ISO8601_DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
 const UNSAFE_LABEL_TEXT_PATTERN = /[\u0000-\u001F\u007F]|\{[A-Z_/]+\}/;
 
 function isSha256Hex(value: unknown): value is string {
@@ -153,9 +153,26 @@ function isSha256Hex(value: unknown): value is string {
 }
 
 function isIso8601DateTime(value: unknown): value is string {
-  return typeof value === 'string'
-    && ISO8601_DATE_TIME_PATTERN.test(value)
-    && !Number.isNaN(Date.parse(value));
+  if (typeof value !== 'string') return false;
+  const match = ISO8601_DATE_TIME_PATTERN.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day < 1 || day > daysInMonth) return false;
+
+  if (match[7] !== 'Z') {
+    const offset = /^[+-](\d{2}):(\d{2})$/.exec(match[7]);
+    if (!offset || Number(offset[1]) > 23 || Number(offset[2]) > 59) return false;
+  }
+  return !Number.isNaN(Date.parse(value));
 }
 
 /**

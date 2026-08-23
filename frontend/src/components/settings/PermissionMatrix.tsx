@@ -7,32 +7,18 @@ import {
   PERMISSION_CAPABILITIES,
   ROLE_DEFINITIONS,
   capabilityAllows,
-  type PermissionArea,
 } from '@shared/role-permissions';
-
-const AREA_ORDER: PermissionArea[] = [
-  'orders',
-  'payments',
-  'customers',
-  'menu',
-  'kitchen',
-  'reports',
-  'staff',
-  'settings',
-  'integrations',
-  'system',
-  'support',
-];
 
 export function PermissionMatrix() {
   const t = useTranslations('permissionMatrix');
   const tStaff = useTranslations('staff');
   const translate = (key: string) => t(key as never);
   const translateStaff = (key: string) => tStaff(key as never);
-  const capabilitiesByArea = AREA_ORDER.map((area) => ({
+  const areas = [...new Set(PERMISSION_CAPABILITIES.map(({ area }) => area))];
+  const capabilitiesByArea = areas.map((area) => ({
     area,
     capabilities: PERMISSION_CAPABILITIES.filter((capability) => capability.area === area),
-  })).filter(({ capabilities }) => capabilities.length > 0);
+  }));
 
   return (
     <section className="mt-8 rounded-xl border border-gray-100 bg-white p-6" aria-labelledby="permission-matrix-title">

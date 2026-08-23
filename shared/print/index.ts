@@ -10,3 +10,4 @@ export * from './policy';
 export * from './direction';
 export * from './bilingual';
 export * from './document';
+export * from './merchant-template';

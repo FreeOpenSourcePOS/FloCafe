@@ -136,10 +136,12 @@ function main() {
     'existing stores receive the opt-in split-check default during upgrade',
   );
   console.log('   ✓ existing stores receive split checks disabled by default');
-  assert.equal(
-    (db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as { value: string }).value,
-    'classic',
-    'existing stores receive the classic bill template during upgrade',
+  // #447: migration v72 upgrades the persisted value to the structured
+  // selection identity; the bare string keeps resolving during transition.
+  assert.deepEqual(
+    JSON.parse((db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as { value: string }).value),
+    { source: 'core', id: 'classic' },
+    'existing stores receive the classic bill template during upgrade, upgraded to the structured selection identity',
   );
   assert.equal(
     (db.prepare("SELECT value FROM settings WHERE key = 'bill_footer_message'").get() as { value: string }).value,

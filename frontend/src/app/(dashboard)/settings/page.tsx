@@ -101,8 +101,10 @@ interface TemplateCard {
   nameKey?: SettingsKey;
   displayName?: string;
   preview: string;
-  source: 'core' | 'plugin';
+  source: 'core' | 'plugin' | 'merchant';
   description?: string;
+  /** Provenance badge text for merchant cards (#447). */
+  originBadgeKey?: 'billTemplateMerchantCreated' | 'billTemplateMerchantImported' | 'billTemplateMerchantCloned';
 }
 
 const TEMPLATE_CARDS: TemplateCard[] = [
@@ -1624,9 +1626,39 @@ export default function SettingsPage() {
         source: 'plugin' as const,
         description: `${template.country} tax template · ${template.paperColumns.join(', ')} columns`,
       }));
-      const availableTemplateIds = new Set([...TEMPLATE_CARDS, ...pluginCards].map((card) => card.id));
-      setBillTemplateCards([...TEMPLATE_CARDS, ...pluginCards]);
-      const storedTemplate = templateResponse?.data.setting?.value;
+      // Merchant templates (#447): provenance is informational only — a
+      // cloned origin references a compliance-pack template WITHOUT any
+      // trust claim; the copy is an ordinary editable document.
+      const merchantCards: TemplateCard[] = (templatesResponse?.data?.merchant || [])
+        .filter((template: { status: string }) => template.status === 'active' || template.status === 'draft')
+        .map((template: {
+          id: string;
+          displayName: string;
+          origin: 'created' | 'imported' | 'cloned';
+          documentType: string;
+        }) => ({
+          id: template.id,
+          displayName: template.displayName,
+          preview: `  ${template.displayName}\n-----------\nReceipt\n${template.documentType} · custom blocks\n-----------\nTOTAL`,
+          source: 'merchant' as const,
+          description: t('billTemplateMerchantDesc'),
+          originBadgeKey: template.origin === 'cloned'
+            ? ('billTemplateMerchantCloned' as const)
+            : template.origin === 'imported'
+              ? ('billTemplateMerchantImported' as const)
+              : ('billTemplateMerchantCreated' as const),
+        }));
+      const availableTemplateIds = new Set([...TEMPLATE_CARDS, ...pluginCards, ...merchantCards].map((card) => card.id));
+      setBillTemplateCards([...TEMPLATE_CARDS, ...pluginCards, ...merchantCards]);
+      // The persisted value may be a legacy bare id or a structured
+      // { source, id } JSON string (#447) — both resolve to the bare id here.
+      let storedTemplate = templateResponse?.data.setting?.value;
+      if (typeof storedTemplate === 'string' && storedTemplate.trim().startsWith('{')) {
+        try {
+          const parsed = JSON.parse(storedTemplate);
+          if (parsed && typeof parsed === 'object' && typeof parsed.id === 'string') storedTemplate = parsed.id;
+        } catch { /* keep raw value */ }
+      }
       const billTemplate: BillTemplate = availableTemplateIds.has(storedTemplate)
         ? storedTemplate as BillTemplate
         : 'classic';
@@ -4008,8 +4040,13 @@ export default function SettingsPage() {
                       className={`text-start rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}>
-                      <p className="font-semibold text-gray-900 mb-2">
-                        {card.nameKey ? t(card.nameKey) : card.displayName}
+                      <p className="font-semibold text-gray-900 mb-2 flex items-center gap-2">
+                        <span className="flex-1">{card.nameKey ? t(card.nameKey) : card.displayName}</span>
+                        {card.source === 'merchant' && card.originBadgeKey && (
+                          <span className="shrink-0 rounded-full bg-brand/10 px-2 py-0.5 text-[10px] font-medium text-brand">
+                            {t(card.originBadgeKey)}
+                          </span>
+                        )}
                       </p>
                       <pre className="font-mono text-[9px] leading-tight text-gray-600 bg-gray-50 p-2 rounded overflow-hidden mb-3 whitespace-pre">
                         {card.preview}

@@ -1,0 +1,6 @@
+{
+  "format": "some-other-vendor-format",
+  "documentType": "receipt",
+  "schemaVersion": 1,
+  "blocks": [{ "kind": "totals" }]
+}

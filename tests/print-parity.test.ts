@@ -22,10 +22,14 @@
  * Issue: https://github.com/FreeOpenSourcePOS/FloCafe/issues/439
  */
 
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
 import {
   formatReceipt,
   formatKOT,
   escPosToText,
+  buildEscPos,
 } from '../main/printers/thermal';
 import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
 import {
@@ -35,8 +39,16 @@ import {
 } from './helpers/legacy-thermal-oracle';
 import { printLabel } from '../main/print/print-labels.generated';
 import {
+  buildBillPrintContext,
+  buildBillPrintData,
+  renderBillDocumentToClassicLines,
+} from '../main/printers/document-classic';
+import {
+  applyMerchantTemplate,
+  buildBillDocument,
   resolveKotLanguage,
   resolveReceiptLanguages,
+  validateMerchantTemplate,
 } from '../shared/print';
 
 // ---------------------------------------------------------------------------
@@ -520,6 +532,54 @@ function run(): void {
     // A fixed-en KOT ticket stays English even for a fa store (#443).
     const kotTextEn = escPosToText(formatKOT(kotOrder, order.items, 'Main Kitchen', 42, false, 'full', 'en-US', undefined, [], false, fixedEn));
     warn(kotTextEn.includes('Time:'), 'fixed-en KOT ticket renders English time label');
+  }
+
+  // ------------------------------------------------------------------
+  // 6. Merchant-template mode (#447): a semantic merchant template is
+  //    applied at the PrintDocument layer, so the same template must
+  //    render byte-identically through every document-driven renderer.
+  //    The golden fixture (all blocks visible, canonical order) must be
+  //    an identity transform on the rendered bytes.
+  // ------------------------------------------------------------------
+  section('Merchant-template mode (golden fixture = identity)');
+  {
+    const fixturePath = path.join(__dirname, 'fixtures/merchant-templates/golden-receipt-v1.json');
+    const validation = validateMerchantTemplate(JSON.parse(fs.readFileSync(fixturePath, 'utf8')));
+    if (!validation.ok) {
+      warn(false, `golden merchant fixture validates: ${validation.errors.join('; ')}`);
+    } else {
+      for (const cols of [32, 42, 48]) {
+        const printData = buildBillPrintData(order, bill, business, false);
+        const printContext = buildBillPrintContext({ columns: cols, language: 'en', business });
+        const baseDocument = buildBillDocument(printData, printContext);
+        const merchantDocument = applyMerchantTemplate(baseDocument, validation.payload);
+        warn(
+          JSON.stringify(merchantDocument.blocks) === JSON.stringify(baseDocument.blocks),
+          `merchant/${cols}: canonical all-blocks template is an identity on blocks`,
+        );
+        const classicOptions = {
+          columns: cols,
+          language: printContext.languages[0],
+          locale: printContext.locale,
+          ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
+          currencySymbol: printContext.currencySymbol,
+          trimDecimals: printContext.trimDecimals,
+          useUnicode: false,
+          arabicShaping: false,
+          cutMode: 'full' as const,
+        };
+        const classicBytes = buildEscPos(
+          renderBillDocumentToClassicLines(baseDocument, classicOptions),
+          false, { cutMode: 'full' as const, arabicShaping: false, columns: cols }, [],
+        );
+        const merchantBytes = buildEscPos(
+          renderBillDocumentToClassicLines(merchantDocument, classicOptions),
+          false, { cutMode: 'full' as const, arabicShaping: false, columns: cols }, [],
+        );
+        warn(Buffer.compare(classicBytes, merchantBytes) === 0,
+          `merchant/${cols}: identical bytes across renderers through the applied template`);
+      }
+    }
   }
 
   console.log('\n' + '='.repeat(56));

@@ -1,0 +1,15 @@
+{
+  "format": "flocafe-merchant-print-template",
+  "documentType": "receipt",
+  "schemaVersion": 1,
+  "blocks": [
+    { "kind": "business-header" },
+    { "kind": "document-meta" },
+    { "kind": "customer" },
+    { "kind": "item-table" },
+    { "kind": "tax-breakdown" },
+    { "kind": "totals" },
+    { "kind": "payments" },
+    { "kind": "message" }
+  ]
+}

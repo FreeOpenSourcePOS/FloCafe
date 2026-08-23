@@ -3951,6 +3951,59 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       `);
     },
   },
+  {
+    version: 72,
+    name: 'merchant_print_templates',
+    up: () => {
+      // Tenant-owned semantic receipt templates (#447). Deliberately separate
+      // from installed_print_templates (signed compliance-pack artifacts):
+      // merchant rows are ordinary editable documents and carry NO compliance
+      // trust. The embedded database is single-store, so every row is scoped
+      // to the local business tenant (business_id = 'local').
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS merchant_print_templates (
+          id TEXT PRIMARY KEY,
+          business_id TEXT NOT NULL DEFAULT 'local',
+          name TEXT NOT NULL,
+          origin TEXT NOT NULL DEFAULT 'created' CHECK (origin IN ('created', 'imported', 'cloned')),
+          derived_from TEXT,
+          document_type TEXT NOT NULL DEFAULT 'receipt' CHECK (document_type IN ('receipt')),
+          schema_version INTEGER NOT NULL DEFAULT 1 CHECK (schema_version >= 1),
+          payload_json TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'archived')),
+          previous_payload_json TEXT,
+          checksum TEXT NOT NULL DEFAULT '',
+          created_by TEXT,
+          updated_by TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_merchant_print_templates_business_status
+          ON merchant_print_templates(business_id, status);
+      `);
+
+      // One-time, idempotent upgrade of the bill_template setting to the
+      // structured selection identity ({ source, id } JSON). Only values that
+      // resolve unambiguously today are upgraded; unrecognized legacy strings
+      // are left untouched and keep resolving during the transition.
+      const current = db.prepare("SELECT value FROM settings WHERE key = 'bill_template'").get() as { value: string } | undefined;
+      const rawValue = typeof current?.value === 'string' ? current.value.trim() : '';
+      if (rawValue.length > 0 && !(rawValue.startsWith('{') && rawValue.endsWith('}'))) {
+        let upgraded: string | null = null;
+        if (['classic', 'compact'].includes(rawValue.toLowerCase())) {
+          upgraded = JSON.stringify({ source: 'core', id: rawValue.toLowerCase() });
+        } else if (db.prepare('SELECT 1 FROM installed_print_templates WHERE template_id = ?').get(rawValue)) {
+          upgraded = JSON.stringify({ source: 'pack', id: rawValue });
+        }
+        if (upgraded) {
+          db.prepare(`
+            INSERT INTO settings (key, value, updated_at) VALUES ('bill_template', ?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+          `).run(upgraded, now());
+        }
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {

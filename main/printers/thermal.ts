@@ -8,7 +8,8 @@ import { getDatabase, parseDbTimestamp } from '../db';
 import { PrinterCutMode, resolvePrinterProfile, matchSupportedPrinterProfile, SupportedPrinterProfile } from './profiles';
 import { getCountryByCode } from '../countries';
 import { resolveTaxComponents } from '../services/tax-components';
-import { loadInstalledPrintTemplate } from '../services/print-templates';
+import { loadInstalledPrintTemplate, parseBillTemplateSelection } from '../services/print-templates';
+import { renderMerchantReceiptViaDocument } from './document-merchant';
 import { correlationId, type FloErrorCode } from '../errors';
 import { sendEvent } from '../services/telemetry';
 import { cloudSync } from '../services/cloud-sync';
@@ -843,9 +844,30 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
 
   const lang = normalizePrintLanguage(language);
   const biz = business || { name: 'Store', address: '', phone: '', taxRegistrationNumber: '' };
-  const pluginTemplate = loadInstalledPrintTemplate(String(template || ''));
-  if (pluginTemplate) {
-    return renderPluginReceipt(pluginTemplate, order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang);
+  // Structured selection identity (#447): the persisted bill_template value
+  // may be a structured { source, id } JSON string or any legacy bare value.
+  // Merchant templates resolve through the document pipeline; pack templates
+  // keep their compliance renderer; unknown values fall through to the core
+  // classic/compact name matching below (unchanged behavior).
+  const selection = parseBillTemplateSelection(template);
+  if (selection?.source === 'pack') {
+    return renderPluginReceipt(
+      loadInstalledPrintTemplate(selection.id),
+      order, bill, biz, cols, useUnicode, isReprint, cutMode, warnings, arabicShaping, lang,
+    );
+  }
+  if (selection?.source === 'merchant') {
+    const result = renderMerchantReceiptViaDocument(order, bill, biz, selection.id, {
+      columns: cols,
+      language: lang,
+      ...(additionalLanguage !== undefined ? { additionalLanguage: normalizePrintLanguage(additionalLanguage) } : {}),
+      isReprint,
+      useUnicode,
+      arabicShaping,
+      cutMode,
+    });
+    if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
+    return result.data;
   }
   const tpl = normalizeReceiptTemplate(template);
 

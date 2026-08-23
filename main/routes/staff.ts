@@ -9,11 +9,10 @@ import bcrypt from 'bcryptjs';
 import { v4 as uuidv4 } from 'uuid';
 import { getDatabase, now } from '../db';
 import { requireRole, validatePassword, authRateLimit, invalidateUserAuthCache } from '../middleware/security';
-import { ROLE_ACCESS, ROLE_KEYS, hasRole } from '../../shared/role-permissions';
+import { ROLE_ACCESS, ROLE_KEYS, OPERATIONAL_ROLES, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
 
-const OPERATIONAL_ROLES: readonly string[] = ['cashier', 'server', 'chef'];
 const VALID_ROLES: readonly string[] = ROLE_KEYS;
 const STAFF_SELECT_FIELDS = 'id, name, email, role, (pin_hash IS NOT NULL) AS has_pin, is_active, created_at, updated_at';
 
@@ -24,7 +23,7 @@ function canModifyTargetStaff(requesterRole: string, targetRole: string): boolea
 }
 
 function isOperationalRole(role: string): boolean {
-  return OPERATIONAL_ROLES.includes(role);
+  return hasRole(role, OPERATIONAL_ROLES);
 }
 
 function hasNonEmptyPin(pin: unknown): boolean {
@@ -112,7 +111,7 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), authRateLimit(), (req
 
     const requesterRole = (req as any).user.role;
     if (requesterRole === 'manager' && !isOperationalRole(role)) {
-      return res.status(403).json({ error: 'Managers can only create operational staff accounts (cashier, server, chef)' });
+      return res.status(403).json({ error: `Managers can only create operational staff accounts (${OPERATIONAL_ROLES.join(', ')})` });
     }
 
     if (isOperationalRole(role) && hasNonEmptyPin(pin)) {

@@ -31,6 +31,7 @@ const KITCHEN = ['owner', 'manager', 'chef'] as const satisfies readonly Role[];
 const ORDER_STATUS = ['owner', 'manager', 'cashier', 'server', 'chef'] as const satisfies readonly Role[];
 const ALL_STAFF = ['owner', 'manager', 'cashier', 'server', 'chef'] as const satisfies readonly Role[];
 const SERVER_APP = ['server'] as const satisfies readonly Role[];
+export const OPERATIONAL_ROLES = ['cashier', 'server', 'chef'] as const satisfies readonly Role[];
 
 /** Named role groups used by backend middleware and frontend surface gates. */
 export const ROLE_ACCESS = {
@@ -43,6 +44,7 @@ export const ROLE_ACCESS = {
   orderStatus: ORDER_STATUS,
   allStaff: ALL_STAFF,
   serverApp: SERVER_APP,
+  operational: OPERATIONAL_ROLES,
 } as const;
 
 export type RoleAccessKey = keyof typeof ROLE_ACCESS;

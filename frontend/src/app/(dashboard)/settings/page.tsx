@@ -278,6 +278,7 @@ export default function SettingsPage() {
   const setLanguage = posSettings.setLanguage;
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
   const isAdmin = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const isOwner = hasRole(currentTenant?.role, ROLE_ACCESS.owner);
   const canViewTaxConfiguration = isAdmin;
   const { confirm, ConfirmDialog } = useConfirm();
 
@@ -425,7 +426,7 @@ export default function SettingsPage() {
         // ignore — history card just shows empty state until retried
       })
       .finally(() => setBackupsLoading(false));
-    if (currentTenant?.role === 'owner') {
+    if (isOwner) {
       api.get('/settings/cloud/account')
         .then(({ data }) => {
           setCloudAccount(data);
@@ -2789,7 +2790,7 @@ export default function SettingsPage() {
 
         {canViewTaxConfiguration && (
           <TabsContent value="tax">
-            <TaxConfigurationPanel isOwner={currentTenant?.role === 'owner'} />
+            <TaxConfigurationPanel isOwner={isOwner} />
           </TabsContent>
         )}
 
@@ -3504,7 +3505,7 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-            {currentTenant?.role === 'owner' && (
+            {isOwner && (
               <div className={`rounded-xl border p-6 ${cloudAccountAvailable && cloudAccount?.email && !cloudAccount.verified ? 'border-red-200 bg-red-50/40' : 'border-gray-100 bg-white'}`}>
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -3579,7 +3580,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {currentTenant?.role === 'owner' && (
+            {isOwner && (
               <div className="rounded-xl border border-gray-100 bg-white p-6">
                 <h2 className="font-semibold text-gray-900">{t('cloudPrivacyControls')}</h2>
                 <p className="mt-2 text-sm text-gray-600">{t('cloudStopReversible')}</p>
@@ -4280,7 +4281,7 @@ export default function SettingsPage() {
                         )}
                       </div>
                     </div>
-                    {(currentTenant?.role === 'owner') && (
+                    {isOwner && (
                       googleDriveStatus.connected ? (
                         <button
                           onClick={disconnectGoogleDrive}
@@ -4353,7 +4354,7 @@ export default function SettingsPage() {
                             <span>{t('googleDriveLastBackup')}: {t('googleDriveLastBackupNever')}</span>
                           )}
                         </div>
-                        {(currentTenant?.role === 'owner') && (
+                        {isOwner && (
                           <button
                             onClick={backupToGoogleDriveNow}
                             disabled={backingUpGoogleDrive}

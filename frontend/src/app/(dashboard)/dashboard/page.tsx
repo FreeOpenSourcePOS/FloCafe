@@ -12,6 +12,7 @@ import toast from 'react-hot-toast';
 import { useFormatCurrency } from '@/hooks/useFormatCurrency';
 import { PAYMENT_METHODS } from '@/lib/payment-methods';
 import { ORDER_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 interface PaymentMethodBreakdown {
   method: string | null;
@@ -144,7 +145,7 @@ export default function DashboardPage() {
   const [insights, setInsights] = useState<Insights | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const isOwner = currentTenant?.role === 'owner';
+  const isOwner = hasRole(currentTenant?.role, ROLE_ACCESS.owner);
   const fmt = useFormatCurrency();
   const locale = useLocale();
   const timeZone = currentTenant?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;

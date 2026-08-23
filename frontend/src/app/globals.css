@@ -45,6 +45,46 @@ body {
   font-family: var(--font-sans);
 }
 
+/* Phase 1 desktop title bar: Electron supplies the native caption buttons.
+ * The safe-area env values exclude those buttons and update on geometrychange;
+ * physical positioning is intentional for WCO's physical x/width values while
+ * content spacing and flow use logical properties for RTL locales. */
+.flo-title-bar {
+  --flo-titlebar-height: 40px;
+  position: relative;
+  block-size: var(--flo-titlebar-height);
+  min-block-size: var(--flo-titlebar-height);
+  align-items: center;
+  overflow: hidden;
+  border-block-end: 1px solid var(--border);
+  background: var(--background);
+  color: var(--foreground);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.flo-title-bar__safe-area {
+  position: absolute;
+  inset-block-start: env(titlebar-area-y, 0px);
+  left: env(titlebar-area-x, 0px);
+  inline-size: env(titlebar-area-width, 100%);
+  block-size: env(titlebar-area-height, var(--flo-titlebar-height));
+  max-inline-size: 100%;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding-inline: 0.75rem;
+}
+
+.flo-title-bar__interactive,
+.flo-title-bar button,
+.flo-title-bar a,
+.flo-title-bar [role='button'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

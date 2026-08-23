@@ -35,7 +35,7 @@ import * as os from 'os';
  * (tables_required=false) and one product ("E2E Coffee").
  */
 
-const BASE = 'http://localhost:3001';
+const BASE = process.env.E2E_BASE_URL || 'http://localhost:3001';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M06ZR8QPAYE8HF2XV90DDKGY');
@@ -99,6 +99,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
   await setLanguage(page, 'en');
   await page.goto(`${BASE}/pos`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
+  await expect(page.getByTestId('desktop-title-bar')).toHaveCount(0);
   await expect(page.getByTestId('pos-product-grid')).toBeVisible();
   await expect(page.getByText('E2E Coffee')).toBeVisible();
   await assertSidebarSide(page, 'left');
@@ -109,6 +110,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
   try {
     await page.goto(`${BASE}/pos`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByTestId('desktop-title-bar')).toHaveCount(0);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     await expect(page.getByText('E2E Coffee')).toBeVisible();
     await assertSidebarSide(page, 'right');

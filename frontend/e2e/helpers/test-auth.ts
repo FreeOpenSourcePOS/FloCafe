@@ -41,7 +41,7 @@ export function getE2eToken(
 export async function setLanguage(
   page: Page,
   value: string,
-  base = 'http://localhost:3001',
+  base = process.env.E2E_BASE_URL || 'http://localhost:3001',
 ): Promise<void> {
   const token =
     (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) ||

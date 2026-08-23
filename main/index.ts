@@ -372,6 +372,15 @@ function createWindow(): void {
     minWidth: 1024,
     minHeight: 768,
     title: 'Flo',
+    // Keep the native caption buttons available while extending the POS UI
+    // into the title-bar area. KDS and popup windows intentionally keep their
+    // stock window chrome in their own creation paths.
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
+    titleBarOverlay: {
+      color: '#ffffff',
+      symbolColor: '#475569',
+      height: 40,
+    },
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

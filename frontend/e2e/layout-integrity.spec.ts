@@ -1,10 +1,16 @@
 import { test, expect } from '@playwright/test';
 
+const BASE = process.env.E2E_BASE_URL || 'http://localhost:3001';
+
 test('POS product grid has no horizontal clipping and touchable product cards', async ({ page }) => {
-  await page.goto('http://localhost:3001/auth/login');
+  await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
+
+  // The LAN/browser build must not render Electron-only title-bar markup.
+  expect(await page.evaluate(() => Boolean(window.electronAPI))).toBe(false);
+  await expect(page.getByTestId('desktop-title-bar')).toHaveCount(0);
 
   const productGrid = page.getByTestId('pos-product-grid');
   await expect(productGrid).toBeVisible();

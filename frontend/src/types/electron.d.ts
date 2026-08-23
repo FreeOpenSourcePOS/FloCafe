@@ -17,11 +17,11 @@ export interface ElectronAPI {
 
   // Settings
   getSettings: () => Promise<Record<string, string> | ElectronIpcError>;
-  setSetting: (key: string, value: string) => Promise<ElectronActionResult>;
+  setSetting: (key: string, value: string) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // KDS
-  getKdsInfo: () => Promise<KdsInfo>;
-  openKdsWindow: () => Promise<void>;
+  getKdsInfo: () => Promise<KdsInfo | ElectronIpcError>;
+  openKdsWindow: () => Promise<void | ElectronIpcError>;
 
   // App info
   getAppInfo: () => Promise<{
@@ -34,7 +34,7 @@ export interface ElectronAPI {
 
   // Printers
   getPrinters: () => Promise<ElectronPrinter[] | ElectronIpcError>;
-  savePrinter: (printer: ElectronPrinterInput) => Promise<ElectronActionResult>;
+  savePrinter: (printer: ElectronPrinterInput) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // Reports
   getDailySummary: () => Promise<DailySummary | ElectronIpcError>;

@@ -145,9 +145,16 @@ export type MerchantTemplateEnvelopeValidation =
 
 const ENVELOPE_ROOT_FIELDS = ['format', 'schemaVersion', 'exportedAt', 'appVersion', 'origin', 'checksum', 'template'];
 const ENVELOPE_ORIGIN_FIELDS = ['sourceTemplateId', 'sourceName', 'sourceChecksum'];
+const ISO8601_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 function isSha256Hex(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-fA-F]{64}$/.test(value);
+}
+
+function isIso8601DateTime(value: unknown): value is string {
+  return typeof value === 'string'
+    && ISO8601_DATE_TIME_PATTERN.test(value)
+    && !Number.isNaN(Date.parse(value));
 }
 
 /**
@@ -177,7 +184,7 @@ export function validateMerchantTemplateEnvelope(value: unknown): MerchantTempla
   if (value.schemaVersion !== MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION) {
     reject(errors, `root.schemaVersion: unsupported transfer-file version ${JSON.stringify(value.schemaVersion)}; this build supports major version ${MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION} only`);
   }
-  if (typeof value.exportedAt !== 'string' || Number.isNaN(Date.parse(value.exportedAt))) {
+  if (!isIso8601DateTime(value.exportedAt)) {
     reject(errors, 'root.exportedAt: expected an ISO-8601 date-time string');
   }
   if (value.appVersion !== undefined && typeof value.appVersion !== 'string') {

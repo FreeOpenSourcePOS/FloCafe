@@ -138,6 +138,13 @@ console.log('\n▶ Envelope validation: negative fixtures');
   }
   ok('unknown majors, wrong formats, and unknown fields rejected with pointers');
 
+  const invalidExportedAt = golden() as Record<string, unknown>;
+  invalidExportedAt.exportedAt = '0';
+  const invalidExportedAtResult = validateMerchantTemplateEnvelope(invalidExportedAt);
+  assert(!invalidExportedAtResult.ok, 'non-ISO exportedAt values are rejected');
+  assert(invalidExportedAtResult.errors.some((message) => message.includes('root.exportedAt')));
+  ok('non-ISO exportedAt values fail closed');
+
   // Disallowed payload block: envelope structure is fine, the PAYLOAD validator
   // must be the single authority that rejects the unknown block kind.
   const disallowedParsed = JSON.parse(readFixture('negative/disallowed-block.json'));

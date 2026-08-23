@@ -50,7 +50,7 @@ Layer ownership:
 | --- | --- | --- | --- |
 | Normalization | `main/printers/document-classic.ts` (`buildBillPrintData`), `main/printers/document-kot.ts` (`buildKotPrintData`), `frontend/src/lib/printer/print-document.ts` | read raw rows once, coerce to typed snapshots, reconcile display-only tax components to the persisted tax total | recompute financial totals or persisted tax liability beyond legacy addon-line extension |
 | Kernel (`shared/print/`) | `shared/print/` | types + pure functions over injected facts | any IO (Electron, DOM, Node built-ins, DB, filesystem, network); import from `frontend/` or `main/`; hardcode language unions |
-| Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | on migrated paths, read bill/order rows directly; invent labels outside the catalog; the documented raw-path exceptions below are not a model boundary |
+| Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | on migrated paths, read bill/order rows directly; invent catalog-backed labels outside the catalog; the documented literal and raw-path exceptions below are not a model boundary |
 | Transports | `main/printers/thermal.ts`, browser APIs | move bytes/paper | change document semantics |
 
 The document-block renderer rule has explicit active raw-path exceptions:
@@ -226,12 +226,13 @@ receipt primary therefore does not currently change browser receipt labels;
 this is separate from the model-only/future bilingual renderer work above.
 
 Policy payloads are untrusted input: `parsePrintLanguagePolicy` /
-`parseKotLanguagePolicy` accept known keys only, require registered +
-selectable codes via the injected registry facts, dedupe, reject duplicate
-primaries, and return frozen normalized policies safe to persist. Invalid or
-missing settings fall back to the store language; printing never fails because
-of a malformed policy (`main/lib/print-language-settings.ts`,
-`tests/print-language-settings.test.ts`).
+`parseKotLanguagePolicy` reject unknown top-level keys and validate the relevant
+nested `primary`/`additional` values, but extra fields inside a primary
+selection object are ignored. They require registered + selectable codes via
+the injected registry facts, dedupe, reject duplicate primaries, and return
+frozen normalized policies safe to persist. Invalid or missing settings fall
+back to the store language; printing never fails because of a malformed policy
+(`main/lib/print-language-settings.ts`, `tests/print-language-settings.test.ts`).
 
 Settings are registry-driven through two synchronized views: the frontend
 renders print-language options from `LANGUAGES`, while backend policy
@@ -282,6 +283,11 @@ Rules:
 - Known deliberate gap: the KOT `Order:` prefix has no assigned key yet;
   the KOT document carries only the value (`KotHeaderBlock.orderNumber`
   doc comment).
+- Renderer-only layout literals remain explicit exceptions: the migrated
+  WebUSB `receipt-encoder.ts` uses `Rate` and `Amount` labels for its 4-column
+  overflow layout (`col4Rows`), while literal tax-ID/tax-component labels are
+  data labels created by `buildBillDocument`. These do not establish new
+  catalog concepts.
 
 ## 5. Template systems, provenance & security
 
@@ -363,26 +369,30 @@ Renderers consume capabilities, they never guess them:
   skipped with an explicit warning unless the profile's shaping flag (or a
   request-level override) admits strict ASCII+Arabic lines
   (`buildEscPos` guard in `main/printers/thermal.ts`).
-- Browser/WebUSB encoders mirror the identical skip-with-warning contract so
-  both paths degrade the same way (`frontend/src/lib/printer/warnings.ts`,
-  `safePrinterText`).
+- The migrated WebUSB receipt path mirrors the skip-with-warning contract
+  (`frontend/src/lib/printer/receipt-encoder.ts`,
+  `frontend/src/lib/printer/warnings.ts`, `safePrinterText`). The raw WebUSB
+  `kot-encoder.ts` and LEGACY-FROZEN `tax-bill-encoder.ts` paths are exceptions:
+  they retain direct `enc.text` writes and their own warning behavior.
 - Browser HTML printing is the full-Unicode path: nothing is skipped for
   script reasons (asserted in `tests/print-parity.test.ts`).
 
-Warning semantics on the shared document-driven paths are **no silent content
-loss**: every skipped line produces a `PrintWarning` naming the field, the
-skipped text, and the reason; unsupported configuration (for example a
-merchant template selected on a print path that cannot honor it) produces a
+Warning semantics on the shared document-driven paths are **no silent loss of
+unsupported content**: every skipped line produces a `PrintWarning` naming the
+field, the skipped text, and the reason; unsupported configuration (for example
+a merchant template selected on a print path that cannot honor it) produces a
 `kind: 'configuration'` warning and a documented fallback layout
-(`makeBillTemplateFallbackWarning`). The legacy raw WebUSB encoders described
-above retain their own warning behavior and do not inherit the
-`PrintDocument` guarantees. Warnings surface to the user after printing
-(`warnings-toast.ts`) and in dispatch results (`classifyPrintFailure` gives
-stable, privacy-safe failure classes for fleet telemetry). The end-state
-contract from epic #438 for the shared paths is native render, explicitly
-supported fallback, or an explicit warning/error — never quiet omission of
-financial content. The recommended capability-tiered raster fallback for
-broader script coverage is future work
+(`makeBillTemplateFallbackWarning`). A valid merchant template may intentionally
+reorder, hide, or omit blocks — including `totals` — through explicit block
+selection and `visible` settings; that is merchant configuration, not a silent
+renderer omission. The legacy raw WebUSB encoders described above retain their
+own warning behavior and do not inherit the `PrintDocument` guarantees.
+Warnings surface to the user after printing (`warnings-toast.ts`) and in
+dispatch results (`classifyPrintFailure` gives stable, privacy-safe failure
+classes for fleet telemetry). The end-state contract from epic #438 for the
+shared paths is native render, explicitly supported fallback, or an explicit
+warning/error for unsupported content or configuration. The recommended
+capability-tiered raster fallback for broader script coverage is future work
 ([printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
 
 ## 7. Renderer/transport map
@@ -511,8 +521,9 @@ All five steps are required; the whitelist and fixtures are load-bearing:
 1. Define the block interface and add it to the `PrintDocumentBlock` union in
    `shared/print/document.ts`; extend `buildBillDocument` to compose it.
    Follow the model rules: frozen nodes, `DirectionalText` values,
-   `SemanticLabel` labels (concept ids from the catalog), no layout widths,
-   no byte tokens.
+   `SemanticLabel` labels (catalog concept ids where a concept exists; literal
+   labels only for the documented data and legacy exceptions), no layout
+   widths, no byte tokens.
 2. Add the kind to `MERCHANT_TEMPLATE_BLOCK_KINDS` in
    `shared/print/merchant-template.ts`; add a corresponding entry to
    `MERCHANT_TEMPLATE_LABEL_FIELDS` for every whitelisted kind, using `[]` when

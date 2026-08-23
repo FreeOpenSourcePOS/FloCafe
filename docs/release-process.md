@@ -52,15 +52,20 @@ Stable clients keep `allowPrerelease` and `allowDowngrade` disabled.
    `[a-z0-9.-]+`; Linux release jobs use the safe matrix labels `x64` and
    `arm64` in the electron-builder template, and artifacts are not renamed
    after electron-builder creates them.
-3. Platform jobs upload installers, update manifests, blockmaps, and required
-   store packages to the draft release.
-   Microsoft Store AppX submission runs only for stable tag pushes. Beta and
-   nightly AppX packages remain outside the Store submission path because their
-   four-part MSIX versions would otherwise collide with stable and with later
-   prereleases.
-4. `scripts/verify-release-assets.cjs` fetches manifests and referenced assets
-   back through the GitHub API and verifies their SHA-512 values. It also checks
-   the expected installer/store/uninstaller inventory and HTTP availability for
+3. Each self-updating platform job asserts that its local updater manifest
+   and representative installer exist before upload. Platform jobs upload
+   installers, update manifests, blockmaps, and required store packages to the
+   draft release. Microsoft Store AppX submission runs only for stable tag
+   pushes. Beta and nightly AppX packages remain outside the Store submission
+   path because their four-part MSIX versions would otherwise collide with
+   stable and with later prereleases.
+4. `scripts/verify-release-assets.cjs` fetches the draft release metadata, then
+   downloads manifests and every referenced asset back through the GitHub API.
+   It parses each manifest as YAML, requires every referenced asset to resolve
+   to HTTP 200 in that same release, and recomputes the manifest SHA-512 for
+   every self-updating artifact. Missing or malformed manifests, unavailable
+   references, and checksum mismatches fail the workflow. It also checks the
+   expected installer/store/uninstaller inventory and HTTP availability for
    uploaded assets that are not referenced by an updater manifest. Those
 non-manifest assets are checked for positive size and HTTP availability; their
 SHA-512 is not independently recomputed because GitHub/electron-builder does

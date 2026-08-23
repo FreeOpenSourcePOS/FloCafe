@@ -289,6 +289,17 @@ jobs:
           SNAPCRAFT_BUILD_ENVIRONMENT: lxd
           FLO_LINUX_ARCH: ${{ matrix.arch }}
 
+      - name: Verify Linux release assets
+        run: |
+          MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
+          MANIFEST_NAME="${MANIFEST_PREFIX}-linux.yml"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then MANIFEST_NAME="${MANIFEST_PREFIX}-linux-arm64.yml"; fi
+          test -f "release/${MANIFEST_NAME}" || { echo "::error::release/${MANIFEST_NAME} is missing — Linux auto-update would be broken for this release"; exit 1; }
+          find release -maxdepth 1 -type f -name "*linux-${{ matrix.arch }}.appimage" -print -quit | grep -q . || {
+            echo "::error::no Linux AppImage for ${{ matrix.arch }} — Linux auto-update would be broken for this release"
+            exit 1
+          }
+
       - name: Upload Linux assets to GitHub release
         # Each matrix entry uploads its own arch-tagged artifacts. The release
         # override uses the safe x64/arm64 matrix labels, so entries never
@@ -719,6 +730,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+
+      - name: Install verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Download and verify every release manifest and referenced artifact
         # Stable verification covers latest.yml, latest-mac.yml, latest-linux.yml,

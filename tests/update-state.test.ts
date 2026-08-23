@@ -17,6 +17,7 @@ import {
   UPDATE_STATES,
   classifyUpdateError,
   initialUpdateState,
+  isDevelopmentOrUnpackedArtifact,
   isInstallReady,
   isMissingUpdateConfigError,
   isUpdateCheckInFlight,
@@ -204,6 +205,29 @@ test('missingUpdateConfigState distinguishes development and packaged artifacts'
     reason: 'manifest-missing',
     error: detail,
   });
+});
+
+test('isDevelopmentOrUnpackedArtifact distinguishes runtime artifact boundaries', () => {
+  assert.equal(isDevelopmentOrUnpackedArtifact({
+    defaultApp: true,
+    packaged: false,
+    executablePath: '/project/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron',
+  }), true);
+  assert.equal(isDevelopmentOrUnpackedArtifact({
+    defaultApp: false,
+    packaged: true,
+    executablePath: '/project/release/linux-unpacked/flo-desktop',
+  }), true);
+  assert.equal(isDevelopmentOrUnpackedArtifact({
+    defaultApp: false,
+    packaged: true,
+    executablePath: '/Applications/Flo Cafe.app/Contents/MacOS/Flo Cafe',
+  }), false);
+  assert.equal(isDevelopmentOrUnpackedArtifact({
+    defaultApp: false,
+    packaged: true,
+    executablePath: 'C:\\Users\\merchant\\AppData\\Local\\Programs\\Flo Cafe\\Flo Cafe.exe',
+  }), false);
 });
 
 test('isInstallReady protects both persisted and separately staged updates', () => {

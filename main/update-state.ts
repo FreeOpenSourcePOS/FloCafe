@@ -32,6 +32,18 @@ export const UPDATE_STATES = [
 
 export type UpdateState = (typeof UPDATE_STATES)[number];
 
+export interface RuntimeArtifactDescriptor {
+  defaultApp: boolean;
+  packaged: boolean;
+  executablePath: string;
+}
+
+const UNPACKED_ARTIFACT_PATH_PATTERN = /(?:^|[\\/])(?:win-unpacked|linux-unpacked|mac(?:-(?:arm64|x64))?)[\\/]/i;
+
+export function isDevelopmentOrUnpackedArtifact(artifact: RuntimeArtifactDescriptor): boolean {
+  return artifact.defaultApp || !artifact.packaged || UNPACKED_ARTIFACT_PATH_PATTERN.test(artifact.executablePath);
+}
+
 /** Why a check or download failed, when known. */
 export type UpdateFailureReason = 'manifest-missing' | 'download-failed' | 'unknown';
 

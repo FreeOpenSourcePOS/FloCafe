@@ -23,6 +23,7 @@ import {
   isMissingUpdateConfigError,
   isUpdateCheckInFlight,
   isInstallReady,
+  isDevelopmentOrUnpackedArtifact,
   missingUpdateConfigState,
   oneShotUpdateState,
   toIpcUpdateStatus,
@@ -224,11 +225,16 @@ function checkForUpdates(): void {
     return;
   }
 
+  const isUpdaterDevelopmentArtifact = isDevelopmentOrUnpackedArtifact({
+    defaultApp: (process as NodeJS.Process & { defaultApp?: boolean }).defaultApp === true,
+    packaged: app.isPackaged,
+    executablePath: process.execPath,
+  });
   const configPath = path.join(process.resourcesPath, 'app-update.yml');
   let configMissing = false;
   let configProbeFailed = false;
   let configProbeError: unknown;
-  if (!isDev) {
+  if (!isUpdaterDevelopmentArtifact) {
     try {
       fs.statSync(configPath);
     } catch (error) {
@@ -241,7 +247,7 @@ function checkForUpdates(): void {
     }
   }
   const configDetail = `app-update.yml not found at ${configPath}`;
-  if (isDev) {
+  if (isUpdaterDevelopmentArtifact) {
     log.debug('[Update] Skipping update check in dev mode');
     setUpdateStatus(oneShotUpdateState('dev-mode'));
     return;

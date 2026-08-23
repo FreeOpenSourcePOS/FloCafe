@@ -70,7 +70,7 @@ export interface KdsInfo {
   url: string;
   wsUrl: string;
   localIP: string;
-  port: number | null;
+  port: number;
 }
 
 export type PrinterConnectionType = 'network' | 'usb' | 'webusb';
@@ -81,7 +81,7 @@ export interface ElectronPrinter {
   name: string;
   connection_type: PrinterConnectionType;
   ip_address: string | null;
-  port: number;
+  port: number | null;
   is_default: number;
   paper_width: string | null;
   created_at: string;

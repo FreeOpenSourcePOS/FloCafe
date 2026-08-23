@@ -15,6 +15,14 @@ export interface ElectronAPI {
   dbInitialize: (pin: string, confirmationPhrase: string) => Promise<{ success: boolean; backupPath?: string; error?: string }>;
   getMasterPinStatus: () => Promise<{ available: boolean; isSet: boolean }>;
 
+  // Settings
+  getSettings: () => Promise<Record<string, string> | ElectronIpcError>;
+  setSetting: (key: string, value: string) => Promise<ElectronActionResult>;
+
+  // KDS
+  getKdsInfo: () => Promise<KdsInfo>;
+  openKdsWindow: () => Promise<void>;
+
   // App info
   getAppInfo: () => Promise<{
     version: string;
@@ -23,6 +31,13 @@ export interface ElectronAPI {
     node: string;
     platform: string;
   }>;
+
+  // Printers
+  getPrinters: () => Promise<ElectronPrinter[] | ElectronIpcError>;
+  savePrinter: (printer: ElectronPrinterInput) => Promise<ElectronActionResult>;
+
+  // Reports
+  getDailySummary: () => Promise<DailySummary | ElectronIpcError>;
 
   // Status
   getStatus: () => Promise<{
@@ -40,6 +55,59 @@ export interface ElectronAPI {
 
   // Platform
   platform: string;
+}
+
+export interface ElectronIpcError {
+  error: string;
+}
+
+export interface ElectronActionResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface KdsInfo {
+  url: string;
+  wsUrl: string;
+  localIP: string;
+  port: number;
+}
+
+export type PrinterConnectionType = 'network' | 'usb' | 'webusb';
+
+/** Raw printer row returned by the legacy Electron IPC settings path. */
+export interface ElectronPrinter {
+  id: string;
+  name: string;
+  connection_type: PrinterConnectionType;
+  ip_address: string | null;
+  port: number;
+  is_default: number;
+  paper_width: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Input accepted by main/ipc.ts save-printer. */
+export interface ElectronPrinterInput {
+  id?: string;
+  name: string;
+  connection_type: PrinterConnectionType;
+  ip_address?: string | null;
+  port?: number | null;
+  is_default?: boolean | number;
+  /** Legacy fields still bound by the Electron handler when supplied. */
+  type?: string;
+  usb_vendor_id?: number | null;
+  usb_product_id?: number | null;
+}
+
+export interface DailySummary {
+  date: string;
+  revenue: number;
+  bill_count: number;
+  covers: number;
+  pending_orders: number;
 }
 
 export type HealthFindingRisk = 'safe' | 'manual_review';

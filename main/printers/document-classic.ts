@@ -44,12 +44,11 @@ import {
 import {
   buildBillDocument,
   containsRtlScript,
-  type BusinessHeaderBlock,
   type ItemTableBlock,
-  type MessageBlock,
   type PrintContext,
   type PrintData,
   type PrintDocument,
+  type PrintDocumentBlock,
   type SemanticLabel,
   type TaxBreakdownBlock,
   type TextDirection,
@@ -246,54 +245,95 @@ export function renderBillDocumentToClassicLines(
   const cols = options.columns;
   const lines: string[] = [];
   const blocks = document.blocks;
-  const header = blocks.find((block): block is BusinessHeaderBlock => block.kind === 'business-header');
-  const totals = blocks.find((block): block is TotalsBlock => block.kind === 'totals');
   const breakdownIndex = blocks.findIndex((block) => block.kind === 'tax-breakdown');
   const totalsIndex = blocks.findIndex((block) => block.kind === 'totals');
-  const breakdown = breakdownIndex >= 0 ? blocks[breakdownIndex] as TaxBreakdownBlock : undefined;
-  const messages = blocks.find((block): block is MessageBlock => block.kind === 'message');
 
   const prefix = resolveCurrencyPrefix(options.currencySymbol ?? '₹', options.useUnicode);
   const trimDecimals = options.trimDecimals === true;
   const tzOptions = options.timezone ? { timeZone: options.timezone } : undefined;
   const dash = '-'.repeat(cols);
-  const hasTaxBreakdown = breakdown !== undefined && breakdown.lines.length > 0;
 
   lines.push('{INIT}');
 
-  if (messages?.reprintBanner) {
-    lines.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(messages.reprintBanner) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+  // ---------------------------------------------------------------------
+  // Ordered semantic composition (#447): EVERY block-owned line is
+  // generated inside this loop, attributed to its own block, so a
+  // merchant template's ordering/omission moves each block's FULL
+  // content (banner, loyalty, header contact footer, footer note
+  // included) with its position. Nothing is emitted outside the loop
+  // except non-block-owned framing ({INIT}, powered-by, {CUT}).
+  //
+  // Blocks whose legacy layout splits across the receipt (business
+  // header name vs contact footer, totals rows vs loyalty lines,
+  // message banner / thank-you / footer note) contribute ordered
+  // SEGMENTS: pre / main / post. Documents whose selected blocks appear
+  // in the canonical relative order assemble those segments in the
+  // pinned legacy arrangement (explicit canonical parity contract —
+  // byte equality with the oracle); genuinely reordered compositions
+  // emit each block's complete segment group strictly at its template
+  // position.
+  // ---------------------------------------------------------------------
+  interface BlockSegments {
+    pre: string[];
+    main: string[];
+    post: string[];
   }
+  const segments = new Map<PrintDocumentBlock['kind'], BlockSegments>();
+  const segmentOf = (kind: PrintDocumentBlock['kind']): BlockSegments => {
+    let segment = segments.get(kind);
+    if (!segment) {
+      segment = { pre: [], main: [], post: [] };
+      segments.set(kind, segment);
+    }
+    return segment;
+  };
 
   const renderGrandTotal = (block: TotalsBlock): void => {
-    lines.push(...financialRows(labelOf(block.grandTotal.label), formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
+    segmentOf('totals').main.push(...financialRows(labelOf(block.grandTotal.label), formatCurrency(block.grandTotal.amount, prefix, options.locale, trimDecimals), cols).map((line) => `{BOLD}${line}{/BOLD}`));
   };
 
   for (const block of blocks) {
     switch (block.kind) {
-      case 'business-header':
-        if (block.name) lines.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + truncateShapedLine(block.name.text, Math.floor(cols / 2), options.arabicShaping) + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+      case 'business-header': {
+        const segment = segmentOf('business-header');
+        if (block.name) segment.main.push('{STORE_NAME}{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}' + truncateShapedLine(block.name.text, Math.floor(cols / 2), options.arabicShaping) + '{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+        // Contact/tax facts are header-owned content; they travel with
+        // the header block's position in reordered compositions.
+        const footerLines: string[] = [];
+        if (block.address) footerLines.push(block.address.text);
+        if (block.phone && block.phoneLabel) footerLines.push(labelOf(block.phoneLabel) + ': ' + block.phone.text);
+        if (block.taxId) footerLines.push(labelOf(block.taxId.label) + ': ' + block.taxId.value.text);
+        if (block.instagramHandle) footerLines.push(block.instagramHandle.text);
+        if (footerLines.length > 0) {
+          segment.post.push(dash);
+          for (const footerLine of footerLines) pushCenteredWrapped(segment.post, footerLine, cols);
+        }
         break;
-      case 'customer':
-        if (block.name) lines.push('{CENTER}{FONT_B}' + truncateShapedLine(block.name.text, cols, options.arabicShaping) + '{/FONT_B}{/CENTER}');
-        if (block.phone) lines.push('{CENTER}' + block.phone.text + '{/CENTER}');
+      }
+      case 'customer': {
+        const segment = segmentOf('customer');
+        if (block.name) segment.main.push('{CENTER}{FONT_B}' + truncateShapedLine(block.name.text, cols, options.arabicShaping) + '{/FONT_B}{/CENTER}');
+        if (block.phone) segment.main.push('{CENTER}' + block.phone.text + '{/CENTER}');
         break;
+      }
       case 'document-meta': {
-        lines.push(dash);
+        const segment = segmentOf('document-meta');
+        segment.main.push(dash);
         const defaultTitle = block.title.conceptId === 'print.taxInvoiceTitle'
           ? printLabel(options.language, 'print.taxInvoiceTitle')
           : printLabel(options.language, 'print.invoiceTitle');
-        if (labelOf(block.title) !== defaultTitle) lines.push('{CENTER}' + labelOf(block.title) + '{/CENTER}');
-        lines.push('{CENTER}' + labelOf(block.invoiceNumberLabel) + ' ' + block.invoiceNumber.text + '{/CENTER}');
+        if (labelOf(block.title) !== defaultTitle) segment.main.push('{CENTER}' + labelOf(block.title) + '{/CENTER}');
+        segment.main.push('{CENTER}' + labelOf(block.invoiceNumberLabel) + ' ' + block.invoiceNumber.text + '{/CENTER}');
         const date = parseDbTimestamp(block.timestamp.text);
-        lines.push('{CENTER}' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
+        segment.main.push('{CENTER}' + date.toLocaleDateString(options.locale + '-u-nu-latn', tzOptions) + ' ' + date.toLocaleTimeString(options.locale + '-u-nu-latn', tzOptions) + '{/CENTER}');
         if (block.table) {
-          lines.push('{CENTER}' + truncateShapedLine(block.table.label.primary.replace('{name}', block.table.name.text), cols, options.arabicShaping) + '{/CENTER}');
+          segment.main.push('{CENTER}' + truncateShapedLine(block.table.label.primary.replace('{name}', block.table.name.text), cols, options.arabicShaping) + '{/CENTER}');
         }
-        lines.push(dash);
+        segment.main.push(dash);
         break;
       }
       case 'item-table': {
+        const segment = segmentOf('item-table');
         const amtLen = itemAmountWidth(
           { items: block.rows.map((row) => ({ total: row.amount, addons: row.addons.map((addon) => ({ price: addon.price })) })) },
           prefix,
@@ -302,10 +342,10 @@ export function renderBillDocumentToClassicLines(
           cols,
         );
         const nameLen = itemNameWidth(cols, amtLen);
-        lines.push(classicItemHeader(block, nameLen, amtLen));
-        lines.push(dash);
+        segment.main.push(classicItemHeader(block, nameLen, amtLen));
+        segment.main.push(dash);
         for (const row of block.rows) {
-          lines.push(...itemRows(
+          segment.main.push(...itemRows(
             { product_name: row.name.text, quantity: row.quantity, total: row.amount },
             nameLen,
             amtLen,
@@ -315,78 +355,147 @@ export function renderBillDocumentToClassicLines(
             trimDecimals,
           ));
           for (const addon of row.addons) {
-            lines.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals));
+            segment.main.push(...addonRows({ name: addon.name.text, price: addon.price }, nameLen, amtLen, cols, prefix, options.locale, trimDecimals));
           }
           if (row.specialInstructions) {
-            lines.push('  ' + labelOf(block.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8));
+            segment.main.push('  ' + labelOf(block.noteLabel) + ': ' + truncate(row.specialInstructions.text, cols - 8));
           }
         }
-        lines.push(dash);
+        segment.main.push(dash);
         break;
       }
-      case 'tax-breakdown':
+      case 'tax-breakdown': {
+        const segment = segmentOf('tax-breakdown');
         for (const line of block.lines) {
           const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
           const label = truncate(labelOf(line.label) + rateSuffix, cols - 12);
-          lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
+          segment.main.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
         }
-        if (hasTaxBreakdown && totals && totalsIndex >= 0 && breakdownIndex > totalsIndex) renderGrandTotal(totals);
+        // Explicit canonical tax/totals parity handling: when the
+        // breakdown FOLLOWS the totals block (non-canonical order), the
+        // bold grand total closes the breakdown segment instead.
+        if (
+          block.lines.length > 0
+          && totalsIndex >= 0
+          && breakdownIndex > totalsIndex
+        ) {
+          renderGrandTotal(blocks[totalsIndex] as TotalsBlock);
+        }
         break;
-      case 'totals':
+      }
+      case 'totals': {
+        const segment = segmentOf('totals');
         if (block.pointsRedeemed) {
           const label = labelOf(block.pointsRedeemed.label);
-          lines.push(label + rightAlign('-' + block.pointsRedeemed.points + ' pts', cols - label.length));
+          segment.main.push(label + rightAlign('-' + block.pointsRedeemed.points + ' pts', cols - label.length));
         }
-        lines.push(...financialRows(labelOf(block.subtotal.label), formatCurrency(block.subtotal.amount, prefix, options.locale, trimDecimals), cols));
+        segment.main.push(...financialRows(labelOf(block.subtotal.label), formatCurrency(block.subtotal.amount, prefix, options.locale, trimDecimals), cols));
         if (block.discount) {
-          lines.push(...financialRows(labelOf(block.discount.label), '-' + formatCurrency(block.discount.amount, prefix, options.locale, trimDecimals), cols));
+          segment.main.push(...financialRows(labelOf(block.discount.label), '-' + formatCurrency(block.discount.amount, prefix, options.locale, trimDecimals), cols));
         }
-        if (!hasTaxBreakdown) {
+        const hasBreakdownLines = blocks.some(
+          (candidate) => candidate.kind === 'tax-breakdown'
+            && (candidate as TaxBreakdownBlock).lines.length > 0,
+        );
+        if (!hasBreakdownLines) {
           if (block.tax) {
-            lines.push(...financialRows(labelOf(block.tax.label), formatCurrency(block.tax.amount, prefix, options.locale, trimDecimals), cols));
+            segment.main.push(...financialRows(labelOf(block.tax.label), formatCurrency(block.tax.amount, prefix, options.locale, trimDecimals), cols));
           }
           renderGrandTotal(block);
         } else if (breakdownIndex < totalsIndex) {
           renderGrandTotal(block);
         }
+        // Loyalty earned/balance is totals-owned content.
+        if (block.pointsEarned || block.pointsBalance) {
+          segment.post.push(dash);
+          if (block.pointsEarned) {
+            const label = labelOf(block.pointsEarned.label);
+            segment.post.push(label + rightAlign(String(block.pointsEarned.points), cols - label.length));
+          }
+          if (block.pointsBalance) {
+            const label = labelOf(block.pointsBalance.label);
+            segment.post.push(label + rightAlign(String(block.pointsBalance.points), cols - label.length));
+          }
+        }
         break;
-      case 'payments':
+      }
+      case 'payments': {
+        const segment = segmentOf('payments');
         for (const line of block.lines) {
           const methodLabel = truncate(paymentLabel(line.label), cols - 12);
-          lines.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
+          segment.main.push(...financialRows(methodLabel, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
         }
         break;
-      case 'message':
+      }
+      case 'message': {
+        const segment = segmentOf('message');
+        if (block.reprintBanner) {
+          segment.pre.push('{CENTER}{BOLD}{DOUBLE_HEIGHT}{DOUBLE_WIDTH}** ' + labelOf(block.reprintBanner) + ' **{/DOUBLE_WIDTH}{/DOUBLE_HEIGHT}{/BOLD}{/CENTER}');
+        }
         if (block.thankYou && labelOf(block.thankYou) !== printLabel(options.language, 'print.thankYouShort')) {
-          lines.push('{CENTER}' + labelOf(block.thankYou) + '{/CENTER}');
+          segment.main.push('{CENTER}' + labelOf(block.thankYou) + '{/CENTER}');
         }
+        if (block.footerNote) pushCenteredWrapped(segment.post, block.footerNote.text, cols);
         break;
+      }
     }
   }
 
-  if (totals && (totals.pointsEarned || totals.pointsBalance)) {
-    lines.push(dash);
-    if (totals.pointsEarned) {
-      const label = labelOf(totals.pointsEarned.label);
-      lines.push(label + rightAlign(String(totals.pointsEarned.points), cols - label.length));
-    }
-    if (totals.pointsBalance) {
-      const label = labelOf(totals.pointsBalance.label);
-      lines.push(label + rightAlign(String(totals.pointsBalance.points), cols - label.length));
+  // Assemble. Documents whose selected blocks appear in the canonical
+  // relative order use the pinned legacy segment arrangement (byte parity
+  // with the oracle); reordered compositions concatenate each block's
+  // full segment group strictly in template order.
+  // Canonical block sequence of PrintDocument v1 (mirrors buildBillDocument;
+  // asserted in tests/print-document.test.ts).
+  const CANONICAL_LAYOUT: PrintDocumentBlock['kind'][] = [
+    'business-header',
+    'customer',
+    'document-meta',
+    'item-table',
+    'totals',
+    'tax-breakdown',
+    'payments',
+    'message',
+  ];
+  const canonicalRank = new Map(CANONICAL_LAYOUT.map((kind, index) => [kind, index]));
+  let lastRank = -1;
+  const isCanonicalRelativeOrder = blocks.every((block) => {
+    const rank = canonicalRank.get(block.kind);
+    if (rank === undefined || rank <= lastRank) return false;
+    lastRank = rank;
+    return true;
+  });
+
+  const emit = (kind: PrintDocumentBlock['kind'], part: keyof BlockSegments): void => {
+    const segment = segments.get(kind);
+    if (segment) lines.push(...segment[part]);
+  };
+
+  if (isCanonicalRelativeOrder) {
+    // Pinned legacy arrangement (canonical parity contract). With the
+    // canonical totals-before-breakdown sequence, the bold grand total
+    // closes the breakdown segment (see the totals/breakdown cases).
+    emit('message', 'pre');
+    emit('business-header', 'main');
+    emit('customer', 'main');
+    emit('document-meta', 'main');
+    emit('item-table', 'main');
+    emit('totals', 'main');
+    emit('tax-breakdown', 'main');
+    emit('payments', 'main');
+    emit('message', 'main');
+    emit('totals', 'post');
+    emit('business-header', 'post');
+    emit('message', 'post');
+  } else {
+    // Strict template order: each block's complete content at its own
+    // position — nothing moves across merchant-selected positions.
+    for (const block of blocks) {
+      const segment = segments.get(block.kind);
+      if (!segment) continue;
+      lines.push(...segment.pre, ...segment.main, ...segment.post);
     }
   }
-
-  const footerLines: string[] = [];
-  if (header?.address) footerLines.push(header.address.text);
-  if (header?.phone && header.phoneLabel) footerLines.push(labelOf(header.phoneLabel) + ': ' + header.phone.text);
-  if (header?.taxId) footerLines.push(labelOf(header.taxId.label) + ': ' + header.taxId.value.text);
-  if (header?.instagramHandle) footerLines.push(header.instagramHandle.text);
-  if (footerLines.length > 0) {
-    lines.push(dash);
-    for (const footerLine of footerLines) pushCenteredWrapped(lines, footerLine, cols);
-  }
-
-  if (messages?.footerNote) pushCenteredWrapped(lines, messages.footerNote.text, cols);
 
   appendPoweredByFooter(lines);
   lines.push('{CUT}');

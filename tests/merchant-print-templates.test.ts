@@ -52,7 +52,7 @@ import {
   validateMerchantTemplate,
   validateMerchantTemplateText,
 } from '../shared/print';
-import { renderClassicReceiptViaDocument } from '../main/printers/document-classic';
+import { renderClassicReceiptViaDocument, renderBillDocumentToClassicLines } from '../main/printers/document-classic';
 import { escPosToText, formatReceipt } from '../main/printers/thermal';
 import {
   parseBillTemplateSelection,
@@ -191,6 +191,85 @@ console.log('\n▶ applyMerchantTemplate');
 
   assert.equal(getBlock(document, 'totals')!.grandTotal.label.primary, 'print.grandTotal[en]');
   ok('input document is never mutated (purity)');
+}
+
+// ---------------------------------------------------------------------------
+// 2b. Ordered semantic composition in the classic renderer (#447)
+// ---------------------------------------------------------------------------
+
+console.log('\n▶ Ordered block composition in renderBillDocumentToClassicLines');
+{
+  const { order, bill, business } = buildParityFixtures();
+  const printContext = {
+    columns: 42,
+    languages: ['en'] as const,
+    baseDirection: 'ltr' as const,
+    locale: 'en-IN',
+    currencySymbol: '₹',
+    trimDecimals: false,
+    resolveLabel: (conceptId: string, language: string) => `${conceptId}[${language}]`,
+  };
+  const baseDocument = buildBillDocument(
+    require('../main/printers/document-classic').buildBillPrintData(
+      order,
+      bill,
+      { ...business, points_earned: 5, points_redeemed: 2 },
+      true,
+    ),
+    printContext,
+  );
+  const renderOrdered = (kinds: string[], labels?: Record<string, unknown>) => {
+    const payloadValidation = validateMerchantTemplate({
+      format: MERCHANT_TEMPLATE_FORMAT,
+      documentType: 'receipt',
+      schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
+      blocks: kinds.map((kind) => ({ kind, ...(labels ?? {}) })),
+    });
+    assert(payloadValidation.ok);
+    return escPosToText(require('../main/printers/thermal').buildEscPos(
+      renderBillDocumentToClassicLines(applyMerchantTemplate(baseDocument, payloadValidation.payload), {
+        columns: 42,
+        language: 'en',
+        locale: 'en-IN',
+        currencySymbol: '₹',
+        trimDecimals: false,
+        useUnicode: false,
+        arabicShaping: false,
+        cutMode: 'full' as const,
+      }),
+      false,
+      { cutMode: 'full' as const, arabicShaping: false, columns: 42 },
+      [],
+    ));
+  };
+  const indexOf = (text: string, needle: RegExp) => {
+    const lines = text.split('\n');
+    const at = lines.findIndex((line) => needle.test(line));
+    assert(at >= 0, `expected /${needle.source}/ in rendered output`);
+    return at;
+  };
+
+  const reordered = renderOrdered(['totals', 'item-table', 'message', 'business-header']);
+  const totalsAt = indexOf(reordered, /subtotal/i);
+  const itemsAt = indexOf(reordered, /Espresso Doppio/);
+  const bannerAt = indexOf(reordered, /\*\* receipt\.reprint\[en\] \*\*/);
+  const loyaltyAt = indexOf(reordered, /pointsEarned/);
+  const addressAt = indexOf(reordered, /12 Marina Boulevard/);
+  assert(totalsAt < itemsAt, 'totals segment precedes items under reordered template');
+  assert(bannerAt > itemsAt, 'reprint banner travels with the message block position');
+  assert(loyaltyAt > totalsAt && loyaltyAt < itemsAt,
+    'loyalty lines stay inside the totals segment, not appended at document end');
+  assert(addressAt > bannerAt,
+    'header contact footer travels with the business-header block position');
+  ok('reordered template renders every block segment at its template position');
+
+  const canonicalSubset = renderOrdered(['business-header', 'totals', 'message']);
+  const subsetNameAt = indexOf(canonicalSubset, /Flo Parity Cafe/);
+  const subsetBannerAt = indexOf(canonicalSubset, /\*\* receipt\.reprint\[en\] \*\*/);
+  const subsetTotalsAt = indexOf(canonicalSubset, /subtotal/i);
+  assert(subsetNameAt < subsetTotalsAt, 'canonical subset keeps the pinned legacy arrangement');
+  assert(subsetBannerAt < subsetNameAt, 'canonical subset pins the banner above the header');
+  ok('canonical-relative-order subsets keep byte-stable legacy arrangement');
 }
 
 // ---------------------------------------------------------------------------

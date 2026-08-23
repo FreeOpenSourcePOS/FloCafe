@@ -1183,10 +1183,18 @@ export default function SettingsPage() {
   };
   const resetPrinting = () => setPrintingForm(savedPrinting);
 
-  // Bill template local state
-  type BillTemplateForm = { billTemplate: BillTemplate; billFooterMessage: string };
+  // Bill template local state. billTemplateSource carries the resolved
+  // selection identity alongside the bare id so a pack template_id that
+  // collides with a core name (classic/compact) keeps its {source: 'pack'}
+  // qualifier through both display-selection and save round-trips (#447).
+  type BillTemplateForm = {
+    billTemplate: BillTemplate;
+    billTemplateSource: 'core' | 'pack' | 'merchant';
+    billFooterMessage: string;
+  };
   const initBillTemplate = (): BillTemplateForm => ({
     billTemplate: posSettings.billTemplate,
+    billTemplateSource: 'core',
     billFooterMessage: posSettings.billFooterMessage,
   });
   const [billForm, setBillForm] = useState<BillTemplateForm>(initBillTemplate);
@@ -1195,13 +1203,13 @@ export default function SettingsPage() {
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
-    const selectedCard = billTemplateCards.find((card) => card.id === billForm.billTemplate);
-    // Persist the resolved selection identity: bare id for core templates,
-    // structured { source, id } for pack and merchant so a pack template_id
-    // that collides with a core name keeps its qualifier.
-    const templateValue = !selectedCard || selectedCard.selectionSource === 'core'
+    // Persist the resolved selection identity captured at selection time
+    // (NOT re-derived by first-id match, which a colliding pack id would
+    // fail): bare id for core templates, structured { source, id } for
+    // pack and merchant.
+    const templateValue = billForm.billTemplateSource === 'core'
       ? billForm.billTemplate
-      : JSON.stringify({ source: selectedCard.selectionSource, id: billForm.billTemplate });
+      : JSON.stringify({ source: billForm.billTemplateSource, id: billForm.billTemplate });
     await Promise.all([
       api.put('/settings/bill_template', { value: templateValue }),
       api.put('/settings/bill_footer_message', { value: billForm.billFooterMessage }),
@@ -1688,8 +1696,11 @@ export default function SettingsPage() {
         ? cards.find((card) => card.id === candidateCard.id && card.selectionSource === storedSource)
         : candidateCard;
       const billTemplate: BillTemplate = matchedCard ? matchedCard.id : 'classic';
+      const billTemplateSource: 'core' | 'pack' | 'merchant' = matchedCard
+        ? matchedCard.selectionSource
+        : 'core';
       const billFooterMessage = footerResponse?.data.setting?.value ?? posSettings.billFooterMessage;
-      const loadedBillForm = { billTemplate, billFooterMessage };
+      const loadedBillForm = { billTemplate, billTemplateSource, billFooterMessage };
       posSettings.setBillTemplate(billTemplate);
       posSettings.setBillFooterMessage(billFooterMessage);
       setBillForm(loadedBillForm);
@@ -4062,7 +4073,7 @@ export default function SettingsPage() {
                 {billTemplateCards.map((card) => {
                   const isSelected = billForm.billTemplate === card.id;
                   return (
-                    <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id }))}
+                    <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id, billTemplateSource: card.selectionSource }))}
                       className={`text-start rounded-xl border-2 p-4 transition-all ${
                         isSelected ? 'border-brand bg-brand/5' : 'border-gray-200 hover:border-gray-300 bg-white'
                       }`}>

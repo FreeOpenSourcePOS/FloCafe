@@ -430,6 +430,9 @@ async function runLifecycle(): Promise<void> {
     const editArchived = await request(app).put(`/api/print-templates/${templateId}`)
       .set('Authorization', OWNER).send({ name: 'Zombie' });
     assert.equal(editArchived.status, 409, 'archived templates are immutable');
+    const rollbackArchived = await request(app).post(`/api/print-templates/${templateId}/rollback`)
+      .set('Authorization', OWNER);
+    assert.equal(rollbackArchived.status, 409, 'rollback is refused on archived templates');
     ok('archive terminalizes the lifecycle');
   }
 

@@ -518,7 +518,7 @@ jobs:
         # package.json target list keeps NSIS x64-only while building AppX for
         # x64 and arm64, so Windows on Arm devices keep native Store coverage.
         run: |
-          npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false \
+          npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false `
             -c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}"
           node scripts/assert-release-artifact-names.cjs release
         env:

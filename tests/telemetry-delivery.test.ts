@@ -32,6 +32,11 @@ async function main() {
   `);
   set.run('telemetry_enabled', 'true', now());
   set.run('country', 'AR', now());
+  // settings.country is seeded to 'IN' at install, so telemetry only reports a
+  // country a human confirmed. Without this stamp 'AR' is indistinguishable
+  // from an untouched default and is deliberately withheld — see the
+  // unconfirmed case below.
+  set.run('country_confirmed_at', new Date().toISOString(), now());
 
   const originalFetch = globalThis.fetch;
   let requestBody: Record<string, unknown> | null = null;
@@ -46,6 +51,19 @@ async function main() {
     assert.equal(requestBody?.country, 'AR', 'telemetry sends the configured ISO country');
     assert.equal(requestBody?.app, 'flocafe');
     assert.equal(requestBody?.app_version, '2.7.2-test');
+
+    // An unconfirmed country is omitted rather than sent as the install
+    // default. FloAdmin geolocates the request IP when the field is absent, so
+    // omitting it is what produces a real country instead of a fake India.
+    db.prepare('DELETE FROM settings WHERE key = ?').run('country_confirmed_at');
+    requestBody = null;
+    assert.equal(await sendEvent('app_launch'), true);
+    assert.equal(
+      Object.prototype.hasOwnProperty.call(requestBody ?? {}, 'country'),
+      false,
+      'an unconfirmed country is omitted so the server can geolocate instead'
+    );
+    set.run('country_confirmed_at', new Date().toISOString(), now());
 
     let bodyCancelled = false;
     globalThis.fetch = (async () => ({

@@ -8,6 +8,7 @@ import { getCurrentSchemaVersion, getDatabase, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
+import { countryConfirmationStamp } from '../services/country-provenance';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
@@ -882,6 +883,10 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         service_model: normalizedServiceModel,
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
+        // The country on this row came off the setup form, so it is a choice
+        // rather than seedInstallDefaults()' 'IN'. cloud-sync reports the
+        // difference — see services/country-provenance.ts.
+        ...countryConfirmationStamp(),
         anonymous_data_consent: 'true',
         telemetry_enabled: 'true',
         telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',

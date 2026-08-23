@@ -23,7 +23,7 @@ Companion documents:
 ```text
  raw bill / order / business rows  (main/ DB rows or frontend Bill objects)
         │
-        │  normalization — the ONLY step allowed to touch raw fields
+        │  normalization — the only document-driven step allowed to touch raw fields
         ▼
  PrintData snapshot + PrintContext          (shared/print/document.ts)
  (printed truth, no recomputation)          (columns, languages, direction,
@@ -50,8 +50,16 @@ Layer ownership:
 | --- | --- | --- | --- |
 | Normalization | `main/printers/document-classic.ts` (`buildBillPrintData`), `frontend/src/lib/printer/print-document.ts` | read raw rows once, coerce to typed snapshots | recompute taxes/totals beyond legacy addon-line extension |
 | Kernel (`shared/print/`) | `shared/print/` | types + pure functions over injected facts | any IO (Electron, DOM, Node built-ins, DB, filesystem, network); import from `frontend/` or `main/`; hardcode language unions |
-| Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | read bill/order rows directly; invent labels outside the catalog |
+| Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | read bill/order rows directly; invent labels outside the catalog; the documented legacy WebUSB exceptions below are not a model boundary |
 | Transports | `main/printers/thermal.ts`, browser APIs | move bytes/paper | change document semantics |
+
+The renderer rule has two explicit legacy WebUSB exceptions. `frontend/src/hooks/usePrinter.ts`
+still calls `kot-encoder.ts` with raw `Order` data for thermal KOT printing, and
+calls the `tax-bill-encoder.ts` raw `Bill`/`Tenant` diagnostic path for the print-test
+page. The tax encoder is explicitly LEGACY-FROZEN; neither path is a
+`PrintDocument` v1 consumer. Their existing raw-field and warning behavior is
+outside the shared document boundary, so new receipt behavior belongs on the
+document-driven paths below and must not be inferred from these exceptions.
 
 The purity boundary of the kernel is binding: see
 [shared/print/README.md](../shared/print/README.md), enforced by the kernel
@@ -147,11 +155,17 @@ browser HTML path marks direction on elements and isolates islands
 ESC/POS paths use width-aware shaping/truncation helpers
 (`main/printers/thermal.ts`).
 
-Bilingual presentation: `selectBilingualFit(label, columns)` picks `inline`
+Bilingual presentation is implemented at the model/helper layer, not yet in
+production renderer output. `selectBilingualFit(label, columns)` picks `inline`
 (primary + 2 separator columns + secondary fits the paper width) or `stacked`
-(one line each); `bilingualLabelLines` returns the exact ordered lines so all
-renderers stack identically (`shared/print/bilingual.ts`). Strategies are
-evaluated across the tested column widths below.
+(one line each), and `bilingualLabelLines` returns the ordered lines
+(`shared/print/bilingual.ts`; width behavior is tested in
+`tests/print-kernel.test.ts`). The `PrintDocument` model carries the optional
+secondary label, but current production receipt renderers emit
+`label.primary`; the browser HTML path also builds a single-language document
+(`frontend/src/lib/printer/web-print.ts`). Neither helper has a production
+caller, so bilingual receipt output remains future renderer work rather than a
+shipped capability.
 
 ## 4. Language behavior
 
@@ -174,9 +188,10 @@ missing settings fall back to the store language; printing never fails because
 of a malformed policy (`main/lib/print-language-settings.ts`,
 `tests/print-language-settings.test.ts`).
 
-Settings dropdowns are registry-driven end to end: the frontend renders
-options from `LANGUAGES`, the backend accepts only languages present in its
-generated print-label table — there is no second hardcoded list to update.
+Settings are registry-driven through two synchronized views: the frontend
+renders print-language options from `LANGUAGES`, while backend policy
+validation accepts only languages present in the generated print-label table.
+Both registries must be updated when a language gains print coverage.
 
 ### Canonical i18n label flow (kernel C, #440)
 
@@ -298,17 +313,20 @@ Renderers consume capabilities, they never guess them:
 - Browser HTML printing is the full-Unicode path: nothing is skipped for
   script reasons (asserted in `tests/print-parity.test.ts`).
 
-Warning semantics — **no silent content loss**: every skipped line produces a
-`PrintWarning` naming the field, the skipped text, and the reason; unsupported
-configuration (for example a merchant template selected on a print path that
-cannot honor it) produces a `kind: 'configuration'` warning and a documented
-fallback layout (`makeBillTemplateFallbackWarning`). Warnings surface to the
-user after printing (`warnings-toast.ts`) and in dispatch results
-(`classifyPrintFailure` gives stable, privacy-safe failure classes for fleet
-telemetry). The end-state contract from epic #438 is native render,
-explicitly supported fallback, or an explicit warning/error — never quiet
-omission of financial content. The recommended capability-tiered raster
-fallback for broader script coverage is future work
+Warning semantics on the shared document-driven paths are **no silent content
+loss**: every skipped line produces a `PrintWarning` naming the field, the
+skipped text, and the reason; unsupported configuration (for example a
+merchant template selected on a print path that cannot honor it) produces a
+`kind: 'configuration'` warning and a documented fallback layout
+(`makeBillTemplateFallbackWarning`). The legacy raw WebUSB encoders described
+above retain their own warning behavior and do not inherit the
+`PrintDocument` guarantees. Warnings surface to the user after printing
+(`warnings-toast.ts`) and in dispatch results (`classifyPrintFailure` gives
+stable, privacy-safe failure classes for fleet telemetry). The end-state
+contract from epic #438 for the shared paths is native render, explicitly
+supported fallback, or an explicit warning/error — never quiet omission of
+financial content. The recommended capability-tiered raster fallback for
+broader script coverage is future work
 ([printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
 
 ## 7. Renderer/transport map
@@ -319,13 +337,16 @@ fallback for broader script coverage is future work
 | `document-compact.ts` (#443) | desktop compact receipts | PrintDocument v1 | token lines → bytes | same |
 | `document-kot.ts` (#443) | desktop kitchen tickets | KotDocument v1 | token lines → bytes | same |
 | `document-merchant.ts` (#447/#448) | desktop receipts with active merchant template | applied PrintDocument | token lines → bytes (fail-closed fallback to classic) | same |
-| `receipt-encoder.ts`, `kot-encoder.ts`, `tax-bill-encoder.ts` (#444) | WebUSB printing | PrintDocument v1 via `print-document.ts` bridge | ESC/POS bytes | WebUSB device |
+| `receipt-encoder.ts` (#444) | WebUSB thermal receipts | PrintDocument v1 via `print-document.ts` bridge | ESC/POS bytes | WebUSB device |
+| `kot-encoder.ts` (#444, legacy exception) | WebUSB thermal KOT | raw `Order` data; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
+| `tax-bill-encoder.ts` (#444, LEGACY-FROZEN diagnostic exception) | WebUSB print-test tax bill | raw `Bill`/`Tenant` data; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
 | `web-print.ts` (#444) | system print dialog receipts | PrintDocument v1 | HTML | browser print |
 | `kot-web-print.ts` | system print dialog kitchen tickets | Kot data | HTML | browser print |
 
-Byte-level transports (Windows spooler RAW datatype, CUPS, sockets) are
-described in [printers.md](printers.md); renderers never touch them directly —
-`thermal.ts` owns dispatch.
+Desktop byte-level transports (Windows spooler RAW datatype, CUPS, sockets) are
+described in [printers.md](printers.md); desktop renderers never touch them
+directly and `thermal.ts` owns that dispatch. Frontend WebUSB bytes are sent by
+`PrinterService` after the selected frontend encoder returns them.
 
 ## 8. Testing guide
 
@@ -407,13 +428,18 @@ Follow the six-step language workflow in [i18n.md](i18n.md) first (scaffold,
 register in `languages.ts` with correct `direction`, translate, validate).
 Then close the print loop:
 
-1. Add the new code to `LANGUAGES` in `scripts/generate-print-labels.cjs`
-   (stable generation order, kept in sync with `languages.ts`).
-2. Regenerate and commit `print-labels.generated.ts` — this table IS the
-   backend's selectable-print-language registry view, so policy validation
-   and dropdown acceptance pick it up automatically
+1. Add the language config to `frontend/src/lib/i18n/languages.ts` with the
+   correct `direction` and `selectable` value. This registry drives the
+   frontend print-language dropdowns; add the matching locale message file
+   through the workflow in [i18n.md](i18n.md).
+2. Add the language code to the separate `LANGUAGES` array in
+   `scripts/generate-print-labels.cjs` (stable generation order). This keeps
+   the generated backend print-label registry in sync with the frontend
+   registry; it does not populate the frontend dropdown.
+3. Regenerate and commit `print-labels.generated.ts` — this table is the
+   backend's selectable-print-language registry view used by policy validation
    (`main/lib/print-language-settings.ts`).
-3. Extend `tests/print-labels.test.ts` expectations if the suite enumerates
+4. Extend `tests/print-labels.test.ts` expectations if the suite enumerates
    languages, and add the language to the parity harness's localized-label
    sections if it introduces a new direction/script.
 
@@ -480,7 +506,10 @@ Rules:
   and, for offline transfer, wrap it in the
   [`flocafe-merchant-template` envelope](merchant-print-templates.md#offline-transfer-format-public-contract-448).
   Validate locally against `shared/print/merchant-template.ts` rules; every
-  violation class has a fixture under `tests/fixtures/merchant-templates/`.
+  violation class must have either a fixture or a focused executable test in
+  the merchant-template test suites. Fixtures cover serialized payload and
+  envelope cases; size-cap, malformed-input, and printer-control-character
+  boundaries may be constructed directly by focused tests.
 - **Country compliance pack**: follow [tax-packs.md](tax-packs.md) for
   authoring/signing; if the pack needs receipt templates, author the
   [`escpos-line-template-v1`](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1)

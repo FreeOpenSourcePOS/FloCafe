@@ -12,7 +12,7 @@ interface StatusInfo {
   port: number;
 }
 
-export default function StatusBar() {
+export default function StatusBar({ showUpdateBadge = true }: { showUpdateBadge?: boolean }) {
   const tNav = useTranslations('nav');
   const tCommon = useTranslations('common');
   const [status, setStatus] = useState<StatusInfo | null>(null);
@@ -115,7 +115,7 @@ export default function StatusBar() {
           </span>
         </div>
 
-        <UpdateBadge />
+        {showUpdateBadge && <UpdateBadge />}
       </div>
     </footer>
   );

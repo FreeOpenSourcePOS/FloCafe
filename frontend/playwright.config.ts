@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test';
+import { E2E_BASE_URL, E2E_KDS_BASE_URL } from './e2e/helpers/urls';
 
 export default defineConfig({
   testDir: './e2e',
@@ -10,10 +11,10 @@ export default defineConfig({
   },
   webServer: {
     command: 'cd .. && node tests/run-electron-node-test.cjs tests/e2e-server.cjs',
-    url: 'http://127.0.0.1:3002/api/health',
+    url: `${E2E_KDS_BASE_URL}/api/health`,
     reuseExistingServer: !process.env.CI,
   },
   projects: [
-    { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
+    { name: 'chromium', use: { ...devices['Desktop Chrome'], baseURL: E2E_BASE_URL } },
   ],
 });

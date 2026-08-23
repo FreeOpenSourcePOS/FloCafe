@@ -5,6 +5,25 @@ const path = require('path');
 const Module = require('module');
 
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flo-e2e-'));
+
+if (process.env.E2E_TASK_LOCAL_PORTS) {
+  const baseUrl = process.env.E2E_BASE_URL;
+  if (baseUrl) {
+    const basePort = new URL(baseUrl).port;
+    if (basePort) process.env.PORT = basePort;
+  }
+
+  const kdsPort = process.env.E2E_KDS_BASE_URL
+    ? new URL(process.env.E2E_KDS_BASE_URL).port
+    : process.env.E2E_KDS_PORT;
+  if (kdsPort) process.env.KDS_PORT = kdsPort;
+
+  const serverAppPort = process.env.E2E_SERVER_APP_BASE_URL
+    ? new URL(process.env.E2E_SERVER_APP_BASE_URL).port
+    : process.env.E2E_SERVER_APP_PORT;
+  if (serverAppPort) process.env.SERVER_APP_PORT = serverAppPort;
+}
+
 process.env.JWT_SECRET = 'e2e-test-secret';
 process.env.FLO_AUTH_RATE_LIMIT_MAX = '1000';
 process.env.FLO_SETTINGS_WRITE_RATE_LIMIT_MAX = '1000';

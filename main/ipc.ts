@@ -9,6 +9,7 @@ import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus } from './services/whatsapp';
+import { createKdsWindow } from './window-options';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -301,18 +302,7 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     const localIP = getLocalIP();
     const kdsOrigin = `http://${localIP}:${port}`;
 
-    activeKdsWindow = new BrowserWindow({
-      width: 1200,
-      height: 800,
-      title: 'Flo - Kitchen Display',
-      webPreferences: {
-        // The KDS page is LAN-served HTTP and uses only the HTTP API +
-        // WebSocket, so it must not receive the privileged POS renderer
-        // bridge (preload.js). See GHSA-jmmq-fjg5-g6px.
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    });
+    activeKdsWindow = createKdsWindow(BrowserWindow);
 
     activeKdsWindow.on('closed', () => {
       activeKdsWindow = null;

@@ -5,6 +5,7 @@ import MenuActionHandler from "@/components/layout/MenuActionHandler";
 import AuthGuard from "@/components/layout/AuthGuard";
 import { HtmlLangSync } from "@/components/layout/HtmlLangSync";
 import { DirectionalToaster } from "@/components/layout/DirectionalToaster";
+import DesktopDragSurface from "@/components/layout/DesktopDragSurface";
 import { I18nProvider } from "@/components/providers/I18nProvider";
 
 const geistSans = Geist({
@@ -58,6 +59,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <DesktopDragSurface />
         <I18nProvider>
           <MenuActionHandler />
           <HtmlLangSync />

@@ -2,6 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 /**
  * End-to-End verification of localized error fallbacks (#241).
@@ -16,7 +17,6 @@ import * as os from 'os';
  * toasts and inline error states) into the evidence directory.
  */
 
-const BASE = 'http://localhost:3001';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M08KC186JQ29G9DS41MZFZH4');

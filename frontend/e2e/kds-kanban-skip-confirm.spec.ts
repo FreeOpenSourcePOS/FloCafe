@@ -1,17 +1,18 @@
 import { test, expect, type Locator } from '@playwright/test';
+import { E2E_BASE_URL, E2E_KDS_BASE_URL } from './helpers/urls';
 
 test('KDS kanban requires confirmation when skipping preparation stages', async ({ page }) => {
   // Set generous desktop viewport
   await page.setViewportSize({ width: 1440, height: 900 });
 
   // 1. Create a fresh order via POS API with pending kitchen status
-  const loginRes = await page.request.post('http://localhost:3001/api/auth/login', {
+  const loginRes = await page.request.post(`${E2E_BASE_URL}/api/auth/login`, {
     data: { email: 'manager@flo.local', password: 'E2ePass123!' },
   });
   expect(loginRes.ok()).toBeTruthy();
   const { access_token } = await loginRes.json();
 
-  const orderRes = await page.request.post('http://localhost:3001/api/orders', {
+  const orderRes = await page.request.post(`${E2E_BASE_URL}/api/orders`, {
     headers: {
       Authorization: `Bearer ${access_token}`,
       'Content-Type': 'application/json',
@@ -26,7 +27,7 @@ test('KDS kanban requires confirmation when skipping preparation stages', async 
   const orderNumStr = `#${order.order_number}`;
 
   // 2. Open standalone KDS
-  await page.goto('http://localhost:3002/kds-standalone');
+  await page.goto(`${E2E_KDS_BASE_URL}/kds-standalone`);
   if (await page.getByTestId('kds-login-form').isVisible()) {
     await page.getByTestId('kds-login-email').fill('manager@flo.local');
     await page.getByTestId('kds-login-password').fill('E2ePass123!');

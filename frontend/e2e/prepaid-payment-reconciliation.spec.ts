@@ -1,13 +1,14 @@
 import { test, expect } from '@playwright/test';
 import { setLanguage } from './helpers/test-auth';
+import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 test('prepaid checkout uses the authoritative decimal bill total and settles in full', async ({ page }) => {
-  await page.goto('http://localhost:3001/auth/login');
+  await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
   await setLanguage(page, 'en');
-  await page.goto('http://localhost:3001/pos');
+  await page.goto(`${BASE}/pos`);
 
   await page.getByTestId('pos-product-card').click();
   await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();
@@ -49,12 +50,12 @@ test('prepaid checkout uses the authoritative decimal bill total and settles in 
 });
 
 test('prepaid checkout never reports success when the payment response is partial', async ({ page }) => {
-  await page.goto('http://localhost:3001/auth/login');
+  await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('manager@flo.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
   await setLanguage(page, 'en');
-  await page.goto('http://localhost:3001/pos');
+  await page.goto(`${BASE}/pos`);
 
   await page.getByTestId('pos-product-card').click();
   await page.getByRole('button', { name: 'Add to Cart - ฿60.00' }).click();

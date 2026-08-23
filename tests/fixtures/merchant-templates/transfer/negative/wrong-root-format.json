@@ -1,0 +1,52 @@
+{
+  "format": "flocafe-compliance-pack",
+  "schemaVersion": 1,
+  "exportedAt": "2026-02-14T09:00:00.000Z",
+  "appVersion": "0.9.0",
+  "origin": {
+    "sourceTemplateId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
+    "sourceName": "Front Counter Receipt",
+    "sourceChecksum": "f2f8809a097ecbf3aa2c16247533588a5211a8a112e3c138876335e8047a5140"
+  },
+  "checksum": "f2f8809a097ecbf3aa2c16247533588a5211a8a112e3c138876335e8047a5140",
+  "template": {
+    "format": "flocafe-merchant-print-template",
+    "documentType": "receipt",
+    "schemaVersion": 1,
+    "blocks": [
+      {
+        "kind": "document-meta",
+        "labels": {
+          "title": "SALES RECEIPT",
+          "invoiceNumber": "Receipt No"
+        }
+      },
+      {
+        "kind": "item-table",
+        "labels": {
+          "item": "Product",
+          "quantity": "Qty",
+          "amount": "Total",
+          "note": "Instructions"
+        }
+      },
+      {
+        "kind": "totals",
+        "labels": {
+          "grandTotal": "AMOUNT DUE",
+          "subtotal": "Net"
+        }
+      },
+      {
+        "kind": "payments"
+      },
+      {
+        "kind": "message"
+      },
+      {
+        "kind": "tax-breakdown",
+        "visible": false
+      }
+    ]
+  }
+}

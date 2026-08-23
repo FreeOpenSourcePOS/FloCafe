@@ -4,8 +4,10 @@
  * Owner-role lifecycle management for tenant-owned semantic receipt
  * templates: create draft -> activate -> archive, with single-step rollback.
  * Payloads are validated fail-closed by the shared kernel validator on every
- * write. This API deliberately does NOT expose import/export file UX (#448)
- * or a visual editor — it defines the model those features use.
+ * write. #448 adds validated offline transfer: GET /:id/export downloads a
+ * self-describing `.json` envelope; POST /import runs the same fail-closed
+ * pipeline on an uploaded envelope and lands it as a NEW draft. This API
+ * deliberately does NOT expose a visual editor.
  */
 
 import { Router, Request, Response } from 'express';
@@ -16,6 +18,8 @@ import {
   activateMerchantPrintTemplate,
   archiveMerchantPrintTemplate,
   createMerchantPrintTemplate,
+  exportMerchantPrintTemplateFile,
+  importMerchantPrintTemplateFile,
   listMerchantPrintTemplates,
   loadMerchantPrintTemplateRow,
   rollbackMerchantPrintTemplate,
@@ -134,6 +138,39 @@ router.get('/:id/payload', requireRole('owner', 'manager'), (req: Request, res: 
     const row = loadMerchantPrintTemplateRow(String(req.params.id));
     if (!row) return res.status(404).json({ error: 'Template not found' });
     res.json({ id: row.id, schemaVersion: row.schema_version, checksum: row.checksum, payload: JSON.parse(row.payload_json) });
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+// --- Offline transfer (#448) ----------------------------------------------
+
+/** Download the portable transfer envelope for one template (owner only). */
+router.get('/:id/export', merchantTemplateWriteRateLimit, requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const file = exportMerchantPrintTemplateFile(String(req.params.id));
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${file.fileName}"`);
+    res.send(file.json);
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+/**
+ * Import a transfer file as a NEW draft (owner only). The body carries the
+ * raw envelope text in `file` (plus optional `name` override and the client
+ * `fileName` for provenance); every byte is treated as untrusted input and
+ * pushed through the full fail-closed validation pipeline in the service.
+ */
+router.post('/import', merchantTemplateWriteRateLimit, requireRole('owner'), (req: Request, res: Response) => {
+  try {
+    const row = importMerchantPrintTemplateFile({
+      file: req.body?.file,
+      name: req.body?.name,
+      fileName: req.body?.fileName,
+    }, actorId(req));
+    res.status(201).json({ template: shape(row) });
   } catch (error) {
     handleError(res, error);
   }

@@ -1007,7 +1007,8 @@ Print a kitchen order ticket for `orderId`. A caller may provide `stationName` a
 
 Owner-role CRUD for tenant-owned semantic receipt templates (#447). See
 [Merchant print templates](merchant-print-templates.md) for the payload schema, validation policy,
-and provenance/trust model. Payloads are validated fail-closed on every write.
+provenance/trust model, and offline transfer contract. Payloads are validated
+fail-closed on every write.
 
 ### GET `/api/print-templates`
 List merchant templates (all statuses). Owner or manager.
@@ -1015,7 +1016,7 @@ List merchant templates (all statuses). Owner or manager.
 ### POST `/api/print-templates`
 Create a template in `draft` status. Body: `{ name, payload, origin?, derivedFrom? }`.
 `origin` is one of `created | imported | cloned`; `cloned` requires a
-`derivedFrom` reference `{ type: 'compliance-pack-template' | 'merchant-template', templateId }`
+`derivedFrom` reference `{ type: 'compliance-pack-template' | 'merchant-template' | 'offline-import', templateId }`
 (informational only — no compliance trust transfers).
 
 ### PUT `/api/print-templates/:id`
@@ -1036,6 +1037,20 @@ restored payload fails current validation, or when the template is archived.
 
 ### GET `/api/print-templates/:id/payload`
 Read the stored payload (owner or manager).
+
+### GET `/api/print-templates/:id/export`
+Download an active or archived template as a portable
+`*.flocafe-template.json` envelope. Owner only. Drafts and rows with invalid
+stored checksums are rejected; the response is JSON with an attachment
+filename.
+
+### POST `/api/print-templates/import`
+Import a portable envelope as a new `draft`. Owner only. Body:
+`{ file, name?, fileName? }`, where `file` is the raw envelope JSON text and
+`fileName` is the optional source filename recorded in offline-import
+provenance. The import path enforces the envelope and payload validators,
+checksum verification, and the 256 KB raw-byte cap; it never activates or
+overwrites an existing template.
 
 ---
 

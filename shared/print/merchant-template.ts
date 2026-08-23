@@ -28,6 +28,14 @@
  * a different contract on purpose; do not converge them. See
  * docs/merchant-print-templates.md.
  *
+ * OFFLINE TRANSFER (#448): templates travel as `.json` envelopes carrying the
+ * validated payload plus integrity checksum and informational origin metadata.
+ * Import treats every file as untrusted input: size-capped, single JSON
+ * document, structurally validated envelope, then the SAME fail-closed
+ * payload validator used on every write path, then checksum verification.
+ * Imports always land as a NEW draft row (`origin: 'imported'`) — never as
+ * an activation, never overwriting an existing identity.
+ *
  * PURITY RULES (same contract as the rest of `shared/print/`, see README.md):
  * types + pure functions only — no Electron, DOM, Node built-ins, DB,
  * filesystem, network, or transport IO.
@@ -51,6 +59,23 @@ export const MERCHANT_TEMPLATE_SCHEMA_VERSION = 1;
 
 /** Hard payload size cap (~256 KB) enforced on write/import. */
 export const MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES = 256 * 1024;
+
+/** Same cap applied to the whole offline transfer ENVELOPE (#448). */
+export const MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES = 256 * 1024;
+
+/**
+ * Discriminator of the offline transfer file format (#448, epic #438).
+ *
+ * The envelope is a self-describing portable wrapper around one validated
+ * merchant template payload: `{ format, schemaVersion, exportedAt,
+ * appVersion?, origin?, checksum, template }`. It is a PUBLIC CONTRACT
+ * (documented in docs/merchant-print-templates.md): stable field names,
+ * fail-closed on unknown majors, unknown fields rejected on import.
+ */
+export const MERCHANT_TEMPLATE_EXPORT_FORMAT = 'flocafe-merchant-template';
+
+/** Current transfer-envelope schema major version. Breaking when bumped. */
+export const MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION = 1;
 
 /** Ordered union of every PrintDocument v1 block kind — the allowed set. */
 export const MERCHANT_TEMPLATE_BLOCK_KINDS = [
@@ -84,6 +109,151 @@ export const MERCHANT_TEMPLATE_LABEL_FIELDS: Readonly<
   'payments': [],
   'message': ['reprintBanner', 'thankYou'],
 });
+
+// ---------------------------------------------------------------------------
+// Offline transfer envelope (#448) — shape + pure structural validation
+// ---------------------------------------------------------------------------
+
+/** Optional informational provenance recorded inside an exported envelope. */
+export interface MerchantTemplateEnvelopeOrigin {
+  /** Merchant-template row id at export time (informational only; import
+   *  always creates a NEW identity and never overwrites by id). */
+  readonly sourceTemplateId?: string;
+  /** Template name at export time; importers may reuse it as a label. */
+  readonly sourceName?: string;
+  /** Payload checksum at export time (sha256 hex of canonical payload text). */
+  readonly sourceChecksum?: string;
+}
+
+/** Structural view of a validated envelope. Checksum VERIFICATION (hashing)
+ * happens at the IO boundary: run {@link validateMerchantTemplate} on
+ * `payload`, then compare `claimedChecksum` against the sha256 of
+ * {@link serializeMerchantTemplatePayload}(payload) — the same canonical text
+ * the service persists. */
+export interface ValidatedMerchantTemplateEnvelope {
+  readonly exportedAt: string;
+  readonly appVersion?: string;
+  readonly origin?: MerchantTemplateEnvelopeOrigin;
+  /** Claimed integrity checksum (verified by the caller). */
+  readonly claimedChecksum: string;
+  readonly payload: MerchantPrintTemplatePayload;
+}
+
+export type MerchantTemplateEnvelopeValidation =
+  | { readonly ok: true; readonly envelope: ValidatedMerchantTemplateEnvelope }
+  | { readonly ok: false; readonly errors: readonly string[] };
+
+const ENVELOPE_ROOT_FIELDS = ['format', 'schemaVersion', 'exportedAt', 'appVersion', 'origin', 'checksum', 'template'];
+const ENVELOPE_ORIGIN_FIELDS = ['sourceTemplateId', 'sourceName', 'sourceChecksum'];
+const ISO8601_DATE_TIME_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const UNSAFE_LABEL_TEXT_PATTERN = /[\u0000-\u001F\u007F]|\{[A-Z_/]+\}/;
+
+function isSha256Hex(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-fA-F]{64}$/.test(value);
+}
+
+function isIso8601DateTime(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const match = ISO8601_DATE_TIME_PATTERN.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const hour = Number(match[4]);
+  const minute = Number(match[5]);
+  const second = Number(match[6]);
+  if (month < 1 || month > 12 || hour > 23 || minute > 59 || second > 59) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+  if (day < 1 || day > daysInMonth) return false;
+
+  if (match[7] !== 'Z') {
+    const offset = /^[+-](\d{2}):(\d{2})$/.exec(match[7]);
+    if (!offset || Number(offset[1]) > 23 || Number(offset[2]) > 59) return false;
+  }
+  return !Number.isNaN(Date.parse(value));
+}
+
+/**
+ * Structurally validate a PARSED offline transfer envelope (pure). Enforces
+ * the #448 unknown-field-reject policy on the root and origin objects, the
+ * format discriminator, the fail-closed envelope schema-major gate, and a
+ * well-formed ISO-8601 `exportedAt`. The embedded TEMPLATE payload is NOT
+ * validated here — run {@link validateMerchantTemplate} on it so exactly one
+ * validator owns payload rules. Checksum equality is likewise verified by
+ * the caller (it needs hashing); this function only checks its SHA-256 shape.
+ */
+export function validateMerchantTemplateEnvelope(value: unknown): MerchantTemplateEnvelopeValidation {
+  const errors: string[] = [];
+  if (!isPlainObject(value)) {
+    return { ok: false, errors: ['transfer file must be a single JSON object'] };
+  }
+
+  for (const key of Object.keys(value)) {
+    if (!ENVELOPE_ROOT_FIELDS.includes(key)) {
+      reject(errors, `root: unknown field "${key}" (allowed: ${ENVELOPE_ROOT_FIELDS.join(', ')})`);
+    }
+  }
+
+  if (value.format !== MERCHANT_TEMPLATE_EXPORT_FORMAT) {
+    reject(errors, `root.format: expected "${MERCHANT_TEMPLATE_EXPORT_FORMAT}", got ${JSON.stringify(value.format)}`);
+  }
+  if (value.schemaVersion !== MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION) {
+    reject(errors, `root.schemaVersion: unsupported transfer-file version ${JSON.stringify(value.schemaVersion)}; this build supports major version ${MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION} only`);
+  }
+  if (!isIso8601DateTime(value.exportedAt)) {
+    reject(errors, 'root.exportedAt: expected an ISO-8601 date-time string');
+  }
+  if (value.appVersion !== undefined && typeof value.appVersion !== 'string') {
+    reject(errors, 'root.appVersion: expected a string');
+  }
+  if (!isSha256Hex(value.checksum)) {
+    reject(errors, 'root.checksum: expected a sha256 hex digest of the template payload');
+  }
+
+  if (!isPlainObject(value.template)) {
+    reject(errors, 'root.template: expected the merchant template payload as a JSON object');
+  }
+
+  let origin: MerchantTemplateEnvelopeOrigin | undefined;
+  if (value.origin !== undefined) {
+    if (!isPlainObject(value.origin)) {
+      reject(errors, 'root.origin: expected an object with informational source metadata');
+    } else {
+      for (const key of Object.keys(value.origin)) {
+        if (!ENVELOPE_ORIGIN_FIELDS.includes(key)) {
+          reject(errors, `root.origin: unknown field "${key}" (allowed: ${ENVELOPE_ORIGIN_FIELDS.join(', ')})`);
+        }
+      }
+      for (const key of ENVELOPE_ORIGIN_FIELDS) {
+        const entry = value.origin[key];
+        if (entry !== undefined && typeof entry !== 'string') {
+          reject(errors, `root.origin.${key}: expected a string`);
+        }
+      }
+      origin = {
+        ...(typeof value.origin.sourceTemplateId === 'string' ? { sourceTemplateId: value.origin.sourceTemplateId } : {}),
+        ...(typeof value.origin.sourceName === 'string' ? { sourceName: value.origin.sourceName } : {}),
+        ...(typeof value.origin.sourceChecksum === 'string' ? { sourceChecksum: value.origin.sourceChecksum } : {}),
+      };
+    }
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
+  return {
+    ok: true,
+    envelope: {
+      exportedAt: value.exportedAt as string,
+      ...(typeof value.appVersion === 'string' ? { appVersion: value.appVersion } : {}),
+      ...(origin ? { origin } : {}),
+      claimedChecksum: value.checksum as string,
+      // Raw template object as parsed; callers must run validateMerchantTemplate
+      // on it before treating this value as a trusted payload.
+      payload: value.template as unknown as MerchantPrintTemplatePayload,
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Payload shape (what merchants store)
@@ -211,6 +381,8 @@ export function validateMerchantTemplate(value: unknown): MerchantTemplateValida
             }
             if (typeof fieldValue !== 'string') {
               reject(errors, `${at}.labels.${key}: expected a literal string`);
+            } else if (UNSAFE_LABEL_TEXT_PATTERN.test(fieldValue)) {
+              reject(errors, `${at}.labels.${key}: contains printer control characters or tokens`);
             }
           }
         }
@@ -244,6 +416,29 @@ export function validateMerchantTemplateText(raw: string): MerchantTemplateValid
     return { ok: false, errors: [`payload is not valid JSON: ${(error as Error).message}`] };
   }
   return validateMerchantTemplate(parsed);
+}
+
+/**
+ * Canonical JSON text of a VALIDATED payload: object keys recursively sorted,
+ * array order untouched (block order is semantic), no insignificant
+ * whitespace. This exact text is what the service persists and the only text
+ * integrity checksums hash (table column + transfer envelope), so
+ * whitespace/key-order reformatting of a payload never changes its digest.
+ */
+export function serializeMerchantTemplatePayload(payload: MerchantPrintTemplatePayload): string {
+  return JSON.stringify(canonicalizeJson(payload));
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (value !== null && typeof value === 'object') {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = canonicalizeJson((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
 }
 
 // ---------------------------------------------------------------------------

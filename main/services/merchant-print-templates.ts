@@ -20,7 +20,15 @@
 
 import { createHash, randomUUID } from 'crypto';
 import { getDatabase, now } from '../db';
-import { validateMerchantTemplateText } from '../../shared/print';
+import {
+  MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES,
+  MERCHANT_TEMPLATE_EXPORT_FORMAT,
+  MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION,
+  serializeMerchantTemplatePayload,
+  validateMerchantTemplate,
+  validateMerchantTemplateEnvelope,
+  validateMerchantTemplateText,
+} from '../../shared/print';
 
 export interface MerchantPrintTemplateRow {
   id: string;
@@ -42,9 +50,14 @@ export interface MerchantPrintTemplateRow {
 
 /** Structured provenance reference (stored as JSON in derived_from). */
 export interface DerivedFromRef {
-  /** Provenance class of the source. Compliance clones stay informational. */
-  type: 'compliance-pack-template' | 'merchant-template';
+  /** Provenance class of the source. Compliance clones stay informational.
+   *  `offline-import` (#448) records a portable transfer file as the source. */
+  type: 'compliance-pack-template' | 'merchant-template' | 'offline-import';
+  /** For offline imports: sha256 hex of the EXACT imported envelope text —
+   *  a stable identity of the source artifact (not of any tenant row). */
   templateId: string;
+  /** For offline imports only: sanitized source file name, informational. */
+  fileName?: string;
 }
 
 export class MerchantTemplateError extends Error {
@@ -82,14 +95,26 @@ function parseDerivedFrom(raw: unknown): DerivedFromRef | null {
     throw new MerchantTemplateError('derivedFrom must be an object with type and templateId');
   }
   const record = value as Record<string, unknown>;
-  const { type, templateId } = record;
-  if (type !== 'compliance-pack-template' && type !== 'merchant-template') {
-    throw new MerchantTemplateError('derivedFrom.type must be "compliance-pack-template" or "merchant-template"');
+  const { type, templateId, fileName } = record;
+  if (type !== 'compliance-pack-template' && type !== 'merchant-template' && type !== 'offline-import') {
+    throw new MerchantTemplateError('derivedFrom.type must be "compliance-pack-template", "merchant-template", or "offline-import"');
   }
   if (typeof templateId !== 'string' || templateId.length === 0) {
     throw new MerchantTemplateError('derivedFrom.templateId must be a non-empty string');
   }
-  return { type, templateId };
+  if (fileName !== undefined) {
+    if (type !== 'offline-import') {
+      throw new MerchantTemplateError('derivedFrom.fileName is only valid for offline-import sources');
+    }
+    if (typeof fileName !== 'string' || fileName.length === 0 || fileName.length > 255) {
+      throw new MerchantTemplateError('derivedFrom.fileName must be a non-empty string of at most 255 characters');
+    }
+  }
+  return {
+    type,
+    templateId,
+    ...(type === 'offline-import' && typeof fileName === 'string' ? { fileName } : {}),
+  };
 }
 
 /** Validate + normalize a payload for storage. Returns canonical JSON text. */
@@ -112,8 +137,9 @@ function normalizePayload(payload: unknown): string {
       validation.errors,
     );
   }
-  // Re-stringify the validated object so the stored text is canonical.
-  return JSON.stringify(validation.payload);
+  // Store the canonical serialization so the persisted text — and therefore
+  // its checksum — never depends on client key order or formatting.
+  return serializeMerchantTemplatePayload(validation.payload);
 }
 
 function validateName(name: unknown): string {
@@ -299,7 +325,7 @@ export function rollbackMerchantPrintTemplate(id: string, actorId: string | null
       restoredValidation.errors,
     );
   }
-  const restoredJson = JSON.stringify(restoredValidation.payload);
+  const restoredJson = serializeMerchantTemplatePayload(restoredValidation.payload);
 
   getDatabase().prepare(`
     UPDATE merchant_print_templates
@@ -307,4 +333,179 @@ export function rollbackMerchantPrintTemplate(id: string, actorId: string | null
     WHERE id = ?
   `).run(restoredJson, computeChecksum(restoredJson), actorId, now(), id);
   return loadMerchantPrintTemplateRow(id)!;
+}
+
+// ---------------------------------------------------------------------------
+// Offline import/export (#448, epic #438)
+//
+// Templates travel as self-describing `.json` envelopes:
+//   { format: 'flocafe-merchant-template', schemaVersion, exportedAt,
+//     appVersion?, origin?, checksum, template }
+//
+// `checksum` is the sha256 of the CANONICAL payload text
+// (serializeMerchantTemplatePayload: recursively key-sorted, no whitespace) —
+// the same integrity value the table stores, so a round-tripped file
+// re-verifies against the persisted row and reformatting never breaks it.
+// Import treats the file as untrusted input: size-capped,
+// single JSON document, structurally validated envelope, then the SAME
+// fail-closed payload validator as every write path, then checksum
+// verification. Imports ALWAYS land as a new draft row (fresh uuid,
+// `origin: 'imported'`) — never auto-activated, never overwriting an
+// existing identity. Fully offline: no network, no registry, no fetches.
+// ---------------------------------------------------------------------------
+
+const EXPORT_FILE_SUFFIX = '.flocafe-template.json';
+
+export interface MerchantTemplateExportFile {
+  /** Sanitized, traversal-proof download filename. */
+  fileName: string;
+  /** Envelope JSON text (pretty-printed for human inspection). */
+  json: string;
+}
+
+/** Reduce a template name to a safe filename slug (no separators, no dots). */
+function exportFileName(name: string): string {
+  const slug = name
+    .normalize('NFKD')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60) || 'template';
+  return `${slug}${EXPORT_FILE_SUFFIX}`;
+}
+
+/** Keep only a bare file name from a client-supplied download/upload name. */
+function sanitizeClientFileName(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const bare = value.split(/[\\/]/).pop() ?? '';
+  const cleaned = bare.replace(/[\u0000-\u001f\u007f"<>|:*?]/g, '').trim();
+  if (cleaned.length === 0 || cleaned === '.' || cleaned === '..') return null;
+  return cleaned.slice(0, 255);
+}
+
+/**
+ * Build the portable transfer envelope for a template. Exportable states are
+ * `active` and `archived`; drafts are deliberately excluded (they have never
+ * passed activation, which is the checksum-verified review point). The row's
+ * checksum is verified BEFORE export so a tampered payload can never be
+ * distributed as a trusted-looking file, and the serialized envelope is held
+ * to the same byte cap import enforces, so an install can never mint a
+ * transfer file it would refuse to read back.
+ */
+export function exportMerchantPrintTemplateFile(id: string): MerchantTemplateExportFile {
+  const row = loadMerchantPrintTemplateRow(id);
+  if (!row) throw new MerchantTemplateError('Template not found', 404);
+  if (row.status !== 'active' && row.status !== 'archived') {
+    throw new MerchantTemplateError('Only active or archived templates can be exported', 409);
+  }
+  verifyChecksum(row);
+  const payloadValidation = validateMerchantTemplateText(row.payload_json);
+  if (!payloadValidation.ok) {
+    throw new MerchantTemplateError(
+      `Invalid stored payload for template ${row.id}`,
+      409,
+      payloadValidation.errors,
+    );
+  }
+
+  const envelope = {
+    format: MERCHANT_TEMPLATE_EXPORT_FORMAT,
+    schemaVersion: MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    origin: {
+      sourceTemplateId: row.id,
+      sourceName: row.name,
+      sourceChecksum: row.checksum,
+    },
+    checksum: row.checksum,
+    template: payloadValidation.payload,
+  };
+  const json = JSON.stringify(envelope, null, 2);
+  const byteLength = Buffer.byteLength(json, 'utf8');
+  if (byteLength > MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES) {
+    throw new MerchantTemplateError(
+      `Exported transfer file is ${byteLength} bytes; the maximum allowed size is ${MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES} bytes`,
+      413,
+    );
+  }
+  return { fileName: exportFileName(row.name), json };
+}
+
+/**
+ * Import a transfer file: full fail-closed validation pipeline, then land as
+ * a NEW draft with `origin: 'imported'` and `derived_from` provenance
+ * recording the source artifact (sha256 of the exact envelope text, plus the
+ * sanitized file name when provided). Duplicate names are allowed — identity
+ * is the fresh uuid, never the source id recorded in the envelope.
+ */
+export function importMerchantPrintTemplateFile(input: {
+  file?: unknown;
+  name?: unknown;
+  fileName?: unknown;
+}, actorId: string | null): MerchantPrintTemplateRow {
+  if (typeof input.file !== 'string' || input.file.length === 0) {
+    throw new MerchantTemplateError('A template transfer file is required');
+  }
+  const raw = input.file;
+  const byteLength = Buffer.byteLength(raw, 'utf8');
+  if (byteLength > MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES) {
+    throw new MerchantTemplateError(
+      `Transfer file is ${byteLength} bytes; the maximum allowed size is ${MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES} bytes`,
+      413,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new MerchantTemplateError(`Transfer file is not valid JSON: ${(error as Error).message}`);
+  }
+
+  const envelopeCheck = validateMerchantTemplateEnvelope(parsed);
+  if (!envelopeCheck.ok) {
+    throw new MerchantTemplateError(
+      `Invalid template transfer file: ${envelopeCheck.errors[0]}`,
+      400,
+      envelopeCheck.errors,
+    );
+  }
+  const { envelope } = envelopeCheck;
+
+  // Same single payload validator as create/update/rollback (#447): unknown
+  // schema majors, disallowed blocks, unknown fields, bad types all reject.
+  const payloadCheck = validateMerchantTemplate(envelope.payload);
+  if (!payloadCheck.ok) {
+    throw new MerchantTemplateError(
+      `Invalid template payload: ${payloadCheck.errors[0]}`,
+      400,
+      payloadCheck.errors,
+    );
+  }
+
+  // Integrity: the claimed checksum must equal the sha256 of the canonical
+  // payload text — any semantic modification after export fails closed.
+  const canonical = serializeMerchantTemplatePayload(payloadCheck.payload);
+  if (computeChecksum(canonical) !== envelope.claimedChecksum.toLowerCase()) {
+    throw new MerchantTemplateError(
+      'Checksum mismatch: the transfer file was modified or corrupted after export',
+      409,
+    );
+  }
+
+  const sourceFileName = sanitizeClientFileName(input.fileName);
+  const derivedFrom: DerivedFromRef = {
+    type: 'offline-import',
+    templateId: computeChecksum(raw),
+    ...(sourceFileName ? { fileName: sourceFileName } : {}),
+  };
+
+  const name = input.name !== undefined && input.name !== null && input.name !== ''
+    ? validateName(input.name)
+    : validateName(envelope.origin?.sourceName ?? 'Imported template');
+
+  return createMerchantPrintTemplate(
+    { name, payload: canonical, origin: 'imported', derivedFrom },
+    actorId,
+  );
 }

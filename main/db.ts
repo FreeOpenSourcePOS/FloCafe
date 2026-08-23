@@ -9,6 +9,7 @@ import * as crypto from 'crypto';
 import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled';
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
+import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -4002,6 +4003,54 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           `).run(upgraded, now());
         }
       }
+    },
+  },
+  {
+    version: 73,
+    name: 'normalize_merchant_template_payloads',
+    up: () => {
+      // #448 moved merchant template persistence onto the CANONICAL payload
+      // serialization (recursively key-sorted, whitespace-free): its sha256 is
+      // both the row's `checksum` column and the offline transfer envelope's
+      // integrity value. Rows written by earlier builds kept client key order,
+      // so their stored text — and therefore their checksum and any envelope
+      // they exported — failed canonical verification on import after the
+      // upgrade. Rewrite each intact row once so every stored payload matches
+      // what checksums hash. Rows whose stored text no longer matches their
+      // checksum (possible tampering) or no longer validates under the current
+      // schema are left untouched, so the existing fail-closed paths keep
+      // surfacing them instead of silently healing or destroying data.
+      const rows = db.prepare(`
+        SELECT id, payload_json, previous_payload_json, checksum
+        FROM merchant_print_templates
+      `).all() as { id: string; payload_json: string; previous_payload_json: string | null; checksum: string }[];
+      let normalized = 0;
+      for (const row of rows) {
+        if (crypto.createHash('sha256').update(row.payload_json, 'utf8').digest('hex') !== row.checksum) continue;
+        const validation = validateMerchantTemplateText(row.payload_json);
+        if (!validation.ok) continue;
+        const payloadJson = serializeMerchantTemplatePayload(validation.payload);
+        let previousPayloadJson = row.previous_payload_json;
+        if (previousPayloadJson !== null) {
+          const previousValidation = validateMerchantTemplateText(previousPayloadJson);
+          if (previousValidation.ok) {
+            previousPayloadJson = serializeMerchantTemplatePayload(previousValidation.payload);
+          }
+        }
+        if (payloadJson === row.payload_json && previousPayloadJson === row.previous_payload_json) continue;
+        db.prepare(`
+          UPDATE merchant_print_templates
+          SET payload_json = ?, previous_payload_json = ?, checksum = ?
+          WHERE id = ?
+        `).run(
+          payloadJson,
+          previousPayloadJson,
+          crypto.createHash('sha256').update(payloadJson, 'utf8').digest('hex'),
+          row.id,
+        );
+        normalized++;
+      }
+      console.log(`[MIGRATION v73] normalized ${normalized} merchant template payload(s); ${rows.length - normalized} already canonical or left untouched`);
     },
   },
 ];

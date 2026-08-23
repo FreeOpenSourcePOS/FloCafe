@@ -249,8 +249,13 @@ fails because of a malformed policy ([`main/lib/print-language-settings.ts`](../
 [`tests/print-language-settings.test.ts`](../tests/print-language-settings.test.ts)).
 
 Settings are registry-driven through two synchronized views: the frontend
-renders print-language options from `LANGUAGES`, while backend policy
-validation accepts only languages present in the generated print-label table.
+renders print-language options from [`LANGUAGES`](../frontend/src/lib/i18n/languages.ts),
+with controls filtered in [`settings/page.tsx`](<../frontend/src/app/(dashboard)/settings/page.tsx>)
+and stored-policy checks in [`print-language-policies.ts`](../frontend/src/lib/print-language-policies.ts);
+backend policy validation accepts only languages present in
+[`PRINT_LABEL_LANGUAGES`](../main/print/print-labels.generated.ts), wired through
+[`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts)
+and checked by [`shared/print/policy.ts`](../shared/print/policy.ts).
 Both registries must be updated when a language gains print coverage.
 
 ### Canonical i18n label flow (kernel C, [#440](https://github.com/FreeOpenSourcePOS/FloCafe/issues/440))

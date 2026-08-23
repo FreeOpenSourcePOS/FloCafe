@@ -317,6 +317,7 @@ console.log('\n▶ Selection identity (structured, legacy-compatible)');
 // ---------------------------------------------------------------------------
 
 const express = require('express');
+const expressRateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const { getJWTSecret } = require('../main/routes/auth');
@@ -324,6 +325,13 @@ const { printTemplateRoutes } = require('../main/routes/print-templates');
 
 const app = express();
 app.use(express.json());
+// Keep the executable API harness bounded at the same boundary as production.
+app.use('/api', expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
 app.use((req: any, res: any, next: any) => {
   if (!req.path.startsWith('/api')) { next(); return; }
   const authHeader = req.headers.authorization;
@@ -338,8 +346,6 @@ app.use((req: any, res: any, next: any) => {
     res.status(401).json({ error: 'Invalid or expired token' });
   }
 });
-// Ephemeral supertest harness: rate limiting is applied by the production router itself.
-// codeql[js/missing-rate-limiting]
 app.use('/api/print-templates', printTemplateRoutes);
 
 function authHeaderFor(role: string): string {

@@ -869,7 +869,7 @@ export function formatReceipt(order: any, bill: any, business?: any, template?: 
     if (warnings && result.warnings.length > 0) warnings.push(...result.warnings);
     return result.data;
   }
-  const tpl = normalizeReceiptTemplate(template);
+  const tpl = normalizeReceiptTemplate(selection?.source === 'core' ? selection.id : template);
 
   try {
     switch (tpl) {

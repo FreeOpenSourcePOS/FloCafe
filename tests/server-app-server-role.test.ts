@@ -49,7 +49,7 @@ async function getJson(baseUrl: string, pathName: string, token: string) {
 }
 
 async function main() {
-  console.log('Integration Test: Server App server-only auth');
+  console.log('Integration Test: Server App front-line + management auth');
   console.log('='.repeat(52));
 
   process.env.SERVER_APP_PORT = String(await getFreeTcpPort());

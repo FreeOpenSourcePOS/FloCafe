@@ -1,0 +1,491 @@
+# Printing architecture
+
+Status: CURRENT (describes the multilingual print pipeline as shipped by epic #438, issues #439–#448)
+
+This document is the map of FloCafe's printing stack for contributors: how a
+bill becomes printed bytes, which layer owns what, and what each layer may
+never do. It covers decisions and contracts — not tutorials that duplicate
+code comments. Every architectural claim links to the code or test that
+enforces it.
+
+Companion documents:
+
+- [printers.md](printers.md) — merchant-facing printer setup and troubleshooting.
+- [merchant-print-templates.md](merchant-print-templates.md) — the merchant template payload/envelope contracts (cross-linked, not duplicated here).
+- [i18n.md](i18n.md) — translation workflow and language registry.
+- [tax-packs.md](tax-packs.md) — signed tax/country-pack lifecycle.
+- [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) — capability study for non-Latin scripts (FORWARD-LOOKING; raster fallback not implemented).
+
+---
+
+## 1. Pipeline overview
+
+```text
+ raw bill / order / business rows  (main/ DB rows or frontend Bill objects)
+        │
+        │  normalization — the ONLY step allowed to touch raw fields
+        ▼
+ PrintData snapshot + PrintContext          (shared/print/document.ts)
+ (printed truth, no recomputation)          (columns, languages, direction,
+        │                                    locale, label resolver)
+        ▼
+ buildBillDocument() / buildKotDocument()   pure builders → PrintDocument v1
+        │
+        │  optional semantic transform
+        ▼
+ applyMerchantTemplate(document, payload)   shared/print/merchant-template.ts
+        │
+        ▼
+ Renderer  — walks document BLOCKS only     main/printers/document-*.ts,
+        │                                   frontend receipt-encoder / web-print
+        ▼
+ Transport — bytes/HTML leave the app       network socket :9100, Windows
+                                            spooler / CUPS queue, WebUSB,
+                                            system print dialog
+```
+
+Layer ownership:
+
+| Layer | Lives in | May do | May never do |
+| --- | --- | --- | --- |
+| Normalization | `main/printers/document-classic.ts` (`buildBillPrintData`), `frontend/src/lib/printer/print-document.ts` | read raw rows once, coerce to typed snapshots | recompute taxes/totals beyond legacy addon-line extension |
+| Kernel (`shared/print/`) | `shared/print/` | types + pure functions over injected facts | any IO (Electron, DOM, Node built-ins, DB, filesystem, network); import from `frontend/` or `main/`; hardcode language unions |
+| Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | read bill/order rows directly; invent labels outside the catalog |
+| Transports | `main/printers/thermal.ts`, browser APIs | move bytes/paper | change document semantics |
+
+The purity boundary of the kernel is binding: see
+[shared/print/README.md](../shared/print/README.md), enforced by the kernel
+test suite (`npm run test:print-kernel`, includes the consumer-boundary check
+in `tests/kernel-purity.test.ts`) and ESLint import restrictions over
+`shared/`.
+
+## 2. Shared print kernel layout
+
+| Module | Contents | Introduced |
+| --- | --- | --- |
+| `types.ts` | `PrintLanguageCode` (structural string), policy shapes, `DirectionScope`, registry-facts interface | #441 |
+| `policy.ts` | resolution + validation of receipt/KOT language policies; max-2 receipts enforced at type level | #441 |
+| `direction.ts` | per-scope direction spec, conservative LTR-island classification | #441 |
+| `bilingual.ts` | `BilingualLabel`, width-fit strategies (`inline` vs `stacked`) | #441 |
+| `document.ts` | `PrintDocument` v1 / `KotDocument` v1 models + pure builders | #442/#443 |
+| `merchant-template.ts` | semantic merchant template payload validation, offline transfer envelope, `applyMerchantTemplate` | #447/#448 |
+
+Dependency direction is one-way: registry → call site → kernel. The central
+language registry ([frontend/src/lib/i18n/languages.ts](../frontend/src/lib/i18n/languages.ts))
+is authoritative; both consumers inject their own view of "registered and
+selectable" via `LanguageRegistryFacts`:
+
+- frontend filters by `selectable` in the registry (`frontend/src/lib/printer/print-document.ts`);
+- backend uses the generated print-label language table
+  (`main/print/print-labels.generated.ts`, wired in `main/lib/print-language-settings.ts`).
+
+The kernel never imports either side.
+
+## 3. PrintDocument v1 model
+
+A `PrintDocument` (#442) is the authoritative *semantic* representation of a
+receipt: an ordered list of frozen blocks plus per-scope direction and the
+resolved language list. No transport tokens (`{CENTER}`, `{CUT}`, …) and no
+HTML exist anywhere in the model.
+
+Receipt block vocabulary v1 (`shared/print/document.ts`):
+
+| Block kind | Carries |
+| --- | --- |
+| `business-header` | name, address, phone (+label), instagram, conditional tax-ID line |
+| `document-meta` | invoice title (tax vs plain), number, canonical timestamp, optional table |
+| `customer` | customer name/phone with their labels |
+| `item-table` | header labels, item rows (quantity, unit price, amount, addons, special instructions) |
+| `totals` | subtotal, discount, flat tax/service/delivery, grand total, loyalty points lines |
+| `tax-breakdown` | per-component lines when the merchant shows the breakdown |
+| `payments` | captured payment lines (known methods resolve through concept ids, unknown stay literal) |
+| `message` | reprint banner, footer note, thank-you |
+
+Kitchen tickets use a separate smaller vocabulary, `KotDocument` v1
+(`kot-header`, `kot-items`; #443). The KOT policy is single-primary in v1.
+
+Invariants every consumer may rely on:
+
+- **No financial recomputation.** Builders copy amounts verbatim from the
+  `PrintData` snapshots; they only apply presence/show decisions
+  (`buildBillDocument` doc comment, asserted in `tests/print-document.test.ts`
+  and byte-compared against the frozen pre-migration oracle in
+  `tests/print-parity.test.ts`).
+- **Labels are never pre-concatenated** `"A / B"` strings. Each label slot is
+  a `SemanticLabel`: a concept reference plus already-resolved primary text
+  and an optional secondary-language rendering of the same concept. Renderers
+  decide how two variants share a line.
+- **Every value carries its resolved direction** (`DirectionalText`), so
+  renderers embed LTR islands without re-running heuristics.
+- Blocks appear in canonical order; `getBlock()` gives typed access.
+
+### Extension policy (adding a block)
+
+Block kinds are whitelisted in exactly three places that must move together:
+the `PrintDocumentBlock` union, the builder, and the merchant-template
+vocabulary (`MERCHANT_TEMPLATE_BLOCK_KINDS`). See [Part II](#part-ii--contributor-recipes)
+for the step-by-step recipe.
+
+### Direction & bidi handling
+
+`shared/print/direction.ts` defines three scopes: `document`, `block`, and
+`value`. Document and block follow the base direction derived from the
+primary print language (registry fact injected by the caller);
+`resolveValueDirection(text, base)` classifies individual embedded values.
+
+LTR-island classification (`isLtrIsland`) is deliberately conservative:
+phone numbers, URLs/emails, identifiers (SKU/invoice/order/tax-ID-like tokens
+carrying at least one digit and at most three whitespace-separated words),
+and amounts resolve `'ltr'` even inside RTL documents; anything containing
+RTL script letters or reading as natural language stays in the base
+direction. Mixed natural-language text is never an island. Behavior is
+covered by the direction tests in `tests/print-kernel.test.ts`.
+
+Renderers consume these annotations instead of ad-hoc language checks: the
+browser HTML path marks direction on elements and isolates islands
+(`frontend/src/lib/printer/web-print.ts` header comment since #444); the
+ESC/POS paths use width-aware shaping/truncation helpers
+(`main/printers/thermal.ts`).
+
+Bilingual presentation: `selectBilingualFit(label, columns)` picks `inline`
+(primary + 2 separator columns + secondary fits the paper width) or `stacked`
+(one line each); `bilingualLabelLines` returns the exact ordered lines so all
+renderers stack identically (`shared/print/bilingual.ts`). Strategies are
+evaluated across the tested column widths below.
+
+## 4. Language behavior
+
+Three decoupled domains (see also [i18n.md](i18n.md)):
+
+- **UI language** drives the interface and is the `inherit` fallback for printing.
+- **Receipt language policy** (`bill_language_policy`): `{ primary: inherit | fixed, additional?: [one] }`.
+  Max 2 languages per receipt in v1, enforced at type level
+  (`ReceiptLanguagePolicy` tuple) and by validation (`MAX_RECEIPT_LANGUAGES`).
+- **Kitchen ticket policy** (`kot_language_policy`): single-primary, resolved
+  independently of the receipt — a fixed English kitchen keeps English tickets
+  even in a Persian storefront (asserted in `tests/print-parity.test.ts`,
+  section "KOT language policy independence").
+
+Policy payloads are untrusted input: `parsePrintLanguagePolicy` /
+`parseKotLanguagePolicy` accept known keys only, require registered +
+selectable codes via the injected registry facts, dedupe, reject duplicate
+primaries, and return frozen normalized policies safe to persist. Invalid or
+missing settings fall back to the store language; printing never fails because
+of a malformed policy (`main/lib/print-language-settings.ts`,
+`tests/print-language-settings.test.ts`).
+
+Settings dropdowns are registry-driven end to end: the frontend renders
+options from `LANGUAGES`, the backend accepts only languages present in its
+generated print-label table — there is no second hardcoded list to update.
+
+### Canonical i18n label flow (kernel C, #440)
+
+Canonical locale messages are the single translation source:
+
+```text
+frontend/src/lib/i18n/messages/<lang>.json      (canonical, 100% parity with en.json)
+        │  npm run generate:print-labels   (scripts/generate-print-labels.cjs)
+        ▼
+main/print/print-labels.generated.ts            (committed derived view)
+        │  printLabel(lang, conceptId)  — unknown lang/key falls back to English
+        ▼
+backend renderers + backend registry facts for policy validation
+```
+
+Rules:
+
+- Never edit `print-labels.generated.ts` by hand; edit messages, regenerate,
+  commit. Drift between messages and the generated view fails
+  `npm run i18n:check` and `npm run test:print-labels` (byte comparison after
+  CRLF normalization).
+- The generator extracts the audited `print.*` namespace plus a manifest of
+  BORROWED keys (`receipt.*`, `pos.*`, …) listed explicitly in
+  `scripts/generate-print-labels.cjs`. Concept ids keep full dotted keys so
+  call sites stay unambiguous about where a label resolves.
+- Deliberate non-translations (exemptions): branding constants
+  ("Powered by FloPOS", URL — `main/printers/thermal.ts`,
+  `frontend/src/lib/printer/branding.ts`) and technical literals on the test
+  page (protocol names, encodings/codepages, byte/hex output, addresses/ports,
+  model and capability identifiers). These are intentionally absent from the
+  concept catalog.
+- Known deliberate gap: the KOT `Order:` prefix has no assigned key yet;
+  the KOT document carries only the value (`KotHeaderBlock.orderNumber`
+  doc comment).
+
+## 5. Template systems, provenance & security
+
+Four provenance classes exist and must stay distinct:
+
+| Class | Storage | Trust | Format | Docs |
+| --- | --- | --- | --- | --- |
+| Core layouts | code | built-in | code + PrintDocument | [printers.md](printers.md) |
+| Compliance pack templates (#445) | `installed_print_templates` | Ed25519-verified signed country-pack artifacts | `escpos-line-template-v1` | [printers.md § compliance templates](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1), [tax-packs.md](tax-packs.md) |
+| Merchant-created templates (#447) | `merchant_print_templates` | ordinary tenant data, no compliance trust | `flocafe-merchant-print-template` | [merchant-print-templates.md](merchant-print-templates.md) |
+| Imported templates (#448) | `merchant_print_templates` (`origin: imported`) | same as merchant-created | transfer envelope around the same payload | [merchant-print-templates.md](merchant-print-templates.md) |
+
+These formats are deliberately **not converged**: #445's line templates are
+the compliance contract; the merchant format is semantic-only. A
+`derivedFrom` reference to a pack template is user information only — no
+compliance trust ever transfers (`shared/print/merchant-template.ts` header,
+[merchant-print-templates.md § Provenance & trust](merchant-print-templates.md#provenance--trust)).
+
+### Merchant template validation pipeline (fail-closed rules)
+
+Enforced on every write/import path by one validator in the shared kernel
+(`validateMerchantTemplateText`, exercised by
+`tests/merchant-print-templates.test.ts` against the golden and negative
+fixtures under `tests/fixtures/merchant-templates/`):
+
+1. Raw-size gate: 256 KB cap before parsing.
+2. Single JSON object; unknown root/block/origin fields rejected (stricter
+   than render-time tolerance, so typos cannot change meaning).
+3. Fail-closed schema-major gate: only major version 1 is accepted, in both
+   payload and envelope positions.
+4. Block whitelist: kinds must come from `MERCHANT_TEMPLATE_BLOCK_KINDS`;
+   duplicates rejected; `visible` must be boolean; `labels` keys must be in
+   the per-block `MERCHANT_TEMPLATE_LABEL_FIELDS` whitelist and be literal
+   strings free of control characters and printer tokens
+   (`UNSAFE_LABEL_TEXT_PATTERN`).
+5. Canonical serialization (`serializeMerchantTemplatePayload`: recursively
+   sorted keys, array order untouched) defines the exact text persisted and
+   hashed — sha256 checksums are verified on activation, rollback, export,
+   and import.
+
+Why imported templates cannot execute code: the payload grammar has no field
+for commands, HTML, scripts, or renderer snippets — only block selection,
+visibility, order, and literal label text applied to a previously validated
+document (`applyMerchantTemplate` is a pure projection). Label literals are
+additionally stripped of ESC/POS control tokens at render time. The render
+path re-validates fail-closed: a stored payload that no longer validates
+falls back to the classic layout with an explicit warning — never garbage,
+never silence (`main/printers/document-merchant.ts`, `fellBackToClassic`).
+
+### Offline transfer envelope
+
+Templates travel as self-describing `.json` files
+(`flocafe-merchant-template`, envelope schema version 1): structural
+validation, ISO-8601 `exportedAt`, sha256-shaped `checksum`, then the same
+payload validator, then checksum verification against the canonical payload
+text. Imports always land as a NEW draft row (`origin: 'imported'`) — never
+an activation, never an overwrite. The full public contract, including the
+field list and provenance semantics, lives in
+[merchant-print-templates.md § Offline transfer format](merchant-print-templates.md#offline-transfer-format-public-contract-448);
+the normative validator is `validateMerchantTemplateEnvelope` in
+`shared/print/merchant-template.ts` with fixtures under
+`tests/fixtures/merchant-templates/transfer/`.
+
+## 6. Printer capability model & warning semantics
+
+Capabilities are declared per profile in
+[`main/printers/profiles.ts`](../main/printers/profiles.ts):
+paper-width/column geometry (`fontAColumns`, `defaultPaperWidth`), cut mode,
+command set (`escpos` today), and `arabicShaping`. Profile resolution order:
+explicit `profile_id` → name/make/model alias match → paper-width-based
+generic fallback (`resolvePrinterProfile`). `arabicShaping` defaults to unset
+(false) and may only be set true after a real print on that hardware proves
+shaped Persian output — generic ESC/POS firmware neither shapes Arabic nor
+reorders bidi (evidence in [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
+
+Renderers consume capabilities, they never guess them:
+
+- Desktop ESC/POS: lines whose content the target printer cannot render are
+  skipped with an explicit warning unless the profile's shaping flag (or a
+  request-level override) admits strict ASCII+Arabic lines
+  (`buildEscPos` guard in `main/printers/thermal.ts`).
+- Browser/WebUSB encoders mirror the identical skip-with-warning contract so
+  both paths degrade the same way (`frontend/src/lib/printer/warnings.ts`,
+  `safePrinterText`).
+- Browser HTML printing is the full-Unicode path: nothing is skipped for
+  script reasons (asserted in `tests/print-parity.test.ts`).
+
+Warning semantics — **no silent content loss**: every skipped line produces a
+`PrintWarning` naming the field, the skipped text, and the reason; unsupported
+configuration (for example a merchant template selected on a print path that
+cannot honor it) produces a `kind: 'configuration'` warning and a documented
+fallback layout (`makeBillTemplateFallbackWarning`). Warnings surface to the
+user after printing (`warnings-toast.ts`) and in dispatch results
+(`classifyPrintFailure` gives stable, privacy-safe failure classes for fleet
+telemetry). The end-state contract from epic #438 is native render,
+explicitly supported fallback, or an explicit warning/error — never quiet
+omission of financial content. The recommended capability-tiered raster
+fallback for broader script coverage is future work
+([printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
+
+## 7. Renderer/transport map
+
+| Renderer | Surface | Consumes | Output | Transport |
+| --- | --- | --- | --- | --- |
+| `document-classic.ts` (`renderClassicReceiptViaDocument`, #442) | desktop preview + printing, receipts | PrintDocument v1 | token lines → bytes | socket :9100 / OS queue |
+| `document-compact.ts` (#443) | desktop compact receipts | PrintDocument v1 | token lines → bytes | same |
+| `document-kot.ts` (#443) | desktop kitchen tickets | KotDocument v1 | token lines → bytes | same |
+| `document-merchant.ts` (#447/#448) | desktop receipts with active merchant template | applied PrintDocument | token lines → bytes (fail-closed fallback to classic) | same |
+| `receipt-encoder.ts`, `kot-encoder.ts`, `tax-bill-encoder.ts` (#444) | WebUSB printing | PrintDocument v1 via `print-document.ts` bridge | ESC/POS bytes | WebUSB device |
+| `web-print.ts` (#444) | system print dialog receipts | PrintDocument v1 | HTML | browser print |
+| `kot-web-print.ts` | system print dialog kitchen tickets | Kot data | HTML | browser print |
+
+Byte-level transports (Windows spooler RAW datatype, CUPS, sockets) are
+described in [printers.md](printers.md); renderers never touch them directly —
+`thermal.ts` owns dispatch.
+
+## 8. Testing guide
+
+| Suite | Command | What it locks down |
+| --- | --- | --- |
+| Kernel units | `npm run test:print-kernel` | policy resolution/validation, direction, bilingual fit, document builders, settings glue |
+| Labels | `npm run test:print-labels` | generated-table selection, English fallback, generator drift (`--check`) |
+| Document model | `npm run test:print-document` | block construction, bilingual pairs, direction annotations, purity |
+| Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle |
+| Merchant templates | `npm run test:merchant-print-templates` | kernel validation, apply semantics, CRUD lifecycle, render path |
+| Transfer envelope | `npm run test:merchant-template-transfer` | import/export contract, tampered-checksum rejection |
+
+Parity harness usage and fixture matrix (`tests/print-parity.test.ts`):
+
+- **Semantic assertions** (content present / explicit warning recorded), not
+  byte snapshots, for cross-renderer checks; amounts compared after stripping
+  grouping separators so `en-IN` and `en-US` styles both pass.
+- **Byte-exact oracle**: every migrated backend surface (classic, compact,
+  KOT) must reproduce its frozen pre-migration output BYTE FOR BYTE at every
+  tested width, including skip rules and reprint banners
+  (`tests/helpers/legacy-thermal-oracle.ts`).
+- **Width coverage expectations**: backend ESC/POS at 32/42/48 columns;
+  WebUSB at 58 mm and 80 mm; browser HTML at `thermal58`/`thermal80`;
+  bilingual fit strategies evaluated across 32–48 columns
+  (`shared/print/bilingual.ts`). New print features must state their width
+  behavior at these widths.
+- **Merchant-template mode**: the golden fixture
+  (`tests/fixtures/merchant-templates/golden-receipt-v1.json`, all blocks,
+  canonical order) must be an identity transform on rendered bytes at every
+  width; labeled variants live beside it with negative fixtures per rejection
+  class.
+
+## 9. Documented future work (not present tense)
+
+The following remain future work and are described as such; do not promise
+them as shipped:
+
+- Visual merchant template editor (#447 ships the model only).
+- Capability-tiered raster fallback for non-Latin scripts
+  ([printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md)).
+- Localized product/add-on *data* on receipts (labels are localized today;
+  product names print as stored).
+- Compact/KOT adoption of merchant documents (v1 renders merchant receipts
+  through the classic pipeline; `main/printers/document-merchant.ts`).
+
+---
+
+# Part II — Contributor recipes
+
+Each recipe lists the files that MUST move together. If your change touches
+one without the others, a test above will fail — that is the point.
+
+## Add a print label
+
+1. Add the message to **all** locale files under
+   `frontend/src/lib/i18n/messages/` (100% leaf parity with `en.json` is
+   enforced; see [i18n.md](i18n.md)). Use a dotted key in the `print.`
+   namespace for new receipt/KOT concepts.
+2. Register the concept id in `scripts/generate-print-labels.cjs`:
+   append to `PRINT_NAMESPACE_KEYS` (new `print.*` key) or `BORROWED_KEYS`
+   (existing key reused verbatim — prefer this when the UI already has the
+   string).
+3. Run `npm run generate:print-labels` and commit the regenerated
+   `main/print/print-labels.generated.ts` together with the message edits.
+   Builds never regenerate tracked sources; drift fails `npm run i18n:check`.
+4. Consume it through the kernel, never as a literal: backend code resolves
+   via `printLabel(lang, id)`; document labels flow through
+   `resolveSemanticLabel` into `SemanticLabel` pairs. Never pre-concatenate
+   bilingual strings.
+5. Do NOT route branding constants or technical test-page literals through
+   the catalog — they are deliberate exemptions (§4).
+
+Verification: `npm run test:print-labels && npm run i18n:check`, then
+`npm run test:print-parity` for renderer-visible effects.
+
+## Add a language with print coverage
+
+Follow the six-step language workflow in [i18n.md](i18n.md) first (scaffold,
+register in `languages.ts` with correct `direction`, translate, validate).
+Then close the print loop:
+
+1. Add the new code to `LANGUAGES` in `scripts/generate-print-labels.cjs`
+   (stable generation order, kept in sync with `languages.ts`).
+2. Regenerate and commit `print-labels.generated.ts` — this table IS the
+   backend's selectable-print-language registry view, so policy validation
+   and dropdown acceptance pick it up automatically
+   (`main/lib/print-language-settings.ts`).
+3. Extend `tests/print-labels.test.ts` expectations if the suite enumerates
+   languages, and add the language to the parity harness's localized-label
+   sections if it introduces a new direction/script.
+
+Verification: `npm run generate:print-labels -- --check && npm run i18n:check
+&& npm run test:print-kernel && npm run test:print-parity`.
+
+## Add a block type to PrintDocument v1
+
+All five steps are required; the whitelist and fixtures are load-bearing:
+
+1. Define the block interface and add it to the `PrintDocumentBlock` union in
+   `shared/print/document.ts`; extend `buildBillDocument` to compose it.
+   Follow the model rules: frozen nodes, `DirectionalText` values,
+   `SemanticLabel` labels (concept ids from the catalog), no layout widths,
+   no byte tokens.
+2. Add the kind to `MERCHANT_TEMPLATE_BLOCK_KINDS` in
+   `shared/print/merchant-template.ts`; add per-slot entries to
+   `MERCHANT_TEMPLATE_LABEL_FIELDS` only if merchants may override labels,
+   and wire overrides into `applyLabelOverrides`.
+3. Teach every renderer: the classic line renderer switch
+   (`main/printers/document-classic.ts`, `renderBillDocumentToClassicLines`),
+   compact/KOT where relevant, and the frontend renderers
+   (`receipt-encoder.ts`, `web-print.ts`) — including the merchant fallback
+   path in `document-merchant.ts`.
+4. Add fixtures: a golden positive fixture under
+   `tests/fixtures/merchant-templates/` exercising the new block, and a
+   negative variant (unknown-kind/duplicate/invalid-label class) under
+   `negative/`; keep `transfer/negative/` consistent if the envelope is
+   affected.
+5. Extend tests: `tests/print-document.test.ts` (construction + purity),
+   `tests/merchant-print-templates.test.ts` (validation + apply), and the
+   parity harness (`tests/print-parity.test.ts`) at all tested widths —
+   including the golden-fixture identity assertion if you changed the
+   all-blocks composition.
+
+Verification: `npm run test:print-document && npm run test:print-kernel &&
+npm run test:merchant-print-templates && npm run test:merchant-template-transfer
+&& npm run test:print-parity`.
+
+## Add a printer profile
+
+Profiles live in [`main/printers/profiles.ts`](../main/printers/profiles.ts)
+(`SUPPORTED_PRINTER_PROFILES`). One entry declares: unique `id`, make/model +
+lowercase `aliases` (matched by substring after normalization), command set,
+default paper width and port, Font A/B column counts, optional physical print
+width, cut mode, and notes.
+
+Rules:
+
+- Set `arabicShaping: true` ONLY after a real print on that specific hardware
+  proves shaped, correctly ordered Persian output; leave it unset otherwise.
+  Generic ESC/POS profiles ship with it unset (§6).
+- Resolution is explicit-id → alias-match → paper-width generic fallback
+  (`resolvePrinterProfile`); choose aliases so real-world USB/device names
+  match (`matchSupportedPrinterProfile` normalizes case and underscores).
+- Verify with Settings → Printers → Test Print at the profile's declared
+  widths; cover width-dependent rendering through the parity harness widths
+  if the profile introduces a new column count.
+
+## Author or contribute templates
+
+- **Merchant template JSON**: author the `flocafe-merchant-print-template`
+  payload (block selection, order, visibility, whitelisted label variants)
+  and, for offline transfer, wrap it in the
+  [`flocafe-merchant-template` envelope](merchant-print-templates.md#offline-transfer-format-public-contract-448).
+  Validate locally against `shared/print/merchant-template.ts` rules; every
+  violation class has a fixture under `tests/fixtures/merchant-templates/`.
+- **Country compliance pack**: follow [tax-packs.md](tax-packs.md) for
+  authoring/signing; if the pack needs receipt templates, author the
+  [`escpos-line-template-v1`](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1)
+  payload and preserve its provenance: compliance templates travel only
+  inside signed packs installed into `installed_print_templates` — never
+  copy pack payloads into merchant storage or vice versa. When deriving a
+  merchant template from a pack template, the clone records `derived_from`
+  as user information only (no trust transfers).

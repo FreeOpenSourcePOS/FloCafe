@@ -2,6 +2,8 @@
 
 FloCafe prints receipts and kitchen order tickets from the desktop app. Configure printers in **Settings → Printers**, then use **Test Print** before service.
 
+> Contributors: for the print pipeline architecture (shared kernel, PrintDocument model, renderer/transport map, language policy, testing guide) see [printing-architecture.md](printing-architecture.md).
+
 ## Connection types
 
 | Type | Use it for | What you need |
@@ -25,7 +27,7 @@ Receipt labels (invoice title, bill number, date, totals, payment methods) and k
 - Invalid or missing policy values always fall back to the store language; printing never fails because of a malformed policy.
 - Browser and WebUSB receipts use the same frontend `PrintDocument` bridge and canonical label resolver (`frontend/src/lib/printer/print-document.ts`) for `receipt.*`/`pos.*` labels, English fallback, and registry-derived base direction. Renderer-owned wording can still differ: browser preserves `Grand Total` while WebUSB keeps `TOTAL`. Browser HTML keeps its system-print layout; merchant-template structural fallback is documented in [merchant-print-templates.md](merchant-print-templates.md).
 
-Lines the printer cannot render under the script rules above are skipped with an explicit warning — content is never silently dropped. The printed document itself carries every line plus its text direction, so direction-aware layouts (right-to-left base with left-to-right amounts and order numbers) can be expressed by any renderer without changing the underlying data. The browser path is the full-Unicode exception to the thermal character guard, not a separate label registry.
+Lines the printer cannot render under the script rules above are skipped with an explicit warning — content is never silently dropped. The printed document itself carries every line plus its text direction, so direction-aware layouts (right-to-left base with left-to-right amounts and order numbers) can be expressed by any renderer without changing the underlying data. The browser path is the full-Unicode exception to the thermal character guard, not a separate label registry. The language-policy resolution rules, canonical label catalog flow, and bilingual layout strategies are specified in [printing-architecture.md](printing-architecture.md).
 
 For the full study of non-Latin script support on thermal printers — including the recommended raster fallback architecture, community hardware-test checklist, and open decisions — see [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md).
 

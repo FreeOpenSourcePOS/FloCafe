@@ -74,7 +74,7 @@ Send pre-shaped presentation forms (Unicode Arabic Presentation Forms-B) in visu
 Render the receipt (or parts) to a 1-bit bitmap and print it with `GS v 0 m xL xH yL yH`.
 
 - `GS v 0` is the mechanism every printer uses for logos; it is implemented across the entire ESC/POS clone ecosystem, including the cheapest hardware. Density mode `m=0` (8 dots/mm both axes) matches standard 203 dpi receipt heads.
-- Reference implementation scale test: Odoo's IoT box converts every receipt image to greyscale → 1-bit → `GS v 0` → cut ([odoo/odoo `PrinterDriver.print_receipt`](https://github.com/odoo/odoo/blob/master/addons/iot_drivers/iot_handlers/drivers/printer_driver.py)); their commit replacing the old ESC/POS text encoder states: *"We now transform the receipts to JPGs, transform these JPGs into ESCPOS commands and send them via Cups."* This runs across one of the largest heterogeneous open-source POS fleets in existence.
+- Reference implementation scale test: Odoo's IoT box converts every receipt image to greyscale → 1-bit → `GS v 0` → cut ([odoo/odoo `PrinterDriver.print_receipt`](https://github.com/odoo/odoo/blob/master/addons/iot_drivers/iot_handlers/drivers/printer_driver_base.py)); their commit replacing the old ESC/POS text encoder states: *"We now transform the receipts to JPGs, transform these JPGs into ESCPOS commands and send them via Cups."* This runs across one of the largest heterogeneous open-source POS fleets in existence.
 
 | Criterion | Assessment |
 | --- | --- |
@@ -108,7 +108,7 @@ The browser print path already renders every script correctly (the browser does 
 
 | System | Multilingual receipt strategy | Evidence |
 | --- | --- | --- |
-| Odoo POS (IoT box) | Whole-receipt raster for everything; old ESC/POS text encoder retired | [`PrinterDriver.print_receipt` source](https://github.com/odoo/odoo/blob/master/addons/iot_drivers/iot_handlers/drivers/printer_driver.py), [hw_escpos replacement commit](https://github.com/odoo/odoo/commit/03b2f7b77dc6189bb485e0b834dba5f6d3d4da2c) |
+| Odoo POS (IoT box) | Whole-receipt raster for everything; old ESC/POS text encoder retired | [`PrinterDriver.print_receipt` source](https://github.com/odoo/odoo/blob/master/addons/iot_drivers/iot_handlers/drivers/printer_driver_base.py), [hw_escpos replacement commit](https://github.com/odoo/odoo/commit/03b2f7b77dc6189bb485e0b834dba5f6d3d4da2c) |
 | escpos-php | Unicode→code-page auto-mapping; official Arabic example renders **images** instead of text lines | [Arabic example](https://github.com/mike42/escpos-php/blob/master/example/specific/6-arabic-epos-tep-220m.php) |
 | python-escpos | Exposes charcode selection only; recurring Arabic mojibake issues resolved by users switching to raster | [#37](https://github.com/python-escpos/python-escpos/issues/37), [#633](https://github.com/python-escpos/python-escpos/issues/633) |
 | node-thermal-printer | iconv-lite code-page translation; shaping/bidi unsupported; Arabic/Thai requests open for years | [PR #81](https://github.com/Klemen1337/node-thermal-printer/pull/81), [#180](https://github.com/Klemen1337/node-thermal-printer/issues/180) |
@@ -209,7 +209,7 @@ Implementation note for that future change: reuse the profile-derived dots-per-l
 
 - Epson ESC/POS command reference, `FS &`: <https://download4.epson.biz/sec_pubs/pos/reference_en/escpos/fs_ampersand.html>
 - ReceiptPrinterEncoder Arabic thread: <https://github.com/NielsLeenheer/ReceiptPrinterEncoder/issues/26>
-- Odoo IoT printer driver: <https://github.com/odoo/odoo/blob/master/addons/iot_drivers/iot_handlers/drivers/printer_driver.py> · replacement rationale: <https://github.com/odoo/odoo/commit/03b2f7b77dc6189bb485e0b834dba5f6d3d4da2c>
+- Odoo IoT printer driver: <https://github.com/odoo/odoo/blob/master/addons/iot_drivers/iot_handlers/drivers/printer_driver_base.py> · replacement rationale: <https://github.com/odoo/odoo/commit/03b2f7b77dc6189bb485e0b834dba5f6d3d4da2c>
 - escpos-php Arabic example: <https://github.com/mike42/escpos-php/blob/master/example/specific/6-arabic-epos-tep-220m.php>
 - node-thermal-printer code-page translation: <https://github.com/Klemen1337/node-thermal-printer/pull/81>
 - python-escpos Arabic issues: <https://github.com/python-escpos/python-escpos/issues/37>, <https://github.com/python-escpos/python-escpos/issues/633>

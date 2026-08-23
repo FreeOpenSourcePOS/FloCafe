@@ -17,6 +17,14 @@ import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShu
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
 import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allowlist';
+import {
+  classifyUpdateError,
+  initialUpdateState,
+  oneShotUpdateState,
+  toIpcUpdateStatus,
+  type StoredUpdateStatus,
+  type UpdateErrorPhase,
+} from './update-state';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import {
   createShutdownCoordinator,
@@ -65,8 +73,10 @@ log.transports.console.level = 'debug';
 const logPath = log.transports.file.getFile().path.replace(/[^\/\\]+$/, '');
 console.log('[Log] Log files location:', logPath);
 
-let updateAvailable = false;
-let updateDownloaded = false;
+// Single persisted update state (#467): every transition (including one-shot
+// startup states and failures) goes through here so a renderer reload can
+// recover the truth via get-update-status instead of racing push events.
+let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
 let startupFailure = false;
 
 function configureAutoUpdaterChannel(): void {
@@ -94,9 +104,21 @@ function configureAutoUpdaterChannel(): void {
   if (channel) log.warn(`[Update] Unsupported prerelease channel ${channel}; using stable updates only`);
 }
 
+function setUpdateStatus(next: StoredUpdateStatus): void {
+  if (next.status !== storedUpdateStatus.status) {
+    const reasonSuffix = next.reason ? ` (${next.reason})` : '';
+    log.info(`[Update] Status change: ${storedUpdateStatus.status} -> ${next.status}${reasonSuffix}`);
+  }
+  storedUpdateStatus = next;
+  mainWindow?.webContents.send('update-status', storedUpdateStatus);
+}
+
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
   configureAutoUpdaterChannel();
+  // Which updater phase we are in, so the single `error` event can be
+  // attributed to a check failure vs a download failure.
+  let updaterPhase: UpdateErrorPhase = 'check';
   // Downloading is harmless and lets the user see a ready-to-install build,
   // but installation must always be an explicit action. A POS may be closed
   // while a payment, printer job, or end-of-day workflow is still in flight.
@@ -105,15 +127,16 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on('checking-for-update', () => {
     console.log('[Update] Checking for updates...');
-    mainWindow?.webContents.send('update-status', { status: 'checking' });
+    updaterPhase = 'check';
+    setUpdateStatus({ status: 'checking' });
   });
 
   autoUpdater.on('update-available', (info) => {
     // autoDownload is true, so electron-updater starts downloading right after
     // this fires on its own — no dialog, no manual download-update call needed.
     console.log('[Update] Update available, downloading silently:', info.version);
-    updateAvailable = true;
-    mainWindow?.webContents.send('update-status', {
+    updaterPhase = 'download';
+    setUpdateStatus({
       status: 'available',
       version: info.version,
       releaseDate: info.releaseDate,
@@ -123,14 +146,15 @@ function setupAutoUpdater(): void {
 
   autoUpdater.on('update-not-available', () => {
     console.log('[Update] No updates available');
-    mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
+    setUpdateStatus({ status: 'up-to-date' });
   });
 
   autoUpdater.on('download-progress', (progress) => {
     console.log(`[Update] Download progress: ${progress.percent.toFixed(1)}%`);
-    mainWindow?.webContents.send('update-status', { 
+    setUpdateStatus({
       status: 'downloading',
-      percent: progress.percent 
+      percent: progress.percent,
+      version: storedUpdateStatus.version
     });
   });
 
@@ -138,27 +162,27 @@ function setupAutoUpdater(): void {
     // The renderer's update badge shows a "Restart Now" prompt. Because
     // autoInstallOnAppQuit is disabled, only that explicit action installs it.
     console.log('[Update] Download complete:', info.version);
-    updateDownloaded = true;
-    mainWindow?.webContents.send('update-status', {
+    updaterPhase = 'check';
+    setUpdateStatus({
       status: 'ready-to-install',
       version: info.version
     });
   });
 
   autoUpdater.on('error', (err) => {
-    // 404 means no release artifacts published yet — treat as "up to date", not an error.
-    // ENOENT means app-update.yml is missing (e.g. running from unpacked dir) — also not an error.
-    const isNonError =
-      err.message?.includes('404') ||
-      err.message?.includes('Cannot find latest') ||
-      err.message?.includes('ENOENT');
-    if (isNonError) {
-      log.debug('[Update] Skipping update — no config or release artifacts:', err.message);
-      mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
-    } else {
-      log.error('[Update] Error:', err);
-      mainWindow?.webContents.send('update-status', { status: 'error', error: err.message });
-    }
+    // #467: classify by error code/phase — never emit up-to-date from an
+    // error path. The historical substring mask (404 / Cannot find latest /
+    // ENOENT => "up to date") hid real check failures from users.
+    const classified = classifyUpdateError(err, updaterPhase);
+    log.info(
+      `[Update] Updater error classified as ${classified.state}` +
+      `/${classified.reason}:`, classified.detail
+    );
+    setUpdateStatus({
+      status: classified.state,
+      reason: classified.reason,
+      error: classified.detail
+    });
   });
 }
 
@@ -169,13 +193,14 @@ function checkForUpdates(): void {
   // update those, so tell the renderer and stop instead of letting
   // "Check for Updates" sit there doing nothing forever when clicked.
   if (process.platform === 'linux' && !process.env.APPIMAGE) {
-    mainWindow?.webContents.send('update-status', { status: 'linux-managed' });
+    log.info('[Update] Linux non-AppImage install — updates managed by package manager');
+    setUpdateStatus(oneShotUpdateState('linux-managed'));
     return;
   }
 
   if (isStoreBuild) {
     log.debug('[Update] Store build — updates handled by the platform store');
-    mainWindow?.webContents.send('update-status', { status: 'store' });
+    setUpdateStatus(oneShotUpdateState('store-managed'));
     return;
   }
 
@@ -184,18 +209,23 @@ function checkForUpdates(): void {
   // file directly — if it's missing, skip the update check gracefully.
   const configPath = path.join(process.resourcesPath, 'app-update.yml');
   if (!fs.existsSync(configPath)) {
+    // Unpacked builds cannot self-update; surface that honestly as dev-mode
+    // instead of pretending to be up to date (#467).
     log.debug('[Update] app-update.yml not found at', configPath, '— skipping (unpacked build)');
-    mainWindow?.webContents.send('update-status', { status: 'up-to-date' });
+    setUpdateStatus(oneShotUpdateState('dev-mode'));
     return;
   }
 
   if (!isDev) {
+    setUpdateStatus({ status: 'checking' });
     autoUpdater.checkForUpdates().catch((err) => {
+      // The `error` event above records the honest classified state; this
+      // catch only prevents an unhandled promise rejection.
       console.error('[Update] Check failed:', err);
     });
   } else {
     log.debug('[Update] Skipping update check in dev mode');
-    mainWindow?.webContents.send('update-status', { status: 'dev-mode' });
+    setUpdateStatus(oneShotUpdateState('dev-mode'));
   }
 }
 
@@ -711,19 +741,18 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Registering IPC handlers...');
     registerIpcHandlers(shutdownSignal);
 
-    ipcMain.handle('get-update-status', () => ({
-      status: updateDownloaded ? 'ready-to-install' as const
-        : updateAvailable ? 'available' as const
-        : 'up-to-date' as const,
-      info: { version: app.getVersion() },
-    }));
+    ipcMain.handle('get-update-status', () =>
+      // #467: return the real persisted state (including not-checked-yet and
+      // one-shot states) so renderer reloads recover it.
+      toIpcUpdateStatus(storedUpdateStatus, app.getVersion())
+    );
 
     ipcMain.handle('check-for-updates', () => {
       checkForUpdates();
     });
 
     ipcMain.handle('restart-and-install', () => {
-      if (!updateDownloaded) {
+      if (storedUpdateStatus.status !== 'ready-to-install') {
         log.warn('[Update] Ignoring install request before an update is downloaded');
         return;
       }
@@ -757,6 +786,11 @@ async function initialize(): Promise<void> {
     if (!isStoreBuild) {
       setupAutoUpdater();
       setTimeout(() => checkForUpdates(), 5000);
+    } else {
+      // Store builds skip electron-updater entirely; seed the persisted state
+      // so the renderer shows honest "managed by the store" status from the
+      // first load instead of a stale never-checked default (#467).
+      setUpdateStatus(oneShotUpdateState('store-managed'));
     }
     setTimeout(() => { void checkTaxPackUpdatesOnStartup(); }, 5000);
 

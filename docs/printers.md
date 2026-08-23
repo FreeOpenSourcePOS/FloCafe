@@ -108,7 +108,7 @@ Supported semantic ids (stable public identifiers — never internal i18n keys):
 
 Resolution order for each label: the pack's structural author string (for example `totals.grandTotalLabel`) wins first, then the matching `labels` entry, then the built-in default localized through the canonical print-labels catalog using the receipt language. English defaults are byte-identical to the pre-#445 hardcoded strings.
 
-Validation at install time is **fail-closed**: the map must be an object, contain at most 64 entries of known semantic ids, and every value must be a non-empty string of at most 120 characters. Violations reject the pack install with a clear error. Renderer version stays 1 — this field is additive and optional; packs without it render identically on old and new versions.
+Validation at install time is **fail-closed**: the map must be an object, contain at most 64 entries of known semantic ids, and every value must be a non-empty string of at most 120 characters. Violations reject the pack install with a clear error. At render time, labels are sanitized (reserved printer control tokens such as `{CUT}`, `{FEED}`, `{INIT}` and styling braces are stripped) and clamped/truncated to fit the selected column width profile (32–48 columns). Renderer version stays 1 — this field is additive and optional; packs without it render identically on old and new versions.
 
 ## API
 

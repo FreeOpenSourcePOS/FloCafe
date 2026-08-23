@@ -18,6 +18,7 @@ import {
   classifyUpdateError,
   initialUpdateState,
   isInstallReady,
+  isUpdateCheckInFlight,
   isOneShotUpdateState,
   oneShotUpdateState,
   toIpcUpdateStatus,
@@ -183,6 +184,13 @@ test('isInstallReady protects both persisted and separately staged updates', () 
   assert.equal(isInstallReady({ status: 'ready-to-install' }, false), true);
   assert.equal(isInstallReady({ status: 'offline' }, true), true);
   assert.equal(isInstallReady({ status: 'downloading' }, false), false);
+});
+
+test('isUpdateCheckInFlight blocks checking and download phases', () => {
+  assert.equal(isUpdateCheckInFlight({ status: 'checking' }, 'check'), true);
+  assert.equal(isUpdateCheckInFlight({ status: 'not-checked-yet' }, 'download'), true);
+  assert.equal(isUpdateCheckInFlight({ status: 'available' }, 'download'), true);
+  assert.equal(isUpdateCheckInFlight({ status: 'up-to-date' }, 'check'), false);
 });
 
 test('isOneShotUpdateState discriminates one-shot states from runtime states', () => {

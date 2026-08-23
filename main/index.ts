@@ -20,6 +20,7 @@ import { isAllowedLocalWindowUrl, isSafeExternalUrl } from './security/url-allow
 import {
   classifyUpdateError,
   initialUpdateState,
+  isUpdateCheckInFlight,
   isInstallReady,
   oneShotUpdateState,
   toIpcUpdateStatus,
@@ -199,8 +200,8 @@ function checkForUpdates(): void {
     return;
   }
 
-  if (updaterPhase === 'download') {
-    log.info('[Update] Ignoring check while an update download is in progress');
+  if (isUpdateCheckInFlight(storedUpdateStatus, updaterPhase)) {
+    log.info('[Update] Ignoring check while another update operation is in progress');
     return;
   }
 

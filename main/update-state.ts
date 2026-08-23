@@ -163,6 +163,10 @@ export function isInstallReady(stored: StoredUpdateStatus, stagedUpdateReady: bo
   return stagedUpdateReady || stored.status === 'ready-to-install';
 }
 
+export function isUpdateCheckInFlight(stored: StoredUpdateStatus, phase: UpdateErrorPhase): boolean {
+  return stored.status === 'checking' || phase === 'download';
+}
+
 /** Payload shape returned by the `get-update-status` IPC handler. */
 export interface IpcUpdateStatusPayload {
   status: StoredUpdateStatus['status'];

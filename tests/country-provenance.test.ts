@@ -153,6 +153,10 @@ async function run() {
     );
 
     // ── Malformed codes never reach the wire ──────────────────────────────
+    // Re-confirm first: the block above deliberately left the store
+    // unconfirmed, and an unconfirmed country reads as null whatever it holds,
+    // which would pass these two assertions without testing normalisation.
+    setSettings({ country_confirmed_at: new Date().toISOString() });
     setSettings({ country: 'Dominican Republic' });
     assertEqual(readCountryProvenance().country, null, 'a non ISO-3166 code is dropped');
     setSettings({ country: 'do' });

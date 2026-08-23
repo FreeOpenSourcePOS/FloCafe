@@ -102,14 +102,16 @@ interface TemplateCard {
   displayName?: string;
   preview: string;
   source: 'core' | 'plugin' | 'merchant';
+  /** Selection-identity source persisted in bill_template (#447). */
+  selectionSource: 'core' | 'pack' | 'merchant';
   description?: string;
   /** Provenance badge text for merchant cards (#447). */
   originBadgeKey?: 'billTemplateMerchantCreated' | 'billTemplateMerchantImported' | 'billTemplateMerchantCloned';
 }
 
 const TEMPLATE_CARDS: TemplateCard[] = [
-  { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core' },
-  { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core' },
+  { id: 'classic', nameKey: 'billTemplateClassicName', preview: CLASSIC_PREVIEW, source: 'core', selectionSource: 'core' },
+  { id: 'compact', nameKey: 'billTemplateCompactName', preview: COMPACT_PREVIEW, source: 'core', selectionSource: 'core' },
 ];
 
 function Toggle({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -1193,8 +1195,15 @@ export default function SettingsPage() {
   const saveBillTemplate = async (silent: boolean = false) => {
     posSettings.setBillTemplate(billForm.billTemplate);
     posSettings.setBillFooterMessage(billForm.billFooterMessage);
+    const selectedCard = billTemplateCards.find((card) => card.id === billForm.billTemplate);
+    // Persist the resolved selection identity: bare id for core templates,
+    // structured { source, id } for pack and merchant so a pack template_id
+    // that collides with a core name keeps its qualifier.
+    const templateValue = !selectedCard || selectedCard.selectionSource === 'core'
+      ? billForm.billTemplate
+      : JSON.stringify({ source: selectedCard.selectionSource, id: billForm.billTemplate });
     await Promise.all([
-      api.put('/settings/bill_template', { value: billForm.billTemplate }),
+      api.put('/settings/bill_template', { value: templateValue }),
       api.put('/settings/bill_footer_message', { value: billForm.billFooterMessage }),
     ]);
     setSavedBillForm(billForm);
@@ -1624,6 +1633,7 @@ export default function SettingsPage() {
         displayName: template.displayName,
         preview: `  ${template.displayName}\n-----------\nTax invoice\n${template.country} · ${template.paperColumns.join('/')} cols\n-----------\nTOTAL`,
         source: 'plugin' as const,
+        selectionSource: 'pack' as const,
         description: `${template.country} tax template · ${template.paperColumns.join(', ')} columns`,
       }));
       // Merchant templates (#447): provenance is informational only — a
@@ -1641,6 +1651,7 @@ export default function SettingsPage() {
           displayName: template.displayName,
           preview: `  ${template.displayName}\n-----------\nReceipt\n${template.documentType} · custom blocks\n-----------\nTOTAL`,
           source: 'merchant' as const,
+          selectionSource: 'merchant' as const,
           description: t('billTemplateMerchantDesc'),
           originBadgeKey: template.origin === 'cloned'
             ? ('billTemplateMerchantCloned' as const)
@@ -1648,20 +1659,35 @@ export default function SettingsPage() {
               ? ('billTemplateMerchantImported' as const)
               : ('billTemplateMerchantCreated' as const),
         }));
-      const availableTemplateIds = new Set([...TEMPLATE_CARDS, ...pluginCards, ...merchantCards].map((card) => card.id));
-      setBillTemplateCards([...TEMPLATE_CARDS, ...pluginCards, ...merchantCards]);
+      const cards = [...TEMPLATE_CARDS, ...pluginCards, ...merchantCards];
+      setBillTemplateCards(cards);
       // The persisted value may be a legacy bare id or a structured
-      // { source, id } JSON string (#447) — both resolve to the bare id here.
-      let storedTemplate = templateResponse?.data.setting?.value;
-      if (typeof storedTemplate === 'string' && storedTemplate.trim().startsWith('{')) {
+      // { source, id } JSON string (#447). Resolve it back to a picker card,
+      // preferring the card whose selection source matches the stored source
+      // so a pack template_id that collides with a core name keeps its
+      // qualifier on the next save.
+      let storedId: unknown = templateResponse?.data.setting?.value;
+      let storedSource: string | null = null;
+      if (typeof storedId === 'string' && storedId.trim().startsWith('{')) {
         try {
-          const parsed = JSON.parse(storedTemplate);
-          if (parsed && typeof parsed === 'object' && typeof parsed.id === 'string') storedTemplate = parsed.id;
+          const parsed = JSON.parse(storedId) as { source?: unknown; id?: unknown };
+          if (
+            parsed && typeof parsed === 'object'
+            && typeof parsed.id === 'string'
+            && (parsed.source === 'core' || parsed.source === 'pack' || parsed.source === 'merchant')
+          ) {
+            storedId = parsed.id;
+            storedSource = parsed.source;
+          }
         } catch { /* keep raw value */ }
       }
-      const billTemplate: BillTemplate = availableTemplateIds.has(storedTemplate)
-        ? storedTemplate as BillTemplate
-        : 'classic';
+      const candidateCard = typeof storedId === 'string'
+        ? cards.find((card) => card.id === storedId)
+        : undefined;
+      const matchedCard = candidateCard && storedSource !== null && candidateCard.selectionSource !== storedSource
+        ? cards.find((card) => card.id === candidateCard.id && card.selectionSource === storedSource)
+        : candidateCard;
+      const billTemplate: BillTemplate = matchedCard ? matchedCard.id : 'classic';
       const billFooterMessage = footerResponse?.data.setting?.value ?? posSettings.billFooterMessage;
       const loadedBillForm = { billTemplate, billFooterMessage };
       posSettings.setBillTemplate(billTemplate);

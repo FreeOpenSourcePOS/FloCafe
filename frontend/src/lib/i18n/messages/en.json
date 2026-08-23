@@ -950,6 +950,7 @@
     "guestFallbackName": "Guest {last4}",
     "itemNotePlaceholder": "Item note",
     "kitchen": "Kitchen",
+    "loginHint": "Tableside ordering for server, manager, and owner accounts",
     "loginSubtitle": "Tableside ordering for service staff",
     "newItems": "New items",
     "openOrder": "Open order",

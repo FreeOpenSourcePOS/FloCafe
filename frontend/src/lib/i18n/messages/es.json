@@ -950,6 +950,7 @@
     "guestFallbackName": "Invitado {last4}",
     "itemNotePlaceholder": "Nota del ítem",
     "kitchen": "Cocina",
+    "loginHint": "Pedidos desde la mesa para cuentas de mesero, encargado y propietario",
     "loginSubtitle": "Pedidos desde la mesa para el personal de servicio",
     "newItems": "Ítems nuevos",
     "openOrder": "Pedido abierto",

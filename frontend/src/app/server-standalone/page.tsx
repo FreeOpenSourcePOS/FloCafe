@@ -300,6 +300,7 @@ export default function ServerStandalonePage() {
               {loginLoading ? tAuth('signingIn') : tAuth('signIn')}
             </button>
           </div>
+          <p className="mt-4 text-center text-xs text-gray-500">{t('loginHint')}</p>
         </form>
       </div>
     );

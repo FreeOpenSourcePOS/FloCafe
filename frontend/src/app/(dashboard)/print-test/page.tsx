@@ -88,7 +88,6 @@ export default function PrintTestPage() {
             // renders translated labels on cold start (mirrors usePrinter).
             const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
             await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
-            const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
             const html = generateKotHtml(testOrder, { paperWidth });
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));

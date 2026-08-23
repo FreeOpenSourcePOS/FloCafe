@@ -31,6 +31,7 @@ import { normalizeCurrencyToAscii, padCurrencyPrefix } from './unicode';
 import { getCountryByCode, getCurrencySymbol } from '@/lib/countries';
 import { formatDate } from './format-date';
 import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
+import { parseDbTimestamp } from '@/lib/utils';
 import { safePrinterText, type PrintWarning } from './warnings';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
 import {
@@ -95,13 +96,20 @@ export interface ReceiptOptions {
   languages?: ResolvedPrintLanguages;
 }
 
-function printReprintBanner(enc: ReceiptPrinterEncoder, bannerLabel: string): void {
+function printReprintBanner(
+  enc: ReceiptPrinterEncoder,
+  bannerLabel: string,
+  warnings: PrintWarning[] | undefined,
+  arabicShaping: boolean,
+  cols: number,
+): void {
   enc
     .align('center')
     .bold(true)
     .width(2)
-    .height(2)
-    .text(`** ${bannerLabel} **`)
+    .height(2);
+  safePrinterText(enc, `** ${bannerLabel} **`, warnings, false, arabicShaping, Math.floor(cols / 2));
+  enc
     .width(1)
     .height(1)
     .bold(false)
@@ -172,6 +180,18 @@ function resolveEncoderCurrency(rawCurrency: string, useUnicode: boolean): strin
   return padCurrencyPrefix(
     useUnicode ? normalizedCurrency : normalizeCurrencyToAscii(normalizedCurrency),
   );
+}
+
+/**
+ * Thermal-safe timestamp: numeric calendar fields on Latin digits, mirroring
+ * the desktop document-classic renderer so the meta line stays printable by
+ * generic ESC/POS printers for every locale.
+ */
+function formatThermalTimestamp(iso: string, locale: string): string {
+  const parsed = parseDbTimestamp(iso);
+  if (Number.isNaN(parsed.getTime())) return iso;
+  const safeLocale = getSafeLatnLocale(locale);
+  return `${parsed.toLocaleDateString(safeLocale)} ${parsed.toLocaleTimeString(safeLocale)}`;
 }
 
 function getSafeLatnLocale(locale: string | undefined): string {
@@ -364,7 +384,7 @@ export function buildClassicReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner));
+  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols);
 
   // Business header (document block).
   if (header?.name) {
@@ -387,13 +407,19 @@ export function buildClassicReceiptBytes(
   }
 
   if (meta) {
-    enc
-      .size('small')
-      .text(padRow(
+    enc.size('small');
+    safePrinterText(
+      enc,
+      padRow(
         `${labelOf(meta.invoiceNumberLabel)} ${meta.invoiceNumber.text}`,
-        formatDate(meta.timestamp.text, locale),
+        formatThermalTimestamp(meta.timestamp.text, locale),
         cols,
-      ))
+      ),
+      warnings,
+      false,
+      arabicShaping,
+    );
+    enc
       .newline()
       .size('normal')
       .align('left')
@@ -403,7 +429,7 @@ export function buildClassicReceiptBytes(
   }
 
   // 4-column header (labels from the document's item-table block).
-  enc.text(col4Header(col4Layout, col4Labels)).newline();
+  safePrinterText(enc, col4Header(col4Layout, col4Labels), warnings, false, arabicShaping).newline();
   enc.rule({ style: 'single' });
 
   // Line items
@@ -442,24 +468,24 @@ export function buildClassicReceiptBytes(
 
   // Totals
   if (totals) {
-    enc.text(padRow(labelOf(totals.subtotal.label), formatAmount(totals.subtotal.amount, currency, locale, opts.trimDecimals === true), cols)).newline();
+    safePrinterText(enc, padRow(labelOf(totals.subtotal.label), formatAmount(totals.subtotal.amount, currency, locale, opts.trimDecimals === true), cols), warnings, false, arabicShaping).newline();
     if (totals.discount) {
-      enc.text(padRow(labelOf(totals.discount.label), `-${formatAmount(totals.discount.amount, currency, locale, opts.trimDecimals === true)}`, cols)).newline();
+      safePrinterText(enc, padRow(labelOf(totals.discount.label), `-${formatAmount(totals.discount.amount, currency, locale, opts.trimDecimals === true)}`, cols), warnings, false, arabicShaping).newline();
     }
     if (totals.tax) {
-      enc.text(padRow(labelOf(totals.tax.label), formatAmount(totals.tax.amount, currency, locale, opts.trimDecimals === true), cols)).newline();
+      safePrinterText(enc, padRow(labelOf(totals.tax.label), formatAmount(totals.tax.amount, currency, locale, opts.trimDecimals === true), cols), warnings, false, arabicShaping).newline();
     }
     if (totals.serviceCharge) {
-      enc.text(padRow(labelOf(totals.serviceCharge.label), formatAmount(totals.serviceCharge.amount, currency, locale, opts.trimDecimals === true), cols)).newline();
+      safePrinterText(enc, padRow(labelOf(totals.serviceCharge.label), formatAmount(totals.serviceCharge.amount, currency, locale, opts.trimDecimals === true), cols), warnings, false, arabicShaping).newline();
     }
     if (totals.deliveryCharge) {
-      enc.text(padRow(labelOf(totals.deliveryCharge.label), formatAmount(totals.deliveryCharge.amount, currency, locale, opts.trimDecimals === true), cols)).newline();
+      safePrinterText(enc, padRow(labelOf(totals.deliveryCharge.label), formatAmount(totals.deliveryCharge.amount, currency, locale, opts.trimDecimals === true), cols), warnings, false, arabicShaping).newline();
     }
 
     enc.rule({ style: 'double' });
+    enc.bold(true);
+    safePrinterText(enc, padRow(labelOf(totals.grandTotal.label), formatAmount(totals.grandTotal.amount, currency, locale, opts.trimDecimals === true), cols), warnings, false, arabicShaping);
     enc
-      .bold(true)
-      .text(padRow(labelOf(totals.grandTotal.label), formatAmount(totals.grandTotal.amount, currency, locale, opts.trimDecimals === true), cols))
       .bold(false)
       .newline();
     enc.rule({ style: 'single' });
@@ -467,7 +493,7 @@ export function buildClassicReceiptBytes(
 
   // Payment methods
   for (const line of payments?.lines ?? []) {
-    enc.text(padRow(paymentLabel(line.label), formatAmount(line.amount, currency, locale, opts.trimDecimals === true), cols)).newline();
+    safePrinterText(enc, padRow(paymentLabel(line.label), formatAmount(line.amount, currency, locale, opts.trimDecimals === true), cols), warnings, false, arabicShaping).newline();
   }
 
   enc.newline();
@@ -476,9 +502,13 @@ export function buildClassicReceiptBytes(
   if (breakdown && breakdown.lines.length > 0) {
     for (const line of breakdown.lines) {
       const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
-      enc
-        .text(padRow(` ${line.label.primary}${rateSuffix}`, formatAmount(line.amount, currency, locale, opts.trimDecimals === true), cols))
-        .newline();
+      safePrinterText(
+        enc,
+        padRow(` ${line.label.primary}${rateSuffix}`, formatAmount(line.amount, currency, locale, opts.trimDecimals === true), cols),
+        warnings,
+        false,
+        arabicShaping,
+      ).newline();
     }
   }
 
@@ -498,7 +528,9 @@ export function buildClassicReceiptBytes(
       enc.align('left');
     }
     enc.newline();
-    enc.align('center').text(printLabelResolver('print.thankYouVisitAgain', primaryLang)).newline();
+    enc.align('center');
+    safePrinterText(enc, printLabelResolver('print.thankYouVisitAgain', primaryLang), warnings, false, arabicShaping, cols);
+    enc.newline();
     if (messages?.footerNote) {
       safePrinterText(enc, truncate(messages.footerNote.text, cols), warnings, false, arabicShaping, cols).newline();
     }
@@ -539,7 +571,7 @@ export function buildCompactReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner));
+  if (messages?.reprintBanner) printReprintBanner(enc, labelOf(messages.reprintBanner), warnings, arabicShaping, cols);
 
   // Header (document business-header block)
   if (header?.name) {
@@ -551,13 +583,17 @@ export function buildCompactReceiptBytes(
 
   // Invoice number and timestamp on one line (document-meta block)
   if (meta) {
-    enc
-      .text(padRow(
+    safePrinterText(
+      enc,
+      padRow(
         `${labelOf(meta.invoiceNumberLabel)} ${meta.invoiceNumber.text}`,
-        formatDate(meta.timestamp.text, locale),
+        formatThermalTimestamp(meta.timestamp.text, locale),
         cols,
-      ))
-      .newline();
+      ),
+      warnings,
+      false,
+      arabicShaping,
+    ).newline();
 
     if (meta.table) {
       safePrinterText(enc, meta.table.label.primary.replace('{name}', meta.table.name.text), warnings, false, arabicShaping, undefined, cols).newline();
@@ -599,35 +635,35 @@ export function buildCompactReceiptBytes(
   enc.rule({ style: 'single' });
 
   if (totals?.discount) {
-    enc.text(padRow(labelOf(totals.discount.label), `-${formatAmount(totals.discount.amount, currency, locale, trim)}`, cols)).newline();
+    safePrinterText(enc, padRow(labelOf(totals.discount.label), `-${formatAmount(totals.discount.amount, currency, locale, trim)}`, cols), warnings, false, arabicShaping).newline();
   }
   if (totals?.tax) {
-    enc.text(padRow(labelOf(totals.tax.label), formatAmount(totals.tax.amount, currency, locale, trim), cols)).newline();
+    safePrinterText(enc, padRow(labelOf(totals.tax.label), formatAmount(totals.tax.amount, currency, locale, trim), cols), warnings, false, arabicShaping).newline();
   }
   if (totals?.serviceCharge) {
-    enc.text(padRow(labelOf(totals.serviceCharge.label), formatAmount(totals.serviceCharge.amount, currency, locale, trim), cols)).newline();
+    safePrinterText(enc, padRow(labelOf(totals.serviceCharge.label), formatAmount(totals.serviceCharge.amount, currency, locale, trim), cols), warnings, false, arabicShaping).newline();
   }
   if (totals?.deliveryCharge) {
-    enc.text(padRow(labelOf(totals.deliveryCharge.label), formatAmount(totals.deliveryCharge.amount, currency, locale, trim), cols)).newline();
+    safePrinterText(enc, padRow(labelOf(totals.deliveryCharge.label), formatAmount(totals.deliveryCharge.amount, currency, locale, trim), cols), warnings, false, arabicShaping).newline();
   }
   if (breakdown && breakdown.lines.length > 0) {
     for (const line of breakdown.lines) {
       const rateSuffix = line.rate === null ? '' : ` @${line.rate}%`;
-      enc.text(padRow(`${line.label.primary}${rateSuffix}`, formatAmount(line.amount, currency, locale, trim), cols)).newline();
+      safePrinterText(enc, padRow(`${line.label.primary}${rateSuffix}`, formatAmount(line.amount, currency, locale, trim), cols), warnings, false, arabicShaping).newline();
     }
   }
 
   enc.rule({ style: 'double' });
   if (totals) {
+    enc.bold(true);
+    safePrinterText(enc, padRow(labelOf(totals.grandTotal.label), formatAmount(totals.grandTotal.amount, currency, locale, trim), cols), warnings, false, arabicShaping);
     enc
-      .bold(true)
-      .text(padRow(labelOf(totals.grandTotal.label), formatAmount(totals.grandTotal.amount, currency, locale, trim), cols))
       .bold(false)
       .newline();
   }
 
   for (const line of payments?.lines ?? []) {
-    enc.text(padRow(paymentLabel(line.label), formatAmount(line.amount, currency, locale, trim), cols)).newline();
+    safePrinterText(enc, padRow(paymentLabel(line.label), formatAmount(line.amount, currency, locale, trim), cols), warnings, false, arabicShaping).newline();
   }
 
   enc.newline().align('center');
@@ -636,7 +672,7 @@ export function buildCompactReceiptBytes(
   }
   if (header?.address) safePrinterText(enc, truncate(header.address.text, cols), warnings, false, arabicShaping, cols).newline();
   if (header?.phone) safePrinterText(enc, `${printLabelResolver('receipt.phone', primaryLang)}: ${header.phone.text}`, warnings, false, arabicShaping, cols).newline();
-  enc.text(printLabelResolver('print.thankYouShort', primaryLang)).newline();
+  safePrinterText(enc, printLabelResolver('print.thankYouShort', primaryLang), warnings, false, arabicShaping, cols).newline();
   if (messages?.footerNote) {
     safePrinterText(enc, truncate(messages.footerNote.text, cols), warnings, false, arabicShaping, cols).newline();
   }
@@ -690,7 +726,7 @@ export function buildDetailedReceiptBytes(
   const enc = new ReceiptPrinterEncoder({ columns: cols });
 
   enc.initialize();
-  if (isReprint) printReprintBanner(enc, 'REPRINT');
+  if (isReprint) printReprintBanner(enc, 'REPRINT', warnings, arabicShaping, cols);
 
   // Header
   if (showBusinessName && tenant.business_name) {

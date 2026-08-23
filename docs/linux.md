@@ -47,12 +47,16 @@ No FUSE? Run extracted:
 
 ## Updates
 
-AppImage installs can use FloCafe's in-app updater when launched as an
-AppImage (`APPIMAGE` is set). deb, rpm, and Snap installs are updated by their
-package manager or the Snap daemon. If an AppImage update is unavailable, use
-[GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases). See
-[Desktop release process](release-process.md) for stable, beta, and nightly
-channel behavior.
+FloCafe's in-app updater is available only when the application is launched
+from a downloaded AppImage (`APPIMAGE` is set). It is not used for an extracted
+AppImage, deb, or rpm installation. Update deb and rpm installations with the
+package manager for your distribution. Snap installations are updated by snapd
+from the Snap Store.
+
+If an AppImage update is unavailable, download the replacement from [GitHub
+Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases). See [Desktop
+release process](release-process.md) for stable, beta, and nightly channel
+behavior.
 
 ---
 

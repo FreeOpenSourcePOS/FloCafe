@@ -70,6 +70,16 @@ async function main(): Promise<void> {
   assert.equal(gd.isGoogleDriveConfigured(), true, 'configured once both env vars are set');
   console.log('   ✓ isGoogleDriveConfigured() requires both client id and secret');
 
+  // ── scoped Drive package runtime contract ────────────────────────────
+  const driveApi = require('@googleapis/drive');
+  assert.equal(typeof driveApi.auth.OAuth2, 'function', '@googleapis/drive exposes the OAuth2 constructor used by the service');
+  const packageAuthClient = new driveApi.auth.OAuth2('test-client-id', 'test-client-secret', 'http://127.0.0.1/callback');
+  const packageDriveClient = driveApi.drive({ version: 'v3', auth: packageAuthClient });
+  for (const method of ['get', 'list', 'create', 'delete'] as const) {
+    assert.equal(typeof packageDriveClient.files[method], 'function', `Drive v3 exposes files.${method}()`);
+  }
+  console.log('   ✓ @googleapis/drive exposes OAuth2 and every Drive v3 method used by backup/retention');
+
   // ── pure retention math ──────────────────────────────────────────────
   const files = [
     { id: 'f1', createdTime: '2026-01-01T00:00:00.000Z' },
@@ -132,6 +142,16 @@ async function main(): Promise<void> {
   status = gd.googleDrive.getStatus();
   assert.equal(status.connected, true, 'connected once a token file is present');
   console.log('   ✓ getStatus() reports connected once a token file exists');
+
+  // The auth library emits refreshed access tokens synchronously. Verify the
+  // service persists the new access token while retaining the refresh token
+  // needed for unattended scheduled backups.
+  const authorizedClient = await (gd.googleDrive as any).getAuthorizedClient();
+  authorizedClient.emit('tokens', { access_token: 'refreshed-access-token', expiry_date: Date.now() + 7200_000 });
+  const persistedTokens = JSON.parse(mockSafeStorage.decryptString(fs.readFileSync(tokenPath))) as Record<string, unknown>;
+  assert.equal(persistedTokens.access_token, 'refreshed-access-token', 'refreshed access token is persisted');
+  assert.equal(persistedTokens.refresh_token, 'fake-refresh-token', 'refresh token survives access-token persistence');
+  console.log('   ✓ refreshed access tokens are persisted without losing the refresh token');
 
   const requestAbort = new AbortController();
   requestAbort.abort();

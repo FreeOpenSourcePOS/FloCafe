@@ -246,9 +246,9 @@ Policy payloads are untrusted input: `parsePrintLanguagePolicy` /
 nested `primary`/`additional` values, but extra fields inside a primary
 selection object are ignored. They require registered + selectable codes via
 the injected registry facts, dedupe, reject duplicate primaries, and return
-shallow-frozen normalized policies safe to persist (the outer policy and
-normalized `additional` array are frozen; nested primary selections remain
-mutable).
+normalized policies with a frozen outer object and type-level readonly fields;
+the parser's intermediate `additional` list is frozen, but returned
+`additional` arrays and nested primary selections are not runtime-frozen.
 Invalid or missing settings fall back to the store language; printing never
 fails because of a malformed policy ([`main/lib/print-language-settings.ts`](../main/lib/print-language-settings.ts),
 [`tests/print-language-settings.test.ts`](../tests/print-language-settings.test.ts)).

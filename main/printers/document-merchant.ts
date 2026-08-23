@@ -59,52 +59,6 @@ export function renderMerchantReceiptViaDocument(
 ): MerchantDocumentRenderResult {
   const warnings: PrintWarning[] = [];
 
-  const finish = (lines: string[], fellBackToClassic: boolean) => {
-    const data = buildEscPos(lines, opts.useUnicode, {
-      cutMode: opts.cutMode,
-      arabicShaping: opts.arabicShaping,
-      columns: opts.columns,
-    }, warnings);
-    return { data, lines, warnings, fellBackToClassic };
-  };
-
-  const row = loadActiveMerchantPrintTemplate(templateId);
-  if (!row) {
-    warnings.push({
-      field: 'bill_template',
-      text: templateId,
-      message: `Merchant template ${templateId} is not active; rendered with the classic layout.`,
-    });
-    const printContext = buildBillPrintContext({
-      columns: opts.columns,
-      language: opts.language,
-      ...(opts.additionalLanguage !== undefined ? { additionalLanguage: opts.additionalLanguage } : {}),
-      business,
-    });
-    return finish(
-      renderBillDocumentToClassicLines(buildBillDocument(buildBillPrintData(order, bill, business, opts.isReprint), printContext), {
-        columns: opts.columns,
-        language: printContext.languages[0],
-        locale: printContext.locale,
-        ...(printContext.timezone !== undefined ? { timezone: printContext.timezone } : {}),
-        currencySymbol: printContext.currencySymbol,
-        trimDecimals: printContext.trimDecimals,
-        useUnicode: opts.useUnicode,
-        arabicShaping: opts.arabicShaping,
-        cutMode: opts.cutMode,
-      }),
-      true,
-    );
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(row.payload_json);
-  } catch {
-    parsed = null;
-  }
-  const validation = validateMerchantTemplate(parsed);
-  const printData = buildBillPrintData(order, bill, business, opts.isReprint);
   const printContext = buildBillPrintContext({
     columns: opts.columns,
     language: opts.language,
@@ -122,6 +76,37 @@ export function renderMerchantReceiptViaDocument(
     arabicShaping: opts.arabicShaping,
     cutMode: opts.cutMode,
   } as const;
+
+  const finish = (lines: string[], fellBackToClassic: boolean) => {
+    const data = buildEscPos(lines, opts.useUnicode, {
+      cutMode: opts.cutMode,
+      arabicShaping: opts.arabicShaping,
+      columns: opts.columns,
+    }, warnings);
+    return { data, lines, warnings, fellBackToClassic };
+  };
+
+  const row = loadActiveMerchantPrintTemplate(templateId);
+  if (!row) {
+    warnings.push({
+      field: 'bill_template',
+      text: templateId,
+      message: `Merchant template ${templateId} is not active; rendered with the classic layout.`,
+    });
+    return finish(
+      renderBillDocumentToClassicLines(buildBillDocument(buildBillPrintData(order, bill, business, opts.isReprint), printContext), baseOptions),
+      true,
+    );
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(row.payload_json);
+  } catch {
+    parsed = null;
+  }
+  const validation = validateMerchantTemplate(parsed);
+  const printData = buildBillPrintData(order, bill, business, opts.isReprint);
 
   if (!validation.ok) {
     // Fail closed: unknown future schema or corrupt payload must never reach

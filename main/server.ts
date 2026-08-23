@@ -11,7 +11,8 @@ import { registerRoutes } from './routes';
 import { getJWTSecret } from './routes/auth';
 import { databaseMaintenanceMiddleware, getDbHealth, isDatabaseMaintenanceActive, isKdsEnabled } from './db';
 import { setupKdsWebSocket } from './services/kds';
-import { rateLimit, staticRouteRateLimit, corsOptions, getUserAuthStatus, isTokenRevoked, isTokenStale } from './middleware/security';
+import expressRateLimit from 'express-rate-limit';
+import { staticRouteRateLimit, corsOptions, getUserAuthStatus, isAllowedPrivateIp, isTokenRevoked, isTokenStale } from './middleware/security';
 import { initFromDb as initWhatsAppFromDb } from './services/whatsapp';
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
@@ -175,7 +176,17 @@ export function startServer(): Promise<void> {
     app.use(databaseMaintenanceMiddleware);
 
     // ── Global API rate limiting ───────────────────────────────────────
-    app.use('/api', rateLimit({ windowMs: 60 * 1000, max: 100 }));
+    // Keep this at the API boundary so every authenticated route, including
+    // routes mounted from separate routers, receives the same protection.
+    // Use express-rate-limit directly so static analysis recognizes the
+    // middleware when reviewing route handlers.
+    app.use('/api', expressRateLimit({
+      windowMs: 60 * 1000,
+      limit: 100,
+      standardHeaders: true,
+      legacyHeaders: false,
+      skip: (req: Request) => isAllowedPrivateIp(req.ip || req.socket.remoteAddress || ''),
+    }));
 
     // ── Content Security Policy ────────────────────────────────────────
     // Blocks eval() and remote code. 'unsafe-inline' is required for

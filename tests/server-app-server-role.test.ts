@@ -1,4 +1,4 @@
-/** Server App auth must be limited to service staff (server role). */
+/** Server App auth must be limited to front-line + management staff (server, manager, owner). */
 import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as net from 'node:net';
@@ -73,26 +73,28 @@ async function main() {
   const baseUrl = `http://127.0.0.1:${getServerAppPort()}`;
 
   try {
-    for (const role of ['owner', 'manager', 'cashier', 'chef']) {
+    for (const role of ['cashier', 'chef']) {
       const response = await postJson(baseUrl, '/api/auth/login', {
         email: `${role}@server-app.test`,
         password: 'ServerPass123!',
       });
       assert.equal(response.status, 403, `${role} cannot log in to Server App`);
-      assert.match(String(response.body.error), /Only service staff/i);
+      assert.match(String(response.body.error), /Only server, manager, or owner/i);
     }
 
-    const serverLogin = await postJson(baseUrl, '/api/auth/login', {
-      email: 'server@server-app.test',
-      password: 'ServerPass123!',
-    });
-    assert.equal(serverLogin.status, 200, 'server can log in to Server App');
-    assert.equal(serverLogin.body.user.role, 'server', 'Server App returns server role');
-    assert.ok(serverLogin.body.access_token, 'Server App returns a token for server');
+    for (const role of ['server', 'manager', 'owner']) {
+      const login = await postJson(baseUrl, '/api/auth/login', {
+        email: `${role}@server-app.test`,
+        password: 'ServerPass123!',
+      });
+      assert.equal(login.status, 200, `${role} can log in to Server App`);
+      assert.equal(login.body.user.role, role, `Server App returns ${role} role`);
+      assert.ok(login.body.access_token, `Server App returns a token for ${role}`);
 
-    const me = await getJson(baseUrl, '/api/auth/me', serverLogin.body.access_token);
-    assert.equal(me.status, 200, 'server token remains valid on /api/auth/me');
-    assert.equal(me.body.user.role, 'server', '/api/auth/me returns server role');
+      const me = await getJson(baseUrl, '/api/auth/me', login.body.access_token);
+      assert.equal(me.status, 200, `${role} token remains valid on /api/auth/me`);
+      assert.equal(me.body.user.role, role, `/api/auth/me returns ${role} role`);
+    }
   } finally {
     await stopServerApp();
     closeDatabase();

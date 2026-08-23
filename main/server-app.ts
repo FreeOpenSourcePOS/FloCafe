@@ -20,7 +20,7 @@ let stopPromise: Promise<void> | null = null;
 let startReject: ((error: Error) => void) | null = null;
 let stopping = false;
 const SERVER_APP_PORT = getDefaultServerAppPort();
-const SERVER_APP_ALLOWED_ROLES = new Set(['server']);
+const SERVER_APP_ALLOWED_ROLES = new Set(['server', 'manager', 'owner']);
 
 type ServerAppUser = {
   userId: string;
@@ -80,7 +80,7 @@ function requireServerAppAuth(req: Request, res: Response, next: NextFunction) {
       return res.status(401).json({ error: 'Invalid token' });
     }
     if (!SERVER_APP_ALLOWED_ROLES.has(user.role)) {
-      return res.status(403).json({ error: 'Access denied. Only service staff allowed.' });
+      return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.' });
     }
 
     (req as any).user = {
@@ -208,7 +208,7 @@ export function startServerApp(): Promise<void> {
           return res.status(401).json({ error: 'Invalid credentials' });
         }
         if (!SERVER_APP_ALLOWED_ROLES.has(user.role)) {
-          return res.status(403).json({ error: 'Access denied. Only service staff allowed.' });
+          return res.status(403).json({ error: 'Access denied. Only server, manager, or owner accounts allowed.' });
         }
 
         const token = jwt.sign(

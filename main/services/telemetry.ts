@@ -11,6 +11,7 @@
  */
 
 import { app } from 'electron';
+import { readCountryProvenance } from './country-provenance';
 import log from 'electron-log';
 import { ensureTelemetryAnonId, isTelemetryEnabled, getSettingValue, parseDbTimestamp, upsertTelemetryLastPing } from '../db';
 
@@ -36,8 +37,13 @@ async function sendEventImpl(eventType: string, payload?: Record<string, unknown
 
   try {
     const anonId = ensureTelemetryAnonId();
-    const configuredCountry = (getSettingValue('country') || '').trim().toUpperCase();
-    const country = /^[A-Z]{2}$/.test(configuredCountry) ? configuredCountry : undefined;
+    // Only a confirmed country is reported. settings.country is seeded to 'IN'
+    // at install, so sending it unconditionally filed every install that had
+    // not finished setup under India — and because the field was always
+    // present, FloAdmin's IP-geolocation fallback for a missing country never
+    // once fired. Omitting it is what lets that fallback do its job.
+    const provenance = readCountryProvenance();
+    const country = provenance.country ?? undefined;
     const response = await fetch(TELEMETRY_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

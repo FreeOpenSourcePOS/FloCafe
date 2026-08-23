@@ -11,6 +11,7 @@ test('POS product grid has no horizontal clipping and touchable product cards', 
   // The LAN/browser build must not render Electron-only title-bar markup.
   expect(await page.evaluate(() => Boolean(window.electronAPI))).toBe(false);
   await expect(page.getByTestId('desktop-title-bar')).toHaveCount(0);
+  await expect(page.getByTestId('desktop-drag-surface')).toHaveCount(0);
 
   const productGrid = page.getByTestId('pos-product-grid');
   await expect(productGrid).toBeVisible();

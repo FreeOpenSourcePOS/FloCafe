@@ -85,6 +85,22 @@ body {
   app-region: no-drag;
 }
 
+.flo-title-bar--root-drag {
+  display: flex;
+}
+
+.flo-title-bar--root-overlay {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline: 0;
+  z-index: 10;
+}
+
+[data-testid='desktop-title-bar'] {
+  position: relative;
+  z-index: 20;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;

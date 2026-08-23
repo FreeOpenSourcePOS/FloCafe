@@ -100,6 +100,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
   await page.goto(`${BASE}/pos`);
   await expect(page.locator('html')).toHaveAttribute('dir', 'ltr');
   await expect(page.getByTestId('desktop-title-bar')).toHaveCount(0);
+  await expect(page.getByTestId('desktop-drag-surface')).toHaveCount(0);
   await expect(page.getByTestId('pos-product-grid')).toBeVisible();
   await expect(page.getByText('E2E Coffee')).toBeVisible();
   await assertSidebarSide(page, 'left');
@@ -111,6 +112,7 @@ test('Dashboard, POS, and orders screens render LTR in English and RTL in Persia
     await page.goto(`${BASE}/pos`);
     await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     await expect(page.getByTestId('desktop-title-bar')).toHaveCount(0);
+    await expect(page.getByTestId('desktop-drag-surface')).toHaveCount(0);
     await expect(page.getByTestId('pos-product-grid')).toBeVisible();
     await expect(page.getByText('E2E Coffee')).toBeVisible();
     await assertSidebarSide(page, 'right');

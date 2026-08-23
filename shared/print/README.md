@@ -15,8 +15,10 @@ issue #441 (epic #438).
 - No hardcoded language unions (`'en' | 'fa' | …`). The central language
   registry (`frontend/src/lib/i18n/languages.ts`) is authoritative; the
   kernel treats codes as structural strings (`PrintLanguageCode = string`).
-- Enforced in CI by `tests/kernel-purity.test.ts` (static import audit) and
-  ESLint (`npm run lint` covers `shared/` with import restrictions).
+- Enforced in CI by the public consumer-boundary checks in
+  `tests/kernel-purity.test.ts`, the static forbidden-import audit in
+  `tests/print-document.test.ts`, and ESLint (`npm run lint` covers `shared/`
+  with import restrictions).
 
 ## Registry-injection pattern
 
@@ -44,7 +46,7 @@ never kernel → registry.
 | `policy.ts`   | Resolution (`resolveReceiptLanguages`, `resolveKotLanguage`) and validation (`parsePrintLanguagePolicy`, `parseKotLanguagePolicy`); max-2 documents enforced at type level for v1 |
 | `direction.ts`| Per-scope direction (`document` / `block` / `value`), LTR-island classification |
 | `bilingual.ts`| `BilingualLabel` + width-fit strategies (`inline` vs `stacked`) parameterized by column count |
-| `document.ts` | Renderer-independent `PrintDocument` v1 (#442): block types (`BusinessHeaderBlock`, `DocumentMetaBlock`, `CustomerBlock`, `ItemTableBlock`, `TaxBreakdownBlock`, `TotalsBlock`, `PaymentsBlock`, `MessageBlock`), `PrintData`/`PrintContext` snapshots, pure `buildBillDocument`. Schema documentation summary is owned by #449 |
+| `document.ts` | Renderer-independent `PrintDocument` v1 / `KotDocument` v1 (#442/#443): receipt and kitchen-ticket block types, `PrintData`/`PrintContext` snapshots, and pure `buildBillDocument` / `buildKotDocument`. Schema and extension policy documented in [docs/printing-architecture.md](../../docs/printing-architecture.md) (#449) |
 
 Consumers: `main/*` imports the relative path `../../shared/print` and gets
 one compiled runtime copy under `dist/shared/print`; `frontend/*` imports

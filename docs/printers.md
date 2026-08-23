@@ -26,6 +26,8 @@ Receipt labels (invoice title, bill number, date, totals, payment methods) and k
 
 Lines the printer cannot render under the script rules above are skipped with an explicit warning — content is never silently dropped. The printed document itself carries every line plus its text direction, so direction-aware layouts (right-to-left base with left-to-right amounts and order numbers) can be expressed by any renderer without changing the underlying data.
 
+For the full study of non-Latin script support on thermal printers — including the recommended raster fallback architecture, community hardware-test checklist, and open decisions — see [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md).
+
 ## Kitchen printing
 
 FloCafe can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs an active printer and the product categories it handles. Items without a matching station fall back to the default kitchen route.

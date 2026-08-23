@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, parseRowJson, withTxn } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { notifyKdsUpdate } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 
@@ -89,7 +90,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     // Accept `number` (schema column) or `name` (legacy frontend field)
     const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
@@ -126,7 +127,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
   }
 });
 
-router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { number, name, capacity, floor, section, position_x, position_y, kitchen_station_id } = req.body;
     const tableNumber = number || name;
@@ -165,7 +166,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
   }
 });
 
-router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:id/deactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
@@ -192,7 +193,7 @@ router.post('/:id/deactivate', requireRole('owner', 'manager'), (req: Request, r
   }
 });
 
-router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:id/reactivate', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const table = db.prepare('SELECT * FROM tables WHERE id = ?').get(req.params.id) as any;
@@ -212,7 +213,7 @@ router.post('/:id/reactivate', requireRole('owner', 'manager'), (req: Request, r
   }
 });
 
-router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/:id/move-order', requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const sourceTableId = req.params.id as string;
     const { target_table_id, order_id } = req.body;
@@ -293,7 +294,7 @@ router.post('/:id/move-order', requireRole('owner', 'manager', 'cashier', 'serve
   }
 });
 
-router.patch('/:id/status', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.patch('/:id/status', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { status } = req.body;
 

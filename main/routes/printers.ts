@@ -12,6 +12,7 @@ import {
 } from '../../shared/print';
 import { getSupportedPrinterProfiles, resolvePrinterProfile } from '../printers/profiles';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getCountryByCode, getCurrencySymbol } from '../countries';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal } from '../shutdown';
@@ -137,7 +138,7 @@ router.get('/:id', (req: Request, res: Response) => {
 });
 
 // POST /api/printers — create
-router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { name, connection_type, ip_address, port, paper_width, is_default } = req.body;
 
@@ -189,7 +190,7 @@ router.post('/', requireRole('owner', 'manager'), (req: Request, res: Response) 
 });
 
 // PUT /api/printers/:id — update
-router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const existing = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -237,7 +238,7 @@ router.put('/:id', requireRole('owner', 'manager'), (req: Request, res: Response
 });
 
 // DELETE /api/printers/:id
-router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.delete('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -263,7 +264,7 @@ router.delete('/:id', requireRole('owner', 'manager'), (req: Request, res: Respo
 });
 
 // POST /api/printers/:id/set-default
-router.post('/:id/set-default', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:id/set-default', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id);
@@ -282,7 +283,7 @@ router.post('/:id/set-default', requireRole('owner', 'manager'), (req: Request, 
 });
 
 // POST /api/printers/:id/test — send a test print job
-router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/:id/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const printer = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
@@ -320,7 +321,7 @@ router.post('/:id/test', requireRole('owner', 'manager'), asyncHandler(async (re
 }));
 
 // POST /api/printers/print-bill — print bill via backend (desktop app)
-router.post('/print-bill', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/print-bill', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { billId, orderId, useUnicode = false, isReprint = false, preview = false } = req.body;
     // Renderer's global "Arabic/Persian shaping" setting (#437). Only an
@@ -539,7 +540,7 @@ export function routeItemsToStations(db: any, orderItems: any[]): { stationName:
 }
 
 // POST /api/printers/print-kot — print KOT via backend (desktop app)
-router.post('/print-kot', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/print-kot', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
   // Coarser than auto_print_kot — when this is off, no KOT print command
   // should ever be sent, automatic or manual (issue #133).
   if (!isKotPrintingEnabled()) {

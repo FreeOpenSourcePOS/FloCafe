@@ -41,6 +41,7 @@ import {
   type AppendAttemptStorage,
 } from '@/lib/append-attempt';
 import { preferChildScopedBill } from '@/lib/printer/tax-components';
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 type OrdersKey = keyof AppConfig['Messages']['orders'];
 
@@ -224,7 +225,7 @@ export default function OrdersPage() {
 
   const currency = getCurrencySymbol(currentTenant?.currency || 'INR', getCountryByCode(currentTenant?.country ?? 'IN')?.locale);
   const fmt = useFormatCurrency();
-  const isOwnerOrManager = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
+  const isOwnerOrManager = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
 
   if (discountModal && !isDiscountTypeAllowed(discountMode, discountModal.type)) {
     setDiscountModal({

@@ -9,6 +9,7 @@ import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { parsePhoneE164 } from '../lib/phone';
+import { ROLE_ACCESS, isRole } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -35,7 +36,6 @@ const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
 const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
-const USER_ROLES = new Set(['owner', 'manager', 'cashier', 'server', 'chef']);
 
 // Parses an import file's schema_version exactly as the import handler does.
 // A missing or malformed value collapses to -1 (and an omitted version to 0),
@@ -46,7 +46,7 @@ function parseImportSchemaVersion(value: unknown): number {
   return /^(?:0|[1-9]\d*)$/.test(raw) ? Number(raw) : -1;
 }
 
-router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
+router.get('/export', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
 
@@ -117,7 +117,7 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
   }
 });
 
-router.post('/import', requireRole('owner'),
+router.post('/import', requireRole(...ROLE_ACCESS.owner),
   (req: Request, res: Response, next: () => void) => {
     // A schema-mismatch import reaches the same delete-and-replace path as an
     // explicit overwrite (the `overwrite || hasVersionMismatch` branch below),
@@ -409,7 +409,8 @@ function restoreRedactedUserPlaceholders(
     const timestamp = typeof row.updated_at === 'string' && row.updated_at
       ? row.updated_at
       : new Date().toISOString();
-    const role = USER_ROLES.has(String(row.role)) ? String(row.role) : 'cashier';
+    const roleValue = String(row.role);
+    const role = isRole(roleValue) ? roleValue : 'cashier';
     const values: Record<string, unknown> = {
       id,
       name: typeof row.name === 'string' && row.name.trim() ? row.name : `Imported staff ${id}`,
@@ -448,7 +449,7 @@ function getTableColumns(db: Database.Database, tableName: string): string[] {
   }
 }
 
-router.post('/backup', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.post('/backup', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { path: backupPath, schemaVersion } = await createBackup(undefined, getHttpRequestSignal(req));
     res.json({ 
@@ -463,7 +464,7 @@ router.post('/backup', requireRole('owner'), requireMasterPin, asyncHandler(asyn
   }
 }));
 
-router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.get('/download', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   let tempDir: string | null = null;
   try {
     const dbPath = getDbPath();
@@ -517,7 +518,7 @@ router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(asy
   }
 }));
 
-router.get('/tables', requireRole('owner'), (req: Request, res: Response) => {
+router.get('/tables', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const tables = db.prepare(`

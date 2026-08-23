@@ -4,6 +4,7 @@ import { getDatabase, now } from '../db';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { googleDrive } from '../services/google-drive';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { requireMasterPin } from '../middleware/master-pin';
 import { resolveTaxIdFormat, validateTaxRegistrationNumber } from '../services/tax';
 import { sendEvent } from '../services/telemetry';
@@ -201,7 +202,7 @@ function taxShape(s: Record<string, string>) {
 
 // ── Specific routes (must come BEFORE /:key wildcard) ─────────────────────
 
-router.get('/business', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
+router.get('/business', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json(businessShape(s));
@@ -211,7 +212,7 @@ router.get('/business', requireRole('owner', 'manager', 'cashier', 'server', 'ch
   }
 });
 
-router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/business', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { business_name, timezone, currency, country, language,
       tax_registration_number, state_code, business_address, business_phone, instagram_handle,
@@ -293,7 +294,7 @@ router.put('/business', requireRole('owner', 'manager'), (req: Request, res: Res
   }
 });
 
-router.get('/tax', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
+router.get('/tax', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json(taxShape(s));
@@ -303,7 +304,7 @@ router.get('/tax', requireRole('owner', 'manager', 'cashier', 'server', 'chef'),
   }
 });
 
-router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/tax', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { tax_registered, tax_registration_number, state_code, tax_scheme, country } = req.body;
 
@@ -341,7 +342,7 @@ router.put('/tax', requireRole('owner', 'manager'), (req: Request, res: Response
   }
 });
 
-router.get('/loyalty', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
+router.get('/loyalty', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json({
@@ -354,7 +355,7 @@ router.get('/loyalty', requireRole('owner', 'manager', 'cashier', 'server', 'che
   }
 });
 
-router.put('/loyalty', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/loyalty', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { loyalty_enabled, global_cashback_percent } = req.body;
 
@@ -384,7 +385,7 @@ router.put('/loyalty', requireRole('owner', 'manager'), (req: Request, res: Resp
 
 // ─── Discount settings ──────────────────────────────────────────────────────
 
-router.get('/discount', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
+router.get('/discount', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json({
@@ -399,7 +400,7 @@ router.get('/discount', requireRole('owner', 'manager', 'cashier', 'server', 'ch
   }
 });
 
-router.put('/discount', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/discount', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const {
       discount_max_percentage,
@@ -463,7 +464,7 @@ router.get('/kds', (_req: Request, res: Response) => {
   }
 });
 
-router.put('/kds', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/kds', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { kds_default_view } = req.body;
     if (kds_default_view !== undefined && !['tabs', 'kanban'].includes(kds_default_view)) {
@@ -507,7 +508,7 @@ function parseBoundedInt(value: unknown, min: number, max: number, fallback: num
   return Number.isInteger(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
-router.get('/order-numbering', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
+router.get('/order-numbering', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json(orderNumberingShape(s));
@@ -517,7 +518,7 @@ router.get('/order-numbering', requireRole('owner', 'manager', 'cashier', 'serve
   }
 });
 
-router.put('/order-numbering', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/order-numbering', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const {
       order_number_prefix,
@@ -591,7 +592,7 @@ const CLOUD_ACCOUNT_UNAVAILABLE_ERROR = 'Cloud account services are unavailable 
 
 // ─── Cloud Sync settings (must come BEFORE /:key wildcard) ──────────────────
 
-router.get('/cloud', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/cloud', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     res.json(cloudSync.getStatus());
   } catch (error: any) {
@@ -600,7 +601,7 @@ router.get('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
   }
 });
 
-router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/cloud', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const {
       cloud_server_url,
@@ -652,7 +653,7 @@ router.put('/cloud', requireRole('owner', 'manager'), (req: Request, res: Respon
   }
 });
 
-router.post('/cloud/register', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/cloud/register', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
   try {
     const deletionRequest = await cloudSync.getDeletionRequestStatus({
       allowRemote: cloudSync.isCloudAccountAvailable(),
@@ -687,7 +688,7 @@ router.post('/cloud/register', requireRole('owner', 'manager'), asyncHandler(asy
   }
 }));
 
-router.post('/cloud/test', requireRole('owner', 'manager'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/cloud/test', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req: Request, res: Response) => {
   try {
     const result = await cloudSync.testConnection(getHttpRequestSignal(req));
     res.json(result);
@@ -697,7 +698,7 @@ router.post('/cloud/test', requireRole('owner', 'manager'), asyncHandler(async (
   }
 }));
 
-router.get('/cloud/account', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+router.get('/cloud/account', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   try {
     const cloudAccountAvailable = cloudSync.isCloudAccountAvailable();
     const signal = getHttpRequestSignal(req);
@@ -725,7 +726,7 @@ router.get('/cloud/account', requireRole('owner'), asyncHandler(async (req: Requ
   }
 }));
 
-router.put('/cloud/account/preferences', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+router.put('/cloud/account/preferences', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   if (!cloudSync.isCloudAccountAvailable()) {
     return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
   }
@@ -739,7 +740,7 @@ router.put('/cloud/account/preferences', requireRole('owner'), asyncHandler(asyn
   }
 }));
 
-router.post('/cloud/account/verification', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/cloud/account/verification', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   if (!cloudSync.isCloudAccountAvailable()) {
     return res.status(409).json({ error: CLOUD_ACCOUNT_UNAVAILABLE_ERROR });
   }
@@ -750,7 +751,7 @@ router.post('/cloud/account/verification', requireRole('owner'), asyncHandler(as
   }
 }));
 
-router.get('/cloud/delete-data/status', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+router.get('/cloud/delete-data/status', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   try {
     const deletionRequest = await cloudSync.getDeletionRequestStatus({ allowRemote: true, signal: getHttpRequestSignal(req) });
     res.json({
@@ -762,11 +763,11 @@ router.get('/cloud/delete-data/status', requireRole('owner'), asyncHandler(async
   }
 }));
 
-router.post('/cloud/stop-all', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/cloud/stop-all', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   res.json(await cloudSync.stopAllCloudServices(getHttpRequestSignal(req)));
 }));
 
-router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.post('/cloud/delete-data', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   if (req.body?.confirmation !== 'DELETE CLOUD DATA') {
     return res.status(400).json({ error: 'Type DELETE CLOUD DATA to confirm' });
   }
@@ -777,7 +778,7 @@ router.post('/cloud/delete-data', requireRole('owner'), requireMasterPin, asyncH
   }
 }));
 
-router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.post('/cloud/delete-data/cancel', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   try {
     res.json(await cloudSync.cancelDeletionRequest(getHttpRequestSignal(req)));
   } catch {
@@ -790,7 +791,7 @@ router.post('/cloud/delete-data/cancel', requireRole('owner'), requireMasterPin,
 // actions that ever touch Google's API, and only owner can trigger them
 // (mirrors how database.ts gates the raw backup/restore actions).
 
-router.get('/google-drive', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/google-drive', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     res.json(googleDrive.getStatus());
   } catch (error: any) {
@@ -799,7 +800,7 @@ router.get('/google-drive', requireRole('owner', 'manager'), (req: Request, res:
   }
 });
 
-router.put('/google-drive', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/google-drive', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { frequency, retention_count } = req.body;
     res.json(googleDrive.updatePreferences({ frequency, retention_count }));
@@ -809,7 +810,7 @@ router.put('/google-drive', requireRole('owner', 'manager'), (req: Request, res:
   }
 });
 
-router.post('/google-drive/connect', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/google-drive/connect', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   try {
     const status = await trackHttpRequestWork(req, googleDrive.connect(getHttpRequestSignal(req)));
     res.json(status);
@@ -824,7 +825,7 @@ router.post('/google-drive/connect', requireRole('owner'), asyncHandler(async (r
   }
 }));
 
-router.post('/google-drive/disconnect', requireRole('owner'), asyncHandler(async (_req: Request, res: Response) => {
+router.post('/google-drive/disconnect', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (_req: Request, res: Response) => {
   try {
     const status = await googleDrive.disconnect();
     res.json(status);
@@ -834,7 +835,7 @@ router.post('/google-drive/disconnect', requireRole('owner'), asyncHandler(async
   }
 }));
 
-router.post('/google-drive/backup-now', requireRole('owner'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/google-drive/backup-now', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req: Request, res: Response) => {
   try {
     const status = await trackHttpRequestWork(req, googleDrive.backupNow(getHttpRequestSignal(req)));
     res.json(status);
@@ -877,7 +878,7 @@ function isAllowedWildcardKey(key: string): boolean {
   return ALLOWED_WILDCARD_KEYS.has(key) || /^tax_plugin_request:[A-Z]{2}$/.test(key);
 }
 
-router.get('/', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
+router.get('/', requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     const s = getAllSettings(getDatabase());
     res.json({ settings: publicSettingsShape(s) });
@@ -887,7 +888,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (r
   }
 });
 
-router.get('/bill-templates', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+router.get('/bill-templates', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
     const plugins = listInstalledPrintTemplates().map((template) => {
       let storedWidths: string[] = [];
@@ -930,7 +931,7 @@ router.get('/bill-templates', requireRole('owner', 'manager'), (_req: Request, r
   }
 });
 
-router.get('/:key', settingsReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server', 'chef'), (req: Request, res: Response) => {
+router.get('/:key', settingsReadRateLimit, requireRole(...ROLE_ACCESS.allStaff), (req: Request, res: Response) => {
   try {
     if (SENSITIVE_SETTING_KEYS.has(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting is sensitive and cannot be read directly' });
@@ -952,7 +953,7 @@ router.get('/:key', settingsReadRateLimit, requireRole('owner', 'manager', 'cash
   }
 });
 
-router.put('/:key', settingsWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:key', settingsWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     if (!isAllowedWildcardKey(req.params.key as string)) {
       return res.status(403).json({ error: 'This setting cannot be updated via wildcard route' });

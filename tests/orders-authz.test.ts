@@ -51,7 +51,8 @@ function seedOrderWithItem(db: any, suffix: string, ownerId?: string) {
 async function main() {
   const db = initTestDb();
   const managerAuth = seedUser(db, 'manager-authz', 'manager', '1234');
-  const cashierAuth = seedUser(db, 'cashier-authz', 'cashier');
+  const ownerAuth = seedUser(db, 'owner-authz', 'owner', '5678');
+  const cashierAuth = seedUser(db, 'cashier-authz', 'cashier', '9876');
   const waiterAuth = seedUser(db, 'server-authz', 'server');
   db.prepare(`INSERT INTO categories (id, name, sort_order) VALUES ('authz-category', 'Authz', 1)`).run();
   db.prepare(`INSERT INTO products (id, category_id, name, price, is_active, sort_order)
@@ -84,6 +85,18 @@ async function main() {
       assertEqual(response.status, 200, `${role} can void an in-progress item with a valid manager PIN`);
       assertEqual((db.prepare('SELECT status FROM order_items WHERE id = ?').get(order.itemId) as any).status, 'voided', `${role} void marks the original item voided`);
     }
+
+    const ownerOrder = seedOrderWithItem(db, 'OWNER-PIN', 'owner-authz');
+    const ownerVoid = await api(baseUrl, `/api/orders/${ownerOrder.orderId}/items/${ownerOrder.itemId}/cancel`, {
+      method: 'PATCH', body: { override_pin: '5678' }, headers: ownerAuth,
+    });
+    assertEqual(ownerVoid.status, 200, 'owner PIN can authorize an in-progress item void');
+
+    const cashierPinOrder = seedOrderWithItem(db, 'CASHIER-PIN', 'cashier-authz');
+    const cashierPin = await api(baseUrl, `/api/orders/${cashierPinOrder.orderId}/items/${cashierPinOrder.itemId}/cancel`, {
+      method: 'PATCH', body: { override_pin: '9876' }, headers: cashierAuth,
+    });
+    assertEqual(cashierPin.status, 403, 'cashier PIN cannot authorize an in-progress item void');
 
     const waiterOwnOrder = seedOrderWithItem(db, 'WAITER-OWN', 'server-authz');
     const waiterCanAdvance = await api(baseUrl, `/api/orders/${waiterOwnOrder.orderId}/status`, {

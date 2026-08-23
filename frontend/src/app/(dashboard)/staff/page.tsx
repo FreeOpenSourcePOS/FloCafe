@@ -7,18 +7,14 @@ import toast from 'react-hot-toast';
 import { Plus, X, Edit, RotateCcw, Eye, EyeOff } from 'lucide-react';
 import type { Staff } from '@/lib/types';
 import { useTranslations, type AppConfig } from 'use-intl';
+import { useAuthStore } from '@/store/auth';
+import { PermissionMatrix } from '@/components/settings/PermissionMatrix';
+import { ROLE_ACCESS, ROLE_KEYS, hasRole } from '@shared/role-permissions';
+import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
 
-const VALID_ROLES = ['owner', 'manager', 'cashier', 'server', 'chef'];
+const VALID_ROLES = ROLE_KEYS;
 
 type StaffKey = keyof AppConfig['Messages']['staff'];
-
-const roleColorKey = {
-  owner: 'roleOwner',
-  manager: 'roleManager',
-  cashier: 'roleCashier',
-  server: 'roleServer',
-  chef: 'roleChef',
-} as const satisfies Record<'owner' | 'manager' | 'cashier' | 'server' | 'chef', StaffKey>;
 
 const roleColors: Record<string, string> = {
   owner: 'bg-red-100 text-red-800',
@@ -29,7 +25,7 @@ const roleColors: Record<string, string> = {
 };
 
 function roleLabel(role: string, t: (key: StaffKey) => string): string {
-  const key = (roleColorKey as Record<string, StaffKey | undefined>)[role];
+  const key = ROLE_LABEL_KEYS[role];
   return key ? t(key) : role;
 }
 
@@ -38,6 +34,8 @@ export default function StaffPage() {
   const tCommon = useTranslations('common');
   const tAuth = useTranslations('auth');
   const tSetup = useTranslations('setup');
+  const { currentTenant } = useAuthStore();
+  const canViewPermissionMatrix = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
   const [staff, setStaff] = useState<Staff[]>([]);
   const [, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -217,6 +215,8 @@ export default function StaffPage() {
 
       {staff.length === 0 && <p className="text-center text-gray-500 py-12">{t('empty')}</p>}
 
+      {canViewPermissionMatrix && <PermissionMatrix />}
+
       {showForm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-6 w-full max-w-sm">
@@ -257,7 +257,7 @@ export default function StaffPage() {
               <select
                 value={form.role} onChange={(e) => {
                   const role = e.target.value;
-                  setForm({ ...form, role, pin: ['owner', 'manager'].includes(role) ? form.pin : '' });
+                  setForm({ ...form, role, pin: hasRole(role, ROLE_ACCESS.ownerManager) ? form.pin : '' });
                 }}
                 className="w-full px-3 py-2 border rounded-lg outline-none focus:ring-2 focus:ring-brand"
               >
@@ -265,7 +265,7 @@ export default function StaffPage() {
                   <option key={r} value={r} disabled={editingLastActiveOwner && r !== 'owner'}>{roleLabel(r, t)}</option>
                 ))}
               </select>
-              {['owner', 'manager'].includes(form.role) && (
+              {hasRole(form.role, ROLE_ACCESS.ownerManager) && (
                 <div>
                   <div className="relative">
                     <input

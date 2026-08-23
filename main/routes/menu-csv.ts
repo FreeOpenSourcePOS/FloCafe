@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { getDatabase, now, generateShortId, getSettingValue } from '../db';
 import { v4 as uuidv4 } from 'uuid';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 
 const router = Router();
@@ -247,7 +248,7 @@ const TEMPLATES: Record<string, string> = {
   ].join('\n'),
 };
 
-router.get('/template/:type', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/template/:type', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   const type = req.params.type as string;
   const csv = TEMPLATES[type];
   if (!csv) return res.status(404).json({ error: 'Unknown template type' });
@@ -258,7 +259,7 @@ router.get('/template/:type', requireRole('owner', 'manager'), (req: Request, re
 
 // ─── Export ──────────────────────────────────────────────────────────────────
 
-router.get('/export/categories', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+router.get('/export/categories', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const rows = db
@@ -276,7 +277,7 @@ router.get('/export/categories', requireRole('owner', 'manager'), (_req: Request
   }
 });
 
-router.get('/export/products', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+router.get('/export/products', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const rows = db
@@ -310,7 +311,7 @@ router.get('/export/products', requireRole('owner', 'manager'), (_req: Request, 
   }
 });
 
-router.get('/export/addons', requireRole('owner', 'manager'), (_req: Request, res: Response) => {
+router.get('/export/addons', requireRole(...ROLE_ACCESS.ownerManager), (_req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const groups = db
@@ -335,7 +336,7 @@ router.get('/export/addons', requireRole('owner', 'manager'), (_req: Request, re
 
 // ─── Import ──────────────────────────────────────────────────────────────────
 
-router.post('/import/categories', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/import/categories', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { csv } = req.body as { csv: string };
     if (typeof csv !== 'string' || !csv) return res.status(400).json({ error: 'No CSV data provided' });
@@ -378,7 +379,7 @@ router.post('/import/categories', requireRole('owner', 'manager'), (req: Request
   }
 });
 
-router.post('/import/products', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/import/products', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { csv } = req.body as { csv: string };
     if (typeof csv !== 'string' || !csv) return res.status(400).json({ error: 'No CSV data provided' });
@@ -527,7 +528,7 @@ router.post('/import/products', requireRole('owner', 'manager'), (req: Request, 
   }
 });
 
-router.post('/import/addons', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/import/addons', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { csv } = req.body as { csv: string };
     if (typeof csv !== 'string' || !csv) return res.status(400).json({ error: 'No CSV data provided' });

@@ -3,6 +3,7 @@ import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, withTxn, getSettingValue } from '../db';
 import { randomUUID } from 'crypto';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getActiveCountryPack, hasConfiguredTaxCategories } from '../services/tax';
 
 const VALID_TAX_BEHAVIORS = ['country_default', 'inclusive', 'exclusive', 'exempt'];
@@ -173,7 +174,7 @@ router.get('/:id', addonGroupReadRateLimit, (req: Request, res: Response) => {
   }
 });
 
-router.post('/', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/', addonGroupWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { name, description, is_required, min_selection, max_selection, allow_multiple_quantities, sort_order, addons } = req.body;
 
@@ -252,7 +253,7 @@ router.post('/', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req
   }
 });
 
-router.put('/:id', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:id', addonGroupWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.id);
@@ -370,7 +371,7 @@ router.put('/:id', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (r
   }
 });
 
-router.delete('/:id', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.delete('/:id', addonGroupWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.id);
@@ -390,7 +391,7 @@ router.delete('/:id', addonGroupWriteRateLimit, requireRole('owner', 'manager'),
 });
 
 // Addon management within a group
-router.post('/:groupId/addons', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:groupId/addons', addonGroupWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order } = req.body;
 
@@ -443,7 +444,7 @@ router.post('/:groupId/addons', addonGroupWriteRateLimit, requireRole('owner', '
   }
 });
 
-router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { name, price, tax_category_id, tax_behavior, inherit_parent_tax_category, is_active, sort_order } = req.body;
 
@@ -509,7 +510,7 @@ router.put('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requireRole('o
   }
 });
 
-router.delete('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.delete('/:groupId/addons/:addonId', addonGroupWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const group = db.prepare('SELECT * FROM addon_groups WHERE id = ?').get(req.params.groupId);

@@ -3,6 +3,7 @@ import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUs
 import { notifyKdsUpdate } from '../services/kds';
 import { parseCategoryIds } from './auth';
 import { requireKdsEnabled, isTokenRevoked, isTokenStale } from '../middleware/security';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -17,7 +18,7 @@ interface OrderItemRow {
 router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => {
   try {
     const role = (req as any).user?.role;
-    if (!role || !['chef', 'manager', 'owner'].includes(role)) {
+    if (!hasRole(role, ROLE_ACCESS.kitchen)) {
       return res.status(403).json({ error: 'Only chef, manager, or owner can update item status' });
     }
 
@@ -42,7 +43,7 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
       ? db.prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null } | undefined
       : undefined;
     if (!currentUser) return res.status(403).json({ error: 'User account is not active' });
-    let categoryIds = currentUser.role === 'manager' || currentUser.role === 'owner'
+    let categoryIds = hasRole(currentUser.role, ROLE_ACCESS.ownerManager)
       ? []
       : parseCategoryIds(currentUser.category_ids);
     const loadedStationIds = getUserKdsStationIds(db, userId);
@@ -60,8 +61,8 @@ router.patch('/:id/status', requireKdsEnabled, (req: Request, res: Response) => 
     const orderData = withTxn(() => {
       const liveUser = db.prepare('SELECT role, category_ids, tokens_valid_after FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null; tokens_valid_after: string | null } | undefined;
       const token = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
-      if (!liveUser || isTokenRevoked(token) || isTokenStale((req as any).user?.iat, liveUser.tokens_valid_after) || !['chef', 'manager', 'owner'].includes(liveUser.role)) throw new Error('USER_FORBIDDEN');
-      categoryIds = liveUser.role === 'manager' || liveUser.role === 'owner' ? [] : parseCategoryIds(liveUser.category_ids);
+      if (!liveUser || isTokenRevoked(token) || isTokenStale((req as any).user?.iat, liveUser.tokens_valid_after) || !hasRole(liveUser.role, ROLE_ACCESS.kitchen)) throw new Error('USER_FORBIDDEN');
+      categoryIds = hasRole(liveUser.role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(liveUser.category_ids);
       const liveStationIds = getUserKdsStationIds(db, userId);
       const liveAssignments = hasUserKdsStationAssignments(db, userId);
       if (!liveStationIds || liveAssignments === null) throw new Error('USER_FORBIDDEN');

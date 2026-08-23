@@ -13,12 +13,14 @@ import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { cloudSync } from '../services/cloud-sync';
 import { validateOrderNotes, validateItemNotes } from './orders-validation';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import expressRateLimit from 'express-rate-limit';
 
 const router = Router();
 const orderReadRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: true, legacyHeaders: false });
 const orderWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
 const MAX_ORDER_IDEMPOTENCY_KEY_LENGTH = 128;
+const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 
 function orderIdempotencyKey(req: Request): string | null {
   const raw = req.get('Idempotency-Key');
@@ -175,7 +177,7 @@ function resolveItemAddons(
   return resolved;
 }
 
-router.get('/', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const db = getDatabase();
@@ -344,7 +346,7 @@ function batchHydrateOrders(db: ReturnType<typeof getDatabase>, orders: any[]) {
   });
 }
 
-router.get('/:id', orderReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/:id', orderReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const user = (req as any).user;
     const db = getDatabase();
@@ -367,7 +369,7 @@ router.get('/:id', orderReadRateLimit, requireRole('owner', 'manager', 'cashier'
   }
 });
 
-router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const body = req.body || {};
     const { table_id, customer_id, type, guest_count, special_instructions, packaging_charge, delivery_charge, items } = body;
@@ -615,7 +617,7 @@ router.post('/', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier',
   }
 });
 
-router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/:id/items', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const body = req.body || {};
@@ -871,7 +873,7 @@ router.post('/:id/items', orderWriteRateLimit, requireRole('owner', 'manager', '
   }
 });
 
-router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'chef', 'server'), (req: Request, res: Response) => {
+router.patch('/:id/status', orderWriteRateLimit, requireRole(...ROLE_ACCESS.orderStatus), (req: Request, res: Response) => {
   try {
     const { status, reason, override_pin, free_table } = req.body;
 
@@ -907,7 +909,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
       const currentUser = authUser?.userId
         ? db.prepare('SELECT role, is_active FROM users WHERE id = ?').get(authUser.userId) as { role: string; is_active: number } | undefined
         : undefined;
-      if (!currentUser || currentUser.is_active !== 1 || !['owner', 'manager', 'cashier', 'chef', 'server'].includes(currentUser.role)) {
+      if (!currentUser || currentUser.is_active !== 1 || !hasRole(currentUser.role, ROLE_ACCESS.orderStatus)) {
         throw Object.assign(new Error('Insufficient permissions'), { statusCode: 403 });
       }
       if (currentUser.role === 'server' && String(currentOrder.user_id) !== String(authUser.userId)) {
@@ -961,8 +963,8 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
           throw Object.assign(new Error('Too many PIN attempts. Try again in 15 minutes.'), { statusCode: 429 });
         }
 
-        const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-          .all()
+        const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
+          .all(...ROLE_ACCESS.ownerManager)
           .find((u: any) => verifyPin(u.pin_hash, override_pin));
 
         if (!user) {
@@ -1049,7 +1051,7 @@ router.patch('/:id/status', orderWriteRateLimit, requireRole('owner', 'manager',
   }
 });
 
-router.patch('/:id/customer', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.patch('/:id/customer', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1093,7 +1095,7 @@ router.patch('/:id/customer', orderWriteRateLimit, requireRole('owner', 'manager
   }
 });
 
-router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const nowStr = now();
@@ -1136,7 +1138,7 @@ router.patch('/:id/convert-to-takeaway', orderWriteRateLimit, requireRole('owner
   }
 });
 
-router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.patch('/:id/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1177,8 +1179,8 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
         if (!checkPinRateLimit(rateLimitKey)) {
           return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
         }
-        const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-          .all()
+        const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
+          .all(...ROLE_ACCESS.ownerManager)
           .find((u: any) => verifyPin(u.pin_hash, override_pin));
         if (!user) {
           return res.status(403).json({ error: 'Invalid manager PIN' });
@@ -1337,7 +1339,7 @@ router.patch('/:id/discount', orderWriteRateLimit, requireRole('owner', 'manager
   }
 });
 
-router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id) as any;
@@ -1382,8 +1384,8 @@ router.patch('/:id/items/:itemId/discount', orderWriteRateLimit, requireRole('ow
       if (!checkPinRateLimit(rateLimitKey)) {
         return res.status(429).json({ error: 'Too many PIN attempts. Try again in 15 minutes.' });
       }
-      const user = db.prepare("SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN ('owner', 'manager')")
-        .all()
+      const user = db.prepare(`SELECT * FROM users WHERE is_active = 1 AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS})`)
+        .all(...ROLE_ACCESS.ownerManager)
         .find((u: any) => verifyPin(u.pin_hash, override_pin));
       if (!user) {
         return res.status(403).json({ error: 'Invalid manager PIN' });

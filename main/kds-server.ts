@@ -13,6 +13,7 @@ import { getJWTSecret, parseCategoryIds } from './routes/auth';
 import { rateLimit, authRateLimit, staticRouteRateLimit, corsOptions, isTokenRevoked, isTokenStale, revokeToken } from './middleware/security';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
+import { ROLE_ACCESS, hasRole } from '../shared/role-permissions';
 
 let kdsServer: http.Server | null = null;
 let kdsWss: WebSocketServer | null = null;
@@ -33,7 +34,7 @@ type KdsRequestUser = {
 };
 
 function categoryIdsForRole(role: string, categoryIds: string | null): string[] {
-  return role === 'manager' || role === 'owner' ? [] : parseCategoryIds(categoryIds);
+  return hasRole(role, ROLE_ACCESS.ownerManager) ? [] : parseCategoryIds(categoryIds);
 }
 
 export function isKdsServerRunning(): boolean {
@@ -124,7 +125,7 @@ export function startKdsServer(): Promise<void> {
         if (!user || isTokenStale(decoded.iat, user.tokens_valid_after)) {
           return res.status(401).json({ error: 'Invalid token' });
         }
-        if (!['chef', 'manager', 'owner'].includes(user.role)) {
+        if (!hasRole(user.role, ROLE_ACCESS.kitchen)) {
           return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
         }
         const stationIds = getUserKdsStationIds(db, user.id);
@@ -202,7 +203,7 @@ export function startKdsServer(): Promise<void> {
         }
 
         // Only allow chef, manager, owner roles
-        if (!['chef', 'manager', 'owner'].includes(user.role)) {
+        if (!hasRole(user.role, ROLE_ACCESS.kitchen)) {
           return res.status(403).json({ error: 'Access denied. Only kitchen staff allowed.' });
         }
 
@@ -414,7 +415,7 @@ export function startKdsServer(): Promise<void> {
           const currentUser = db.prepare('SELECT role, category_ids, is_active, tokens_valid_after FROM users WHERE id = ?').get(kdsUser.userId) as { role: string; category_ids: string | null; is_active: number; tokens_valid_after: string | null } | undefined;
           const currentToken = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
           if (!currentUser?.is_active || isTokenRevoked(currentToken) || isTokenStale(kdsUser.iat, currentUser?.tokens_valid_after)) return { statusCode: 403, error: 'User account is not active' };
-          if (!['chef', 'manager', 'owner'].includes(currentUser.role)) return { statusCode: 403, error: 'Not authorized to update KDS items' };
+          if (!hasRole(currentUser.role, ROLE_ACCESS.kitchen)) return { statusCode: 403, error: 'Not authorized to update KDS items' };
           const currentCategoryIds = categoryIdsForRole(currentUser.role, currentUser.category_ids);
           const currentStationIds = getUserKdsStationIds(db, kdsUser.userId);
           const currentAssignmentsConfigured = hasUserKdsStationAssignments(db, kdsUser.userId);

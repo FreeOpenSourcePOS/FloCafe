@@ -14,13 +14,14 @@ import { getDefaultServerAppPort, getServerAppPort as getActiveServerAppPort, se
 import { API_JSON_BODY_LIMIT } from './http-limits';
 import { buildCspHeader } from './csp';
 import { resolveContainedPath } from './lib/path-containment';
+import { ROLE_ACCESS } from '../shared/role-permissions';
 
 let serverApp: http.Server | null = null;
 let stopPromise: Promise<void> | null = null;
 let startReject: ((error: Error) => void) | null = null;
 let stopping = false;
 const SERVER_APP_PORT = getDefaultServerAppPort();
-const SERVER_APP_ALLOWED_ROLES = new Set(['server', 'manager', 'owner']);
+const SERVER_APP_ALLOWED_ROLES = new Set(ROLE_ACCESS.serverApp);
 
 type ServerAppUser = {
   userId: string;

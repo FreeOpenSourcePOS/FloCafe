@@ -3,6 +3,7 @@ import expressRateLimit from 'express-rate-limit';
 import { randomUUID } from 'crypto';
 import { getDatabase, now, getSettingValue } from '../db';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { parsePhoneE164, stripPhoneDigits } from '../lib/phone';
 
 export function parseCustomer(c: any): any {
@@ -54,7 +55,7 @@ export function getWalletBalance(customerId: string | number | null): number {
 }
 
 // Cleanup endpoint: delete all customers with null IDs - must be before /:id
-router.delete('/admin/cleanup', customerWriteRateLimit, requireRole('owner'), (req: Request, res: Response) => {
+router.delete('/admin/cleanup', customerWriteRateLimit, requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const result = db.prepare("DELETE FROM customers WHERE id IS NULL").run();
@@ -65,7 +66,7 @@ router.delete('/admin/cleanup', customerWriteRateLimit, requireRole('owner'), (r
   }
 });
 
-router.post('/admin/repair-phones', customerWriteRateLimit, requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/admin/repair-phones', customerWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const tenantCountry = getSettingValue('country') || 'IN';
@@ -108,7 +109,7 @@ router.post('/admin/repair-phones', customerWriteRateLimit, requireRole('owner',
   }
 });
 
-router.get('/alerts', customerReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/alerts', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const result = db.prepare(`
@@ -124,7 +125,7 @@ router.get('/alerts', customerReadRateLimit, requireRole('owner', 'manager', 'ca
   }
 });
 
-router.get('/', customerReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     // #208: the previous version ran 4 correlated subqueries per customer
@@ -228,7 +229,7 @@ router.get('/', customerReadRateLimit, requireRole('owner', 'manager', 'cashier'
   }
 });
 
-router.get('/:id', customerReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/:id', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const customerRaw = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id);
@@ -253,7 +254,7 @@ router.get('/:id', customerReadRateLimit, requireRole('owner', 'manager', 'cashi
   }
 });
 
-router.get('/:id/wallet', customerReadRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.get('/:id/wallet', customerReadRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const customerId = req.params.id as string;
@@ -274,7 +275,7 @@ router.get('/:id/wallet', customerReadRateLimit, requireRole('owner', 'manager',
   }
 });
 
-router.post('/', customerWriteRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req: Request, res: Response) => {
+router.post('/', customerWriteRateLimit, requireRole(...ROLE_ACCESS.sales), (req: Request, res: Response) => {
   try {
     const { phone, name, email, address, notes, country_code } = req.body;
 
@@ -354,7 +355,7 @@ router.post('/', customerWriteRateLimit, requireRole('owner', 'manager', 'cashie
   }
 });
 
-router.put('/:id', customerWriteRateLimit, requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.put('/:id', customerWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const {
       phone, name, email, address, notes, country_code

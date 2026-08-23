@@ -4988,7 +4988,7 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleCheckUpdates}
-                  disabled={updateStatus?.status === 'checking' || updateStatus?.status === 'available' || updateStatus?.status === 'downloading'}
+                  disabled={updateStatus?.status === 'checking' || updateStatus?.status === 'available' || updateStatus?.status === 'downloading' || updateStatus?.status === 'ready-to-install'}
                   className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 bg-brand text-white hover:opacity-90"
                 >
                   <RefreshCw size={16} className={updateStatus?.status === 'checking' ? 'animate-spin' : ''} />

@@ -332,7 +332,7 @@ export function renderBillDocumentToClassicLines(
           const label = truncate(labelOf(line.label) + rateSuffix, cols - 12);
           lines.push(...financialRows(label, formatCurrency(line.amount, prefix, options.locale, trimDecimals), cols));
         }
-        if (totals && totalsIndex >= 0 && breakdownIndex > totalsIndex) renderGrandTotal(totals);
+        if (hasTaxBreakdown && totals && totalsIndex >= 0 && breakdownIndex > totalsIndex) renderGrandTotal(totals);
         break;
       case 'totals':
         if (block.pointsRedeemed) {

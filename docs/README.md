@@ -27,7 +27,6 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
 | [merchant-print-templates.md](merchant-print-templates.md) | Merchant print template schema (v1), validation/compatibility policy, provenance and trust model, and bill-template selection identity. Cross-links the compliance `escpos-line-template-v1` contract (#445). | CURRENT |
-| [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) | Capability study and decision record for non-Latin scripts (Arabic/Persian, Hebrew, CJK, Indic) on ESC/POS hardware: approach comparison, recommended capability-tiered raster-fallback architecture (#446), community hardware-test matrix, and test-page raster probe spec. Not yet implemented. | FORWARD-LOOKING |
 
 ### Active design & forward-looking plans
 
@@ -35,6 +34,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | --- | --- | --- |
 | [tax-engine-v2-spec.md](tax-engine-v2-spec.md) | Architectural specification for Tax Engine v2, data-only country packs, and future capability plugin boundaries. *(Note: 2026-07-31 amendment establishes that country packs are catalog-only and not auto-bundled).* | ACTIVE DESIGN |
 | [cloud-v2-plan.md](cloud-v2-plan.md) | Client integration plan for FloAdmin v2 cloud coordination. Phase 1 client work is implemented in code; forward-looking multi-device sync and FloAdmin contracts remain in design/specs. | ACTIVE DESIGN / FORWARD-LOOKING |
+| [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) | Capability study and decision record for non-Latin scripts (Arabic/Persian, Hebrew, CJK, Indic) on ESC/POS hardware: approach comparison, recommended capability-tiered raster-fallback architecture (#446), community hardware-test matrix, and test-page raster probe spec. Not yet implemented. | FORWARD-LOOKING |
 
 ### Historical records
 

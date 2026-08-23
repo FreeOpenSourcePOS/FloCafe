@@ -84,7 +84,7 @@ Render the receipt (or parts) to a 1-bit bitmap and print it with `GS v 0 m xL x
 | Performance | Payload grows from ~1–2 KB (text receipt) to ≈ 72 B × ~1150 dot rows ≈ 80 KB (80 mm) / ≈ 55 KB (58 mm). Transfer over TCP 9100 / USB bulk is sub-second; head time is unchanged because the same paper area prints either way. Slow MCUs on clones can stutter on very large single images — solved by banding (Section 5). |
 | Paper width / density | Requires dots-per-line knowledge: 384 (58 mm) vs 576 (80 mm) at 203 dpi. Derivable from the existing paper-width profile data. |
 | Transport support | Identical byte stream on TCP, USB RAW queues, and WebUSB — it is ordinary bytes after init. OS spooler RAW pass-through is proven by Odoo/CUPS. No WebUSB-specific work. |
-| Package size impact | None at the protocol layer. Cost lives in the host rendering engine and bundled script fonts (a dependency question — see Section 7). |
+| Package size impact | None at the protocol layer. Cost lives in the host rendering engine and bundled script fonts (a dependency question — see Section 8). |
 | Maintenance burden | One renderer consuming the semantic print kernel; new scripts become font additions, not logic changes. |
 | Failure/fallback mode | Falls back to today's exact behavior (native attempt + explicit warning). Never worse than status quo. |
 
@@ -102,7 +102,7 @@ The browser print path already renders every script correctly (the browser does 
 | Native code pages | ✗ | ✗ isolated forms | ✗ | all | none | garbage, `?` |
 | UTF-8 pass-through | varies | varies | varies | all | none | mojibake |
 | Host shaping + bidi text | ✗ (glyph gap) | partial | hard | all | small | blank/garbage |
-| **Raster `GS v 0`** | **✓** | **✓** | **✓** | **all raw transports** | rendering engine (Section 7) | falls back to skip+warn |
+| **Raster `GS v 0`** | **✓** | **✓** | **✓** | **all raw transports** | rendering engine (Section 8) | falls back to skip+warn |
 
 ## 4. What other systems do
 
@@ -173,7 +173,8 @@ Paper width:              58mm / 80mm      Firmware date (if known):
 [ ] 5. Firmware Arabic shaping probe: unshaped-but-reversed Persian
        looks connected?  yes / no
 [ ] 6. Raster probe (test page band, Section 7): prints?  yes / no
-[ ] 7. Raster width: band fills the printable width edge-to-edge?
+[ ] 7. Raster width: solid bar spans full width except the small
+       designed inset (~1mm/side)?  full / shrunk / clipped
 [ ] 8. Banded raster (multi-strip image): continuous, no gaps/stutter?
 [ ] 9. Mixed sample: Latin text lines + Persian raster lines interleave
        at consistent line height?

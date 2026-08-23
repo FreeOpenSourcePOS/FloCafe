@@ -49,9 +49,12 @@ its trust model depends on every row tracing to a verified pack version.
   replaces the resolved label text for EVERY language variant. These keys are
   semantic field names — internal i18n translation keys are never exposed as
   template fields.
-- No ESC/POS tokens, HTML, or renderer snippets may appear anywhere in a
-  payload. One template feeds every renderer by being applied to a built
-  PrintDocument before rendering (`applyMerchantTemplate`).
+- The payload shape contains semantic block selections and literal label text
+  only; it has no fields for ESC/POS tokens, HTML, or renderer snippets. The
+  backend thermal receipt renderer consumes the applied document through
+  `applyMerchantTemplate`; browser/WebUSB print paths currently use the
+  built-in layout and show an explicit fallback warning for merchant
+  selections.
 
 ## Validation & compatibility policy
 
@@ -68,9 +71,10 @@ shared kernel) — stricter than render-time tolerance:
   validates, the classic layout renders instead and an explicit warning is
   recorded — never garbage, never silence.
 
-Minor-version evolution policy: additive optional fields only; readers ignore
-unknown MINOR revisions within a known major at RENDER time but writers still
-reject them on write/import to keep stored payloads auditable.
+This release exposes an integer `schemaVersion` and supports version `1` only;
+there is no separate minor-version field yet. Any other version value fails
+validation on write/import and at render time, keeping stored payloads
+auditable until a future compatibility policy is explicitly introduced.
 
 ## Storage & lifecycle
 
@@ -121,8 +125,9 @@ The `bill_template` setting persists a STRUCTURED selection:
 
 ## Renderers
 
-Merchant receipt documents render through the PrintDocument pipeline
+Merchant receipt documents render through the backend PrintDocument pipeline
 (`data → document → applyMerchantTemplate → renderer`). The parity harness
 (print-parity.test.ts) runs a merchant-template mode asserting byte-equivalence
-with the plain classic document pipeline. Compact/KOT rendering of merchant
-documents belongs to their owning issues.
+with the plain classic document pipeline. Browser/WebUSB printing uses the
+built-in classic/compact layout and warns when a merchant template is selected.
+Compact/KOT rendering of merchant documents belongs to their owning issues.

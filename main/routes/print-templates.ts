@@ -21,6 +21,7 @@ import {
   rollbackMerchantPrintTemplate,
   updateMerchantPrintTemplate,
 } from '../services/merchant-print-templates';
+import type { MerchantPrintTemplateRow } from '../services/merchant-print-templates';
 
 const router = Router();
 
@@ -32,11 +33,12 @@ const merchantTemplateWriteRateLimit = expressRateLimit({
 });
 
 function actorId(req: Request): string | null {
-  return String((req as any).user?.userId || '') || null;
+  const user = (req as Request & { user?: { userId?: string } }).user;
+  return String(user?.userId || '') || null;
 }
 
 /** Public row shape: provenance stays informational, payloads stay internal. */
-function shape(row: any) {
+function shape(row: MerchantPrintTemplateRow) {
   return {
     id: row.id,
     name: row.name,

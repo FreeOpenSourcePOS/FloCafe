@@ -35,6 +35,8 @@ export interface MerchantDocumentRenderResult {
   readonly fellBackToClassic: boolean;
 }
 
+type RawPrintRecord = Record<string, unknown>;
+
 /**
  * Render a bill through a merchant template row. Fail-closed on render too:
  * if the stored payload no longer validates against this build's schema
@@ -42,9 +44,9 @@ export interface MerchantDocumentRenderResult {
  * classic document is rendered instead of garbage or nothing.
  */
 export function renderMerchantReceiptViaDocument(
-  order: any,
-  bill: any,
-  business: any,
+  order: RawPrintRecord,
+  bill: RawPrintRecord,
+  business: RawPrintRecord,
   templateId: string,
   opts: {
     columns: number;

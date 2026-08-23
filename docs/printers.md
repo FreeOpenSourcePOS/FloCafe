@@ -79,7 +79,7 @@ If printing still fails:
 
 Signed country tax packs can ship compliance receipt templates that render through FloCafe's built-in ESC/POS line renderer (`renderEscposLineTemplateV1`, renderer id `flocafe-thermal-receipt-template`).
 
-> **Status: legacy/compliance-oriented.** `escpos-line-template-v1` exists to keep signed, jurisdiction-specific compliance receipts working. It is **not** the future merchant/community template format — that is the semantic merchant model tracked in [#447](https://github.com/FreeOpenSourcePOS/FloCafe/issues/447). Do not build merchant-facing template features on this contract.
+> **Status: legacy/compliance-oriented.** `escpos-line-template-v1` exists to keep signed, jurisdiction-specific compliance receipts working. It is **not** the merchant-facing template format; see the current [merchant print template model](merchant-print-templates.md). Do not build merchant-facing template features on this contract.
 
 ### Payload fields
 

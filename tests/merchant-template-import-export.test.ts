@@ -44,8 +44,11 @@ import { createHash } from 'node:crypto';
 
 import {
   MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES,
+  MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
   MERCHANT_TEMPLATE_EXPORT_FORMAT,
   MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION,
+  MERCHANT_TEMPLATE_FORMAT,
+  MERCHANT_TEMPLATE_SCHEMA_VERSION,
   serializeMerchantTemplatePayload,
   validateMerchantTemplate,
   validateMerchantTemplateEnvelope,
@@ -154,9 +157,12 @@ console.log('\n▶ Envelope validation: negative fixtures');
   assert(tamperedEnvelope.ok);
   const tamperedPayload = validateMerchantTemplate(tamperedEnvelope.ok ? tamperedEnvelope.envelope.payload : null);
   assert(tamperedPayload.ok);
+  const tamperedCanonical = tamperedPayload.ok
+    ? serializeMerchantTemplatePayload(tamperedPayload.payload)
+    : '';
   assert.notEqual(
     tamperedEnvelope.ok && tamperedEnvelope.envelope.claimedChecksum.toLowerCase(),
-    sha256(JSON.stringify(tamperedPayload.ok ? tamperedPayload.payload : null)),
+    sha256(tamperedCanonical),
   );
   ok('tampered checksum fixture is detectable at the verification step');
 
@@ -300,6 +306,35 @@ async function runTransfer(): Promise<void> {
     assert(!filename.startsWith('.'), 'no dotfile/traversal filenames');
     assert.match(filename, /\.flocafe-template\.json$/);
     ok(`hostile names sanitize to traversal-proof filenames (${JSON.stringify(filename)})`);
+
+    // A payload just inside the write cap can pretty-print past the transfer
+    // cap once the envelope wrapper is added: export must refuse rather than
+    // mint a file importers (including this install) would reject with 413.
+    const probe = (filler: number): string => serializeMerchantTemplatePayload({
+      format: MERCHANT_TEMPLATE_FORMAT,
+      documentType: 'receipt',
+      schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
+      blocks: [{ kind: 'totals', labels: { grandTotal: 'x'.repeat(filler) } }],
+    });
+    const nearCapPayload = {
+      format: MERCHANT_TEMPLATE_FORMAT,
+      documentType: 'receipt',
+      schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
+      blocks: [{ kind: 'totals', labels: { grandTotal: 'x'.repeat(MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES - probe(0).length - 1) } }],
+    };
+    assert(
+      Buffer.byteLength(probe(nearCapPayload.blocks[0].labels.grandTotal.length), 'utf8') <= MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
+      'premise: the crafted payload still passes the write-time size cap',
+    );
+    const nearCap = await request(app).post('/api/print-templates')
+      .set('Authorization', OWNER).send({ name: 'Near Cap Receipt', payload: nearCapPayload });
+    assert.equal(nearCap.status, 201);
+    await request(app).post(`/api/print-templates/${nearCap.body.template.id}/activate`).set('Authorization', OWNER);
+    const nearCapExport = await request(app).get(`/api/print-templates/${nearCap.body.template.id}/export`)
+      .set('Authorization', OWNER);
+    assert.equal(nearCapExport.status, 413, `oversized envelope export is refused (got ${nearCapExport.status})`);
+    assert.match(nearCapExport.body.error, /maximum allowed size/);
+    ok('export holds its output to the same byte cap import enforces');
   }
 
   console.log('\n▶ Import API: fail-closed pipeline');
@@ -430,9 +465,107 @@ async function runTransfer(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 5. Storage normalization: rows persisted by earlier builds must transfer
+//
+// Builds before the canonical serialization switch stored payload_json in
+// client key order with a checksum over that exact text, so their exported
+// envelopes failed canonical checksum verification on import (409) — the
+// transfer feature silently could not move any pre-existing template.
+// Migration v73 rewrites those rows once; this section replays that upgrade
+// against realistic legacy rows and proves the round trip works afterwards.
+// ---------------------------------------------------------------------------
+
+async function runLegacyStorageNormalization(): Promise<void> {
+  console.log('\n▶ Storage normalization: pre-canonicalization rows become transferable');
+  {
+    const legacyText = JSON.stringify(PAYLOAD);
+    const canonical = serializeMerchantTemplatePayload(PAYLOAD);
+    assert.notEqual(legacyText, canonical,
+      'premise: legacy storage text differs from the canonical serialization');
+    const reorder = (value: Record<string, unknown>): Record<string, unknown> =>
+      Object.keys(value).sort().reverse().reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = value[key];
+        return acc;
+      }, {});
+    const legacyPreviousText = JSON.stringify(reorder(PAYLOAD as unknown as Record<string, unknown>));
+    const tamperedChecksum = 'f'.repeat(64);
+
+    const insertLegacy = getDatabase().prepare(`
+      INSERT INTO merchant_print_templates (
+        id, business_id, name, origin, derived_from, document_type, schema_version,
+        payload_json, status, previous_payload_json, checksum, created_by, updated_by,
+        created_at, updated_at
+      ) VALUES (?, 'local', ?, 'created', NULL, 'receipt', 1, ?, ?, ?, ?, NULL, NULL,
+                '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')
+    `);
+    // Active row written entirely by an earlier build (payload + checksum both
+    // legacy), a row whose current payload was already rewritten by a later
+    // edit but whose rollback point is still legacy, and a row whose stored
+    // text no longer matches its checksum (integrity unknown).
+    insertLegacy.run('legacy-active-row', 'Legacy Counter Receipt', legacyText, 'active', null, sha256(legacyText));
+    insertLegacy.run('legacy-rollback-row', 'Legacy Rollback Point', canonical, 'active', legacyPreviousText, sha256(canonical));
+    insertLegacy.run('legacy-tampered-row', 'Legacy Tampered Row', legacyText, 'draft', null, tamperedChecksum);
+
+    getDatabase().pragma('user_version = 72');
+    closeDatabase();
+    initDatabase();
+
+    const readRow = (id: string): any => getDatabase().prepare(
+      'SELECT id, status, payload_json, previous_payload_json, checksum FROM merchant_print_templates WHERE id = ?'
+    ).get(id);
+
+    const migratedActive = readRow('legacy-active-row');
+    assert.deepEqual(JSON.parse(migratedActive.payload_json), PAYLOAD,
+      'normalization preserves the semantic content exactly');
+    assert.equal(migratedActive.payload_json, canonical,
+      'legacy active row rewritten to the canonical serialization');
+    assert.equal(migratedActive.checksum, sha256(canonical),
+      'checksum recomputed over the canonical text');
+    assert.equal(migratedActive.status, 'active');
+
+    const migratedRollback = readRow('legacy-rollback-row');
+    assert.equal(migratedRollback.payload_json, canonical,
+      'already-canonical payload stays byte-identical');
+    assert.equal(migratedRollback.previous_payload_json, canonical,
+      'legacy rollback point normalizes to the same canonical text');
+
+    const untouchedTampered = readRow('legacy-tampered-row');
+    assert.equal(untouchedTampered.payload_json, legacyText,
+      'rows with unverifiable integrity are left untouched');
+    assert.equal(untouchedTampered.checksum, tamperedChecksum);
+    ok('legacy payloads and rollback points normalize once; integrity-unknown rows stay untouched');
+
+    // Idempotency: replaying the migration changes nothing further.
+    getDatabase().pragma('user_version = 72');
+    closeDatabase();
+    initDatabase();
+    assert.deepEqual(readRow('legacy-active-row'), migratedActive,
+      'second migration run leaves normalized rows unchanged');
+    assert.deepEqual(readRow('legacy-rollback-row'), migratedRollback);
+    ok('normalization is idempotent across repeated upgrade runs');
+
+    // The reported failure mode: export -> import of a pre-existing template
+    // used to fail with 409 "Checksum mismatch" on every importer.
+    const exported = await request(app).get('/api/print-templates/legacy-active-row/export')
+      .set('Authorization', OWNER);
+    assert.equal(exported.status, 200, `migrated active template exports (got ${exported.status})`);
+    const reimported = await request(app).post('/api/print-templates/import')
+      .set('Authorization', OWNER).send({ file: exported.text });
+    assert.equal(reimported.status, 201,
+      `exported pre-existing template re-imports (got ${reimported.status}: ${reimported.body?.error ?? ''})`);
+    assert.equal(reimported.body.template.status, 'draft');
+    assert.equal(reimported.body.template.origin, 'imported');
+    assert.equal(reimported.body.template.checksum, migratedActive.checksum,
+      'the migrated row transfers with its persisted checksum intact');
+    ok('templates stored by earlier builds now survive the export -> import round trip');
+  }
+}
+
 (async () => {
   try {
     await runTransfer();
+    await runLegacyStorageNormalization();
     console.log(`\nMerchant template import/export tests: ${passed} checks passed.`);
     closeDatabase();
     process.exit(0);

@@ -78,7 +78,8 @@ auditable until a future compatibility policy is explicitly introduced.
 
 ## Storage & lifecycle
 
-Table `merchant_print_templates` (migration v72):
+Table `merchant_print_templates` (migration v72; stored payloads normalized by
+migration v73):
 
 - `id` uuid PK; `business_id` tenant scope (the embedded database is
   single-store, so rows are scoped to `'local'`).
@@ -92,6 +93,11 @@ Table `merchant_print_templates` (migration v72):
   active template's payload changes).
 - `checksum`: sha256 of the exact persisted payload text; verified before
   activation and rollback so tampering is detected before any state change.
+- Migration v73 rewrote rows written before the canonical serialization
+  convention (client key order) into it once, idempotently, so envelope
+  checksums equal row checksums across upgrades. Rows whose stored text no
+  longer matches their checksum, or that no longer validate under the current
+  schema, are left untouched for the fail-closed checks above.
 
 CRUD API (owner role): `/api/print-templates` — create draft, update draft /
 active (active edits snapshot the previous payload), `activate`, `archive`,
@@ -145,7 +151,9 @@ Contract promises:
   source file name> }` as provenance.
 - Exportable states are `active` and `archived`; drafts are refused (they
   have never passed activation, the checksum-verified review point). A row
-  whose stored checksum no longer matches its payload can never be exported.
+  whose stored checksum no longer matches its payload can never be exported,
+  and the serialized envelope is held to the same 256 KB raw-byte cap import
+  enforces, so an install never mints a file it would refuse to read back.
 - Only minor-version forward migration would be introduced together with an
   explicit compatibility policy; today integer `schemaVersion` values other
   than `1` are rejected in both envelope and payload positions.

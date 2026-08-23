@@ -388,7 +388,9 @@ function sanitizeClientFileName(value: unknown): string | null {
  * `active` and `archived`; drafts are deliberately excluded (they have never
  * passed activation, which is the checksum-verified review point). The row's
  * checksum is verified BEFORE export so a tampered payload can never be
- * distributed as a trusted-looking file.
+ * distributed as a trusted-looking file, and the serialized envelope is held
+ * to the same byte cap import enforces, so an install can never mint a
+ * transfer file it would refuse to read back.
  */
 export function exportMerchantPrintTemplateFile(id: string): MerchantTemplateExportFile {
   const row = loadMerchantPrintTemplateRow(id);
@@ -410,7 +412,15 @@ export function exportMerchantPrintTemplateFile(id: string): MerchantTemplateExp
     checksum: row.checksum,
     template: JSON.parse(row.payload_json),
   };
-  return { fileName: exportFileName(row.name), json: JSON.stringify(envelope, null, 2) };
+  const json = JSON.stringify(envelope, null, 2);
+  const byteLength = Buffer.byteLength(json, 'utf8');
+  if (byteLength > MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES) {
+    throw new MerchantTemplateError(
+      `Exported transfer file is ${byteLength} bytes; the maximum allowed size is ${MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES} bytes`,
+      413,
+    );
+  }
+  return { fileName: exportFileName(row.name), json };
 }
 
 /**

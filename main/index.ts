@@ -69,8 +69,34 @@ let updateAvailable = false;
 let updateDownloaded = false;
 let startupFailure = false;
 
+function configureAutoUpdaterChannel(): void {
+  const prerelease = autoUpdater.currentVersion.prerelease[0];
+  const channel = typeof prerelease === 'string' ? prerelease : null;
+
+  // Stable installs intentionally leave channel unset. GitHub's stable
+  // provider then follows the repository's explicitly selected latest release.
+  // Beta/nightly builds opt in through their semver channel and use the
+  // corresponding beta.yml/nightly.yml manifest instead.
+  if (channel === 'beta' || channel === 'nightly') {
+    autoUpdater.channel = channel;
+    autoUpdater.allowPrerelease = true;
+    // Switching between a prerelease channel and stable can legitimately move
+    // to a lower semver value, so electron-updater must be allowed to do that.
+    autoUpdater.allowDowngrade = true;
+    log.info(`[Update] Opted into ${channel} release channel`);
+    return;
+  }
+
+  // Do not let an unsupported prerelease (for example, a local alpha build)
+  // accidentally subscribe an installation to an untracked channel.
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
+  if (channel) log.warn(`[Update] Unsupported prerelease channel ${channel}; using stable updates only`);
+}
+
 function setupAutoUpdater(): void {
   autoUpdater.logger = log;
+  configureAutoUpdaterChannel();
   // Downloading is harmless and lets the user see a ready-to-install build,
   // but installation must always be an explicit action. A POS may be closed
   // while a payment, printer job, or end-of-day workflow is still in flight.

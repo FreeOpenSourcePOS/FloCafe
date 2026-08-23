@@ -20,15 +20,16 @@
     "build:all-platforms": "npm run build:frontend && npm run build && electron-builder --win --mac --linux",
     "postinstall": "install-electron && electron-builder install-app-deps && npm run verify:electron",
     "verify:electron": "node scripts/verify-electron-runtime.cjs",
+    "verify:release-artifacts": "node scripts/assert-release-artifact-names.cjs",
     "build:win": "npm run build:frontend && npm run build && electron-builder --win",
     "build:appx": "npm run build:frontend && npm run build && electron-builder --win appx --x64 --arm64 --config.npmRebuild=false",
     "build:mac": "npm run build:frontend && npm run build && electron-builder --mac",
     "build:mas": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac mas --universal",
     "build:mas-dev": "MAS_BUILD=1 npm run build:frontend && MAS_BUILD=1 npm run build && MAS_BUILD=1 electron-builder --mac masDev",
     "build:linux": "npm run build:frontend && npm run build && electron-builder --linux",
-    "release:linux": "npm run build:frontend && npm run build && electron-builder --linux --publish always",
-    "release:mac": "npm run build:frontend && npm run build && electron-builder --mac --publish always",
-    "release:win": "npm run build:frontend && npm run build && electron-builder --win --publish always",
+    "release:linux": "npm run build:frontend && npm run build && electron-builder --linux --publish never",
+    "release:mac": "npm run build:frontend && npm run build && electron-builder --mac --publish never",
+    "release:win": "npm run build:frontend && npm run build && electron-builder --win --publish never",
     "pack": "electron-builder --dir",
     "pretest": "bash tests/run-test.sh npm run test:payment-methods-split && bash tests/run-test.sh npm run test:release-regressions",
     "start": "electron .",
@@ -55,7 +56,7 @@
     "test:kds-frontend-conflict": "ts-node --transpile-only -P tests/tsconfig.json tests/kds-frontend-conflict.test.ts",
     "test:kds-window-hardening": "ts-node --transpile-only -P tests/tsconfig.json tests/kds-window-hardening.test.ts",
     "test:e2e": "npm run build && npm run build:frontend && cd frontend && npx playwright install chromium && npx playwright test",
-    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts",
+    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts && node tests/release-asset-verifier.test.cjs",
     "test:windows-uninstaller": "node tests/run-windows-uninstaller-tests.cjs",
     "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts",
     "test:country-provenance": "node tests/run-electron-node-test.cjs tests/country-provenance.test.ts",
@@ -208,6 +209,7 @@
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
     "eslint": "^10.8.1",
+    "js-yaml": "^4.3.1",
     "supertest": "^7.2.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.4.5"
@@ -251,8 +253,11 @@
       "provider": "github",
       "owner": "FreeOpenSourcePOS",
       "repo": "FloCafe",
-      "releaseType": "release"
+      "releaseType": "release",
+      "channel": "latest"
     },
+    "detectUpdateChannel": false,
+    "generateUpdatesFilesForAllChannels": true,
     "extraResources": [
       {
         "from": "assets",
@@ -380,7 +385,7 @@
       "icon": "assets",
       "category": "Office",
       "executableName": "flocafe",
-      "artifactName": "flocafe-${version}-${arch}.${ext}",
+      "artifactName": "flocafe-${version}-linux.${ext}",
       "extraFiles": [
         {
           "from": "assets/com.flo.desktop.metainfo.xml",
@@ -400,6 +405,9 @@
           "StartupWMClass": "flo-desktop"
         }
       }
+    },
+    "appImage": {
+      "artifactName": "flocafe-${version}-linux.appimage"
     },
     "snapcraft": {
       "base": "core24",

@@ -6,9 +6,9 @@
   "origin": {
     "sourceTemplateId": "3f2504e0-4f89-11d3-9a0c-0305e82c3301",
     "sourceName": "Front Counter Receipt",
-    "sourceChecksum": "f2f8809a097ecbf3aa2c16247533588a5211a8a112e3c138876335e8047a5140"
+    "sourceChecksum": "fbcfe2e9000bf19f50ef8cfdee9020ac7eda2f77e2ff4a235f799d0cb5b224ea"
   },
-  "checksum": "f2f8809a097ecbf3aa2c16247533588a5211a8a112e3c138876335e8047a5140",
+  "checksum": "fbcfe2e9000bf19f50ef8cfdee9020ac7eda2f77e2ff4a235f799d0cb5b224ea",
   "template": {
     "format": "flocafe-merchant-print-template",
     "documentType": "receipt",

@@ -24,6 +24,7 @@ import {
   MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES,
   MERCHANT_TEMPLATE_EXPORT_FORMAT,
   MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION,
+  serializeMerchantTemplatePayload,
   validateMerchantTemplate,
   validateMerchantTemplateEnvelope,
   validateMerchantTemplateText,
@@ -136,8 +137,9 @@ function normalizePayload(payload: unknown): string {
       validation.errors,
     );
   }
-  // Re-stringify the validated object so the stored text is canonical.
-  return JSON.stringify(validation.payload);
+  // Store the canonical serialization so the persisted text — and therefore
+  // its checksum — never depends on client key order or formatting.
+  return serializeMerchantTemplatePayload(validation.payload);
 }
 
 function validateName(name: unknown): string {
@@ -323,7 +325,7 @@ export function rollbackMerchantPrintTemplate(id: string, actorId: string | null
       restoredValidation.errors,
     );
   }
-  const restoredJson = JSON.stringify(restoredValidation.payload);
+  const restoredJson = serializeMerchantTemplatePayload(restoredValidation.payload);
 
   getDatabase().prepare(`
     UPDATE merchant_print_templates
@@ -341,9 +343,10 @@ export function rollbackMerchantPrintTemplate(id: string, actorId: string | null
 //     appVersion?, origin?, checksum, template }
 //
 // `checksum` is the sha256 of the CANONICAL payload text
-// (JSON.stringify of the validated payload object) — the same integrity
-// value the table stores, so a round-tripped file re-verifies against the
-// persisted row. Import treats the file as untrusted input: size-capped,
+// (serializeMerchantTemplatePayload: recursively key-sorted, no whitespace) —
+// the same integrity value the table stores, so a round-tripped file
+// re-verifies against the persisted row and reformatting never breaks it.
+// Import treats the file as untrusted input: size-capped,
 // single JSON document, structurally validated envelope, then the SAME
 // fail-closed payload validator as every write path, then checksum
 // verification. Imports ALWAYS land as a new draft row (fresh uuid,
@@ -464,7 +467,7 @@ export function importMerchantPrintTemplateFile(input: {
 
   // Integrity: the claimed checksum must equal the sha256 of the canonical
   // payload text — any semantic modification after export fails closed.
-  const canonical = JSON.stringify(payloadCheck.payload);
+  const canonical = serializeMerchantTemplatePayload(payloadCheck.payload);
   if (computeChecksum(canonical) !== envelope.claimedChecksum.toLowerCase()) {
     throw new MerchantTemplateError(
       'Checksum mismatch: the transfer file was modified or corrupted after export',
@@ -472,10 +475,11 @@ export function importMerchantPrintTemplateFile(input: {
     );
   }
 
+  const sourceFileName = sanitizeClientFileName(input.fileName);
   const derivedFrom: DerivedFromRef = {
     type: 'offline-import',
     templateId: computeChecksum(raw),
-    ...(sanitizeClientFileName(input.fileName) ? { fileName: sanitizeClientFileName(input.fileName)! } : {}),
+    ...(sourceFileName ? { fileName: sourceFileName } : {}),
   };
 
   const name = input.name !== undefined && input.name !== null && input.name !== ''

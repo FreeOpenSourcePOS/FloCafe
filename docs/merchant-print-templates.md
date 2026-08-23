@@ -125,10 +125,14 @@ Contract promises:
   import (stricter than render tolerance) so typos cannot change meaning.
 - The envelope major gate is independent of the payload's `schemaVersion`:
   unknown envelope majors fail closed before the payload is even inspected.
-- `checksum` is the sha256 hex of the CANONICAL payload text —
-  `JSON.stringify(validatedPayload)` — which is exactly what the table's
-  `checksum` column stores. Whitespace/key-order reformatting of the file
-  does not break verification; any semantic modification does.
+- `checksum` is the sha256 hex of the CANONICAL payload text: the validated
+  payload serialized with recursively sorted object keys, unchanged array
+  order, and no insignificant whitespace (`serializeMerchantTemplatePayload`
+  in the shared print kernel). That exact text is also what the table's
+  `payload_json` column stores, so the envelope `checksum` equals the row's
+  `checksum` column. Whitespace/key-order reformatting of the file does not
+  break verification; any semantic modification (including block order)
+  does.
 - Import treats every file as untrusted input: raw byte cap 256 KB, single
   JSON document, structural envelope validation, then the SAME shared
   payload validator used on every write path (#447), then checksum

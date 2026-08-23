@@ -46,6 +46,7 @@ import {
   MAX_MERCHANT_TEMPLATE_ENVELOPE_BYTES,
   MERCHANT_TEMPLATE_EXPORT_FORMAT,
   MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION,
+  serializeMerchantTemplatePayload,
   validateMerchantTemplate,
   validateMerchantTemplateEnvelope,
 } from '../shared/print';
@@ -84,14 +85,33 @@ console.log('\n▶ Envelope validation: golden fixture');
   const payloadResult = validateMerchantTemplate(envelopeResult.ok ? envelopeResult.envelope.payload : null);
   assert(payloadResult.ok, 'embedded payload passes the shared #447 validator');
 
-  // Checksum convention: sha256 of the canonical payload serialization.
-  const canonical = JSON.stringify(payloadResult.ok ? payloadResult.payload : null);
+  // Checksum convention: sha256 of the shared kernel's canonical serialization.
+  const canonical = payloadResult.ok ? serializeMerchantTemplatePayload(payloadResult.payload) : '';
   assert.equal(
     envelopeResult.ok && envelopeResult.envelope.claimedChecksum.toLowerCase(),
     sha256(canonical),
     'claimed checksum equals sha256 of canonical payload text',
   );
   ok('checksum convention verified against the golden fixture');
+
+  // Key order never affects the digest: an alphabetically re-keyed deep copy
+  // of the same payload serializes to the identical canonical text.
+  const template = parsed.template as Record<string, unknown>;
+  const rekeyed = {
+    schemaVersion: template.schemaVersion,
+    blocks: (template.blocks as Array<Record<string, unknown>>).map((block) =>
+      Object.keys(block).sort().reduce<Record<string, unknown>>((acc, key) => {
+        acc[key] = block[key];
+        return acc;
+      }, {})),
+    format: template.format,
+    documentType: template.documentType,
+  };
+  assert.deepEqual(JSON.parse(serializeMerchantTemplatePayload(rekeyed as any)), template,
+    're-keyed copy stays semantically identical');
+  assert.equal(sha256(serializeMerchantTemplatePayload(rekeyed as any)), sha256(canonical),
+    'reordering keys does not change the canonical digest');
+  ok('canonical digest is insensitive to object key order');
 
   assert.equal(MERCHANT_TEMPLATE_EXPORT_FORMAT, 'flocafe-merchant-template');
   assert.equal(MERCHANT_TEMPLATE_EXPORT_SCHEMA_VERSION, 1);
@@ -352,6 +372,32 @@ async function runTransfer(): Promise<void> {
     const duplicates = (getDatabase().prepare('SELECT COUNT(*) AS n FROM merchant_print_templates WHERE name = ?').get('Front Counter Receipt') as any).n;
     assert.equal(duplicates, 3, 'duplicate names allowed under distinct uuid identities (source + 2 imports)');
     ok('duplicate names are permitted (identity is the uuid, never the source id)');
+  }
+
+  console.log('\n▶ Reformat tolerance: whitespace/key-order edits still verify');
+  {
+    const reformatted = JSON.parse(exportedText);
+    const source = reformatted.template;
+    reformatted.template = {
+      schemaVersion: source.schemaVersion,
+      blocks: source.blocks.map((block: Record<string, unknown>) => Object.keys(block)
+        .sort()
+        .reverse()
+        .reduce<Record<string, unknown>>((acc, key) => {
+          acc[key] = block[key];
+          return acc;
+        }, {})),
+      format: source.format,
+      documentType: source.documentType,
+    };
+    const res = await request(app).post('/api/print-templates/import')
+      .set('Authorization', OWNER).send({ file: JSON.stringify(reformatted) });
+    assert.equal(res.status, 201, `whitespace/key-reformatted file imports (got ${res.status})`);
+    const sourceRow = getDatabase().prepare('SELECT checksum FROM merchant_print_templates WHERE id = ?')
+      .get(templateId) as any;
+    assert.equal(res.body.template.checksum, sourceRow.checksum,
+      'reformatted copy verifies to the persisted source checksum');
+    ok('whitespace/key-order reformatting does not break verification');
   }
 
   console.log('\n▶ Round-trip render parity + lifecycle intact after import');

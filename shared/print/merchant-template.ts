@@ -126,8 +126,10 @@ export interface MerchantTemplateEnvelopeOrigin {
 }
 
 /** Structural view of a validated envelope. Checksum VERIFICATION (hashing)
- * happens at the IO boundary: compare `claimedChecksum` against the sha256 of
- * `JSON.stringify(payload)` (the same canonical text the service persists). */
+ * happens at the IO boundary: run {@link validateMerchantTemplate} on
+ * `payload`, then compare `claimedChecksum` against the sha256 of
+ * {@link serializeMerchantTemplatePayload}(payload) — the same canonical text
+ * the service persists. */
 export interface ValidatedMerchantTemplateEnvelope {
   readonly exportedAt: string;
   readonly appVersion?: string;
@@ -221,8 +223,8 @@ export function validateMerchantTemplateEnvelope(value: unknown): MerchantTempla
       ...(typeof value.appVersion === 'string' ? { appVersion: value.appVersion } : {}),
       ...(origin ? { origin } : {}),
       claimedChecksum: value.checksum as string,
-      // Placeholder replaced by the caller after payload validation; the
-      // structural contract above is what this function owns.
+      // Raw template object as parsed; callers must run validateMerchantTemplate
+      // on it before treating this value as a trusted payload.
       payload: value.template as unknown as MerchantPrintTemplatePayload,
     },
   };
@@ -387,6 +389,29 @@ export function validateMerchantTemplateText(raw: string): MerchantTemplateValid
     return { ok: false, errors: [`payload is not valid JSON: ${(error as Error).message}`] };
   }
   return validateMerchantTemplate(parsed);
+}
+
+/**
+ * Canonical JSON text of a VALIDATED payload: object keys recursively sorted,
+ * array order untouched (block order is semantic), no insignificant
+ * whitespace. This exact text is what the service persists and the only text
+ * integrity checksums hash (table column + transfer envelope), so
+ * whitespace/key-order reformatting of a payload never changes its digest.
+ */
+export function serializeMerchantTemplatePayload(payload: MerchantPrintTemplatePayload): string {
+  return JSON.stringify(canonicalizeJson(payload));
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (value !== null && typeof value === 'object') {
+    const sorted: Record<string, unknown> = {};
+    for (const key of Object.keys(value).sort()) {
+      sorted[key] = canonicalizeJson((value as Record<string, unknown>)[key]);
+    }
+    return sorted;
+  }
+  return value;
 }
 
 // ---------------------------------------------------------------------------

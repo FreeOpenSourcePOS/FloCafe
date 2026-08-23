@@ -24,6 +24,8 @@ Receipt labels (invoice title, bill number, date, totals, payment methods) and k
 - **Kitchen tickets** resolve their label language independently through the stored `kot_language_policy`. A fixed kitchen language (for example English) keeps tickets in that language even when the storefront runs in another language.
 - Invalid or missing policy values always fall back to the store language; printing never fails because of a malformed policy.
 
+For the full study of non-Latin script support on thermal printers — including the recommended raster fallback architecture, community hardware-test checklist, and open decisions — see [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md).
+
 Lines the printer cannot render under the script rules above are skipped with an explicit warning — content is never silently dropped. The printed document itself carries every line plus its text direction, so direction-aware layouts (right-to-left base with left-to-right amounts and order numbers) can be expressed by any renderer without changing the underlying data.
 
 ## Kitchen printing

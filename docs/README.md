@@ -27,6 +27,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
 | [merchant-print-templates.md](merchant-print-templates.md) | Merchant print template schema (v1), validation/compatibility policy, provenance and trust model, and bill-template selection identity. Cross-links the compliance `escpos-line-template-v1` contract (#445). | CURRENT |
+| [printing-nonlatin-capabilities.md](printing-nonlatin-capabilities.md) | Capability study and decision record for non-Latin scripts (Arabic/Persian, Hebrew, CJK, Indic) on ESC/POS hardware: approach comparison, recommended capability-tiered raster-fallback architecture (#446), community hardware-test matrix, and test-page raster probe spec. Not yet implemented. | FORWARD-LOOKING |
 
 ### Active design & forward-looking plans
 

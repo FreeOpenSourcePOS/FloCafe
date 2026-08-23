@@ -4052,7 +4052,7 @@ export default function SettingsPage() {
                         {card.preview}
                       </pre>
                       <p className="text-xs text-gray-500">
-                        {card.source === 'plugin'
+                        {card.source === 'plugin' || card.source === 'merchant'
                           ? card.description
                           : card.id === 'classic'
                             ? t('billTemplateClassicDesc')

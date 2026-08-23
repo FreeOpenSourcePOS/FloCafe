@@ -1006,7 +1006,7 @@ Print a kitchen order ticket for `orderId`. A caller may provide `stationName` a
 ## Merchant Print Templates
 
 Owner-role CRUD for tenant-owned semantic receipt templates (#447). See
-docs/merchant-print-templates.md for the payload schema, validation policy,
+[Merchant print templates](merchant-print-templates.md) for the payload schema, validation policy,
 and provenance/trust model. Payloads are validated fail-closed on every write.
 
 ### GET `/api/print-templates`

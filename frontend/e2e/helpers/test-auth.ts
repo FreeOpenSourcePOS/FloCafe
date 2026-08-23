@@ -1,5 +1,6 @@
 import { Page, expect } from '@playwright/test';
 import * as crypto from 'crypto';
+import { E2E_BASE_URL } from './urls';
 
 export const E2E_JWT_SECRET = process.env.JWT_SECRET || 'e2e-test-secret';
 export const E2E_PASSWORD = process.env.E2E_PASSWORD || 'E2ePass123!';
@@ -41,7 +42,7 @@ export function getE2eToken(
 export async function setLanguage(
   page: Page,
   value: string,
-  base = process.env.E2E_BASE_URL || 'http://localhost:3001',
+  base = E2E_BASE_URL,
 ): Promise<void> {
   const token =
     (await page.evaluate(() => localStorage.getItem('token')).catch(() => null)) ||

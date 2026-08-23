@@ -2,6 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 /**
  * Rendered RTL/LTR evidence for the Dashboard, POS, and common order flow
@@ -35,7 +36,6 @@ import * as os from 'os';
  * (tables_required=false) and one product ("E2E Coffee").
  */
 
-const BASE = process.env.E2E_BASE_URL || 'http://localhost:3001';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M06ZR8QPAYE8HF2XV90DDKGY');

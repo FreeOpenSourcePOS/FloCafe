@@ -2,6 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 /**
  * Rendered RTL/LTR evidence for the Setup, Auth, and Settings screens
@@ -30,7 +31,6 @@ import * as os from 'os';
  * E2ePass123! and owner@flo.local / E2ePass123!.
  */
 
-const BASE = 'http://localhost:3001';
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M06TFQ2DPQQE7CME0SCKM8Y3');
@@ -306,4 +306,3 @@ test('settings renders RTL without horizontal overflow, mirrors toggles and tabs
     await logout(page);
   }
 });
-

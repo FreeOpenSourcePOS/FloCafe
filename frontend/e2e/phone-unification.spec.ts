@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { setLanguage } from './helpers/test-auth';
+import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 const EVIDENCE_DIR = process.env.EVIDENCE_DIR || path.join(os.tmpdir(), 'no-mistakes-evidence', '01M017SAY4WPNZWT0YAB197D9H');
 if (!fs.existsSync(EVIDENCE_DIR)) {
@@ -11,7 +12,7 @@ if (!fs.existsSync(EVIDENCE_DIR)) {
 
 test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({ page }) => {
   // Log in as owner for full administrative access
-  await page.goto('http://localhost:3001/auth/login');
+  await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('owner@flo.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
@@ -19,7 +20,7 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
   await setLanguage(page, 'en');
 
   // ── 1. Customer Management: validates, normalizes, clears, and updates phone numbers ──
-    await page.goto('http://localhost:3001/customers');
+    await page.goto(`${BASE}/customers`);
     await expect(page.locator('table')).toBeVisible();
 
     // 1. Add customer with local Thai/national phone
@@ -91,7 +92,7 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
     await page.screenshot({ path: tableIntlScreenshot });
 
     // ── 2. Business Settings: normalizes and validates business contact phone ──
-    await page.goto('http://localhost:3001/settings');
+    await page.goto(`${BASE}/settings`);
     await page.waitForLoadState('networkidle');
 
     // Locate the phone input in business information section
@@ -124,7 +125,7 @@ test('Frontend Phone Unification End-to-End Visual Suite (Issue #263)', async ({
     await page.screenshot({ path: settingsClearedScreenshot });
 
     // ── 3. WhatsApp Blocklist: normalizes entered phone with tenant country ──
-    await page.goto('http://localhost:3001/whatsapp');
+    await page.goto(`${BASE}/whatsapp`);
     await page.waitForLoadState('networkidle');
 
     // WhatsApp blocklist form inputs

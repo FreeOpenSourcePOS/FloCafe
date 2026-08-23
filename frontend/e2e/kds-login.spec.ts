@@ -1,11 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { E2E_KDS_BASE_URL } from './helpers/urls';
 
 test('KDS standalone logs in and restores its session', async ({ page }) => {
   const pageErrors: Error[] = [];
   page.on('pageerror', (error) => pageErrors.push(error));
-  const kdsBaseUrl = process.env.KDS_BASE_URL ?? 'http://localhost:3002';
-
-  await page.goto(`${kdsBaseUrl}/kds-standalone`);
+  await page.goto(`${E2E_KDS_BASE_URL}/kds-standalone`);
   await expect(page.getByTestId('kds-login-form')).toBeVisible();
   await page.getByTestId('kds-login-email').fill('manager@flo.local');
   await page.getByTestId('kds-login-password').fill('E2ePass123!');

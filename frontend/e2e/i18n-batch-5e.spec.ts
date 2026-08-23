@@ -1,6 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
-
-const BASE = 'http://localhost:3001';
+import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 async function captureScreenshot(page: Page, filename: string): Promise<void> {
   // Playwright writes to a per-test output dir (test-results/), which is

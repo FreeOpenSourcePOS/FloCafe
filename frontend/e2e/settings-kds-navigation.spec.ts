@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const BASE = process.env.E2E_BASE_URL || 'http://localhost:3001';
+import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 test('KDS sidebar link selects the KDS tab after switching Settings tabs', async ({ page }) => {
   await page.goto(`${BASE}/auth/login`);

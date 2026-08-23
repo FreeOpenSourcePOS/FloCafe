@@ -1,6 +1,5 @@
 import { test, expect } from '@playwright/test';
-
-const BASE = process.env.E2E_BASE_URL || 'http://localhost:3001';
+import { E2E_BASE_URL as BASE } from './helpers/urls';
 
 test('POS product grid has no horizontal clipping and touchable product cards', async ({ page }) => {
   await page.goto(`${BASE}/auth/login`);

@@ -2,10 +2,15 @@ import { test, expect, Page } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import {
+  E2E_BASE_URL,
+  E2E_KDS_BASE_URL,
+  E2E_SERVER_APP_BASE_URL,
+} from './helpers/urls';
 
-const BASE_API = 'http://localhost:3001';
-const BASE_KDS = 'http://localhost:3002';
-const BASE_SERVER_APP = 'http://localhost:3003';
+const BASE_API = E2E_BASE_URL;
+const BASE_KDS = E2E_KDS_BASE_URL;
+const BASE_SERVER_APP = E2E_SERVER_APP_BASE_URL;
 const EVIDENCE_DIR =
   process.env.EVIDENCE_DIR ||
   path.join(os.tmpdir(), 'no-mistakes-evidence', '01M0D9465DMYWJPCZS0XR240HB');

@@ -310,7 +310,7 @@ async function runTransfer(): Promise<void> {
 
   console.log('\n▶ Export hardening: tamper detection + filename sanitization');
   {
-    const row = getDatabase().prepare('SELECT payload_json FROM merchant_print_templates WHERE id = ?').get(templateId) as any;
+    const row = getDatabase().prepare('SELECT payload_json, checksum FROM merchant_print_templates WHERE id = ?').get(templateId) as any;
     getDatabase().prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
       .run('{"tampered":true}', templateId);
     const tamperedExport = await request(app).get(`/api/print-templates/${templateId}/export`)

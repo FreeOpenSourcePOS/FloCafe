@@ -338,6 +338,8 @@ app.use((req: any, res: any, next: any) => {
     res.status(401).json({ error: 'Invalid or expired token' });
   }
 });
+// Ephemeral supertest harness: rate limiting is applied by the production router itself.
+// codeql[js/missing-rate-limiting]
 app.use('/api/print-templates', printTemplateRoutes);
 
 function authHeaderFor(role: string): string {

@@ -33,6 +33,8 @@ import { whatsappRoutes } from './whatsapp';
 import { supportTicketRoutes } from './support-ticket';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, withTxn, getSettingValue, getCachedPairingCode, setCachedPairingCode, verifyPin } from '../db';
 import { checkPinRateLimit } from './orders';
+
+const OWNER_MANAGER_ROLE_PLACEHOLDERS = ROLE_ACCESS.ownerManager.map(() => '?').join(', ');
 import {
   calculateConfiguredChargeTaxes,
   combineItemAndChargeTaxes,
@@ -361,13 +363,13 @@ export function registerRoutes(app: Express): void {
           const managerId = req.body.manager_id || req.body.user_id;
           let pinUser: any = null;
           if (managerId) {
-            const candidate = db.prepare("SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").get(managerId) as any;
+            const candidate = db.prepare(`SELECT * FROM users WHERE id = ? AND pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS}) AND is_active = 1`).get(managerId, ...ROLE_ACCESS.ownerManager) as any;
             if (candidate && verifyPin(candidate.pin_hash, override_pin)) {
               pinUser = candidate;
             }
           }
           if (!pinUser) {
-            const managers = db.prepare("SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN ('owner', 'manager') AND is_active = 1").all() as any[];
+            const managers = db.prepare(`SELECT * FROM users WHERE pin_hash IS NOT NULL AND role IN (${OWNER_MANAGER_ROLE_PLACEHOLDERS}) AND is_active = 1`).all(...ROLE_ACCESS.ownerManager) as any[];
             for (const u of managers) {
               if (verifyPin(u.pin_hash, override_pin)) {
                 pinUser = u;

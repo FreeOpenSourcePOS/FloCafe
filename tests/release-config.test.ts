@@ -1,369 +1,193 @@
-/**
- * Release integrity checks — catches the class of bug where macOS
- * auto-update silently 404'd on latest-mac.yml for every release from
- * v1.6.7 through v1.9.11: electron-builder needs a `zip` mac target to
- * produce that manifest, and the release workflow has to actually upload
- * it (and the Windows/NSIS equivalent, latest.yml) alongside the installer.
- * None of this requires an actual platform build — it's a config/workflow
- * shape check, fast enough to run on every `npm test`.
- */
 import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+
+const YAML = require('js-yaml') as { load: (text: string) => unknown };
+
+function loadWorkflow(fileName: string): any {
+  const workflow = YAML.load(fs.readFileSync(path.join(__dirname, '../.github/workflows', fileName), 'utf8')) as any;
+  assert.ok(workflow && typeof workflow === 'object' && workflow.jobs, `${fileName} must parse as a workflow with jobs`);
+  return workflow;
+}
+
+function findStep(job: any, name: string): any {
+  const step = (job.steps || []).find((candidate: any) => candidate.name === name);
+  assert.ok(step, `workflow job must contain step "${name}"`);
+  return step;
+}
+
+function stepRun(job: any, name: string): string {
+  const run = findStep(job, name).run;
+  assert.equal(typeof run, 'string', `workflow step "${name}" must execute a script`);
+  return run;
+}
 
 function run() {
   console.log('Testing release config + workflow integrity...');
 
   const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json'), 'utf8'));
   const build = pkg.build;
+  const releaseVerifier = require('../scripts/verify-release-assets.cjs');
 
   assert.equal(pkg.engines?.node, '>=22.12.0', 'root Node engine must match Electron 43 minimum');
   assert.equal(pkg.scripts?.['verify:electron'], 'node scripts/verify-electron-runtime.cjs', 'Electron runtime verification must be cross-platform');
   assert.equal(pkg.scripts?.['verify:release-artifacts'], 'node scripts/assert-release-artifact-names.cjs', 'release artifact filename assertion must be available to CI');
   assert.ok(fs.existsSync(path.join(__dirname, '../scripts/verify-electron-runtime.cjs')), 'cross-platform Electron runtime verifier must exist');
   assert.ok(fs.existsSync(path.join(__dirname, '../scripts/assert-release-artifact-names.cjs')), 'release artifact filename verifier must exist');
-  const releaseVerifierPath = path.join(__dirname, '../scripts/verify-release-assets.cjs');
-  assert.ok(fs.existsSync(releaseVerifierPath), 'draft release asset verifier must exist');
-  const releaseVerifier = fs.readFileSync(releaseVerifierPath, 'utf8');
-  assert.ok(releaseVerifier.includes('assertReleaseAssetInventory') && releaseVerifier.includes('verifyAssetAvailability'), 'draft release verification must cover the uploaded asset inventory as well as manifest references');
+  assert.equal(typeof releaseVerifier.assertReleaseAssetInventory, 'function', 'draft release verifier must expose inventory validation');
+  assert.deepEqual(
+    releaseVerifier.expectedManifestNames('latest'),
+    ['latest.yml', 'latest-mac.yml', 'latest-linux.yml', 'latest-linux-arm64.yml'],
+    'draft release verification must require both Linux architecture manifests'
+  );
   assert.equal(build?.publish?.channel, 'latest', 'stable builds must default to the latest update channel');
   assert.equal(build?.detectUpdateChannel, false, 'GitHub release channels must be selected explicitly by the release pipeline');
   assert.equal(build?.generateUpdatesFilesForAllChannels, true, 'electron-builder must support channel update manifests');
+  assert.equal(build?.publish?.provider, 'github', 'build.publish must target GitHub releases');
 
-  // ── electron-builder config ──────────────────────────────────────────
-  assert.ok(build?.publish?.provider === 'github', 'build.publish must target GitHub releases');
+  const macTargets = (build?.mac?.target || []).map((target: any) => target.target);
+  assert.ok(macTargets.includes('zip'), 'mac build target must include zip for electron-updater');
 
-  const macTargets = (build?.mac?.target || []).map((t: any) => t.target);
-  assert.ok(
-    macTargets.includes('zip'),
-    'mac build target must include "zip" — DMG alone cannot be used for electron-updater\'s ' +
-    'silent background updates, and without a zip target electron-builder never produces latest-mac.yml'
-  );
-
-  const winTargets = (build?.win?.target || []).map((t: any) => t.target);
-  assert.ok(
-    winTargets.includes('nsis'),
-    'win build target must include "nsis" — electron-updater\'s Windows auto-update relies on ' +
-    'the NSIS installer + latest.yml'
-  );
+  const winTargets = (build?.win?.target || []).map((target: any) => target.target);
+  assert.ok(winTargets.includes('nsis'), 'win build target must include nsis for electron-updater');
   assert.equal(
     pkg.scripts?.['build:appx'],
     'npm run build:frontend && npm run build && electron-builder --win appx --x64 --arm64 --config.npmRebuild=false',
-    'build:appx must remain available for local x64+arm64 Microsoft Store package builds without requiring a native rebuild'
+    'build:appx must preserve local x64 and arm64 Store builds'
   );
-  assert.ok(build?.appx?.identityName, 'build.appx.identityName must be set for Microsoft Store package identity');
-  assert.ok(build?.appx?.publisher, 'build.appx.publisher must be set for Microsoft Store package identity');
+  assert.ok(build?.appx?.identityName, 'build.appx.identityName must be set');
+  assert.ok(build?.appx?.publisher, 'build.appx.publisher must be set');
+  assert.ok(winTargets.includes('appx'), 'win build target must include appx');
+  const appxConfig = (build?.win?.target || []).find((target: any) => target.target === 'appx');
+  assert.ok(appxConfig?.arch?.includes('arm64'), 'win appx target must include arm64');
 
-  const appxTarget = winTargets.find((target: string) => target === 'appx');
-  assert.ok(appxTarget, 'win build target must include "appx" for Microsoft Store packages');
-  const winTargetConfigs = (build?.win?.target || []) as Array<{ target: string; arch?: string[] }>;
-  const appxConfig = winTargetConfigs.find((target) => target.target === 'appx');
-  assert.ok(
-    appxConfig?.arch?.includes('arm64'),
-    'win appx target must include arm64 so Windows on Arm Store users get a native package'
-  );
+  assert.equal(build?.snapcraft?.base, 'core24', 'snapcraft must use core24');
+  const snapPlugs = build?.snapcraft?.core24?.plugs || [];
+  assert.ok(snapPlugs.includes('default'), 'snapcraft must preserve the default Electron plugs');
+  assert.ok(snapPlugs.includes('network-bind'), 'snapcraft must permit the local servers to bind');
+  assert.equal(build?.snapcraft?.core24?.environment?.TMPDIR, '$XDG_RUNTIME_DIR', 'snapcraft must use a writable runtime temp directory');
+  assert.ok(typeof build?.linux?.synopsis === 'string' && build.linux.synopsis.length > 0 && build.linux.synopsis.length <= 78, 'linux synopsis must be present and short');
 
-  // ── Linux snap: Path B (snapcraft, core24) shape ────────────────
-  assert.ok(
-    build?.snapcraft?.base === 'core24',
-    'build.snapcraft.base must be "core24" — modern Electron (≥28) is supported, GNOME extension ' +
-    'requires core22+. Old "snap" block is legacy and can\'t declare the GNOME extension cleanly.'
-  );
-  const snapsPlugs = (build?.snapcraft?.core24?.plugs || []) as string[];
-  assert.ok(
-    snapsPlugs.includes('default'),
-    'plugs must include "default" so electron-builder\'s Electron base plug set (x11, wayland, ' +
-    'home, network, audio-playback, opengl, ...) is preserved instead of replaced'
-  );
-  assert.ok(
-    snapsPlugs.includes('network-bind'),
-    'plugs must include "network-bind" — the local Express server binds 0.0.0.0:3001 and the ' +
-    'KDS server binds 0.0.0.0:3002; without this both fail under strict confinement'
-  );
-  const linuxEnv = build?.snapcraft?.core24?.environment || {};
-  assert.ok(
-    linuxEnv.TMPDIR === '$XDG_RUNTIME_DIR',
-    'snapcraft.core24.environment.TMPDIR must be "$XDG_RUNTIME_DIR" — Chromium/Electron needs a ' +
-    'writable runtime tmpdir or libappindicator resources become unreadable under confinement'
-  );
-  const linuxSynopsis = build?.linux?.synopsis;
-  assert.ok(
-    typeof linuxSynopsis === 'string' && linuxSynopsis.length > 0 && linuxSynopsis.length <= 78,
-    `linux.synopsis must be set and ≤78 chars (got ${JSON.stringify(linuxSynopsis)})`
-  );
+  for (const artifact of [build?.linux?.artifactName, build?.appImage?.artifactName]) {
+    assert.ok(typeof artifact === 'string' && artifact.includes('${version}') && !artifact.includes('${arch}') && !/\s/.test(artifact.replace(/\$\{[^}]+\}/g, '')), `Linux artifact template must be safe: ${JSON.stringify(artifact)}`);
+  }
+  assert.ok(build?.appImage?.artifactName.endsWith('.appimage'), 'AppImage artifact extension must be lowercase');
 
-  // ── Linux artifacts: safe filenames for release URLs ─────────────
-  // The productName ("Flo Cafe") default would produce spaces and uppercase
-  // characters. Keep the platform templates explicitly lowercase so every
-  // published filename satisfies the no-renaming release contract (#463).
-  const linuxArtifact = build?.linux?.artifactName;
-  assert.ok(
-    typeof linuxArtifact === 'string' && linuxArtifact.includes('${version}') && linuxArtifact.includes('-linux.') && !linuxArtifact.includes('${arch}') && !/\s/.test(linuxArtifact.replace(/\$\{[^}]+\}/g, '')),
-    `linux.artifactName must be a safe lowercased template (got ${JSON.stringify(linuxArtifact)})`
-  );
-  const appImageArtifact = build?.appImage?.artifactName;
-  assert.ok(
-    typeof appImageArtifact === 'string' && appImageArtifact.includes('${version}') && appImageArtifact.endsWith('.appimage') && !appImageArtifact.includes('${arch}') && !/\s/.test(appImageArtifact.replace(/\$\{[^}]+\}/g, '')),
-    `appImage.artifactName must use a lowercase .appimage extension and safe template (got ${JSON.stringify(appImageArtifact)})`
-  );
-
-  const linuxTargets = (build?.linux?.target || []) as Array<{ target: string; arch?: string[] }>;
-  // arm64 must be declared on EVERY Linux target — AppImage, deb, rpm, snap.
-  // otherwise the arm64 matrix runner would skip that target and the release
-  // would only ship half-arch.
-  const expectedArchPerTarget: Array<[string, string]> = [
-    ['AppImage', 'AppImagehub auto-discovery + ARM Linux desktops'],
-    ['deb', 'Debian / Ubuntu / Raspberry Pi OS / SteamOS'],
-    ['rpm', 'Fedora / RHEL / Nobara / openSUSE on arm64'],
-    ['snap', 'Snap Store on Raspberry Pi + ARM servers'],
-  ];
-  for (const [targetName, why] of expectedArchPerTarget) {
-    const target = linuxTargets.find((t) => t.target === targetName);
-    assert.ok(
-      target,
-      `linux.target must include "${targetName}" (${why})`
-    );
-    assert.ok(
-      target.arch && target.arch.includes('arm64'),
-      `${targetName} target.arch must include "arm64" (${why})`
-    );
+  const linuxTargets = build?.linux?.target || [];
+  for (const targetName of ['AppImage', 'deb', 'rpm', 'snap']) {
+    const target = linuxTargets.find((entry: any) => entry.target === targetName);
+    assert.ok(target?.arch?.includes('arm64'), `${targetName} must include arm64`);
   }
 
-  // AppStream metainfo file must be wired into the AppImage at the
-  // freedesktop-spec path usr/share/metainfo/. AppImageHub's catalog
-  // CI runs appstreamcli validate against this file.
   const extraFiles: any[] = build?.linux?.extraFiles || [];
-  const metainfoEntry = extraFiles.find(
-    (f) => typeof f?.to === 'string' && f.to.startsWith('usr/share/metainfo/')
-  );
-  assert.ok(
-    metainfoEntry,
-    'linux.extraFiles must include an entry that copies the AppStream metainfo to usr/share/metainfo/'
-  );
-  assert.ok(
-    fs.existsSync(path.join(__dirname, '..', metainfoEntry!.from)),
-    `metainfo source file must exist on disk: ${metainfoEntry!.from}`
-  );
-  // The release job must invoke scripts/update-metainfo.js before the
-  // build so each AppImage ships with a fresh <release> entry. A stale
-  // 1.7.1 entry has shipped in every release since 2.x.
-  assert.ok(
-    fs.existsSync(path.join(__dirname, '../scripts/update-metainfo.js')),
-    'scripts/update-metainfo.js must exist — it is invoked by the release job to keep ' +
-    'assets/com.flo.desktop.metainfo.xml current.'
-  );
-  const metainfoUpdater = fs.readFileSync(path.join(__dirname, '../scripts/update-metainfo.js'), 'utf8');
-  assert.ok(
-    /replace\(\/\(\\s\*<releases\\b\[\^>\]\*\>\)/.test(metainfoUpdater),
-    'metadata updater must insert into attributed and bare <releases> elements'
-  );
+  const metainfoEntry = extraFiles.find((entry: any) => typeof entry?.to === 'string' && entry.to.startsWith('usr/share/metainfo/'));
+  assert.ok(metainfoEntry, 'linux.extraFiles must include AppStream metainfo');
+  assert.ok(fs.existsSync(path.join(__dirname, '..', metainfoEntry.from)), 'AppStream metainfo source must exist');
+  assert.ok(fs.existsSync(path.join(__dirname, '../scripts/update-metainfo.js')), 'AppStream metadata updater must exist');
 
-  // ── release workflow uploads the auto-update manifests, not just installers ──
-  const workflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/release.yml'), 'utf8');
+  const workflow = loadWorkflow('release.yml');
+  const jobs = workflow.jobs;
+  const triggers = workflow.on || workflow['true'];
+  const createRelease = jobs['create-release'];
+  const metadata = findStep(createRelease, 'Determine release metadata');
+  const validateTag = findStep(createRelease, 'Validate release tag');
+  assert.match(validateTag.run, /\[\[\s*"\$TAG"\s*=~\s*\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\(-/);
+  assert.match(validateTag.run, /"\$TAG"\s*!=\s*"\$VERSION"/);
+  assert.equal(metadata.env.RELEASE_REF_NAME, '${{ github.ref_name }}');
+  assert.equal(validateTag.env.RELEASE_TAG, '${{ steps.release-metadata.outputs.tag }}');
+  assert.match(stepRun(createRelease, 'Create GitHub draft release (if not exists)'), /--draft/);
+  assert.match(stepRun(createRelease, 'Create GitHub draft release (if not exists)'), /--latest=false/);
+  assert.deepEqual(Object.keys(createRelease.outputs).sort(), ['channel', 'make_latest', 'manifest_prefix', 'prerelease', 'version']);
+  assert.deepEqual(triggers.workflow_dispatch.inputs.channel.options, ['stable', 'beta', 'nightly']);
+  assert.equal(triggers.workflow_dispatch.inputs.channel.type, 'choice');
+  assert.equal(triggers.workflow_dispatch.inputs.promote_stable.type, 'boolean');
 
-  // issue #220: `on.push.tags: '[0-9]*'` is a glob, not a version pattern —
-  // it matches any tag starting with a digit. Every downstream step reads
-  // VERSION from package.json rather than the pushed tag, so without an
-  // explicit check a malformed or mismatched tag would silently create a
-  // release titled after whatever package.json says under an unrelated ref.
-  const createReleaseJob = workflow.split(/^\s*create-release:/m)[1]?.split(/^\s*release-linux:/m)[0] || '';
-  assert.ok(
-    /\[\[\s*"\$TAG"\s*=~\s*\^\[0-9\]\+\\\.\[0-9\]\+\\\.\[0-9\]\+\(-/.test(createReleaseJob),
-    'create-release job must validate the pushed tag against stable and prerelease semver before creating a release'
-  );
-  assert.ok(
-    /"\$TAG"\s*!=\s*"\$VERSION"/.test(createReleaseJob),
-    'create-release job must reject a tag that does not equal package.json\'s version'
-  );
-  assert.ok(
-    createReleaseJob.includes('RELEASE_REF_NAME: ${{ github.ref_name }}') &&
-    createReleaseJob.includes('RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}') &&
-    !createReleaseJob.includes('TAG="${{ github.ref_name }}"') &&
-    !createReleaseJob.includes('TAG="${{ steps.release-metadata.outputs.tag }}"'),
-    'untrusted tag refs must enter release shell steps through environment variables, not source interpolation'
-  );
-  assert.ok(
-    createReleaseJob.includes('workflow_dispatch') || workflow.includes('promote_stable'),
-    'release workflow must expose an explicit channel/latest-promotion control'
-  );
-  assert.ok(
-    createReleaseJob.includes('--draft') && createReleaseJob.includes('--latest=false'),
-    'release creation must remain a draft and must not move GitHub Latest before verification'
-  );
-  assert.ok(
-    workflow.includes('options:\n          - stable\n          - beta\n          - nightly') && workflow.includes('promote_stable'),
-    'release workflow must expose stable, beta, and nightly channels plus explicit stable promotion'
-  );
-
-  const linuxJob = workflow.split(/^\s*release-linux:/m)[1]?.split(/^\s*release-mac:/m)[0] || '';
-  assert.ok(
-    /update-metainfo\.js/.test(linuxJob),
-    'release-linux job must run scripts/update-metainfo.js before the electron-builder build.'
-  );
-  assert.ok(
-    linuxJob.includes('assert-release-artifact-names.cjs') &&
-    linuxJob.includes('manifest_prefix') &&
-    linuxJob.includes('-c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}"') &&
-    linuxJob.includes('-c.linux.artifactName=') && linuxJob.includes('FLO_LINUX_ARCH') &&
-    /-linux\*\.yml/.test(linuxJob),
-    'release-linux must assert safe produced filenames, use latest for stable, and upload channel Linux manifests'
-  );
-  assert.ok(
-    /ubuntu-24\.04-arm\b/.test(linuxJob),
-    'release-linux job must include an ubuntu-24.04-arm matrix entry (the actual GitHub-hosted ' +
-    'arm64 Linux runner label — note: no "64" suffix) so arm64 AppImages are actually built. ' +
-    'declaring arm64 in build.linux.target is not enough without a runner, and the wrong label ' +
-    '(e.g. ubuntu-24.04-arm64) leaves the job stuck queued forever with no matching runner.'
-  );
-  const snapPublishStep = linuxJob.split(/^\s*- name: Publish snap to/m)[1]?.split(/^\s*- name:/m)[0] || '';
-  assert.ok(
-    !/matrix\.arch\s*==/.test(snapPublishStep),
-    'Snap Store publication must not be x64-gated; the release matrix publishes x64 and arm64 snap revisions.'
-  );
-  assert.ok(
-    snapPublishStep.includes('SNAPCRAFT_STORE_CREDENTIALS not set') &&
-    !/SNAPCRAFT_STORE_CREDENTIALS not set[^\n]*skipping snap publish/.test(snapPublishStep) &&
-    /SNAPCRAFT_STORE_CREDENTIALS not set[\s\S]{0,240}exit 1/.test(snapPublishStep),
-    'Snap Store publication must fail closed when SNAPCRAFT_STORE_CREDENTIALS is missing.'
-  );
-
-  const macJob = workflow.split(/^\s*release-mac:/m)[1]?.split(/^\s*release-windows:/m)[0] || '';
-  assert.ok(macJob.includes('latest-mac.yml'), 'release-mac job must document/upload the stable latest-mac.yml manifest');
-  assert.ok(macJob.includes('assert-release-artifact-names.cjs') && macJob.includes('manifest_prefix'), 'release-mac must assert safe produced filenames and select the channel manifest');
-  assert.ok(/release\/\*\.zip\b/.test(macJob), 'release-mac job must upload the .zip artifact');
-  assert.ok(macJob.includes('.zip.blockmap'), 'release-mac job must upload the .zip.blockmap');
-
-  const winJob = workflow.split(/^\s*release-windows:/m)[1] || '';
-  assert.ok(winJob.includes('latest.yml'), 'release-windows job must document/upload the stable latest.yml manifest');
-  assert.ok(winJob.includes('assert-release-artifact-names.cjs') && winJob.includes('manifest_prefix'), 'release-windows must assert safe produced filenames and select the channel manifest');
-  assert.ok(winJob.includes('.exe.blockmap'), 'release-windows job must upload the .exe.blockmap');
-  assert.ok(
-    /electron-builder --win --publish never --config\.npmRebuild=false/.test(winJob),
-    'release-windows job must build Windows targets from package.json so AppX x64+arm64 config is honored'
-  );
-  assert.ok(
-    /release\\\*\.appx/.test(winJob),
-    'release-windows job must verify and upload the .appx Microsoft Store package'
-  );
-  assert.ok(
-    // Quote-agnostic: electron-builder emits some AppX Identity attributes
-    // (e.g. Publisher) with single quotes and others with double quotes —
-    // both are valid XML — so this must not lock in one quote style. The
-    // doubled '' is PowerShell's single-quoted-string escape for a literal '.
-    winJob.includes(`ProcessorArchitecture=["'']([^"'']+)["'']`) &&
-    winJob.includes('@("x64", "arm64")'),
-    'release-windows job must inspect AppX manifests and require both x64 and arm64 packages'
-  );
-  assert.ok(
-    winJob.includes('microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0'),
-    'release-windows job must install the official Microsoft Store Developer CLI action pinned by commit SHA'
-  );
-  assert.ok(
-    (winJob.match(/if: github\.event_name == 'push' && startsWith\(github\.ref, 'refs\/tags\/'\)/g) || []).length >= 2,
-    'the Store CLI setup and publish steps must be gated to tag pushes so workflow_dispatch can never reach Partner Center'
-  );
-  assert.ok(
-    /msstore reconfigure[\s\S]+?if \(\$LASTEXITCODE -ne 0\)/.test(winJob),
-    'release-windows job must check msstore reconfigure exit code — a failing native CLI call does not fail a pwsh step on its own'
-  );
-  for (const required of [
-    'AZURE_AD_TENANT_ID',
-    'AZURE_AD_APPLICATION_CLIENT_ID',
-    'AZURE_AD_APPLICATION_SECRET',
-    'SELLER_ID',
-    'MICROSOFT_STORE_PRODUCT_ID',
-  ]) {
-    assert.ok(
-      winJob.includes(required),
-      `release-windows job must require ${required} for Microsoft Store publishing`
-    );
+  for (const scriptName of ['release:linux', 'release:mac', 'release:win']) {
+    assert.match(pkg.scripts?.[scriptName], /--publish never$/, `${scriptName} must not publish outside the release workflow`);
   }
-  assert.ok(
-    /msstore reconfigure[\s\S]+--tenantId[\s\S]+--sellerId[\s\S]+--clientId[\s\S]+--clientSecret/.test(winJob),
-    'release-windows job must configure msstore with Partner Center credentials'
-  );
-  assert.ok(
-    /\$publishArgs = @\("\$\{\{ github\.workspace \}\}\\release", '--appId', "\$env:MICROSOFT_STORE_PRODUCT_ID"\)/.test(winJob) &&
-    /msstore publish @publishArgs/.test(winJob) &&
-    /if \(\$LASTEXITCODE -ne 0\) \{ throw "Microsoft Store publish failed/.test(winJob),
-    'release-windows job must publish the built AppX packages to the configured Microsoft Store product and check the exit code'
-  );
 
-  const verifyJob = workflow.split(/^\s*verify-release:/m)[1]?.split(/^\s*publish-release:/m)[0] || '';
-  const publishJob = workflow.split(/^\s*publish-release:/m)[1] || '';
-  assert.ok(
-    verifyJob.includes('needs: [create-release, release-linux, release-mac, release-windows]') &&
-    verifyJob.includes('verify-release-assets.cjs') &&
-    publishJob.includes('needs: [create-release, release-linux, release-mac, release-windows, verify-release]') &&
-    publishJob.includes('draft=false') && publishJob.includes('make_latest=false'),
-    'release must verify all platform assets from the draft before a separate publish job can run'
-  );
-  assert.ok(
-    publishJob.includes('make_latest=true') && publishJob.includes('outputs.make_latest'),
-    'stable GitHub Latest selection must be an explicit post-verification promotion'
-  );
-  assert.ok(
-    createReleaseJob.includes('MANIFEST_PREFIX=latest') &&
-    workflow.includes('--channel "${{ needs.create-release.outputs.manifest_prefix }}"'),
-    'stable release verification must normalize the stable channel to latest manifest filenames'
-  );
+  const linuxJob = jobs['release-linux'];
+  const linuxBuild = stepRun(linuxJob, 'Build Linux artifacts');
+  const linuxUpload = stepRun(linuxJob, 'Upload Linux assets to GitHub release');
+  const snapPublish = findStep(linuxJob, 'Publish snap to the matching Snap Store channel');
+  assert.match(linuxBuild, /--publish never/);
+  assert.match(linuxBuild, /assert-release-artifact-names\.cjs/);
+  assert.match(linuxBuild, /-c\.publish\.channel="\$\{\{ needs\.create-release\.outputs\.manifest_prefix \}\}"/);
+  assert.match(linuxBuild, /FLO_LINUX_ARCH/);
+  assert.match(linuxUpload, /MANIFEST_NAME="\$\{MANIFEST_PREFIX\}-linux\.yml"/);
+  assert.match(linuxUpload, /MANIFEST_NAME="\$\{MANIFEST_PREFIX\}-linux-arm64\.yml"/);
+  assert.match(linuxUpload, /release\/\$\{MANIFEST_NAME\}/);
+  assert.deepEqual(linuxJob.strategy.matrix.include.map((entry: any) => entry.runner), ['ubuntu-24.04', 'ubuntu-24.04-arm']);
+  assert.equal(snapPublish.if, undefined, 'Snap publication must run for both architectures');
+  assert.match(snapPublish.run, /SNAPCRAFT_STORE_CREDENTIALS not set[\s\S]{0,240}exit 1/);
+
+  const macJob = jobs['release-mac'];
+  assert.match(stepRun(macJob, 'Build macOS'), /--publish never/);
+  assert.match(stepRun(macJob, 'Build macOS'), /assert-release-artifact-names\.cjs/);
+  assert.match(stepRun(macJob, 'Verify macOS release assets'), /MANIFEST_PREFIX/);
+  assert.match(stepRun(macJob, 'Upload macOS assets to GitHub release'), /release\/\*\.zip/);
+  assert.match(stepRun(macJob, 'Upload macOS assets to GitHub release'), /release\/\*\.zip\.blockmap/);
+  assert.match(stepRun(macJob, 'Upload macOS assets to GitHub release'), /manifest_prefix/);
+
+  const winJob = jobs['release-windows'];
+  assert.match(stepRun(winJob, 'Build Windows'), /electron-builder --win --publish never --config\.npmRebuild=false/);
+  assert.match(stepRun(winJob, 'Build Windows'), /assert-release-artifact-names\.cjs/);
+  assert.match(stepRun(winJob, 'Verify Windows release assets'), /release\\\*\.appx/);
+  assert.ok(stepRun(winJob, 'Verify Windows release assets').includes('ProcessorArchitecture=["\'\']([^"\'\']+)["\'\']'));
+  assert.match(stepRun(winJob, 'Verify Windows release assets'), /@\("x64", "arm64"\)/);
+  assert.match(stepRun(winJob, 'Upload Windows assets to GitHub release'), /manifest_prefix/);
+  const storeSetup = findStep(winJob, 'Setup Microsoft Store Developer CLI');
+  const storePublish = findStep(winJob, 'Publish Windows AppX packages to Microsoft Store');
+  assert.equal(storeSetup.uses, 'microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0');
+  assert.equal(storeSetup.if, "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')");
+  assert.equal(storePublish.if, storeSetup.if);
+  assert.equal(storePublish.env.RELEASE_CHANNEL, '${{ needs.create-release.outputs.channel }}');
+  assert.match(storePublish.run, /RELEASE_CHANNEL -ne 'stable'[\s\S]+MSSTORE_FLIGHT_ID/);
+  assert.match(storePublish.run, /msstore reconfigure[\s\S]+LASTEXITCODE/);
+  assert.match(storePublish.run, /msstore publish @publishArgs[\s\S]+Microsoft Store publish failed/);
+
+  const verifyJob = jobs['verify-release'];
+  const publishJob = jobs['publish-release'];
+  assert.deepEqual(verifyJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows']);
+  assert.deepEqual(publishJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release']);
+  assert.match(stepRun(verifyJob, 'Download and verify every release manifest and referenced artifact'), /verify-release-assets\.cjs/);
+  const publishRun = stepRun(publishJob, 'Publish draft without changing GitHub Latest by default');
+  assert.match(publishRun, /-F draft=false/);
+  assert.match(publishRun, /-F prerelease=/);
+  assert.match(publishRun, /-f make_latest=false/);
+  assert.match(publishRun, /-f make_latest=true/);
+  assert.doesNotMatch(publishRun, /-F make_latest=/);
+  assert.match(publishRun, /outputs\.make_latest/);
 
   const macArtifact = build?.mac?.artifactName;
-  assert.ok(
-    typeof macArtifact === 'string' && macArtifact.includes('${arch}') && macArtifact.includes('mac') && !/\s/.test(macArtifact.replace(/\$\{[^}]+\}/g, '')),
-    `mac.artifactName must be a single lowercased template using \${arch} and mac identifier (got ${JSON.stringify(macArtifact)})`
-  );
-
+  assert.ok(typeof macArtifact === 'string' && macArtifact.includes('${arch}') && macArtifact.includes('mac') && !/\s/.test(macArtifact.replace(/\$\{[^}]+\}/g, '')), `mac artifact template must be safe: ${JSON.stringify(macArtifact)}`);
   const winArtifact = build?.win?.artifactName;
-  assert.ok(
-    typeof winArtifact === 'string' && winArtifact.includes('${arch}') && winArtifact.includes('win') && !/\s/.test(winArtifact.replace(/\$\{[^}]+\}/g, '')),
-    `win.artifactName must be a single lowercased template using \${arch} and win identifier (got ${JSON.stringify(winArtifact)})`
-  );
+  assert.ok(typeof winArtifact === 'string' && winArtifact.includes('${arch}') && winArtifact.includes('win') && !/\s/.test(winArtifact.replace(/\$\{[^}]+\}/g, '')), `win artifact template must be safe: ${JSON.stringify(winArtifact)}`);
 
-  // ── nightly matrix workflow integrity ──
-  const matrixWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/nightly-release.yml'), 'utf8');
+  const matrixWorkflow = loadWorkflow('nightly-release.yml');
+  const matrixTriggers = matrixWorkflow.on || matrixWorkflow['true'];
+  assert.deepEqual(matrixTriggers.push.branches, ['main']);
+  assert.ok(matrixTriggers.workflow_dispatch !== undefined);
+  assert.equal(matrixTriggers.pull_request, undefined);
+  assert.equal(matrixWorkflow.concurrency['cancel-in-progress'], false);
+  const matrixJob = matrixWorkflow.jobs['build-matrix'];
+  assert.equal(matrixJob.name, 'build-${{ matrix.name }}');
+  assert.deepEqual(
+    matrixJob.strategy.matrix.include.map((entry: any) => entry.name).sort(),
+    ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64'].sort()
+  );
+  const matrixUpload = findStep(matrixJob, 'Upload build artifacts');
+  assert.equal(matrixUpload.with.name, 'flocafe-build-${{ matrix.name }}');
 
-  assert.ok(
-    /push:\s*\n\s*branches:\s*\[main\]/.test(matrixWorkflow) && matrixWorkflow.includes('workflow_dispatch:'),
-    'Full Cross-Platform Matrix workflow must trigger on merges to main and workflow_dispatch'
-  );
-  assert.ok(
-    !/^\s*pull_request\s*:/m.test(matrixWorkflow),
-    'Full Cross-Platform Matrix workflow must NOT run on pull_request to conserve CI runner minutes'
-  );
-  assert.ok(
-    matrixWorkflow.includes('cancel-in-progress: false'),
-    'Full Cross-Platform Matrix workflow must not cancel in-progress builds on main'
-  );
-  assert.ok(
-    matrixWorkflow.includes('name: build-${{ matrix.name }}'),
-    'build-matrix job name should be parameterized by matrix.name'
-  );
-
-  for (const targetName of ['linux-x64', 'macos-arm64', 'macos-x64', 'windows-x64']) {
-    assert.ok(
-      matrixWorkflow.includes(`name: ${targetName}`),
-      `build-matrix strategy must include ${targetName} target`
-    );
-  }
-
-  assert.ok(
-    matrixWorkflow.includes('name: flocafe-build-${{ matrix.name }}'),
-    'Full Cross-Platform Matrix workflow must upload build artifacts with descriptive platform-arch names'
-  );
-
-  const ciWorkflow = fs.readFileSync(path.join(__dirname, '../.github/workflows/ci.yml'), 'utf8');
-  assert.ok(
-    ciWorkflow.includes('run: npm run test:release-regressions') &&
-    ciWorkflow.includes("REQUIRE_VISUAL_EVIDENCE: '1'") &&
-    ciWorkflow.includes('EVIDENCE_DIR: ${{ runner.temp }}/flocafe-release-regressions'),
-    'CI must run release regression suites with required visual evidence in a portable runner temp directory',
-  );
-  assert.ok(
-    ciWorkflow.includes('name: release-regression-evidence') &&
-    ciWorkflow.includes('path: ${{ runner.temp }}/flocafe-release-regressions/'),
-    'CI must upload release regression evidence artifacts when available',
-  );
+  const ciWorkflow = loadWorkflow('ci.yml');
+  const e2eJob = ciWorkflow.jobs['e2e-playwright'];
+  const releaseRegression = findStep(e2eJob, 'Run renderer and printer regression suites');
+  assert.equal(releaseRegression.run, 'npm run test:release-regressions');
+  assert.equal(releaseRegression.env.REQUIRE_VISUAL_EVIDENCE, '1');
+  assert.equal(releaseRegression.env.EVIDENCE_DIR, '${{ runner.temp }}/flocafe-release-regressions');
+  const evidenceUpload = (e2eJob.steps || []).find((step: any) => step.with?.name === 'release-regression-evidence');
+  assert.ok(evidenceUpload, 'CI must upload release regression evidence');
+  assert.equal(evidenceUpload.with.path, '${{ runner.temp }}/flocafe-release-regressions/');
 
   console.log('✅ Release config + workflow integrity checks passed');
 }

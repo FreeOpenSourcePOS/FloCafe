@@ -75,11 +75,18 @@ function unquoteYamlScalar(value) {
 
 function parseManifest(text, name) {
   const files = [];
+  let version = null;
   let current = null;
   let topLevelPath = null;
   let topLevelSha512 = null;
 
   for (const line of text.split(/\r?\n/)) {
+    const versionValue = line.match(/^version:\s*(.+?)\s*$/);
+    if (versionValue) {
+      version = unquoteYamlScalar(versionValue[1]);
+      continue;
+    }
+
     const listUrl = line.match(/^\s*-\s+url:\s*(.+?)\s*$/);
     const scalarUrl = line.match(/^\s+url:\s*(.+?)\s*$/);
     if (listUrl || scalarUrl) {
@@ -104,6 +111,7 @@ function parseManifest(text, name) {
     if (topSha) topLevelSha512 = unquoteYamlScalar(topSha[1]);
   }
 
+  if (!version) throw new Error(`${name} does not declare a release version`);
   if (topLevelPath && !files.some((file) => file.url === topLevelPath)) {
     files.push({ url: topLevelPath, sha512: topLevelSha512 });
   }
@@ -113,47 +121,70 @@ function parseManifest(text, name) {
       throw new Error(`${name} has an update artifact without both url and sha512`);
     }
   }
-  return files;
+  return { version, files };
 }
 
-function expectedManifestNames(channel, assetNames) {
-  const required = [`${channel}.yml`, `${channel}-mac.yml`, `${channel}-linux.yml`];
-  const linuxArchManifests = assetNames.filter((name) => new RegExp(`^${channel}-linux-[a-z0-9-]+\\.yml$`).test(name));
-  return [...required, ...linuxArchManifests];
-}
-
-function assertReleaseAssetInventory(assets, manifestNames) {
-  const names = assets.map((asset) => asset.name);
-  const requiredCounts = [
-    ['uninstall-macos.sh', 1],
-    ['uninstall-windows.ps1', 1],
-    [/\.exe$/, 1],
-    [/\.exe\.blockmap$/, 1],
-    [/\.appx$/, 2],
-    [/\.dmg$/, 2],
-    [/\.zip$/, 2],
-    [/\.zip\.blockmap$/, 2],
-    [/\.appimage$/, 2],
-    [/\.deb$/, 2],
-    [/\.rpm$/, 2],
-    [/\.snap$/, 2],
+function expectedManifestNames(channel) {
+  return [
+    `${channel}.yml`,
+    `${channel}-mac.yml`,
+    `${channel}-linux.yml`,
+    `${channel}-linux-arm64.yml`,
   ];
-  for (const [pattern, minimum] of requiredCounts) {
-    const count = names.filter((name) => typeof pattern === 'string' ? name === pattern : pattern.test(name)).length;
-    if (count < minimum) {
-      throw new Error(`release asset inventory is incomplete for ${String(pattern)}: expected at least ${minimum}, found ${count}`);
-    }
+}
+
+function expectedArtifactNames(version) {
+  const base = `flocafe-${version}`;
+  return [
+    'uninstall-macos.sh',
+    'uninstall-windows.ps1',
+    `${base}-win-x64.exe`,
+    `${base}-win-x64.exe.blockmap`,
+    `${base}-win-x64.appx`,
+    `${base}-win-arm64.appx`,
+    `${base}-mac-x64.dmg`,
+    `${base}-mac-arm64.dmg`,
+    `${base}-mac-x64.zip`,
+    `${base}-mac-arm64.zip`,
+    `${base}-mac-x64.zip.blockmap`,
+    `${base}-mac-arm64.zip.blockmap`,
+    `${base}-linux-x64.appimage`,
+    `${base}-linux-arm64.appimage`,
+    `${base}-linux-x64.deb`,
+    `${base}-linux-arm64.deb`,
+    `${base}-linux-x64.rpm`,
+    `${base}-linux-arm64.rpm`,
+    `${base}-linux-x64.snap`,
+    `${base}-linux-arm64.snap`,
+  ];
+}
+
+function assertReleaseAssetInventory(assets, manifestNames, version) {
+  if (!version) throw new Error('release asset inventory requires an expected release version');
+  const names = assets.map((asset) => asset.name);
+  if (new Set(names).size !== names.length) {
+    throw new Error('release asset inventory contains duplicate asset names');
   }
 
   const manifestSet = new Set(manifestNames);
+  const expected = new Set([...manifestNames, ...expectedArtifactNames(version)]);
+  const unexpected = names.filter((name) => !expected.has(name));
+  if (unexpected.length > 0) {
+    throw new Error(`release asset inventory contains unexpected assets: ${unexpected.join(', ')}`);
+  }
+  const missing = [...expected].filter((name) => !names.includes(name));
+  if (missing.length > 0) {
+    throw new Error(`release asset inventory is incomplete; missing: ${missing.join(', ')}`);
+  }
+
   for (const asset of assets) {
-    if (manifestSet.has(asset.name)) continue;
     if (!/^[a-z0-9.-]+$/.test(asset.name)) {
       throw new Error(`release contains unsafe uploaded asset name ${asset.name}`);
     }
     if (!Number.isInteger(asset.size) || asset.size <= 0) {
       throw new Error(`release asset ${asset.name} has no positive uploaded size`);
     }
+    if (manifestSet.has(asset.name)) continue;
   }
 }
 
@@ -196,29 +227,34 @@ async function main() {
 
   const assets = Array.isArray(release.assets) ? release.assets : [];
   const assetsByName = new Map(assets.map((asset) => [asset.name, asset]));
-  const manifestNames = expectedManifestNames(options.channel, assets.map((asset) => asset.name));
-  const uniqueManifestNames = [...new Set(manifestNames)];
-  for (const name of uniqueManifestNames) {
+  const manifestNames = expectedManifestNames(options.channel);
+  for (const name of manifestNames) {
     if (!assetsByName.has(name)) throw new Error(`release ${options.tag} is missing ${name}`);
   }
-  assertReleaseAssetInventory(assets, uniqueManifestNames);
+  assertReleaseAssetInventory(assets, manifestNames, options.tag);
 
   for (const asset of assets) {
-    if (!uniqueManifestNames.includes(asset.name)) await verifyAssetAvailability(asset);
+    if (!manifestNames.includes(asset.name)) await verifyAssetAvailability(asset);
   }
 
   const verifyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flocafe-release-verify-'));
   try {
-    for (const manifestName of uniqueManifestNames) {
+    for (const manifestName of manifestNames) {
       const manifestAsset = assetsByName.get(manifestName);
       const manifestBytes = Buffer.from(await readAsset(manifestAsset));
       const manifestPath = path.join(verifyDir, manifestName);
       fs.writeFileSync(manifestPath, manifestBytes);
-      const files = parseManifest(manifestBytes.toString('utf8'), manifestName);
+      const manifest = parseManifest(manifestBytes.toString('utf8'), manifestName);
+      if (manifest.version !== options.tag) {
+        throw new Error(`${manifestName} declares version ${manifest.version}, expected ${options.tag}`);
+      }
 
-      for (const file of files) {
+      for (const file of manifest.files) {
         if (path.basename(file.url) !== file.url || !/^[a-z0-9.-]+$/.test(file.url)) {
           throw new Error(`${manifestName} references unsafe artifact URL ${file.url}`);
+        }
+        if (!file.url.includes(options.tag)) {
+          throw new Error(`${manifestName} references ${file.url}, which is not part of release ${options.tag}`);
         }
         const artifact = assetsByName.get(file.url);
         if (!artifact) {
@@ -244,6 +280,7 @@ if (require.main === module) {
 
 module.exports = {
   assertReleaseAssetInventory,
+  expectedArtifactNames,
   expectedManifestNames,
   parseManifest,
 };

@@ -270,10 +270,11 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           mapfile -t FILES < <(find release -maxdepth 1 -type f \( -name '*.appimage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.snap' \) -print)
           MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
-          mapfile -t MANIFESTS < <(find release -maxdepth 1 -type f -name "${MANIFEST_PREFIX}-linux*.yml" -print)
-          FILES+=("${MANIFESTS[@]}")
+          MANIFEST_NAME="${MANIFEST_PREFIX}-linux.yml"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then MANIFEST_NAME="${MANIFEST_PREFIX}-linux-arm64.yml"; fi
+          [ -f "release/${MANIFEST_NAME}" ] || { echo "::error::release/${MANIFEST_NAME} is missing for ${{ matrix.arch }}"; exit 1; }
+          FILES+=("release/${MANIFEST_NAME}")
           [ ${#FILES[@]} -gt 0 ] || { echo "::error::no Linux artifacts produced for ${{ matrix.arch }}"; exit 1; }
-          [ ${#MANIFESTS[@]} -gt 0 ] || { echo "::error::no ${MANIFEST_PREFIX}-linux.yml manifest produced for ${{ matrix.arch }}"; exit 1; }
           gh release upload "${VERSION}" "${FILES[@]}" --repo "${{ github.repository }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
@@ -549,7 +550,7 @@ jobs:
           # Center after the fact.
           $expectedIdentity = node -p "require('./package.json').build.appx.identityName"
           $expectedPublisher = node -p "require('./package.json').build.appx.publisher"
-          $expectedVersion = "$(node -p "require('./package.json').version").0"
+          $expectedVersion = node -p "require('./package.json').version.split('-')[0] + '.0'"
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $architectures = @{}
@@ -632,6 +633,7 @@ jobs:
           AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
           SELLER_ID: ${{ secrets.SELLER_ID }}
           MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
+          RELEASE_CHANNEL: ${{ needs.create-release.outputs.channel }}
           # Optional: set MSSTORE_NO_COMMIT=true (repo/environment variable)
           # to leave a submission as a draft, or MSSTORE_FLIGHT_ID to submit
           # to a Partner Center flight instead of production, for a
@@ -653,6 +655,10 @@ jobs:
           }
           if ($missing.Count -gt 0) {
             Write-Error "Missing Microsoft Store configuration: $($missing -join ', ')"
+            exit 1
+          }
+          if ($env:RELEASE_CHANNEL -ne 'stable' -and [string]::IsNullOrWhiteSpace($env:MSSTORE_FLIGHT_ID)) {
+            Write-Error "Non-stable AppX releases require MSSTORE_FLIGHT_ID so prerelease packages cannot reach the production Store channel"
             exit 1
           }
 
@@ -691,8 +697,8 @@ jobs:
           node-version: '22'
 
       - name: Download and verify every release manifest and referenced artifact
-        # Stable verification covers latest.yml, latest-mac.yml, and
-        # latest-linux.yml (plus latest-linux-arm64.yml when present). Beta
+        # Stable verification covers latest.yml, latest-mac.yml, latest-linux.yml,
+        # and latest-linux-arm64.yml. Beta
         # and nightly substitute their explicit channel prefix.
         run: |
           node scripts/verify-release-assets.cjs \
@@ -722,10 +728,10 @@ jobs:
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
             -F draft=false \
             -F prerelease="${PRERELEASE}" \
-            -F make_latest=false
+            -f make_latest=false
           if [ "${{ needs.create-release.outputs.make_latest }}" = "true" ]; then
             gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
-              -F make_latest=true
+              -f make_latest=true
           fi
           echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }})"
         env:

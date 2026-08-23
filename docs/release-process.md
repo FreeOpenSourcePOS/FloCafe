@@ -49,6 +49,9 @@ Stable clients keep `allowPrerelease` and `allowDowngrade` disabled.
    after electron-builder creates them.
 3. Platform jobs upload installers, update manifests, blockmaps, and required
    store packages to the draft release.
+   Microsoft Store AppX submissions for beta and nightly tags require a
+   Partner Center flight ID; stable submissions may target the production Store
+   channel.
 4. `scripts/verify-release-assets.cjs` fetches manifests and referenced assets
    back through the GitHub API and verifies their SHA-512 values. It also checks
    the expected installer/store/uninstaller inventory and HTTP availability for

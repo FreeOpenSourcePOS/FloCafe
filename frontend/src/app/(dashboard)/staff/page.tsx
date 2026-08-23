@@ -9,19 +9,12 @@ import type { Staff } from '@/lib/types';
 import { useTranslations, type AppConfig } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { PermissionMatrix } from '@/components/settings/PermissionMatrix';
-import { ROLE_ACCESS, ROLE_KEYS, hasRole, type Role } from '@shared/role-permissions';
+import { ROLE_ACCESS, ROLE_KEYS, hasRole } from '@shared/role-permissions';
+import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
 
 const VALID_ROLES = ROLE_KEYS;
 
 type StaffKey = keyof AppConfig['Messages']['staff'];
-
-const roleColorKey = {
-  owner: 'roleOwner',
-  manager: 'roleManager',
-  cashier: 'roleCashier',
-  server: 'roleServer',
-  chef: 'roleChef',
-} as const satisfies Record<Role, StaffKey>;
 
 const roleColors: Record<string, string> = {
   owner: 'bg-red-100 text-red-800',
@@ -32,7 +25,7 @@ const roleColors: Record<string, string> = {
 };
 
 function roleLabel(role: string, t: (key: StaffKey) => string): string {
-  const key = (roleColorKey as Record<string, StaffKey | undefined>)[role];
+  const key = ROLE_LABEL_KEYS[role];
   return key ? t(key) : role;
 }
 

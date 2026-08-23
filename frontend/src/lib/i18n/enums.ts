@@ -18,6 +18,7 @@
 import { ORDER_TYPE_LABEL_KEYS } from '../order-types';
 import type { Order, Table, OrderItem } from '../types';
 import type { AppConfig } from 'use-intl';
+import { ROLE_LABEL_KEYS as SHARED_ROLE_LABEL_KEYS } from '@shared/role-permissions';
 
 export { ORDER_TYPE_LABEL_KEYS };
 
@@ -28,13 +29,7 @@ type CommonKey = keyof AppConfig['Messages']['common'];
 type BusinessTypeKey = keyof AppConfig['Messages']['businessType'];
 
 /** Staff/tenant role → label. Used in login tenant picker, staff table, etc. */
-export const ROLE_LABEL_KEYS = {
-  owner: 'roleOwner',
-  manager: 'roleManager',
-  cashier: 'roleCashier',
-  chef: 'roleChef',
-  server: 'roleServer',
-} as const satisfies Record<'owner' | 'manager' | 'cashier' | 'chef' | 'server', StaffKey>;
+export const ROLE_LABEL_KEYS = SHARED_ROLE_LABEL_KEYS as Record<string, StaffKey>;
 
 /** Order-level status → label (exhaustively typed against `Order['status']`). */
 export const ORDER_STATUS_LABEL_KEYS = {

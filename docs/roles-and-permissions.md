@@ -18,7 +18,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 | Orders | Update order status | ✓ | ✓ | ✓ | ✓ | ✓ |
 | Orders | Change order customers and discounts | ✓ | ✓ | — | — | — |
 | Orders | Cancel pending order items | ✓ | ✓ | — | — | — |
-| Orders | Void in-progress order items (manager PIN may be required) | ✓ | ✓ | ✓ | ✓ | — |
+| Orders | Void in-progress order items (manager PIN may be required) | ✓ | ✓ | — | — | — |
 | Orders | Restore cancelled order items | ✓ | ✓ | — | — | — |
 | Orders | Create and manage held orders | ✓ | ✓ | ✓ | ✓ | — |
 | Payments | View bills, take payments, and print receipts | ✓ | ✓ | ✓ | — | — |

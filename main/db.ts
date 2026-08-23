@@ -10,6 +10,9 @@ import { BUNDLED_COUNTRY_PACKS, bundledPackVersionId } from './tax-packs/bundled
 import { SHUTDOWN_TIMEOUT_MS } from './shutdown';
 import { resolveContainedPath } from './lib/path-containment';
 import { serializeMerchantTemplatePayload, validateMerchantTemplateText } from '../shared/print';
+import { ROLE_KEYS } from '../shared/role-permissions';
+
+const USER_ROLE_SQL_CHECK = `CHECK (role IN (${ROLE_KEYS.map((role) => `'${role}'`).join(', ')}))`;
 
 let db: Database.Database;
 let dbHealthError: string | null = null;
@@ -3901,7 +3904,7 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
           email TEXT UNIQUE,
           password TEXT NOT NULL,
           role TEXT NOT NULL DEFAULT 'cashier'
-            CHECK (role IN ('owner', 'manager', 'cashier', 'server', 'chef')),
+            ${USER_ROLE_SQL_CHECK},
           pin TEXT,
           pin_hash TEXT,
           category_ids TEXT,
@@ -4323,7 +4326,7 @@ function createSchema(): void {
     );
 
     -- ── Users (authentication + roles) ──────────────────────────────────
-    -- Roles: owner, manager, cashier, server, chef
+    -- Roles: ${ROLE_KEYS.join(', ')}
     -- KDS is operated by the chef role.
 
     CREATE TABLE IF NOT EXISTS users (
@@ -4332,7 +4335,7 @@ function createSchema(): void {
       email TEXT UNIQUE,
       password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'cashier'
-        CHECK (role IN ('owner', 'manager', 'cashier', 'server', 'chef')),
+        ${USER_ROLE_SQL_CHECK},
       pin TEXT,
       pin_hash TEXT,
       category_ids TEXT,

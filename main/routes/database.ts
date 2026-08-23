@@ -9,7 +9,7 @@ import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { parsePhoneE164 } from '../lib/phone';
-import { ROLE_ACCESS } from '../../shared/role-permissions';
+import { ROLE_ACCESS, isRole } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -36,7 +36,6 @@ const USER_REDACT_COLS = new Set(['password', 'pin', 'pin_hash']);
 
 // Tables excluded entirely — cloud_sync_outbox may contain cloud auth payloads.
 const EXPORT_EXCLUDE_TABLES = new Set(['cloud_sync_outbox', 'support_ticket_outbox', 'store_diagnostics_outbox', 'kds_pairing_tokens']);
-const USER_ROLES = new Set(['owner', 'manager', 'cashier', 'server', 'chef']);
 
 // Parses an import file's schema_version exactly as the import handler does.
 // A missing or malformed value collapses to -1 (and an omitted version to 0),
@@ -410,7 +409,8 @@ function restoreRedactedUserPlaceholders(
     const timestamp = typeof row.updated_at === 'string' && row.updated_at
       ? row.updated_at
       : new Date().toISOString();
-    const role = USER_ROLES.has(String(row.role)) ? String(row.role) : 'cashier';
+    const roleValue = String(row.role);
+    const role = isRole(roleValue) ? roleValue : 'cashier';
     const values: Record<string, unknown> = {
       id,
       name: typeof row.name === 'string' && row.name.trim() ? row.name : `Imported staff ${id}`,

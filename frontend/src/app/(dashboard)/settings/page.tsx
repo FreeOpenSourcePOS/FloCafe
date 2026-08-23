@@ -36,6 +36,7 @@ import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
 import { isTemplateCardSelected, type BillTemplateSelectionSource } from '@/lib/bill-template-picker';
+import { ROLE_ACCESS, hasRole } from '@shared/role-permissions';
 
 // Registry-derived selectable UI languages (from LANGUAGES where selectable: true).
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
@@ -276,8 +277,8 @@ export default function SettingsPage() {
   const language = posSettings.language;
   const setLanguage = posSettings.setLanguage;
   const { formatDate, formatTime, formatDateTime } = useFormatDate();
-  const isAdmin = currentTenant?.role === 'admin' || currentTenant?.role === 'owner';
-  const canViewTaxConfiguration = currentTenant?.role === 'owner' || currentTenant?.role === 'manager';
+  const isAdmin = hasRole(currentTenant?.role, ROLE_ACCESS.ownerManager);
+  const canViewTaxConfiguration = isAdmin;
   const { confirm, ConfirmDialog } = useConfirm();
 
   const [loyaltyEnabled, setLoyaltyEnabled] = useState(false);

@@ -14,8 +14,13 @@ export const ROLE_DEFINITIONS = [
   { id: 'chef', labelKey: 'roleChef', descriptionKey: 'chefDescription' },
 ] as const;
 
-export const ROLE_KEYS = ROLE_DEFINITIONS.map(({ id }) => id) as [Role, ...Role[]];
 export type Role = typeof ROLE_DEFINITIONS[number]['id'];
+export type RoleLabelKey = typeof ROLE_DEFINITIONS[number]['labelKey'];
+
+export const ROLE_KEYS = ROLE_DEFINITIONS.map(({ id }) => id) as [Role, ...Role[]];
+export const ROLE_LABEL_KEYS = Object.fromEntries(
+  ROLE_DEFINITIONS.map(({ id, labelKey }) => [id, labelKey]),
+) as Record<Role, RoleLabelKey>;
 
 const OWNER = ['owner'] as const satisfies readonly Role[];
 const OWNER_MANAGER = ['owner', 'manager'] as const satisfies readonly Role[];
@@ -73,7 +78,7 @@ export const PERMISSION_CAPABILITIES = [
   { id: 'ordersStatus', area: 'orders', labelKey: 'ordersStatus', allowedRoles: ROLE_ACCESS.orderStatus },
   { id: 'ordersCustomerDiscounts', area: 'orders', labelKey: 'ordersCustomerDiscounts', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'orderItemCancel', area: 'orders', labelKey: 'orderItemCancel', allowedRoles: ROLE_ACCESS.ownerManager },
-  { id: 'orderItemVoid', area: 'orders', labelKey: 'orderItemVoid', allowedRoles: ROLE_ACCESS.sales },
+  { id: 'orderItemVoid', area: 'orders', labelKey: 'orderItemVoid', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'orderItemRestore', area: 'orders', labelKey: 'orderItemRestore', allowedRoles: ROLE_ACCESS.ownerManager },
   { id: 'heldOrders', area: 'orders', labelKey: 'heldOrders', allowedRoles: ROLE_ACCESS.sales },
   { id: 'billsPayments', area: 'payments', labelKey: 'billsPayments', allowedRoles: ROLE_ACCESS.ownerManagerCashier },

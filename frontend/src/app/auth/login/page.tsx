@@ -12,18 +12,10 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import toast from 'react-hot-toast';
 import { Eye, EyeOff } from 'lucide-react';
+import { ROLE_LABEL_KEYS } from '@/lib/i18n-enums';
 
 // Backend enum → leaf key maps for the tenant picker.
-type StaffRoleKey = keyof AppConfig['Messages']['staff'];
 type BusinessTypeKey = keyof AppConfig['Messages']['businessType'];
-
-const ROLE_LEAF_KEYS: Record<string, StaffRoleKey> = {
-  owner: 'roleOwner',
-  manager: 'roleManager',
-  cashier: 'roleCashier',
-  chef: 'roleChef',
-  server: 'roleServer',
-};
 
 const BUSINESS_TYPE_LEAF_KEYS: Record<string, BusinessTypeKey> = {
   restaurant: 'restaurant',
@@ -148,7 +140,7 @@ function LoginContent() {
               <div className="space-y-3">
                 {tenants.map((tenant) => {
                   const businessTypeKey = tenant.business_type ? BUSINESS_TYPE_LEAF_KEYS[tenant.business_type] : undefined;
-                  const roleKey = tenant.role ? ROLE_LEAF_KEYS[tenant.role] : undefined;
+                  const roleKey = tenant.role ? ROLE_LABEL_KEYS[tenant.role] : undefined;
                   return (
                     <button
                       key={tenant.id}

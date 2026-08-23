@@ -49,9 +49,10 @@ Stable clients keep `allowPrerelease` and `allowDowngrade` disabled.
    `X.Y.Z-nightly.N`).
 2. Each platform builds with `--publish never` and passes
    `scripts/assert-release-artifact-names.cjs`. Produced filenames must match
-   `[a-z0-9.-]+`; Linux release jobs use the safe matrix labels `x64` and
-   `arm64` in the electron-builder template, and artifacts are not renamed
-   after electron-builder creates them.
+   `[a-z0-9.-]+`. electron-builder's generic `${arch}` macro uses target
+   spellings such as `x86_64`, `amd64`, and `aarch64`, so the Linux release
+   command explicitly uses the safe matrix labels `x64` and `arm64` for every
+   artifact (including AppImage); artifacts are not renamed after creation.
 3. Each self-updating platform job asserts that its local updater manifest
    and representative installer exist before upload. Platform jobs upload
    installers, update manifests, blockmaps, and required store packages to the

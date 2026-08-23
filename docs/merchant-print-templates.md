@@ -192,13 +192,19 @@ The `bill_template` setting persists a STRUCTURED selection:
 
 ## Renderers
 
-Merchant receipt documents render through the backend PrintDocument pipeline
-(`data → document → applyMerchantTemplate → renderer`). The parity harness
-(print-parity.test.ts) runs a merchant-template mode asserting byte-equivalence
+Merchant receipt documents render through the backend [PrintDocument pipeline](../shared/print/document.ts)
+(`data → document → applyMerchantTemplate → renderer`). The [parity harness](../tests/print-parity.test.ts)
+runs a merchant-template mode asserting byte-equivalence
 with the plain classic document pipeline. Browser/WebUSB printing uses the
 shared document labels and the built-in classic/compact block layout; it warns
 when a merchant template's structural selection or label overrides cannot be
 applied on that path. The fallback is enforced by
-`frontend/src/lib/printer/web-print.ts`, `frontend/src/lib/printer/print-document.ts`,
-and the browser/parity printing tests. Compact/KOT rendering of merchant
-documents belongs to their owning issues.
+[`web-print.ts`](../frontend/src/lib/printer/web-print.ts) and
+[`print-document.ts`](../frontend/src/lib/printer/print-document.ts) for label
+resolution, while [`usePrinter.ts`](../frontend/src/hooks/usePrinter.ts) owns
+the structural fallback and delegates its warning to
+[`warnings.ts`](../frontend/src/lib/printer/warnings.ts). Behavioral coverage
+is in [`printer.test.ts`](../tests/printer.test.ts),
+[`browser-receipts.test.ts`](../tests/browser-receipts.test.ts), and
+[`print-parity.test.ts`](../tests/print-parity.test.ts). Compact/KOT rendering
+of merchant documents belongs to their owning issues.

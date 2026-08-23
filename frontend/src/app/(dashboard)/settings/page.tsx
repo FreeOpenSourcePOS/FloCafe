@@ -35,6 +35,7 @@ import { Ltr } from '@/components/layout/Ltr';
 import { useFormatDate } from '@/hooks/useFormatDate';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
 import { TENANT_STATUS_LABEL_KEYS } from '@/lib/i18n-enums';
+import { isTemplateCardSelected, type BillTemplateSelectionSource } from '@/lib/bill-template-picker';
 
 // Registry-derived selectable UI languages (from LANGUAGES where selectable: true).
 const SELECTABLE_LANGUAGES: Language[] = (Object.keys(LANGUAGES) as Language[]).filter(
@@ -103,7 +104,7 @@ interface TemplateCard {
   preview: string;
   source: 'core' | 'plugin' | 'merchant';
   /** Selection-identity source persisted in bill_template (#447). */
-  selectionSource: 'core' | 'pack' | 'merchant';
+  selectionSource: BillTemplateSelectionSource;
   description?: string;
   /** Provenance badge text for merchant cards (#447). */
   originBadgeKey?: 'billTemplateMerchantCreated' | 'billTemplateMerchantImported' | 'billTemplateMerchantCloned';
@@ -1189,7 +1190,7 @@ export default function SettingsPage() {
   // qualifier through both display-selection and save round-trips (#447).
   type BillTemplateForm = {
     billTemplate: BillTemplate;
-    billTemplateSource: 'core' | 'pack' | 'merchant';
+    billTemplateSource: BillTemplateSelectionSource;
     billFooterMessage: string;
   };
   const initBillTemplate = (): BillTemplateForm => ({
@@ -4071,11 +4072,7 @@ export default function SettingsPage() {
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {billTemplateCards.map((card) => {
-                  // Selection identity is (id, source): a pack template may
-                  // share a bare id ('classic'/'compact') with core (#475), so
-                  // matching on id alone would highlight both cards.
-                  const isSelected =
-                    billForm.billTemplate === card.id && billForm.billTemplateSource === card.selectionSource;
+                  const isSelected = isTemplateCardSelected(billForm, card);
                   return (
                     <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id, billTemplateSource: card.selectionSource }))}
                       className={`text-start rounded-xl border-2 p-4 transition-all ${

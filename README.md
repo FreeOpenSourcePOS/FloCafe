@@ -38,21 +38,10 @@ Download the latest installer from [GitHub Releases](https://github.com/FreeOpen
   </a>
 </p>
 
-Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`, `.rpm`, and Snap packages. On Linux:
-
-```sh
-# AppImage
-chmod +x flocafe-*.appimage
-./flocafe-*.appimage
-
-# Debian or Ubuntu
-sudo apt install ./flocafe-*.deb
-
-# Snap
-sudo snap install flocafe
-```
-
-For Linux package choices, updates, FUSE setup, printing permissions, and tray behavior, see [Linux installation and support](docs/linux.md).
+Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`,
+`.rpm`, and Snap packages. For Linux package-specific install commands, updates,
+FUSE setup, printing permissions, and tray behavior, see [Linux installation and
+support](docs/linux.md).
 
 ### System requirements
 

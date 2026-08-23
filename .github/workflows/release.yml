@@ -752,10 +752,10 @@ jobs:
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
             -F draft=false \
             -F prerelease="${PRERELEASE}" \
-            -f make_latest=false
+            -F make_latest=false
           if [ "${{ needs.create-release.outputs.make_latest }}" = "true" ]; then
             gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
-              -f make_latest=true
+              -F make_latest=true
           fi
           echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }})"
         env:
@@ -784,7 +784,7 @@ jobs:
             exit 1
           fi
           RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")
-          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -f make_latest=true
+          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -F make_latest=true
           echo "Promoted ${RELEASE_TAG} to GitHub Latest"
         env:
           GH_TOKEN: ${{ github.token }}

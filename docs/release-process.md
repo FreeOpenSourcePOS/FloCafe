@@ -20,16 +20,21 @@ They publish `beta*.yml` or `nightly*.yml` manifests, including the platform
 suffix. A beta/nightly installation derives its channel from its version in
 `main/index.ts`; a stable installation leaves `autoUpdater.channel` unset and
 therefore follows only GitHub's selected stable release.
+Beta and nightly installations are intentionally isolated from stable: if their
+channel has no published release, electron-updater reports no channel update
+instead of silently falling back to stable.
 
 GitHub's `Latest` release pointer and electron-updater's channel manifests are
 separate concepts. Every release is created with `--draft --latest=false`.
 After all platform uploads have completed, CI downloads each manifest and every
 artifact it references from the same draft release, checks HTTP success, and
 recomputes the manifest SHA-512 values. Only the separate `publish-release` job
-can then publish it. A stable build moves the GitHub `Latest` pointer only through
-an explicit promotion value: the normal numeric stable-tag pipeline sets that
-value, while a manually dispatched stable run requires `promote_stable=true`.
-Beta and nightly releases never move that pointer.
+can then publish it. Stable tag pushes publish without moving GitHub's `Latest`
+pointer. To promote an already verified stable release, dispatch the workflow
+from that exact tag with `release_tag` set to the same tag,
+`channel=stable`, and `promote_stable=true`; the promotion-only job checks that
+the release is already published before selecting it. Beta and nightly releases
+never move that pointer.
 
 This follows electron-builder's channel model: GitHub publishing requires an
 explicit `publish.channel`, while prerelease versions select prerelease releases
@@ -49,9 +54,10 @@ Stable clients keep `allowPrerelease` and `allowDowngrade` disabled.
    after electron-builder creates them.
 3. Platform jobs upload installers, update manifests, blockmaps, and required
    store packages to the draft release.
-   Microsoft Store AppX submissions for beta and nightly tags require a
-   Partner Center flight ID; stable submissions may target the production Store
-   channel.
+   Microsoft Store AppX submission runs only for stable tag pushes. Beta and
+   nightly AppX packages remain outside the Store submission path because their
+   four-part MSIX versions would otherwise collide with stable and with later
+   prereleases.
 4. `scripts/verify-release-assets.cjs` fetches manifests and referenced assets
    back through the GitHub API and verifies their SHA-512 values. It also checks
    the expected installer/store/uninstaller inventory and HTTP availability for
@@ -60,13 +66,14 @@ non-manifest assets are checked for positive size and HTTP availability; their
 SHA-512 is not independently recomputed because GitHub/electron-builder does
 not publish a second expected SHA-512 for them.
 5. The dedicated publish job changes `draft` to false. It sets `make_latest`
-   false unless the stable-tag pipeline or explicit stable-promotion input
-   supplied the promotion value.
+   false for every normal release. A separate explicit stable-promotion dispatch
+   is the only path that changes GitHub's `Latest` pointer.
 
-Run **Actions > Release > Run workflow** with `channel=beta` or
-`channel=nightly` for a matching prerelease tag. Use `promote_stable=true` on a
-manual stable run only when the verified build should become the default update
-target.
+Run **Actions > Release > Run workflow** from the exact matching prerelease tag,
+set `release_tag` to that tag, and choose `channel=beta` or `channel=nightly`.
+For a stable build, leave `promote_stable=false`; use a second dispatch with
+`promote_stable=true` only when the already verified release should become the
+default update target.
 
 References: [electron-builder release channels](https://www.electron.build/docs/tutorials/release-using-channels/),
 [electron-updater channel and downgrade options](https://www.electron.build/docs/api/electron-updater.class.baseupdater/),

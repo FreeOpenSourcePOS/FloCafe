@@ -95,9 +95,11 @@ function run() {
   assertShellStep(createRelease, 'Create GitHub draft release (if not exists)');
   assert.equal(metadata.env.RELEASE_REF_NAME, '${{ github.ref_name }}');
   assert.equal(validateTag.env.RELEASE_TAG, '${{ steps.release-metadata.outputs.tag }}');
-  assert.deepEqual(Object.keys(createRelease.outputs).sort(), ['channel', 'make_latest', 'manifest_prefix', 'prerelease', 'version']);
+  assert.deepEqual(Object.keys(createRelease.outputs).sort(), ['channel', 'make_latest', 'manifest_prefix', 'prerelease', 'promotion_only', 'version']);
   assert.deepEqual(triggers.workflow_dispatch.inputs.channel.options, ['stable', 'beta', 'nightly']);
   assert.equal(triggers.workflow_dispatch.inputs.channel.type, 'choice');
+  assert.equal(triggers.workflow_dispatch.inputs.release_tag.required, true);
+  assert.equal(triggers.workflow_dispatch.inputs.release_tag.type, 'string');
   assert.equal(triggers.workflow_dispatch.inputs.promote_stable.type, 'boolean');
 
   for (const scriptName of ['release:linux', 'release:mac', 'release:win']) {
@@ -126,9 +128,9 @@ function run() {
   const storePublish = findStep(winJob, 'Publish Windows AppX packages to Microsoft Store');
   assertShellStep(winJob, 'Publish Windows AppX packages to Microsoft Store');
   assert.equal(storeSetup.uses, 'microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0');
-  assert.equal(storeSetup.if, "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')");
+  assert.equal(storeSetup.if, "github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.channel == 'stable'");
   assert.equal(storePublish.if, storeSetup.if);
-  assert.equal(storePublish.env.RELEASE_CHANNEL, '${{ needs.create-release.outputs.channel }}');
+  assert.equal(storePublish.env.RELEASE_CHANNEL, undefined);
 
   const verifyJob = jobs['verify-release'];
   const publishJob = jobs['publish-release'];
@@ -136,6 +138,10 @@ function run() {
   assert.deepEqual(publishJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release']);
   assertShellStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
   assertShellStep(publishJob, 'Publish draft without changing GitHub Latest by default');
+  const promoteJob = jobs['promote-release'];
+  assert.equal(promoteJob.needs, 'create-release');
+  assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
+  assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
 
   const macArtifact = build?.mac?.artifactName;
   assert.ok(typeof macArtifact === 'string' && macArtifact.includes('${arch}') && macArtifact.includes('mac') && !/\s/.test(macArtifact.replace(/\$\{[^}]+\}/g, '')), `mac artifact template must be safe: ${JSON.stringify(macArtifact)}`);

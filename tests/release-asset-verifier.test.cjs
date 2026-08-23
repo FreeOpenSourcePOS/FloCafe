@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const {
+  assertManifestPlatformMapping,
   assertReleaseAssetInventory,
   expectedManifestNames,
   parseManifest,
@@ -62,6 +63,40 @@ assert.deepEqual(manifest, {
 assert.throws(
   () => parseManifest('files:\n  - url: flocafe-3.3.0-win-x64.exe\n    sha512: abc123\n', 'latest.yml'),
   /does not declare a release version/,
+);
+
+assert.doesNotThrow(() => assertManifestPlatformMapping('latest.yml', '3.3.0', [
+  { url: 'flocafe-3.3.0-win-x64.exe' },
+]));
+assert.doesNotThrow(() => assertManifestPlatformMapping('latest-mac.yml', '3.3.0', [
+  { url: 'flocafe-3.3.0-mac-x64.zip' },
+  { url: 'flocafe-3.3.0-mac-arm64.zip' },
+  { url: 'flocafe-3.3.0-mac-x64.dmg' },
+  { url: 'flocafe-3.3.0-mac-arm64.dmg' },
+]));
+assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux.yml', '3.3.0', [
+  { url: 'flocafe-3.3.0-linux-x64.appimage' },
+]));
+assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux-arm64.yml', '3.3.0', [
+  { url: 'flocafe-3.3.0-linux-arm64.appimage' },
+]));
+assert.throws(
+  () => assertManifestPlatformMapping('latest.yml', '3.3.0', [
+    { url: 'flocafe-3.3.0-mac-x64.zip' },
+  ]),
+  /another platform or architecture/,
+);
+assert.throws(
+  () => assertManifestPlatformMapping('latest-linux-arm64.yml', '3.3.0', [
+    { url: 'flocafe-3.3.0-linux-x64.appimage' },
+  ]),
+  /another platform or architecture/,
+);
+assert.throws(
+  () => assertManifestPlatformMapping('latest-mac.yml', '3.3.0', [
+    { url: 'flocafe-3.3.0-mac-x64.zip' },
+  ]),
+  /missing required platform artifacts/,
 );
 
 console.log('✅ Draft release asset inventory checks passed');

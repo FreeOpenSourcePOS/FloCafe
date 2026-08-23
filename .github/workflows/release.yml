@@ -15,6 +15,10 @@ on:
           - stable
           - beta
           - nightly
+      release_tag:
+        description: Existing release tag to build or promote
+        required: true
+        type: string
       promote_stable:
         description: Explicitly select this verified stable release as GitHub Latest
         required: true
@@ -44,6 +48,7 @@ jobs:
       manifest_prefix: ${{ steps.release-metadata.outputs.manifest_prefix }}
       prerelease: ${{ steps.release-metadata.outputs.prerelease }}
       make_latest: ${{ steps.release-metadata.outputs.make_latest }}
+      promotion_only: ${{ steps.release-metadata.outputs.promotion_only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,7 +61,11 @@ jobs:
           if [ "$RELEASE_EVENT_NAME" = "push" ]; then
             TAG="$RELEASE_REF_NAME"
           else
-            TAG="$VERSION"
+            TAG="$RELEASE_TAG_INPUT"
+            if [ "$RELEASE_REF_NAME" != "$TAG" ]; then
+              echo "::error::Manual release dispatch must run from the selected release tag '$TAG', not '$RELEASE_REF_NAME'."
+              exit 1
+            fi
           fi
 
           VERSION_CHANNEL="stable"
@@ -79,19 +88,15 @@ jobs:
             exit 1
           fi
 
-          if [ "$CHANNEL" = "stable" ] && [ "$RELEASE_EVENT_NAME" = "push" ]; then
-            # A numeric tag push is the captain/pipeline's normal stable
-            # promotion. This is still passed explicitly to the publish job.
-            PROMOTE=true
-          else
-            # Manual dispatches default to a non-Latest release unless
-            # promote_stable is explicitly checked.
-            PROMOTE="${{ inputs.promote_stable }}"
-            PROMOTE="${PROMOTE:-false}"
-          fi
+          PROMOTE="${{ inputs.promote_stable }}"
+          PROMOTE="${PROMOTE:-false}"
           if [ "$PROMOTE" = "true" ] && [ "$CHANNEL" != "stable" ]; then
             echo "::error::Only a stable release can be explicitly selected as GitHub Latest."
             exit 1
+          fi
+          PROMOTION_ONLY=false
+          if [ "$RELEASE_EVENT_NAME" = "workflow_dispatch" ] && [ "$PROMOTE" = "true" ]; then
+            PROMOTION_ONLY=true
           fi
           PRERELEASE=false
           [ "$CHANNEL" != "stable" ] && PRERELEASE=true
@@ -104,10 +109,12 @@ jobs:
             echo "manifest_prefix=$MANIFEST_PREFIX"
             echo "prerelease=$PRERELEASE"
             echo "make_latest=$PROMOTE"
+            echo "promotion_only=$PROMOTION_ONLY"
           } >> "$GITHUB_OUTPUT"
         env:
           RELEASE_EVENT_NAME: ${{ github.event_name }}
           RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
 
       - name: Validate release tag
         # `on.push.tags: '[0-9]*'` is a glob, not a version pattern — it also
@@ -124,9 +131,21 @@ jobs:
             echo "::error::Tag '${TAG}' does not match package.json version '${VERSION}'."
             exit 1
           fi
+          if [ "$RELEASE_EVENT_NAME" != "push" ]; then
+            TAG_COMMIT=$(git rev-parse "${TAG}^{commit}") || {
+              echo "::error::Release tag '${TAG}' does not exist in the checked-out repository."
+              exit 1
+            }
+            HEAD_COMMIT=$(git rev-parse HEAD)
+            if [ "$TAG_COMMIT" != "$HEAD_COMMIT" ]; then
+              echo "::error::Checked-out revision '$HEAD_COMMIT' does not match release tag '${TAG}' at '$TAG_COMMIT'."
+              exit 1
+            fi
+          fi
         env:
           RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
           RELEASE_VERSION: ${{ steps.release-metadata.outputs.version }}
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
 
       - name: Create GitHub draft release (if not exists)
         # Release notes come from CHANGELOG.md, not --generate-notes: this repo
@@ -137,17 +156,19 @@ jobs:
         # publishing a release with no notes if one is missing. The release is
         # deliberately kept as a draft until all platform assets pass the
         # post-upload verification job.
+        if: steps.release-metadata.outputs.promotion_only != 'true'
         run: |
-          VERSION="${{ steps.release-metadata.outputs.version }}"
-          CHANNEL="${{ steps.release-metadata.outputs.channel }}"
+          TAG="$RELEASE_TAG"
+          VERSION="$RELEASE_VERSION"
+          CHANNEL="$RELEASE_CHANNEL"
           BASE_VERSION="${VERSION%%-*}"
-          if gh release view "${VERSION}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            DRAFT=$(gh release view "${VERSION}" --repo "${{ github.repository }}" --json isDraft --jq .isDraft)
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            DRAFT=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json isDraft --jq .isDraft)
             if [ "$DRAFT" != "true" ]; then
-              echo "::error::Release ${VERSION} already exists and is published; refusing to overwrite it."
+              echo "::error::Release ${TAG} already exists and is published; refusing to overwrite it."
               exit 1
             fi
-            echo "Draft release ${VERSION} already exists, reusing it."
+            echo "Draft release ${TAG} already exists, reusing it."
           else
             if ! ./scripts/changelog-notes.sh "${BASE_VERSION}" > /tmp/release-notes.md; then
               echo "::error::CHANGELOG.md has no '## [${BASE_VERSION}]' entry — add one before tagging a release."
@@ -162,31 +183,37 @@ jobs:
 
             RELEASE_ARGS=(--draft --latest=false)
             [ "$CHANNEL" != "stable" ] && RELEASE_ARGS+=(--prerelease)
-            gh release create "${VERSION}" \
+            gh release create "${TAG}" \
               --repo "${{ github.repository }}" \
+              --verify-tag \
               --title "${VERSION} (${CHANNEL})" \
               --notes-file /tmp/release-notes.md \
               "${RELEASE_ARGS[@]}"
           fi
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release-metadata.outputs.version }}
+          RELEASE_CHANNEL: ${{ steps.release-metadata.outputs.channel }}
 
       - name: Upload standalone uninstaller scripts
         # Independent utility scripts, not part of the app bundle — for
         # users who need to fully remove/reinstall outside the packaged
         # per-platform uninstaller (e.g. a broken install).
+        if: steps.release-metadata.outputs.promotion_only != 'true'
         run: |
-          VERSION="${{ steps.release-metadata.outputs.version }}"
-          gh release upload "${VERSION}" \
+          gh release upload "$RELEASE_TAG" \
             scripts/uninstallers/uninstall-macos.sh \
             scripts/uninstallers/uninstall-windows.ps1 \
             --repo "${{ github.repository }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
 
   release-linux:
     runs-on: ${{ matrix.runner }}
     needs: create-release
+    if: needs.create-release.outputs.promotion_only != 'true'
     timeout-minutes: 60
     # Each matrix entry builds AppImage + deb + rpm + snap for its host
     # architecture.electron-builder doesn't cross-compile, so x64 hosts
@@ -306,6 +333,7 @@ jobs:
   release-mac:
     runs-on: macos-latest
     needs: create-release
+    if: needs.create-release.outputs.promotion_only != 'true'
     # Was two parallel 60-minute matrix jobs (one per arch); now one job builds,
     # signs, and notarizes both — packaging + notarizing arch #2 no longer
     # overlaps arch #1's wall-clock time, so this needs real headroom over the
@@ -482,6 +510,7 @@ jobs:
   release-windows:
     runs-on: windows-latest
     needs: create-release
+    if: needs.create-release.outputs.promotion_only != 'true'
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -621,11 +650,11 @@ jobs:
         # branch code, so it must never be allowed to reach Partner Center.
         # Pinned to v1.4 by commit SHA rather than the mutable v1.1 tag
         # (matches this repo's pinning convention for third-party actions).
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.channel == 'stable'
         uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
 
       - name: Publish Windows AppX packages to Microsoft Store
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.channel == 'stable'
         shell: pwsh
         env:
           AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
@@ -633,7 +662,6 @@ jobs:
           AZURE_AD_APPLICATION_SECRET: ${{ secrets.AZURE_AD_APPLICATION_SECRET }}
           SELLER_ID: ${{ secrets.SELLER_ID }}
           MICROSOFT_STORE_PRODUCT_ID: ${{ vars.MICROSOFT_STORE_PRODUCT_ID }}
-          RELEASE_CHANNEL: ${{ needs.create-release.outputs.channel }}
           # Optional: set MSSTORE_NO_COMMIT=true (repo/environment variable)
           # to leave a submission as a draft, or MSSTORE_FLIGHT_ID to submit
           # to a Partner Center flight instead of production, for a
@@ -657,11 +685,6 @@ jobs:
             Write-Error "Missing Microsoft Store configuration: $($missing -join ', ')"
             exit 1
           }
-          if ($env:RELEASE_CHANNEL -ne 'stable' -and [string]::IsNullOrWhiteSpace($env:MSSTORE_FLIGHT_ID)) {
-            Write-Error "Non-stable AppX releases require MSSTORE_FLIGHT_ID so prerelease packages cannot reach the production Store channel"
-            exit 1
-          }
-
           msstore reconfigure `
             --tenantId "$env:AZURE_AD_TENANT_ID" `
             --sellerId "$env:SELLER_ID" `
@@ -687,6 +710,7 @@ jobs:
     # No release is publishable until every platform job and this independent
     # post-upload verification pass succeeds.
     needs: [create-release, release-linux, release-mac, release-windows]
+    if: needs.create-release.outputs.promotion_only != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -713,7 +737,7 @@ jobs:
     # Keep this as a distinct job so publishing cannot happen in a platform
     # job before the other platforms' draft assets have been checked.
     needs: [create-release, release-linux, release-mac, release-windows, verify-release]
-    if: needs.verify-release.result == 'success'
+    if: needs.create-release.outputs.promotion_only != 'true' && needs.verify-release.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -736,3 +760,33 @@ jobs:
           echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }})"
         env:
           GH_TOKEN: ${{ github.token }}
+
+  promote-release:
+    name: Promote verified stable release
+    needs: create-release
+    if: needs.create-release.outputs.promotion_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Promote published stable release to GitHub Latest
+        run: |
+          if [ "$RELEASE_CHANNEL" != "stable" ]; then
+            echo "::error::Only a stable release can be promoted to GitHub Latest."
+            exit 1
+          fi
+          RELEASE_JSON=$(gh api "repos/${{ github.repository }}/releases/tags/${RELEASE_TAG}")
+          if [ "$(jq -r '.draft' <<<"$RELEASE_JSON")" != "false" ]; then
+            echo "::error::Release ${RELEASE_TAG} must already be published before promotion."
+            exit 1
+          fi
+          if [ "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" != "false" ]; then
+            echo "::error::Release ${RELEASE_TAG} must not be prerelease."
+            exit 1
+          fi
+          RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")
+          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -f make_latest=true
+          echo "Promoted ${RELEASE_TAG} to GitHub Latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+          RELEASE_CHANNEL: ${{ needs.create-release.outputs.channel }}

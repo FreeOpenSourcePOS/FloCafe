@@ -133,6 +133,43 @@ function expectedManifestNames(channel) {
   ];
 }
 
+function assertManifestPlatformMapping(manifestName, version, files) {
+  const base = `flocafe-${version}`;
+  const urls = files.map((file) => file.url);
+  let allowed;
+  let required;
+
+  if (/^(latest|beta|nightly)\.yml$/.test(manifestName)) {
+    allowed = new Set([`${base}-win-x64.exe`]);
+    required = [`${base}-win-x64.exe`];
+  } else if (/^(latest|beta|nightly)-mac\.yml$/.test(manifestName)) {
+    allowed = new Set([
+      `${base}-mac-x64.dmg`,
+      `${base}-mac-arm64.dmg`,
+      `${base}-mac-x64.zip`,
+      `${base}-mac-arm64.zip`,
+    ]);
+    required = [`${base}-mac-x64.zip`, `${base}-mac-arm64.zip`];
+  } else if (/^(latest|beta|nightly)-linux\.yml$/.test(manifestName)) {
+    allowed = new Set([`${base}-linux-x64.appimage`]);
+    required = [`${base}-linux-x64.appimage`];
+  } else if (/^(latest|beta|nightly)-linux-arm64\.yml$/.test(manifestName)) {
+    allowed = new Set([`${base}-linux-arm64.appimage`]);
+    required = [`${base}-linux-arm64.appimage`];
+  } else {
+    throw new Error(`unsupported release manifest ${manifestName}`);
+  }
+
+  const mismatched = urls.filter((url) => !allowed.has(url));
+  if (mismatched.length > 0) {
+    throw new Error(`${manifestName} references artifacts for another platform or architecture: ${mismatched.join(', ')}`);
+  }
+  const missing = required.filter((url) => !urls.includes(url));
+  if (missing.length > 0) {
+    throw new Error(`${manifestName} is missing required platform artifacts: ${missing.join(', ')}`);
+  }
+}
+
 function expectedArtifactNames(version) {
   const base = `flocafe-${version}`;
   return [
@@ -248,6 +285,7 @@ async function main() {
       if (manifest.version !== options.tag) {
         throw new Error(`${manifestName} declares version ${manifest.version}, expected ${options.tag}`);
       }
+      assertManifestPlatformMapping(manifestName, options.tag, manifest.files);
 
       for (const file of manifest.files) {
         if (path.basename(file.url) !== file.url || !/^[a-z0-9.-]+$/.test(file.url)) {
@@ -280,6 +318,7 @@ if (require.main === module) {
 
 module.exports = {
   assertReleaseAssetInventory,
+  assertManifestPlatformMapping,
   expectedArtifactNames,
   expectedManifestNames,
   parseManifest,

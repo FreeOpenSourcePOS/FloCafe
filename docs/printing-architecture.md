@@ -36,8 +36,8 @@ Companion documents:
  applyMerchantTemplate(document, payload)   shared/print/merchant-template.ts
         │
         ▼
- Renderer  — walks document BLOCKS only     main/printers/document-*.ts,
-        │                                   frontend receipt-encoder / web-print
+        Renderer  — migrated paths walk BLOCKS;    main/printers/document-*.ts,
+        │          see raw-path exceptions below   frontend receipt-encoder / web-print
         ▼
  Transport — bytes/HTML leave the app       network socket :9100, Windows
                                             spooler / CUPS queue, WebUSB,
@@ -50,16 +50,27 @@ Layer ownership:
 | --- | --- | --- | --- |
 | Normalization | `main/printers/document-classic.ts` (`buildBillPrintData`), `frontend/src/lib/printer/print-document.ts` | read raw rows once, coerce to typed snapshots | recompute taxes/totals beyond legacy addon-line extension |
 | Kernel (`shared/print/`) | `shared/print/` | types + pure functions over injected facts | any IO (Electron, DOM, Node built-ins, DB, filesystem, network); import from `frontend/` or `main/`; hardcode language unions |
-| Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | read bill/order rows directly; invent labels outside the catalog; the documented legacy WebUSB exceptions below are not a model boundary |
+| Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | on migrated paths, read bill/order rows directly; invent labels outside the catalog; the documented raw-path exceptions below are not a model boundary |
 | Transports | `main/printers/thermal.ts`, browser APIs | move bytes/paper | change document semantics |
 
-The renderer rule has two explicit legacy WebUSB exceptions. `frontend/src/hooks/usePrinter.ts`
-still calls `kot-encoder.ts` with raw `Order` data for thermal KOT printing, and
-calls the `tax-bill-encoder.ts` raw `Bill`/`Tenant` diagnostic path for the print-test
-page. The tax encoder is explicitly LEGACY-FROZEN; neither path is a
-`PrintDocument` v1 consumer. Their existing raw-field and warning behavior is
-outside the shared document boundary, so new receipt behavior belongs on the
-document-driven paths below and must not be inferred from these exceptions.
+The document-block renderer rule has explicit active raw-path exceptions:
+
+- Signed #445 compliance packs use `main/printers/thermal.ts` to render raw
+  `Order`/`Bill`/business rows with the signed `escpos-line-template-v1`
+  payload. This remains a separate compliance format; see [the compliance
+  template contract in printers.md](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1).
+- `frontend/src/lib/printer/kot-web-print.ts` renders browser KOT HTML from a
+  raw `Order`; it uses the shared catalog and direction helpers but is not a
+  `KotDocument` v1 consumer.
+- `frontend/src/hooks/usePrinter.ts` still calls `kot-encoder.ts` with raw
+  `Order` data for thermal KOT printing and calls the `tax-bill-encoder.ts` raw
+  `Bill`/`Tenant` diagnostic path for the print-test page. The tax encoder is
+  explicitly LEGACY-FROZEN.
+
+These paths retain their own raw-field and warning behavior outside the shared
+document boundary. New document features must use the migrated paths below;
+the exceptions must not be treated as evidence that their raw inputs are
+`PrintDocument` v1 data.
 
 The purity boundary of the kernel is binding: see
 [shared/print/README.md](../shared/print/README.md), enforced by the kernel
@@ -83,7 +94,10 @@ language registry ([frontend/src/lib/i18n/languages.ts](../frontend/src/lib/i18n
 is authoritative; both consumers inject their own view of "registered and
 selectable" via `LanguageRegistryFacts`:
 
-- frontend filters by `selectable` in the registry (`frontend/src/lib/printer/print-document.ts`);
+- frontend validates stored policies against `selectable` in
+  [`frontend/src/lib/print-language-policies.ts`](../frontend/src/lib/print-language-policies.ts),
+  while the settings page builds the selectable print-language controls from
+  the same registry (`frontend/src/app/(dashboard)/settings/page.tsx`);
 - backend uses the generated print-label language table
   (`main/print/print-labels.generated.ts`, wired in `main/lib/print-language-settings.ts`).
 
@@ -123,9 +137,15 @@ Invariants every consumer may rely on:
   a `SemanticLabel`: a concept reference plus already-resolved primary text
   and an optional secondary-language rendering of the same concept. Renderers
   decide how two variants share a line.
-- **Every value carries its resolved direction** (`DirectionalText`), so
-  renderers embed LTR islands without re-running heuristics.
-- Blocks appear in canonical order; `getBlock()` gives typed access.
+- **Text fields represented as `DirectionalText` carry their resolved
+  direction**, so renderers embed LTR islands without re-running heuristics.
+  Quantities, amounts, rates, points, and payment amounts remain numeric model
+  fields and do not carry direction metadata.
+- The unmodified output of `buildBillDocument` appears in canonical block
+  order; `getBlock()` gives typed access. Applying
+  `applyMerchantTemplate` is an explicit semantic transform: a validated
+  merchant payload may reorder or omit blocks before rendering
+  (`shared/print/merchant-template.ts`).
 
 ### Extension policy (adding a block)
 
@@ -179,6 +199,13 @@ Three decoupled domains (see also [i18n.md](i18n.md)):
   independently of the receipt — a fixed English kitchen keeps English tickets
   even in a Persian storefront (asserted in `tests/print-parity.test.ts`,
   section "KOT language policy independence").
+
+Thermal receipt paths resolve the receipt policy before building the document.
+The browser receipt path is an active exception: `usePrinter.ts` calls
+`printWebBill` without a policy-derived `language`, and `web-print.ts` defaults
+to the active UI language before building a single-language document. A fixed
+receipt primary therefore does not currently change browser receipt labels;
+this is separate from the model-only/future bilingual renderer work above.
 
 Policy payloads are untrusted input: `parsePrintLanguagePolicy` /
 `parseKotLanguagePolicy` accept known keys only, require registered +
@@ -337,11 +364,12 @@ broader script coverage is future work
 | `document-compact.ts` (#443) | desktop compact receipts | PrintDocument v1 | token lines → bytes | same |
 | `document-kot.ts` (#443) | desktop kitchen tickets | KotDocument v1 | token lines → bytes | same |
 | `document-merchant.ts` (#447/#448) | desktop receipts with active merchant template | applied PrintDocument | token lines → bytes (fail-closed fallback to classic) | same |
+| `thermal.ts` compliance plugin (#445) | desktop receipt with signed country-pack template | raw `Order`/`Bill`/business rows + signed [`escpos-line-template-v1`](printers.md#country-pack-compliance-receipt-templates-escpos-line-template-v1) payload | ESC/POS bytes | desktop transport |
 | `receipt-encoder.ts` (#444) | WebUSB thermal receipts | PrintDocument v1 via `print-document.ts` bridge | ESC/POS bytes | WebUSB device |
 | `kot-encoder.ts` (#444, legacy exception) | WebUSB thermal KOT | raw `Order` data; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
 | `tax-bill-encoder.ts` (#444, LEGACY-FROZEN diagnostic exception) | WebUSB print-test tax bill | raw `Bill`/`Tenant` data; no PrintDocument bridge | ESC/POS bytes | WebUSB device |
 | `web-print.ts` (#444) | system print dialog receipts | PrintDocument v1 | HTML | browser print |
-| `kot-web-print.ts` | system print dialog kitchen tickets | Kot data | HTML | browser print |
+| `kot-web-print.ts` | system print dialog kitchen tickets | raw `Order` data; shared catalog/direction helpers, no KotDocument bridge | HTML | browser print |
 
 Desktop byte-level transports (Windows spooler RAW datatype, CUPS, sockets) are
 described in [printers.md](printers.md); desktop renderers never touch them

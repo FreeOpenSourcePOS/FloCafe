@@ -108,6 +108,7 @@ function run() {
 
   const linuxJob = jobs['release-linux'];
   assertShellStep(linuxJob, 'Build Linux artifacts');
+  assertShellStep(linuxJob, 'Verify Linux release assets');
   assertShellStep(linuxJob, 'Upload Linux assets to GitHub release');
   assertShellStep(linuxJob, 'Prepend AppStream release entry');
   const snapPublish = findStep(linuxJob, 'Publish snap to the matching Snap Store channel');
@@ -133,6 +134,8 @@ function run() {
   assert.equal(storePublish.env.RELEASE_CHANNEL, undefined);
 
   const verifyJob = jobs['verify-release'];
+  const verifierDependencies = findStep(verifyJob, 'Install verifier dependencies');
+  assert.equal(verifierDependencies.run, 'npm ci --ignore-scripts --no-audit --no-fund');
   const publishJob = jobs['publish-release'];
   assert.deepEqual(verifyJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows']);
   assert.deepEqual(publishJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release']);

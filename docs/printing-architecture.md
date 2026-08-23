@@ -307,11 +307,11 @@ Rules:
 - Known deliberate gap: the KOT `Order:` prefix has no assigned key yet;
   the KOT document carries only the value (`KotHeaderBlock.orderNumber`
   doc comment).
-- Renderer-only layout literals remain explicit exceptions: the migrated
-  WebUSB [`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts) uses `Rate` and `Amount` labels for its 4-column
-  overflow layout (`col4Rows`), while literal tax-ID/tax-component labels are
-  data labels created by `buildBillDocument`. These do not establish new
-  catalog concepts.
+- Renderer-only layout lookups remain explicit exceptions: the migrated WebUSB
+  [`frontend/src/lib/printer/receipt-encoder.ts`](../frontend/src/lib/printer/receipt-encoder.ts) resolves `receipt.rate` and `printTest.amt` through
+  `printLabelResolver` for its 4-column layout. These labels live outside
+  `PrintDocument`; literal tax-ID/tax-component labels are data labels created
+  by `buildBillDocument`. These do not establish new catalog concepts.
 
 ## 5. Template systems, provenance & security
 
@@ -413,8 +413,11 @@ Warning semantics on the shared document-driven paths are **no silent loss of
 unsupported content**: every skipped line produces a `PrintWarning` naming the
 field, the skipped text, and the reason; unsupported configuration (for example
 a merchant template selected on a print path that cannot honor it) produces a
-`kind: 'configuration'` warning and a documented fallback layout
-(`makeBillTemplateFallbackWarning`). A valid merchant template may intentionally
+path-specific warning and a documented fallback layout. The frontend
+[`makeBillTemplateFallbackWarning`](../frontend/src/lib/printer/warnings.ts)
+marks that warning `kind: 'configuration'`; desktop
+[`PrintWarning`](../main/printers/thermal.ts) carries `field`, `text`, and
+`message` without a `kind` field. A valid merchant template may intentionally
 reorder, hide, or omit blocks — including `totals` — through explicit block
 selection and `visible` settings; that is merchant configuration, not a silent
 renderer omission. The legacy raw WebUSB encoders described above retain their
@@ -452,12 +455,12 @@ directly and [`main/printers/thermal.ts`](../main/printers/thermal.ts) owns that
 
 | Suite | Command | What it locks down |
 | --- | --- | --- |
-| Kernel units | `npm run test:print-kernel` | policy resolution/validation, direction, bilingual fit, settings glue |
-| Labels | `npm run test:print-labels` | generated-table selection, English fallback, generator drift (`--check`) |
-| Document model | `npm run test:print-document` | block construction, document builders, bilingual pairs, direction annotations, purity |
-| Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle |
-| Merchant templates | `npm run test:merchant-print-templates` | kernel validation, apply semantics, CRUD lifecycle, render path |
-| Transfer envelope | `npm run test:merchant-template-transfer` | import/export contract, tampered-checksum rejection |
+| Kernel units | `npm run test:print-kernel` | policy resolution/validation, direction, bilingual fit, settings glue ([`tests/print-kernel.test.ts`](../tests/print-kernel.test.ts), [`tests/kernel-purity.test.ts`](../tests/kernel-purity.test.ts), [`tests/print-language-settings.test.ts`](../tests/print-language-settings.test.ts)) |
+| Labels | `npm run test:print-labels` | generated-table selection, English fallback, generator drift (`--check`) ([`tests/print-labels.test.ts`](../tests/print-labels.test.ts), [`scripts/generate-print-labels.cjs`](../scripts/generate-print-labels.cjs)) |
+| Document model | `npm run test:print-document` | block construction, document builders, bilingual pairs, direction annotations, purity ([`tests/print-document.test.ts`](../tests/print-document.test.ts)) |
+| Parity harness | `npm run test:print-parity` | cross-renderer semantic parity + byte-exact migration oracle ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)) |
+| Merchant templates | `npm run test:merchant-print-templates` | kernel validation, apply semantics, CRUD lifecycle, render path ([`tests/merchant-print-templates.test.ts`](../tests/merchant-print-templates.test.ts)) |
+| Transfer envelope | `npm run test:merchant-template-transfer` | import/export contract, tampered-checksum rejection ([`tests/merchant-template-import-export.test.ts`](../tests/merchant-template-import-export.test.ts)) |
 
 Parity harness usage and fixture matrix ([`tests/print-parity.test.ts`](../tests/print-parity.test.ts)):
 

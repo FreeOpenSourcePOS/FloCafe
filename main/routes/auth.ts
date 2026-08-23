@@ -4,10 +4,11 @@ import jwt, { SignOptions } from 'jsonwebtoken';
 import { v4 as uuidv4 } from 'uuid';
 import { randomBytes } from 'crypto';
 import { getCountryCallingCode, type CountryCode } from 'libphonenumber-js';
-import { getCurrentSchemaVersion, getDatabase, now } from '../db';
+import { getCurrentSchemaVersion, getDatabase, getSettingValue, now } from '../db';
 import { authorizeMasterPin, isMasterPinAvailable, setMasterPin } from '../services/master-pin';
 import { authRateLimit, validatePassword, revokeToken, isTokenRevoked, isTokenStale, invalidateUserAuthCache } from '../middleware/security';
 import { getCurrencySymbol, getCountryByCode, isValidTimeZone } from '../countries';
+import { countryConfirmationPatch } from '../services/country-provenance';
 import { cloudSync, DEFAULT_CLOUD_SERVER_URL, normalizeCloudServerUrl } from '../services/cloud-sync';
 import { asyncHandler } from '../middleware/async-handler';
 import { normalizeOptionalPhone } from '../lib/phone';
@@ -882,6 +883,11 @@ router.post('/setup/initialize', (req: Request, res: Response) => {
         service_model: normalizedServiceModel,
         setup_profile: normalizedSetupProfile,
         onboarding_completed: 'true',
+        // Completing setup is not by itself a country choice: the wizard
+        // preselects IN and submits it whether or not the picker was touched.
+        // Only a country that differs from the seeded default — or a client
+        // that reports the selection outright — counts.
+        ...countryConfirmationPatch(country, getSettingValue('country'), req.body.country_selected),
         anonymous_data_consent: 'true',
         telemetry_enabled: 'true',
         telemetry_scope: 'usage_stats,country,app_version,platform,session_duration,feature_usage,error_diagnostics',

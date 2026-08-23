@@ -15,13 +15,12 @@
  * Browser receipts are full HTML, not raw ESC/POS bytes, so they never apply
  * the ASCII currency fallback or `ریال → IRR` downgrade used by the thermal
  * encoders. They follow the tenant's locale preferences (currency display,
- * digit mode, calendar) and the active UI language, and render RTL with
+ * digit mode, calendar) and the resolved receipt language policy, and render RTL with
  * isolated LTR islands for Persian (fa).
  */
 
 import type { Bill, Tenant } from '@/lib/types';
 import toast from 'react-hot-toast';
-import { createTranslator } from 'use-intl/core';
 import {
   getCountryByCode,
   formatCurrencyForTenant,
@@ -29,13 +28,15 @@ import {
   formatDateForTenant,
 } from '@/lib/countries';
 import { parseDbTimestamp } from '@/lib/utils';
-import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
+import { loadLocaleMessages } from '@/lib/i18n/loader';
 import {
   buildFrontendBillDocument,
-  resolveActiveUiLanguage,
+  ensurePrintLanguagesLoaded,
+  printLabelResolver,
+  resolveBillPrintLanguages,
 } from './print-document';
 import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
-import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
+import { LANGUAGES, type Language } from '@/lib/i18n/languages';
 import {
   getBlock,
   type BusinessHeaderBlock,
@@ -48,7 +49,7 @@ import {
   type TaxBreakdownBlock,
   type TotalsBlock,
 } from '@print/document';
-import type { TextDirection } from '@print/types';
+import type { ResolvedPrintLanguages, TextDirection } from '@print/types';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 
@@ -101,8 +102,10 @@ export interface WebPrintOptions {
   isReprint?: boolean;
   /** Hide trailing .00 on printed amounts while keeping non-zero decimals. */
   trimDecimals?: boolean;
-  /** UI language for receipt labels (defaults to the active store language). */
+  /** UI language used when resolving an inherited receipt language policy. */
   language?: Language;
+  /** Resolved receipt languages supplied by the caller's print policy. */
+  languages?: ResolvedPrintLanguages;
 }
 
 /**
@@ -111,7 +114,7 @@ export interface WebPrintOptions {
  * localized so a Persian receipt doesn't show an English phrase.
  */
 function resolveTaxIdLabel(country: string | undefined, lang: Language): string {
-  if (country?.toUpperCase() === 'IR') return t('receipt.economicCode', lang);
+  if (country?.toUpperCase() === 'IR') return printLabelResolver('receipt.economicCode', lang);
   return getCountryByCode(country ?? 'IN')?.taxIdLabel || 'Tax ID';
 }
 
@@ -134,7 +137,7 @@ export async function printWebBill(
   tenant: ReceiptTenant,
   opts: WebPrintOptions = {}
 ): Promise<void> {
-  const lang = resolveLanguage(opts.language);
+  const languages = resolvePrintLanguages(opts);
 
   // 1. Open popup window synchronously to maintain transient user activation
   const printWindow = typeof window !== 'undefined' ? window.open('', '_blank', 'width=800,height=600') : null;
@@ -143,10 +146,11 @@ export async function printWebBill(
     throw new Error('Popup window was blocked by browser');
   }
 
-  // 2. Ensure the requested language messages are loaded in memory so the
-  //    document's label resolution sees them
-  await ensureReceiptMessagesLoaded(lang);
-  const html = generateBillHtml(bill, tenant, opts);
+  // 2. Ensure every language selected by the canonical print policy is
+  //    available before the synchronous document build. The document uses
+  //    the primary language for this single-language HTML surface.
+  await ensurePrintLanguagesLoaded(languages);
+  const html = generateBillHtml(bill, tenant, { ...opts, languages });
 
   // 3. Write HTML and trigger print
   if (printWindow.closed) {
@@ -255,9 +259,8 @@ export function generateBillHtml(
     trimDecimals = false,
   } = opts;
 
-  const lang = resolveLanguage(opts.language);
-  const dir = getLanguageDirection(lang);
-  const localeTag = LANGUAGES[lang]?.locale ?? lang;
+  const languages = resolvePrintLanguages(opts);
+  const lang = languages[0] as Language;
 
   const document = buildFrontendBillDocument(bill, tenant, {
     columns: paperSize === 'thermal80' ? 48 : 42,
@@ -275,9 +278,11 @@ export function generateBillHtml(
     showTableNumber,
     isReprint,
     trimDecimals,
-    languages: [lang],
+    languages,
   });
   const base = document.direction.base;
+  const dir = base;
+  const localeTag = LANGUAGES[lang]?.locale ?? lang;
 
   const header = getBlock(document, 'business-header') as BusinessHeaderBlock | undefined;
   const meta = getBlock(document, 'document-meta') as DocumentMetaBlock | undefined;
@@ -288,25 +293,25 @@ export function generateBillHtml(
   const payments = getBlock(document, 'payments') as PaymentsBlock | undefined;
   const messages = getBlock(document, 'message') as MessageBlock | undefined;
 
-  // Presentation labels. Values come from the document; each surface picks
-  // its catalog concepts — the browser receipt keeps the ones it has always
-  // shown (e.g. "Bill #", "Grand Total"), now resolved through the same
-  // shared catalog instead of per-template literals.
+  // Presentation labels come from the semantic document whenever the
+  // document owns that slot. Surface-only labels use the same injected
+  // catalog resolver as the document builder and thermal renderers.
+  const metaTableLabel = documentLabel(meta?.table?.label, 'pos.tableLabel', lang);
   const L = {
-    billNumber: t('receipt.billNumber', lang),
-    date: t('receipt.date', lang),
-    table: t('receipt.table', lang),
-    customer: t('pos.customer', lang),
-    customerNo: t('receipt.customerNo', lang),
-    rate: t('receipt.rate', lang),
-    totalTax: t('receipt.totalTax', lang),
-    deliveryCharge: t('receipt.deliveryCharge', lang),
-    grandTotal: t('receipt.grandTotal', lang),
-    taxDetails: t('receipt.taxDetails', lang),
-    paymentsHeader: t('receipt.payments', lang),
-    thankYou: t('receipt.thankYou', lang),
-    taxIncluded: t('receipt.taxIncluded', lang),
-    printBill: t('receipt.printBill', lang),
+    billNumber: documentLabel(meta?.billNumberLabel, 'receipt.billNumber', lang),
+    date: documentLabel(meta?.dateLabel, 'receipt.date', lang),
+    table: stripLabelPlaceholder(metaTableLabel),
+    customer: documentLabel(customer?.nameLabel, 'pos.customer', lang),
+    customerNo: documentLabel(customer?.phoneLabel, 'print.numberShort', lang),
+    rate: printLabelResolver('receipt.rate', lang),
+    totalTax: surfaceLabel(totals?.tax?.label, 'pos.tax', 'receipt.totalTax', lang),
+    deliveryCharge: surfaceLabel(totals?.deliveryCharge?.label, 'pos.delivery', 'receipt.deliveryCharge', lang),
+    grandTotal: surfaceLabel(totals?.grandTotal?.label, 'print.grandTotal', 'receipt.grandTotal', lang),
+    taxDetails: printLabelResolver('receipt.taxDetails', lang),
+    paymentsHeader: printLabelResolver('receipt.payments', lang),
+    thankYou: surfaceLabel(messages?.thankYou, 'print.thankYouShort', 'receipt.thankYou', lang),
+    taxIncluded: printLabelResolver('receipt.taxIncluded', lang),
+    printBill: printLabelResolver('receipt.printBill', lang),
   };
 
   const invoiceNumberLabel = L.billNumber;
@@ -352,7 +357,7 @@ export function generateBillHtml(
       <table>
         <tr>
           <td><strong>${escapeHtml(invoiceNumberLabel)}</strong> ${meta ? directionalValue(meta.invoiceNumber, base) : ''}</td>
-          <td class="text-end"><strong>${escapeHtml(L.date)}</strong> ${meta ? escapeHtml(formatReceiptDate(meta.timestamp.text, tenant, LANGUAGES[lang].locale)) : ''}</td>
+          <td class="text-end"><strong>${escapeHtml(L.date)}</strong> ${meta ? escapeHtml(formatReceiptDate(meta.timestamp.text, tenant, LANGUAGES[lang]?.locale ?? lang)) : ''}</td>
         </tr>
         ${meta?.table ? `<tr><td><strong>${escapeHtml(L.table)}</strong> ${escapeHtml(meta.table.name.text)}</td><td></td></tr>` : ''}
         ${customer?.name ? `<tr><td><strong>${escapeHtml(L.customer)}</strong> ${escapeHtml(customer.name.text)}</td><td></td></tr>` : ''}
@@ -446,23 +451,40 @@ export function generateBillHtml(
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Resolve the active UI language, falling back to `en` outside the client store. */
-function resolveLanguage(language?: Language): Language {
-  return resolveActiveUiLanguage(language);
+/** Resolve the receipt language list through the shared policy bridge. */
+function resolvePrintLanguages(opts: Pick<WebPrintOptions, 'language' | 'languages'>): ResolvedPrintLanguages {
+  return opts.languages ?? resolveBillPrintLanguages(opts.language);
 }
 
-/** Synchronous receipt translator backed by the shared locale loader cache. */
-function translatorFor(lang: Language): (key: string) => string {
-  const locale = LANGUAGES[lang]?.locale ?? 'en';
-  const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
-  // `createTranslator` resolves dotted keys against the whole message tree;
-  // the cached messages are untyped (Record<string, unknown>), so the returned
-  // translator accepts arbitrary string keys at runtime.
-  return createTranslator({ locale, messages }) as unknown as (key: string) => string;
+/** Read a semantic document label, retaining the canonical resolver fallback. */
+function documentLabel(
+  label: { primary: string } | null | undefined,
+  conceptId: string,
+  lang: Language,
+): string {
+  return label?.primary ?? printLabelResolver(conceptId, lang);
 }
 
-function t(key: string, lang: Language): string {
-  return translatorFor(lang)(key);
+/**
+ * Keep the browser's established wording while honoring a semantic label
+ * override from an applied merchant document. The default browser concept is
+ * still resolved by the shared catalog - it is not a second translation table.
+ */
+function surfaceLabel(
+  semanticLabel: { primary: string } | null | undefined,
+  semanticConceptId: string,
+  browserConceptId: string,
+  lang: Language,
+): string {
+  const semanticDefault = printLabelResolver(semanticConceptId, lang);
+  return semanticLabel && semanticLabel.primary !== semanticDefault
+    ? semanticLabel.primary
+    : printLabelResolver(browserConceptId, lang);
+}
+
+/** Remove the semantic table label's interpolation token for a separate value cell. */
+function stripLabelPlaceholder(label: string): string {
+  return label.replace('{name}', '').replace(/[:：]\s*$/, '').trim();
 }
 
 /** Unknown payment methods keep their legacy capitalized literal rendering. */

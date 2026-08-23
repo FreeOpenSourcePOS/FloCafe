@@ -218,7 +218,7 @@ async function run() {
     assert('Grand Total row shows Persian "جمع کل"', html.includes('<strong>جمع کل</strong>'));
     assert('Payments section header shows Persian "پرداخت‌ها"', html.includes('<th colspan="2">پرداخت‌ها</th>'));
     assert('Card payment method translated to "کارت"', html.includes('<td>کارت</td>'));
-    assert('Footer shows Persian thank you', html.includes('از بازدید شما سپاسگزاریم!'));
+    assert('Footer preserves Persian thank you text', html.includes('از بازدید شما سپاسگزاریم!'));
     assert('Footer shows Persian tax notice', html.includes('مالیات در صورت اعمال، شامل شده است'));
     assert('Print button shows Persian "چاپ رسید"', html.includes('چاپ رسید</button>'));
   }
@@ -344,6 +344,54 @@ async function run() {
       ptHtml.includes('Conta #') &&
       ptHtml.includes('Total geral') &&
       ptHtml.includes('Obrigado pela sua visita!')
+    );
+  }
+
+  console.log('\nTest Suite 6: Canonical semantic labels and unknown-language fallback');
+  {
+    const canonicalBill: Bill = {
+      ...testIranBill,
+      tax_breakdown: [],
+      delivery_charge: 10000,
+      tax_amount: 90000,
+      total: 1000000,
+      paid_amount: 1000000,
+      payment_details: [{ method: 'card', amount: 1000000, timestamp: '2026-08-17T14:35:00.000Z' }],
+    };
+    const canonicalTenant = { ...baseIranTenant, currency_display: 'rial' as const };
+    const expectedLabels = {
+      billNumber: 'رسید #',
+      date: 'تاریخ',
+      table: 'میز',
+      customer: 'مشتری',
+      customerNo: 'شماره مشتری',
+      item: 'اقلام',
+      quantity: 'تعداد',
+      rate: 'نرخ',
+      amount: 'مبلغ',
+      subtotal: 'جمع جزء',
+      tax: 'مالیات کل',
+      delivery: 'هزینه ارسال',
+      total: 'جمع کل',
+      payments: 'پرداخت‌ها',
+      card: 'کارت',
+      thankYou: 'از بازدید شما سپاسگزاریم!',
+    };
+    const faHtml = generateBillHtml(canonicalBill, canonicalTenant, { language: 'fa', showTaxBreakdown: false });
+    for (const [name, label] of Object.entries(expectedLabels)) {
+      assert(`fa canonical ${name} label renders`, faHtml.includes(label));
+    }
+
+    // Supplying an unknown policy language must retain the resolver's English
+    // fallback rather than leaking a raw i18n key or crashing the HTML path.
+    const unknownHtml = generateBillHtml(canonicalBill, canonicalTenant, {
+      languages: ['xx'] as any,
+      showTaxBreakdown: false,
+    });
+    assert('unknown browser print language falls back to English labels',
+      unknownHtml.includes('<strong>Grand Total</strong>') &&
+      unknownHtml.includes('<p>Thank you for your visit!</p>') &&
+      !unknownHtml.includes('receipt.grandTotal'),
     );
   }
 

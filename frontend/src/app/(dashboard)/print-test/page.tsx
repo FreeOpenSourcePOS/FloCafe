@@ -9,7 +9,7 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { createTestBill, createTestOrder, createTestTenant, createTestCustomer } from '@/lib/printer/test-data';
 import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
-import { ensurePrintLanguagesLoaded } from '@/lib/printer/print-document';
+import { ensurePrintLanguagesLoaded, resolveBillPrintLanguages } from '@/lib/printer/print-document';
 import { generateKotHtml } from '@/lib/printer/kot-web-print';
 import { shareBillViaWhatsApp, getWhatsAppMessage } from '@/lib/whatsapp-share';
 import toast from 'react-hot-toast';
@@ -116,13 +116,16 @@ export default function PrintTestPage() {
     }
   };
 
-  const handleDownloadHtml = () => {
+  const handleDownloadHtml = async () => {
+    const languages = resolveBillPrintLanguages();
+    await ensurePrintLanguagesLoaded(languages);
     const html = generateBillHtml(testBill, testTenant, {
       paperSize: printerPaperSize,
       includeTaxId: true,
       taxRegistrationNumber: 'TAXID-0001',
       address: '123 Main Street, Mumbai - 400001',
       phone: '+91 9876543210',
+      languages,
     });
 
     const blob = new Blob([html], { type: 'text/html' });

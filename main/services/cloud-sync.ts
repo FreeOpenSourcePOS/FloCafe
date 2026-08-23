@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import * as os from 'os';
 import log from 'electron-log';
 import { WebSocket, type RawData } from 'ws';
+import { readCountryProvenance } from './country-provenance';
 import { getDatabase, now, parseItemJson, attachEffectiveAddons, ensureCloudIdentity, isDiagnosticsConsentEnabled, isDatabaseMaintenanceActive, registerDatabaseMaintenanceEndListener, registerDatabaseMaintenanceStartListener, utcDayBounds, utcTodayDate, withDatabaseRequest } from '../db';
 
 export const DEFAULT_CLOUD_SERVER_URL = 'https://blue.flopos.com/';
@@ -477,6 +478,13 @@ export class CloudSyncService {
     const owner = db.prepare(
       "SELECT name FROM users WHERE role = 'owner' AND is_active = 1 ORDER BY created_at ASC LIMIT 1"
     ).get() as { name?: string } | undefined;
+    // Country is reported through readCountryProvenance() rather than read
+    // straight off settings, because settings.country is seeded to 'IN' at
+    // install: sending it raw told FloAdmin that every unconfigured install on
+    // earth was Indian. An unconfirmed country is withheld (FloAdmin COALESCEs,
+    // so null preserves whatever it already has) and the OS's own region goes
+    // alongside as the signal an install default cannot fake.
+    const provenance = readCountryProvenance();
     const body = {
       pos_hash: posHash,
       device_secret_hash: sha256Hex(deviceSecret),
@@ -490,7 +498,11 @@ export class CloudSyncService {
         contact_name: owner?.name || '',
         email: settings.email || '',
         phone: settings.business_phone || settings.phone || '',
-        country: settings.country || 'IN',
+        country: provenance.country,
+        country_source: provenance.countrySource,
+        os_country: provenance.osCountry,
+        os_locale: provenance.osLocale,
+        os_timezone: provenance.osTimezone,
         timezone: settings.timezone || 'Asia/Kolkata',
         currency: settings.currency || 'INR',
         address: settings.business_address || '',

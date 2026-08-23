@@ -52,9 +52,12 @@ its trust model depends on every row tracing to a verified pack version.
 - The payload shape contains semantic block selections and literal label text
   only; it has no fields for ESC/POS tokens, HTML, or renderer snippets. The
   backend thermal receipt renderer consumes the applied document through
-  `applyMerchantTemplate`; browser/WebUSB print paths currently use the
-  built-in layout and show an explicit fallback warning for merchant
-  selections.
+  `applyMerchantTemplate`. Browser/WebUSB print paths also build their labels
+  from the shared `PrintDocument` bridge and canonical catalog resolver (with
+  registry-derived direction); they currently keep the built-in block layout
+  and show an explicit fallback warning when a merchant selection cannot be
+  applied. This structural fallback does not use a browser-only translation
+  table.
 
 ## Validation & compatibility policy
 
@@ -189,9 +192,19 @@ The `bill_template` setting persists a STRUCTURED selection:
 
 ## Renderers
 
-Merchant receipt documents render through the backend PrintDocument pipeline
-(`data → document → applyMerchantTemplate → renderer`). The parity harness
-(print-parity.test.ts) runs a merchant-template mode asserting byte-equivalence
+Merchant receipt documents render through the backend [PrintDocument pipeline](../shared/print/document.ts)
+(`data → document → applyMerchantTemplate → renderer`). The [parity harness](../tests/print-parity.test.ts)
+runs a merchant-template mode asserting byte-equivalence
 with the plain classic document pipeline. Browser/WebUSB printing uses the
-built-in classic/compact layout and warns when a merchant template is selected.
-Compact/KOT rendering of merchant documents belongs to their owning issues.
+shared document labels and the built-in classic/compact block layout; it warns
+when a merchant template's structural selection or label overrides cannot be
+applied on that path. The fallback is enforced by
+[`web-print.ts`](../frontend/src/lib/printer/web-print.ts) and
+[`print-document.ts`](../frontend/src/lib/printer/print-document.ts) for label
+resolution, while [`usePrinter.ts`](../frontend/src/hooks/usePrinter.ts) owns
+the structural fallback and delegates its warning to
+[`warnings.ts`](../frontend/src/lib/printer/warnings.ts). Behavioral coverage
+is in [`printer.test.ts`](../tests/printer.test.ts),
+[`browser-receipts.test.ts`](../tests/browser-receipts.test.ts), and
+[`print-parity.test.ts`](../tests/print-parity.test.ts). Compact/KOT rendering
+of merchant documents belongs to their owning issues.

@@ -413,6 +413,44 @@ function run(): void {
     expectContent('html/reprint', html, { ...baseExpect, subtotal: 1220, truncationMarker: false, items: [LATIN_ITEM, LONG_ITEM, PERSIAN_ITEM], reprint: true, reprintStyle: 'html' }, warn);
   }
 
+  section('Browser HTML uses semantic catalog labels and fallback');
+  {
+    const html = fe.webPrint.generateBillHtml(bill as any, tenant as any, {
+      paperSize: 'thermal80',
+      businessName: business.name,
+      address: business.address,
+      phone: business.phone,
+      showCustomerName: true,
+      showCustomerPhone: true,
+      showTableNumber: true,
+    });
+    for (const [concept, expected] of [
+      ['receipt.billNumber', 'Bill #'],
+      ['receipt.date', 'Date'],
+      ['pos.tableLabel', 'Table'],
+      ['pos.customer', 'Customer'],
+      ['print.numberShort', 'Customer No'],
+      ['receipt.item', 'Item'],
+      ['receipt.qty', 'Qty'],
+      ['receipt.rate', 'Rate'],
+      ['receipt.amount', 'Amount'],
+      ['pos.subtotal', 'Subtotal'],
+      ['pos.discount', 'Discount'],
+      ['receipt.grandTotal', 'Grand Total'],
+      ['receipt.payments', 'Payments'],
+      ['pos.methodCash', 'Cash'],
+      ['pos.methodCard', 'Card'],
+      ['receipt.thankYou', 'Thank you for your visit!'],
+    ] as const) {
+      warn(html.includes(expected), `browser semantic label ${concept} renders as ${expected}`);
+    }
+    const fallback = fe.webPrint.generateBillHtml(bill as any, tenant as any, {
+      languages: ['unknown-language'] as any,
+    });
+    warn(fallback.includes('<strong>Grand Total</strong>') && !fallback.includes('receipt.grandTotal'),
+      'browser unknown language uses English catalog fallback without leaking a key');
+  }
+
   // ------------------------------------------------------------------
   // 4. PrintDocument pipeline vs LEGACY ORACLE (#443): every migrated
   //    backend surface (classic, compact, KOT) must reproduce its frozen

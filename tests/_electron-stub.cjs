@@ -14,6 +14,11 @@ module.exports = {
       return os.tmpdir();
     },
     getVersion: () => '0.0.0-stub',
+    // Read by services/country-provenance.ts. Overridable per-test via
+    // FLO_STUB_LOCALE / FLO_STUB_LOCALE_COUNTRY so a test can pretend the
+    // machine is somewhere specific.
+    getLocale: () => process.env.FLO_STUB_LOCALE || 'en-US',
+    getLocaleCountryCode: () => process.env.FLO_STUB_LOCALE_COUNTRY || 'US',
     isPackaged: false,
   },
   safeStorage: {

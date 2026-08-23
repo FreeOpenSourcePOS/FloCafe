@@ -161,9 +161,9 @@ Invariants every consumer may rely on:
 
 ### Extension policy (adding a block)
 
-Block kinds are whitelisted in exactly three places that must move together:
-the `PrintDocumentBlock` union, the builder, and the merchant-template
-vocabulary (`MERCHANT_TEMPLATE_BLOCK_KINDS`). See [Part II](#part-ii--contributor-recipes)
+The block-extension contract spans the `PrintDocumentBlock` union, the
+builder, the merchant-template block and label-field/override registries, and
+every renderer that consumes the document. See [Part II](#part-ii--contributor-recipes)
 for the step-by-step recipe.
 
 ### Direction & bidi handling
@@ -230,9 +230,11 @@ Policy payloads are untrusted input: `parsePrintLanguagePolicy` /
 nested `primary`/`additional` values, but extra fields inside a primary
 selection object are ignored. They require registered + selectable codes via
 the injected registry facts, dedupe, reject duplicate primaries, and return
-frozen normalized policies safe to persist. Invalid or missing settings fall
-back to the store language; printing never fails because of a malformed policy
-(`main/lib/print-language-settings.ts`, `tests/print-language-settings.test.ts`).
+shallow-frozen normalized policies safe to persist (the outer policy and
+`additional` array are frozen; nested primary selections are not deep-frozen).
+Invalid or missing settings fall back to the store language; printing never
+fails because of a malformed policy (`main/lib/print-language-settings.ts`,
+`tests/print-language-settings.test.ts`).
 
 Settings are registry-driven through two synchronized views: the frontend
 renders print-language options from `LANGUAGES`, while backend policy
@@ -308,10 +310,14 @@ compliance trust ever transfers (`shared/print/merchant-template.ts` header,
 
 ### Merchant template validation pipeline (fail-closed rules)
 
-Enforced on every write/import path by one validator in the shared kernel
-(`validateMerchantTemplateText`, exercised by
-`tests/merchant-print-templates.test.ts` against the golden and negative
-fixtures under `tests/fixtures/merchant-templates/`):
+The shared payload rule set is enforced on every write/import path in the
+kernel. Raw JSON payload writes use `validateMerchantTemplateText` for the
+size, parse, and payload checks; offline imports use
+`validateMerchantTemplateEnvelope` for the envelope and then
+`validateMerchantTemplate` for its embedded payload. The golden and negative
+fixtures under `tests/fixtures/merchant-templates/` exercise these paths in
+`tests/merchant-print-templates.test.ts` and
+`tests/merchant-template-import-export.test.ts`:
 
 1. Raw-size gate: 256 KB cap before parsing.
 2. Single JSON object; unknown root/block/origin fields rejected (stricter
@@ -331,9 +337,10 @@ fixtures under `tests/fixtures/merchant-templates/`):
 Why imported templates cannot execute code: the payload grammar has no field
 for commands, HTML, scripts, or renderer snippets — only block selection,
 visibility, order, and literal label text applied to a previously validated
-document (`applyMerchantTemplate` is a pure projection). Label literals are
-additionally stripped of ESC/POS control tokens at render time. The render
-path re-validates fail-closed: a stored payload that no longer validates
+document (`applyMerchantTemplate` is a pure projection). Label literals with
+ESC/POS control tokens or ASCII control characters are rejected during payload
+validation (`UNSAFE_LABEL_TEXT_PATTERN`), not stripped at render time. The
+render path re-validates fail-closed: a stored payload that no longer validates
 falls back to the classic layout with an explicit warning — never garbage,
 never silence (`main/printers/document-merchant.ts`, `fellBackToClassic`).
 
@@ -369,11 +376,13 @@ Renderers consume capabilities, they never guess them:
   skipped with an explicit warning unless the profile's shaping flag (or a
   request-level override) admits strict ASCII+Arabic lines
   (`buildEscPos` guard in `main/printers/thermal.ts`).
-- The migrated WebUSB receipt path mirrors the skip-with-warning contract
-  (`frontend/src/lib/printer/receipt-encoder.ts`,
-  `frontend/src/lib/printer/warnings.ts`, `safePrinterText`). The raw WebUSB
-  `kot-encoder.ts` and LEGACY-FROZEN `tax-bill-encoder.ts` paths are exceptions:
-  they retain direct `enc.text` writes and their own warning behavior.
+- The migrated WebUSB receipt path uses `safePrinterText` for renderer-managed
+  text and its warning behavior (`frontend/src/lib/printer/receipt-encoder.ts`,
+  `frontend/src/lib/printer/warnings.ts`). `buildClassicReceiptBytes` still
+  writes the masked customer phone directly with `enc.text`, so that field is a
+  documented warning-contract exception. The raw WebUSB `kot-encoder.ts` and
+  LEGACY-FROZEN `tax-bill-encoder.ts` paths are broader exceptions with their
+  own direct-write and warning behavior.
 - Browser HTML printing is the full-Unicode path: nothing is skipped for
   script reasons (asserted in `tests/print-parity.test.ts`).
 

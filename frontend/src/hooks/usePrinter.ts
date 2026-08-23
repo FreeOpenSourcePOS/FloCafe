@@ -308,8 +308,13 @@ export const usePrinterStore = create<PrinterState>()(
           // Browser fallback: render semantic KOT HTML instead of decoding
           // raw ESC/POS bytes (#444). The ticket is built from the order's
           // fields with resolved labels and kernel direction annotations.
+          // Greptile P1 (PR #474): when a fixed KOT language differs from the
+          // active UI language after a cold start, its message bundle is not
+          // in the loader cache yet - load it before generating so labels
+          // don't silently fall back to English.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
-          const { generateKotHtml } = await import('@/lib/printer/kot-web-print');
+          const { generateKotHtml, resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+          await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
           const html = generateKotHtml(order, { paperWidth });
           await printerService.printViaBrowser(html, paperWidth);
           return [] as PrintWarning[];

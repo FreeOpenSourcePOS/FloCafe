@@ -34,7 +34,7 @@ export interface KotWebPrintOptions {
 }
 
 /** Resolve the KOT ticket language: fixed policy language or the UI language. */
-function resolveKotHtmlLanguage(language?: Language): Language {
+export function resolveKotTicketLanguage(language?: Language): Language {
   if (language) return language;
   try {
     const store = usePosSettingsStore.getState();
@@ -44,7 +44,6 @@ function resolveKotHtmlLanguage(language?: Language): Language {
     return 'en';
   }
 }
-
 function translatorFor(lang: Language): ((key: string) => string) {
   const locale = LANGUAGES[lang]?.locale ?? 'en';
   const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
@@ -84,7 +83,7 @@ export function generateKotHtml(
   opts: KotWebPrintOptions = {}
 ): string {
   const paperWidth = opts.paperWidth ?? 58;
-  const lang = resolveKotHtmlLanguage(opts.language);
+  const lang = resolveKotTicketLanguage(opts.language);
   const tr = translatorFor(lang);
   const base = detectTicketDirection(lang);
 

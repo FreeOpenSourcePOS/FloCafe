@@ -391,6 +391,35 @@ exit 0
 
   console.log('✓ CI workflow linux-tests matrix and sharding configuration verified');
 
+  // The Windows uninstaller wrapper only uses Node built-ins and probes the
+  // Windows runtime/Pester. Keep that job independent from the application's
+  // postinstall, which downloads Electron and rebuilds native dependencies.
+  const windowsJobMatch = ciWorkflow.match(
+    /\n  windows-uninstaller:\n([\s\S]*?)(?=\n  [a-z0-9-]+:\n|\s*$)/,
+  );
+  assert.ok(windowsJobMatch, 'ci.yml must define a Windows uninstaller job');
+  const windowsJob = windowsJobMatch?.[1] ?? '';
+  const windowsRunCommands = [...windowsJob.matchAll(/^\s+run:\s*(.+)$/gm)]
+    .map(([, command]) => command)
+    .join('\n');
+  assert.ok(
+    ciWorkflow.includes('uninstaller: ${{ steps.filter.outputs.uninstaller }}'),
+    'changes must expose the uninstaller filter result to dependent jobs',
+  );
+  assert.ok(
+    ciWorkflow.includes("uninstaller: ['scripts/uninstallers/**', 'tests/windows-uninstaller.Tests.ps1', 'tests/run-windows-uninstaller-tests.cjs', 'package.json', 'package-lock.json', '.github/workflows/ci.yml']"),
+    'uninstaller path filtering must remain wired to the Windows test inputs',
+  );
+  assert.match(windowsJob, /needs: changes/);
+  assert.match(windowsJob, /if: \$\{\{ needs\.changes\.outputs\.uninstaller == 'true' \}\}/);
+  assert.match(windowsJob, /runs-on: windows-latest/);
+  assert.match(windowsJob, /timeout-minutes: 5/);
+  assert.match(windowsRunCommands, /node tests\/run-windows-uninstaller-tests\.cjs/);
+  assert.doesNotMatch(windowsRunCommands, /\bnpm(?:\.cmd)?\s+(?:ci|i|install|run\s+postinstall)\b/);
+  assert.doesNotMatch(windowsRunCommands, /install-electron|electron-builder install-app-deps|verify:electron/);
+
+  console.log('✓ Windows uninstaller CI boundary avoids application postinstall');
+
   console.log('All dev tooling script tests passed cleanly!');
 }
 

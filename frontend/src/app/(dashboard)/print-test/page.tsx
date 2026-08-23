@@ -9,12 +9,11 @@ import { usePosSettingsStore } from '@/store/pos-settings';
 import { printerService } from '@/lib/printer/PrinterService';
 import { createTestBill, createTestOrder, createTestTenant, createTestCustomer } from '@/lib/printer/test-data';
 import { printWebBill, generateBillHtml } from '@/lib/printer/web-print';
+import { ensurePrintLanguagesLoaded } from '@/lib/printer/print-document';
+import { generateKotHtml } from '@/lib/printer/kot-web-print';
 import { shareBillViaWhatsApp, getWhatsAppMessage } from '@/lib/whatsapp-share';
-import { formatCurrencyForTenant, getCountryByCode } from '@/lib/countries';
-import { formatDate } from '@/lib/printer/format-date';
-import { formatTaxComponentLabel, resolveTaxComponents } from '@/lib/printer/tax-components';
 import toast from 'react-hot-toast';
-import { useTranslations, type AppConfig } from 'use-intl';
+import { useTranslations } from 'use-intl';
 type TestMode = 'receipt' | 'tax' | 'kot' | 'web-print' | 'whatsapp';
 type PaperWidth = 58 | 80;
 
@@ -41,8 +40,11 @@ export default function PrintTestPage() {
       switch (effectiveTestMode) {
         case 'receipt':
           if (printMethod === 'browser') {
-            const html = generateThermalReceiptHtml(testBill, testTenant, paperWidth, { t, tCommon });
-            await printerService.printViaBrowser(html, paperWidth);
+            // Browser test surface runs through the real document-driven
+            // web-print path (#444).
+            await printWebBill(testBill, testTenant, {
+              paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
+            });
             toast.success(t('browserDialogOpened'));
           } else {
             const printWarnings = await printBill(testBill, testTenant, { paperWidth });
@@ -52,14 +54,13 @@ export default function PrintTestPage() {
           break;
         case 'tax':
           if (printMethod === 'browser') {
-            const html = generateThermalReceiptHtml(testBill, testTenant, paperWidth, {
-              t,
-              tCommon,
+            await printWebBill(testBill, testTenant, {
+              paperSize: paperWidth === 80 ? 'thermal80' : 'thermal58',
+              includeTaxId: true,
               taxRegistrationNumber: 'TAXID-0001',
               address: '123 Main Street, Mumbai - 400001',
               phone: '+91 9876543210',
             });
-            await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
           } else {
             const printWarnings = await printTaxBill(testBill, testTenant, {
@@ -81,7 +82,13 @@ export default function PrintTestPage() {
             break;
           }
           if (printMethod === 'browser') {
-            const html = generateKotHtml(testOrder, paperWidth);
+            // Semantic KOT HTML (#444): resolved labels + kernel direction
+            // annotations instead of decoded ESC/POS bytes. Preload the
+            // ticket locale so a fixed KOT language ≠ UI language still
+            // renders translated labels on cold start (mirrors usePrinter).
+            const { resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
+            await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
+            const html = generateKotHtml(testOrder, { paperWidth });
             await printerService.printViaBrowser(html, paperWidth);
             toast.success(t('browserDialogOpened'));
           } else {
@@ -307,121 +314,4 @@ export default function PrintTestPage() {
       </div>
     </div>
   );
-}
-
-function generateThermalReceiptHtml(
-  bill: ReturnType<typeof createTestBill>,
-  tenant: ReturnType<typeof createTestTenant>,
-  paperWidth: 58 | 80,
-  options?: {
-    taxRegistrationNumber?: string;
-    address?: string;
-    phone?: string;
-    t?: (key: keyof AppConfig['Messages']['printTest']) => string;
-    tCommon?: (key: keyof AppConfig['Messages']['common']) => string;
-  }
-): string {
-  const t = options?.t ?? ((k: string) => k);
-  const tCommon = options?.tCommon ?? ((k: string) => k);
-  const fontSize = paperWidth === 58 ? '10px' : '12px';
-  const padding = paperWidth === 58 ? '4px' : '6px';
-  
-  const fmtCurrency = (amount: number) => formatCurrencyForTenant(amount, tenant.country, tenant.currency);
-  
-  const items = bill.order?.items || [];
-  const rows = items.map((item, idx) => `
-    <tr>
-      <td style="font-size:${fontSize};padding:${padding};">${idx + 1}. ${item.product_name}</td>
-      <td style="font-size:${fontSize};padding:${padding};text-align:right;">${item.quantity}</td>
-      <td style="font-size:${fontSize};padding:${padding};text-align:right;">${fmtCurrency(item.unit_price)}</td>
-      <td style="font-size:${fontSize};padding:${padding};text-align:right;">${fmtCurrency(item.subtotal)}</td>
-    </tr>
-  `).join('');
-
-  const taxComponents = resolveTaxComponents(bill);
-  const taxIdLabel = getCountryByCode(tenant.country ?? 'IN')?.taxIdLabel || 'Tax ID';
-  const taxRows = taxComponents.map((component) => `
-        <tr>
-          <td style="padding:${padding};">${formatTaxComponentLabel(component)}</td>
-          <td style="text-align:right;padding:${padding};">${fmtCurrency(component.amount)}</td>
-        </tr>
-  `).join('');
-
-  return `
-    <div style="text-align:center;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
-      <h2 style="margin:0;font-size:${paperWidth === 58 ? '14px' : '16px'};">${tenant.business_name}</h2>
-      ${options?.address ? `<p style="margin:2px 0;font-size:${fontSize};">${options.address}</p>` : ''}
-      ${options?.phone ? `<p style="margin:2px 0;font-size:${fontSize};">${options.phone}</p>` : ''}
-      ${options?.taxRegistrationNumber ? `<p style="margin:2px 0;font-size:${fontSize};">${taxIdLabel}: ${options.taxRegistrationNumber}</p>` : ''}
-      <hr style="border:1px dashed #000;margin:4px 0;">
-      <p style="margin:2px 0;">Bill #: ${bill.bill_number}</p>
-      <p style="margin:2px 0;">${formatDate(new Date().toISOString(), getCountryByCode(tenant.country ?? 'IN')?.locale)}</p>
-      <hr style="border:1px dashed #000;margin:4px 0;">
-      <table style="width:100%;border-collapse:collapse;font-size:${fontSize};">
-        <thead>
-          <tr>
-            <th style="text-align:left;padding:${padding};">${t('item')}</th>
-            <th style="text-align:right;padding:${padding};">${t('qty')}</th>
-            <th style="text-align:right;padding:${padding};">${t('rate')}</th>
-            <th style="text-align:right;padding:${padding};">${t('amt')}</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
-      <hr style="border:1px dashed #000;margin:4px 0;">
-      <table style="width:100%;font-size:${fontSize};">
-        <tr>
-          <td style="padding:${padding};">${tCommon('subtotal')}</td>
-          <td style="text-align:right;padding:${padding};">${fmtCurrency(bill.subtotal)}</td>
-        </tr>
-        ${bill.discount_amount > 0 ? `
-        <tr>
-          <td style="padding:${padding};">${tCommon('discount')}</td>
-          <td style="text-align:right;padding:${padding};">-${fmtCurrency(bill.discount_amount)}</td>
-        </tr>
-        ` : ''}
-        ${taxRows}
-        <tr style="font-weight:bold;">
-          <td style="padding:${padding};">${tCommon('total')}</td>
-          <td style="text-align:right;padding:${padding};">${fmtCurrency(bill.total)}</td>
-        </tr>
-      </table>
-      <hr style="border:1px dashed #000;margin:8px 0;">
-      <p style="margin:4px 0;font-size:${fontSize};">Thank you for visiting!</p>
-      <p style="margin:4px 0;font-size:${fontSize};">Please visit again</p>
-    </div>
-  `;
-}
-
-function generateKotHtml(
-  order: ReturnType<typeof createTestOrder>,
-  paperWidth: 58 | 80
-): string {
-  const fontSize = paperWidth === 58 ? '10px' : '12px';
-  const padding = paperWidth === 58 ? '4px' : '6px';
-  
-  const items = order.items || [];
-  const rows = items.map((item, idx) => `
-    <tr>
-      <td style="font-size:${fontSize};padding:${padding};">${idx + 1}. ${item.product_name}</td>
-      <td style="font-size:${fontSize};padding:${padding};text-align:right;font-weight:bold;">${item.quantity}</td>
-    </tr>
-  `).join('');
-
-  return `
-    <div style="text-align:center;padding:${padding};font-family:'Courier New',monospace;font-size:${fontSize};">
-      <h2 style="margin:0;font-size:${paperWidth === 58 ? '14px' : '16px'};">KOT</h2>
-      <p style="margin:2px 0;">Order #: ${order.order_number}</p>
-      <p style="margin:2px 0;">${formatDate(order.created_at, 'en-US')}</p>
-      <hr style="border:1px dashed #000;margin:4px 0;">
-      <table style="width:100%;border-collapse:collapse;font-size:${fontSize};">
-        <tbody>
-          ${rows}
-        </tbody>
-      </table>
-      <hr style="border:1px dashed #000;margin:8px 0;">
-    </div>
-  `;
 }

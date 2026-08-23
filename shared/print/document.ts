@@ -97,9 +97,11 @@ export function directionalText(text: string, base: TextDirection): DirectionalT
 export interface ItemAddonSnapshot {
   readonly name: string;
   readonly price: number;
+  /** Addon unit quantity as printed truth, when the surface displays it. */
+  readonly quantity?: number;
 }
 
-/** One order item as printed truth. */
+/** One item row as printed truth. */
 export interface OrderItemSnapshot {
   readonly productName: string;
   readonly quantity: number;
@@ -138,6 +140,10 @@ export interface BillSnapshot {
   readonly discountAmount: number;
   readonly taxAmount: number;
   readonly total: number;
+  /** Flat service charge, when the bill carries one (frontend bills). */
+  readonly serviceCharge?: number;
+  /** Flat delivery charge, when the bill carries one (frontend bills). */
+  readonly deliveryCharge?: number;
   readonly taxComponents: readonly TaxComponentSnapshot[];
   readonly payments: readonly PaymentSnapshot[];
   readonly pointsEarned: number;
@@ -270,6 +276,8 @@ export interface CustomerBlock {
 export interface ItemAddonValue {
   readonly name: DirectionalText;
   readonly price: number;
+  /** Addon unit quantity as printed truth, when the snapshot carries one. */
+  readonly quantity?: number;
 }
 
 /** One item row: semantic fields only — no layout widths, no byte tokens. */
@@ -277,6 +285,8 @@ export interface ItemTableRow {
   readonly direction: TextDirection;
   readonly name: DirectionalText;
   readonly quantity: number;
+  /** Per-unit price as printed truth, when the surface prints a rate column. */
+  readonly unitPrice?: number;
   /** Line total as printed truth. */
   readonly amount: number;
   readonly addons: readonly ItemAddonValue[];
@@ -325,6 +335,10 @@ export interface TotalsBlock {
   readonly discount: { readonly label: SemanticLabel; readonly amount: number } | null;
   /** Flat tax line, present only when no breakdown lines are emitted. */
   readonly tax: { readonly label: SemanticLabel; readonly amount: number } | null;
+  /** Flat service-charge line, present when the snapshot carries a nonzero charge. */
+  readonly serviceCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
+  /** Flat delivery-charge line, present when the snapshot carries a nonzero charge. */
+  readonly deliveryCharge: { readonly label: SemanticLabel; readonly amount: number } | null;
   readonly grandTotal: { readonly label: SemanticLabel; readonly amount: number };
   readonly pointsRedeemed: { readonly label: SemanticLabel; readonly points: number } | null;
   readonly pointsEarned: { readonly label: SemanticLabel; readonly points: number } | null;
@@ -519,10 +533,12 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       direction: base,
       name: directionalText(item.productName, base),
       quantity: item.quantity,
+      unitPrice: item.unitPrice,
       amount: item.total,
       addons: Object.freeze(item.addons.map((addon) => Object.freeze({
         name: directionalText(addon.name, base),
         price: addon.price,
+        quantity: addon.quantity,
       }))),
       specialInstructions: optionalDirectional(item.specialInstructions, base),
     }))),
@@ -555,6 +571,18 @@ export function buildBillDocument(printData: PrintData, printContext: PrintConte
       ? Object.freeze({
         label: resolveSemanticLabel(labels, 'pos.tax'),
         amount: bill.taxAmount,
+      })
+      : null,
+    serviceCharge: toFiniteNumber(bill.serviceCharge) !== 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'receipt.serviceCharge'),
+        amount: toFiniteNumber(bill.serviceCharge),
+      })
+      : null,
+    deliveryCharge: toFiniteNumber(bill.deliveryCharge) !== 0
+      ? Object.freeze({
+        label: resolveSemanticLabel(labels, 'pos.delivery'),
+        amount: toFiniteNumber(bill.deliveryCharge),
       })
       : null,
     grandTotal: Object.freeze({

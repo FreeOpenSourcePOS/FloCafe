@@ -5,6 +5,13 @@
  * the fallback path for merchants without an ESC/POS hardware printer.
  * Generates HTML that can be printed silently or shown to user.
  *
+ * Since #444 (epic #438) the HTML is rendered from the shared,
+ * renderer-independent PrintDocument: raw bill fields are normalized once in
+ * `print-document.ts`, and this renderer only walks document blocks.
+ * Labels arrive resolved inside the document / via the injected catalog
+ * resolver; bidi isolation (`dir`, LTR islands) is driven by the kernel
+ * DirectionSpec annotations instead of ad-hoc language checks.
+ *
  * Browser receipts are full HTML, not raw ESC/POS bytes, so they never apply
  * the ASCII currency fallback or `ریال → IRR` downgrade used by the thermal
  * encoders. They follow the tenant's locale preferences (currency display,
@@ -14,19 +21,34 @@
 
 import type { Bill, Tenant } from '@/lib/types';
 import toast from 'react-hot-toast';
+import { createTranslator } from 'use-intl/core';
 import {
   getCountryByCode,
   formatCurrencyForTenant,
   formatNumberForTenant,
   formatDateForTenant,
 } from '@/lib/countries';
-import { formatTaxComponentLabel, resolveTaxComponents } from './tax-components';
-import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
-import { createTranslator } from 'use-intl/core';
-import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
-import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
-import { usePosSettingsStore } from '@/store/pos-settings';
 import { parseDbTimestamp } from '@/lib/utils';
+import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
+import {
+  buildFrontendBillDocument,
+  resolveActiveUiLanguage,
+} from './print-document';
+import { RECEIPT_BRANDING_NAME, RECEIPT_BRANDING_URL } from './branding';
+import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
+import {
+  getBlock,
+  type BusinessHeaderBlock,
+  type CustomerBlock,
+  type DirectionalText,
+  type DocumentMetaBlock,
+  type ItemTableBlock,
+  type MessageBlock,
+  type PaymentsBlock,
+  type TaxBreakdownBlock,
+  type TotalsBlock,
+} from '@print/document';
+import type { TextDirection } from '@print/types';
 
 export type PaperSize = 'thermal58' | 'thermal80';
 
@@ -37,7 +59,7 @@ export type ReceiptTenant = Pick<
 >;
 
 /** Encodes HTML entity characters so database-sourced values can't inject markup/scripts into the bill print window. */
-function escapeHtml(value: unknown): string {
+export function escapeHtml(value: unknown): string {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -46,9 +68,18 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
-/** Wraps inherently-LTR content (bill numbers, phones, tax IDs) in a bidi-isolated LTR span. */
-function ltrSpan(value: unknown): string {
-  return `<span class="ltr" dir="ltr">${escapeHtml(value)}</span>`;
+/**
+ * Render one kernel-annotated value. Confident LTR islands (phones, invoice
+ * numbers, tax IDs — per the direction kernel) are wrapped in a bidi-isolated
+ * LTR span when the document base direction is RTL; everything else renders
+ * inline in the base direction.
+ */
+function directionalValue(value: DirectionalText | null, base: TextDirection): string {
+  if (!value) return '';
+  if (value.direction === 'ltr' && base === 'rtl') {
+    return `<span class="ltr" dir="ltr">${escapeHtml(value.text)}</span>`;
+  }
+  return escapeHtml(value.text);
 }
 
 export interface WebPrintOptions {
@@ -74,80 +105,14 @@ export interface WebPrintOptions {
   language?: Language;
 }
 
-/** Resolve the active UI language, falling back to `en` outside the client store. */
-function resolveLanguage(language?: Language): Language {
-  if (language) return language;
-  try {
-    return usePosSettingsStore.getState().language;
-  } catch {
-    return 'en';
-  }
-}
-
-/**
- * Synchronous receipt translator backed by the shared locale loader cache.
- * English is primed at module load; other languages resolve once their bundle
- * has been loaded on demand (#375). Falls back to English so a receipt always
- * renders without raw keys.
- */
-function getReceiptTranslator(lang: Language): (key: string) => string {
-  const locale = LANGUAGES[lang]?.locale ?? 'en';
-  const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
-  // `createTranslator` resolves dotted keys against the whole message tree;
-  // the cached messages are untyped (Record<string, unknown>), so the returned
-  // translator accepts arbitrary string keys at runtime.
-  return createTranslator({ locale, messages }) as unknown as (key: string) => string;
-}
-
-/** Static receipt labels in the active UI language. */
-function receiptLabels(lang: Language) {
-  const t = getReceiptTranslator(lang);
-  return {
-    billNumber: t('receipt.billNumber'),
-    date: t('receipt.date'),
-    table: t('receipt.table'),
-    customer: t('pos.customer'),
-    customerNo: t('receipt.customerNo'),
-    phone: t('receipt.phone'),
-    item: t('receipt.item'),
-    qty: t('receipt.qty'),
-    rate: t('receipt.rate'),
-    amount: t('receipt.amount'),
-    taxDetails: t('receipt.taxDetails'),
-    subtotal: t('pos.subtotal'),
-    discount: t('pos.discount'),
-    totalTax: t('receipt.totalTax'),
-    serviceCharge: t('receipt.serviceCharge'),
-    deliveryCharge: t('receipt.deliveryCharge'),
-    grandTotal: t('receipt.grandTotal'),
-    payments: t('receipt.payments'),
-    thankYou: t('receipt.thankYou'),
-    taxIncluded: t('receipt.taxIncluded'),
-    printBill: t('receipt.printBill'),
-    reprint: t('receipt.reprint'),
-  };
-}
-
 /**
  * Tax-id label printed on the receipt. Country-profile labels are acronyms or
  * proper nouns (GSTIN, CUIT, …) and stay as-is; Iran's "Economic Code" is
  * localized so a Persian receipt doesn't show an English phrase.
  */
 function resolveTaxIdLabel(country: string | undefined, lang: Language): string {
-  if (country?.toUpperCase() === 'IR') return getReceiptTranslator(lang)('receipt.economicCode');
+  if (country?.toUpperCase() === 'IR') return t('receipt.economicCode', lang);
   return getCountryByCode(country ?? 'IN')?.taxIdLabel || 'Tax ID';
-}
-
-const PAYMENT_METHOD_KEYS: Record<string, string> = {
-  cash: 'pos.methodCash',
-  card: 'pos.methodCard',
-  wallet: 'pos.methodWallet',
-};
-
-function resolvePaymentMethodLabel(method: string, lang: Language): string {
-  const key = PAYMENT_METHOD_KEYS[method.toLowerCase()];
-  if (key) return getReceiptTranslator(lang)(key);
-  return method.charAt(0).toUpperCase() + method.slice(1);
 }
 
 /**
@@ -178,7 +143,8 @@ export async function printWebBill(
     throw new Error('Popup window was blocked by browser');
   }
 
-  // 2. Ensure the requested language messages are loaded in memory
+  // 2. Ensure the requested language messages are loaded in memory so the
+  //    document's label resolution sees them
   await ensureReceiptMessagesLoaded(lang);
   const html = generateBillHtml(bill, tenant, opts);
 
@@ -255,9 +221,17 @@ export async function printWebBill(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Document → HTML rendering
+// ---------------------------------------------------------------------------
+
 /**
  * Generate HTML string for the bill (without opening print dialog).
  * Useful for preview or PDF generation.
+ *
+ * Renders exclusively from the shared PrintDocument (+ context): raw bill
+ * fields are normalized once in `print-document.ts`, and every label comes
+ * resolved out of the document blocks or the injected catalog resolver.
  */
 export function generateBillHtml(
   bill: Bill,
@@ -284,29 +258,76 @@ export function generateBillHtml(
   const lang = resolveLanguage(opts.language);
   const dir = getLanguageDirection(lang);
   const localeTag = LANGUAGES[lang]?.locale ?? lang;
-  const L = receiptLabels(lang);
-  const displayName = showBusinessName ? (businessName ?? tenant.business_name) : '';
-  const taxIdLabel = resolveTaxIdLabel(tenant.country, lang);
-  const order = bill.order;
 
+  const document = buildFrontendBillDocument(bill, tenant, {
+    columns: paperSize === 'thermal80' ? 48 : 42,
+    businessName: showBusinessName ? (businessName ?? tenant.business_name) : undefined,
+    address,
+    phone,
+    footerNote,
+    taxRegistrationNumber,
+    includeTaxId: includeTaxId && !!taxRegistrationNumber,
+    taxIdLabel: resolveTaxIdLabel(tenant.country, lang),
+    showBusinessName,
+    showTaxBreakdown,
+    showCustomerName,
+    showCustomerPhone,
+    showTableNumber,
+    isReprint,
+    trimDecimals,
+    languages: [lang],
+  });
+  const base = document.direction.base;
+
+  const header = getBlock(document, 'business-header') as BusinessHeaderBlock | undefined;
+  const meta = getBlock(document, 'document-meta') as DocumentMetaBlock | undefined;
+  const customer = getBlock(document, 'customer') as CustomerBlock | undefined;
+  const itemsBlock = getBlock(document, 'item-table') as ItemTableBlock | undefined;
+  const breakdown = getBlock(document, 'tax-breakdown') as TaxBreakdownBlock | undefined;
+  const totals = getBlock(document, 'totals') as TotalsBlock | undefined;
+  const payments = getBlock(document, 'payments') as PaymentsBlock | undefined;
+  const messages = getBlock(document, 'message') as MessageBlock | undefined;
+
+  // Presentation labels. Values come from the document; each surface picks
+  // its catalog concepts — the browser receipt keeps the ones it has always
+  // shown (e.g. "Bill #", "Grand Total"), now resolved through the same
+  // shared catalog instead of per-template literals.
+  const L = {
+    billNumber: t('receipt.billNumber', lang),
+    date: t('receipt.date', lang),
+    table: t('receipt.table', lang),
+    customer: t('pos.customer', lang),
+    customerNo: t('receipt.customerNo', lang),
+    rate: t('receipt.rate', lang),
+    totalTax: t('receipt.totalTax', lang),
+    deliveryCharge: t('receipt.deliveryCharge', lang),
+    grandTotal: t('receipt.grandTotal', lang),
+    taxDetails: t('receipt.taxDetails', lang),
+    paymentsHeader: t('receipt.payments', lang),
+    thankYou: t('receipt.thankYou', lang),
+    taxIncluded: t('receipt.taxIncluded', lang),
+    printBill: t('receipt.printBill', lang),
+  };
+
+  const invoiceNumberLabel = L.billNumber;
   const styles = getPaperStyles(paperSize);
-  const taxComponents = resolveTaxComponents(bill);
-  const hasTax = Number(bill.tax_amount) !== 0
-    || taxComponents.some((component) => Number(component.amount) !== 0);
 
-  const items = order?.items ?? [];
-  const fmtAmount = (value: number | string) => formatAmount(value, tenant, trimDecimals);
-  const fmtQuantity = (value: number | string) => formatNumberForTenant(
+  const items = itemsBlock?.rows ?? [];
+  const fmtAmount = (value: number) => formatAmount(value, tenant, trimDecimals);
+  const fmtQuantity = (value: number) => formatNumberForTenant(
     Number(value) || 0,
     tenant.country,
     { digits: tenant.number_digits },
   );
 
+  const hasTax = (totals?.tax != null)
+    || (breakdown != null && breakdown.lines.length > 0);
+
   return `<!DOCTYPE html>
 <html lang="${localeTag}" dir="${dir}">
 <head>
   <meta charset="utf-8">
-  <title>${L.billNumber} ${escapeHtml(bill.bill_number)}</title>
+  <title>${escapeHtml(invoiceNumberLabel)} ${escapeHtml(meta?.invoiceNumber.text ?? '')}</title>
   <style>
     ${styles}
     @media print {
@@ -317,25 +338,25 @@ export function generateBillHtml(
 </head>
 <body>
   <div class="bill-container">
-    ${isReprint ? `<div class="reprint-banner">${escapeHtml(L.reprint)}</div>` : ''}
+    ${messages?.reprintBanner ? `<div class="reprint-banner">${escapeHtml(messages.reprintBanner.primary)}</div>` : ''}
     <!-- Header -->
     <div class="header">
-      ${displayName ? `<h1>${escapeHtml(displayName)}</h1>` : ''}
-      ${address ? `<p>${escapeHtml(address).replace(/\n/g, '<br>')}</p>` : ''}
-      ${phone ? `<p>${escapeHtml(L.phone)}: ${ltrSpan(phone)}</p>` : ''}
-      ${includeTaxId && taxRegistrationNumber ? `<p>${escapeHtml(taxIdLabel)}: ${ltrSpan(taxRegistrationNumber)}</p>` : ''}
+      ${header?.name ? `<h1>${escapeHtml(header.name.text)}</h1>` : ''}
+      ${header?.address ? `<p>${escapeHtml(header.address.text).replace(/\n/g, '<br>')}</p>` : ''}
+      ${header?.phone && header.phoneLabel ? `<p>${escapeHtml(header.phoneLabel.primary)}: ${directionalValue(header.phone, base)}</p>` : ''}
+      ${header?.taxId ? `<p>${escapeHtml(header.taxId.label.primary)}: ${directionalValue(header.taxId.value, base)}</p>` : ''}
     </div>
 
     <!-- Bill Details -->
     <div class="bill-details">
       <table>
         <tr>
-          <td><strong>${escapeHtml(L.billNumber)}</strong> ${ltrSpan(bill.bill_number)}</td>
-          <td class="text-end"><strong>${escapeHtml(L.date)}</strong> ${escapeHtml(formatReceiptDate(order?.created_at, tenant, LANGUAGES[lang].locale))}</td>
+          <td><strong>${escapeHtml(invoiceNumberLabel)}</strong> ${meta ? directionalValue(meta.invoiceNumber, base) : ''}</td>
+          <td class="text-end"><strong>${escapeHtml(L.date)}</strong> ${meta ? escapeHtml(formatReceiptDate(meta.timestamp.text, tenant, LANGUAGES[lang].locale)) : ''}</td>
         </tr>
-        ${showTableNumber && order?.table?.name ? `<tr><td><strong>${escapeHtml(L.table)}</strong> ${escapeHtml(order.table.name)}</td><td></td></tr>` : ''}
-        ${showCustomerName && order?.customer?.name ? `<tr><td><strong>${escapeHtml(L.customer)}</strong> ${escapeHtml(order.customer.name)}</td><td></td></tr>` : ''}
-        ${showCustomerPhone && order?.customer?.phone ? `<tr><td><strong>${escapeHtml(L.customerNo)}</strong> ${ltrSpan(order.customer.phone)}</td><td></td></tr>` : ''}
+        ${meta?.table ? `<tr><td><strong>${escapeHtml(L.table)}</strong> ${escapeHtml(meta.table.name.text)}</td><td></td></tr>` : ''}
+        ${customer?.name ? `<tr><td><strong>${escapeHtml(L.customer)}</strong> ${escapeHtml(customer.name.text)}</td><td></td></tr>` : ''}
+        ${customer?.phone ? `<tr><td><strong>${escapeHtml(L.customerNo)}</strong> ${directionalValue(customer.phone, base)}</td><td></td></tr>` : ''}
       </table>
     </div>
 
@@ -343,37 +364,37 @@ export function generateBillHtml(
     <table class="items-table">
       <thead>
         <tr>
-          <th>${escapeHtml(L.item)}</th>
-          <th class="text-end">${escapeHtml(L.qty)}</th>
+          <th>${escapeHtml(itemsBlock?.header.item.primary ?? '')}</th>
+          <th class="text-end">${escapeHtml(itemsBlock?.header.quantity.primary ?? '')}</th>
           <th class="text-end">${escapeHtml(L.rate)}</th>
-          <th class="text-end">${escapeHtml(L.amount)}</th>
+          <th class="text-end">${escapeHtml(itemsBlock?.header.amount.primary ?? '')}</th>
         </tr>
       </thead>
       <tbody>
-        ${items.map(item => `
+        ${items.map(row => `
           <tr>
             <td>
-              ${escapeHtml(item.product_name)}
-              ${item.addons && item.addons.length > 0 ? `<br><small class="text-muted">${item.addons.map(a => `+ ${escapeHtml(a.name)}${(a.quantity || 1) > 1 ? ` ×${escapeHtml(a.quantity)}` : ''}`).join(', ')}</small>` : ''}
-              ${item.special_instructions ? `<br><small class="text-italic">${escapeHtml(item.special_instructions)}</small>` : ''}
+              ${escapeHtml(row.name.text)}
+              ${row.addons.length > 0 ? `<br><small class="text-muted">${row.addons.map(a => `+ ${escapeHtml(a.name.text)}${(a.quantity ?? 1) > 1 ? ` ×${escapeHtml(a.quantity)}` : ''}`).join(', ')}</small>` : ''}
+              ${row.specialInstructions ? `<br><small class="text-italic">${escapeHtml(row.specialInstructions.text)}</small>` : ''}
             </td>
-            <td class="text-end num">${fmtQuantity(item.quantity)}</td>
-            <td class="text-end num">${fmtAmount(Number(item.unit_price))}</td>
-            <td class="text-end num">${fmtAmount(item.total)}</td>
+            <td class="text-end num">${fmtQuantity(row.quantity)}</td>
+            <td class="text-end num">${fmtAmount(row.unitPrice ?? 0)}</td>
+            <td class="text-end num">${fmtAmount(row.amount)}</td>
           </tr>
         `).join('')}
       </tbody>
     </table>
 
     <!-- Tax Breakdown -->
-    ${showTaxBreakdown && taxComponents.length > 0 ? `
+    ${breakdown && breakdown.lines.length > 0 ? `
     <table class="tax-table">
       <thead>
         <tr><th colspan="2">${escapeHtml(L.taxDetails)}</th></tr>
       </thead>
       <tbody>
-        ${taxComponents.map((component) => `
-          <tr><td>${escapeHtml(formatTaxComponentLabel(component))}</td><td class="text-end num">${fmtAmount(component.amount)}</td></tr>
+        ${breakdown.lines.map((line) => `
+          <tr><td>${escapeHtml(line.rate === null ? line.label.primary : `${line.label.primary} @${line.rate}%`)}</td><td class="text-end num">${fmtAmount(line.amount)}</td></tr>
         `).join('')}
       </tbody>
     </table>
@@ -381,23 +402,25 @@ export function generateBillHtml(
 
     <!-- Totals -->
     <table class="totals-table">
-      <tr><td>${escapeHtml(L.subtotal)}</td><td class="text-end num">${fmtAmount(bill.subtotal)}</td></tr>
-      ${Number(bill.discount_amount) > 0 ? `<tr><td>${escapeHtml(L.discount)}</td><td class="text-end num">-${fmtAmount(bill.discount_amount)}</td></tr>` : ''}
-      ${Number(bill.tax_amount) > 0 ? `<tr><td>${escapeHtml(L.totalTax)}</td><td class="text-end num">${fmtAmount(bill.tax_amount)}</td></tr>` : ''}
-      ${Number(bill.service_charge) > 0 ? `<tr><td>${escapeHtml(L.serviceCharge)}</td><td class="text-end num">${fmtAmount(bill.service_charge)}</td></tr>` : ''}
-      ${Number(bill.delivery_charge) > 0 ? `<tr><td>${escapeHtml(L.deliveryCharge)}</td><td class="text-end num">${fmtAmount(bill.delivery_charge)}</td></tr>` : ''}
-      <tr class="total-row"><td><strong>${escapeHtml(L.grandTotal)}</strong></td><td class="text-end num"><strong>${fmtAmount(bill.total)}</strong></td></tr>
+      ${totals ? `
+      <tr><td>${escapeHtml(totals.subtotal.label.primary)}</td><td class="text-end num">${fmtAmount(totals.subtotal.amount)}</td></tr>
+      ${totals.discount ? `<tr><td>${escapeHtml(totals.discount.label.primary)}</td><td class="text-end num">-${fmtAmount(totals.discount.amount)}</td></tr>` : ''}
+      ${totals.tax ? `<tr><td>${escapeHtml(L.totalTax)}</td><td class="text-end num">${fmtAmount(totals.tax.amount)}</td></tr>` : ''}
+      ${totals.serviceCharge ? `<tr><td>${escapeHtml(totals.serviceCharge.label.primary)}</td><td class="text-end num">${fmtAmount(totals.serviceCharge.amount)}</td></tr>` : ''}
+      ${totals.deliveryCharge ? `<tr><td>${escapeHtml(L.deliveryCharge)}</td><td class="text-end num">${fmtAmount(totals.deliveryCharge.amount)}</td></tr>` : ''}
+      <tr class="total-row"><td><strong>${escapeHtml(L.grandTotal)}</strong></td><td class="text-end num"><strong>${fmtAmount(totals.grandTotal.amount)}</strong></td></tr>
+      ` : ''}
     </table>
 
     <!-- Payments -->
-    ${bill.payment_details && bill.payment_details.length > 0 ? `
+    ${payments && payments.lines.length > 0 ? `
     <table class="payments-table">
       <thead>
-        <tr><th colspan="2">${escapeHtml(L.payments)}</th></tr>
+        <tr><th colspan="2">${escapeHtml(L.paymentsHeader)}</th></tr>
       </thead>
       <tbody>
-        ${bill.payment_details.map(p => `
-          <tr><td>${escapeHtml(resolvePaymentMethodLabel(p.method, lang))}</td><td class="text-end num">${fmtAmount(p.amount)}</td></tr>
+        ${payments.lines.map((line) => `
+          <tr><td>${escapeHtml(paymentLineLabel(line.label))}</td><td class="text-end num">${fmtAmount(line.amount)}</td></tr>
         `).join('')}
       </tbody>
     </table>
@@ -405,7 +428,7 @@ export function generateBillHtml(
 
     <!-- Footer -->
     <div class="footer">
-      ${footerNote ? `<p>${escapeHtml(footerNote)}</p>` : `<p>${escapeHtml(L.thankYou)}</p>`}
+      ${messages?.footerNote ? `<p>${escapeHtml(messages.footerNote.text)}</p>` : `<p>${escapeHtml(L.thankYou)}</p>`}
       ${hasTax ? `<p>${escapeHtml(L.taxIncluded)}</p>` : ''}
       <p class="powered-by">${escapeHtml(RECEIPT_BRANDING_NAME)}<br>${escapeHtml(RECEIPT_BRANDING_URL)}</p>
     </div>
@@ -422,6 +445,32 @@ export function generateBillHtml(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/** Resolve the active UI language, falling back to `en` outside the client store. */
+function resolveLanguage(language?: Language): Language {
+  return resolveActiveUiLanguage(language);
+}
+
+/** Synchronous receipt translator backed by the shared locale loader cache. */
+function translatorFor(lang: Language): (key: string) => string {
+  const locale = LANGUAGES[lang]?.locale ?? 'en';
+  const messages = getCachedMessages(lang) ?? getCachedMessages('en') ?? {};
+  // `createTranslator` resolves dotted keys against the whole message tree;
+  // the cached messages are untyped (Record<string, unknown>), so the returned
+  // translator accepts arbitrary string keys at runtime.
+  return createTranslator({ locale, messages }) as unknown as (key: string) => string;
+}
+
+function t(key: string, lang: Language): string {
+  return translatorFor(lang)(key);
+}
+
+/** Unknown payment methods keep their legacy capitalized literal rendering. */
+function paymentLineLabel(label: { conceptId?: string; primary: string }): string {
+  return label.conceptId !== undefined
+    ? label.primary
+    : label.primary.charAt(0).toUpperCase() + label.primary.slice(1);
+}
 
 function getPaperStyles(size: PaperSize): string {
   const baseStyles = `
@@ -472,7 +521,7 @@ function getPaperStyles(size: PaperSize): string {
  * Format an amount following the tenant's currency display (Iran rial/toman),
  * digit mode, and `trimDecimals` preference. Browser output is always Unicode.
  */
-function formatAmount(value: number | string, tenant: ReceiptTenant, trimDecimals = false): string {
+function formatAmount(value: number, tenant: ReceiptTenant, trimDecimals = false): string {
   const numeric = Number.isFinite(Number(value)) ? Number(value) : 0;
   const prefs = { currencyDisplay: tenant.currency_display, digits: tenant.number_digits };
   const hasDecimals = Math.round(numeric * 100) % 100 !== 0;
@@ -501,7 +550,7 @@ function formatAmount(value: number | string, tenant: ReceiptTenant, trimDecimal
   return formatCurrencyForTenant(numeric, tenant.country, tenant.currency, prefs);
 }
 
-function formatReceiptDate(iso: string | undefined, tenant: ReceiptTenant, locale?: string): string {
+function formatReceiptDate(iso: string, tenant: ReceiptTenant, locale?: string): string {
   if (!iso) return '';
   try {
     const d = parseDbTimestamp(iso);

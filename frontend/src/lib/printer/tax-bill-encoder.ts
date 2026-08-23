@@ -4,6 +4,13 @@
  * Detailed tax billing receipt encoder for ESC/POS thermal printers.
  * Supports both 58mm (2.5") and 80mm (3.5") paper widths.
  * Includes: tax registration number, HSN/reference codes, and item tax details.
+ *
+ * LEGACY-FROZEN (#444 decision, epic #438): this diagnostic encoder is only
+ * reachable from the print-test page ('tax' mode). It is deliberately NOT
+ * migrated onto the shared PrintDocument model and keeps its historical
+ * raw-bill rendering; this is a documented exemption, not an endorsement —
+ * it must not gain new business behavior. The browser path of the same test
+ * surface renders through the document-driven web-print pipeline.
  */
 
 import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';

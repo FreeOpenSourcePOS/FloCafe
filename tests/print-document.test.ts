@@ -92,7 +92,7 @@ console.log('\n▶ Block construction (fixture bill)');
   assert.equal(document.version, 1, 'document version is 1');
   assert.deepEqual(
     document.blocks.map((block) => block.kind),
-    ['business-header', 'document-meta', 'customer', 'item-table', 'tax-breakdown', 'totals', 'payments', 'message'],
+    ['business-header', 'customer', 'document-meta', 'item-table', 'totals', 'tax-breakdown', 'payments', 'message'],
     'canonical block order',
   );
   ok('canonical ordered blocks');

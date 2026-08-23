@@ -4,11 +4,11 @@
   "schemaVersion": 1,
   "blocks": [
     { "kind": "business-header" },
-    { "kind": "document-meta" },
     { "kind": "customer" },
+    { "kind": "document-meta" },
     { "kind": "item-table" },
-    { "kind": "tax-breakdown" },
     { "kind": "totals" },
+    { "kind": "tax-breakdown" },
     { "kind": "payments" },
     { "kind": "message" }
   ]

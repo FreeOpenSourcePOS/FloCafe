@@ -498,6 +498,52 @@ async function runLifecycle(): Promise<void> {
     assert(!styledText.includes('GST'), 'hidden tax breakdown block stays hidden');
     ok('semantic overrides change rendered output exactly where configured');
 
+    const reorderedPayload = {
+      format: MERCHANT_TEMPLATE_FORMAT,
+      documentType: 'receipt',
+      schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
+      blocks: [
+        { kind: 'totals' },
+        { kind: 'item-table' },
+        { kind: 'document-meta', labels: { title: 'CUSTOM RECEIPT' } },
+        { kind: 'message', labels: { thankYou: 'COME AGAIN' } },
+      ],
+    };
+    const reordered = await request(app).post('/api/print-templates')
+      .set('Authorization', OWNER).send({ name: 'Reordered', payload: reorderedPayload });
+    const reorderedId = reordered.body.template.id;
+    await request(app).post(`/api/print-templates/${reorderedId}/activate`).set('Authorization', OWNER);
+    const reorderedText = escPosToText(formatReceipt(order, bill, business,
+      serializeBillTemplateSelection({ source: 'merchant', id: reorderedId }), 42, false, false, 'full', [], false, 'en'));
+    assert(reorderedText.indexOf('TOTAL') < reorderedText.indexOf('Espresso Doppio'),
+      'renderer preserves merchant totals-before-items order');
+    assert(reorderedText.includes('CUSTOM RECEIPT'), 'document-meta title override reaches rendered lines');
+    assert(reorderedText.includes('COME AGAIN'), 'message thankYou override reaches rendered lines');
+    assert(!reorderedText.includes('Flo Parity Cafe'), 'omitted business-header block is not rendered');
+    ok('reordered and omitted blocks render semantically through the document pipeline');
+
+    const taxOnly = await request(app).post('/api/print-templates')
+      .set('Authorization', OWNER).send({
+        name: 'Tax Only',
+        payload: {
+          format: MERCHANT_TEMPLATE_FORMAT,
+          documentType: 'receipt',
+          schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
+          blocks: [{ kind: 'tax-breakdown' }],
+        },
+      });
+    const taxOnlyId = taxOnly.body.template.id;
+    await request(app).post(`/api/print-templates/${taxOnlyId}/activate`).set('Authorization', OWNER);
+    const taxOnlyText = escPosToText(formatReceipt(
+      order,
+      { ...bill, tax_amount: 90, tax_breakdown: [{ title: 'GST', rate: 5, amount: 90 }] },
+      { ...business, show_tax_breakdown: true },
+      serializeBillTemplateSelection({ source: 'merchant', id: taxOnlyId }), 42, false, false, 'full', [], false, 'en',
+    ));
+    assert(taxOnlyText.includes('GST'), 'tax-breakdown renders without a totals block');
+    assert(!taxOnlyText.includes('TOTAL'), 'tax-only composition does not synthesize totals');
+    ok('standalone tax-breakdown blocks remain renderable');
+
     // Legacy bare value keeps resolving through the same entrypoint.
     const legacyClassic = formatReceipt(order, bill, business, 'classic', 42, false, false, 'full', [], false, 'en');
     assert(legacyClassic.length > 0, 'legacy bare classic still renders');

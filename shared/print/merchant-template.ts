@@ -55,11 +55,11 @@ export const MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES = 256 * 1024;
 /** Ordered union of every PrintDocument v1 block kind — the allowed set. */
 export const MERCHANT_TEMPLATE_BLOCK_KINDS = [
   'business-header',
-  'document-meta',
   'customer',
+  'document-meta',
   'item-table',
-  'tax-breakdown',
   'totals',
+  'tax-breakdown',
   'payments',
   'message',
 ] as const;

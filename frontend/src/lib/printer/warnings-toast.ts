@@ -40,12 +40,15 @@ export function showPrintWarningsToast(warnings: PrintWarning[]): void {
   if (warnings.length === 0) return;
 
   const t = getTranslator(resolveLanguage());
-  const hasArabic = warnings.some((warning) => hasArabicScript(warning.text));
-
-  const sections = [
-    t('printWarnings.title', { count: warnings.length }),
-    hasArabic ? t('printWarnings.arabicShapingHint') : t('printWarnings.genericHint'),
-  ];
+  const lineWarnings = warnings.filter((warning) => warning.kind !== 'configuration');
+  const templateWarnings = warnings.filter((warning) => warning.kind === 'configuration');
+  const sections: string[] = [];
+  if (templateWarnings.length > 0) sections.push(t('printWarnings.templateFallback'));
+  if (lineWarnings.length > 0) {
+    const hasArabic = lineWarnings.some((warning) => hasArabicScript(warning.text));
+    sections.push(t('printWarnings.title', { count: lineWarnings.length }));
+    sections.push(hasArabic ? t('printWarnings.arabicShapingHint') : t('printWarnings.genericHint'));
+  }
 
   const texts = warnings.map((warning) => warning.message || warning.text).filter(Boolean);
   if (texts.length > 0) {

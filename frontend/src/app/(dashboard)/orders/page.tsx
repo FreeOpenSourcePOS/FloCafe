@@ -536,7 +536,7 @@ export default function OrdersPage() {
         const fallbackOrder = orders.find((o) => o.bill?.id === bill.id);
         const { data } = await api.get(`/bills/${bill.id}`);
         const latestBill = preferChildScopedBill(data.bill as Bill, fallbackOrder);
-        await printBill(
+        const printWarnings = await printBill(
           latestBill,
           {
             business_name: currentTenant?.business_name || tCommon('businessNameFallback'),
@@ -549,6 +549,7 @@ export default function OrdersPage() {
           },
           { isReprint: false }
         );
+        showPrintWarningsToast(printWarnings);
         await api.post(`/bills/${bill.id}/print`, { print_type: 'receipt' });
       } catch {
         toast.error(tOrders('receiptPrintFailedHint'));

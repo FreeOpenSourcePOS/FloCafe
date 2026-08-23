@@ -398,8 +398,14 @@ console.log('\n✅ Test 1b2: Arabic shaping capability gate');
 
   const toastMessages: string[] = [];
   const { showPrintWarningsToast } = loadWarningsToastWithCapture(toastMessages);
+  const { warnings: templateWarnings } = loadFrontendPrinterModules();
   showPrintWarningsToast([{ field: 'receipt line', text: 'کافه Café', message: 'mixed-script warning' }]);
   assert('mixed Arabic warnings show the shaping remedy', toastMessages.length === 1 && toastMessages[0].includes('Enable "Printer supports Arabic/Persian shaping"'));
+  const merchantFallbackWarning = templateWarnings.makeBillTemplateFallbackWarning('{"source":"merchant","id":"merchant-1"}');
+  assert('non-core bill templates create an explicit fallback warning', Boolean(merchantFallbackWarning) && merchantFallbackWarning!.kind === 'configuration');
+  assert('core bill templates do not create a fallback warning', templateWarnings.makeBillTemplateFallbackWarning('classic') === null);
+  showPrintWarningsToast([merchantFallbackWarning!]);
+  assert('template fallback warnings are user-visible', toastMessages.length === 2 && toastMessages[1].includes('selected bill template'));
 
   // The full receipt path threads the flag into the encoder.
   const persianBiz = { ...fixtureBusiness, name: 'کافه فلو تهران', currency_symbol: 'IRR', country: 'IR' };

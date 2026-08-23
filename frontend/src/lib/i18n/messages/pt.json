@@ -671,7 +671,8 @@
     "title": "{count, plural, one {# linha não foi impressa} other {# linhas não foram impressas}}",
     "arabicShapingHint": "Sua impressora não conseguiu imprimir o texto em persa/árabe. Ative \"Impressora suporta moldagem de árabe/persa\" em Configurações → Impressão ou imprima pelo navegador.",
     "genericHint": "As linhas abaixo contêm caracteres que esta impressora térmica não consegue renderizar.",
-    "moreLines": "…e mais {count}"
+    "moreLines": "…e mais {count}",
+    "templateFallback": "O modelo de recibo selecionado não é compatível com este caminho de impressão; o layout de recibo integrado foi usado."
   },
   "print": {
     "taxInvoiceTitle": "FATURA COM IMPOSTOS",

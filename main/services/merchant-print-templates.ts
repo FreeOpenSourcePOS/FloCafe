@@ -399,6 +399,14 @@ export function exportMerchantPrintTemplateFile(id: string): MerchantTemplateExp
     throw new MerchantTemplateError('Only active or archived templates can be exported', 409);
   }
   verifyChecksum(row);
+  const payloadValidation = validateMerchantTemplateText(row.payload_json);
+  if (!payloadValidation.ok) {
+    throw new MerchantTemplateError(
+      `Invalid stored payload for template ${row.id}`,
+      409,
+      payloadValidation.errors,
+    );
+  }
 
   const envelope = {
     format: MERCHANT_TEMPLATE_EXPORT_FORMAT,
@@ -410,7 +418,7 @@ export function exportMerchantPrintTemplateFile(id: string): MerchantTemplateExp
       sourceChecksum: row.checksum,
     },
     checksum: row.checksum,
-    template: JSON.parse(row.payload_json),
+    template: payloadValidation.payload,
   };
   const json = JSON.stringify(envelope, null, 2);
   const byteLength = Buffer.byteLength(json, 'utf8');

@@ -289,9 +289,16 @@ async function runTransfer(): Promise<void> {
     const tamperedExport = await request(app).get(`/api/print-templates/${templateId}/export`)
       .set('Authorization', OWNER);
     assert.equal(tamperedExport.status, 409, 'export fails closed on checksum mismatch');
+    getDatabase().prepare('UPDATE merchant_print_templates SET payload_json = ?, checksum = ? WHERE id = ?')
+      .run('{"tampered":true}', sha256('{"tampered":true}'), templateId);
+    const invalidPayloadExport = await request(app).get(`/api/print-templates/${templateId}/export`)
+      .set('Authorization', OWNER);
+    assert.equal(invalidPayloadExport.status, 409, 'export fails closed on invalid payload with matching checksum');
     getDatabase().prepare('UPDATE merchant_print_templates SET payload_json = ? WHERE id = ?')
       .run(row.payload_json, templateId);
-    ok('a tampered row can never be distributed as a trusted-looking file');
+    getDatabase().prepare('UPDATE merchant_print_templates SET checksum = ? WHERE id = ?')
+      .run(row.checksum, templateId);
+    ok('tampered or invalid rows can never be distributed as trusted-looking files');
 
     const weird = await request(app).post('/api/print-templates')
       .set('Authorization', OWNER)

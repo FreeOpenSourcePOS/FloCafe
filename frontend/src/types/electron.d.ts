@@ -11,12 +11,12 @@ export interface ElectronAPI {
   backupDatabase: (pin?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   restoreBackup: (pin?: string, backupPath?: string) => Promise<{ success: boolean; error?: string }>;
   dbHealthCheck: () => Promise<HealthCheckReport | { error: string }>;
-  dbApplySafeFixes: (findingIds?: string[]) => Promise<{ applied: string[]; skipped: string[]; errors: { id: string; error: string }[] }>;
+  dbApplySafeFixes: (findingIds?: string[]) => Promise<ElectronDbSafeFixesResult | ElectronIpcError>;
   dbInitialize: (pin: string, confirmationPhrase: string) => Promise<{ success: boolean; backupPath?: string; error?: string }>;
-  getMasterPinStatus: () => Promise<{ available: boolean; isSet: boolean }>;
+  getMasterPinStatus: () => Promise<ElectronMasterPinStatus | ElectronIpcError>;
 
   // Settings
-  getSettings: () => Promise<Record<string, string> | ElectronIpcError>;
+  getSettings: () => Promise<Record<string, string | null> | ElectronIpcError>;
   setSetting: (key: string, value: string) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // KDS
@@ -24,13 +24,7 @@ export interface ElectronAPI {
   openKdsWindow: () => Promise<void | ElectronIpcError>;
 
   // App info
-  getAppInfo: () => Promise<{
-    version: string;
-    name: string;
-    electron: string;
-    node: string;
-    platform: string;
-  }>;
+  getAppInfo: () => Promise<ElectronAppInfo | ElectronIpcError>;
 
   // Printers
   getPrinters: () => Promise<ElectronPrinter[] | ElectronIpcError>;
@@ -40,12 +34,7 @@ export interface ElectronAPI {
   getDailySummary: () => Promise<DailySummary | ElectronIpcError>;
 
   // Status
-  getStatus: () => Promise<{
-    server: string;
-    memory: { heapUsed: number; heapTotal: number; rss: number };
-    uptime: number;
-    port: number;
-  }>;
+  getStatus: () => Promise<ElectronStatus>;
 
   // Updates
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
@@ -64,6 +53,34 @@ export interface ElectronIpcError {
 export interface ElectronActionResult {
   success: boolean;
   error?: string;
+}
+
+export interface ElectronDbSafeFixesResult {
+  applied: string[];
+  skipped: string[];
+  errors: { id: string; error: string }[];
+}
+
+export interface ElectronMasterPinStatus {
+  available: boolean;
+  isSet: boolean;
+}
+
+export interface ElectronAppInfo {
+  version: string;
+  name: string;
+  electron: string;
+  node: string;
+  platform: string;
+}
+
+export interface ElectronStatus {
+  server: string;
+  kdsServer: string;
+  serverApp: string;
+  memory: { heapUsed: number; heapTotal: number; rss: number };
+  uptime: number;
+  port: number;
 }
 
 export interface KdsInfo {

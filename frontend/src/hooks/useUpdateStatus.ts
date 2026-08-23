@@ -22,6 +22,7 @@ export function useUpdateStatus() {
     // isElectron here (instead of a synchronous effect setState) keeps the
     // first render stable for SSR/static export.
     window.electronAPI.getAppInfo().then((info) => {
+      if ('error' in info) return;
       setAppVersion(info.version);
       setIsElectron(true);
     });

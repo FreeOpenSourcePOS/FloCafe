@@ -1,7 +1,7 @@
 # Non-Latin thermal receipt printing — capability study and decision record
 
 **Refs:** #446 (research issue) · epic #438
-**Status of this document:** Study and decision record. It describes a *recommended* target architecture that is **not yet implemented**; production renderers are unchanged. Any prototype or dependency adoption requires separate review (see Section 8, *Open decisions*).
+**Status of this document:** Study and decision record. It describes a *recommended* target architecture that is **not yet implemented**; thermal production renderers remain on the current text/skip-with-warning behavior. The browser system-print path now shares the semantic label pipeline, but this change does not alter raw thermal output or the non-Latin fallback studied here. Any prototype or dependency adoption requires separate review (see Section 8, *Open decisions*).
 
 ---
 

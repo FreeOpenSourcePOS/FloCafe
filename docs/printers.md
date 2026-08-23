@@ -16,6 +16,16 @@ Set the paper width to match the printer: 58 mm or 80 mm. The first configured p
 
 In **Settings → Printers**, enable **Printer supports Arabic/Persian shaping** only for a thermal printer whose firmware performs Arabic/Persian contextual shaping and bidirectional ordering. With this setting enabled, receipt, tax-bill, and kitchen-ticket lines containing Arabic or Persian text are sent to the printer for it to shape; the setting is off by default for generic ESC/POS hardware. Without it, unsupported lines are skipped instead of being sent as garbled bytes, and FloCafe displays a warning after printing. Lines that also contain another unsupported script remain skipped.
 
+## Receipt and kitchen-ticket languages
+
+Receipt labels (invoice title, bill number, date, totals, payment methods) and kitchen-ticket labels are resolved from the tenant's language configuration at print time:
+
+- **Receipts** follow the tenant **language** setting combined with the stored `bill_language_policy` (`inherit` follows the store language; `fixed` pins one configured language; an optional second `additional` language is carried on the document for future bilingual layouts). Tenants whose language is fa or es receive localized receipt labels end-to-end.
+- **Kitchen tickets** resolve their label language independently through the stored `kot_language_policy`. A fixed kitchen language (for example English) keeps tickets in that language even when the storefront runs in another language.
+- Invalid or missing policy values always fall back to the store language; printing never fails because of a malformed policy.
+
+Lines the printer cannot render under the script rules above are skipped with an explicit warning — content is never silently dropped. The printed document itself carries every line plus its text direction, so direction-aware layouts (right-to-left base with left-to-right amounts and order numbers) can be expressed by any renderer without changing the underlying data.
+
 ## Kitchen printing
 
 FloCafe can print kitchen order tickets to the default printer or route items to configured kitchen stations. A station needs an active printer and the product categories it handles. Items without a matching station fall back to the default kitchen route.

@@ -90,10 +90,12 @@ persisted subtotal, tax, charge, or total fields
 [`frontend/src/lib/printer/tax-components.ts`](../frontend/src/lib/printer/tax-components.ts)).
 
 The purity boundary of the kernel is binding: see
-[shared/print/README.md](../shared/print/README.md), enforced by the kernel
-test suite (`npm run test:print-kernel`, includes the consumer-boundary check
-in [`tests/kernel-purity.test.ts`](../tests/kernel-purity.test.ts)) and ESLint
-import restrictions over [`shared/`](../shared/).
+[shared/print/README.md](../shared/print/README.md). Public consumer behavior
+is covered by the kernel test suite (`npm run test:print-kernel`, including the
+consumer-boundary check in [`tests/kernel-purity.test.ts`](../tests/kernel-purity.test.ts));
+the static forbidden-import audit is in [`tests/print-document.test.ts`](../tests/print-document.test.ts)
+and runs via `npm run test:print-document`, alongside ESLint import
+restrictions over [`shared/`](../shared/).
 
 ## 2. Shared print kernel layout
 

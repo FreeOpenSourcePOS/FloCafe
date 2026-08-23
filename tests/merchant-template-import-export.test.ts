@@ -235,6 +235,7 @@ try {
 }
 
 const express = require('express');
+const expressRateLimit = require('express-rate-limit');
 const jwt = require('jsonwebtoken');
 const request = require('supertest');
 const { getJWTSecret } = require('../main/routes/auth');
@@ -244,6 +245,12 @@ const app = express();
 // Deliberately ABOVE the 256 KB envelope cap so the feature's own size gate
 // is what rejects oversized files (not the generic body parser limit).
 app.use(express.json({ limit: '2mb' }));
+app.use('/api', expressRateLimit({
+  windowMs: 60 * 1000,
+  limit: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+}));
 app.use((req: any, res: any, next: any) => {
   if (!req.path.startsWith('/api')) { next(); return; }
   const authHeader = req.headers.authorization;

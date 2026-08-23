@@ -182,6 +182,8 @@ The `bill_template` setting persists a STRUCTURED selection:
   (migration v72 upgraded resolvable values once, idempotently).
 - Pack ids happen to be globally unique today (`template_id` is the table
   PK), but persisted semantics deliberately do not rely on that accident.
+- The settings picker matches both `id` and `source`, so core and pack cards
+  with the same bare id cannot both appear selected.
 - Resolution order for legacy strings: core names, then pack ids, then
   merchant ids.
 

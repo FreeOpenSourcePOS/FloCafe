@@ -1630,7 +1630,7 @@ export default function SettingsPage() {
       // cloned origin references a compliance-pack template WITHOUT any
       // trust claim; the copy is an ordinary editable document.
       const merchantCards: TemplateCard[] = (templatesResponse?.data?.merchant || [])
-        .filter((template: { status: string }) => template.status === 'active' || template.status === 'draft')
+        .filter((template: { status: string }) => template.status === 'active')
         .map((template: {
           id: string;
           displayName: string;

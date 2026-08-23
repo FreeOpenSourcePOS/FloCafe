@@ -283,6 +283,9 @@ function verifyChecksum(row: MerchantPrintTemplateRow): void {
 export function rollbackMerchantPrintTemplate(id: string, actorId: string | null): MerchantPrintTemplateRow {
   const row = loadMerchantPrintTemplateRow(id);
   if (!row) throw new MerchantTemplateError('Template not found', 404);
+  if (row.status === 'archived') {
+    throw new MerchantTemplateError('Archived templates cannot be rolled back', 409);
+  }
   if (!row.previous_payload_json) {
     throw new MerchantTemplateError('No previous payload to roll back to', 409);
   }

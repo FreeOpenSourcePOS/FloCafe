@@ -4071,7 +4071,11 @@ export default function SettingsPage() {
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                 {billTemplateCards.map((card) => {
-                  const isSelected = billForm.billTemplate === card.id;
+                  // Selection identity is (id, source): a pack template may
+                  // share a bare id ('classic'/'compact') with core (#475), so
+                  // matching on id alone would highlight both cards.
+                  const isSelected =
+                    billForm.billTemplate === card.id && billForm.billTemplateSource === card.selectionSource;
                   return (
                     <button key={card.id} onClick={() => setBillForm((p) => ({ ...p, billTemplate: card.id, billTemplateSource: card.selectionSource }))}
                       className={`text-start rounded-xl border-2 p-4 transition-all ${

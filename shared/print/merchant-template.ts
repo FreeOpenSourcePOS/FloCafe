@@ -146,6 +146,7 @@ export type MerchantTemplateEnvelopeValidation =
 const ENVELOPE_ROOT_FIELDS = ['format', 'schemaVersion', 'exportedAt', 'appVersion', 'origin', 'checksum', 'template'];
 const ENVELOPE_ORIGIN_FIELDS = ['sourceTemplateId', 'sourceName', 'sourceChecksum'];
 const ISO8601_DATE_TIME_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+const UNSAFE_LABEL_TEXT_PATTERN = /[\u0000-\u001F\u007F]|\{[A-Z_/]+\}/;
 
 function isSha256Hex(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-fA-F]{64}$/.test(value);
@@ -363,6 +364,8 @@ export function validateMerchantTemplate(value: unknown): MerchantTemplateValida
             }
             if (typeof fieldValue !== 'string') {
               reject(errors, `${at}.labels.${key}: expected a literal string`);
+            } else if (UNSAFE_LABEL_TEXT_PATTERN.test(fieldValue)) {
+              reject(errors, `${at}.labels.${key}: contains printer control characters or tokens`);
             }
           }
         }

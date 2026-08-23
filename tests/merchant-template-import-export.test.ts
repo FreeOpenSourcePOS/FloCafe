@@ -145,6 +145,16 @@ console.log('\n▶ Envelope validation: negative fixtures');
   assert(invalidExportedAtResult.errors.some((message) => message.includes('root.exportedAt')));
   ok('non-ISO exportedAt values fail closed');
 
+  for (const [label, value] of [['printer token', '{CUT}'], ['control character', '\u001b']] as const) {
+    const unsafePayload = JSON.parse(JSON.stringify(golden().template)) as Record<string, any>;
+    const totalsBlock = unsafePayload.blocks.find((block: Record<string, any>) => block.kind === 'totals');
+    totalsBlock.labels.grandTotal = value;
+    const unsafeResult = validateMerchantTemplate(unsafePayload);
+    assert(!unsafeResult.ok, `${label} in a label is rejected`);
+    assert(unsafeResult.errors.some((message) => message.includes('printer control')));
+  }
+  ok('printer tokens and control characters are rejected from labels');
+
   // Disallowed payload block: envelope structure is fine, the PAYLOAD validator
   // must be the single authority that rejects the unknown block kind.
   const disallowedParsed = JSON.parse(readFixture('negative/disallowed-block.json'));
@@ -336,8 +346,9 @@ async function runTransfer(): Promise<void> {
       schemaVersion: MERCHANT_TEMPLATE_SCHEMA_VERSION,
       blocks: [{ kind: 'totals', labels: { grandTotal: 'x'.repeat(MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES - probe(0).length - 1) } }],
     };
+    const nearCapPayloadText = probe(nearCapPayload.blocks[0].labels.grandTotal.length);
     assert(
-      Buffer.byteLength(probe(nearCapPayload.blocks[0].labels.grandTotal.length), 'utf8') <= MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
+      Buffer.byteLength(nearCapPayloadText, 'utf8') <= MAX_MERCHANT_TEMPLATE_PAYLOAD_BYTES,
       'premise: the crafted payload still passes the write-time size cap',
     );
     const nearCap = await request(app).post('/api/print-templates')

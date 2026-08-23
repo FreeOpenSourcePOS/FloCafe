@@ -121,6 +121,61 @@ async function run(): Promise<void> {
     settings.setLanguage('en');
   }
 
+  // ------------------------------------------------------------------
+  // Scenario 2: the ticket locale's bundle FAILS to load. Printing must
+  // still proceed (offline-first graceful degradation to English) but the
+  // failure must be surfaced via the returned print warnings (Greptile P1).
+  // ------------------------------------------------------------------
+  {
+    settings.setKotLanguagePolicy({ primary: { mode: 'fixed', language: 'fa' }, additional: [] });
+    const loaderModule = require('../frontend/src/lib/i18n/loader');
+    const originalLoad = loaderModule.loadLocaleMessages;
+    loaderModule.loadLocaleMessages = async (lang: string) => {
+      if (lang === 'fa') throw new Error('simulated offline bundle fetch failure');
+      return originalLoad(lang);
+    };
+
+    const failureCaptured: string[] = [];
+    (printerService as any).printViaBrowser = async (html: string): Promise<void> => {
+      failureCaptured.push(html);
+    };
+
+    try {
+      const order = {
+        id: 2,
+        order_number: 'ORD-KOT-COLD-002',
+        type: 'dine_in',
+        status: 'pending',
+        created_at: '2026-08-22T18:42:00Z',
+        items: [
+          { product_name: 'Espresso', quantity: 1, status: 'pending', addons: [], special_instructions: null },
+        ],
+      } as any;
+
+      let warnings: PrintWarning[] = [];
+      try {
+        warnings = await printerStore.getState().printKot(order);
+      } catch (err) {
+        check('failed locale load does not abort printing', false, String(err));
+      }
+
+      check('KOT print proceeds despite failed locale load', failureCaptured.length === 1);
+      check('failed KOT locale is surfaced as a print warning',
+        warnings.some((w) => w.field === 'kot language' && w.text === 'fa' && /could not be loaded/.test(w.message)),
+        JSON.stringify(warnings),
+      );
+      // Note: scenario 1 already warmed the fa cache, so the ticket may
+      // render cached Persian labels here; what matters is that printing
+      // proceeds and the failure is surfaced rather than silent.
+      check('ticket still renders content', (failureCaptured[0] ?? '').includes('ORD-KOT-COLD-002'));
+    } finally {
+      loaderModule.loadLocaleMessages = originalLoad;
+      (printerService as any).printViaBrowser = originalPrintViaBrowser;
+      settings.setKotLanguagePolicy(policy.defaultPrintLanguagePolicy() as never);
+      settings.setLanguage('en');
+    }
+  }
+
   console.log(`\n${passed + failed} checks | ${passed} passed | ${failed} failed`);
   process.exit(failed === 0 ? 0 : 1);
 }

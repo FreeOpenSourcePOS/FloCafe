@@ -22,7 +22,7 @@ import {
   type PrintDocument,
 } from '@print/document';
 import { defaultPrintLanguagePolicy, resolveReceiptLanguages } from '@print/policy';
-import type { ReceiptLanguagePolicy, ResolvedPrintLanguages } from '@print/types';
+import type { PrintLanguageCode, ReceiptLanguagePolicy, ResolvedPrintLanguages } from '@print/types';
 import { createTranslator } from 'use-intl/core';
 import { getCachedMessages, loadLocaleMessages } from '@/lib/i18n/loader';
 import { LANGUAGES, getLanguageDirection, type Language } from '@/lib/i18n/languages';
@@ -113,12 +113,17 @@ export const printLabelResolver: LabelResolver = (conceptId: string, language: s
 
 /**
  * Ensure every requested receipt language's messages are loaded in memory
- * before a synchronous document build (#377).
+ * before a synchronous document build (#377). Locale loads are allowed to
+ * fail (offline-first: printing must never block on a message bundle), but
+ * the failed language codes are RETURNED so callers can surface a warning
+ * through the established print-warning path instead of silently falling
+ * back to English (Greptile P1, PR #474).
  */
-export async function ensurePrintLanguagesLoaded(languages: ResolvedPrintLanguages): Promise<void> {
-  await Promise.all(
-    languages.map((language) => loadLocaleMessages(language as Language).catch(() => {})),
+export async function ensurePrintLanguagesLoaded(languages: ResolvedPrintLanguages): Promise<PrintLanguageCode[]> {
+  const outcomes = await Promise.allSettled(
+    languages.map((language) => loadLocaleMessages(language as Language)),
   );
+  return languages.filter((_, index) => outcomes[index].status === 'rejected');
 }
 
 /** Base document direction for the primary language, from the central registry. */

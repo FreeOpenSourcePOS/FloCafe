@@ -170,7 +170,14 @@ export const usePrinterStore = create<PrinterState>()(
           // requested language bundles must be in memory first.
           const configuredPaperWidth: PaperWidth = printerPaperSize === 'thermal80' ? 80 : 58;
           const languages = opts?.languages ?? resolveBillPrintLanguages();
-          await ensurePrintLanguagesLoaded(languages);
+          const failedLanguages = await ensurePrintLanguagesLoaded(languages);
+          // A locale bundle that failed to load degrades to English labels;
+          // surface that through the established warning path (Greptile P1).
+          const warnings: PrintWarning[] = failedLanguages.map((language) => ({
+            field: 'receipt language',
+            text: language,
+            message: `Receipt language "${language}" could not be loaded, so English labels were used.`,
+          }));
           const builderOpts: ReceiptOptions = {
             ...opts,
             paperWidth: opts?.paperWidth ?? configuredPaperWidth,
@@ -190,7 +197,6 @@ export const usePrinterStore = create<PrinterState>()(
             languages,
           };
 
-          const warnings: PrintWarning[] = [];
           let bytes: Uint8Array;
           if (billTemplate === 'compact') {
             bytes = buildCompactReceiptBytes(bill, tenant, builderOpts, warnings);
@@ -314,10 +320,18 @@ export const usePrinterStore = create<PrinterState>()(
           // don't silently fall back to English.
           const paperWidth = (get().paperWidth || 80) === 80 ? 80 : 58;
           const { generateKotHtml, resolveKotTicketLanguage } = await import('@/lib/printer/kot-web-print');
-          await ensurePrintLanguagesLoaded([resolveKotTicketLanguage()]);
+          const kotLanguage = resolveKotTicketLanguage();
+          const failedLanguages = await ensurePrintLanguagesLoaded([kotLanguage]);
           const html = generateKotHtml(order, { paperWidth });
           await printerService.printViaBrowser(html, paperWidth);
-          return [] as PrintWarning[];
+          // A failed locale load degrades to English labels; surface it
+          // through the established warning path instead of staying silent
+          // (Greptile P1, PR #474).
+          return failedLanguages.map((language) => ({
+            field: 'kot language',
+            text: language,
+            message: `KOT language "${language}" could not be loaded, so English labels were used.`,
+          })) as PrintWarning[];
         } catch (err) {
           set({ lastError: (err as Error).message });
           throw err;

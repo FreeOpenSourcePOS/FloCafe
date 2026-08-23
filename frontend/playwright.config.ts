@@ -1,8 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { E2E_BASE_URL, E2E_KDS_BASE_URL } from './e2e/helpers/urls';
 
-const e2eKdsPort = new URL(E2E_KDS_BASE_URL).port || '3002';
-
 export default defineConfig({
   testDir: './e2e',
   testMatch: /.*\.spec\.ts/,

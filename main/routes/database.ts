@@ -9,6 +9,7 @@ import * as path from 'path';
 import { asyncHandler } from '../middleware/async-handler';
 import { getHttpRequestSignal, trackHttpRequestWork } from '../shutdown';
 import { parsePhoneE164 } from '../lib/phone';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 
 const router = Router();
 
@@ -46,7 +47,7 @@ function parseImportSchemaVersion(value: unknown): number {
   return /^(?:0|[1-9]\d*)$/.test(raw) ? Number(raw) : -1;
 }
 
-router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
+router.get('/export', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
 
@@ -117,7 +118,7 @@ router.get('/export', requireRole('owner'), (req: Request, res: Response) => {
   }
 });
 
-router.post('/import', requireRole('owner'),
+router.post('/import', requireRole(...ROLE_ACCESS.owner),
   (req: Request, res: Response, next: () => void) => {
     // A schema-mismatch import reaches the same delete-and-replace path as an
     // explicit overwrite (the `overwrite || hasVersionMismatch` branch below),
@@ -448,7 +449,7 @@ function getTableColumns(db: Database.Database, tableName: string): string[] {
   }
 }
 
-router.post('/backup', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.post('/backup', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   try {
     const { path: backupPath, schemaVersion } = await createBackup(undefined, getHttpRequestSignal(req));
     res.json({ 
@@ -463,7 +464,7 @@ router.post('/backup', requireRole('owner'), requireMasterPin, asyncHandler(asyn
   }
 }));
 
-router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.get('/download', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   let tempDir: string | null = null;
   try {
     const dbPath = getDbPath();
@@ -517,7 +518,7 @@ router.get('/download', requireRole('owner'), requireMasterPin, asyncHandler(asy
   }
 }));
 
-router.get('/tables', requireRole('owner'), (req: Request, res: Response) => {
+router.get('/tables', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const tables = db.prepare(`

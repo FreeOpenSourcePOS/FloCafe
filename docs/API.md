@@ -1122,13 +1122,7 @@ Each item in an order has its own status, allowing:
 
 ## Role-Based Access
 
-| Role | Access |
-|------|--------|
-| `owner` | Full access, user management, settings |
-| `manager` | Most features, limited settings |
-| `cashier` | POS, orders, bills |
-| `waiter` | Orders, tables |
-| `chef` | KDS only |
+See [Roles and permissions](roles-and-permissions.md) for the complete current role matrix. The database accepts `owner`, `manager`, `cashier`, `server`, and `chef`; the historical `waiter` label is no longer a valid role.
 
 ---
 

@@ -7,11 +7,12 @@ import { runHealthCheck, applySafeFixes } from '../services/schema-health';
 import { isMasterPinAvailable, isMasterPinSet, resetMasterPin } from '../services/master-pin';
 import { clearJWTSecretCache } from './auth';
 import { getHttpRequestSignal } from '../shutdown';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 
 const router = Router();
 
 // Read-only / additive-only — not master-PIN gated, only owner-gated.
-router.get('/health-check', requireRole('owner'), (_req: Request, res: Response) => {
+router.get('/health-check', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: Response) => {
   try {
     res.json(runHealthCheck());
   } catch (error: any) {
@@ -20,7 +21,7 @@ router.get('/health-check', requireRole('owner'), (_req: Request, res: Response)
   }
 });
 
-router.post('/apply-safe-fixes', requireRole('owner'), (req: Request, res: Response) => {
+router.post('/apply-safe-fixes', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   try {
     const body = (req.body && typeof req.body === 'object' ? req.body : {}) as { findingIds?: unknown };
     const { findingIds } = body;
@@ -36,7 +37,7 @@ router.post('/apply-safe-fixes', requireRole('owner'), (req: Request, res: Respo
 
 // Read-only listing of the managed backups/ directory (#120). Not master-PIN
 // gated — same read-only rationale as /health-check.
-router.get('/backups', requireRole('owner'), (_req: Request, res: Response) => {
+router.get('/backups', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: Response) => {
   try {
     res.json({ backups: listBackups() });
   } catch (error: any) {
@@ -48,7 +49,7 @@ router.get('/backups', requireRole('owner'), (_req: Request, res: Response) => {
 // Deletes one backup from the managed backups/ directory (#120) — same
 // master-PIN gate as creating one, since a backup is the safety net a
 // restore/initialize depends on.
-router.post('/backups/:fileName/delete', requireRole('owner'), requireMasterPin, (req: Request, res: Response) => {
+router.post('/backups/:fileName/delete', requireRole(...ROLE_ACCESS.owner), requireMasterPin, (req: Request, res: Response) => {
   try {
     deleteBackup(req.params.fileName as string);
     res.json({ success: true });
@@ -64,11 +65,11 @@ router.post('/backups/:fileName/delete', requireRole('owner'), requireMasterPin,
   }
 });
 
-router.get('/master-pin/status', requireRole('owner'), (_req: Request, res: Response) => {
+router.get('/master-pin/status', requireRole(...ROLE_ACCESS.owner), (_req: Request, res: Response) => {
   res.json({ available: isMasterPinAvailable(), isSet: isMasterPinSet(), schemaVersion: getCurrentSchemaVersion() });
 });
 
-router.post('/master-pin/reset', requireRole('owner'), (req: Request, res: Response) => {
+router.post('/master-pin/reset', requireRole(...ROLE_ACCESS.owner), (req: Request, res: Response) => {
   const { pin, confirm_pin } = req.body as { pin?: string; confirm_pin?: string };
   const cleanPin = String(pin || '').trim();
   if (!/^\d{4}$/.test(cleanPin)) {
@@ -91,7 +92,7 @@ router.post('/master-pin/reset', requireRole('owner'), (req: Request, res: Respo
 
 const INITIALIZE_CONFIRM_PHRASE = 'INITIALIZE';
 
-router.post('/initialize', requireRole('owner'), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
+router.post('/initialize', requireRole(...ROLE_ACCESS.owner), requireMasterPin, asyncHandler(async (req: Request, res: Response) => {
   if (req.body?.confirmation_phrase !== INITIALIZE_CONFIRM_PHRASE) {
     return res.status(400).json({ error: `Type "${INITIALIZE_CONFIRM_PHRASE}" to confirm` });
   }

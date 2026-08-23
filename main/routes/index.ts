@@ -1,6 +1,7 @@
 import { Express } from 'express';
 import { authRoutes } from './auth';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { categoryRoutes } from './categories';
 import { productRoutes } from './products';
 import { addonGroupRoutes } from './addon-groups';
@@ -113,7 +114,7 @@ export function registerRoutes(app: Express): void {
   // Categories available under the store's active country pack — powers the
   // product-page category selector. Read-only; pack activation/management
   // (installing/updating a pack) is a separate, later feature.
-  app.get('/api/tax/categories', requireRole('owner', 'manager'), asyncHandler(async (req, res) => {
+  app.get('/api/tax/categories', requireRole(...ROLE_ACCESS.ownerManager), asyncHandler(async (req, res) => {
     try {
       const { getActiveCountryPack, hasConfiguredTaxCategories, previewCategoryRate } = await import('../services/tax');
       const country = getSettingValue('country') || 'IN';
@@ -150,7 +151,7 @@ export function registerRoutes(app: Express): void {
   // Mobile pairing code — proxies FloAdmin (see cloud-sync.ts generatePairingCode).
   // Cache-first: repeat GETs (e.g. reopening Settings) must NOT generate a new
   // code or disconnect paired devices — only a stale/missing cache calls out.
-  app.get('/api/mobile/pairing-code', requireRole('owner'), asyncHandler(async (req, res) => {
+  app.get('/api/mobile/pairing-code', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req, res) => {
     try {
       const cached = getCachedPairingCode();
       if (cached) {
@@ -173,7 +174,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Explicit rotate — disconnects every currently-paired RevFlo device.
-  app.post('/api/mobile/rotate-code', requireRole('owner'), asyncHandler(async (req, res) => {
+  app.post('/api/mobile/rotate-code', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req, res) => {
     try {
       const { code, expires_at } = await cloudSync.generatePairingCode(true);
       setCachedPairingCode(code, expires_at);
@@ -188,7 +189,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Paired RevFlo devices for this store — Settings > Mobile App session list.
-  app.get('/api/mobile/devices', requireRole('owner'), asyncHandler(async (req, res) => {
+  app.get('/api/mobile/devices', requireRole(...ROLE_ACCESS.owner), asyncHandler(async (req, res) => {
     try {
       const devices = await cloudSync.listPairedDevices();
       res.json({ devices });
@@ -199,7 +200,7 @@ export function registerRoutes(app: Express): void {
   }));
 
   // Legacy/flat customer search endpoint (frontend uses this)
-  app.get('/api/customers-search', inlineCustomerLookupRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req, res) => {
+  app.get('/api/customers-search', inlineCustomerLookupRateLimit, requireRole(...ROLE_ACCESS.sales), (req, res) => {
     try {
       const { q } = req.query;
       if (!q || String(q).length < 2) {
@@ -228,7 +229,7 @@ export function registerRoutes(app: Express): void {
   });
 
   // CRM lookup endpoint (frontend uses this)
-  app.get('/api/crm/lookup', inlineCustomerLookupRateLimit, requireRole('owner', 'manager', 'cashier', 'server'), (req, res) => {
+  app.get('/api/crm/lookup', inlineCustomerLookupRateLimit, requireRole(...ROLE_ACCESS.sales), (req, res) => {
     try {
       const { phone, country_code } = req.query;
       if (!phone) {
@@ -300,7 +301,7 @@ export function registerRoutes(app: Express): void {
         // intentional idempotent no-op. Check it before the parent terminal
         // policy so a retry cannot turn a harmless repeat into a new error.
         if (['cancelled', 'voided', 'void_adjustment'].includes(currentItem.status)) {
-          if (!['owner', 'manager'].includes(userRole)) {
+          if (!hasRole(userRole, ROLE_ACCESS.ownerManager)) {
             throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
           }
           const items = attachEffectiveAddons(db, db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(orderId).map(parseItemJson) as any[]);
@@ -338,8 +339,8 @@ export function registerRoutes(app: Express): void {
         // the whole-order-cancel override pattern, and leaves a negative bill
         // line so the removal stays visible on the bill.
         const isItemVoid = ['preparing', 'ready'].includes(currentItem.status);
-        const isPrivilegedRole = ['owner', 'manager'].includes(userRole);
-        const canUseOverride = ['cashier', 'server'].includes(userRole) && isItemVoid;
+        const isPrivilegedRole = hasRole(userRole, ROLE_ACCESS.ownerManager);
+        const canUseOverride = hasRole(userRole, ROLE_ACCESS.cashierServer) && isItemVoid;
         if (!isPrivilegedRole && !canUseOverride) {
           throw Object.assign(new Error('Only owner or manager can cancel this item'), { statusCode: 403 });
         }
@@ -572,7 +573,7 @@ export function registerRoutes(app: Express): void {
           throw Object.assign(new Error('Item or order not found'), { statusCode: 404 });
         }
         const actor = db.prepare('SELECT role FROM users WHERE id = ? AND is_active = 1').get(actorId) as { role: string } | undefined;
-        if (!actor || !['owner', 'manager'].includes(actor.role)) {
+        if (!actor || !hasRole(actor.role, ROLE_ACCESS.ownerManager)) {
           throw Object.assign(new Error('Only owner or manager can restore items'), { statusCode: 403 });
         }
 

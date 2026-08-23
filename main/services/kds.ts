@@ -3,6 +3,7 @@ import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUs
 import * as jwt from 'jsonwebtoken';
 import { getJWTSecret, parseCategoryIds } from '../routes/auth';
 import { getUserAuthStatus, isTokenRevoked, isTokenStale } from '../middleware/security';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 
 interface KdsClient {
   ws: WebSocket;
@@ -81,14 +82,14 @@ function isKdsClientAuthorized(client: KdsClient): boolean {
     if (
       decoded.userId !== client.userId ||
       !status?.isActive ||
-      !['chef', 'owner', 'manager'].includes(status.role) ||
+      !hasRole(status.role, ROLE_ACCESS.kitchen) ||
       isTokenStale(decoded.iat, status.tokensValidAfter)
     ) return false;
     const currentUser = getDatabase()
       .prepare('SELECT category_ids FROM users WHERE id = ? AND is_active = 1')
       .get(client.userId) as { category_ids: string | null } | undefined;
     if (!currentUser) return false;
-    const nextCategoryIds = ['manager', 'owner'].includes(status.role)
+    const nextCategoryIds = hasRole(status.role, ROLE_ACCESS.ownerManager)
       ? []
       : parseCategoryIds(currentUser.category_ids);
     const nextStationIds = getUserKdsStationIds(getDatabase(), client.userId);
@@ -308,12 +309,12 @@ function handleAuth(ws: WebSocket, client: KdsClient, message: any): void {
       return;
     }
 
-    if (user.role !== 'chef' && user.role !== 'owner' && user.role !== 'manager') {
+    if (!hasRole(user.role, ROLE_ACCESS.kitchen)) {
       closeKdsClient(client, 'Only kitchen staff can access KDS');
       return;
     }
 
-    const categoryIds = ['manager', 'owner'].includes(user.role)
+    const categoryIds = hasRole(user.role, ROLE_ACCESS.ownerManager)
       ? []
       : parseCategoryIds(user.category_ids);
     const stationIds = getUserKdsStationIds(getDatabase(), user.id);

@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import Decimal from 'decimal.js';
 import { getDatabase, getSettingValue, parseDbTimestamp, utcDayBounds, utcTodayDate } from '../db';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import { getOrdersWithItemsForBills } from './bills';
 import { aggregateTaxComponents } from '../services/tax-components';
 
@@ -102,7 +103,7 @@ function pickExtreme(counts: number[], mode: 'max' | 'min', include: (count: num
   return best;
 }
 
-router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/daily-stats', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const today = utcTodayDate();
@@ -138,7 +139,7 @@ router.get('/daily-stats', requireRole('owner', 'manager'), (req: Request, res: 
   }
 });
 
-router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/summary', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     // #208: an explicit date param is a UTC `YYYY-MM-DD`; resolve to the
@@ -185,7 +186,7 @@ router.get('/summary', requireRole('owner', 'manager'), (req: Request, res: Resp
 // Dynamic tax-component report for receipt/report consumers. Components are
 // derived item by item so mixed legacy + categorized bills cannot double-count
 // the categorized portion already present in the bill-level tax_breakdown.
-router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/tax-components', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const today = utcTodayDate();
@@ -233,7 +234,7 @@ router.get('/tax-components', requireRole('owner', 'manager'), (req: Request, re
   }
 });
 
-router.get('/sales', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/sales', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const today = utcTodayDate();
@@ -281,7 +282,7 @@ router.get('/sales', requireRole('owner', 'manager'), (req: Request, res: Respon
   }
 });
 
-router.get('/topProducts', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/topProducts', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const today = utcTodayDate();
@@ -315,7 +316,7 @@ router.get('/topProducts', requireRole('owner', 'manager'), (req: Request, res: 
   }
 });
 
-router.get('/recentOrders', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/recentOrders', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const requestedLimit = Number(req.query.limit);
@@ -371,7 +372,7 @@ router.get('/recentOrders', requireRole('owner', 'manager'), (req: Request, res:
   }
 });
 
-router.get('/tables', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/tables', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const [start, end] = utcDayBounds(utcTodayDate());
@@ -411,7 +412,7 @@ router.get('/tables', requireRole('owner', 'manager'), (req: Request, res: Respo
 // AOV, top staff, top categories, busiest/idlest hour & day-of-week, and
 // average kitchen prep time, aggregated over a trailing window (default 30
 // days) so hour/day patterns reflect a consistent trend rather than one day.
-router.get('/insights', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.get('/insights', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const days = Math.min(Math.max(parseInt(req.query.days as string) || 30, 1), 365);

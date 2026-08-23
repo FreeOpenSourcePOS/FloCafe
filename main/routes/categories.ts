@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import expressRateLimit from 'express-rate-limit';
 import { getDatabase, now, generateShortId } from '../db';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 
 const router = Router();
 const categoryWriteRateLimit = expressRateLimit({ windowMs: 60 * 1000, limit: 60, standardHeaders: true, legacyHeaders: false });
@@ -181,7 +182,7 @@ function createCategory(req: Request, res: Response) {
   }
 }
 
-router.post('/', categoryWriteRateLimit, requireRole('owner', 'manager'), createCategory);
+router.post('/', categoryWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), createCategory);
 
 function updateCategory(req: Request, res: Response) {
   try {
@@ -249,7 +250,7 @@ function updateCategory(req: Request, res: Response) {
   }
 }
 
-router.put('/:id', categoryWriteRateLimit, requireRole('owner', 'manager'), updateCategory);
+router.put('/:id', categoryWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), updateCategory);
 
 function deleteCategory(req: Request, res: Response) {
   try {
@@ -315,6 +316,6 @@ function deleteCategory(req: Request, res: Response) {
   }
 }
 
-router.delete('/:id', categoryWriteRateLimit, requireRole('owner', 'manager'), deleteCategory);
+router.delete('/:id', categoryWriteRateLimit, requireRole(...ROLE_ACCESS.ownerManager), deleteCategory);
 
 export const categoryRoutes = router;

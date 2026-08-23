@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express';
 import { getDatabase, getKdsStationCategoryIds, getKdsStationRoutingScope, getUserKdsStationIds, hasUserKdsStationAssignments, isKdsStationItemAllowed, parseItemJson, attachEffectiveAddons, isVoidedItemKdsVisible, projectKdsItem, projectKdsOrder } from '../db';
 import { requireRole, requireKdsEnabled } from '../middleware/security';
+import { ROLE_ACCESS, hasRole } from '../../shared/role-permissions';
 import { parseCategoryIds } from './auth';
 
 const router = Router();
 
-router.use(requireRole('chef', 'manager', 'owner'));
+router.use(requireRole(...ROLE_ACCESS.kitchen));
 router.use(requireKdsEnabled);
 
 // Active kitchen orders — the old `OR EXISTS` form forced the planner to
@@ -29,7 +30,7 @@ router.get('/orders', (req: Request, res: Response) => {
       ? db.prepare('SELECT role, category_ids FROM users WHERE id = ? AND is_active = 1').get(userId) as { role: string; category_ids: string | null } | undefined
       : undefined;
     if (!currentUser) return res.status(403).json({ error: 'User account is not active' });
-    const categoryIds = currentUser.role === 'manager' || currentUser.role === 'owner'
+    const categoryIds = hasRole(currentUser.role, ROLE_ACCESS.ownerManager)
       ? []
       : parseCategoryIds(currentUser.category_ids);
     const stationIds = getUserKdsStationIds(db, userId);

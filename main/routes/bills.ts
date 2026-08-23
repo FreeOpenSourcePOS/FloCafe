@@ -17,6 +17,7 @@ import { asyncHandler } from '../middleware/async-handler';
 import { notifyKdsUpdate, notifyOrderUpdated } from '../services/kds';
 import { printReceipt } from '../services/receipt';
 import { requireRole } from '../middleware/security';
+import { ROLE_ACCESS } from '../../shared/role-permissions';
 import {
   calculateConfiguredChargeTaxes,
   combineItemAndChargeTaxes,
@@ -330,7 +331,7 @@ function parsePaginationInteger(value: unknown, defaultValue: number): number | 
   return parsed;
 }
 
-router.get('/', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.get('/', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     let query = 'SELECT * FROM bills WHERE 1=1';
@@ -395,7 +396,7 @@ router.get('/', requireRole('owner', 'manager', 'cashier'), (req: Request, res: 
   }
 });
 
-router.get('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.get('/:id', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id));
@@ -414,7 +415,7 @@ router.get('/:id', requireRole('owner', 'manager', 'cashier'), (req: Request, re
 });
 
 // Get bill by order ID
-router.get('/order/:orderId', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.get('/order/:orderId', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const bill = parseRowJson(db.prepare('SELECT * FROM bills WHERE order_id = ? ORDER BY created_at DESC LIMIT 1').get(req.params.orderId));
@@ -432,7 +433,7 @@ router.get('/order/:orderId', requireRole('owner', 'manager', 'cashier'), (req: 
   }
 });
 
-router.post('/generate', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.post('/generate', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const { order_id } = req.body;
 
@@ -1410,7 +1411,7 @@ export function syncUnpaidBillsForOrder(
 // Divide one unpaid dine-in bill into independently payable guest checks.
 // The kitchen order and inventory rows remain singular; bill_items stores only
 // the whole-unit quantity allocated to each resulting check.
-router.post('/:id/split-check', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.post('/:id/split-check', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     if (getSettingValue('split_checks_enabled') !== 'true') return res.status(403).json({ error: 'Split checks are not enabled' });
@@ -1917,7 +1918,7 @@ function applyPaymentBatch(
   return result;
 }
 
-router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.post('/:id/payment', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const payment = req.body;
     if (!payment || typeof payment !== 'object' || Array.isArray(payment)) {
@@ -1946,7 +1947,7 @@ router.post('/:id/payment', requireRole('owner', 'manager', 'cashier'), (req: Re
 // payment line in the array within a single transaction, so a failure partway
 // through (insufficient wallet balance, an invalid amount, etc.) rolls back every
 // line already applied instead of leaving the bill partially paid.
-router.post('/:id/payments', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.post('/:id/payments', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const body = req.body;
     if (!body || typeof body !== 'object' || Array.isArray(body)) {
@@ -1976,7 +1977,7 @@ router.post('/:id/payments', requireRole('owner', 'manager', 'cashier'), (req: R
   }
 });
 
-router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:id/applyDiscount', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const { type, value, reason } = req.body;
 
@@ -2163,7 +2164,7 @@ router.post('/:id/applyDiscount', requireRole('owner', 'manager'), (req: Request
   }
 });
 
-router.post('/:id/markPrinted', requireRole('owner', 'manager'), (req: Request, res: Response) => {
+router.post('/:id/markPrinted', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const bill = db.prepare('SELECT * FROM bills WHERE id = ?').get(req.params.id);
@@ -2183,7 +2184,7 @@ router.post('/:id/markPrinted', requireRole('owner', 'manager'), (req: Request, 
 });
 
 // POST /api/bills/:id/print - Print or reprint bill
-router.post('/:id/print', requireRole('owner', 'manager', 'cashier'), asyncHandler(async (req: Request, res: Response) => {
+router.post('/:id/print', requireRole(...ROLE_ACCESS.ownerManagerCashier), asyncHandler(async (req: Request, res: Response) => {
   try {
     const { print_type } = req.body;
 
@@ -2205,7 +2206,7 @@ router.post('/:id/print', requireRole('owner', 'manager', 'cashier'), asyncHandl
 }));
 
 // GET /api/bills/:id/print-history - Get print history for bill
-router.get('/:id/print-history', requireRole('owner', 'manager', 'cashier'), (req: Request, res: Response) => {
+router.get('/:id/print-history', requireRole(...ROLE_ACCESS.ownerManagerCashier), (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const prints = db.prepare(`

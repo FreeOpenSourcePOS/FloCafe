@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { UpdateStatus } from '@/types/electron';
+import { shouldApplyInitialUpdateStatus } from './update-status-sync';
 
 /**
  * Shared update-status state, backed by the same IPC channels the Settings
@@ -24,13 +25,15 @@ export function useUpdateStatus() {
       setAppVersion(info.version);
       setIsElectron(true);
     });
+    let receivedLiveUpdateStatus = false;
     const unsubscribe = window.electronAPI.onUpdateStatus((status) => {
+      receivedLiveUpdateStatus = true;
       setUpdateStatus(status);
     });
     // Seed from the persisted main-process state so reloads recover one-shot
     // states (store-managed / linux-managed / dev-mode) and failures (#467).
     window.electronAPI.getUpdateStatus().then((status) => {
-      if (!status) return;
+      if (!status || !shouldApplyInitialUpdateStatus(receivedLiveUpdateStatus)) return;
       setUpdateStatus({
         status: status.status,
         ...(status.version !== undefined ? { version: status.version } : {}),

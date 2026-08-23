@@ -228,7 +228,6 @@ function checkForUpdates(): void {
   const isUpdaterDevelopmentArtifact = isDevelopmentOrUnpackedArtifact({
     defaultApp: (process as NodeJS.Process & { defaultApp?: boolean }).defaultApp === true,
     packaged: app.isPackaged,
-    executablePath: process.execPath,
   });
   const configPath = path.join(process.resourcesPath, 'app-update.yml');
   let configMissing = false;

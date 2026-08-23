@@ -13,6 +13,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { shouldApplyInitialUpdateStatus } from '../frontend/src/hooks/update-status-sync';
 import {
   UPDATE_STATES,
   classifyUpdateError,
@@ -211,23 +212,20 @@ test('isDevelopmentOrUnpackedArtifact distinguishes runtime artifact boundaries'
   assert.equal(isDevelopmentOrUnpackedArtifact({
     defaultApp: true,
     packaged: false,
-    executablePath: '/project/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron',
+  }), true);
+  assert.equal(isDevelopmentOrUnpackedArtifact({
+    defaultApp: false,
+    packaged: false,
   }), true);
   assert.equal(isDevelopmentOrUnpackedArtifact({
     defaultApp: false,
     packaged: true,
-    executablePath: '/project/release/linux-unpacked/flo-desktop',
-  }), true);
-  assert.equal(isDevelopmentOrUnpackedArtifact({
-    defaultApp: false,
-    packaged: true,
-    executablePath: '/Applications/Flo Cafe.app/Contents/MacOS/Flo Cafe',
   }), false);
-  assert.equal(isDevelopmentOrUnpackedArtifact({
-    defaultApp: false,
-    packaged: true,
-    executablePath: 'C:\\Users\\merchant\\AppData\\Local\\Programs\\Flo Cafe\\Flo Cafe.exe',
-  }), false);
+});
+
+test('initial update seed is ignored after a live status arrives', () => {
+  assert.equal(shouldApplyInitialUpdateStatus(false), true);
+  assert.equal(shouldApplyInitialUpdateStatus(true), false);
 });
 
 test('isInstallReady protects both persisted and separately staged updates', () => {

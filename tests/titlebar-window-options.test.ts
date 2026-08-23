@@ -1,57 +1,66 @@
 import * as assert from 'node:assert/strict';
-import * as fs from 'node:fs';
-import * as path from 'node:path';
+import { isAllowedLocalWindowUrl } from '../main/security/url-allowlist';
+import {
+  createKdsWindow,
+  createLocalWindowOpenHandler,
+  createMainWindow,
+} from '../main/window-options';
 
-const mainSource = fs.readFileSync(path.join(process.cwd(), 'main/index.ts'), 'utf8');
-const ipcSource = fs.readFileSync(path.join(process.cwd(), 'main/ipc.ts'), 'utf8');
-
-function section(source: string, start: string, end: string): string {
-  const startIndex = source.indexOf(start);
-  assert.notEqual(startIndex, -1, `source contains ${start}`);
-  const endIndex = source.indexOf(end, startIndex + start.length);
-  assert.notEqual(endIndex, -1, `source contains ${end} after ${start}`);
-  return source.slice(startIndex, endIndex);
+class FakeBrowserWindow {
+  constructor(public readonly options: any) {}
 }
 
-const mainWindowOptions = section(
-  mainSource,
-  'mainWindow = new BrowserWindow({',
-  'mainWindow.once(\'ready-to-show\''
-);
-assert.match(
-  mainWindowOptions,
-  /titleBarStyle:\s*process\.platform === 'darwin' \? 'hiddenInset' : 'hidden'/,
-  'the main POS window uses hiddenInset on macOS and hidden elsewhere'
-);
-assert.match(mainWindowOptions, /titleBarOverlay:\s*\{[\s\S]*height:\s*40[\s\S]*\}/, 'the main POS window sets an explicit overlay height');
-assert.match(mainWindowOptions, /color:\s*'#ffffff'/, 'the native overlay uses an opaque background color');
-assert.match(mainWindowOptions, /symbolColor:\s*'#475569'/, 'the native overlay uses an opaque symbol color');
-assert.match(mainWindowOptions, /contextIsolation:\s*true/);
-assert.match(mainWindowOptions, /nodeIntegration:\s*false/);
-assert.match(mainWindowOptions, /sandbox:\s*false/);
-assert.doesNotMatch(mainWindowOptions, /frame:\s*false/, 'the native-controls design does not remove the window frame');
+const macMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'darwin');
+const windowsMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'win32');
+const linuxMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'linux');
 
-const printPopupHandler = section(
-  mainSource,
-  "mainWindow.webContents.setWindowOpenHandler(({ url }) => {",
-  "  // Intercept all renderer downloads"
-);
-assert.match(printPopupHandler, /width:\s*isBlank \? 800 : 1280/);
-assert.match(printPopupHandler, /height:\s*isBlank \? 600 : 800/);
-assert.match(printPopupHandler, /title:\s*isBlank \? 'Print Receipt' : 'Flo - Kitchen Display'/);
-assert.match(printPopupHandler, /autoHideMenuBar:\s*isBlank/);
-assert.match(printPopupHandler, /contextIsolation:\s*true/);
-assert.match(printPopupHandler, /nodeIntegration:\s*false/);
-assert.doesNotMatch(printPopupHandler, /titleBarStyle|titleBarOverlay|frame:\s*false/, 'print and local popup options remain stock');
+assert.equal(macMainWindow.options.titleBarStyle, 'hiddenInset');
+assert.equal(windowsMainWindow.options.titleBarStyle, 'hidden');
+assert.equal(linuxMainWindow.options.titleBarStyle, 'hidden');
+assert.deepEqual(macMainWindow.options.titleBarOverlay, {
+  color: '#ffffff',
+  symbolColor: '#475569',
+  height: 40,
+});
+assert.equal(macMainWindow.options.webPreferences.preload, '/tmp/preload.js');
+assert.equal(macMainWindow.options.webPreferences.contextIsolation, true);
+assert.equal(macMainWindow.options.webPreferences.nodeIntegration, false);
+assert.equal(macMainWindow.options.webPreferences.sandbox, false);
+assert.equal('frame' in macMainWindow.options, false, 'the native-controls design does not remove the window frame');
 
-const kdsWindowOptions = section(
-  ipcSource,
-  'activeKdsWindow = new BrowserWindow({',
-  "    activeKdsWindow.on('closed'"
+const localWindowOpenHandler = createLocalWindowOpenHandler(
+  isAllowedLocalWindowUrl,
+  () => 3001,
+  () => '192.168.1.50',
 );
-assert.match(kdsWindowOptions, /contextIsolation:\s*true/);
-assert.match(kdsWindowOptions, /nodeIntegration:\s*false/);
-assert.doesNotMatch(kdsWindowOptions, /preload\s*:/, 'KDS keeps the privileged preload bridge removed');
-assert.doesNotMatch(kdsWindowOptions, /titleBarStyle|titleBarOverlay|frame:\s*false/, 'KDS keeps stock window chrome');
+const printPopup = localWindowOpenHandler({ url: 'about:blank' });
+assert.equal(printPopup?.action, 'allow');
+assert.deepEqual(printPopup?.overrideBrowserWindowOptions, {
+  width: 800,
+  height: 600,
+  title: 'Print Receipt',
+  autoHideMenuBar: true,
+  webPreferences: {
+    contextIsolation: true,
+    nodeIntegration: false,
+  },
+});
+assert.equal('titleBarStyle' in (printPopup?.overrideBrowserWindowOptions || {}), false);
+assert.equal('titleBarOverlay' in (printPopup?.overrideBrowserWindowOptions || {}), false);
+assert.equal('frame' in (printPopup?.overrideBrowserWindowOptions || {}), false);
+
+const kitchenPopup = localWindowOpenHandler({ url: 'http://localhost:3001/kds' });
+assert.equal(kitchenPopup?.action, 'allow');
+assert.equal(kitchenPopup?.overrideBrowserWindowOptions.title, 'Flo - Kitchen Display');
+assert.equal(kitchenPopup?.overrideBrowserWindowOptions.width, 1280);
+assert.equal(kitchenPopup?.overrideBrowserWindowOptions.height, 800);
+
+const kdsWindow = createKdsWindow(FakeBrowserWindow as any);
+assert.equal(kdsWindow.options.webPreferences.preload, undefined, 'KDS keeps the privileged preload bridge removed');
+assert.equal(kdsWindow.options.webPreferences.contextIsolation, true);
+assert.equal(kdsWindow.options.webPreferences.nodeIntegration, false);
+assert.equal('titleBarStyle' in kdsWindow.options, false, 'KDS keeps stock window chrome');
+assert.equal('titleBarOverlay' in kdsWindow.options, false, 'KDS keeps stock window chrome');
+assert.equal('frame' in kdsWindow.options, false, 'KDS keeps stock window chrome');
 
 console.log('Title-bar main-window options and popup/KDS exclusions are preserved.');

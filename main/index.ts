@@ -31,6 +31,7 @@ import {
   type UpdateErrorPhase,
 } from './update-state';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
+import { createLocalWindowOpenHandler, createMainWindow } from './window-options';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -366,29 +367,7 @@ function createWindow(): void {
   // the same run instead of only on the next full relaunch.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 1024,
-    minHeight: 768,
-    title: 'Flo',
-    // Keep the native caption buttons available while extending the POS UI
-    // into the title-bar area. KDS and popup windows intentionally keep their
-    // stock window chrome in their own creation paths.
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    titleBarOverlay: {
-      color: '#ffffff',
-      symbolColor: '#475569',
-      height: 40,
-    },
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: false,
-    },
-    show: false,
-  });
+  mainWindow = createMainWindow(BrowserWindow, path.join(__dirname, 'preload.js'));
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
@@ -403,24 +382,11 @@ function createWindow(): void {
 
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page)
   // and blank popup windows (e.g. browser print popups). External URLs are sent to the system browser.
+  const localWindowOpenHandler = createLocalWindowOpenHandler(isAllowedLocalWindowUrl, getServerPort, getLocalIP);
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    const isBlank = url === 'about:blank' || url === '';
-    const isLocal = isAllowedLocalWindowUrl(url, getServerPort(), getLocalIP());
-    if (isLocal) {
-      return {
-        action: 'allow',
-        overrideBrowserWindowOptions: {
-          width: isBlank ? 800 : 1280,
-          height: isBlank ? 600 : 800,
-          title: isBlank ? 'Print Receipt' : 'Flo - Kitchen Display',
-          autoHideMenuBar: isBlank,
-          webPreferences: {
-            contextIsolation: true,
-            nodeIntegration: false,
-          },
-        },
-      };
-    }
+    const localWindowResponse = localWindowOpenHandler({ url });
+    if (localWindowResponse) return localWindowResponse;
+
     if (isSafeExternalUrl(url)) {
       shell.openExternal(url).catch((err) => console.warn('[Flo] Failed to open external URL:', err?.message || err));
     } else {

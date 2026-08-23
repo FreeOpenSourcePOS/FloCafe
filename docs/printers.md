@@ -65,6 +65,51 @@ If printing still fails:
 2. Search for lines starting with `[Printer]` around the time of the failure to find the exact error code or stage.
 3. If opening an issue, include the `[Printer]` log snippet, your OS, printer make/model, connection type, and paper width.
 
+## Country-pack compliance receipt templates (`escpos-line-template-v1`)
+
+Signed country tax packs can ship compliance receipt templates that render through FloCafe's built-in ESC/POS line renderer (`renderEscposLineTemplateV1`, renderer id `flocafe-thermal-receipt-template`).
+
+> **Status: legacy/compliance-oriented.** `escpos-line-template-v1` exists to keep signed, jurisdiction-specific compliance receipts working. It is **not** the future merchant/community template format — that is the semantic merchant model tracked in [#447](https://github.com/FreeOpenSourcePOS/FloCafe/issues/447). Do not build merchant-facing template features on this contract.
+
+### Payload fields
+
+| Field | Type | Required | Behavior |
+| --- | --- | --- | --- |
+| `format` | `"escpos-line-template-v1"` | yes | Contract identifier; must match exactly |
+| `widthProfiles` | array | yes | Per-printer-width column layouts (32–48 columns); at least one profile must cover each declared `paperColumns` width |
+| `header` | object | no | Optional author strings: `businessNameTransform` (`uppercase`), `taxTitleWhenTaxPresent`, `titleWhenTaxAbsent` |
+| `fields.taxRegistrationNumberLabel` | string | no | Author label for the tax registration line |
+| `totals.grandTotalLabel` | string | no | Author label for the bold grand-total row |
+| `totals.showSubtotal`, `totals.showDiscount` | boolean | no | Toggle subtotal/discount rows (default on) |
+| `totals.showTaxRegistrationNumber` | string | no | `when_tax_present_or_enabled` or default visibility rule |
+| `footer.defaultMessage` | string | no | Author footer message used when no configured footer note applies |
+| `footer.useConfiguredFooterNote` | boolean | no | Prefer the merchant's configured footer note (default on) |
+| `footer.includePoweredByFloPOS` | boolean | no | Append the FloPOS branding footer (default on) |
+| `labels` | object | no | Optional map of semantic label id → override string, see below (#445) |
+
+Unknown fields are tolerated at render time so older app versions keep rendering newer signed packs.
+
+### The optional `labels` map (#445)
+
+Packs may ship a payload-root `labels` map to override built-in fallback labels with their own copy:
+
+```json
+{
+  "format": "escpos-line-template-v1",
+  "widthProfiles": [{ "columns": 48, "layout": {} }],
+  "labels": {
+    "total": "SUMA TOTAL",
+    "footerThanks": "¡Gracias por su visita!"
+  }
+}
+```
+
+Supported semantic ids (stable public identifiers — never internal i18n keys): `invoice`, `taxInvoice`, `subtotal`, `discount`, `tax`, `total`, `taxIncluded`, `footerThanks`. Once shipped, an id never changes meaning.
+
+Resolution order for each label: the pack's structural author string (for example `totals.grandTotalLabel`) wins first, then the matching `labels` entry, then the built-in default localized through the canonical print-labels catalog using the receipt language. English defaults are byte-identical to the pre-#445 hardcoded strings.
+
+Validation at install time is **fail-closed**: the map must be an object, contain at most 64 entries of known semantic ids, and every value must be a non-empty string of at most 120 characters. Violations reject the pack install with a clear error. At render time, labels are sanitized (reserved printer control tokens such as `{CUT}`, `{FEED}`, `{INIT}` and styling braces are stripped) and clamped/truncated to fit the selected column width profile (32–48 columns). Renderer version stays 1 — this field is additive and optional; packs without it render identically on old and new versions.
+
 ## API
 
 The printer endpoints are documented in [API.md](API.md#printers). They cover configured printers, detection, supported profiles, test printing, receipt printing, and kitchen tickets.

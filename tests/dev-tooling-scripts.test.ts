@@ -7,6 +7,7 @@ import path from 'node:path';
 // Import kill-ports functions
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { isFloProcess, FLO_PATTERNS } = require('../kill-ports.js');
+const YAML = require('js-yaml') as { load: (text: string) => unknown };
 
 const rootDir = path.resolve(__dirname, '..');
 const resetScript = path.join(rootDir, 'scripts/dev/nuclear-reset.sh');
@@ -372,24 +373,97 @@ exit 0
 
   // CI Workflow schema and configuration assertions
   const ciWorkflow = fs.readFileSync(path.join(rootDir, '.github/workflows/ci.yml'), 'utf8');
+  const ciConfig = YAML.load(ciWorkflow) as any;
 
-  assert.ok(ciWorkflow.includes('linux-tests:'), 'ci.yml must define a "linux-tests" job');
-  assert.ok(
-    ciWorkflow.includes('name: Core Test Suite (Shard ${{ matrix.shard_number }}/2)'),
+  assert.ok(ciConfig?.jobs?.['linux-tests'], 'ci.yml must define a "linux-tests" job');
+  const linuxTestsJob = ciConfig.jobs['linux-tests'];
+  assert.strictEqual(
+    linuxTestsJob.name,
+    'Core Test Suite (Shard ${{ matrix.shard_number }}/2)',
     'linux-tests must display 1-indexed shard numbers in job name',
   );
-  assert.ok(ciWorkflow.includes('fail-fast: false'), 'linux-tests strategy.fail-fast must be false');
-  assert.ok(/shard:\s*\[0,\s*1\]/.test(ciWorkflow), 'linux-tests matrix.shard must be [0, 1]');
-  assert.ok(
-    ciWorkflow.includes('shard_number: 1') && ciWorkflow.includes('shard_number: 2'),
+  assert.strictEqual(linuxTestsJob.strategy?.['fail-fast'], false, 'linux-tests strategy.fail-fast must be false');
+  assert.deepStrictEqual(linuxTestsJob.strategy?.matrix?.shard, [0, 1], 'linux-tests matrix.shard must be [0, 1]');
+  assert.deepStrictEqual(
+    linuxTestsJob.strategy?.matrix?.include?.map((entry: any) => entry.shard_number),
+    [1, 2],
     'linux-tests matrix must include 1-indexed shard_number mappings',
   );
 
-  assert.ok(ciWorkflow.includes('if: matrix.shard == 0'), 'Payment method split check must run only on shard 0');
-  assert.ok(ciWorkflow.includes('working-directory: frontend'), 'linux-tests must include frontend dependencies installation step');
-  assert.match(ciWorkflow, /SHARD_TOTAL=2\s+SHARD_INDEX=\${{\s*matrix\.shard\s*}}\s+node\s+scripts\/ci\/run-test-shard\.cjs/);
+  const shardRunStep = linuxTestsJob.steps.find((step: any) => step.name === 'Core test suite (shard ${{ matrix.shard }})');
+  assert.ok(shardRunStep, 'linux-tests must define its core test suite step');
+  assert.strictEqual(shardRunStep.run.trim(), 'SHARD_TOTAL=2 SHARD_INDEX=${{ matrix.shard }} node scripts/ci/run-test-shard.cjs');
+  assert.ok(
+    linuxTestsJob.steps.some((step: any) => step.if === 'matrix.shard == 0'),
+    'Payment method split check must run only on shard 0',
+  );
+  assert.ok(
+    linuxTestsJob.steps.some((step: any) => step.name === 'Install frontend dependencies' && step['working-directory'] === 'frontend'),
+    'linux-tests must include frontend dependencies installation step',
+  );
 
   console.log('✓ CI workflow linux-tests matrix and sharding configuration verified');
+
+  // The Windows uninstaller wrapper only uses Node built-ins and probes the
+  // Windows runtime/Pester. Keep that job independent from the application's
+  // postinstall, which downloads Electron and rebuilds native dependencies.
+  const changesJob = ciConfig.jobs.changes;
+  const pathFilterStep = changesJob.steps.find((step: any) => step.id === 'filter');
+  assert.ok(pathFilterStep, 'changes must define the path filter step');
+  const pathFilters = YAML.load(pathFilterStep.with.filters) as any;
+  assert.deepStrictEqual(
+    changesJob.outputs.uninstaller,
+    '${{ steps.filter.outputs.uninstaller }}',
+    'changes must expose the uninstaller filter result to dependent jobs',
+  );
+  assert.deepStrictEqual(
+    pathFilters.uninstaller,
+    [
+      'scripts/uninstallers/**',
+      'tests/windows-uninstaller.Tests.ps1',
+      'tests/run-windows-uninstaller-tests.cjs',
+      'package.json',
+      'package-lock.json',
+      '.github/workflows/ci.yml',
+    ],
+    'uninstaller path filtering must remain wired to the Windows test inputs',
+  );
+
+  const windowsJob = ciConfig.jobs['windows-uninstaller'];
+  assert.ok(windowsJob, 'ci.yml must define a Windows uninstaller job');
+  assert.strictEqual(windowsJob.needs, 'changes');
+  assert.strictEqual(windowsJob.if, "${{ needs.changes.outputs.uninstaller == 'true' }}");
+  assert.strictEqual(windowsJob['runs-on'], 'windows-latest');
+  assert.strictEqual(windowsJob['timeout-minutes'], 5);
+
+  const windowsSteps = windowsJob.steps as any[];
+  const setupNodeIndex = windowsSteps.findIndex((step) => step.name === 'Set up Node.js 22');
+  const uninstallerTestIndex = windowsSteps.findIndex((step) => step.name === 'Run Windows uninstaller Pester tests');
+  assert.ok(setupNodeIndex >= 0, 'Windows job must set up Node.js 22');
+  assert.ok(uninstallerTestIndex > setupNodeIndex, 'Windows wrapper must run after Node.js setup');
+  assert.strictEqual(windowsSteps[setupNodeIndex].with?.['node-version'], '22');
+
+  // YAML parsing normalizes quoted scalars, folded/literal blocks, and
+  // indentation. Trimming the parsed scalar keeps formatting changes harmless
+  // while preserving command contents and order for the boundary check.
+  const windowsRunSteps = windowsSteps
+    .map((step, index) => ({ index, command: typeof step.run === 'string' ? step.run.trim() : null }))
+    .filter((step): step is { index: number; command: string } => step.command !== null);
+  assert.deepStrictEqual(
+    windowsRunSteps.map((step) => step.index),
+    [uninstallerTestIndex],
+    'Windows job must have exactly one shell step, after Node.js setup',
+  );
+  assert.deepStrictEqual(
+    windowsRunSteps.map((step) => step.command),
+    ['node tests/run-windows-uninstaller-tests.cjs'],
+    'Windows job must invoke the built-in-only uninstaller wrapper directly',
+  );
+  const windowsRunCommands = windowsRunSteps.map((step) => step.command).join('\n');
+  assert.doesNotMatch(windowsRunCommands, /\bnpm(?:\.cmd)?\s+(?:ci|i|install|run\s+postinstall)\b/);
+  assert.doesNotMatch(windowsRunCommands, /install-electron|electron-builder install-app-deps|verify:electron/);
+
+  console.log('✓ Windows uninstaller CI boundary avoids application postinstall');
 
   console.log('All dev tooling script tests passed cleanly!');
 }

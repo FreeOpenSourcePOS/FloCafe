@@ -780,7 +780,7 @@ export default function SettingsPage() {
   }, []);
 
   // ── Updates ─────────────────────────────────────────────────────────────────
-  const { updateStatus, appVersion, checkForUpdates: handleCheckUpdates } = useUpdateStatus();
+  const { updateStatus, appVersion, isElectron, checkForUpdates: handleCheckUpdates } = useUpdateStatus();
 
   // ── Printers ─────────────────────────────────────────────────────────────
   type HwPrinter = {
@@ -4896,36 +4896,48 @@ export default function SettingsPage() {
               <h2 className="font-semibold text-gray-900">{t('updates')}</h2>
             </div>
             <p className="text-sm text-gray-500 mb-6">
-              {updateStatus?.status === 'store'
+              {!isElectron
+                ? t('softwareUpdatesHintBrowser')
+                : updateStatus?.status === 'store-managed'
                 ? t('softwareUpdatesHintStore')
                 : updateStatus?.status === 'linux-managed'
                 ? t('softwareUpdatesHintLinuxManaged')
                 : t('softwareUpdatesHintDefault')}
             </p>
 
-            {updateStatus && updateStatus.status !== 'store' && updateStatus.status !== 'linux-managed' && (
+            {/* Update controls only exist in the desktop app; hide them for
+                browser/LAN users instead of showing a dead button (#467). */}
+            {isElectron && updateStatus && updateStatus.status !== 'store-managed' && updateStatus.status !== 'linux-managed' && (
               <div className={`p-4 rounded-lg mb-4 ${
                 updateStatus.status === 'available' || updateStatus.status === 'ready-to-install'
                   ? 'bg-green-50 border border-green-200'
-                  : updateStatus.status === 'error'
+                  : updateStatus.status === 'up-to-date'
+                  ? 'bg-green-50 border border-green-200'
+                  : updateStatus.status === 'check-failed'
                   ? 'bg-red-50 border border-red-200'
-                  : updateStatus.status === 'dev-mode'
+                  : updateStatus.status === 'offline' || updateStatus.status === 'dev-mode'
                   ? 'bg-yellow-50 border border-yellow-200'
                   : 'bg-gray-50 border border-gray-200'
               }`}>
                 <div className="flex items-center gap-2 mb-2">
-                  {updateStatus.status === 'checking' && <RefreshCw size={16} className="animate-spin text-brand" />}
+                  {(updateStatus.status === 'checking' || updateStatus.status === 'downloading') && <RefreshCw size={16} className="animate-spin text-brand" />}
                   {updateStatus.status === 'available' && <Check size={16} className="text-green-600" />}
                   {updateStatus.status === 'up-to-date' && <CheckCircle2 size={16} className="text-green-600" />}
                   {updateStatus.status === 'ready-to-install' && <CheckCircle2 size={16} className="text-green-600" />}
-                  {updateStatus.status === 'downloading' && <RefreshCw size={16} className="animate-spin text-brand" />}
-                  {updateStatus.status === 'error' && <span className="text-red-600">✕</span>}
+                  {updateStatus.status === 'check-failed' && <span className="text-red-600">✕</span>}
+                  {updateStatus.status === 'offline' && <span className="text-yellow-600">⚠</span>}
                   {updateStatus.status === 'dev-mode' && <span className="text-yellow-600">⚠</span>}
-                  <span className="font-medium capitalize">
+                  {updateStatus.status === 'not-checked-yet' && <span className="text-gray-500">—</span>}
+                  <span className="font-medium">
                     {updateStatus.status === 'available' ? t('updateStatusAvailable')
                      : updateStatus.status === 'up-to-date' ? t('updateStatusUpToDate')
                      : updateStatus.status === 'ready-to-install' ? t('updateStatusReadyToInstall')
-                     : updateStatus.status.replace(/-/g, ' ')}
+                     : updateStatus.status === 'not-checked-yet' ? t('updateStatusNotCheckedYet')
+                     : updateStatus.status === 'check-failed' ? t('updateStatusCheckFailed')
+                     : updateStatus.status === 'offline' ? t('updateStatusOffline')
+                     : updateStatus.status === 'checking' ? t('checking')
+                     : updateStatus.status === 'dev-mode' ? t('devModeTitle')
+                     : t('updateStatusDownloading')}
                   </span>
                 </div>
                 {appVersion && (
@@ -4945,23 +4957,40 @@ export default function SettingsPage() {
                     <p className="text-xs text-gray-500 mt-1">{t('percentDownloaded', { percent: updateStatus.percent.toFixed(1) })}</p>
                   </div>
                 )}
-                {updateStatus.error && (
-                  <p className="text-sm text-red-600 mt-1">{updateStatus.error}</p>
-                )}
                 {updateStatus.status === 'up-to-date' && (
                   <p className="text-sm text-gray-600">{t('upToDate')}</p>
                 )}
+                {updateStatus.status === 'not-checked-yet' && (
+                  <p className="text-sm text-gray-600">{t('notCheckedYetHint')}</p>
+                )}
                 {updateStatus.status === 'dev-mode' && (
-                  <p className="text-sm text-yellow-600">{t('devModeDisabled')}</p>
+                  <p className="text-sm text-yellow-700">{t('devModeDisabled')}</p>
+                )}
+                {(updateStatus.status === 'check-failed' || updateStatus.status === 'offline') && (
+                  <p className="text-sm mt-1 text-red-600">
+                    {updateStatus.reason === 'manifest-missing'
+                      ? t('updateErrorManifestMissing')
+                      : updateStatus.reason === 'download-failed'
+                      ? t('updateErrorDownloadFailed')
+                      : updateStatus.status === 'offline'
+                      ? t('updateStatusOfflineHint')
+                      : t('updateErrorGeneric')}
+                  </p>
+                )}
+                {(updateStatus.status === 'check-failed' || updateStatus.status === 'offline') && updateStatus.error && (
+                  <details className="mt-1">
+                    <summary className="text-xs text-gray-500 cursor-pointer">{t('errorDetails')}</summary>
+                    <p className="text-xs text-gray-500 mt-0.5 break-all"><Ltr>{updateStatus.error}</Ltr></p>
+                  </details>
                 )}
               </div>
             )}
 
-            {updateStatus?.status !== 'store' && updateStatus?.status !== 'linux-managed' && (
+            {isElectron && updateStatus?.status !== 'store-managed' && updateStatus?.status !== 'linux-managed' && (
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleCheckUpdates}
-                  disabled={updateStatus?.status === 'checking' || updateStatus?.status === 'downloading'}
+                  disabled={updateStatus?.status === 'checking' || updateStatus?.status === 'available' || updateStatus?.status === 'downloading' || updateStatus?.status === 'ready-to-install'}
                   className="px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 disabled:opacity-50 bg-brand text-white hover:opacity-90"
                 >
                   <RefreshCw size={16} className={updateStatus?.status === 'checking' ? 'animate-spin' : ''} />

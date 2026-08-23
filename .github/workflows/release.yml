@@ -5,6 +5,25 @@ on:
     tags:
       - '[0-9]*'
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Update channel for this release
+        required: true
+        default: stable
+        type: choice
+        options:
+          - stable
+          - beta
+          - nightly
+      release_tag:
+        description: Existing release tag to build or promote
+        required: true
+        type: string
+      promote_stable:
+        description: Explicitly select this verified stable release as GitHub Latest
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -23,81 +42,178 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      version: ${{ steps.release-metadata.outputs.version }}
+      channel: ${{ steps.release-metadata.outputs.channel }}
+      manifest_prefix: ${{ steps.release-metadata.outputs.manifest_prefix }}
+      prerelease: ${{ steps.release-metadata.outputs.prerelease }}
+      make_latest: ${{ steps.release-metadata.outputs.make_latest }}
+      promotion_only: ${{ steps.release-metadata.outputs.promotion_only }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full tag history — needed for the "Full Changelog" compare link below
 
-      - name: Validate release tag
-        # `on.push.tags: '[0-9]*'` is a glob, not a semver pattern — it
-        # matches any tag starting with a digit (e.g. "2-oops", "99999").
-        # Every step below reads VERSION from package.json, not from the
-        # pushed tag, so a malformed or mismatched tag would silently
-        # create a release titled after whatever package.json happens to
-        # say, under a ref that doesn't match it (issue #220). Fail loudly
-        # here instead, before anything is built or published, if the tag
-        # isn't a strict X.Y.Z and doesn't equal package.json's version.
-        if: github.event_name == 'push'
+      - name: Determine release metadata
+        id: release-metadata
         run: |
-          TAG="${{ github.ref_name }}"
           VERSION=$(node -p "require('./package.json').version")
-          if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "::error::Tag '${TAG}' is not a valid release version (expected strict X.Y.Z, e.g. 2.9.5)."
+          if [ "$RELEASE_EVENT_NAME" = "push" ]; then
+            TAG="$RELEASE_REF_NAME"
+          else
+            TAG="$RELEASE_TAG_INPUT"
+            if [ "$RELEASE_REF_NAME" != "$TAG" ]; then
+              echo "::error::Manual release dispatch must run from the selected release tag '$TAG', not '$RELEASE_REF_NAME'."
+              exit 1
+            fi
+          fi
+
+          VERSION_CHANNEL="stable"
+          if [[ "$VERSION" == *-* ]]; then
+            VERSION_CHANNEL="${VERSION#*-}"
+            VERSION_CHANNEL="${VERSION_CHANNEL%%.*}"
+          fi
+          REQUESTED_CHANNEL="${{ inputs.channel }}"
+          CHANNEL="${REQUESTED_CHANNEL:-$VERSION_CHANNEL}"
+          case "$CHANNEL" in
+            stable|beta|nightly) ;;
+            *) echo "::error::Unsupported release channel '$CHANNEL' (expected stable, beta, or nightly)."; exit 1 ;;
+          esac
+          if [ "$CHANNEL" = "stable" ] && [ "$VERSION_CHANNEL" != "stable" ]; then
+            echo "::error::A stable channel release must use a stable package version, got '$VERSION'."
             exit 1
           fi
-          if [ "$TAG" != "$VERSION" ]; then
-            echo "::error::Tag '${TAG}' does not match package.json version '${VERSION}'. Bump package.json and CHANGELOG.md to match the tag (or vice versa) before pushing."
+          if [ "$CHANNEL" != "stable" ] && [ "$VERSION_CHANNEL" != "$CHANNEL" ]; then
+            echo "::error::A $CHANNEL channel release must use a $CHANNEL prerelease version, got '$VERSION'."
             exit 1
           fi
 
-      - name: Create GitHub release (if not exists)
+          PROMOTE="${{ inputs.promote_stable }}"
+          PROMOTE="${PROMOTE:-false}"
+          if [ "$PROMOTE" = "true" ] && [ "$CHANNEL" != "stable" ]; then
+            echo "::error::Only a stable release can be explicitly selected as GitHub Latest."
+            exit 1
+          fi
+          PROMOTION_ONLY=false
+          if [ "$RELEASE_EVENT_NAME" = "workflow_dispatch" ] && [ "$PROMOTE" = "true" ]; then
+            PROMOTION_ONLY=true
+          fi
+          PRERELEASE=false
+          [ "$CHANNEL" != "stable" ] && PRERELEASE=true
+          MANIFEST_PREFIX=latest
+          [ "$CHANNEL" != "stable" ] && MANIFEST_PREFIX="$CHANNEL"
+          {
+            echo "version=$VERSION"
+            echo "tag=$TAG"
+            echo "channel=$CHANNEL"
+            echo "manifest_prefix=$MANIFEST_PREFIX"
+            echo "prerelease=$PRERELEASE"
+            echo "make_latest=$PROMOTE"
+            echo "promotion_only=$PROMOTION_ONLY"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+          RELEASE_TAG_INPUT: ${{ inputs.release_tag }}
+
+      - name: Validate release tag
+        # `on.push.tags: '[0-9]*'` is a glob, not a version pattern — it also
+        # matches prerelease tags. Validate the complete semver and package
+        # version before creating the draft release (issue #220).
+        run: |
+          TAG="$RELEASE_TAG"
+          VERSION="$RELEASE_VERSION"
+          if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
+            echo "::error::Tag '${TAG}' is not a valid release version (expected X.Y.Z or a beta/nightly prerelease)."
+            exit 1
+          fi
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "::error::Tag '${TAG}' does not match package.json version '${VERSION}'."
+            exit 1
+          fi
+          if [ "$RELEASE_EVENT_NAME" != "push" ]; then
+            TAG_COMMIT=$(git rev-parse "${TAG}^{commit}") || {
+              echo "::error::Release tag '${TAG}' does not exist in the checked-out repository."
+              exit 1
+            }
+            HEAD_COMMIT=$(git rev-parse HEAD)
+            if [ "$TAG_COMMIT" != "$HEAD_COMMIT" ]; then
+              echo "::error::Checked-out revision '$HEAD_COMMIT' does not match release tag '${TAG}' at '$TAG_COMMIT'."
+              exit 1
+            fi
+          fi
+        env:
+          RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release-metadata.outputs.version }}
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+
+      - name: Create GitHub draft release (if not exists)
         # Release notes come from CHANGELOG.md, not --generate-notes: this repo
         # pushes straight to main instead of merging PRs, so GitHub's PR-based
         # auto-generated notes come back empty (see git history around
         # v2.0.0/v2.0.3 for what that looked like). A CHANGELOG.md entry is
         # mandatory for every release — this step fails loudly instead of
-        # publishing a release with no notes if one is missing.
+        # publishing a release with no notes if one is missing. The release is
+        # deliberately kept as a draft until all platform assets pass the
+        # post-upload verification job.
+        if: steps.release-metadata.outputs.promotion_only != 'true'
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if gh release view "${VERSION}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            echo "Release ${VERSION} already exists, skipping creation."
-            exit 0
-          fi
+          TAG="$RELEASE_TAG"
+          VERSION="$RELEASE_VERSION"
+          CHANNEL="$RELEASE_CHANNEL"
+          BASE_VERSION="${VERSION%%-*}"
+          if gh release view "${TAG}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            DRAFT=$(gh release view "${TAG}" --repo "${{ github.repository }}" --json isDraft --jq .isDraft)
+            if [ "$DRAFT" != "true" ]; then
+              echo "::error::Release ${TAG} already exists and is published; refusing to overwrite it."
+              exit 1
+            fi
+            echo "Draft release ${TAG} already exists, reusing it."
+          else
+            if ! ./scripts/changelog-notes.sh "${BASE_VERSION}" > /tmp/release-notes.md; then
+              echo "::error::CHANGELOG.md has no '## [${BASE_VERSION}]' entry — add one before tagging a release."
+              exit 1
+            fi
 
-          if ! ./scripts/changelog-notes.sh "${VERSION}" > /tmp/release-notes.md; then
-            echo "::error::CHANGELOG.md has no '## [${VERSION}]' entry — add one before tagging a release."
-            exit 1
-          fi
+            PREV_TAG=$(git tag --list --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | grep -Ev "^(v)?${BASE_VERSION}\$" | head -1)
+            if [ -n "$PREV_TAG" ]; then
+              echo "" >> /tmp/release-notes.md
+              echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> /tmp/release-notes.md
+            fi
 
-          PREV_TAG=$(git tag --list --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | grep -Ev "^(v)?${VERSION}\$" | head -1)
-          if [ -n "$PREV_TAG" ]; then
-            echo "" >> /tmp/release-notes.md
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> /tmp/release-notes.md
+            RELEASE_ARGS=(--draft --latest=false)
+            [ "$CHANNEL" != "stable" ] && RELEASE_ARGS+=(--prerelease)
+            gh release create "${TAG}" \
+              --repo "${{ github.repository }}" \
+              --verify-tag \
+              --title "${VERSION} (${CHANNEL})" \
+              --notes-file /tmp/release-notes.md \
+              "${RELEASE_ARGS[@]}"
           fi
-
-          gh release create "${VERSION}" \
-            --repo "${{ github.repository }}" \
-            --title "${VERSION}" \
-            --notes-file /tmp/release-notes.md
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
+          RELEASE_VERSION: ${{ steps.release-metadata.outputs.version }}
+          RELEASE_CHANNEL: ${{ steps.release-metadata.outputs.channel }}
 
       - name: Upload standalone uninstaller scripts
         # Independent utility scripts, not part of the app bundle — for
         # users who need to fully remove/reinstall outside the packaged
         # per-platform uninstaller (e.g. a broken install).
+        if: steps.release-metadata.outputs.promotion_only != 'true'
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          gh release upload "${VERSION}" \
+          gh release upload "$RELEASE_TAG" \
             scripts/uninstallers/uninstall-macos.sh \
             scripts/uninstallers/uninstall-windows.ps1 \
             --repo "${{ github.repository }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release-metadata.outputs.tag }}
 
   release-linux:
     runs-on: ${{ matrix.runner }}
     needs: create-release
+    if: needs.create-release.outputs.promotion_only != 'true'
     timeout-minutes: 60
     # Each matrix entry builds AppImage + deb + rpm + snap for its host
     # architecture.electron-builder doesn't cross-compile, so x64 hosts
@@ -163,26 +279,38 @@ jobs:
         # extension and default stage-packages (libnspr4, libnss3, libxss1,
         # libappindicator3-1, libsecret-1-0). SNAPCRAFT_BUILD_ENVIRONMENT=lxd
         # selects the LXD provider explicitly.
-        run: npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm snap --publish never
+        run: |
+          npm run build:frontend && npm run build && npx electron-builder --linux AppImage deb rpm snap --publish never \
+            -c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}" \
+            -c.linux.artifactName="flocafe-\${version}-linux-\${env.FLO_LINUX_ARCH}.\${ext}" \
+            -c.appImage.artifactName="flocafe-\${version}-linux-\${env.FLO_LINUX_ARCH}.appimage"
+          node scripts/assert-release-artifact-names.cjs release
         env:
           SNAPCRAFT_BUILD_ENVIRONMENT: lxd
+          FLO_LINUX_ARCH: ${{ matrix.arch }}
 
       - name: Upload Linux assets to GitHub release
-        # Each matrix entry uploads its own arch-tagged artifacts. Filename
-        # suffixes uniquely identify architecture (x86_64 / arm64 / amd64),
-        # so x64 and arm64 entries never collide on the same GitHub release.
+        # Each matrix entry uploads its own arch-tagged artifacts. The release
+        # override uses the safe x64/arm64 matrix labels, so entries never
+        # collide on the same GitHub release and no post-build rename is needed.
         run: |
           VERSION=$(node -p "require('./package.json').version")
-          shopt -s nullglob
-          FILES=(release/*.AppImage release/*.deb release/*.rpm release/*.snap)
-          [ ${#FILES[@]} -gt 0 ] || { echo "::error::no artifacts produced for ${{ matrix.arch }}"; exit 1; }
+          mapfile -t FILES < <(find release -maxdepth 1 -type f \( -name '*.appimage' -o -name '*.deb' -o -name '*.rpm' -o -name '*.snap' \) -print)
+          MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
+          MANIFEST_NAME="${MANIFEST_PREFIX}-linux.yml"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then MANIFEST_NAME="${MANIFEST_PREFIX}-linux-arm64.yml"; fi
+          [ -f "release/${MANIFEST_NAME}" ] || { echo "::error::release/${MANIFEST_NAME} is missing for ${{ matrix.arch }}"; exit 1; }
+          FILES+=("release/${MANIFEST_NAME}")
+          [ ${#FILES[@]} -gt 0 ] || { echo "::error::no Linux artifacts produced for ${{ matrix.arch }}"; exit 1; }
           gh release upload "${VERSION}" "${FILES[@]}" --repo "${{ github.repository }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Publish snap to Snap Store (stable)
+      - name: Publish snap to the matching Snap Store channel
         # Both matrix entries publish their snap, each tagged with its arch.
         # Snap Store keeps multiple per-arch revisions under one snap name.
+        # Stable/beta/nightly map to stable/beta/edge respectively; this keeps
+        # a prerelease out of the stable package-manager channel.
         # The credentials check is at runtime, not in `if:` — GitHub Actions
         # rejects `secrets` in `if:` expressions (unrecognized named-value).
         # A missing credential is a release failure, not a skipped channel:
@@ -195,14 +323,17 @@ jobs:
             exit 1
           fi
           SNAP_NAME="flocafe"
-          SNAP=$(ls release/*.snap | head -1)
+          SNAP=$(find release -maxdepth 1 -type f -name '*.snap' -print -quit)
           [ -n "$SNAP" ] || { echo "::error::No .snap produced by electron-builder for ${{ matrix.arch }}"; exit 1; }
+          SNAP_CHANNEL="${{ needs.create-release.outputs.channel }}"
+          [ "$SNAP_CHANNEL" = "nightly" ] && SNAP_CHANNEL=edge
           snapcraft register "$SNAP_NAME" || echo "::warning::register skipped/failed; continuing"
-          snapcraft upload "$SNAP" --release=stable
+          snapcraft upload "$SNAP" --release="$SNAP_CHANNEL"
 
   release-mac:
     runs-on: macos-latest
     needs: create-release
+    if: needs.create-release.outputs.promotion_only != 'true'
     # Was two parallel 60-minute matrix jobs (one per arch); now one job builds,
     # signs, and notarizes both — packaging + notarizing arch #2 no longer
     # overlaps arch #1's wall-clock time, so this needs real headroom over the
@@ -282,7 +413,10 @@ jobs:
         # `files` entries — so one process building both archs produces a single
         # correctly-merged latest-mac.yml instead of two per-arch ones stepping on
         # each other via --clobber.
-        run: npm run build:frontend && npm run build && npx electron-builder --mac --x64 --arm64 --publish never
+        run: |
+          npm run build:frontend && npm run build && npx electron-builder --mac --x64 --arm64 --publish never \
+            -c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}"
+          node scripts/assert-release-artifact-names.cjs release
         env:
           CSC_LINK: ${{ secrets.MAC_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
@@ -293,9 +427,10 @@ jobs:
 
       - name: Verify macOS release assets
         run: |
-          test -f release/latest-mac.yml || { echo "::error::release/latest-mac.yml is missing — macOS auto-update would be broken for this release"; exit 1; }
-          ls release/*.zip >/dev/null 2>&1 || { echo "::error::no .zip in release/ — macOS auto-update would be broken for this release"; exit 1; }
-          ls release/*.zip.blockmap >/dev/null 2>&1 || { echo "::error::no .zip.blockmap in release/ — macOS auto-update would be broken for this release"; exit 1; }
+          MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
+          test -f "release/${MANIFEST_PREFIX}-mac.yml" || { echo "::error::release/${MANIFEST_PREFIX}-mac.yml is missing — macOS auto-update would be broken for this release"; exit 1; }
+          find release -maxdepth 1 -type f -name '*.zip' -print -quit | grep -q . || { echo "::error::no .zip in release/ — macOS auto-update would be broken for this release"; exit 1; }
+          find release -maxdepth 1 -type f -name '*.zip.blockmap' -print -quit | grep -q . || { echo "::error::no .zip.blockmap in release/ — macOS auto-update would be broken for this release"; exit 1; }
           # Guards against a regression back to #199/#178: this should list one
           # `files:` entry per .zip built (both archs), not just exist.
           #
@@ -307,8 +442,8 @@ jobs:
           # entries were being counted as if they were missing zip entries).
           # electron-updater's MacUpdater only ever selects a `.zip` entry, so
           # only those need to be counted here.
-          ZIP_COUNT=$(ls release/*.zip | wc -l | tr -d ' ')
-          MANIFEST_COUNT=$(grep -cE '^\s*- url: .*\.zip$' release/latest-mac.yml || true)
+          ZIP_COUNT=$(find release -maxdepth 1 -type f -name '*.zip' | wc -l | tr -d ' ')
+          MANIFEST_COUNT=$(grep -cE '^\s*- url: .*\.zip$' "release/${MANIFEST_PREFIX}-mac.yml" || true)
           if [ "$MANIFEST_COUNT" -ne "$ZIP_COUNT" ]; then
             echo "::error::latest-mac.yml lists $MANIFEST_COUNT .zip file(s) but $ZIP_COUNT .zip(s) were built — auto-update would be broken for whichever architecture's entry is missing"
             exit 1
@@ -338,7 +473,7 @@ jobs:
             release/*.dmg \
             release/*.zip \
             release/*.zip.blockmap \
-            release/latest-mac.yml \
+            "release/${{ needs.create-release.outputs.manifest_prefix }}-mac.yml" \
             --repo "${{ github.repository }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
@@ -357,7 +492,8 @@ jobs:
           VERIFY_DIR=$(mktemp -d)
           trap 'rm -rf "$DOWNLOAD_DIR" "$VERIFY_DIR"' EXIT
           gh release download "${VERSION}" --repo "${{ github.repository }}" --pattern '*.zip' --dir "$DOWNLOAD_DIR"
-          ls "$DOWNLOAD_DIR"/*.zip >/dev/null 2>&1 || { echo "::error::no .zip downloaded from the published release"; exit 1; }
+          gh release download "${VERSION}" --repo "${{ github.repository }}" --pattern "${{ needs.create-release.outputs.manifest_prefix }}-mac.yml" --dir "$DOWNLOAD_DIR"
+          ls "$DOWNLOAD_DIR"/*.zip >/dev/null 2>&1 || { echo "::error::no .zip downloaded from the draft release"; exit 1; }
           for ZIP in "$DOWNLOAD_DIR"/*.zip; do
             APP_DIR="$VERIFY_DIR/$(basename "$ZIP" .zip)"
             mkdir -p "$APP_DIR"
@@ -374,6 +510,7 @@ jobs:
   release-windows:
     runs-on: windows-latest
     needs: create-release
+    if: needs.create-release.outputs.promotion_only != 'true'
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -409,7 +546,10 @@ jobs:
         # packages, and electron-builder's Store target is still named appx. The
         # package.json target list keeps NSIS x64-only while building AppX for
         # x64 and arm64, so Windows on Arm devices keep native Store coverage.
-        run: npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false
+        run: |
+          npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false `
+            -c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}"
+          node scripts/assert-release-artifact-names.cjs release
         env:
           CSC_LINK: ${{ secrets.WINDOWS_CERTS }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERTS_PASSWORD }}
@@ -425,7 +565,9 @@ jobs:
         # and apply updates. Fail loudly here instead of silently shipping a
         # release nothing can auto-update from.
         run: |
-          if (-not (Test-Path release\latest.yml)) { Write-Error "release\latest.yml is missing — Windows auto-update would be broken for this release"; exit 1 }
+          $manifestPrefix = "${{ needs.create-release.outputs.manifest_prefix }}"
+          $manifestPath = "release\$manifestPrefix.yml"
+          if (-not (Test-Path $manifestPath)) { Write-Error "$manifestPath is missing — Windows auto-update would be broken for this release"; exit 1 }
           if (-not (Get-ChildItem release\*.exe.blockmap -ErrorAction SilentlyContinue)) { Write-Error "no .exe.blockmap in release\ — Windows auto-update would be broken for this release"; exit 1 }
           $appxFiles = @(Get-ChildItem release\*.appx -ErrorAction SilentlyContinue)
           if ($appxFiles.Count -eq 0) { Write-Error "no .appx in release\ — Microsoft Store submission package is missing"; exit 1 }
@@ -437,7 +579,7 @@ jobs:
           # Center after the fact.
           $expectedIdentity = node -p "require('./package.json').build.appx.identityName"
           $expectedPublisher = node -p "require('./package.json').build.appx.publisher"
-          $expectedVersion = "$(node -p "require('./package.json').version").0"
+          $expectedVersion = node -p "require('./package.json').version.split('-')[0] + '.0'"
 
           Add-Type -AssemblyName System.IO.Compression.FileSystem
           $architectures = @{}
@@ -498,7 +640,8 @@ jobs:
       - name: Upload Windows assets to GitHub release
         run: |
           $VERSION = node -p "require('./package.json').version"
-          gh release upload "$VERSION" (Get-ChildItem release\*.exe, release\*.exe.blockmap, release\*.appx, release\latest.yml | Select-Object -ExpandProperty FullName) --repo "${{ github.repository }}" --clobber
+          $manifestPrefix = "${{ needs.create-release.outputs.manifest_prefix }}"
+          gh release upload "$VERSION" (Get-ChildItem release\*.exe, release\*.exe.blockmap, release\*.appx, "release\$manifestPrefix.yml" | Select-Object -ExpandProperty FullName) --repo "${{ github.repository }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -507,11 +650,11 @@ jobs:
         # branch code, so it must never be allowed to reach Partner Center.
         # Pinned to v1.4 by commit SHA rather than the mutable v1.1 tag
         # (matches this repo's pinning convention for third-party actions).
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.channel == 'stable'
         uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
 
       - name: Publish Windows AppX packages to Microsoft Store
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/') && needs.create-release.outputs.channel == 'stable'
         shell: pwsh
         env:
           AZURE_AD_TENANT_ID: ${{ secrets.AZURE_AD_TENANT_ID }}
@@ -542,7 +685,6 @@ jobs:
             Write-Error "Missing Microsoft Store configuration: $($missing -join ', ')"
             exit 1
           }
-
           msstore reconfigure `
             --tenantId "$env:AZURE_AD_TENANT_ID" `
             --sellerId "$env:SELLER_ID" `
@@ -562,3 +704,89 @@ jobs:
           }
           msstore publish @publishArgs
           if ($LASTEXITCODE -ne 0) { throw "Microsoft Store publish failed with exit code $LASTEXITCODE." }
+
+  verify-release:
+    name: Verify uploaded draft release
+    # No release is publishable until every platform job and this independent
+    # post-upload verification pass succeeds.
+    needs: [create-release, release-linux, release-mac, release-windows]
+    if: needs.create-release.outputs.promotion_only != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Download and verify every release manifest and referenced artifact
+        # Stable verification covers latest.yml, latest-mac.yml, latest-linux.yml,
+        # and latest-linux-arm64.yml. Beta
+        # and nightly substitute their explicit channel prefix.
+        run: |
+          node scripts/verify-release-assets.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "${{ needs.create-release.outputs.version }}" \
+            --channel "${{ needs.create-release.outputs.manifest_prefix }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  publish-release:
+    name: Publish verified release
+    # Keep this as a distinct job so publishing cannot happen in a platform
+    # job before the other platforms' draft assets have been checked.
+    needs: [create-release, release-linux, release-mac, release-windows, verify-release]
+    if: needs.create-release.outputs.promotion_only != 'true' && needs.verify-release.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Publish draft without changing GitHub Latest by default
+        run: |
+          VERSION="${{ needs.create-release.outputs.version }}"
+          PRERELEASE="${{ needs.create-release.outputs.prerelease }}"
+          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/${VERSION}" --jq .id)
+          # Draft and prerelease state are changed only after verification. The
+          # explicit false prevents an ordinary stable build from moving the
+          # stable pointer; the promotion input is handled in the next call.
+          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
+            -F draft=false \
+            -F prerelease="${PRERELEASE}" \
+            -F make_latest=false
+          if [ "${{ needs.create-release.outputs.make_latest }}" = "true" ]; then
+            gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
+              -F make_latest=true
+          fi
+          echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }})"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  promote-release:
+    name: Promote verified stable release
+    needs: create-release
+    if: needs.create-release.outputs.promotion_only == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Promote published stable release to GitHub Latest
+        run: |
+          if [ "$RELEASE_CHANNEL" != "stable" ]; then
+            echo "::error::Only a stable release can be promoted to GitHub Latest."
+            exit 1
+          fi
+          RELEASE_JSON=$(gh api "repos/${{ github.repository }}/releases/tags/${RELEASE_TAG}")
+          if [ "$(jq -r '.draft' <<<"$RELEASE_JSON")" != "false" ]; then
+            echo "::error::Release ${RELEASE_TAG} must already be published before promotion."
+            exit 1
+          fi
+          if [ "$(jq -r '.prerelease' <<<"$RELEASE_JSON")" != "false" ]; then
+            echo "::error::Release ${RELEASE_TAG} must not be prerelease."
+            exit 1
+          fi
+          RELEASE_ID=$(jq -r '.id' <<<"$RELEASE_JSON")
+          gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" -F make_latest=true
+          echo "Promoted ${RELEASE_TAG} to GitHub Latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+          RELEASE_CHANNEL: ${{ needs.create-release.outputs.channel }}

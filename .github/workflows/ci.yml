@@ -262,8 +262,7 @@ jobs:
           node-version: '22'
           cache: 'npm'
 
-      - name: Install dependencies
-        run: npm ci
-
+      # The wrapper only uses Node built-ins and probes the Windows runtime/Pester.
+      # Do not run the application lifecycle or install its dependencies here.
       - name: Run Windows uninstaller Pester tests
-        run: npm run test:windows-uninstaller
+        run: node tests/run-windows-uninstaller-tests.cjs

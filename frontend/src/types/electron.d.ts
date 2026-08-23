@@ -34,7 +34,7 @@ export interface ElectronAPI {
 
   // Updates
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
-  getUpdateStatus: () => Promise<{ status: UpdateStatus['status']; info: { version: string } }>;
+  getUpdateStatus: () => Promise<{ status: UpdateStatus['status']; version?: string; percent?: number; reason?: UpdateFailureReason; error?: string; info: { version: string } }>;
   checkForUpdates: () => Promise<void>;
   restartAndInstall: () => Promise<void>;
 
@@ -66,12 +66,28 @@ export interface HealthCheckReport {
   summary: { safeCount: number; manualReviewCount: number };
 }
 
+/** Why an update check or download failed, when the main process knows. */
+export type UpdateFailureReason = 'manifest-missing' | 'download-failed' | 'unknown';
+
 export interface UpdateStatus {
-  status: 'checking' | 'available' | 'up-to-date' | 'downloading' | 'ready-to-install' | 'error' | 'dev-mode' | 'store' | 'linux-managed';
+  // #467 honest state model — mirrors main/update-state.ts.
+  status:
+    | 'not-checked-yet'
+    | 'checking'
+    | 'up-to-date'
+    | 'available'
+    | 'downloading'
+    | 'ready-to-install'
+    | 'check-failed'
+    | 'offline'
+    | 'store-managed'
+    | 'linux-managed'
+    | 'dev-mode';
   version?: string;
   releaseDate?: string;
   releaseNotes?: string;
   percent?: number;
+  reason?: UpdateFailureReason;
   error?: string;
 }
 

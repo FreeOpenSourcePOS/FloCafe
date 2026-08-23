@@ -6,7 +6,7 @@ FloCafe runs on current Linux distributions through AppImage, deb, rpm, and Snap
 
 | Format | For |
 |--------|-----|
-| **AppImage** (`flocafe-*.AppImage`) | Any distro — no install needed |
+| **AppImage** (`flocafe-*.appimage`) | Any distro — no install needed |
 | **deb** (`flocafe-*.deb`) | Debian / Ubuntu and derivatives |
 | **rpm** (`flocafe-*.rpm`) | Fedora, RHEL-family, and compatible distributions |
 | **Snap** (`flocafe-*.snap`) | Snap-enabled distributions |
@@ -19,7 +19,7 @@ release jobs run on Ubuntu 24.04 runners for x64 and arm64 respectively.
 sudo dpkg -i flocafe-*.deb && sudo apt-get install -f
 
 # AppImage
-chmod +x flocafe-*.AppImage && ./flocafe-*.AppImage
+chmod +x flocafe-*.appimage && ./flocafe-*.appimage
 ```
 
 ---
@@ -39,7 +39,7 @@ sudo apt install libfuse2t64
 No FUSE? Run extracted:
 
 ```bash
-./flocafe-*.AppImage --appimage-extract
+./flocafe-*.appimage --appimage-extract
 ./squashfs-root/AppRun
 ```
 
@@ -50,7 +50,9 @@ No FUSE? Run extracted:
 AppImage installs can use FloCafe's in-app updater when launched as an
 AppImage (`APPIMAGE` is set). deb, rpm, and Snap installs are updated by their
 package manager or the Snap daemon. If an AppImage update is unavailable, use
-[GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases).
+[GitHub Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases). See
+[Desktop release process](release-process.md) for stable, beta, and nightly
+channel behavior.
 
 ---
 

@@ -48,7 +48,7 @@ Layer ownership:
 
 | Layer | Lives in | May do | May never do |
 | --- | --- | --- | --- |
-| Normalization | `main/printers/document-classic.ts` (`buildBillPrintData`), `frontend/src/lib/printer/print-document.ts` | read raw rows once, coerce to typed snapshots | recompute taxes/totals beyond legacy addon-line extension |
+| Normalization | `main/printers/document-classic.ts` (`buildBillPrintData`), `main/printers/document-kot.ts` (`buildKotPrintData`), `frontend/src/lib/printer/print-document.ts` | read raw rows once, coerce to typed snapshots | recompute taxes/totals beyond legacy addon-line extension |
 | Kernel (`shared/print/`) | `shared/print/` | types + pure functions over injected facts | any IO (Electron, DOM, Node built-ins, DB, filesystem, network); import from `frontend/` or `main/`; hardcode language unions |
 | Renderers | `main/printers/`, `frontend/src/lib/printer/` | choose physical layout from blocks + context | on migrated paths, read bill/order rows directly; invent labels outside the catalog; the documented raw-path exceptions below are not a model boundary |
 | Transports | `main/printers/thermal.ts`, browser APIs | move bytes/paper | change document semantics |
@@ -133,14 +133,17 @@ Invariants every consumer may rely on:
   (`buildBillDocument` doc comment, asserted in `tests/print-document.test.ts`
   and byte-compared against the frozen pre-migration oracle in
   `tests/print-parity.test.ts`).
-- **Labels are never pre-concatenated** `"A / B"` strings. Each label slot is
-  a `SemanticLabel`: a concept reference plus already-resolved primary text
-  and an optional secondary-language rendering of the same concept. Renderers
-  decide how two variants share a line.
+- **Labels are never pre-concatenated** `"A / B"` strings. Catalog-backed
+  label slots are `SemanticLabel` values with a concept reference plus
+  already-resolved primary text and an optional secondary-language rendering
+  of the same concept. Literal data labels — such as tax-ID text, tax
+  component titles, and unknown payment methods — intentionally omit
+  `conceptId`; renderers still decide how language variants share a line.
 - **Text fields represented as `DirectionalText` carry their resolved
-  direction**, so renderers embed LTR islands without re-running heuristics.
-  Quantities, amounts, rates, points, and payment amounts remain numeric model
-  fields and do not carry direction metadata.
+  direction**; the browser HTML renderer uses it to isolate LTR islands.
+  ESC/POS renderers do not currently consume those annotations. Quantities,
+  amounts, rates, points, and payment amounts remain numeric model fields and
+  do not carry direction metadata.
 - The unmodified output of `buildBillDocument` appears in canonical block
   order; `getBlock()` gives typed access. Applying
   `applyMerchantTemplate` is an explicit semantic transform: a validated
@@ -169,10 +172,11 @@ RTL script letters or reading as natural language stays in the base
 direction. Mixed natural-language text is never an island. Behavior is
 covered by the direction tests in `tests/print-kernel.test.ts`.
 
-Renderers consume these annotations instead of ad-hoc language checks: the
-browser HTML path marks direction on elements and isolates islands
-(`frontend/src/lib/printer/web-print.ts` header comment since #444); the
-ESC/POS paths use width-aware shaping/truncation helpers
+The browser HTML path consumes `DirectionalText.direction` to mark elements
+and isolate LTR islands (`frontend/src/lib/printer/web-print.ts` lines 77–82,
+since #444). ESC/POS document renderers currently consume the text values and
+use width-aware shaping/truncation helpers, but do not consume the kernel's
+direction annotations or provide bidi/LTR-island handling
 (`main/printers/thermal.ts`).
 
 Bilingual presentation is implemented at the model/helper layer, not yet in
@@ -229,7 +233,8 @@ frontend/src/lib/i18n/messages/<lang>.json      (canonical, 100% parity with en.
         │  npm run generate:print-labels   (scripts/generate-print-labels.cjs)
         ▼
 main/print/print-labels.generated.ts            (committed derived view)
-        │  printLabel(lang, conceptId)  — unknown lang/key falls back to English
+        │  printLabel(lang, conceptId)  — unknown language falls back to English;
+        │                                  conceptId is a generated union
         ▼
 backend renderers + backend registry facts for policy validation
 ```
@@ -404,8 +409,8 @@ Parity harness usage and fixture matrix (`tests/print-parity.test.ts`):
 - **Merchant-template mode**: the golden fixture
   (`tests/fixtures/merchant-templates/golden-receipt-v1.json`, all blocks,
   canonical order) must be an identity transform on rendered bytes at every
-  width; labeled variants live beside it with negative fixtures per rejection
-  class.
+  width; labeled variants live beside it with a negative fixture or focused
+  executable test per rejection class.
 
 ## 9. Documented future work (not present tense)
 

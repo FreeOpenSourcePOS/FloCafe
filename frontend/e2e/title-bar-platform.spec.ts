@@ -96,16 +96,23 @@ test('sidebar offset regression (#504): expanded/collapsed states at md+ viewpor
     for (const route of routes) {
       await page.goto(route.url);
       const sidebar = page.locator('[data-slot="sidebar-container"]');
+      const sidebarState = sidebar.locator('xpath=ancestor::*[@data-slot="sidebar"]');
       await expect(sidebar, `${viewport.name} ${route.name}: sidebar renders`).toBeVisible();
 
+      await expect(sidebarState, `${viewport.name} ${route.name}: sidebar starts expanded`).toHaveAttribute('data-state', 'expanded');
+      await expect(sidebarState, `${viewport.name} ${route.name}: expanded sidebar has no collapse mode`).toHaveAttribute('data-collapsible', '');
       await assertViewportTopGeometry(`${viewport.name} ${route.name} expanded`, viewport.height);
 
       // Collapse to rail (the same toggle #505 had to keep below the bar) and
       // re-check; Control+b is the app's sidebar shortcut.
       await page.keyboard.press('Control+b');
+      await expect(sidebarState, `${viewport.name} ${route.name}: shortcut collapses sidebar`).toHaveAttribute('data-state', 'collapsed');
+      await expect(sidebarState, `${viewport.name} ${route.name}: collapsed sidebar uses icon mode`).toHaveAttribute('data-collapsible', 'icon');
       await expect(sidebar, `${viewport.name} ${route.name}: rail stays visible when collapsed`).toBeVisible();
       await assertViewportTopGeometry(`${viewport.name} ${route.name} collapsed`, viewport.height);
       await page.keyboard.press('Control+b');
+      await expect(sidebarState, `${viewport.name} ${route.name}: shortcut expands sidebar`).toHaveAttribute('data-state', 'expanded');
+      await expect(sidebarState, `${viewport.name} ${route.name}: expanded sidebar clears collapse mode`).toHaveAttribute('data-collapsible', '');
     }
   }
 

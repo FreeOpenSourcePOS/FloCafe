@@ -22,7 +22,7 @@
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-dropzone": "^19.1.1",
+    "react-dropzone": "^20.1.1",
     "react-easy-crop": "^6.2.3",
     "react-hot-toast": "^2.6.0",
     "sharp": "^0.35.3",

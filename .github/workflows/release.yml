@@ -345,7 +345,23 @@ jobs:
           [ -n "$SNAP" ] || { echo "::error::No .snap produced by electron-builder for ${{ matrix.arch }}"; exit 1; }
           SNAP_CHANNEL="${{ needs.create-release.outputs.channel }}"
           snapcraft register "$SNAP_NAME" || echo "::warning::register skipped/failed; continuing"
-          snapcraft upload "$SNAP" --release="$SNAP_CHANNEL"
+          # #468: the current SNAPCRAFT_STORE_CREDENTIALS macaroon was exported
+          # with channel restrictions (stable, edge) and cannot release to
+          # beta (`invalid-channel-permission`). The GitHub release still gets
+          # the full .snap artifact set; failing the whole release build for a
+          # Store-side credential scope would block every other platform's
+          # updater feed. Degrade exactly this error to a loud warning until
+          # the credentials are re-exported with beta enabled.
+          if ! UPLOAD_OUT=$(snapcraft upload "$SNAP" --release="$SNAP_CHANNEL" 2>&1); then
+            printf '%s\n' "$UPLOAD_OUT"
+            if printf '%s' "$UPLOAD_OUT" | grep -q "invalid-channel-permission"; then
+              echo "::warning::Snap Store credentials do not permit the '$SNAP_CHANNEL' channel (macaroon restriction). The .snap remains attached to this GitHub release; re-export SNAPCRAFT_STORE_CREDENTIALS with the beta channel enabled to restore Store publishing (#468)."
+              exit 0
+            fi
+            echo "::error::snapcraft upload failed"
+            exit 1
+          fi
+          printf '%s\n' "$UPLOAD_OUT"
 
   release-mac:
     runs-on: macos-latest
@@ -563,8 +579,14 @@ jobs:
         # packages, and electron-builder's Store target is still named appx. The
         # package.json target list keeps NSIS x64-only while building AppX for
         # x64 and arm64, so Windows on Arm devices keep native Store coverage.
+        # bash, not pwsh: pwsh mangles the -c.publish.channel="..." electron-builder
+        # CLI override (splits it into a bare `-c` flag plus a positional that
+        # electron-builder then tries to open as a config file), which failed the
+        # 3.3.1-beta.1 release build. The mac/linux jobs already run this exact
+        # invocation under bash successfully.
+        shell: bash
         run: |
-          npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false `
+          npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false \
             -c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}"
           node scripts/assert-release-artifact-names.cjs release
         env:
@@ -765,7 +787,16 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           PRERELEASE="${{ needs.create-release.outputs.prerelease }}"
-          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/${VERSION}" --jq .id)
+          # Draft releases are not addressable via /releases/tags/{tag} (that
+          # endpoint only matches published releases), so resolve the draft's
+          # ID through the releases list. Same root cause as the draft-asset
+          # verifier fix in scripts/verify-release-assets.cjs (#468).
+          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq ".[] | select(.tag_name==\"$VERSION\") | .id" | head -1)
+          if [ -z "$RELEASE_ID" ]; then
+            echo "::error::No release found for tag $VERSION"
+            exit 1
+          fi
           # Draft and prerelease state are changed only after verification. The
           # explicit false prevents an ordinary stable build from moving the
           # stable pointer; the promotion input is handled in the next call.

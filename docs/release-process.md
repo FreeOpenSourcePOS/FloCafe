@@ -3,8 +3,11 @@
 FloCafe desktop releases use one electron-builder pipeline and GitHub Releases for
 NSIS/Windows, macOS DMG+ZIP, and Linux AppImage/deb/rpm/Snap artifacts. Microsoft
 Store (AppX) and Mac App Store (MAS) packages are submitted to their stores and
-are not consumed by `electron-updater`. Snap Store uploads use the stable or
-beta channel matching the release and are updated by snapd rather than
+are not consumed by `electron-updater`. Snap Store uploads target the stable or
+beta channel matching the release when the configured macaroon permits that
+channel; a beta upload denied with `invalid-channel-permission` is downgraded
+to a warning and the GitHub release remains publishable until credentials are
+re-exported. Snap installations are updated by snapd rather than
 `electron-updater`.
 
 Nightly releases are explicitly rejected (#503): beta is the only prerelease
@@ -120,7 +123,8 @@ when the already verified release should become the default update target.
    verifies the draft (`beta.yml`, `beta-mac.yml`, `beta-linux.yml`,
    `beta-linux-arm64.yml` plus referenced artifacts), publishes it as a
    **prerelease**, and leaves GitHub's Latest pointer untouched. Snap Store
-   packages go to the snap `beta` channel.
+   packages go to the snap `beta` channel when credentials permit it; a
+   channel-permission warning does not block GitHub release publication.
 5. Sanity-check from a beta-enabled install (or an opted-in stable one):
    Check for Updates should offer `X.Y.Z-beta.N` via `beta.yml`.
 

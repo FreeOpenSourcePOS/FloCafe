@@ -1,5 +1,7 @@
 import * as assert from 'node:assert/strict';
+import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 
 const YAML = require('js-yaml') as { load: (text: string) => unknown };
@@ -24,6 +26,87 @@ function assertShellStep(job: any, name: string): void {
   const step = findStep(job, name);
   assert.equal(typeof step.run, 'string', `workflow step "${name}" must execute a shell script`);
 }
+
+function renderWorkflowScript(script: string, expressions: Record<string, string>): string {
+  return script.replace(/\$\{\{\s*([^}]+?)\s*\}\}/g, (_match, expression: string) => {
+    const key = expression.trim();
+    assert.ok(Object.hasOwn(expressions, key), `workflow test has no value for expression ${key}`);
+    return expressions[key];
+  });
+}
+
+function executeWorkflowStep(step: any, options: {
+  env?: Record<string, string>;
+  expressions?: Record<string, string>;
+  fakeNodeVersion?: string;
+  fakeCommands?: Record<string, string>;
+} = {}): { status: number | null; stdout: string; stderr: string; outputs: Record<string, string>; log: string } {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flocafe-release-config-'));
+  const binDir = path.join(tempDir, 'bin');
+  const outputPath = path.join(tempDir, 'github-output');
+  const logPath = path.join(tempDir, 'commands.log');
+  fs.mkdirSync(binDir);
+  try {
+    if (options.fakeNodeVersion !== undefined) {
+      const fakeNode = path.join(binDir, 'node');
+      fs.writeFileSync(fakeNode, `#!/bin/sh\nprintf '%s\\n' '${options.fakeNodeVersion}'\n`);
+      fs.chmodSync(fakeNode, 0o755);
+    }
+    for (const [name, script] of Object.entries(options.fakeCommands || {})) {
+      const commandPath = path.join(binDir, name);
+      fs.writeFileSync(commandPath, script);
+      fs.chmodSync(commandPath, 0o755);
+    }
+
+    const result = childProcess.spawnSync(
+      '/bin/bash',
+      ['-e', '-u', '-o', 'pipefail', '-c', renderWorkflowScript(step.run as string, options.expressions || {})],
+      {
+        cwd: path.join(__dirname, '..'),
+        env: {
+          ...process.env,
+          ...options.env,
+          GITHUB_OUTPUT: outputPath,
+          RELEASE_TEST_LOG: logPath,
+          PATH: `${binDir}:${process.env.PATH || ''}`,
+        },
+        encoding: 'utf8',
+      }
+    );
+    const outputs: Record<string, string> = {};
+    if (fs.existsSync(outputPath)) {
+      for (const line of fs.readFileSync(outputPath, 'utf8').split('\n')) {
+        const separator = line.indexOf('=');
+        if (separator > 0) outputs[line.slice(0, separator)] = line.slice(separator + 1);
+      }
+    }
+    return {
+      status: result.status,
+      stdout: result.stdout || '',
+      stderr: result.stderr || '',
+      outputs,
+      log: fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '',
+    };
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
+const fakeGh = `#!/bin/sh
+printf '%s\\n' "$*" >> "$RELEASE_TEST_LOG"
+if [ "$1" = "release" ] && [ "$2" = "view" ]; then exit 1; fi
+if [ "$1" = "api" ] && [ "\${3:-}" = "--jq" ]; then printf '42\\n'; exit 0; fi
+if [ "$1" = "api" ] && [ "\${2:-}" != "--method" ]; then printf '{"draft":false,"prerelease":false,"id":42}\\n'; fi
+`;
+
+const fakeJq = `#!/bin/sh
+case "$*" in
+  *draft*) printf 'false\\n' ;;
+  *prerelease*) printf 'false\\n' ;;
+  *id*) printf '42\\n' ;;
+  *) exit 1 ;;
+esac
+`;
 
 function run() {
   console.log('Testing release config + workflow integrity...');
@@ -156,57 +239,161 @@ function run() {
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
 
-  // ── Stable feed isolation (#463 / decision #503) ─────────────────────────
-  // The stable release path must be structurally incapable of emitting a
-  // prerelease-flagged release or a beta-channel manifest:
-  //   - stable channel forces PRERELEASE=false and MANIFEST_PREFIX=latest;
-  //   - prerelease flagging and non-latest manifest prefixes are gated on
-  //     `$CHANNEL != stable` in every step that touches them;
-  //   - GitHub's Latest pointer only moves through an explicit human action
-  //     (promote_stable=true), which is rejected for any non-stable channel;
-  //   - nightlies are rejected outright, so no third feed can appear.
-  const metadataRun = metadata.run as string;
-  assert.ok(metadataRun.includes('PRERELEASE=false'), 'release metadata must default PRERELEASE to false for stable');
-  assert.ok(
-    metadataRun.includes('[ "$CHANNEL" != "stable" ] && PRERELEASE=true'),
-    'prerelease flagging must be gated on a non-stable channel'
-  );
-  assert.ok(metadataRun.includes('MANIFEST_PREFIX=latest'), 'stable releases must use the latest manifest prefix');
-  assert.ok(
-    metadataRun.includes('[ "$CHANNEL" != "stable" ] && MANIFEST_PREFIX="$CHANNEL"'),
-    'beta-channel manifests must be gated on a non-stable channel'
-  );
-  assert.ok(
-    metadataRun.includes('[ "$CHANNEL" = "stable" ] && [ "$VERSION_CHANNEL" != "stable" ]'),
-    'a stable-channel release must require a stable package version'
-  );
+  const metadataStable = executeWorkflowStep(metadata, {
+    env: {
+      RELEASE_EVENT_NAME: 'push',
+      RELEASE_REF_NAME: '3.3.0',
+      RELEASE_TAG_INPUT: '',
+    },
+    expressions: { 'inputs.channel': '', 'inputs.promote_stable': 'false' },
+    fakeNodeVersion: '3.3.0',
+  });
+  assert.equal(metadataStable.status, 0, metadataStable.stderr);
+  assert.deepEqual(metadataStable.outputs, {
+    version: '3.3.0',
+    tag: '3.3.0',
+    channel: 'stable',
+    manifest_prefix: 'latest',
+    prerelease: 'false',
+    make_latest: 'false',
+    promotion_only: 'false',
+  });
+
+  const metadataBeta = executeWorkflowStep(metadata, {
+    env: {
+      RELEASE_EVENT_NAME: 'workflow_dispatch',
+      RELEASE_REF_NAME: '3.3.1-beta.1',
+      RELEASE_TAG_INPUT: '3.3.1-beta.1',
+    },
+    expressions: { 'inputs.channel': 'beta', 'inputs.promote_stable': 'false' },
+    fakeNodeVersion: '3.3.1-beta.1',
+  });
+  assert.equal(metadataBeta.status, 0, metadataBeta.stderr);
+  assert.deepEqual(metadataBeta.outputs, {
+    version: '3.3.1-beta.1',
+    tag: '3.3.1-beta.1',
+    channel: 'beta',
+    manifest_prefix: 'beta',
+    prerelease: 'true',
+    make_latest: 'false',
+    promotion_only: 'false',
+  });
+
+  const metadataNightly = executeWorkflowStep(metadata, {
+    env: {
+      RELEASE_EVENT_NAME: 'push',
+      RELEASE_REF_NAME: '3.3.1-nightly.1',
+      RELEASE_TAG_INPUT: '',
+    },
+    expressions: { 'inputs.channel': '', 'inputs.promote_stable': 'false' },
+    fakeNodeVersion: '3.3.1-nightly.1',
+  });
+  assert.notEqual(metadataNightly.status, 0, 'unsupported prerelease tags must be rejected');
+
+  const metadataPromotion = executeWorkflowStep(metadata, {
+    env: {
+      RELEASE_EVENT_NAME: 'workflow_dispatch',
+      RELEASE_REF_NAME: '3.3.0',
+      RELEASE_TAG_INPUT: '3.3.0',
+    },
+    expressions: { 'inputs.channel': 'stable', 'inputs.promote_stable': 'true' },
+    fakeNodeVersion: '3.3.0',
+  });
+  assert.equal(metadataPromotion.status, 0, metadataPromotion.stderr);
+  assert.equal(metadataPromotion.outputs.make_latest, 'true');
+  assert.equal(metadataPromotion.outputs.promotion_only, 'true');
+
+  const metadataBetaPromotion = executeWorkflowStep(metadata, {
+    env: {
+      RELEASE_EVENT_NAME: 'workflow_dispatch',
+      RELEASE_REF_NAME: '3.3.1-beta.1',
+      RELEASE_TAG_INPUT: '3.3.1-beta.1',
+    },
+    expressions: { 'inputs.channel': 'beta', 'inputs.promote_stable': 'true' },
+    fakeNodeVersion: '3.3.1-beta.1',
+  });
+  assert.notEqual(metadataBetaPromotion.status, 0, 'beta releases must not be promoted automatically');
 
   const draftReleaseStep = findStep(createRelease, 'Create GitHub draft release (if not exists)');
-  const draftReleaseRun = draftReleaseStep.run as string;
-  assert.ok(draftReleaseRun.includes('--latest=false'), 'creating a draft release must never move GitHub Latest by itself');
-  assert.ok(
-    draftReleaseRun.includes('[ "$CHANNEL" != "stable" ] && RELEASE_ARGS+=(--prerelease)'),
-    'draft releases may only be flagged prerelease for non-stable channels'
-  );
+  const draftStable = executeWorkflowStep(draftReleaseStep, {
+    env: { RELEASE_TAG: '3.3.0', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'stable' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGh },
+  });
+  assert.equal(draftStable.status, 0, draftStable.stderr);
+  assert.match(draftStable.log, /release create 3\.3\.0/);
+  assert.match(draftStable.log, /--latest=false/);
+  assert.doesNotMatch(draftStable.log, /--prerelease/);
 
-  const publishRun = findStep(publishJob, 'Publish draft without changing GitHub Latest by default').run as string;
-  assert.ok(publishRun.includes('-F make_latest=false'), 'ordinary publishing must never move GitHub Latest');
-  assert.ok(
-    publishRun.includes('-F prerelease="${PRERELEASE}"') || publishRun.includes('-F prerelease="${{ needs.create-release.outputs.prerelease }}"'),
-    'publishing must carry the per-channel prerelease flag from release metadata'
-  );
-  const promoteRun = findStep(promoteJob, 'Promote published stable release to GitHub Latest').run as string;
-  assert.ok(promoteRun.includes('Only a stable release can be promoted to GitHub Latest.'), 'promotion must refuse non-stable channels');
-  assert.ok(promoteRun.includes('must not be prerelease'), 'promotion must refuse prerelease-flagged releases');
-  assert.ok(
-    metadataRun.includes('[ "$PROMOTE" = "true" ] && [ "$CHANNEL" != "stable" ]'),
-    'promote_stable must be refused for non-stable channels'
-  );
+  const draftBeta = executeWorkflowStep(draftReleaseStep, {
+    env: { RELEASE_TAG: '3.3.1-beta.1', RELEASE_VERSION: '3.3.0', RELEASE_CHANNEL: 'beta' },
+    expressions: { 'github.repository': 'FreeOpenSourcePOS/FloCafe' },
+    fakeCommands: { gh: fakeGh },
+  });
+  assert.equal(draftBeta.status, 0, draftBeta.stderr);
+  assert.match(draftBeta.log, /--latest=false/);
+  assert.match(draftBeta.log, /--prerelease/);
 
-  const releaseWorkflowText = fs.readFileSync(path.join(__dirname, '../.github/workflows/release.yml'), 'utf8');
-  assert.ok(!releaseWorkflowText.includes('nightly'), '#503: release.yml must not contain any nightly publish path');
-  const verifierText = fs.readFileSync(path.join(__dirname, '../scripts/verify-release-assets.cjs'), 'utf8');
-  assert.ok(!verifierText.includes('nightly'), '#503: the draft-release verifier must not accept nightly manifests');
+  const publishStep = findStep(publishJob, 'Publish draft without changing GitHub Latest by default');
+  const publishStable = executeWorkflowStep(publishStep, {
+    expressions: {
+      'needs.create-release.outputs.version': '3.3.0',
+      'needs.create-release.outputs.prerelease': 'false',
+      'needs.create-release.outputs.make_latest': 'false',
+      'needs.create-release.outputs.channel': 'stable',
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+    },
+    fakeCommands: { gh: fakeGh },
+  });
+  assert.equal(publishStable.status, 0, publishStable.stderr);
+  assert.match(publishStable.log, /-F draft=false -F prerelease=false -F make_latest=false/);
+  assert.doesNotMatch(publishStable.log, /make_latest=true/);
+
+  const publishBeta = executeWorkflowStep(publishStep, {
+    expressions: {
+      'needs.create-release.outputs.version': '3.3.1-beta.1',
+      'needs.create-release.outputs.prerelease': 'true',
+      'needs.create-release.outputs.make_latest': 'false',
+      'needs.create-release.outputs.channel': 'beta',
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+    },
+    fakeCommands: { gh: fakeGh },
+  });
+  assert.equal(publishBeta.status, 0, publishBeta.stderr);
+  assert.match(publishBeta.log, /-F draft=false -F prerelease=true -F make_latest=false/);
+  assert.doesNotMatch(publishBeta.log, /make_latest=true/);
+
+  const promoteStep = findStep(promoteJob, 'Promote published stable release to GitHub Latest');
+  const promoteStable = executeWorkflowStep(promoteStep, {
+    env: { RELEASE_TAG: '3.3.0', RELEASE_CHANNEL: 'stable' },
+    expressions: {
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'needs.create-release.outputs.version': '3.3.0',
+      'needs.create-release.outputs.channel': 'stable',
+    },
+    fakeCommands: { gh: fakeGh, jq: fakeJq },
+  });
+  assert.equal(promoteStable.status, 0, promoteStable.stderr);
+  assert.match(promoteStable.log, /-F make_latest=true/);
+
+  const promoteBeta = executeWorkflowStep(promoteStep, {
+    env: { RELEASE_TAG: '3.3.1-beta.1', RELEASE_CHANNEL: 'beta' },
+    expressions: {
+      'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'needs.create-release.outputs.version': '3.3.1-beta.1',
+      'needs.create-release.outputs.channel': 'beta',
+    },
+    fakeCommands: { gh: fakeGh, jq: fakeJq },
+  });
+  assert.notEqual(promoteBeta.status, 0, 'beta releases must be refused by the promotion job');
+
+  const verifierRejectsNightly = childProcess.spawnSync(
+    process.execPath,
+    [path.join(__dirname, '../scripts/verify-release-assets.cjs'), '--repo', 'FreeOpenSourcePOS/FloCafe', '--tag', '3.3.1-nightly.1', '--channel', 'nightly'],
+    { encoding: 'utf8' }
+  );
+  assert.notEqual(verifierRejectsNightly.status, 0, 'the asset verifier must reject nightly channels');
+  assert.match(verifierRejectsNightly.stderr, /unsupported release channel/);
   assert.deepEqual(releaseVerifier.expectedManifestNames('beta'),
     ['beta.yml', 'beta-mac.yml', 'beta-linux.yml', 'beta-linux-arm64.yml'],
     'beta drafts must be verified against the beta-prefixed updater manifests');

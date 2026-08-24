@@ -55,14 +55,15 @@ export interface UpdateChannelInputs {
  *    channel: without an explicit opt-in the install gets stable updates so
  *    an untracked stamp never subscribes it to a dead feed.
  *
- * `allowDowngrade` is required whenever a prerelease feed is active because
- * leaving a prerelease channel must be able to move to a lower semver value
- * (e.g. 3.4.0-beta.1 -> 3.3.2).
+ * `allowDowngrade` is only needed for a beta-stamped build, whose stable
+ * promotion may move to a lower semver value (e.g. 3.4.0-beta.1 -> 3.3.2).
+ * A stable build joining beta must wait for a beta at or above its version.
  */
 export function resolveUpdateChannel(inputs: UpdateChannelInputs): ResolvedUpdateChannel {
-  const onBetaFeed = inputs.betaOptIn || inputs.versionPrereleaseChannel === 'beta';
+  const betaBuild = inputs.versionPrereleaseChannel === 'beta';
+  const onBetaFeed = inputs.betaOptIn || betaBuild;
   if (onBetaFeed) {
-    return { channel: 'beta', allowPrerelease: true, allowDowngrade: true };
+    return { channel: 'beta', allowPrerelease: true, allowDowngrade: betaBuild };
   }
   return { channel: null, allowPrerelease: false, allowDowngrade: false };
 }

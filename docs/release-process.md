@@ -33,7 +33,9 @@ in through the in-app switch exposed as the IPC pair `updates:get-beta-channel`
 / `updates:set-beta-channel` (persisted in the SQLite settings store under
 `updates.beta_channel_enabled`, resolved in `main/update-channel.ts`). An
 opted-in stable install follows the same beta manifest as a beta-stamped
-build; opting out again is allowed to downgrade back to the newest stable.
+build, and can opt out again to return to stable updates. A beta-stamped build
+continues following beta regardless of the preference; leaving that channel
+requires manually installing a stable build.
 
 Desktop builds that expose the beta-channel IPC contract provide a beta
 pre-release toggle in **Settings > Updates**. The toggle reads and persists its

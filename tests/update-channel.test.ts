@@ -19,19 +19,20 @@ import {
   resolveUpdateChannel,
 } from '../main/update-channel';
 
-const BETA_FEED = { channel: 'beta' as const, allowPrerelease: true, allowDowngrade: true };
+const BETA_BUILD_FEED = { channel: 'beta' as const, allowPrerelease: true, allowDowngrade: true };
+const BETA_OPT_IN_FEED = { channel: 'beta' as const, allowPrerelease: true, allowDowngrade: false };
 const STABLE_FEED = { channel: null, allowPrerelease: false, allowDowngrade: false };
 
 test('a beta-stamped build always follows the beta feed', () => {
-  assert.deepEqual(resolveUpdateChannel({ versionPrereleaseChannel: 'beta', betaOptIn: false }), BETA_FEED);
-  assert.deepEqual(resolveUpdateChannel({ versionPrereleaseChannel: 'beta', betaOptIn: true }), BETA_FEED);
+  assert.deepEqual(resolveUpdateChannel({ versionPrereleaseChannel: 'beta', betaOptIn: false }), BETA_BUILD_FEED);
+  assert.deepEqual(resolveUpdateChannel({ versionPrereleaseChannel: 'beta', betaOptIn: true }), BETA_BUILD_FEED);
 });
 
 test('a stable build only joins beta through an explicit opt-in', () => {
   assert.deepEqual(resolveUpdateChannel({ versionPrereleaseChannel: null, betaOptIn: false }), STABLE_FEED);
   assert.deepEqual(
     resolveUpdateChannel({ versionPrereleaseChannel: null, betaOptIn: true }),
-    BETA_FEED,
+    BETA_OPT_IN_FEED,
     'opt-in must enable prereleases so the client can find beta.yml'
   );
 });
@@ -47,12 +48,16 @@ test('unsupported prerelease stamps never subscribe to an untracked channel (#50
 });
 
 test('an explicit opt-in wins over any running-version stamp', () => {
-  assert.deepEqual(resolveUpdateChannel({ versionPrereleaseChannel: 'nightly', betaOptIn: true }), BETA_FEED);
+  assert.deepEqual(resolveUpdateChannel({ versionPrereleaseChannel: 'nightly', betaOptIn: true }), BETA_OPT_IN_FEED);
 });
 
-test('the beta feed always permits downgrades for leaving the channel', () => {
-  // e.g. 3.4.0-beta.1 -> latest stable 3.3.x requires semver downgrade.
+test('stable beta opt-in does not permit downgrades', () => {
   const resolved = resolveUpdateChannel({ versionPrereleaseChannel: null, betaOptIn: true });
+  assert.equal(resolved.allowDowngrade, false);
+});
+
+test('a beta-stamped build permits a downgrade to a promoted stable release', () => {
+  const resolved = resolveUpdateChannel({ versionPrereleaseChannel: 'beta', betaOptIn: false });
   assert.equal(resolved.allowDowngrade, true);
 });
 

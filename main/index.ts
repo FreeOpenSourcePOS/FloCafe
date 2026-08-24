@@ -803,12 +803,6 @@ async function initialize(): Promise<void> {
       checkForUpdates();
     });
 
-    // #463: restarting to install takes the whole POS down (server, KDS,
-    // printing) until the app comes back up, so it is gated behind manager or
-    // owner PIN approval. The PIN check runs here in the main process — the
-    // same authorizeMasterPin used by every other master-PIN-gated IPC
-    // handler — so no renderer path can bypass the guard.
-    ipcMain.handle('restart-and-install', (_event, pin?: unknown) => {
     ipcMain.handle('updates:get-beta-channel', () =>
       // Persisted preference only — whether beta releases are *offered* is
       // decided by resolveUpdateChannel at check time, so this stays honest
@@ -845,6 +839,11 @@ async function initialize(): Promise<void> {
       return { success: true };
     });
 
+    // #463: restarting to install takes the whole POS down (server, KDS,
+    // printing) until the app comes back up, so it is gated behind manager or
+    // owner PIN approval. The PIN check runs here in the main process — the
+    // same authorizeMasterPin used by every other master-PIN-gated IPC
+    // handler — so no renderer path can bypass the guard.
     ipcMain.handle('restart-and-install', (_event, pin?: unknown) => {
       if (!isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
         log.warn('[Update] Ignoring install request before an update is downloaded');

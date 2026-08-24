@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { UpdateStatus } from '@/types/electron';
+import type { ElectronActionResult, UpdateStatus } from '@/types/electron';
 import { shouldApplyInitialUpdateStatus } from './update-status-sync';
 
 /**
@@ -52,10 +52,14 @@ export function useUpdateStatus() {
     }
   };
 
-  const restartAndInstall = () => {
+  // #463: the main process authorizes the manager/owner PIN inside the
+  // `restart-and-install` handler; this only forwards it and returns the
+  // normalized result so the confirmation dialog can stay open on failure.
+  const restartAndInstall = (pin?: string) => {
     if (typeof window !== 'undefined' && window.electronAPI) {
-      window.electronAPI.restartAndInstall();
+      return window.electronAPI.restartAndInstall(pin);
     }
+    return Promise.resolve({ success: false, error: 'not-available' } satisfies ElectronActionResult);
   };
 
   return { updateStatus, appVersion, isElectron, checkForUpdates, restartAndInstall };

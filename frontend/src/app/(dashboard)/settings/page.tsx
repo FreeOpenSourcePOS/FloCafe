@@ -22,6 +22,7 @@ import { COUNTRIES, getCountryByCode, getLocalizedCountryName, sortCountriesByLo
 import { dialCodeFor, normalizeOptionalPhone } from '@/lib/phone';
 import { useConfirm } from '@/hooks/use-confirm';
 import { MasterPinPrompt } from '@/components/settings/MasterPinPrompt';
+import BetaChannelToggle from '@/components/settings/BetaChannelToggle';
 import { HealthCheckDialog } from '@/components/settings/HealthCheckDialog';
 import { InitializeDatabaseDialog } from '@/components/settings/InitializeDatabaseDialog';
 import { WhatsAppEnableCard } from '@/components/settings/WhatsAppEnableCard';
@@ -4999,6 +5000,12 @@ export default function SettingsPage() {
               </div>
             )}
           </div>
+
+          {/* #463: beta/pre-release channel opt-in; feature-detects the
+              beta-release-channel IPC contract and degrades visibly when absent. */}
+          {isElectron && (
+            <BetaChannelToggle />
+          )}
           </div>
         </TabsContent>
 

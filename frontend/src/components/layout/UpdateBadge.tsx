@@ -7,6 +7,7 @@
  */
 
 import { Download, Sparkles } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslations } from 'use-intl';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,9 +19,13 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useUpdateStatus } from '@/hooks/useUpdateStatus';
+import { UpdateInstallGuardDialog } from '@/components/updates/UpdateInstallGuardDialog';
 
 export default function UpdateBadge() {
   const { updateStatus, appVersion, restartAndInstall } = useUpdateStatus();
+  // #463: restart-to-install always goes through the PIN-guarded confirmation
+  // dialog; the dropdown item only opens it and can never restart directly.
+  const [guardOpen, setGuardOpen] = useState(false);
   const t = useTranslations('update');
 
   const status = updateStatus?.status;
@@ -80,12 +85,18 @@ export default function UpdateBadge() {
         {isReady && (
           <>
             <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={restartAndInstall} className="text-sm cursor-pointer">
+            <DropdownMenuItem onClick={() => setGuardOpen(true)} className="text-sm cursor-pointer">
               {t('restartNow')}
             </DropdownMenuItem>
           </>
         )}
       </DropdownMenuContent>
+
+      <UpdateInstallGuardDialog
+        open={guardOpen}
+        onCancel={() => setGuardOpen(false)}
+        onRequestRestart={(pin) => restartAndInstall(pin)}
+      />
     </DropdownMenu>
   );
 }

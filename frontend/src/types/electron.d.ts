@@ -40,7 +40,16 @@ export interface ElectronAPI {
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
   getUpdateStatus: () => Promise<{ status: UpdateStatus['status']; version?: string; percent?: number; reason?: UpdateFailureReason; error?: string; info: { version: string } }>;
   checkForUpdates: () => Promise<void>;
-  restartAndInstall: () => Promise<void>;
+  // #463: the main process authorizes the manager/owner PIN before quitting
+  // to install; a denied request resolves with success:false instead of restarting.
+  restartAndInstall: (pin?: string) => Promise<ElectronActionResult>;
+
+  // Beta/pre-release update channel (#463). Main process + preload bindings are
+  // owned by the beta-release-channel workstream (`updates:get-beta-channel` /
+  // `updates:set-beta-channel`). Optional on purpose: renderers must feature-
+  // detect these and degrade gracefully until that implementation lands.
+  getBetaChannel?: () => Promise<unknown>;
+  setBetaChannel?: (enabled: boolean) => Promise<unknown>;
 
   // Platform
   platform: string;

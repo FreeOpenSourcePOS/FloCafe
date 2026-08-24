@@ -39,6 +39,11 @@
   --sidebar-accent-foreground: #3248FF;
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: #3248FF;
+
+  /* Hoisted to :root so fixed app chrome can offset below the title bar;
+   * consumed by both .flo-title-bar and the sidebar inset rules below. */
+  --flo-titlebar-height: 40px;
+  --flo-sidebar-block-start: 0px;
 }
 
 body {
@@ -50,7 +55,6 @@ body {
  * physical positioning is intentional for WCO's physical x/width values while
  * content spacing and flow use logical properties for RTL locales. */
 .flo-title-bar {
-  --flo-titlebar-height: 40px;
   position: relative;
   block-size: var(--flo-titlebar-height);
   min-block-size: var(--flo-titlebar-height);
@@ -96,6 +100,15 @@ body {
 [data-testid='desktop-title-bar'] {
   position: relative;
   z-index: 20;
+}
+
+/* Under Electron the fixed app sidebar must start below the custom title bar
+ * instead of sliding beneath it. data-flo-desktop-titlebar is set on <html>
+ * only when window.electronAPI exists (TitleBar.tsx), so browser/LAN keeps
+ * the viewport-top geometry (--flo-sidebar-block-start stays 0px). Block-axis
+ * logical properties are direction-independent, keeping RTL correct. */
+html[data-flo-desktop-titlebar='true'] {
+  --flo-sidebar-block-start: var(--flo-titlebar-height);
 }
 
 ::-webkit-scrollbar {

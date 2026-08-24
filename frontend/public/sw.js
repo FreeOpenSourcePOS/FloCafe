@@ -52,10 +52,18 @@ self.addEventListener('fetch', (event) => {
         );
         return response;
       })
-      .catch(() => caches.match(event.request).then((cached) =>
-        cached || (event.request.mode === 'navigate'
-          ? caches.match('/dashboard')
-          : Promise.resolve(undefined))
-      ).then((cached) => cached || new Response('Offline', { status: 503, statusText: 'Offline' })))
+      .catch(() => caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        // For navigate requests, fall back to the cached dashboard shell so
+        // the user sees the app rather than a browser error page. For
+        // sub-resources (JS chunks, images etc.) do NOT return a fake 503 —
+        // let the fetch fail transparently so the browser can retry. On a
+        // desktop Electron app, the server is localhost and any failure is
+        // transient; a fabricated 503 prevents the natural retry.
+        if (event.request.mode === 'navigate') {
+          return caches.match('/dashboard').then((shell) => shell || undefined);
+        }
+        return undefined;
+      }))
   );
 });

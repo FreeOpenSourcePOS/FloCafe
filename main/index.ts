@@ -438,11 +438,16 @@ function createWindow(): void {
     electronVersion: process.versions.electron,
     overlayApiPresent: typeof BrowserWindow.prototype?.setTitleBarOverlay === 'function',
   });
+  // The app currently has no dark mode (the .dark CSS class is never applied
+  // and only light-theme CSS variables are defined). Pass false for isDark so
+  // the native titleBarOverlay always uses the light palette (#ffffff bg,
+  // #0a0a0a symbols) regardless of the OS light/dark setting, keeping the
+  // controls visually consistent with the always-light app content.
   mainWindow = createMainWindow(
     BrowserWindow,
     path.join(__dirname, 'preload.js'),
     process.platform,
-    nativeTheme.shouldUseDarkColors,
+    false, // isDark: always light until the app implements a dark theme
     resolvedTitleBarMode,
   );
 
@@ -456,12 +461,18 @@ function createWindow(): void {
   // This avoids file:// protocol issues and keeps dev/prod behaviour identical.
   mainWindow.loadURL(`http://localhost:${getServerPort()}`);
 
-  // Every navigation (initial load, manual reload, crash-recovery reload)
-  // starts a fresh readiness epoch: the previous document's reports become
-  // stale, and a bounded fail-safe covers this document failing to mount its
-  // control surface. See main/window-readiness.ts.
-  mainWindow.webContents.on('did-start-loading', () => {
-    beginRendererDocument();
+  // A new readiness epoch begins only when a real, cross-document navigation
+  // loads a new renderer document — not on Next.js client-side route changes.
+  // did-start-loading fires on every pushState navigation, which would create
+  // a new failing epoch on every page switch. did-navigate fires only on
+  // full-document navigations (initial load, manual reload, crash recovery).
+  mainWindow.webContents.on('did-navigate', (_event, _url, httpResponseCode, _httpStatusText) => {
+    // Only reset for the main frame; ignore sub-frame loads.
+    // Also skip same-document navigations (hash changes, pushState) by checking
+    // that the response code indicates a real server round-trip (not 0).
+    if (httpResponseCode !== 0) {
+      beginRendererDocument();
+    }
   });
 
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page)
@@ -850,10 +861,12 @@ async function initialize(): Promise<void> {
     console.log('[Flo] Registering IPC handlers...');
     registerIpcHandlers(shutdownSignal);
 
-    // Keep the title-bar overlay colors following the OS light/dark theme at
-    // runtime (no-op on unsupported platforms such as Linux). Attached once in
-    // initialize(); createWindow() may run again on crash recovery.
-    attachTitleBarThemeSync(nativeTheme, () => mainWindow);
+    // NOTE: attachTitleBarThemeSync is intentionally not called here.
+    // The app has no dark mode (only light CSS variables, .dark class never
+    // applied), so the overlay stays pinned to the light palette set at window
+    // creation. Syncing with nativeTheme would make the caption controls go
+    // dark when the OS switches to dark mode while the app content stays light.
+    // Re-enable this when the app ships a dark theme.
 
     ipcMain.handle('get-update-status', () =>
       // #467: return the real persisted state (including not-checked-yet and

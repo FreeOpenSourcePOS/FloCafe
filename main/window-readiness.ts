@@ -49,11 +49,19 @@ function clearReadinessFailSafe(): void {
  * Begins a fresh readiness epoch for an incoming document. Called on window
  * creation and on every `did-start-loading`; invalidates prior documents'
  * readiness reports and arms the fail-safe for this one.
+ *
+ * NOTE: rendererDocumentNonce is intentionally NOT cleared here. The preload
+ * fires ipcRenderer.sendSync('window-document', nonce) exactly once per
+ * renderer process creation — synchronously, before the page navigates to its
+ * URL. `did-start-loading` can fire multiple times per navigation lifecycle
+ * without spawning a new renderer, so clearing the nonce here would race
+ * against (and lose to) the preload's registration. On a real page reload that
+ * creates a new renderer, the preload re-runs and the incoming window-document
+ * message naturally replaces the stale nonce.
  */
 export function beginRendererDocument(): number {
   rendererReadinessEpoch += 1;
   readyEpoch = null;
-  rendererDocumentNonce = null;
   rendererReadinessFailSafeShown = false;
   clearReadinessFailSafe();
 

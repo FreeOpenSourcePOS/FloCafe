@@ -21,10 +21,7 @@ export default function WindowControls() {
     getElectronCapability,
     getServerElectronCapability,
   );
-  // Fail-safe default: assume visible HTML fallback controls until main
-  // explicitly confirms the native overlay works, so mode-resolution failure
-  // can never leave a hidden bar without controls.
-  const [titleBarMode, setTitleBarMode] = useState<TitleBarMode>('html-fallback');
+  const [titleBarMode, setTitleBarMode] = useState<TitleBarMode | null>(null);
 
   useEffect(() => {
     if (!isElectron) return undefined;
@@ -47,10 +44,8 @@ export default function WindowControls() {
     window.electronAPI
       ?.getStatus()
       .then((status) => {
-        // Only upgrade away from the visible fallback when main explicitly
-        // confirms native overlay; missing/unrecognized values keep controls.
-        if (!cancelled && status?.titleBarMode === 'native-overlay') {
-          setTitleBarMode('native-overlay');
+        if (!cancelled) {
+          setTitleBarMode(status?.titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay');
         }
       })
       .catch((error) => {

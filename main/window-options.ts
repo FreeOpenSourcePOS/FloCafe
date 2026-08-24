@@ -1,11 +1,17 @@
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
+import { resolveTitleBarOverlayColors, TITLE_BAR_HEIGHT } from './title-bar-theme';
 
 export type BrowserWindowConstructor = new (options: BrowserWindowConstructorOptions) => BrowserWindow;
+
+// macOS traffic-light buttons are 12px tall; y = (40 - 12) / 2 centers them in
+// the 40px title bar. x keeps the standard inset margin from the window edge.
+const MAC_TRAFFIC_LIGHT_POSITION = { x: 16, y: 14 } as const;
 
 export function createMainWindow(
   BrowserWindowConstructor: BrowserWindowConstructor,
   preload: string,
   platform: NodeJS.Platform = process.platform,
+  isDark = false,
 ): BrowserWindow {
   return new BrowserWindowConstructor({
     width: 1400,
@@ -15,10 +21,10 @@ export function createMainWindow(
     title: 'Flo',
     titleBarStyle: platform === 'darwin' ? 'hiddenInset' : 'hidden',
     titleBarOverlay: {
-      color: '#ffffff',
-      symbolColor: '#475569',
-      height: 40,
+      ...resolveTitleBarOverlayColors(isDark),
+      height: TITLE_BAR_HEIGHT,
     },
+    ...(platform === 'darwin' ? { trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION } : {}),
     webPreferences: {
       preload,
       contextIsolation: true,

@@ -2,6 +2,8 @@
 
 **Status: CURRENT implementation note (Refs #457)**
 
+**Phase 2 update (#458):** the overlay colors now resolve from shared tokens in `main/title-bar-theme.ts` instead of inline constants, a `nativeTheme` listener applies light/dark overlay updates at runtime on macOS/Windows (no-op elsewhere), and macOS traffic lights sit vertically centered in the 40px bar via `trafficLightPosition`.
+
 Phase 1 gives the main POS Electron window a small native-controls title-bar foundation without removing the OS window frame:
 
 - macOS uses `hiddenInset`; Windows and Linux use `hidden`.
@@ -16,4 +18,4 @@ The renderer `ElectronAPI` declaration stays in parity with the existing preload
 
 ## Explicit Phase 2 exclusions
 
-Phase 1 does not add HTML window-control buttons or broad window-control IPC, Linux HTML fallback controls, clock/cloud-sync indicators, title-bar printer/server polling, vibrancy/transparency, dynamic theme synchronization, or cross-platform manual validation. Those remain bounded follow-up work if platform testing identifies a need.
+Phase 1 does not add HTML window-control buttons or broad window-control IPC, Linux HTML fallback controls, clock/cloud-sync indicators, title-bar printer/server polling, vibrancy/transparency, or cross-platform manual validation. Those remain bounded follow-up work if platform testing identifies a need.

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, nativeTheme, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -34,6 +34,7 @@ import {
 } from './update-state';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow } from './window-options';
+import { attachTitleBarThemeSync } from './title-bar-theme';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -397,7 +398,12 @@ function createWindow(): void {
   // the same run instead of only on the next full relaunch.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
-  mainWindow = createMainWindow(BrowserWindow, path.join(__dirname, 'preload.js'));
+  mainWindow = createMainWindow(
+    BrowserWindow,
+    path.join(__dirname, 'preload.js'),
+    process.platform,
+    nativeTheme.shouldUseDarkColors,
+  );
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();
@@ -799,6 +805,11 @@ async function initialize(): Promise<void> {
 
     console.log('[Flo] Registering IPC handlers...');
     registerIpcHandlers(shutdownSignal);
+
+    // Keep the title-bar overlay colors following the OS light/dark theme at
+    // runtime (no-op on unsupported platforms such as Linux). Attached once in
+    // initialize(); createWindow() may run again on crash recovery.
+    attachTitleBarThemeSync(nativeTheme, () => mainWindow);
 
     ipcMain.handle('get-update-status', () =>
       // #467: return the real persisted state (including not-checked-yet and

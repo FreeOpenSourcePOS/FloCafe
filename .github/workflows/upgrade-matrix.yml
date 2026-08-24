@@ -233,11 +233,16 @@ jobs:
           eval "$(echo -n ci | gnome-keyring-daemon --start --components=secrets)"
           xvfb-run -a "$FLO_APPIMAGE" --remote-debugging-port=9222 > app-n.log 2>&1 &
           echo $! > app.pid
+          READY=false
           for _ in $(seq 1 90); do
-            curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1 && break
+            if curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1 \
+              && curl -sf http://127.0.0.1:9222/json >/dev/null 2>&1; then
+              READY=true
+              break
+            fi
             sleep 2
           done
-          curl -s http://127.0.0.1:3001/api/health | head -c 200; echo
+          [ "$READY" = true ] || { echo "::error::release N API/CDP endpoints did not become ready"; exit 1; }
 
       - name: Seed data, opt into beta, wait for staged update, restart-and-install
         run: |
@@ -466,12 +471,21 @@ jobs:
             sleep 2
           done
 
+      - name: Resolve stable target before seeding
+        run: |
+          TARGET=$(curl -fsSL -H "Accept: application/vnd.github+json" https://api.github.com/repos/FreeOpenSourcePOS/FloCafe/releases/latest \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).tag_name))")
+          [ -n "$TARGET" ] || { echo "::error::stable release target is empty"; exit 1; }
+          echo "TARGET_VERSION=$TARGET" >> "$GITHUB_ENV"
+          echo "stable target: $TARGET"
+
       - name: Seed data and let the stable feed stage the current stable release
         run: |
           export FLO_STATUS_LOG="$RUNNER_TEMP/update-status.log"
           node scripts/upgrade-matrix/run-upgrade.cjs seed \
             --row older-cohort-windows \
             --channel stable \
+            --expected-version "$TARGET_VERSION" \
             --email "$MATRIX_EMAIL" --password "$MATRIX_PASSWORD" --pin "$MATRIX_PIN" \
             --seed-file "$RUNNER_TEMP/seeds.json"
 
@@ -494,12 +508,11 @@ jobs:
 
       - name: Verify version + persistence after relaunch
         run: |
-          TARGET=$(curl -sSL -H "Accept: application/vnd.github+json" https://api.github.com/repos/FreeOpenSourcePOS/FloCafe/releases/latest | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).tag_name))")
-          echo "latest stable target: $TARGET"
+          echo "stable target: $TARGET_VERSION"
           node scripts/upgrade-matrix/run-upgrade.cjs verify \
             --row older-cohort-windows \
             --skip-beta-preference \
-            --expected-version "$TARGET" \
+            --expected-version "$TARGET_VERSION" \
             --seed-file "$RUNNER_TEMP/seeds.json" \
             | tee "$RUNNER_TEMP/evidence.json"
 

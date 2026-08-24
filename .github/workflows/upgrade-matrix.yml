@@ -188,9 +188,11 @@ jobs:
           - arch: x64
             runs-on: ubuntu-latest
             asset_suffix: linux-x64.appimage
+            legacy_asset_suffix: x86_64.AppImage
           - arch: arm64
             runs-on: ubuntu-24.04-arm
             asset_suffix: linux-arm64.appimage
+            legacy_asset_suffix: arm64.AppImage
     env:
       FROM_VERSION: ${{ inputs.from_version || '3.3.0' }}
       TO_VERSION: ${{ inputs.to_version || '3.3.1-beta.1' }}
@@ -213,8 +215,11 @@ jobs:
       - name: Install release N
         run: |
           mkdir -p "$RUNNER_TEMP/matrix" && cd "$RUNNER_TEMP/matrix"
-          curl -sSL -o flocafe.AppImage \
-            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.asset_suffix }}"
+          if ! curl -fsSL -o flocafe.AppImage \
+            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.asset_suffix }}"; then
+            curl -fsSL -o flocafe.AppImage \
+              "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.legacy_asset_suffix }}"
+          fi
           chmod +x flocafe.AppImage
           echo "FLO_APPIMAGE=$RUNNER_TEMP/matrix/flocafe.AppImage" >> "$GITHUB_ENV"
 
@@ -322,9 +327,11 @@ jobs:
         include:
           - pkg: deb
             asset_suffix: linux-x64.deb
+            legacy_asset_suffix: amd64.deb
             experimental: false
           - pkg: snap
             asset_suffix: linux-x64.snap
+            legacy_asset_suffix: amd64.snap
             experimental: true
     continue-on-error: ${{ matrix.experimental }}
     env:
@@ -344,8 +351,11 @@ jobs:
       - name: Install package manager build of release N
         run: |
           cd "$RUNNER_TEMP"
-          curl -sSL -o pkg.${{ matrix.pkg }} \
-            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.asset_suffix }}"
+          if ! curl -fsSL -o pkg.${{ matrix.pkg }} \
+            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.asset_suffix }}"; then
+            curl -fsSL -o pkg.${{ matrix.pkg }} \
+              "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.legacy_asset_suffix }}"
+          fi
           if [ "${{ matrix.pkg }}" = deb ]; then
             sudo dpkg -i pkg.deb || sudo apt-get install -y -f -qq
             dpkg -l | grep -i flo
@@ -368,15 +378,36 @@ jobs:
 
       - name: Assert linux-managed updater state and no self-update attempt
         run: |
-          sleep 15  # let the startup update check resolve its one-shot state
-          STATUS=$(node -e '
-            const { cdpEval } = require("./scripts/upgrade-matrix/harness.cjs");
-            cdpEval(9222, "window.electronAPI.getUpdateStatus()")
-              .then(s => console.log(JSON.stringify(s)))
-              .catch(e => { console.error(e.message); process.exit(1); });
-          ')
+          STATUS=$(node <<'NODE'
+          const { cdpEval } = require('./scripts/upgrade-matrix/harness.cjs');
+          const expression = `new Promise((resolve, reject) => {
+            let unsubscribe;
+            const timer = setTimeout(() => {
+              unsubscribe?.();
+              reject(new Error('timed out waiting for managed updater status'));
+            }, 30000);
+            unsubscribe = window.electronAPI.onUpdateStatus((status) => {
+              if (status?.status !== 'linux-managed' && status?.status !== 'store-managed') return;
+              clearTimeout(timer);
+              unsubscribe?.();
+              resolve(status);
+            });
+            Promise.resolve()
+              .then(() => window.electronAPI.checkForUpdates())
+              .catch((error) => {
+                clearTimeout(timer);
+                unsubscribe?.();
+                reject(error);
+              });
+          })`;
+          cdpEval(9222, expression)
+            .then((status) => console.log(JSON.stringify(status)))
+            .catch((error) => { console.error(error.message); process.exit(1); });
+          NODE
+          )
           echo "update status: $STATUS"
-          echo "$STATUS" | tee "$RUNNER_TEMP/gating-status.json" | grep -qE '"status":"(linux-managed|store-managed)"'
+          printf '%s\n' "$STATUS" | tee "$RUNNER_TEMP/gating-status.json" >/dev/null
+          node -e "const status = JSON.parse(process.argv[1]); if (!['linux-managed', 'store-managed'].includes(status.status)) process.exit(1);" "$STATUS"
           LOG=$(ls "$HOME/.config/flo-desktop/logs/main.log" 2>/dev/null || true)
           if [ -n "$LOG" ]; then
             grep -F "Linux non-AppImage install — updates managed by package manager" "$LOG" | tail -3 | tee "$RUNNER_TEMP/gating-log.txt"
@@ -446,7 +477,7 @@ jobs:
               VERSION_OK=$(node -e '
                 const { cdpEval } = require("./scripts/upgrade-matrix/harness.cjs");
                 cdpEval(9222, "window.electronAPI.getAppInfo()")
-                  .then(i => process.exit(i.version === "'${OLD_VERSION}'" ? 1 : 0))
+                  .then(i => process.exit(i.version === process.env.OLD_VERSION ? 1 : 0))
                   .catch(() => process.exit(1));
               ' && echo yes || echo no)
               [ "$VERSION_OK" = "yes" ] && { echo "upgraded app is back up"; exit 0; }

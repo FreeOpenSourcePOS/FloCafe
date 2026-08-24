@@ -6,8 +6,8 @@
  *    guarded `restart-and-install` IPC result and the renderer-side
  *    preconditions (valid PIN format, no accidental submit);
  *  - frontend/src/lib/updates/beta-channel.ts — feature detection of the
- *    sibling-owned `updates:get/set-beta-channel` contract, tri-state value
- *    normalization, and optimistic-update decisions for the Settings toggle.
+ *    `updates:get/set-beta-channel` contract, tri-state value normalization,
+ *    and optimistic-update decisions for the Settings toggle.
  *
  * Run: npm run test:update-ui
  */

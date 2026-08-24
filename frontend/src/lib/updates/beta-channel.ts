@@ -2,13 +2,12 @@
  * Pure helpers for the beta/pre-release update channel toggle (#463).
  *
  * The `updates:get-beta-channel` / `updates:set-beta-channel` IPC contract
- * (and its preload bindings) is owned by the beta-release-channel workstream.
- * This module lets the renderer feature-detect that API so the Settings
- * toggle stays correct whether or not the sibling implementation has landed.
+ * is implemented by the main process and preload bindings. This module keeps
+ * the renderer compatible with older builds that do not expose those methods.
  *
- * Everything here is deliberately tolerant of unknown result shapes: the
- * sibling crew owns the exact response envelope, so we only commit to
- * "boolean-ish" values and `{ success, error? }`-style action results.
+ * Everything here is deliberately tolerant of unknown result shapes so the
+ * renderer can degrade safely when an older build or an unavailable IPC call
+ * does not return the current response envelope.
  */
 
 export interface BetaChannelApi {

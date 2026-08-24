@@ -102,10 +102,10 @@ not publish a second expected SHA-512 for them.
    false for every normal release. A separate explicit stable-promotion dispatch
    is the only path that changes GitHub's `Latest` pointer.
 
-`X.Y.Z-beta.N` prerelease tag, set `release_tag` to that tag, and choose
-`channel=beta`. For a stable build, leave `promote_stable=false`; use a second
-dispatch with `promote_stable=true` only when the already verified release
-should become the default update target.
+For a beta release, use the exact `X.Y.Z-beta.N` prerelease tag, set
+`release_tag` to that tag, and choose `channel=beta`. For a stable build, leave
+`promote_stable=false`; use a second dispatch with `promote_stable=true` only
+when the already verified release should become the default update target.
 
 ## Cutting a beta release
 

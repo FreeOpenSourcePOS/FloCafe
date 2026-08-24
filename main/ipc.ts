@@ -245,10 +245,16 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     return applyWindowControlAction(win, action);
   });
 
-  handle('window-ready', (event) => {
+  handle('window-ready', (event, payload: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
-    markWindowRendererReady();
+    // Reports are bound to the readiness epoch of the document that sent them
+    // (see main/window-readiness.ts). Stale or malformed reports are ignored:
+    // a previous document must never mark the current one ready.
+    const reported = (payload as { epoch?: unknown } | null | undefined)?.epoch;
+    if (!markWindowRendererReady(reported)) {
+      return { success: false, error: 'Stale or invalid readiness report' };
+    }
     win.show();
     return { success: true };
   });

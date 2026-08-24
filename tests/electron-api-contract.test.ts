@@ -59,7 +59,7 @@ async function run(): Promise<void> {
   await call('getDailySummary');
   await call('getBetaChannel');
   await call('setBetaChannel', true);
-  await call('windowReady');
+  await call('windowReady', { epoch: 1 });
   await call('windowAction', 'minimize');
 
   const receivedStatuses: unknown[] = [];
@@ -85,7 +85,7 @@ async function run(): Promise<void> {
     { channel: 'get-daily-summary', args: [] },
     { channel: 'updates:get-beta-channel', args: [] },
     { channel: 'updates:set-beta-channel', args: [true] },
-    { channel: 'window-ready', args: [] },
+    { channel: 'window-ready', args: [{ epoch: 1 }] },
     { channel: 'window-action', args: ['minimize'] },
   ]);
 

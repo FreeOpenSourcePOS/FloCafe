@@ -1,0 +1,84 @@
+/**
+ * Readiness-lifecycle tests for main/window-readiness.ts (issue #461).
+ *
+ * Covers the three review-mandated scenarios as one coherent epoch lifecycle:
+ *   1. Reject path: malformed/failed readiness reports never mark the document
+ *      ready; the bounded fail-safe shows the window and fires exactly once.
+ *   2. Reload path: a new document (did-start-loading) invalidates the previous
+ *      document's reports, so a reload can never inherit a stale ready flag.
+ *   3. Fail-safe path: an unconfirmed current epoch surfaces the window after
+ *      the bounded timeout; a confirmed epoch cancels it.
+ *
+ * Run: npm run test:window-readiness
+ */
+
+import * as assert from 'node:assert/strict';
+import { setTimeout as sleep } from 'node:timers/promises';
+import {
+  beginRendererDocument,
+  getRendererReadinessEpoch,
+  initWindowReadiness,
+  isWindowRendererReady,
+  markWindowRendererReady,
+} from '../main/window-readiness';
+
+async function run(): Promise<void> {
+  // ── 1. Malformed reports (reject path) ──────────────────────────────────────
+  const shows: number[] = [];
+  initWindowReadiness(() => shows.push(getRendererReadinessEpoch()), { failsafeMs: 20 });
+
+  const firstEpoch = beginRendererDocument();
+  assert.equal(firstEpoch, 1);
+  assert.equal(isWindowRendererReady(), false);
+
+  for (const bad of [undefined, null, '1', 0, -1, 1.5, Number.NaN, {}]) {
+    assert.equal(
+      markWindowRendererReady(bad),
+      false,
+      `malformed epoch ${String(bad)} must be rejected`,
+    );
+  }
+  assert.equal(isWindowRendererReady(), false, 'malformed reports never mark the document ready');
+
+  // Fail-safe covers the reject path: nothing valid reported -> window shown.
+  await sleep(60);
+  assert.deepEqual(shows, [firstEpoch], 'fail-safe must fire exactly once for the unconfirmed epoch');
+
+  // A late valid report still works after the fail-safe fired.
+  assert.equal(markWindowRendererReady(firstEpoch), true);
+  assert.equal(isWindowRendererReady(), true);
+
+  // ── 2. Reload path (stale-epoch invalidation) ───────────────────────────────
+  const secondEpoch = beginRendererDocument();
+  assert.equal(secondEpoch, firstEpoch + 1, 'every document load begins a new epoch');
+  assert.equal(isWindowRendererReady(), false, 'new document starts unready');
+
+  // The previous document's report is now stale and must be ignored.
+  assert.equal(markWindowRendererReady(firstEpoch), false, 'stale-epoch report must be ignored');
+  assert.equal(isWindowRendererReady(), false);
+
+  // The stale epoch's fail-safe must not fire for the superseded epoch, but
+  // the new unconfirmed epoch's own fail-safe still covers it.
+  await sleep(60);
+  assert.equal(shows.filter((e) => e === firstEpoch).length, 1, 'superseded epoch timer stays inert');
+  assert.ok(shows.includes(secondEpoch), 'new epoch fail-safe covers its unconfirmed document');
+
+  assert.equal(markWindowRendererReady(secondEpoch), true);
+  assert.equal(isWindowRendererReady(), true, 'current-epoch confirmation marks ready');
+
+  // ── 3. Fail-safe cancellation on confirmed readiness ────────────────────────
+  const thirdEpoch = beginRendererDocument();
+  assert.equal(markWindowRendererReady(thirdEpoch), true);
+  await sleep(60);
+  assert.ok(
+    !shows.includes(thirdEpoch),
+    'confirmed epochs cancel their fail-safe; no fail-safe show',
+  );
+
+  console.log('Window readiness lifecycle (epoch binding, stale rejection, fail-safe) verified.');
+}
+
+run().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

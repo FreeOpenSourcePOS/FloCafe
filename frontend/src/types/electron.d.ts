@@ -39,7 +39,10 @@ export interface ElectronAPI {
 
   // Status
   getStatus: () => Promise<ElectronStatus>;
-  windowReady: () => Promise<ElectronActionResult | ElectronIpcError>;
+  // Window controls (HTML title-bar fallback; only invoked when getStatus()
+  // reports titleBarMode 'html-fallback'). Readiness reports are bound to the
+  // document epoch from getTitleBarStatus so main can reject stale reports.
+  windowReady: (payload: { epoch: number }) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // Updates
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
@@ -95,6 +98,9 @@ export interface ElectronStatus {
   /** How main supplies the window caption controls. Optional so a newer
    * renderer against an older main keeps native-overlay Phase 1 behavior. */
   titleBarMode?: TitleBarMode;
+  /** Current readiness epoch of the loaded document; bind windowReady reports
+   * to it. Optional for the same older-main compatibility reason. */
+  titleBarEpoch?: number;
 }
 
 export type TitleBarMode = 'native-overlay' | 'html-fallback';

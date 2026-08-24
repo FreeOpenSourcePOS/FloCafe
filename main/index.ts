@@ -35,7 +35,7 @@ import {
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
 import { attachTitleBarThemeSync } from './title-bar-theme';
-import { isWindowRendererReady, resetWindowReadiness } from './window-readiness';
+import { beginRendererDocument, getRendererReadinessEpoch, initWindowReadiness, isWindowRendererReady } from './window-readiness';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -409,7 +409,14 @@ function createWindow(): void {
   // transient lock), retrying here means the app can still self-heal within
   // the same run instead of only on the next full relaunch.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
-  resetWindowReadiness();
+
+  // Readiness lifecycle: register the fail-safe show path and begin the first
+  // document epoch before anything loads. Every subsequent navigation re-begins
+  // via the did-start-loading hook below.
+  initWindowReadiness(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+  });
+  beginRendererDocument();
 
   // Decide once per window whether the native titleBarOverlay can be relied
   // on (platform + Electron >= 33 + the overlay API actually present). When
@@ -439,12 +446,11 @@ function createWindow(): void {
   mainWindow.loadURL(`http://localhost:${getServerPort()}`);
 
   // Every navigation (initial load, manual reload, crash-recovery reload)
-  // tears down the previous document and its caption controls, so readiness
-  // must re-evaluate for the new one. Without this, a reload that fails to
-  // re-mount WindowControls would leave a visible window whose stale ready
-  // flag no longer matches reality.
+  // starts a fresh readiness epoch: the previous document's reports become
+  // stale, and a bounded fail-safe covers this document failing to mount its
+  // control surface. See main/window-readiness.ts.
   mainWindow.webContents.on('did-start-loading', () => {
-    resetWindowReadiness();
+    beginRendererDocument();
   });
 
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page)
@@ -922,6 +928,7 @@ async function initialize(): Promise<void> {
         uptime: process.uptime(),
         port: getServerPort(),
         titleBarMode: resolvedTitleBarMode,
+        titleBarEpoch: getRendererReadinessEpoch(),
       };
     });
 

@@ -18,7 +18,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getStatus: () => ipcRenderer.invoke('get-status'),
 
-  windowReady: () => ipcRenderer.invoke('window-ready'),
+  windowReady: (payload: { epoch: number }) => ipcRenderer.invoke('window-ready', payload),
 
   // Narrow window-control surface for the renderer title bar's HTML fallback
   // controls. Only ever called when main reports titleBarMode 'html-fallback'.

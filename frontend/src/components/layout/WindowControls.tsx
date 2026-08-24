@@ -7,9 +7,6 @@ import { useTranslations } from 'use-intl';
 type TitleBarMode = 'native-overlay' | 'html-fallback';
 type WindowControlAction = 'minimize' | 'toggle-maximize' | 'close';
 
-/** Grace period before re-signal readiness if the first invoke hangs. */
-const WINDOW_READY_FAILSAFE_MS = 3000;
-
 const subscribeToElectronCapability = () => () => {};
 const getElectronCapability = () => typeof window !== 'undefined' && Boolean(window.electronAPI?.getStatus);
 const getServerElectronCapability = () => false;
@@ -21,42 +18,51 @@ export default function WindowControls() {
     getElectronCapability,
     getServerElectronCapability,
   );
-  const [titleBarMode, setTitleBarMode] = useState<TitleBarMode | null>(null);
+  const [resolved, setResolved] = useState<{ mode: TitleBarMode; epoch: number } | null>(null);
 
   useEffect(() => {
     if (!isElectron) return undefined;
     let cancelled = false;
 
-    // Readiness must not depend on mode resolution succeeding: signal it
-    // immediately and once more from a fail-safe timer so getStatus()
-    // rejecting, hanging, or returning an unknown shape can never leave the
-    // hidden BrowserWindow invisible indefinitely.
-    const signalReady = () => {
-      const windowReady = window.electronAPI?.windowReady;
-      if (typeof windowReady !== 'function') return;
-      windowReady().catch((error) => {
-        console.error('[WindowControls] Unable to show the main window:', error);
-      });
-    };
-    signalReady();
-    const failSafeTimer = setTimeout(signalReady, WINDOW_READY_FAILSAFE_MS);
-
     window.electronAPI
       ?.getStatus()
       .then((status) => {
-        if (!cancelled) {
-          setTitleBarMode(status?.titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay');
-        }
+        if (cancelled) return;
+        // Resolve the mode and bind this document's readiness report to the
+        // epoch main issued for it. An unrecognized/missing mode keeps native-
+        // overlay behavior so an older main never gets duplicate controls.
+        setResolved({
+          mode: status?.titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay',
+          epoch: typeof status?.titleBarEpoch === 'number' ? status.titleBarEpoch : Number.NaN,
+        });
       })
       .catch((error) => {
+        // Deliberately no readiness report on failure: main cannot trust a
+        // control-surface confirmation from a document whose status read
+        // failed. Main's bounded fail-safe shows the window instead.
         console.error('[WindowControls] Unable to resolve title-bar mode:', error);
       });
 
     return () => {
       cancelled = true;
-      clearTimeout(failSafeTimer);
     };
   }, [isElectron]);
+
+  // Readiness report: fires only once this document knows its epoch AND the
+  // control surface it reports for actually exists. For native-overlay the
+  // caption buttons are always present; for html-fallback this effect runs
+  // after the commit that mounted the fallback buttons below. Stale or
+  // malformed epochs are rejected by main, so a reload can never inherit a
+  // previous document's confirmation.
+  useEffect(() => {
+    if (!isElectron || !resolved) return;
+    if (!Number.isInteger(resolved.epoch) || resolved.epoch < 1) return;
+    window.electronAPI
+      ?.windowReady({ epoch: resolved.epoch })
+      ?.catch((error) => {
+        console.error('[WindowControls] Unable to report renderer readiness:', error);
+      });
+  }, [isElectron, resolved]);
 
   const runWindowAction = useCallback((action: WindowControlAction) => {
     const windowAction = window.electronAPI?.windowAction;
@@ -64,7 +70,7 @@ export default function WindowControls() {
     windowAction(action).catch(() => {});
   }, []);
 
-  if (!isElectron || titleBarMode !== 'html-fallback') return null;
+  if (!isElectron || resolved?.mode !== 'html-fallback') return null;
 
   return (
     <div className="flo-title-bar__fallback-controls" role="group" aria-label={tCommon('windowControls')}>

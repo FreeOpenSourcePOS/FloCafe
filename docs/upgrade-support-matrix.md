@@ -1,8 +1,8 @@
 # Runtime upgrade support matrix (#468)
 
-**Verification window:** 2026-08-24  
-**N:** `3.3.0`  
-**N+1:** `3.3.1-beta.1` (GitHub prerelease, beta channel)  
+**Verification window:** 2026-08-24
+**N:** `3.3.0`
+**N+1:** `3.3.1-beta.1` (GitHub prerelease, beta channel)
 **Stable feed:** unchanged; GitHub Latest remained `3.3.0` throughout.
 
 This matrix records real installed-artifact runs, not unit tests or artifact-only
@@ -17,8 +17,8 @@ reason; no unobserved behavior is inferred.
   - `draft=false`, `prerelease=true`
   - `releases/latest` remained `3.3.0`
   - [successful release workflow run 32749694533](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32749694533)
-  - Windows, macOS, Linux x64, and Linux arm64 packaging jobs passed; draft
-    manifest/artifact verification and publish passed.
+  - Windows, macOS, Linux x64, and Linux arm64 packaging jobs passed; GitHub
+    draft manifest/artifact verification and release publication passed.
 - The release verifier was exercised against the real beta draft. It found and
   fixed two latent release-pipeline assumptions: draft releases are not
   addressable by `GET /releases/tags/{tag}`, and Linux updater manifests contain

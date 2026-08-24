@@ -225,7 +225,7 @@ jobs:
 
       - name: Launch release N under Xvfb with a CDP port
         run: |
-          export $(dbus-launch)
+          eval "$(dbus-launch)"
           echo -n ci | gnome-keyring-daemon --unlock >/dev/null
           eval "$(echo -n ci | gnome-keyring-daemon --start --components=secrets)"
           xvfb-run -a "$FLO_APPIMAGE" --remote-debugging-port=9222 > app-n.log 2>&1 &
@@ -259,7 +259,7 @@ jobs:
             echo "::error::release N process did not exit before relaunch"
             exit 1
           fi
-          export $(dbus-launch)
+          eval "$(dbus-launch)"
           echo -n ci | gnome-keyring-daemon --unlock >/dev/null
           eval "$(echo -n ci | gnome-keyring-daemon --start --components=secrets)"
           xvfb-run -a "$FLO_APPIMAGE" --remote-debugging-port=9222 > app-nplus1.log 2>&1 &
@@ -303,7 +303,7 @@ jobs:
             echo "## Update status transitions"
             cat "$RUNNER_TEMP/update-status.log"
             echo "## Processes after relaunch (roots only)"
-            ps -eo pid,args | grep "[F]lo Cafe\|[f]locafe" | grep -v '\-\-type='
+            pgrep -af 'Flo Cafe|flocafe' | grep -v -- '--type='
           } | tee "$RUNNER_TEMP/evidence-extra.txt"
 
       - name: Upload row evidence
@@ -450,7 +450,7 @@ jobs:
             sleep 2
           done
           EXE=$(find "$APP_DIR" -maxdepth 1 -name "*.exe" | head -1)
-          [ -n "$EXE" ] || { ls -R "$LOCALAPPDATA/Programs" | head -30; exit 1; }
+          [ -n "$EXE" ] || { find "$LOCALAPPDATA/Programs" -maxdepth 2 -print | head -30; exit 1; }
           echo "FLO_EXE=$EXE" >> "$GITHUB_ENV"
 
       - name: Launch release N with a CDP port

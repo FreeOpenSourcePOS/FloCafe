@@ -26,6 +26,7 @@ This index classifies documentation in `docs/` so contributors and AI agents kno
 | [google-drive-setup.md](google-drive-setup.md) | Maintainer setup for the optional Google Drive backup OAuth client. | CURRENT |
 | [mac-app-store-publishing.md](mac-app-store-publishing.md) | Fastlane, Transporter, and GitHub Actions publishing workflow for the Mac App Store build. | CURRENT |
 | [release-process.md](release-process.md) | Desktop release channels, draft verification gates, artifact naming, and explicit stable promotion. | CURRENT |
+| [upgrade-support-matrix.md](upgrade-support-matrix.md) | Evidence matrix for real installed-artifact N → N+1 upgrade coverage and explicit NOT-RUN platform cells. | CURRENT |
 | [tax-packs.md](tax-packs.md) | Tax pack schema, authoring guide, cryptographic signing, and catalog distribution workflow. | CURRENT |
 | [i18n.md](i18n.md) | Internationalization guide, translation editing, language scaffolding (`npm run i18n:add`), and RTL layout support. | CURRENT |
 | [merchant-print-templates.md](merchant-print-templates.md) | Merchant print template schema (v1), validation/compatibility policy, provenance and trust model, and bill-template selection identity. Cross-links the compliance `escpos-line-template-v1` contract (#445). | CURRENT |

@@ -461,8 +461,8 @@ function createWindow(): void {
   // did-start-loading, did-start-navigation exposes whether a navigation is
   // same-document, so Next.js pushState route changes keep the current
   // readiness report while reloads and full navigations invalidate it.
-  mainWindow.webContents.on('did-start-navigation', (details) => {
-    if (isFullDocumentMainFrameNavigation(details)) {
+  mainWindow.webContents.on('did-start-navigation', (_event, _url, isSameDocument, isMainFrame) => {
+    if (isFullDocumentMainFrameNavigation({ isSameDocument, isMainFrame })) {
       beginRendererDocument();
     }
   });

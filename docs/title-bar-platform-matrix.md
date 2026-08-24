@@ -1,7 +1,8 @@
 # Title-bar platform test matrix
 
-**Status:** CURRENT verification record for epic #457 / issue #462 remainder  
-**Date:** 2026-08-24  
+**Status:** CURRENT verification record for epic #457 / issue #462 remainder
+
+**Date:** 2026-08-24
 **Related changes:** #505 (sidebar offset), #508 (theme-following overlay), #509 (Linux fallback controls and `windowAction` IPC)
 
 This record uses assertion and log evidence first. The Linux XWD capture is supplementary evidence; no screenshot is required for a cell to pass.

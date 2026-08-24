@@ -11,8 +11,8 @@ PASS | window-creation: main window created with resolved mode | mode=native-ove
 PASS | overlay-config: window built with titleBarOverlay at 40 DIP height | titleBarOverlay={"color":"#ffffff","symbolColor":"#0a0a0a","height":40}
 INFO | overlay-getter | platform=linux getTitleBarOverlay()=undefined (getter not supported on Linux; Electron draws server-side decorations)
 PASS | window-action: unsupported verbs are rejected | action='explode' rejected
-[3346222:0824/123234.973332:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[3346222:0824/123234.973332:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:
 [3346222:0824/123234.973447:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
-[3346222:0824/123234.976258:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[3346222:0824/123234.976258:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type:
 SKIP | window-action round-trip | display has no window manager (xvfb without WM); state changes are no-ops
 SUMMARY | 9/9 checks passed

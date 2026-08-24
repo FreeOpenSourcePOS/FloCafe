@@ -11,8 +11,8 @@
  * Requires `npm run build` first: it loads the compiled dist/main/window-options.js.
  *
  * Optional flags:
- *   --fullscreen-check   macOS only: visibly enters/exits fullscreen and kiosk
- *                        attempts (interactive session required).
+ *   --fullscreen-check   macOS only: visibly enters/exits fullscreen and records
+ *                        kiosk-codepath availability (interactive session required).
  */
 
 const assert = require('node:assert/strict');

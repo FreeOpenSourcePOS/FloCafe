@@ -102,9 +102,32 @@ async function run(): Promise<void> {
     assert.equal(persisted.port, 9200);
     assert.equal(persisted.is_default, 0);
 
+    const webusbCreated = await savePrinter!(trustedSender, {
+      name: 'WebUSB Printer',
+      connection_type: 'webusb',
+      port: null,
+      is_default: false,
+    });
+    assert.deepEqual(webusbCreated, { success: true }, 'save-printer creates a WebUSB row with a null port');
+
+    const webusb = db.prepare('SELECT * FROM printers WHERE name = ?').get('WebUSB Printer') as any;
+    assert.equal(webusb.port, null, 'save-printer preserves an explicit null WebUSB port');
+
+    const webusbUpdated = await savePrinter!(trustedSender, {
+      id: webusb.id,
+      name: 'Updated WebUSB Printer',
+      connection_type: 'webusb',
+      port: null,
+      is_default: false,
+    });
+    assert.deepEqual(webusbUpdated, { success: true }, 'save-printer updates a WebUSB row with a null port');
+
+    const persistedWebusb = db.prepare('SELECT * FROM printers WHERE id = ?').get(webusb.id) as any;
+    assert.equal(persistedWebusb.port, null, 'WebUSB updates preserve an explicit null port');
+
     const listed = await getPrinters!(trustedSender);
     assert.equal(Array.isArray(listed), true, 'get-printers returns persisted rows through IPC');
-    assert.equal(listed[0].id, inserted.id);
+    assert.equal(listed.some((printer: any) => printer.id === inserted.id), true);
     console.log('Electron printer IPC create/update behavior matches the live SQLite schema.');
   } finally {
     closeDatabase();

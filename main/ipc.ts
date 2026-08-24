@@ -358,19 +358,20 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
         return { success: false, error: 'Printer name contains invalid characters' };
       }
       const db = getDatabase();
+      const port = printer.port === null ? null : (printer.port || 9100);
       if (printer.id) {
         db.prepare(`
           UPDATE printers SET name = ?, connection_type = ?, ip_address = ?,
             port = ?, is_default = ?, updated_at = ?
           WHERE id = ?
         `).run(printer.name, printer.connection_type, printer.ip_address ?? null,
-          printer.port || 9100, printer.is_default ? 1 : 0, now(), printer.id);
+          port, printer.is_default ? 1 : 0, now(), printer.id);
       } else {
         db.prepare(`
           INSERT INTO printers (id, name, connection_type, ip_address, port, is_default, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `).run(randomUUID(), printer.name, printer.connection_type, printer.ip_address ?? null,
-          printer.port || 9100, printer.is_default ? 1 : 0, now(), now());
+          port, printer.is_default ? 1 : 0, now(), now());
       }
       return { success: true };
     } catch (error: any) {

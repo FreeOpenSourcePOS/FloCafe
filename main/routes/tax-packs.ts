@@ -52,6 +52,8 @@ interface PackRow {
   jurisdiction: string;
   active_version_id: string | null;
   status: string;
+  disclaimer_acknowledged_at: string | null;
+  disclaimer_acknowledged_by: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -82,11 +84,39 @@ function actorUserId(req: Request): string | null {
   return (req as any).user?.userId || (req as any).user?.id || null;
 }
 
-function activateInstalledPack(pack: PackRow, version: VersionRow, actorId: string | null): void {
+interface ActivateOptions {
+  acknowledgeCommunityDisclaimer?: boolean;
+}
+
+// Thrown by activateInstalledPack when a community-sourced pack's no-liability
+// disclaimer hasn't been acknowledged yet for this pack id. Callers should
+// catch this specifically and surface requires_disclaimer to the frontend
+// instead of a generic 500 — nothing is activated when this throws.
+class DisclaimerRequiredError extends Error {
+  statusCode = 428;
+  requiresDisclaimer = true as const;
+  sourceType = 'community' as const;
+  constructor(public packId: string, public version: string) {
+    super('Community tax pack requires disclaimer acknowledgment before activation');
+  }
+}
+
+function activateInstalledPack(
+  pack: PackRow,
+  version: VersionRow,
+  actorId: string | null,
+  options: ActivateOptions = {},
+): void {
   const db = getDatabase();
   const validation = validationChecklist(version);
   if (!validation.valid) {
     throw Object.assign(new Error('Tax pack failed activation validation'), { statusCode: 400 });
+  }
+  const definition = JSON.parse(version.pack_json) as CountryPack;
+  const alreadyAcknowledged = Boolean(pack.disclaimer_acknowledged_at);
+  const isCommunityPack = definition.sourceType === 'community';
+  if (isCommunityPack && !alreadyAcknowledged && !options.acknowledgeCommunityDisclaimer) {
+    throw new DisclaimerRequiredError(pack.id, version.version);
   }
   const previousVersionId = pack.active_version_id;
   withTxn(() => {
@@ -97,6 +127,11 @@ function activateInstalledPack(pack: PackRow, version: VersionRow, actorId: stri
       db.prepare(`UPDATE tax_overrides SET pack_version_id = ?, updated_at = ? WHERE pack_version_id = ?`)
         .run(version.id, now(), previousVersionId);
     }
+    if (isCommunityPack && !alreadyAcknowledged) {
+      db.prepare(`
+        UPDATE country_packs SET disclaimer_acknowledged_at = ?, disclaimer_acknowledged_by = ? WHERE id = ?
+      `).run(now(), actorId, pack.id);
+    }
     db.prepare(`UPDATE country_packs SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ?`)
       .run(version.id, now(), pack.id);
     db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(version.id);
@@ -106,7 +141,11 @@ function activateInstalledPack(pack: PackRow, version: VersionRow, actorId: stri
       WHERE pack_id IN (SELECT id FROM country_packs WHERE country = ?)
     `).run(pack.country);
     db.prepare(`UPDATE installed_print_templates SET status = 'active' WHERE pack_version_id = ?`).run(version.id);
-    audit('activate_pack', actorId, pack.id, version.id, null, { previousVersionId, automatic: true });
+    audit('activate_pack', actorId, pack.id, version.id, null, {
+      previousVersionId,
+      automatic: true,
+      ...(isCommunityPack ? { sourceType: 'community', disclaimerAcknowledged: true } : {}),
+    });
   });
 }
 
@@ -228,6 +267,8 @@ function activePackForCountry(country: string): { pack: PackRow; version: Versio
       jurisdiction: row.jurisdiction,
       active_version_id: row.active_version_id,
       status: row.status,
+      disclaimer_acknowledged_at: row.disclaimer_acknowledged_at,
+      disclaimer_acknowledged_by: row.disclaimer_acknowledged_by,
       created_at: row.created_at,
       updated_at: row.updated_at,
     },
@@ -610,6 +651,8 @@ export function validationChecklist(
     if (registrationFormatValid && /\([^()]*[+*][^()]*\)[+*]/.test(pattern)) registrationFormatValid = false;
   }
   add(25, registrationFormatValid, 'Registration-number format, if declared, is a well-formed, non-catastrophic pattern and description');
+  add(26, pack.publisher !== 'local' || !pack.sourceType || pack.sourceType === 'official',
+    'A local/manual pack never declares a community sourceType');
   return { valid: checks.every((check) => check.passed), checks };
 }
 
@@ -905,7 +948,23 @@ router.post('/ensure-country', requireRole(...ROLE_ACCESS.ownerManager), asyncHa
       version = db.prepare('SELECT * FROM country_pack_versions WHERE id = ?').get(installed.versionId) as VersionRow;
     }
     if (!pack || !version) throw new Error('Installed tax pack could not be loaded');
-    activateInstalledPack(pack, version, actorUserId(req));
+    try {
+      activateInstalledPack(pack, version, actorUserId(req), {
+        acknowledgeCommunityDisclaimer: req.body?.acknowledge_community_disclaimer === true,
+      });
+    } catch (error) {
+      if (error instanceof DisclaimerRequiredError) {
+        return res.json({
+          enabled: false,
+          requires_disclaimer: true,
+          source_type: 'community',
+          country,
+          pack_id: error.packId,
+          version: error.version,
+        });
+      }
+      throw error;
+    }
     const definition = JSON.parse(version.pack_json) as CountryPack;
     // Enabling taxes should work immediately for a normal merchant. Existing
     // explicit assignments are preserved; only previously unclassified rows
@@ -1424,30 +1483,22 @@ router.post('/:packId/versions/:versionId/activate', requireRole(...ROLE_ACCESS.
     if (!validation.valid) {
       return res.status(400).json({ error: 'Pack version failed activation validation', validation });
     }
-    const previousVersionId = pack.active_version_id;
-    withTxn(() => {
-      db.prepare(
-        `UPDATE country_packs SET status = 'installed', updated_at = ? WHERE country = ? AND id != ?`
-      ).run(now(), pack.country, pack.id);
-      if (previousVersionId) {
-        db.prepare(`UPDATE country_pack_versions SET status = 'installed' WHERE id = ?`).run(previousVersionId);
-        db.prepare(`
-          UPDATE tax_overrides SET pack_version_id = ?, updated_at = ?
-          WHERE pack_version_id = ?
-        `).run(version.id, now(), previousVersionId);
+    try {
+      activateInstalledPack(pack, version, actorUserId(req), {
+        acknowledgeCommunityDisclaimer: req.body?.acknowledge_community_disclaimer === true,
+      });
+    } catch (error) {
+      if (error instanceof DisclaimerRequiredError) {
+        return res.json({
+          changed: false,
+          requires_disclaimer: true,
+          source_type: 'community',
+          pack_id: error.packId,
+          version: error.version,
+        });
       }
-      db.prepare(`
-        UPDATE country_packs SET active_version_id = ?, status = 'active', updated_at = ? WHERE id = ?
-      `).run(version.id, now(), pack.id);
-      db.prepare(`UPDATE country_pack_versions SET status = 'active' WHERE id = ?`).run(version.id);
-      db.prepare(`
-        UPDATE installed_print_templates
-        SET status = 'installed'
-        WHERE pack_id IN (SELECT id FROM country_packs WHERE country = ?)
-      `).run(pack.country);
-      db.prepare(`UPDATE installed_print_templates SET status = 'active' WHERE pack_version_id = ?`).run(version.id);
-      audit('activate_pack', actorUserId(req), pack.id, version.id, null, { previousVersionId });
-    });
+      throw error;
+    }
     res.json({ changed: true, active_version_id: version.id, validation });
   } catch (error: any) {
     console.error('[Tax Packs] Activation failed:', error);

@@ -4056,6 +4056,24 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       console.log(`[MIGRATION v73] normalized ${normalized} merchant template payload(s); ${rows.length - normalized} already canonical or left untouched`);
     },
   },
+  {
+    version: 74,
+    name: 'add_country_packs_disclaimer_ack',
+    up: () => {
+      // Backs the community-tax-pack no-liability disclaimer gate: a pack
+      // with sourceType 'community' cannot be activated until an owner
+      // acknowledges it once per pack id (see activateInstalledPack in
+      // routes/tax-packs.ts). Nullable and additive — existing official/local
+      // packs are unaffected.
+      const columns = getColumns(db, 'country_packs');
+      if (!columns.includes('disclaimer_acknowledged_at')) {
+        db.exec(`ALTER TABLE country_packs ADD COLUMN disclaimer_acknowledged_at TEXT`);
+      }
+      if (!columns.includes('disclaimer_acknowledged_by')) {
+        db.exec(`ALTER TABLE country_packs ADD COLUMN disclaimer_acknowledged_by TEXT`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4484,6 +4502,8 @@ function createSchema(): void {
       jurisdiction TEXT NOT NULL,
       active_version_id TEXT,
       status TEXT NOT NULL DEFAULT 'installed',
+      disclaimer_acknowledged_at TEXT,
+      disclaimer_acknowledged_by TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -4595,6 +4615,8 @@ function createTaxPackSchema(): void {
       jurisdiction TEXT NOT NULL,
       active_version_id TEXT,
       status TEXT NOT NULL DEFAULT 'installed',
+      disclaimer_acknowledged_at TEXT,
+      disclaimer_acknowledged_by TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );

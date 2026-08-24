@@ -45,6 +45,12 @@ export interface CountryPack {
   schemaVersion: 1;
   id: string;
   publisher: string;
+  // Absent/undefined means 'official'. 'community' marks a pack compiled
+  // from public information rather than a reviewed/authoritative source;
+  // activation then requires an explicit no-liability disclaimer
+  // acknowledgment (see activateInstalledPack in routes/tax-packs.ts).
+  // Never set on a publisher: 'local' pack — validationChecklist rejects that.
+  sourceType?: 'official' | 'community';
   version: string;
   country: string;
   jurisdiction: string;

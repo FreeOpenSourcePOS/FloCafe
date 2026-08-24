@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { E2E_BASE_URL as BASE } from './helpers/urls';
+import { E2E_BASE_URL as BASE, E2E_KDS_BASE_URL } from './helpers/urls';
 
 test('POS product grid has no horizontal clipping and touchable product cards', async ({ page }) => {
   await page.goto(`${BASE}/auth/login`);
@@ -28,11 +28,8 @@ test('POS product grid has no horizontal clipping and touchable product cards', 
   expect(card!.height, 'product card height').toBeGreaterThanOrEqual(44);
 });
 
-test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on every dashboard route', async ({ page }) => {
-  test.slow();
-
-  // Owner account: /dashboard redirects non-owner roles to /pos, and one
-  // login keeps the suite within the shared server's login rate limit.
+test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on the POS, KDS, and settings routes', async ({ page }) => {
+  // One login keeps the suite within the shared server's login rate limit.
   await page.goto(`${BASE}/auth/login`);
   await page.locator('#email').fill('owner@flo.local');
   await page.locator('#password').fill('E2ePass123!');
@@ -55,42 +52,30 @@ test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on
   };
 
   // Every dashboard layout route shares the same fixed-sidebar chrome, so the
-  // capability-absent contract must hold on each of them: zero Electron
-  // title-bar markup, no CSS desktop flag, viewport-top sidebar geometry.
+  // capability-absent contract must hold on each of them in expanded and
+  // collapsed/rail variants: zero Electron title-bar markup, no CSS desktop
+  // flag, viewport-top sidebar geometry. /kds is served by its standalone
+  // KDS server (the main LAN app reserves /kds for its WebSocket endpoint),
+  // so it is exercised against the same static export on the KDS origin.
   const dashboardRoutes = [
-    '/pos',
-    '/dashboard',
-    '/orders',
-    '/products',
-    '/tables',
-    '/customers',
-    '/addon-groups',
-    '/staff',
-    '/settings',
-    '/support',
-    '/order-history-demo',
-    '/print-test',
-    '/whatsapp',
+    { name: 'POS', url: `${BASE}/pos` },
+    { name: 'KDS', url: `${E2E_KDS_BASE_URL}/kds` },
+    { name: 'settings', url: `${BASE}/settings` },
   ];
   for (const route of dashboardRoutes) {
-    await page.goto(`${BASE}${route}`);
-    await expect(sidebar, `${route}: sidebar renders`).toBeVisible();
+    await page.goto(route.url);
+    await expect(sidebar, `${route.name}: sidebar renders`).toBeVisible();
 
-    expect(await page.evaluate(() => Boolean(window.electronAPI)), `${route}: capability absent`).toBe(false);
-    await expect(page.getByTestId('desktop-title-bar'), route).toHaveCount(0);
-    await expect(page.getByTestId('desktop-drag-surface'), route).toHaveCount(0);
-    await expect(page.locator('html'), route).not.toHaveAttribute('data-flo-desktop-titlebar');
+    expect(await page.evaluate(() => Boolean(window.electronAPI)), `${route.name}: capability absent`).toBe(false);
+    await expect(page.getByTestId('desktop-title-bar'), route.name).toHaveCount(0);
+    await expect(page.getByTestId('desktop-drag-surface'), route.name).toHaveCount(0);
+    await expect(page.locator('html'), route.name).not.toHaveAttribute('data-flo-desktop-titlebar');
 
-    await assertViewportTopGeometry(route);
+    await assertViewportTopGeometry(`${route.name} expanded sidebar`);
+    await page.keyboard.press('Control+b');
+    await expect(sidebar, `${route.name}: rail stays visible when collapsed`).toBeVisible();
+    await assertViewportTopGeometry(`${route.name} collapsed sidebar`);
   }
-
-  // Expanded and collapsed/rail variants must both keep viewport-top geometry.
-  await page.goto(`${BASE}/pos`);
-  await assertViewportTopGeometry('expanded sidebar');
-  await expect(sidebar).toBeVisible();
-  await page.keyboard.press('Control+b');
-  await expect(sidebar).toBeVisible();
-  await assertViewportTopGeometry('collapsed sidebar');
 
   // CSS wiring sanity for the Electron path: forcing the capability flag on
   // <html> must offset the fixed sidebar below the title bar height.

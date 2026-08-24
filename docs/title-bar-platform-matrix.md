@@ -19,6 +19,7 @@ This record uses assertion and log evidence first. The Linux XWD capture is supp
 | [`frontend/e2e/layout-integrity.spec.ts`](../frontend/e2e/layout-integrity.spec.ts) | Existing browser/LAN geometry and zero-title-bar checks. |
 | [`docs/images/title-bar-platform-matrix/linux-runtime-probe.log`](images/title-bar-platform-matrix/linux-runtime-probe.log) | Debian 13 GNOME, Electron 43.4.1, Xvfb: 9/9 probe checks passed; WM-dependent action round-trip explicitly skipped because Xvfb had no WM. |
 | [`docs/images/title-bar-platform-matrix/appimage-run-summary.log`](images/title-bar-platform-matrix/appimage-run-summary.log) | Current-branch packaged AppImage startup under dedicated Xvfb display. |
+| [`docs/images/title-bar-platform-matrix/health-response.json`](images/title-bar-platform-matrix/health-response.json) | Fresh packaged-AppImage `/api/health` assertion: `status=ok`, `db=ok`. |
 | [`docs/images/title-bar-platform-matrix/gnome-button-layout.txt`](images/title-bar-platform-matrix/gnome-button-layout.txt) | Real Debian GNOME `button-layout='appmenu:close'` observation. |
 | [`docs/images/title-bar-platform-matrix/linux-appimage-root.xwd`](images/title-bar-platform-matrix/linux-appimage-root.xwd) | Supplementary Xvfb root-window capture from the packaged-AppImage run. |
 | [title-bar phase 1/2 note](title-bar-phase1.md) | Existing GNOME hardware verification, native overlay safe-area behavior, and close-only default context. |
@@ -31,7 +32,7 @@ The workflow is [`.github/workflows/title-bar-platform-matrix.yml`](../.github/w
 
 | Cell | Result | Evidence / reason |
 | --- | --- | --- |
-| Overlay renders | **PASS-verified** | The real Electron probe creates the main window with `titleBarOverlay` and asserts the 40 DIP height; the Windows job runs the same probe. |
+| Overlay renders | **NOT-RUN** | The hosted Windows probe is assertion-based and creates a hidden window, so it verifies constructor configuration but does not observe visible native overlay pixels. A visible shell-rendering session was not captured. |
 | Drag regions work | **NOT-RUN** | Requires physical pointer interaction with the native caption/drag region. The renderer contract is covered by `DesktopDragSurface` and the browser/LAN test proves the surface is absent outside Electron. |
 | Snap Layouts hover on maximize | **NOT-RUN** | Requires a real Windows shell pointer hover over the native maximize button. Native overlay delegates caption buttons to Windows, so this is not reproducible in the cross-platform Electron probe. |
 | Double-click maximize | **NOT-RUN** | Requires a real double-click on the native caption/drag region; no synthetic shell input is used. The `toggle-maximize` verb is covered separately by the runtime probe where the window manager permits it. |
@@ -45,8 +46,8 @@ The AppImage was built from this branch with `electron-builder --linux AppImage 
 | --- | --- | --- |
 | Native-overlay vs HTML-fallback decision | **PASS-verified** | [`linux-runtime-probe.log`](images/title-bar-platform-matrix/linux-runtime-probe.log) reports `platform=linux`, `overlayApiPresent=true`, `resolved=native-overlay`, and separately verifies missing API, pre-33, and unknown-platform inputs fail closed to `html-fallback`. |
 | Native overlay option is 40px high | **PASS-verified** | Probe asserts the actual constructor option: `titleBarOverlay={color:#ffffff,symbolColor:#0a0a0a,height:40}`. Electron's Linux getter is unsupported and is logged as such; constructor options are the authoritative assertion. |
-| Packaged AppImage starts and serves | **PASS-verified** | [`appimage-run-summary.log`](images/title-bar-platform-matrix/appimage-run-summary.log) records the packaged server, KDS, IPC registration, window creation, and `Flo Ready` startup path. The health endpoint returned `{"status":"ok","db":"ok"}` during the run. |
-| Fallback min/max/close through `windowAction` IPC | **PASS-verified (contract)** | Invalid actions are rejected and the narrow action implementation is covered by the runtime probe plus `tests/titlebar-window-options.test.ts`. A real minimize/maximize round-trip is **NOT-RUN on Linux Xvfb** because the dedicated display has no window manager; the probe records this explicit skip rather than treating no-op WM behavior as a product failure. |
+| Packaged AppImage starts and serves | **PASS-verified** | [`appimage-run-summary.log`](images/title-bar-platform-matrix/appimage-run-summary.log) records the packaged server, KDS, IPC registration, window creation, and `Flo Ready` startup path. A fresh health assertion is preserved in [`health-response.json`](images/title-bar-platform-matrix/health-response.json): `status=ok`, `db=ok`. |
+| Fallback min/max/close through `windowAction` IPC | **NOT-RUN (end-to-end)** | The narrow action contract is **PASS-verified** by the helper and preload tests, but this run did not invoke the registered main IPC handler from a live fallback renderer; Linux Xvfb also has no window manager for a real state round-trip. The probe records that environment skip rather than overstating direct-helper coverage as IPC proof. |
 | GNOME close-only default | **PASS-verified** | `gsettings` on the real Debian GNOME machine reports `button-layout='appmenu:close'`; the existing GNOME hardware observation is also recorded in [`title-bar-phase1.md`](title-bar-phase1.md). |
 | X11 | **PASS-verified** | The packaged run and runtime probe ran on X11/Xvfb (`DISPLAY=:77`). |
 | Wayland | **NOT-RUN** | The safety boundary forbids touching the existing GNOME desktop session; a separate Wayland compositor/session was not started. Existing hardware notes describe GNOME behavior but do not claim a Wayland-specific run. |
@@ -58,7 +59,7 @@ The local runtime is macOS with Electron 43.4.1. `npx electron tests/platform-ti
 
 | Cell | Result | Evidence / reason |
 | --- | --- | --- |
-| `hiddenInset` and traffic-light centering in 40px bar | **PASS-verified** | The probe asserts `titleBarStyle=hiddenInset` and exported `MAC_TRAFFIC_LIGHT_POSITION={x:16,y:14}`; `(40-12)/2=14` centers the 12px traffic lights. macOS correctly resolves to HTML fallback because `setTitleBarOverlay` is not available on darwin. |
+| `hiddenInset` and traffic-light centering in 40px bar | **PASS-verified (configuration)** | The probe's real `createMainWindow` option capture asserts `titleBarStyle=hiddenInset`; it also asserts `MAC_TRAFFIC_LIGHT_POSITION={x:16,y:14}`, where `(40-12)/2=14` centers the 12px traffic lights. Visible traffic-light pixels were not independently captured. macOS correctly resolves to HTML fallback because `setTitleBarOverlay` is not available on darwin. |
 | Fullscreen enter/exit | **PASS-verified** | The local `--fullscreen-check` probe entered and exited native fullscreen and asserted both states. |
 | Kiosk mode | **NOT-RUN** | No kiosk codepath or `setKiosk` usage exists in the current FloCafe source. This is a product-scope finding, not an unverified claim. |
 | RTL/Persian (`fa`) logical-property layout | **PASS-verified** | `tests/rtl-foundation.test.ts`, `tests/rtl-dashboard-pos-common.test.ts`, `tests/rtl-setup-auth-settings.test.ts`, and the corresponding existing Playwright coverage pass. Title-bar CSS uses logical inline/block properties; no physical left/right fallback-control placement was added. |
@@ -78,4 +79,4 @@ The local runtime is macOS with Electron 43.4.1. `npx electron tests/platform-ti
 3. **Kiosk mode is absent.** The macOS kiosk cell is explicitly NOT-RUN because there is no implementation to exercise.
 4. **WM-dependent Linux actions are environment-limited.** Xvfb was intentionally run without a window manager to avoid touching the captain's GNOME desktop session; minimize/maximize state transitions are consequently recorded as SKIP in the probe while IPC verb validation remains PASS.
 
-No product code was changed in response to these findings.
+No product behavior was changed in response to these findings; the matrix deliberately downgrades unobserved visual/IPC cells to NOT-RUN and keeps the contract evidence separate.

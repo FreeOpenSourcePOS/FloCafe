@@ -345,7 +345,23 @@ jobs:
           [ -n "$SNAP" ] || { echo "::error::No .snap produced by electron-builder for ${{ matrix.arch }}"; exit 1; }
           SNAP_CHANNEL="${{ needs.create-release.outputs.channel }}"
           snapcraft register "$SNAP_NAME" || echo "::warning::register skipped/failed; continuing"
-          snapcraft upload "$SNAP" --release="$SNAP_CHANNEL"
+          # #468: the current SNAPCRAFT_STORE_CREDENTIALS macaroon was exported
+          # with channel restrictions (stable, edge) and cannot release to
+          # beta (`invalid-channel-permission`). The GitHub release still gets
+          # the full .snap artifact set; failing the whole release build for a
+          # Store-side credential scope would block every other platform's
+          # updater feed. Degrade exactly this error to a loud warning until
+          # the credentials are re-exported with beta enabled.
+          if ! UPLOAD_OUT=$(snapcraft upload "$SNAP" --release="$SNAP_CHANNEL" 2>&1); then
+            printf '%s\n' "$UPLOAD_OUT"
+            if printf '%s' "$UPLOAD_OUT" | grep -q "invalid-channel-permission"; then
+              echo "::warning::Snap Store credentials do not permit the '$SNAP_CHANNEL' channel (macaroon restriction). The .snap remains attached to this GitHub release; re-export SNAPCRAFT_STORE_CREDENTIALS with the beta channel enabled to restore Store publishing (#468)."
+              exit 0
+            fi
+            echo "::error::snapcraft upload failed"
+            exit 1
+          fi
+          printf '%s\n' "$UPLOAD_OUT"
 
   release-mac:
     runs-on: macos-latest

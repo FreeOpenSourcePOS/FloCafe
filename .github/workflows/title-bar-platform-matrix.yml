@@ -1,0 +1,53 @@
+# ---------------------------------------------------------------
+# FloCafe — Title-bar platform matrix (Refs #457 / #462)
+# ---------------------------------------------------------------
+# Assertion/log-based evidence for the custom title-bar platform test
+# matrix (docs/title-bar-platform-matrix.md). Runs the title-bar contract
+# suites plus a real-Electron runtime probe on the hosted Windows desktop.
+# Linux packaged-AppImage rows run on the captain-approved Debian GNOME
+# machine; macOS hands-on rows run locally. See the matrix document for
+# evidence links.
+
+name: title-bar-platform-matrix
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'main/**'
+      - 'frontend/**'
+      - 'tests/**'
+      - '.github/workflows/title-bar-platform-matrix.yml'
+      - 'docs/title-bar-platform-matrix.md'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  windows-titlebar:
+    name: Windows title-bar rows
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Compile backend
+        run: npm run build
+      - name: Title-bar contract suites
+        run: |
+          npm run test:titlebar-window-options
+          npm run test:window-readiness
+          npm run test:electron-api-contract
+        shell: bash
+      - name: Electron runtime probe (win32)
+        run: npx electron tests/platform-titlebar-runtime-probe.cjs

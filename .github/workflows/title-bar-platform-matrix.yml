@@ -16,6 +16,7 @@ on:
     branches: [main]
     paths:
       - 'main/**'
+      - 'frontend/**'
       - 'tests/**'
       - '.github/workflows/title-bar-platform-matrix.yml'
       - 'docs/title-bar-platform-matrix.md'
@@ -50,4 +51,3 @@ jobs:
         shell: bash
       - name: Electron runtime probe (win32)
         run: npx electron tests/platform-titlebar-runtime-probe.cjs
-

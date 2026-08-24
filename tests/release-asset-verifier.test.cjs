@@ -7,6 +7,8 @@ const {
   parseManifest,
   verifyReleaseAssets,
 } = require('../scripts/verify-release-assets.cjs');
+const { createCandidateManifest } = require('../scripts/release-gate/candidate-manifest.cjs');
+const { createReleaseSummary } = require('../scripts/release-gate/evidence.cjs');
 
 const VERSION = '3.3.0';
 const MANIFESTS = expectedManifestNames('latest');
@@ -72,8 +74,9 @@ function makeFixture() {
     })))));
   }
 
-  const assets = names.map((name) => ({
+  const assets = names.map((name, index) => ({
     name,
+    id: index + 1,
     size: payloads.get(name).length,
     url: `https://assets.test/${name}`,
   }));
@@ -196,6 +199,44 @@ assert.throws(
   assert.ok(requestedAssets.includes(`flocafe-${VERSION}-win-x64.exe`), 'Windows representative must be downloaded and hashed');
   assert.ok(requestedAssets.includes(`flocafe-${VERSION}-mac-x64.zip`), 'macOS representative must be downloaded and hashed');
   assert.ok(requestedAssets.includes(`flocafe-${VERSION}-linux-x64.appimage`), 'Linux representative must be downloaded and hashed');
+
+  const candidateManifest = await createCandidateManifest({
+    release: fixture.release,
+    commit: 'a'.repeat(40),
+    channel: 'stable',
+    requestAsset: requestFor(fixture),
+    signingStatuses: { windows: 'not-verified', mac: 'signed', linux: 'not-applicable' },
+  });
+  const candidateManifestBytes = Buffer.from(`${JSON.stringify(candidateManifest, null, 2)}\n`);
+  const releaseSummary = createReleaseSummary({ manifest: candidateManifest, candidateManifestBytes });
+  const summaryBytes = Buffer.from(`${JSON.stringify(releaseSummary, null, 2)}\n`);
+  fixture.payloads.set('candidate-manifest.json', candidateManifestBytes);
+  fixture.payloads.set('release-summary.json', summaryBytes);
+  fixture.release.assets.push(
+    { name: 'candidate-manifest.json', id: 1001, size: candidateManifestBytes.length, url: 'https://assets.test/candidate-manifest.json' },
+    { name: 'release-summary.json', id: 1002, size: summaryBytes.length, url: 'https://assets.test/release-summary.json' },
+  );
+  await verifyReleaseAssets(fixture.release, {
+    channel: 'latest',
+    requestAsset: requestFor(fixture),
+    requireCandidateManifest: true,
+    requireReleaseSummary: true,
+    candidateManifestAssetId: 1001,
+    candidateManifestCommit: 'a'.repeat(40),
+  });
+  const originalUninstaller = fixture.payloads.get('uninstall-macos.sh');
+  fixture.payloads.set('uninstall-macos.sh', Buffer.from('changed after manifest creation'));
+  await assert.rejects(
+    () => verifyReleaseAssets(fixture.release, {
+      channel: 'latest',
+      requestAsset: requestFor(fixture),
+      requireCandidateManifest: true,
+      candidateManifestAssetId: 1001,
+      candidateManifestCommit: 'a'.repeat(40),
+    }),
+    /candidate digest binding mismatch for uninstall-macos\.sh/,
+  );
+  fixture.payloads.set('uninstall-macos.sh', originalUninstaller);
 
   const missingManifest = makeFixture();
   missingManifest.release.assets = missingManifest.release.assets.filter((asset) => asset.name !== 'latest-linux-arm64.yml');

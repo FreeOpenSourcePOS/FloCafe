@@ -87,28 +87,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Build sanitized 90-day evidence bundle
-        run: |
-          set -euo pipefail
-          MANIFEST_URL=$(gh api "repos/$RELEASE_REPOSITORY/releases/tags/$CANDIDATE_TAG" \
-            --jq '.assets[] | select(.name == "candidate-manifest.json") | .url')
-          gh api "$MANIFEST_URL" -H 'Accept: application/octet-stream' > "$RUNNER_TEMP/candidate-manifest.json"
-          node scripts/release-gate/evidence.cjs \
-            --manifest "$RUNNER_TEMP/candidate-manifest.json" \
-            --output "$RUNNER_TEMP/release-summary.json"
-        env:
-          GH_TOKEN: ${{ github.token }}
-
-      - name: Retain sanitized evidence for 90 days
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-candidate-${{ inputs.candidate_tag }}-evidence
-          path: |
-            ${{ runner.temp }}/candidate-manifest.json
-            ${{ runner.temp }}/release-summary.json
-          retention-days: 90
-          if-no-files-found: error
-
   installed-artifact-matrix:
     name: Invoke exact installed-artifact matrix
     needs: verify-candidate
@@ -168,3 +146,48 @@ jobs:
         run: |
           echo "::notice::Installed-artifact upgrade rows are NOT-RUN. Enable run_installed_matrix only after PR #512 lands with the exact candidate binding inputs."
           echo "Hosted candidate integrity passed; this is not a complete runtime upgrade gate."
+
+  retain-candidate-evidence:
+    name: Retain final sanitized candidate evidence
+    needs: [verify-candidate, installed-artifact-matrix, matrix-not-run-boundary]
+    if: always() && needs.verify-candidate.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      MATRIX_RESULT: ${{ needs.installed-artifact-matrix.result }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Build final sanitized evidence bundle
+        run: |
+          set -euo pipefail
+          MANIFEST_URL=$(gh api "repos/$RELEASE_REPOSITORY/releases/tags/$CANDIDATE_TAG" \
+            --jq '.assets[] | select(.name == "candidate-manifest.json") | .url')
+          gh api "$MANIFEST_URL" -H 'Accept: application/octet-stream' > "$RUNNER_TEMP/candidate-manifest.json"
+          case "$MATRIX_RESULT" in
+            success) MATRIX_STATUS=PASS ;;
+            failure) MATRIX_STATUS=FAIL ;;
+            *) MATRIX_STATUS=NOT-RUN ;;
+          esac
+          node scripts/release-gate/evidence.cjs \
+            --manifest "$RUNNER_TEMP/candidate-manifest.json" \
+            --matrix-status "$MATRIX_STATUS" \
+            --output "$RUNNER_TEMP/release-summary.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Retain sanitized evidence for 90 days
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-candidate-${{ inputs.candidate_tag }}-evidence
+          path: |
+            ${{ runner.temp }}/candidate-manifest.json
+            ${{ runner.temp }}/release-summary.json
+          retention-days: 90
+          if-no-files-found: error

@@ -12,6 +12,13 @@ const fs = require('node:fs');
 const SENSITIVE_KEY = /(pass(word)?|pin|token|secret|credential|authorization|cookie|private.?key|api.?key)/i;
 const SENSITIVE_VALUE = /(gh[pousr]_|github_pat_|xox[baprs]-|BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY|Bearer\s+[A-Za-z0-9._-]+)/i;
 const RETENTION_DAYS = 90;
+const MATRIX_STATUSES = new Set(['PASS', 'FAIL', 'NOT-RUN']);
+const SUMMARY_KEYS = ['schemaVersion', 'type', 'release', 'automated', 'residualRisk', 'manual', 'retention'];
+const RELEASE_KEYS = ['tag', 'channel', 'commit', 'candidateManifestSha256', 'boundAssetCount'];
+const AUTOMATED_KEYS = ['candidateManifest', 'draftInventoryAndDownloads', 'channelPublication', 'installedArtifactMatrix'];
+const RESIDUAL_RISK_KEYS = ['windowsDirectDownloadSigning', 'windowsSmartScreen'];
+const MANUAL_KEYS = ['desktopCompositor', 'physicalPrinters', 'masReview', 'microsoftStore'];
+const RETENTION_KEYS = ['sanitizedWorkflowArtifactsDays', 'permanentSummary', 'sensitiveLogsExcluded'];
 
 function assertSafeKey(key) {
   if (SENSITIVE_KEY.test(key)) throw new Error(`sanitized evidence cannot contain sensitive field ${key}`);
@@ -43,34 +50,42 @@ function sha256(bytes) {
   return crypto.createHash('sha256').update(bytes).digest('hex');
 }
 
-function createReleaseSummary({ manifest, candidateManifestBytes, matrix = null } = {}) {
-  if (!manifest || !manifest.release || !manifest.commit) throw new Error('release summary requires a candidate manifest');
+function assertExactKeys(value, expectedKeys, path) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${path} must be an object`);
+  const expected = new Set(expectedKeys);
+  const actual = Object.keys(value);
+  if (actual.length !== expected.size || actual.some((key) => !expected.has(key))) {
+    throw new Error(`${path} has an invalid schema`);
+  }
+}
+
+function windowsSigningSummary(manifest) {
   const windowsArtifacts = (manifest.assets || []).filter((asset) => asset.platform === 'windows' && ['installer', 'store-package', 'archive'].includes(asset.kind));
-  const hasUnsignedWindows = windowsArtifacts.some((asset) => asset.signing?.status === 'unsigned');
-  const hasSignedWindows = windowsArtifacts.some((asset) => asset.signing?.status === 'signed');
-  const windowsSigning = hasUnsignedWindows
-    ? 'UNSIGNED (accepted residual risk)'
-    : hasSignedWindows
-      ? 'SIGNED (artifact signature verification recorded)'
-      : 'NOT-VERIFIED';
-  const summary = {
+  if (windowsArtifacts.some((asset) => asset.signing?.status === 'unsigned')) return 'UNSIGNED (accepted residual risk)';
+  if (windowsArtifacts.some((asset) => asset.signing?.status === 'signed')) return 'SIGNED (artifact signature verification recorded)';
+  return 'NOT-VERIFIED';
+}
+
+function summaryContract(manifest, candidateManifestBytes, matrixStatus) {
+  if (!MATRIX_STATUSES.has(matrixStatus)) throw new Error(`installed artifact matrix status must be PASS, FAIL, or NOT-RUN`);
+  return {
     schemaVersion: 1,
     type: 'flocafe-release-summary',
     release: {
       tag: manifest.release.tag,
       channel: manifest.release.channel,
       commit: manifest.commit.sha,
-      candidateManifestSha256: candidateManifestBytes ? sha256(candidateManifestBytes) : null,
+      candidateManifestSha256: sha256(candidateManifestBytes),
       boundAssetCount: Array.isArray(manifest.assets) ? manifest.assets.length : 0,
     },
     automated: {
       candidateManifest: 'PASS',
       draftInventoryAndDownloads: 'PASS',
       channelPublication: manifest.release.channel === 'beta' ? 'PASS (prerelease, Latest unchanged)' : 'PASS (Latest unchanged until promotion)',
-      installedArtifactMatrix: matrix?.status || 'NOT-RUN',
+      installedArtifactMatrix: matrixStatus,
     },
     residualRisk: {
-      windowsDirectDownloadSigning: windowsSigning,
+      windowsDirectDownloadSigning: windowsSigningSummary(manifest),
       windowsSmartScreen: 'NOT-RUN (requires interactive reputation-bearing Windows installation)',
     },
     manual: {
@@ -85,28 +100,39 @@ function createReleaseSummary({ manifest, candidateManifestBytes, matrix = null 
       sensitiveLogsExcluded: true,
     },
   };
+}
+
+function createReleaseSummary({ manifest, candidateManifestBytes, matrix = null } = {}) {
+  if (!manifest || !manifest.release || !manifest.commit) throw new Error('release summary requires a candidate manifest');
+  const summary = summaryContract(manifest, candidateManifestBytes, matrix?.status || 'NOT-RUN');
   return assertReleaseSummary(summary, { manifest, candidateManifestBytes });
 }
 
-function assertReleaseSummary(summary, { manifest, candidateManifestBytes } = {}) {
+function assertReleaseSummary(summary, { manifest, candidateManifestBytes, matrix = null } = {}) {
   assertSanitized(summary);
-  if (!summary || summary.schemaVersion !== 1 || summary.type !== 'flocafe-release-summary') {
-    throw new Error('release summary schema is invalid');
-  }
   if (!manifest || !manifest.release || !manifest.commit || !summary.release) {
     throw new Error('release summary must bind a candidate manifest');
-  }
-  if (summary.release.tag !== manifest.release.tag || summary.release.channel !== manifest.release.channel || summary.release.commit !== manifest.commit.sha) {
-    throw new Error('release summary release binding does not match the candidate manifest');
   }
   if (!candidateManifestBytes || summary.release.candidateManifestSha256 !== sha256(candidateManifestBytes)) {
     throw new Error('release summary candidate manifest digest does not match the published bytes');
   }
-  if (summary.release.boundAssetCount !== (Array.isArray(manifest.assets) ? manifest.assets.length : -1)) {
-    throw new Error('release summary asset count does not match the candidate manifest');
+  const matrixStatus = matrix?.status || summary.automated?.installedArtifactMatrix;
+  const expected = summaryContract(manifest, candidateManifestBytes, matrixStatus);
+  assertExactKeys(summary, SUMMARY_KEYS, 'release summary');
+  if (summary.schemaVersion !== expected.schemaVersion || summary.type !== expected.type) {
+    throw new Error('release summary schema is invalid');
   }
-  if (summary.automated?.candidateManifest !== 'PASS' || summary.automated?.draftInventoryAndDownloads !== 'PASS') {
-    throw new Error('release summary does not record the required automated release checks');
+  assertExactKeys(summary.release, RELEASE_KEYS, 'release summary release section');
+  assertExactKeys(summary.automated, AUTOMATED_KEYS, 'release summary automated section');
+  assertExactKeys(summary.residualRisk, RESIDUAL_RISK_KEYS, 'release summary residual-risk section');
+  assertExactKeys(summary.manual, MANUAL_KEYS, 'release summary manual section');
+  assertExactKeys(summary.retention, RETENTION_KEYS, 'release summary retention section');
+  for (const section of ['release', 'automated', 'residualRisk', 'manual', 'retention']) {
+    for (const key of Object.keys(expected[section])) {
+      if (summary[section][key] !== expected[section][key]) {
+        throw new Error(`release summary ${section} section does not match the immutable candidate manifest`);
+      }
+    }
   }
   assertRetentionPolicy(summary.retention);
   return summary;
@@ -131,14 +157,17 @@ function parseArgs(argv) {
   const outputIndex = argv.indexOf('--output');
   if (manifestIndex === -1 || !argv[manifestIndex + 1]) throw new Error('missing required argument --manifest');
   if (outputIndex === -1 || !argv[outputIndex + 1]) throw new Error('missing required argument --output');
-  return { manifest: argv[manifestIndex + 1], output: argv[outputIndex + 1] };
+  const matrixIndex = argv.indexOf('--matrix-status');
+  const matrixStatus = matrixIndex === -1 ? 'NOT-RUN' : (argv[matrixIndex + 1] || '');
+  if (!MATRIX_STATUSES.has(matrixStatus)) throw new Error('matrix status must be PASS, FAIL, or NOT-RUN');
+  return { manifest: argv[manifestIndex + 1], output: argv[outputIndex + 1], matrixStatus };
 }
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const bytes = fs.readFileSync(options.manifest);
   const manifest = JSON.parse(bytes.toString('utf8'));
-  const summary = createReleaseSummary({ manifest, candidateManifestBytes: bytes });
+  const summary = createReleaseSummary({ manifest, candidateManifestBytes: bytes, matrix: { status: options.matrixStatus } });
   writeJson(options.output, summary);
   console.log(`sanitized release summary written to ${options.output}`);
 }

@@ -109,7 +109,8 @@ not publish a second expected SHA-512 for them.
    fetched back from the draft. It binds the release tag, exact commit, GitHub
    asset IDs/names/sizes, platform/architecture, SHA-256, SHA-512, and explicit
    signing status. Windows direct-download assets are currently recorded as
-   `UNSIGNED`; SmartScreen is always `NOT-RUN`, never inferred from a signature.
+   `NOT-VERIFIED` until release-boundary signature verification is recorded;
+   SmartScreen is always `NOT-RUN`, never inferred from a signature.
    A rerun refuses to overwrite different manifest or summary bytes.
 7. Each Linux job uploads a sanitized `snap-publication-x64.json` or
    `snap-publication-arm64.json` marker only after `snapcraft upload` succeeds.
@@ -156,7 +157,8 @@ directly to GitHub `Latest`.
    with the candidate-manifest inputs. The gate then records the installed rows
    as explicit **NOT-RUN** rather than claiming a pass. Once #512 lands, the
    gate dispatches that existing matrix and waits for its result; it never
-   starts a competing upgrade harness.
+   starts a competing upgrade harness. Final retained evidence records the
+   matrix as `PASS`, `FAIL`, or `NOT-RUN` after that result is known.
 6. Sanity-check from a beta-enabled install (or an opted-in stable one):
    Check for Updates should offer `X.Y.Z-beta.N` via `beta.yml`.
 

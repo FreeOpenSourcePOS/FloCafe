@@ -40,6 +40,7 @@ It dispatches and waits for the durable #468 workflow only after that workflow
 (from PR #512) exposes and validates these exact inputs:
 
 - `candidate_tag`
+- `from_version`
 - `candidate_manifest_asset_id`
 - `candidate_manifest_sha256`
 - `matrix_dispatch_id` (included in the matrix run name for correlation)

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-const { assertReleaseSummary } = require('./evidence.cjs');
-const { manifestSha256, resolveTagCommit, verifyCandidateManifest } = require('./candidate-manifest.cjs');
-const { assertPublishedRelease, assertStableSnapEvidence } = require('./release-state.cjs');
+const { manifestSha256, resolveTagCommit } = require('./candidate-manifest.cjs');
+const { assertPublishedRelease } = require('./release-state.cjs');
+const { verifyReleaseAssets } = require('../verify-release-assets.cjs');
 
 function arg(argv, name) {
   const index = argv.indexOf(name);
@@ -68,23 +68,17 @@ async function verifyStablePromotion({ release, tag, expectedManifestAssetId, ex
   if (manifest.commit?.sha !== resolvedCommit) {
     throw new Error(`candidate manifest commit does not match stable tag ${tag}: expected ${resolvedCommit}`);
   }
-  await verifyCandidateManifest(manifest, release, {
-    requestAsset: (asset) => fetchAssetBytes(asset, asset.name),
+  await verifyReleaseAssets(release, {
+    channel: 'latest',
     tag,
-    commit: resolvedCommit,
-    channel: 'stable',
+    requestAsset: (asset) => fetchAssetBytes(asset, asset.name),
+    requireCandidateManifest: true,
+    requireReleaseSummary: true,
+    requireSnapEvidence: true,
+    allowPublished: true,
+    candidateManifestAssetId: expectedManifestAssetId,
+    candidateManifestCommit: resolvedCommit,
   });
-
-  const summary = parseJson(await fetchAssetBytes(summaryAsset, 'release-summary.json'), 'release-summary.json');
-  assertReleaseSummary(summary, { manifest, candidateManifestBytes: candidateBytes });
-
-  const evidenceByArch = {};
-  for (const architecture of ['x64', 'arm64']) {
-    const asset = (release.assets || []).find((entry) => entry.name === `snap-publication-${architecture}.json`);
-    if (!asset) throw new Error(`stable release ${tag} is missing Snap publication evidence for ${architecture}; refusing Latest promotion`);
-    evidenceByArch[architecture] = parseJson(await fetchAssetBytes(asset, `Snap publication evidence for ${architecture}`), `Snap publication evidence for ${architecture}`);
-  }
-  assertStableSnapEvidence(evidenceByArch, tag);
   return { tag, commit: resolvedCommit, assetCount: manifest.assets.length };
 }
 

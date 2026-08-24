@@ -1,5 +1,8 @@
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const {
   assertCandidateManifest,
@@ -26,7 +29,9 @@ const {
 const { createSnapEvidence } = require('../scripts/release-gate/snap-evidence.cjs');
 const { assertMatrixContract, buildDispatchInputs, createDispatchId } = require('../scripts/release-gate/matrix-contract.cjs');
 const { assertCorrelatedRun } = require('../scripts/release-gate/matrix-dispatch.cjs');
+const { ensureReleaseAssets } = require('../scripts/release-gate/ensure-release-assets.cjs');
 const { verifyStablePromotion } = require('../scripts/release-gate/verify-stable-promotion.cjs');
+const { expectedArtifactNames, expectedManifestNames } = require('../scripts/verify-release-assets.cjs');
 
 const payloads = new Map();
 function asset(name, id) {
@@ -126,6 +131,10 @@ const requestAsset = async (entry) => payloads.get(entry.name);
   assertStableSnapEvidence(snapEvidence, '3.3.0');
   assert.throws(() => assertStableSnapEvidence({ x64: snapEvidence.x64 }, '3.3.0'), /missing.*arm64/);
   assert.throws(() => assertStableSnapEvidence({
+    x64: { ...snapEvidence.x64, architecture: 'arm64' },
+    arm64: snapEvidence.arm64,
+  }, '3.3.0'), /architecture/);
+  assert.throws(() => assertStableSnapEvidence({
     x64: snapEvidence.x64,
     arm64: { ...snapEvidence.arm64, status: 'failed' },
   }, '3.3.0'), /status=published/);
@@ -144,27 +153,66 @@ const requestAsset = async (entry) => payloads.get(entry.name);
   assert.equal(summary.retention.sanitizedWorkflowArtifactsDays, RETENTION_DAYS);
   assert.equal(summary.automated.installedArtifactMatrix, 'NOT-RUN');
   assertRetentionPolicy(summary.retention);
+  const passedMatrixSummary = createReleaseSummary({
+    manifest,
+    candidateManifestBytes: Buffer.from('manifest'),
+    matrix: { status: 'PASS' },
+  });
+  assert.equal(passedMatrixSummary.automated.installedArtifactMatrix, 'PASS');
+  assert.throws(() => assertReleaseSummary({
+    ...summary,
+    residualRisk: { ...summary.residualRisk, windowsDirectDownloadSigning: 'SIGNED (artifact signature verification recorded)' },
+  }, { manifest, candidateManifestBytes: Buffer.from('manifest') }), /residualRisk/);
+  const incompleteSummary = JSON.parse(JSON.stringify(summary));
+  delete incompleteSummary.manual.masReview;
+  assert.throws(() => assertReleaseSummary(incompleteSummary, {
+    manifest,
+    candidateManifestBytes: Buffer.from('manifest'),
+  }), /manual/);
   assert.throws(() => assertSanitized({ password: 'nope' }), /sensitive field/);
   assert.throws(() => assertSanitized({ note: 'Bearer abc123' }), /credential-like/);
 
-  const stablePayloads = new Map();
-  const stableAssets = releaseAssets.map((entry) => {
-    let bytes = payloads.get(entry.name);
-    if (entry.name === 'snap-publication-x64.json') {
-      bytes = Buffer.from(JSON.stringify(createSnapEvidence({ tag: '3.3.0', channel: 'stable', architecture: 'x64' })));
-    } else if (entry.name === 'snap-publication-arm64.json') {
-      bytes = Buffer.from(JSON.stringify(createSnapEvidence({ tag: '3.3.0', channel: 'stable', architecture: 'arm64' })));
-    }
-    stablePayloads.set(entry.name, bytes);
-    return { ...entry, size: bytes.length };
-  });
+  const stableVersion = '3.3.0';
+  const stablePayloads = new Map(expectedArtifactNames(stableVersion).map((name) => [name, Buffer.from(`stable:${name}`)]));
+  const stableManifestFiles = {
+    'latest.yml': [`flocafe-${stableVersion}-win-x64.exe`],
+    'latest-mac.yml': [`flocafe-${stableVersion}-mac-x64.zip`, `flocafe-${stableVersion}-mac-arm64.zip`],
+    'latest-linux.yml': [`flocafe-${stableVersion}-linux-x64.appimage`],
+    'latest-linux-arm64.yml': [`flocafe-${stableVersion}-linux-arm64.appimage`],
+  };
+  for (const [manifestName, fileNames] of Object.entries(stableManifestFiles)) {
+    const manifestText = [
+      `version: ${stableVersion}`,
+      'files:',
+      ...fileNames.flatMap((name) => [
+        `  - url: ${name}`,
+        `    sha512: ${crypto.createHash('sha512').update(stablePayloads.get(name)).digest('base64')}`,
+      ]),
+      '',
+    ].join('\n');
+    stablePayloads.set(manifestName, Buffer.from(manifestText));
+  }
+  stablePayloads.set('snap-publication-x64.json', Buffer.from(JSON.stringify(createSnapEvidence({ tag: stableVersion, channel: 'stable', architecture: 'x64' }))));
+  stablePayloads.set('snap-publication-arm64.json', Buffer.from(JSON.stringify(createSnapEvidence({ tag: stableVersion, channel: 'stable', architecture: 'arm64' }))));
+  const stableAssetNames = [
+    ...expectedManifestNames('latest'),
+    ...expectedArtifactNames(stableVersion),
+    'snap-publication-x64.json',
+    'snap-publication-arm64.json',
+  ];
+  const stableAssets = stableAssetNames.map((name, index) => ({
+    name,
+    id: 201 + index,
+    size: stablePayloads.get(name).length,
+    url: `https://assets.test/stable-${name}`,
+  }));
   const stableDraft = { draft: true, tag_name: '3.3.0', assets: stableAssets };
   const stableManifest = await createCandidateManifest({
     release: stableDraft,
     commit: 'b'.repeat(40),
     channel: 'stable',
     requestAsset: async (entry) => stablePayloads.get(entry.name),
-    signingStatuses: { windows: 'unsigned', mac: 'signed', linux: 'not-applicable' },
+    signingStatuses: { windows: 'not-verified', mac: 'signed', linux: 'not-applicable' },
   });
   const stableCandidateBytes = Buffer.from(`${JSON.stringify(stableManifest, null, 2)}\n`);
   const stableSummary = createReleaseSummary({
@@ -180,14 +228,14 @@ const requestAsset = async (entry) => payloads.get(entry.name);
     tag_name: '3.3.0',
     assets: [
       ...stableAssets,
-      { name: 'candidate-manifest.json', id: 115, size: stableCandidateBytes.length, url: 'https://assets.test/stable-candidate-manifest.json' },
-      { name: 'release-summary.json', id: 116, size: stableSummaryBytes.length, url: 'https://assets.test/stable-release-summary.json' },
+      { name: 'candidate-manifest.json', id: 299, size: stableCandidateBytes.length, url: 'https://assets.test/stable-candidate-manifest.json' },
+      { name: 'release-summary.json', id: 300, size: stableSummaryBytes.length, url: 'https://assets.test/stable-release-summary.json' },
     ],
   };
   const stablePromotionArgs = {
     release: stablePublished,
     tag: '3.3.0',
-    expectedManifestAssetId: 115,
+    expectedManifestAssetId: 299,
     expectedManifestSha256: manifestSha256(stableCandidateBytes),
     resolveCommit: async () => 'b'.repeat(40),
     fetchAssetBytes: async (entry) => stablePayloads.get(entry.name),
@@ -201,8 +249,35 @@ const requestAsset = async (entry) => payloads.get(entry.name);
         assets: stablePublished.assets.filter((entry) => entry.name !== 'snap-publication-arm64.json'),
       },
     }),
-    /asset set changed|missing Snap publication evidence/,
+    /missing:.*snap-publication-arm64/,
   );
+
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flocafe-release-assets-'));
+  try {
+    const reusableFile = path.join(tempDir, 'reusable.bin');
+    fs.writeFileSync(reusableFile, 'same bytes');
+    const draftAsset = { name: 'reusable.bin', id: 401, url: 'https://assets.test/reusable.bin' };
+    let uploads = 0;
+    const draftResult = await ensureReleaseAssets({
+      release: { draft: true, assets: [draftAsset] },
+      files: [reusableFile],
+      fetchExistingAsset: async () => Buffer.from('same bytes'),
+      upload: async () => { uploads += 1; },
+    });
+    assert.deepEqual(draftResult, [{ name: 'reusable.bin', id: 401, action: 'reused' }]);
+    assert.equal(uploads, 0);
+    fs.writeFileSync(reusableFile, 'changed bytes');
+    await assert.rejects(
+      () => ensureReleaseAssets({
+        release: { draft: true, assets: [draftAsset] },
+        files: [reusableFile],
+        fetchExistingAsset: async () => Buffer.from('same bytes'),
+      }),
+      /already exists with different bytes/,
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 
   const currentMatrix = `name: Runtime upgrade matrix
 run-name: Runtime upgrade matrix \${{ inputs.matrix_dispatch_id }}
@@ -231,17 +306,23 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     env:
+      FROM_VERSION: \${{ inputs.from_version }}
       TAG: \${{ inputs.candidate_tag }}
       ASSET_ID: \${{ inputs.candidate_manifest_asset_id }}
       MANIFEST_SHA: \${{ inputs.candidate_manifest_sha256 }}
       DISPATCH_ID: \${{ inputs.matrix_dispatch_id }}
     steps:
       - name: Validate exact candidate binding
-        run: test -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"
+        run: test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"
 `;
   assert.doesNotThrow(() => assertMatrixContract(integratedMatrix));
   assert.throws(() => assertMatrixContract(integratedMatrix.replace('TAG: ${{ inputs.candidate_tag }}', 'TAG: candidate')), /exact candidate inputs/);
-  assert.throws(() => assertMatrixContract(integratedMatrix.replace('test -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"', 'test -n ready')), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace('test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"', 'test -n ready')), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace('"$TAG"', '"$TAG_SUFFIX"')), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace(
+    'run: test -n "$FROM_VERSION" -a -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"',
+    'uses: example/runtime-matrix@main\n        with:\n          tag: \${{ inputs.candidate_tag }}\n          asset-id: \${{ inputs.candidate_manifest_asset_id }}\n          sha256: \${{ inputs.candidate_manifest_sha256 }}\n          from-version: \${{ inputs.from_version }}\n          dispatch-id: \${{ inputs.matrix_dispatch_id }}',
+  )), /exact candidate inputs/);
   const dispatchId = createDispatchId();
   assert.doesNotThrow(() => assertCorrelatedRun({
     workflow_id: 12,

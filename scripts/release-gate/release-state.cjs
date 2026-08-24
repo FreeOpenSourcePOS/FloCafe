@@ -44,11 +44,12 @@ function assertCandidateReadiness({ release, tag, channel, expectedAssetIds, ava
   return true;
 }
 
-function assertSnapEvidence(evidence, { tag, channel, requireBoth = true } = {}) {
+function assertSnapEvidence(evidence, { tag, channel, architecture, requireBoth = true } = {}) {
   if (!evidence || evidence.status !== 'published') throw new Error('Snap publication evidence must have status=published');
   if (evidence.tag !== tag) throw new Error(`Snap publication evidence tag does not match ${tag}`);
   if (evidence.channel !== channel) throw new Error(`Snap publication evidence channel does not match ${channel}`);
   if (!SNAP_ARCHES.includes(evidence.architecture)) throw new Error(`Snap publication evidence has unsupported architecture ${evidence.architecture}`);
+  if (architecture && evidence.architecture !== architecture) throw new Error(`Snap publication evidence architecture does not match expected ${architecture}`);
   if (requireBoth && evidence.architecture === 'both') throw new Error('Snap publication evidence must be one record per architecture');
   return true;
 }
@@ -57,7 +58,7 @@ function assertStableSnapEvidence(evidenceByArch, tag) {
   for (const arch of SNAP_ARCHES) {
     const evidence = evidenceByArch[arch];
     if (!evidence) throw new Error(`stable Snap publication evidence is missing for ${arch}; refusing promotion`);
-    assertSnapEvidence(evidence, { tag, channel: 'stable' });
+    assertSnapEvidence(evidence, { tag, channel: 'stable', architecture: arch });
   }
   return true;
 }

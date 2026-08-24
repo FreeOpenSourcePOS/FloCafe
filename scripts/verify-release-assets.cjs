@@ -15,9 +15,11 @@ const {
   assertSnapEvidence,
 } = require('./release-gate/release-state.cjs');
 const {
-  assertRetentionPolicy,
-  assertSanitized,
+  assertReleaseSummary,
 } = require('./release-gate/evidence.cjs');
+const {
+  verifyCandidateManifest,
+} = require('./release-gate/candidate-manifest.cjs');
 
 function requiredArg(args, name) {
   const index = args.indexOf(name);
@@ -25,6 +27,11 @@ function requiredArg(args, name) {
     throw new Error(`missing required argument ${name}`);
   }
   return args[index + 1];
+}
+
+function optionalArg(args, name, fallback = null) {
+  const index = args.indexOf(name);
+  return index === -1 ? fallback : (args[index + 1] || fallback);
 }
 
 function parseArgs(argv) {
@@ -36,6 +43,8 @@ function parseArgs(argv) {
     requireCandidateManifest: args.includes('--require-candidate-manifest'),
     requireReleaseSummary: args.includes('--require-release-summary'),
     requireSnapEvidence: args.includes('--require-snap-evidence'),
+    candidateManifestAssetId: optionalArg(args, '--candidate-manifest-asset-id'),
+    candidateManifestCommit: optionalArg(args, '--candidate-manifest-commit'),
   };
   const repositoryParts = result.repo.split('/');
   if (repositoryParts.length !== 2 || repositoryParts.some((part) => !/^[a-zA-Z0-9.-]+$/.test(part))) {
@@ -46,6 +55,12 @@ function parseArgs(argv) {
   }
   if (!['latest', 'beta'].includes(result.channel)) {
     throw new Error(`unsupported release channel ${result.channel} (nightlies are rejected by #503)`);
+  }
+  if (result.candidateManifestAssetId !== null && !/^\d+$/.test(result.candidateManifestAssetId)) {
+    throw new Error('--candidate-manifest-asset-id must be a positive integer');
+  }
+  if (result.candidateManifestCommit !== null && !/^[0-9a-f]{40,64}$/i.test(result.candidateManifestCommit)) {
+    throw new Error('--candidate-manifest-commit must be a commit SHA');
   }
   return result;
 }
@@ -362,9 +377,15 @@ async function verifyReleaseAssets(release, {
   requireCandidateManifest = false,
   requireReleaseSummary = false,
   requireSnapEvidence = false,
+  allowPublished = false,
+  candidateManifestAssetId = null,
+  candidateManifestCommit = null,
 } = {}) {
-  if (!release || release.draft !== true) {
+  if (!release || (release.draft !== true && !allowPublished)) {
     throw new Error(`release ${tag || '(unknown)'} is not a draft; refusing to verify a mutable published release`);
+  }
+  if (allowPublished && release.draft !== false) {
+    throw new Error(`release ${tag || '(unknown)'} is not a published release`);
   }
   if (typeof tag !== 'string' || tag === '') throw new Error('release verification requires a release tag');
   if (release.tag_name && release.tag_name !== tag) {
@@ -392,6 +413,30 @@ async function verifyReleaseAssets(release, {
   }
 
   const releaseChannel = channel === 'latest' ? 'stable' : channel;
+  let candidateManifest = null;
+  let candidateManifestBytes = null;
+  if (requireReleaseSummary && !requireCandidateManifest) {
+    throw new Error('release summary verification requires candidate-manifest.json verification');
+  }
+  if (requireCandidateManifest) {
+    const candidateAsset = assetsByName.get('candidate-manifest.json');
+    if (!candidateAsset) throw new Error(`release ${tag} is missing candidate-manifest.json`);
+    if (candidateManifestAssetId !== null && String(candidateAsset.id) !== String(candidateManifestAssetId)) {
+      throw new Error(`candidate manifest asset ID ${candidateAsset.id} does not match expected ${candidateManifestAssetId}`);
+    }
+    candidateManifestBytes = await readAsset(candidateAsset, requestAsset);
+    try {
+      candidateManifest = JSON.parse(candidateManifestBytes.toString('utf8'));
+    } catch (error) {
+      throw new Error(`candidate-manifest.json is not valid JSON: ${error.message}`);
+    }
+    await verifyCandidateManifest(candidateManifest, release, {
+      requestAsset,
+      tag,
+      commit: candidateManifestCommit,
+      channel: releaseChannel,
+    });
+  }
   if (requireSnapEvidence) {
     for (const architecture of ['x64', 'arm64']) {
       const evidenceAsset = assetsByName.get(`snap-publication-${architecture}.json`);
@@ -400,7 +445,7 @@ async function verifyReleaseAssets(release, {
       try { evidence = JSON.parse(evidenceBytes.toString('utf8')); } catch (error) {
         throw new Error(`snap-publication-${architecture}.json is not valid JSON: ${error.message}`);
       }
-      assertSnapEvidence(evidence, { tag, channel: releaseChannel });
+      assertSnapEvidence(evidence, { tag, channel: releaseChannel, architecture });
     }
   }
   if (requireReleaseSummary) {
@@ -409,8 +454,7 @@ async function verifyReleaseAssets(release, {
     try { summary = JSON.parse(summaryBytes.toString('utf8')); } catch (error) {
       throw new Error(`release-summary.json is not valid JSON: ${error.message}`);
     }
-    assertSanitized(summary);
-    assertRetentionPolicy(summary.retention);
+    assertReleaseSummary(summary, { manifest: candidateManifest, candidateManifestBytes });
   }
 
   for (const manifestName of manifestNames) {
@@ -455,6 +499,8 @@ async function main() {
     requireCandidateManifest: options.requireCandidateManifest,
     requireReleaseSummary: options.requireReleaseSummary,
     requireSnapEvidence: options.requireSnapEvidence,
+    candidateManifestAssetId: options.candidateManifestAssetId,
+    candidateManifestCommit: options.candidateManifestCommit,
   });
 }
 

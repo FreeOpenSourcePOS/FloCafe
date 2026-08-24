@@ -13,6 +13,7 @@ const crypto = require('node:crypto');
 const YAML = require('js-yaml');
 
 const REQUIRED_INPUTS = [
+  'from_version',
   'candidate_tag',
   'candidate_manifest_asset_id',
   'candidate_manifest_sha256',
@@ -53,12 +54,13 @@ function executableRun(run) {
 }
 
 function usesEnvironment(run, name) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   return [
-    `$${name}`,
-    '${' + name + '}',
-    `$env:${name}`,
-    `%${name}%`,
-  ].some((reference) => run.includes(reference));
+    new RegExp(`\\$${escaped}(?![A-Za-z0-9_])`),
+    new RegExp(`\\$\\{${escaped}\\}`),
+    new RegExp(`\\$env:${escaped}(?![A-Za-z0-9_])`, 'i'),
+    new RegExp(`%${escaped}%`, 'i'),
+  ].some((reference) => reference.test(run));
 }
 
 function executableInputReferences(job) {
@@ -71,21 +73,20 @@ function executableInputReferences(job) {
   };
   const jobBindings = new Map();
   addBindings(job.env, jobBindings);
-  const references = new Set();
+  const referencesByStep = [];
   for (const step of job.steps) {
     if (!isRecord(step)) continue;
     const bindings = new Map(jobBindings);
     addBindings(step.env, bindings);
-    for (const value of Object.values(step.with || {})) {
-      const input = inputBinding(value);
-      if (input) references.add(input);
-    }
     const run = executableRun(step.run);
+    const references = new Set();
+    for (const match of run.matchAll(/\$\{\{\s*inputs\.([a-z0-9_]+)\s*\}\}/g)) references.add(match[1]);
     for (const [name, input] of bindings.entries()) {
       if (usesEnvironment(run, name)) references.add(input);
     }
+    referencesByStep.push(references);
   }
-  return references;
+  return referencesByStep;
 }
 
 function assertMatrixContract(workflowText) {
@@ -107,8 +108,8 @@ function assertMatrixContract(workflowText) {
   const referencedJobs = [];
   for (const [jobId, job] of Object.entries(workflow.jobs)) {
     if (!isRecord(job) || !Array.isArray(job.steps)) continue;
-    const references = executableInputReferences(job);
-    if (REQUIRED_INPUTS.every((input) => references.has(input))) referencedJobs.push(jobId);
+    const referencesByStep = executableInputReferences(job);
+    if (referencesByStep.some((references) => REQUIRED_INPUTS.every((input) => references.has(input)))) referencedJobs.push(jobId);
   }
   if (referencedJobs.length === 0) {
     throw new Error('runtime matrix must validate the exact candidate inputs in an executable job');

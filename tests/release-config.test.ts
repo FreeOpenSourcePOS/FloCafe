@@ -260,10 +260,12 @@ function run() {
     assert.equal(candidateInputs[input].required, true, `${input} must be exact and required`);
   }
   assert.equal(candidateInputs.run_installed_matrix.type, 'boolean');
-  const candidateVerifyJob = candidateWorkflow.jobs['verify-candidate'];
-  const candidateEvidenceUpload = findStep(candidateVerifyJob, 'Retain sanitized evidence for 90 days');
+  const candidateEvidenceJob = candidateWorkflow.jobs['retain-candidate-evidence'];
+  assert.deepEqual(candidateEvidenceJob.needs, ['verify-candidate', 'installed-artifact-matrix', 'matrix-not-run-boundary']);
+  assert.equal(candidateEvidenceJob.if, "always() && needs.verify-candidate.result == 'success'");
+  const candidateEvidenceUpload = findStep(candidateEvidenceJob, 'Retain sanitized evidence for 90 days');
   assert.equal(candidateEvidenceUpload.with['retention-days'], 90);
-  const candidateVerifyStep = findStep(candidateVerifyJob, 'Verify exact candidate manifest, tag, commit, and bytes');
+  const candidateVerifyStep = findStep(candidateWorkflow.jobs['verify-candidate'], 'Verify exact candidate manifest, tag, commit, and bytes');
   const shellInjection = 'safe"; echo injected >&2; #';
   const safeCandidateVerification = executeWorkflowStep(candidateVerifyStep, {
     env: {

@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "community-japan",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "JP",
+  "jurisdiction": "*",
+  "currency": "JPY",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": true,
+  "registrationNumberLabel": "Invoice Registration Number",
+  "registrationNumberFormat": {
+    "pattern": "^T\\d{13}$",
+    "description": "Qualified Invoice System registration number: \"T\" followed by the 13-digit Corporate Number"
+  },
+  "categories": [
+    { "id": "standard", "label": "Dine-in (Consumption Tax 10%)", "ruleIds": ["consumption-tax-standard"] },
+    { "id": "takeaway", "label": "Takeaway / delivery (Consumption Tax 8%)", "ruleIds": ["consumption-tax-reduced"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["consumption-tax-standard"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["consumption-tax-reduced"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["consumption-tax-standard"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["consumption-tax-standard"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["consumption-tax-standard"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "consumption-tax-standard",
+      "label": "Consumption Tax (standard, dine-in)",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "service_charge", "addon", "unclassified"],
+      "rate": "10"
+    },
+    {
+      "id": "consumption-tax-reduced",
+      "label": "Consumption Tax (reduced, takeaway/delivery)",
+      "type": "percent",
+      "categoryIds": ["takeaway", "delivery"],
+      "rate": "8"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 0,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "1",
+    "method": "half_up"
+  }
+}

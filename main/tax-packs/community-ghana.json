@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "id": "community-ghana",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "GH",
+  "jurisdiction": "*",
+  "currency": "GHS",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": false,
+  "registrationNumberLabel": "TIN",
+  "registrationNumberFormat": {
+    "pattern": "^GHA-?\\d{9}-?[0-9A-Z]$",
+    "description": "Ghana Card PIN used as TIN: \"GHA\" + 9 digits + check character"
+  },
+  "categories": [
+    { "id": "standard", "label": "Standard (VAT 15% + NHIL 2.5% + GETFund 2.5% = 20%)", "ruleIds": ["vat", "nhil", "getfund"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["vat", "nhil", "getfund"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["vat", "nhil", "getfund"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["vat", "nhil", "getfund"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["vat", "nhil", "getfund"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["vat", "nhil", "getfund"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "vat",
+      "label": "VAT",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "15"
+    },
+    {
+      "id": "nhil",
+      "label": "NHIL",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "2.5"
+    },
+    {
+      "id": "getfund",
+      "label": "GETFund Levy",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "2.5"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

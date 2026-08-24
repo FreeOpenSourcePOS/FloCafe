@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "community-uzbekistan",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "UZ",
+  "jurisdiction": "*",
+  "currency": "UZS",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": true,
+  "registrationNumberLabel": "STIR",
+  "registrationNumberFormat": {
+    "pattern": "^\\d{9}$",
+    "description": "9-digit Soliq to'lovchisining identifikatsiya raqami (taxpayer identification number)"
+  },
+  "categories": [
+    { "id": "standard", "label": "Standard (VAT 12%)", "ruleIds": ["vat"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["vat"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["vat"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["vat"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["vat"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["vat"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "vat",
+      "label": "VAT (QQS)",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "12"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

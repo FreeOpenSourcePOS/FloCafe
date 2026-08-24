@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "community-pakistan",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "PK",
+  "jurisdiction": "*",
+  "currency": "PKR",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": false,
+  "registrationNumberLabel": "NTN",
+  "registrationNumberFormat": {
+    "pattern": "^\\d{7}(-\\d)?$",
+    "description": "7-digit National Tax Number issued by the FBR, optionally with a trailing check digit"
+  },
+  "categories": [
+    { "id": "standard", "label": "Standard (provincial services tax, ~16% — verify for your province)", "ruleIds": ["services-tax"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["services-tax"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["services-tax"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["services-tax"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["services-tax"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["services-tax"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "services-tax",
+      "label": "Sales Tax on Services (restaurants)",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "16"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

@@ -108,6 +108,147 @@ FloCafe includes UI translations for:
 
 UI language is independent of store country and regional settings, and tax calculation rules remain a separate concern. For details on contributing translations or adding languages, see the [Internationalization and translation guide](docs/i18n.md).
 
+FloCafe ships with 131 country profiles covering 109 currencies. Each profile sets a default currency, locale, and setup timezone; store owners can override the timezone during setup or later in Settings.
+
+<details>
+<summary>Supported country profiles, currencies, and default timezones</summary>
+
+| Country | Currency | Default timezone |
+| --- | --- | --- |
+| India (IN) | INR | Asia/Kolkata |
+| Argentina (AR) | ARS | America/Argentina/Buenos_Aires |
+| United States (US) | USD | America/New_York |
+| Canada (CA) | CAD | America/Toronto |
+| United Kingdom (GB) | GBP | Europe/London |
+| Thailand (TH) | THB | Asia/Bangkok |
+| Singapore (SG) | SGD | Asia/Singapore |
+| Malaysia (MY) | MYR | Asia/Kuala_Lumpur |
+| Indonesia (ID) | IDR | Asia/Jakarta |
+| Philippines (PH) | PHP | Asia/Manila |
+| Vietnam (VN) | VND | Asia/Ho_Chi_Minh |
+| Australia (AU) | AUD | Australia/Sydney |
+| New Zealand (NZ) | NZD | Pacific/Auckland |
+| United Arab Emirates (AE) | AED | Asia/Dubai |
+| Saudi Arabia (SA) | SAR | Asia/Riyadh |
+| South Africa (ZA) | ZAR | Africa/Johannesburg |
+| Morocco (MA) | MAD | Africa/Casablanca |
+| Kenya (KE) | KES | Africa/Nairobi |
+| Nigeria (NG) | NGN | Africa/Lagos |
+| Brazil (BR) | BRL | America/Sao_Paulo |
+| Mexico (MX) | MXN | America/Mexico_City |
+| Chile (CL) | CLP | America/Santiago |
+| Uruguay (UY) | UYU | America/Montevideo |
+| Paraguay (PY) | PYG | America/Asuncion |
+| Japan (JP) | JPY | Asia/Tokyo |
+| South Korea (KR) | KRW | Asia/Seoul |
+| China (CN) | CNY | Asia/Shanghai |
+| Hong Kong SAR China (HK) | HKD | Asia/Hong_Kong |
+| Taiwan (TW) | TWD | Asia/Taipei |
+| Pakistan (PK) | PKR | Asia/Karachi |
+| Bangladesh (BD) | BDT | Asia/Dhaka |
+| Sri Lanka (LK) | LKR | Asia/Colombo |
+| Nepal (NP) | NPR | Asia/Kathmandu |
+| Egypt (EG) | EGP | Africa/Cairo |
+| Israel (IL) | ILS | Asia/Jerusalem |
+| Türkiye (TR) | TRY | Europe/Istanbul |
+| Iran (IR) | IRR | Asia/Tehran |
+| Germany (DE) | EUR | Europe/Berlin |
+| France (FR) | EUR | Europe/Paris |
+| Italy (IT) | EUR | Europe/Rome |
+| Spain (ES) | EUR | Europe/Madrid |
+| Portugal (PT) | EUR | Europe/Lisbon |
+| Netherlands (NL) | EUR | Europe/Amsterdam |
+| Belgium (BE) | EUR | Europe/Brussels |
+| Ireland (IE) | EUR | Europe/Dublin |
+| Austria (AT) | EUR | Europe/Vienna |
+| Greece (GR) | EUR | Europe/Athens |
+| Finland (FI) | EUR | Europe/Helsinki |
+| Luxembourg (LU) | EUR | Europe/Luxembourg |
+| Malta (MT) | EUR | Europe/Malta |
+| Cyprus (CY) | EUR | Asia/Nicosia |
+| Slovakia (SK) | EUR | Europe/Bratislava |
+| Slovenia (SI) | EUR | Europe/Ljubljana |
+| Estonia (EE) | EUR | Europe/Tallinn |
+| Latvia (LV) | EUR | Europe/Riga |
+| Lithuania (LT) | EUR | Europe/Vilnius |
+| Croatia (HR) | EUR | Europe/Zagreb |
+| Switzerland (CH) | CHF | Europe/Zurich |
+| Sweden (SE) | SEK | Europe/Stockholm |
+| Norway (NO) | NOK | Europe/Oslo |
+| Denmark (DK) | DKK | Europe/Copenhagen |
+| Poland (PL) | PLN | Europe/Warsaw |
+| Czechia (CZ) | CZK | Europe/Prague |
+| Hungary (HU) | HUF | Europe/Budapest |
+| Romania (RO) | RON | Europe/Bucharest |
+| Bulgaria (BG) | BGN | Europe/Sofia |
+| Iceland (IS) | ISK | Atlantic/Reykjavik |
+| Serbia (RS) | RSD | Europe/Belgrade |
+| Ukraine (UA) | UAH | Europe/Kyiv |
+| Albania (AL) | ALL | Europe/Tirane |
+| North Macedonia (MK) | MKD | Europe/Skopje |
+| Bosnia & Herzegovina (BA) | BAM | Europe/Sarajevo |
+| Moldova (MD) | MDL | Europe/Chisinau |
+| Georgia (GE) | GEL | Asia/Tbilisi |
+| Armenia (AM) | AMD | Asia/Yerevan |
+| Azerbaijan (AZ) | AZN | Asia/Baku |
+| Qatar (QA) | QAR | Asia/Qatar |
+| Kuwait (KW) | KWD | Asia/Kuwait |
+| Bahrain (BH) | BHD | Asia/Bahrain |
+| Oman (OM) | OMR | Asia/Muscat |
+| Jordan (JO) | JOD | Asia/Amman |
+| Lebanon (LB) | LBP | Asia/Beirut |
+| Iraq (IQ) | IQD | Asia/Baghdad |
+| Yemen (YE) | YER | Asia/Aden |
+| Ghana (GH) | GHS | Africa/Accra |
+| Tanzania (TZ) | TZS | Africa/Dar_es_Salaam |
+| Uganda (UG) | UGX | Africa/Kampala |
+| Ethiopia (ET) | ETB | Africa/Addis_Ababa |
+| Rwanda (RW) | RWF | Africa/Kigali |
+| Côte d’Ivoire (CI) | XOF | Africa/Abidjan |
+| Senegal (SN) | XOF | Africa/Dakar |
+| Cameroon (CM) | XAF | Africa/Douala |
+| Zambia (ZM) | ZMW | Africa/Lusaka |
+| Mauritius (MU) | MUR | Indian/Mauritius |
+| Tunisia (TN) | TND | Africa/Tunis |
+| Algeria (DZ) | DZD | Africa/Algiers |
+| Botswana (BW) | BWP | Africa/Gaborone |
+| Namibia (NA) | NAD | Africa/Windhoek |
+| Mozambique (MZ) | MZN | Africa/Maputo |
+| Angola (AO) | AOA | Africa/Luanda |
+| Kazakhstan (KZ) | KZT | Asia/Almaty |
+| Uzbekistan (UZ) | UZS | Asia/Tashkent |
+| Mongolia (MN) | MNT | Asia/Ulaanbaatar |
+| Myanmar (Burma) (MM) | MMK | Asia/Yangon |
+| Cambodia (KH) | KHR | Asia/Phnom_Penh |
+| Laos (LA) | LAK | Asia/Vientiane |
+| Brunei (BN) | BND | Asia/Brunei |
+| Macao SAR China (MO) | MOP | Asia/Macau |
+| Maldives (MV) | MVR | Indian/Maldives |
+| Bhutan (BT) | BTN | Asia/Thimphu |
+| Afghanistan (AF) | AFN | Asia/Kabul |
+| Guatemala (GT) | GTQ | America/Guatemala |
+| Costa Rica (CR) | CRC | America/Costa_Rica |
+| Panama (PA) | PAB | America/Panama |
+| Dominican Republic (DO) | DOP | America/Santo_Domingo |
+| Honduras (HN) | HNL | America/Tegucigalpa |
+| El Salvador (SV) | USD | America/El_Salvador |
+| Nicaragua (NI) | NIO | America/Managua |
+| Belize (BZ) | BZD | America/Belize |
+| Jamaica (JM) | JMD | America/Jamaica |
+| Trinidad & Tobago (TT) | TTD | America/Port_of_Spain |
+| Bahamas (BS) | BSD | America/Nassau |
+| Barbados (BB) | BBD | America/Barbados |
+| Haiti (HT) | HTG | America/Port-au-Prince |
+| Bolivia (BO) | BOB | America/La_Paz |
+| Ecuador (EC) | USD | America/Guayaquil |
+| Colombia (CO) | COP | America/Bogota |
+| Peru (PE) | PEN | America/Lima |
+| Venezuela (VE) | VES | America/Caracas |
+| Fiji (FJ) | FJD | Pacific/Fiji |
+| Papua New Guinea (PG) | PGK | Pacific/Port_Moresby |
+
+</details>
+
 ## Tax support
 
 FloCafe includes a generic calculation engine and supports signed, versioned country tax packs for regional rules, tax categories, and rounding policies. Country coverage is expanding through the catalog, and availability varies. Operators can also configure manual tax rules and rates locally.

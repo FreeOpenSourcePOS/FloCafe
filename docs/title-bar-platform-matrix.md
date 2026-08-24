@@ -51,7 +51,7 @@ The AppImage was built from this branch with `electron-builder --linux AppImage 
 | GNOME close-only default | **PASS-verified** | `gsettings` on the real Debian GNOME machine reports `button-layout='appmenu:close'`; the existing GNOME hardware observation is also recorded in [`title-bar-phase1.md`](title-bar-phase1.md). |
 | X11 | **PASS-verified** | The packaged run and runtime probe ran on X11/Xvfb (`DISPLAY=:77`). |
 | Wayland | **NOT-RUN** | The safety boundary forbids touching the existing GNOME desktop session; a separate Wayland compositor/session was not started. Existing hardware notes describe GNOME behavior but do not claim a Wayland-specific run. |
-| Visual screenshot | **Supplementary** | [`linux-appimage-root.xwd`](images/title-bar-platform-matrix/linux-appimage-root.xwd) is the dedicated Xvfb root capture. Assertion/log evidence remains authoritative. |
+| Visual screenshot | **NOT-RUN (supplementary capture only)** | [`linux-appimage-root.xwd`](images/title-bar-platform-matrix/linux-appimage-root.xwd) is retained as a supplementary Xvfb root capture; it is not used as the authoritative visual assertion. Logs/assertions are authoritative. |
 
 ### 3. macOS local
 

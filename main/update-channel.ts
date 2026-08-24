@@ -10,8 +10,8 @@
  *  - Beta builds publish as prerelease-flagged GitHub releases with tags like
  *    `3.3.1-beta.1` and electron-updater manifests prefixed `beta` (beta.yml,
  *    beta-mac.yml, ...). A client only sees them when prereleases are enabled
- *    for it; stable installs follow GitHub's Latest release and never fetch a
- *    beta manifest.
+ *    for it; stable installs follow GitHub's Latest release unless the user
+ *    explicitly opts into the beta channel.
  *  - Nightly releases are explicitly rejected: no nightly publish path exists,
  *    and a version stamped `*-nightly.*` is treated as an unsupported
  *    prerelease (stable updates only).

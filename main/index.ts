@@ -129,8 +129,8 @@ function configureAutoUpdaterChannel(betaOptInOverride?: boolean): void {
 
   autoUpdater.channel = resolved.channel;
   autoUpdater.allowPrerelease = resolved.allowPrerelease;
-  // Switching between a prerelease channel and stable can legitimately move
-  // to a lower semver value, so leaving beta must be allowed to downgrade.
+  // A beta-stamped build may move to a lower semver stable release during an
+  // explicit promotion; a stable build joining beta must never downgrade.
   autoUpdater.allowDowngrade = resolved.allowDowngrade;
 
   if (resolved.channel) {

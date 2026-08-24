@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
-import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError, now } from './db';
+import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError, now, withDatabaseRequest } from './db';
 import { BETA_CHANNEL_SETTING_KEY, parseStoredBetaChannelEnabled, resolveUpdateChannel } from './update-channel';
 import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/catalog';
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
@@ -89,6 +89,7 @@ let storedUpdateStatus: StoredUpdateStatus = initialUpdateState();
 let updaterPhase: UpdateErrorPhase = 'check';
 let stagedUpdateReady = false;
 let startupFailure = false;
+let betaChannelTransitionTail: Promise<void> = Promise.resolve();
 
 // Beta-channel opt-in persistence (#463, decision #503). The preference lives
 // in the same SQLite settings store as the rest of the app configuration so it
@@ -112,12 +113,18 @@ function writeBetaChannelEnabled(enabled: boolean): void {
     .run(BETA_CHANNEL_SETTING_KEY, enabled ? 'true' : 'false', now());
 }
 
-function configureAutoUpdaterChannel(): void {
+function enqueueBetaChannelTransition<T>(operation: () => Promise<T>): Promise<T> {
+  const transition = betaChannelTransitionTail.then(operation, operation);
+  betaChannelTransitionTail = transition.then(() => undefined, () => undefined);
+  return transition;
+}
+
+function configureAutoUpdaterChannel(betaOptInOverride?: boolean): void {
   const prerelease = autoUpdater.currentVersion.prerelease[0];
   const versionChannel = typeof prerelease === 'string' ? prerelease : null;
   const resolved = resolveUpdateChannel({
     versionPrereleaseChannel: versionChannel,
-    betaOptIn: readBetaChannelEnabled(),
+    betaOptIn: betaOptInOverride ?? readBetaChannelEnabled(),
   });
 
   autoUpdater.channel = resolved.channel;
@@ -807,36 +814,38 @@ async function initialize(): Promise<void> {
       // Persisted preference only — whether beta releases are *offered* is
       // decided by resolveUpdateChannel at check time, so this stays honest
       // even if the running version forces a specific channel.
-      readBetaChannelEnabled()
+      withDatabaseRequest(() => readBetaChannelEnabled())
     );
 
     ipcMain.handle('updates:set-beta-channel', (_event, enabled: unknown) => {
       if (typeof enabled !== 'boolean') {
         return { success: false, error: 'enabled must be a boolean' };
       }
-      // #467 honest-state model: never swap feeds underneath an in-flight or
-      // staged update. The renderer surfaces the refusal as a real state
-      // instead of silently masking what the updater is doing.
-      if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
-        return { success: false, error: 'A downloaded update is waiting to be installed — install it before switching channels' };
-      }
-      if (isUpdateCheckInFlight(storedUpdateStatus, updaterPhase)) {
-        return { success: false, error: 'An update check or download is in progress — try again once it finishes' };
-      }
-      try {
-        writeBetaChannelEnabled(enabled);
-      } catch (error) {
-        log.error('[Update] Failed to persist beta-channel preference:', error);
-        return { success: false, error: 'Could not save the channel preference' };
-      }
-      log.info(`[Update] Beta channel ${enabled ? 'enabled' : 'disabled'} by user`);
-      // Re-derive allowPrerelease/channel for the running install, then reset
-      // to the real pre-check state and immediately re-check against the new
-      // feed — the renderer sees genuine states, not a fabricated answer.
-      configureAutoUpdaterChannel();
-      setUpdateStatus(initialUpdateState());
-      checkForUpdates();
-      return { success: true };
+      return enqueueBetaChannelTransition(() => withDatabaseRequest(async () => {
+        // #467 honest-state model: never swap feeds underneath an in-flight or
+        // staged update. The renderer surfaces the refusal as a real state
+        // instead of silently masking what the updater is doing.
+        if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
+          return { success: false, error: 'A downloaded update is waiting to be installed — install it before switching channels' };
+        }
+        if (isUpdateCheckInFlight(storedUpdateStatus, updaterPhase)) {
+          return { success: false, error: 'An update check or download is in progress — try again once it finishes' };
+        }
+        try {
+          writeBetaChannelEnabled(enabled);
+        } catch (error) {
+          log.error('[Update] Failed to persist beta-channel preference:', error);
+          return { success: false, error: 'Could not save the channel preference' };
+        }
+        log.info(`[Update] Beta channel ${enabled ? 'enabled' : 'disabled'} by user`);
+        // Re-derive allowPrerelease/channel for the running install, then reset
+        // to the real pre-check state and immediately re-check against the new
+        // feed — the renderer sees genuine states, not a fabricated answer.
+        configureAutoUpdaterChannel(enabled);
+        setUpdateStatus(initialUpdateState());
+        checkForUpdates();
+        return { success: true };
+      }));
     });
 
     // #463: restarting to install takes the whole POS down (server, KDS,

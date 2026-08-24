@@ -1,4 +1,5 @@
 import { ipcMain, dialog, app, BrowserWindow } from 'electron';
+import { randomUUID } from 'node:crypto';
 import * as path from 'path';
 import * as fs from 'fs';
 import { getDatabase, createBackup, restoreBackup, now, getCurrentSchemaVersion, getSchemaVersionFromBackup, resetDatabaseWithBackup, withDatabaseMaintenanceLock, withDatabaseRequest, isManagedBackupFile } from './db';
@@ -359,19 +360,17 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
       const db = getDatabase();
       if (printer.id) {
         db.prepare(`
-          UPDATE printers SET name = ?, type = ?, connection_type = ?, ip_address = ?,
-            port = ?, usb_vendor_id = ?, usb_product_id = ?, is_default = ?, updated_at = ?
+          UPDATE printers SET name = ?, connection_type = ?, ip_address = ?,
+            port = ?, is_default = ?, updated_at = ?
           WHERE id = ?
-        `).run(printer.name, printer.type, printer.connection_type, printer.ip_address,
-          printer.port || 9100, printer.usb_vendor_id, printer.usb_product_id,
-          printer.is_default ? 1 : 0, now(), printer.id);
+        `).run(printer.name, printer.connection_type, printer.ip_address ?? null,
+          printer.port || 9100, printer.is_default ? 1 : 0, now(), printer.id);
       } else {
         db.prepare(`
-          INSERT INTO printers (name, type, connection_type, ip_address, port, usb_vendor_id, usb_product_id, is_default, created_at, updated_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(printer.name, printer.type, printer.connection_type, printer.ip_address,
-          printer.port || 9100, printer.usb_vendor_id, printer.usb_product_id,
-          printer.is_default ? 1 : 0, now(), now());
+          INSERT INTO printers (id, name, connection_type, ip_address, port, is_default, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(randomUUID(), printer.name, printer.connection_type, printer.ip_address ?? null,
+          printer.port || 9100, printer.is_default ? 1 : 0, now(), now());
       }
       return { success: true };
     } catch (error: any) {

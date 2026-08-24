@@ -113,10 +113,6 @@ export interface ElectronPrinterInput {
   ip_address?: string | null;
   port?: number | null;
   is_default?: boolean | number;
-  /** Legacy fields still bound by the Electron handler when supplied. */
-  type?: string;
-  usb_vendor_id?: number | null;
-  usb_product_id?: number | null;
 }
 
 export interface DailySummary {

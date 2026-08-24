@@ -112,6 +112,8 @@ function parseManifest(text, name) {
     throw new Error(`${name} references the same update artifact more than once: ${duplicateUrls.join(', ')}`);
   }
 
+  let topLevelPath = null;
+
   // electron-builder repeats the preferred update artifact as top-level
   // path/sha512. Keep that contract checked too: a disagreement here would
   // make the updater use a different checksum than the files entry we verify.
@@ -122,7 +124,7 @@ function parseManifest(text, name) {
     if (typeof document.sha512 !== 'string' || !isSha512(document.sha512)) {
       throw new Error(`${name} has a top-level path without a valid SHA-512`);
     }
-    const topLevelPath = document.path.trim();
+    topLevelPath = document.path.trim();
     const topLevelSha512 = normalizeSha512(document.sha512);
     const matchingFile = files.find((file) => file.url === topLevelPath);
     if (matchingFile) {
@@ -134,7 +136,7 @@ function parseManifest(text, name) {
     }
   }
 
-  return { version: document.version.trim(), files };
+  return { version: document.version.trim(), path: topLevelPath, files };
 }
 
 function expectedManifestNames(channel) {
@@ -146,11 +148,12 @@ function expectedManifestNames(channel) {
   ];
 }
 
-function assertManifestPlatformMapping(manifestName, version, files) {
+function assertManifestPlatformMapping(manifestName, version, files, selectedPath) {
   const base = `flocafe-${version}`;
   const urls = files.map((file) => file.url);
   let allowed;
   let required;
+  let requiredUpdaterPath;
 
   if (/^(latest|beta)\.yml$/.test(manifestName)) {
     allowed = new Set([`${base}-win-x64.exe`]);
@@ -175,6 +178,7 @@ function assertManifestPlatformMapping(manifestName, version, files) {
       `${base}-linux-x64.snap`,
     ]);
     required = [`${base}-linux-x64.appimage`];
+    requiredUpdaterPath = required[0];
   } else if (/^(latest|beta)-linux-arm64\.yml$/.test(manifestName)) {
     allowed = new Set([
       `${base}-linux-arm64.appimage`,
@@ -183,6 +187,7 @@ function assertManifestPlatformMapping(manifestName, version, files) {
       `${base}-linux-arm64.snap`,
     ]);
     required = [`${base}-linux-arm64.appimage`];
+    requiredUpdaterPath = required[0];
   } else {
     throw new Error(`unsupported release manifest ${manifestName}`);
   }
@@ -194,6 +199,9 @@ function assertManifestPlatformMapping(manifestName, version, files) {
   const missing = required.filter((url) => !urls.includes(url));
   if (missing.length > 0) {
     throw new Error(`${manifestName} is missing required platform artifacts: ${missing.join(', ')}`);
+  }
+  if (requiredUpdaterPath && selectedPath !== requiredUpdaterPath) {
+    throw new Error(`${manifestName} updater path must be ${requiredUpdaterPath}, got ${selectedPath ?? '(missing)'}`);
   }
 }
 
@@ -359,7 +367,7 @@ async function verifyReleaseAssets(release, { channel, tag = release && release.
     if (manifest.version !== tag) {
       throw new Error(`${manifestName} declares version ${manifest.version}, expected ${tag}`);
     }
-    assertManifestPlatformMapping(manifestName, tag, manifest.files);
+    assertManifestPlatformMapping(manifestName, tag, manifest.files, manifest.path);
 
     for (const file of manifest.files) {
       if (file.url !== file.url.split('/').pop() || !/^[a-z0-9.-]+$/.test(file.url)) {

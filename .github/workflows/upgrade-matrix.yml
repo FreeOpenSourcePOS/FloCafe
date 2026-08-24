@@ -73,8 +73,11 @@ jobs:
           curl -sSL -o "setup-N.exe" \
             "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-win-x64.exe"
           ls -la setup-N.exe
-          ./setup-N.exe /S
-          # One-click NSIS installs under %LOCALAPPDATA%\Programs\<productName>.
+          # Git Bash path-converts the leading slash in NSIS switches unless
+          # disabled, which would leave the assisted installer waiting for UI
+          # input on the headless runner.
+          MSYS_NO_PATHCONV=1 ./setup-N.exe /S
+          # Per-user NSIS installs under %LOCALAPPDATA%\Programs\<productName>.
           APP_DIR=""
           for _ in $(seq 1 60); do
             APP_DIR=$(find "$LOCALAPPDATA/Programs" -maxdepth 1 -iname "*flo*" -type d 2>/dev/null | head -1)
@@ -442,7 +445,9 @@ jobs:
           mkdir -p "$RUNNER_TEMP/matrix" && cd "$RUNNER_TEMP/matrix"
           curl -sSL -o "setup-old.exe" \
             "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${OLD_VERSION}/Flo.Cafe.Setup.${OLD_VERSION}.exe"
-          ./setup-old.exe /S
+          # Keep the NSIS /S switch intact when invoking the Windows binary
+          # from Git Bash; otherwise the silent installer waits for UI input.
+          MSYS_NO_PATHCONV=1 ./setup-old.exe /S
           APP_DIR=""
           for _ in $(seq 1 60); do
             APP_DIR=$(find "$LOCALAPPDATA/Programs" -maxdepth 1 -iname "*flo*" -type d 2>/dev/null | head -1)

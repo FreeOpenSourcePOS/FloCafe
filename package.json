@@ -1,6 +1,6 @@
 {
   "name": "flo-desktop",
-  "version": "3.3.0",
+  "version": "3.3.1-beta.1",
   "description": "Free, open-source, offline-first restaurant POS with KDS, SQLite, and thermal printer support.",
   "engines": {
     "node": ">=22.12.0"
@@ -40,11 +40,10 @@
     "test:redos-hardening": "node tests/run-electron-node-test.cjs tests/redos-hardening.test.ts",
     "test:phase2": "ts-node --transpile-only -P tests/tsconfig.json tests/auth-state-recovery.test.ts && node tests/run-electron-node-test.cjs tests/login-email-normalization.test.ts && node tests/run-electron-node-test.cjs tests/master-pin.test.ts && node tests/run-electron-node-test.cjs tests/manager-pin-verification.test.ts && node tests/run-electron-node-test.cjs tests/jwt-logout-lifecycle.test.ts && node tests/run-electron-node-test.cjs tests/kds-websocket-revalidation.test.ts && node tests/run-electron-node-test.cjs tests/token-revocation-fail-closed.test.ts",
     "test:url-allowlist": "ts-node --transpile-only -P tests/tsconfig.json tests/url-allowlist.test.ts",
-    "test:startup-cache": "ts-node --transpile-only -P tests/tsconfig.json tests/startup-cache.test.ts",    "test:issue-389-timezone-override": "node tests/run-electron-node-test.cjs tests/issue-389-timezone-override.test.ts",
+    "test:startup-cache": "ts-node --transpile-only -P tests/tsconfig.json tests/startup-cache.test.ts",
+    "test:issue-389-timezone-override": "node tests/run-electron-node-test.cjs tests/issue-389-timezone-override.test.ts",
     "test:issue-390-locale-preference-invariants": "node tests/run-electron-node-test.cjs tests/issue-390-locale-preference-invariants.test.ts",
     "test:issue-475-picker-highlight": "ts-node --transpile-only -P tests/tsconfig.json tests/issue-475-bill-template-picker-highlight.test.ts",
-
-
     "test:auth-ui-deterministic": "ts-node --transpile-only -P tests/tsconfig.json tests/auth-ui-deterministic.test.ts",
     "test:cors": "ts-node --transpile-only -P tests/tsconfig.json tests/cors-security.test.ts",
     "test:csp-lan": "ts-node --transpile-only -P tests/tsconfig.json tests/csp-lan-header.test.ts",
@@ -142,7 +141,7 @@
     "test:phone-search-integration": "node tests/run-electron-node-test.cjs tests/phone-search-integration.test.ts",
     "test:e2e-argentina-flow": "ts-node --transpile-only -P tests/tsconfig.json tests/e2e-argentina-flow.test.ts",
     "test:translations": "ts-node --transpile-only -P tests/tsconfig.json tests/translations.test.ts",
- "test:print-labels": "ts-node --transpile-only -P tests/tsconfig.json tests/print-labels.test.ts && node scripts/generate-print-labels.cjs --check",
+    "test:print-labels": "ts-node --transpile-only -P tests/tsconfig.json tests/print-labels.test.ts && node scripts/generate-print-labels.cjs --check",
     "test:locale-chunks": "ts-node --transpile-only -P tests/tsconfig.json tests/locale-chunk-splitting.test.ts",
     "test:browser-receipts": "ts-node --transpile-only -P tests/tsconfig.json tests/browser-receipts.test.ts",
     "test:decoupled-ui-locale": "ts-node --transpile-only -P tests/tsconfig.json tests/decoupled-ui-locale.test.ts",

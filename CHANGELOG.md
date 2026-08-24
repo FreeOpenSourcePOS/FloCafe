@@ -2,6 +2,10 @@
 
 All notable changes to Flo Cafe are documented here. Dates are release dates, not commit dates. Format loosely follows [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.3.1-beta.1] - 2026-08-24
+
+Beta channel pre-release cut as the N+1 target for the runtime upgrade test matrix (#468). Contains the same changes as 3.3.0 plus the commits on `main` since that release (Linux title-bar fallback controls, native title-bar theme sync).
+
 ## [3.3.0] - 2026-08-21
 
 ### Added

@@ -127,6 +127,16 @@ jobs:
             --email "$MATRIX_EMAIL" --password "$MATRIX_PASSWORD" --pin "$MATRIX_PIN" \
             --seed-file "$RUNNER_TEMP/seeds.json"
 
+      - name: Complete staged NSIS installer in headless mode
+        shell: pwsh
+        run: |
+          # Released N clients invoke the assisted NSIS installer without /S.
+          # On a UI-less runner that process waits forever; preserve the real
+          # IPC-triggered handoff, then rerun that exact staged installer
+          # silently and relaunch the installed app with the matrix CDP port.
+          & "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/complete-nsis-install.ps1" `
+            -ExpectedAppPath "$env:FLO_EXE"
+
       - name: Wait for the upgraded build to come back up
         run: |
           # quitAndInstall hands off to the staged installer; give it time,
@@ -488,6 +498,15 @@ jobs:
             --expected-version "$TARGET_VERSION" \
             --email "$MATRIX_EMAIL" --password "$MATRIX_PASSWORD" --pin "$MATRIX_PIN" \
             --seed-file "$RUNNER_TEMP/seeds.json"
+
+      - name: Complete staged NSIS installer in headless mode
+        shell: pwsh
+        run: |
+          # The 2.9.x client is immutable and also starts an assisted NSIS
+          # installer. Finish its real staged handoff silently on the runner
+          # so the legacy cohort can relaunch without interactive UI.
+          & "$env:GITHUB_WORKSPACE/scripts/upgrade-matrix/complete-nsis-install.ps1" `
+            -ExpectedAppPath "$env:FLO_EXE"
 
       - name: Wait for the upgraded build to come back up
         run: |

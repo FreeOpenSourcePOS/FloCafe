@@ -1,12 +1,12 @@
 import type { NativeTheme } from 'electron';
 
 /**
- * Title-bar theme tokens and helpers for the native-controls title bar
- * (Refs #457, Phase 2 theme synchronization).
+ * Title-bar palette tokens and optional helpers for the native-controls title
+ * bar (Refs #457; dark-theme follow-up in #513).
  *
  * The overlay colors mirror the renderer CSS custom properties defined in
- * `frontend/src/app/globals.css` so the native Window Controls Overlay stays
- * visually continuous with the `.flo-title-bar` surface:
+ * `frontend/src/app/globals.css` so callers can keep the native Window
+ * Controls Overlay visually continuous with the `.flo-title-bar` surface:
  * - light: `--background` oklch(1 0 0) -> #ffffff and `--foreground`
  *   oklch(0.145 0 0) -> #0a0a0a.
  * - dark: `--background` oklch(0.145 0 0) -> #0a0a0a and `--foreground`
@@ -73,9 +73,11 @@ type ThemeLike = Pick<NativeTheme, 'shouldUseDarkColors'> & {
 };
 
 /**
- * Subscribes to OS theme changes so the main window's title-bar overlay keeps
- * following light/dark at runtime. Returns an unsubscribe function. No-ops on
- * platforms where the overlay cannot be updated.
+ * Optional future-integration helper: subscribes to OS theme changes so a
+ * caller can keep a window's title-bar overlay following light/dark at
+ * runtime. Returns an unsubscribe function. No-ops on platforms where the
+ * overlay cannot be updated. The current main window intentionally pins the
+ * light palette until the renderer implements dark-theme behavior.
  */
 export function attachTitleBarThemeSync(
   nativeTheme: ThemeLike,

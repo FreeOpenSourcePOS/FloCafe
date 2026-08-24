@@ -21,6 +21,7 @@ const RENDERER_READINESS_FAILSAFE_MS = 10_000;
 
 let rendererReadinessEpoch = 0;
 let readyEpoch: number | null = null;
+let rendererReadinessFailSafeShown = false;
 let showWindowFn: (() => void) | null = null;
 let failsafeTimer: ReturnType<typeof setTimeout> | null = null;
 let failsafeMs = RENDERER_READINESS_FAILSAFE_MS;
@@ -49,6 +50,7 @@ function clearReadinessFailSafe(): void {
 export function beginRendererDocument(): number {
   rendererReadinessEpoch += 1;
   readyEpoch = null;
+  rendererReadinessFailSafeShown = false;
   clearReadinessFailSafe();
 
   const epoch = rendererReadinessEpoch;
@@ -56,6 +58,7 @@ export function beginRendererDocument(): number {
     failsafeTimer = null;
     if (epoch !== rendererReadinessEpoch) return;
     if (readyEpoch === epoch) return;
+    rendererReadinessFailSafeShown = true;
     if (showWindowFn) {
       console.error(
         `[Window] Renderer readiness FAIL-SAFE fired for epoch ${epoch}: ` +
@@ -90,4 +93,22 @@ export function markWindowRendererReady(epoch: unknown): boolean {
 /** True when the current document's control surface has confirmed ready. */
 export function isWindowRendererReady(): boolean {
   return readyEpoch === rendererReadinessEpoch && readyEpoch !== null && rendererReadinessEpoch > 0;
+}
+
+export function isRendererReadinessFailSafeShown(): boolean {
+  return rendererReadinessFailSafeShown;
+}
+
+export function isCurrentRendererFrame(
+  senderFrame: { frameToken?: string; detached?: boolean } | null | undefined,
+  currentFrame: { frameToken?: string; detached?: boolean } | null | undefined,
+): boolean {
+  return Boolean(
+    senderFrame
+      && currentFrame
+      && senderFrame.detached !== true
+      && currentFrame.detached !== true
+      && typeof senderFrame.frameToken === 'string'
+      && senderFrame.frameToken === currentFrame.frameToken,
+  );
 }

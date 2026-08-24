@@ -37,8 +37,11 @@ export function resolveTitleBarMode(probe: {
   if (probe.platform !== 'darwin' && probe.platform !== 'win32' && probe.platform !== 'linux') {
     return 'html-fallback';
   }
-  const major = Number.parseInt(probe.electronVersion.split('.')[0] ?? '', 10);
-  if (!Number.isFinite(major) || major < MIN_OVERLAY_ELECTRON_MAJOR) return 'html-fallback';
+  const versionMatch = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
+    probe.electronVersion,
+  );
+  const major = versionMatch ? Number(versionMatch[1]) : Number.NaN;
+  if (!Number.isSafeInteger(major) || major < MIN_OVERLAY_ELECTRON_MAJOR) return 'html-fallback';
   if (!probe.overlayApiPresent) return 'html-fallback';
   return 'native-overlay';
 }

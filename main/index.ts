@@ -35,7 +35,13 @@ import {
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
 import { attachTitleBarThemeSync } from './title-bar-theme';
-import { beginRendererDocument, getRendererReadinessEpoch, initWindowReadiness, isWindowRendererReady } from './window-readiness';
+import {
+  beginRendererDocument,
+  getRendererReadinessEpoch,
+  initWindowReadiness,
+  isRendererReadinessFailSafeShown,
+  isWindowRendererReady,
+} from './window-readiness';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -357,7 +363,11 @@ let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
 
 function showMainWindow(): boolean {
-  if (!isWindowRendererReady() || !mainWindow || mainWindow.isDestroyed()) return false;
+  if (
+    (!isWindowRendererReady() && !isRendererReadinessFailSafeShown())
+    || !mainWindow
+    || mainWindow.isDestroyed()
+  ) return false;
   mainWindow.show();
   return true;
 }

@@ -18,6 +18,8 @@ import {
   beginRendererDocument,
   getRendererReadinessEpoch,
   initWindowReadiness,
+  isCurrentRendererFrame,
+  isRendererReadinessFailSafeShown,
   isWindowRendererReady,
   markWindowRendererReady,
 } from '../main/window-readiness';
@@ -43,6 +45,23 @@ async function run(): Promise<void> {
   // Fail-safe covers the reject path: nothing valid reported -> window shown.
   await sleep(60);
   assert.deepEqual(shows, [firstEpoch], 'fail-safe must fire exactly once for the unconfirmed epoch');
+  assert.equal(isRendererReadinessFailSafeShown(), true, 'fail-safe visibility remains recoverable');
+  assert.equal(
+    isCurrentRendererFrame({ frameToken: 'current' }, { frameToken: 'current' }),
+    true,
+    'current document frame identity is accepted',
+  );
+  assert.equal(
+    isCurrentRendererFrame({ frameToken: 'old' }, { frameToken: 'current' }),
+    false,
+    'stale document frame identity is rejected',
+  );
+  assert.equal(
+    isCurrentRendererFrame({ frameToken: 'current', detached: true }, { frameToken: 'current' }),
+    false,
+    'detached document frame identity is rejected',
+  );
+  assert.equal(isCurrentRendererFrame(null, { frameToken: 'current' }), false);
 
   // A late valid report still works after the fail-safe fired.
   assert.equal(markWindowRendererReady(firstEpoch), true);
@@ -52,6 +71,7 @@ async function run(): Promise<void> {
   const secondEpoch = beginRendererDocument();
   assert.equal(secondEpoch, firstEpoch + 1, 'every document load begins a new epoch');
   assert.equal(isWindowRendererReady(), false, 'new document starts unready');
+  assert.equal(isRendererReadinessFailSafeShown(), false, 'new document clears fail-safe show state');
 
   // The previous document's report is now stale and must be ignored.
   assert.equal(markWindowRendererReady(firstEpoch), false, 'stale-epoch report must be ignored');

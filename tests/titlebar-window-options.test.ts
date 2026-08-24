@@ -91,6 +91,10 @@ assert.equal(
   resolveTitleBarMode({ platform: 'linux', electronVersion: '', overlayApiPresent: true }),
   'html-fallback',
 );
+assert.equal(
+  resolveTitleBarMode({ platform: 'linux', electronVersion: '33oops', overlayApiPresent: true }),
+  'html-fallback',
+);
 
 const linuxFallbackMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'linux', 'html-fallback');
 assert.equal(linuxFallbackMainWindow.options.titleBarStyle, 'hidden');

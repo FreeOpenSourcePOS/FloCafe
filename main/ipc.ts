@@ -11,7 +11,7 @@ import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './serv
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus } from './services/whatsapp';
 import { createKdsWindow, applyWindowControlAction } from './window-options';
-import { markWindowRendererReady } from './window-readiness';
+import { isCurrentRendererFrame, markWindowRendererReady } from './window-readiness';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -248,6 +248,15 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   handle('window-ready', (event, payload: unknown) => {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
+    let currentFrame: Electron.WebFrameMain | null = null;
+    try {
+      currentFrame = event.sender.mainFrame;
+    } catch {
+      return { success: false, error: 'Stale or invalid readiness report' };
+    }
+    if (!isCurrentRendererFrame(event.senderFrame, currentFrame)) {
+      return { success: false, error: 'Stale or invalid readiness report' };
+    }
     // Reports are bound to the readiness epoch of the document that sent them
     // (see main/window-readiness.ts). Stale or malformed reports are ignored:
     // a previous document must never mark the current one ready.

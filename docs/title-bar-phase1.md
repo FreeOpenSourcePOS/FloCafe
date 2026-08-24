@@ -18,4 +18,4 @@ The renderer `ElectronAPI` declaration stays in parity with the existing preload
 
 ## Explicit Phase 2 exclusions
 
-Phase 1 does not add HTML window-control buttons or broad window-control IPC, Linux HTML fallback controls, clock/cloud-sync indicators, title-bar printer/server polling, vibrancy/transparency, dynamic theme synchronization, or cross-platform manual validation. Those remain bounded follow-up work if platform testing identifies a need.
+Phase 1 does not add HTML window-control buttons or broad window-control IPC, Linux HTML fallback controls, clock/cloud-sync indicators, title-bar printer/server polling, vibrancy/transparency, or cross-platform manual validation. Those remain bounded follow-up work if platform testing identifies a need.

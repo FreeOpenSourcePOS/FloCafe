@@ -47,5 +47,4 @@ It dispatches and waits for the durable #468 workflow only after that workflow
 
 Until #512 lands with that contract, installed-artifact rows remain
 **NOT-RUN** and the candidate gate must not be described as a complete runtime
-upgrade pass. The current PR #512 checks are not release evidence; its Windows
-rows were not green at the time this gate was added.
+upgrade pass.

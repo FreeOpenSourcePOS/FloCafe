@@ -152,7 +152,8 @@ directly to GitHub `Latest`.
    packages go to the snap `beta` channel when credentials permit it; a
    channel-permission warning does not block GitHub release publication.
 5. Run **Actions > Release candidate confidence gate** with the exact published
-   beta tag, commit, candidate-manifest asset ID/SHA-256, and Stable Latest tag.
+   beta tag, commit, candidate-manifest asset ID/SHA-256, Stable Latest tag, and
+   the exact stable `from_version` installed as N by the runtime matrix.
    Set `run_installed_matrix=false` until PR #512's runtime-matrix workflow lands
    with the candidate-manifest inputs. The gate then records the installed rows
    as explicit **NOT-RUN** rather than claiming a pass. Once #512 lands, the
@@ -175,10 +176,10 @@ stable release:
 3. To make it the default update target, dispatch **Release** once more from
    that exact tag with `release_tag=X.Y.Z`, `channel=stable`,
    `promote_stable=true`, plus the candidate-manifest asset ID and SHA-256. The
-promotion-only job revalidates that immutable manifest against every current
-release asset and first requires the permanent candidate summary and both
-stable Snap publication markers, then refuses anything unpublished or
-prerelease-flagged before selecting it as
+   promotion-only job revalidates that immutable manifest against every current
+   release asset and first requires the permanent candidate summary and both
+   stable Snap publication markers, then refuses anything unpublished or
+   prerelease-flagged before selecting it as
    GitHub Latest. Stable installs see it on their next update check.
 
 Betas also act as the N+1 update source for runtime upgrade matrix testing

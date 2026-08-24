@@ -7,8 +7,8 @@ import type { NativeTheme } from 'electron';
  * The overlay colors mirror the renderer CSS custom properties defined in
  * `frontend/src/app/globals.css` so the native Window Controls Overlay stays
  * visually continuous with the `.flo-title-bar` surface:
- * - light: Phase 1 tokens (`--background` oklch(1 0 0) -> #ffffff, slate
- *   symbol color #475569).
+ * - light: `--background` oklch(1 0 0) -> #ffffff and `--foreground`
+ *   oklch(0.145 0 0) -> #0a0a0a.
  * - dark: `--background` oklch(0.145 0 0) -> #0a0a0a and `--foreground`
  *   oklch(0.985 0 0) -> #fafafa.
  *
@@ -24,7 +24,7 @@ export interface TitleBarOverlayColors {
 }
 
 export const TITLE_BAR_OVERLAY_COLORS: Readonly<Record<'light' | 'dark', TitleBarOverlayColors>> = {
-  light: { color: '#ffffff', symbolColor: '#475569' },
+  light: { color: '#ffffff', symbolColor: '#0a0a0a' },
   dark: { color: '#0a0a0a', symbolColor: '#fafafa' },
 };
 

@@ -11,6 +11,7 @@ export function createMainWindow(
   BrowserWindowConstructor: BrowserWindowConstructor,
   preload: string,
   platform: NodeJS.Platform = process.platform,
+  isDark = false,
 ): BrowserWindow {
   return new BrowserWindowConstructor({
     width: 1400,
@@ -20,7 +21,7 @@ export function createMainWindow(
     title: 'Flo',
     titleBarStyle: platform === 'darwin' ? 'hiddenInset' : 'hidden',
     titleBarOverlay: {
-      ...resolveTitleBarOverlayColors(false),
+      ...resolveTitleBarOverlayColors(isDark),
       height: TITLE_BAR_HEIGHT,
     },
     ...(platform === 'darwin' ? { trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION } : {}),

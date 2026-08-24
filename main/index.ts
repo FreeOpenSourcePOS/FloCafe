@@ -398,7 +398,12 @@ function createWindow(): void {
   // the same run instead of only on the next full relaunch.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
-  mainWindow = createMainWindow(BrowserWindow, path.join(__dirname, 'preload.js'));
+  mainWindow = createMainWindow(
+    BrowserWindow,
+    path.join(__dirname, 'preload.js'),
+    process.platform,
+    nativeTheme.shouldUseDarkColors,
+  );
 
   mainWindow.once('ready-to-show', () => {
     mainWindow?.show();

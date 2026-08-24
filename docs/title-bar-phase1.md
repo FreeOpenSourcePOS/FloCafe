@@ -42,7 +42,7 @@ Contract coverage lives in `tests/titlebar-window-options.test.ts` (mode resolut
 
 A manually-triggered `workflow_dispatch` CI job that launches the packaged Linux AppImage under xvfb on ubuntu-latest and captures screenshots of both overlay and fallback modes as artifacts remains follow-up work; it needs a packaged-build runner and xvfb setup that does not fit this slice.
 
-The renderer `ElectronAPI` declaration stays in parity with the preload surface, including settings, KDS, printer, and daily-summary methods plus the narrow `windowAction` control and `windowReady` readiness methods. The `titleBarMode` capability remains part of the `get-status` payload rather than a separate renderer gate. The KDS window, print receipt/local popup windows, native dialogs, and browser/LAN layouts remain on their existing paths. Context isolation, disabled Node integration, and the preload API are unchanged.
+The renderer `ElectronAPI` declaration stays in parity with the preload surface, including settings, KDS, printer, and daily-summary methods plus the narrow `windowAction` control and `windowReady` readiness methods. The `titleBarMode` capability remains part of the `get-status` payload rather than a separate renderer gate. The KDS window, print receipt/local popup windows, native dialogs, and browser/LAN layouts remain on their existing paths. Context isolation and disabled Node integration are unchanged; the preload API is extended only by the two narrow readiness/control methods described above.
 
 ## Explicit exclusions
 

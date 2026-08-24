@@ -14,6 +14,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
     return {
       app: { isPackaged: true, getPath: () => testDir, getVersion: () => 'test' },
       ipcMain: {
+        on: () => {},
         handle: (channel: string, handler: Function) => {
           ipcHandlers.set(channel, handler);
         },
@@ -122,4 +123,3 @@ run()
     Module._load = originalLoad;
     fs.rmSync(testDir, { recursive: true, force: true });
   });
-

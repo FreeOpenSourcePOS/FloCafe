@@ -51,8 +51,9 @@ body {
   font-family: var(--font-sans);
 }
 
-/* Phase 1 desktop title bar: Electron supplies the native caption buttons.
- * The safe-area env values exclude those buttons and update on geometrychange;
+/* Desktop title bar: native-overlay mode supplies the caption buttons through
+ * Electron; html-fallback mode mounts equivalent controls in the renderer.
+ * The safe-area env values exclude native buttons and update on geometrychange;
  * physical positioning is intentional for WCO's physical x/width values while
  * content spacing and flow use logical properties for RTL locales. */
 .flo-title-bar {

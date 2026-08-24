@@ -39,9 +39,9 @@ export interface ElectronAPI {
 
   // Status
   getStatus: () => Promise<ElectronStatus>;
-  // Window controls (HTML title-bar fallback; only invoked when getStatus()
-  // reports titleBarMode 'html-fallback'). Readiness reports are bound to the
-  // document epoch from getTitleBarStatus so main can reject stale reports.
+  // Renderer readiness report, used after either native-overlay or HTML
+  // fallback controls are available. Reports are bound to the document epoch
+  // from getStatus() so main can reject stale reports.
   windowReady: (payload: { epoch: number }) => Promise<ElectronActionResult | ElectronIpcError>;
 
   // Updates

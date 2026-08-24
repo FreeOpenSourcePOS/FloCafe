@@ -38,12 +38,12 @@ Phase 2 adds a defensive runtime decision so no platform can end up hidden-with-
 
 Contract coverage lives in `tests/titlebar-window-options.test.ts` (mode resolution matrix, fallback window options, window-action verb validation), `tests/window-readiness.test.ts` (epoch and nonce binding, stale-report rejection, reload invalidation, fail-safe firing and cancellation), and `tests/electron-api-contract.test.ts` (preload surface includes `windowAction` and document-bound `windowReady`).
 
-### Follow-up (not implemented)
+### Platform matrix follow-up (completed in #462)
 
-A manually-triggered `workflow_dispatch` CI job that launches the packaged Linux AppImage under xvfb on ubuntu-latest and captures screenshots of both overlay and fallback modes as artifacts remains follow-up work; it needs a packaged-build runner and xvfb setup that does not fit this slice.
+Cross-platform verification is recorded in [`docs/title-bar-platform-matrix.md`](title-bar-platform-matrix.md). The Windows assertion workflow runs on a hosted desktop runner; the packaged Linux AppImage is verified under Xvfb on the captain-approved Debian GNOME machine, with assertion/log evidence and a supplementary XWD capture. macOS fullscreen/traffic-light and browser/LAN/sidebar rows are recorded separately in that matrix.
 
 The renderer `ElectronAPI` declaration stays in parity with the preload surface, including settings, KDS, printer, and daily-summary methods plus the narrow `windowAction` control and `windowReady` readiness methods. The `titleBarMode` capability remains part of the `get-status` payload rather than a separate renderer gate. The KDS window, print receipt/local popup windows, native dialogs, and browser/LAN layouts remain on their existing paths. Context isolation and disabled Node integration are unchanged; the preload API is extended only by the two narrow readiness/control methods described above.
 
 ## Explicit exclusions
 
-Phase 1 did not add HTML window-control buttons or broad window-control IPC, clock/cloud-sync indicators, title-bar printer/server polling, vibrancy/transparency, dynamic theme synchronization, or cross-platform manual validation. Phase 2 delivered the HTML fallback controls over one narrow `windowAction` IPC channel; broad window-control IPC, cloud-sync indicators, printer/server polling, vibrancy/transparency, and dynamic theme synchronization remain bounded follow-up work if platform testing identifies a need.
+Phase 1 did not add HTML window-control buttons or broad window-control IPC, clock/cloud-sync indicators, title-bar printer/server polling, vibrancy/transparency, or dynamic theme synchronization. Phase 2 delivered the HTML fallback controls over one narrow `windowAction` IPC channel; broad window-control IPC, cloud-sync indicators, printer/server polling, vibrancy/transparency, and any platform coverage outside the matrix remain bounded follow-up work if testing identifies a need.

@@ -11,7 +11,9 @@ export type BrowserWindowConstructor = new (options: BrowserWindowConstructorOpt
 
 // macOS traffic-light buttons are 12px tall; y = (40 - 12) / 2 centers them in
 // the 40px title bar. x keeps the standard inset margin from the window edge.
-const MAC_TRAFFIC_LIGHT_POSITION = { x: 16, y: 14 } as const;
+// Exported for the platform-matrix runtime probe (tests/platform-titlebar-runtime-probe.cjs)
+// so the macOS hands-on row can assert the exact centered values.
+export const MAC_TRAFFIC_LIGHT_POSITION = { x: 16, y: 14 } as const;
 
 /**
  * Window Controls Overlay APIs became dependable across our supported

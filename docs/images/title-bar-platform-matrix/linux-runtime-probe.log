@@ -1,0 +1,18 @@
+INFO | environment | platform=linux electron=43.4.1
+[3346222:0824/123234.883838:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+PASS | mode-resolution: real environment decision matches contract | resolved=native-overlay (platform=linux, electronMajor=43, overlayApiPresent=true)
+PASS | mode-resolution: missing overlay API fails closed to html-fallback | overlayApiPresent=false -> html-fallback
+PASS | mode-resolution: pre-33 Electron fails closed to html-fallback | electron 32.x -> html-fallback
+PASS | mode-resolution: unknown platform fails closed to html-fallback | platform=sunos -> html-fallback
+PASS | fallback-options: html-fallback builds without titleBarOverlay | titleBarOverlay present=false
+PASS | fallback-options: titleBarStyle stays hidden/hiddenInset in fallback | titleBarStyle=hidden
+[3346222:0824/123234.941362:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+PASS | window-creation: main window created with resolved mode | mode=native-overlay
+PASS | overlay-config: window built with titleBarOverlay at 40 DIP height | titleBarOverlay={"color":"#ffffff","symbolColor":"#0a0a0a","height":40}
+INFO | overlay-getter | platform=linux getTitleBarOverlay()=undefined (getter not supported on Linux; Electron draws server-side decorations)
+PASS | window-action: unsupported verbs are rejected | action='explode' rejected
+[3346222:0824/123234.973332:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+[3346222:0824/123234.973447:ERROR:dbus/bus.cc:405] Failed to connect to the bus: Could not parse server address: Unknown address type (examples of valid types are "tcp" and on UNIX "unix")
+[3346222:0824/123234.976258:ERROR:dbus/object_proxy.cc:572] Failed to call method: org.freedesktop.DBus.NameHasOwner: object_path= /org/freedesktop/DBus: unknown error type: 
+SKIP | window-action round-trip | display has no window manager (xvfb without WM); state changes are no-ops
+SUMMARY | 9/9 checks passed

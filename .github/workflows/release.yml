@@ -354,7 +354,7 @@ jobs:
           # the credentials are re-exported with beta enabled.
           if ! UPLOAD_OUT=$(snapcraft upload "$SNAP" --release="$SNAP_CHANNEL" 2>&1); then
             printf '%s\n' "$UPLOAD_OUT"
-            if printf '%s' "$UPLOAD_OUT" | grep -q "invalid-channel-permission"; then
+            if [ "$SNAP_CHANNEL" = "beta" ] && printf '%s' "$UPLOAD_OUT" | grep -q "invalid-channel-permission"; then
               echo "::warning::Snap Store credentials do not permit the '$SNAP_CHANNEL' channel (macaroon restriction). The .snap remains attached to this GitHub release; re-export SNAPCRAFT_STORE_CREDENTIALS with the beta channel enabled to restore Store publishing (#468)."
               exit 0
             fi

@@ -195,7 +195,10 @@ async function setupAndSeed({ email, password, masterPin }) {
 }
 
 /** Verify the seeded records survived the upgrade. Throws on any loss. */
-async function verifySeeds(seeds, expectedVersion, { skipBetaPreference = false } = {}) {
+async function verifySeeds(seeds, expectedVersion, {
+  skipBetaPreference = false,
+  skipBetaPreferenceReason = 'beta preference not in scope',
+} = {}) {
   const problems = [];
   const appInfo = await cdpEval(DEBUG_PORT(), 'window.electronAPI.getAppInfo()');
   if (appInfo?.version !== expectedVersion) {
@@ -216,7 +219,7 @@ async function verifySeeds(seeds, expectedVersion, { skipBetaPreference = false 
     problems.push('seeded printer config missing after upgrade');
   }
   let betaCheck = skipBetaPreference
-    ? 'SKIP (pre-toggle fixture; N predates beta preference)'
+    ? `SKIP (${skipBetaPreferenceReason})`
     : 'SKIP (build predates the beta-channel IPC)';
   if (!skipBetaPreference) {
     try {

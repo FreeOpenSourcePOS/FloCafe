@@ -1,8 +1,8 @@
 # Runtime upgrade support matrix (#468)
 
-**Verification window:** 2026-08-24  
-**N:** `3.3.0`  
-**N+1:** `3.3.1-beta.1` (GitHub prerelease, beta channel)  
+**Verification window:** 2026-08-24
+**N:** `3.3.0`
+**N+1:** `3.3.1-beta.1` (GitHub prerelease, beta channel)
 **Stable feed:** unchanged; GitHub Latest remained `3.3.0` throughout.
 
 This matrix records real installed-artifact runs, not unit tests or artifact-only
@@ -17,8 +17,8 @@ reason; no unobserved behavior is inferred.
   - `draft=false`, `prerelease=true`
   - `releases/latest` remained `3.3.0`
   - [successful release workflow run 32749694533](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32749694533)
-  - Windows, macOS, Linux x64, and Linux arm64 packaging jobs passed; draft
-    manifest/artifact verification and publish passed.
+  - Windows, macOS, Linux x64, and Linux arm64 packaging jobs passed; GitHub
+    draft manifest/artifact verification and release publication passed.
 - The release verifier was exercised against the real beta draft. It found and
   fixed two latent release-pipeline assumptions: draft releases are not
   addressable by `GET /releases/tags/{tag}`, and Linux updater manifests contain
@@ -28,12 +28,12 @@ reason; no unobserved behavior is inferred.
 
 | Row | N artifact / target | Result | Evidence / reason |
 |---|---|---|---|
-| Windows NSIS x64 | `flocafe-3.3.0-win-x64.exe` -> `3.3.1-beta.1` | **PENDING** | Workflow is committed but cannot be dispatched until the new workflow is present on the default branch; see [execution blocker](#windows-nsis-x64). |
+| Windows NSIS x64 | `flocafe-3.3.0-win-x64.exe` -> `3.3.1-beta.1` | **PASS-verified** | [Run 32775289667](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32775289667), artifact `evidence-windows-nsis-x64`. |
 | macOS DMG/ZIP arm64 | `flocafe-3.3.0-mac-arm64.dmg` -> `3.3.1-beta.1` | **NOT-RUN** | [Signed fixture limitation](#macos-arm64-dmgzip) |
 | macOS DMG/ZIP x64 | `flocafe-3.3.0-mac-x64.dmg` -> `3.3.1-beta.1` | **NOT-RUN** | No Intel Mac available locally; no remote macOS execution was used for this row. |
 | Linux AppImage x64 | `flocafe-3.3.0-x86_64.AppImage` -> `3.3.1-beta.1` | **PASS-verified** | [Real Debian 13 GNOME machine evidence](#linux-appimage-x64) |
 | Linux AppImage arm64 | `flocafe-3.3.0-arm64.AppImage` -> `3.3.1-beta.1` | **NOT-RUN** | The approved real Linux machine is x86_64; no arm64 Linux machine was available in this run. The arm64 beta artifact did build and publish. |
-| Older cohort Windows NSIS x64 | `Flo.Cafe.Setup.2.9.7.exe` -> stable `3.3.0` | **PENDING** | Same GitHub-hosted workflow registration blocker; see [execution blocker](#older-cohort). |
+| Older cohort Windows NSIS x64 | `Flo.Cafe.Setup.2.9.7.exe` -> stable `3.3.0` | **PASS-verified** | [Run 32775289667](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32775289667), artifact `evidence-older-cohort-windows`. |
 | Linux managed: deb | `flocafe-3.3.0-amd64.deb` | **PASS-verified** | [Live `linux-managed` IPC event](#linux-managed-gating) |
 | Linux managed: rpm | `flocafe-3.3.0-x86_64.rpm` | **NOT-RUN** | No system package installation was permitted on the real Debian box; the same main-process gate is covered by the deb row. |
 | Linux managed: snap | `flocafe-3.3.0-amd64.snap` | **NOT-RUN** | No snapd/system mutation was permitted on the real Debian box. Beta Snap Store publishing was also blocked by the repository macaroon's `stable, edge` channel restriction; the `.snap` GitHub asset still published. |
@@ -41,19 +41,28 @@ reason; no unobserved behavior is inferred.
 
 ## Windows NSIS x64
 
-**Result: PENDING execution.** The row workflow is prepared to install the
-released N installer silently on `windows-latest`, apply an isolated pre-toggle
-beta fixture, seed an owner (Master PIN `4681`), product, order marker, and
-network printer, stage `3.3.1-beta.1`, invoke
-`window.electronAPI.restartAndInstall`, and check version, persistence,
-updater differential/full logs, and the root process tree. The fixture changes
-only the runner's installed copy, never a release asset.
+**Result: PASS-verified.** [Run 32775289667](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32775289667)
+installed the released N artifact on `windows-latest`, applied the isolated
+pre-toggle beta fixture, seeded an owner/order/printer, staged beta.1, and
+completed the real staged NSIS handoff. The evidence JSON reports version,
+order, and printer persistence PASS; the process evidence reports one root
+process after relaunch. The uploaded artifact is
+[`evidence-windows-nsis-x64`](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32775289667/artifacts/9537745436).
 
-The row workflow is [`.github/workflows/upgrade-matrix.yml`](../.github/workflows/upgrade-matrix.yml).
-GitHub will not expose a new `workflow_dispatch` workflow until its file is
-present on the default branch, so this isolated-branch run has no CI artifact
-to link yet. The workflow must be triggered from a PR/default-branch workflow
-registration before this cell can honestly become PASS.
+The updater log recorded:
+
+```text
+Differential download: .../3.3.1-beta.1/flocafe-3.3.1-beta.1-win-x64.exe
+status transitions: up-to-date -> available -> ready-to-install
+root processes: 1
+```
+
+The first two hosted attempts exposed an assisted-NSIS/UI handoff problem.
+The bounded `complete-nsis-install.ps1` helper captured the staged process,
+stopped only that UI-blocked handoff, reran the same staged installer with
+`/S`, checked its exit code, and relaunched with CDP. The successful run proves
+the updater assertions after that handoff; interactive SmartScreen remains
+NOT-RUN as recorded in the table.
 
 ## macOS arm64 DMG/ZIP
 
@@ -132,11 +141,12 @@ behavior.
 
 ## Older cohort
 
-**Result: PENDING execution.** The workflow is prepared to install the
-released 2.9.7 Windows NSIS installer, seed the same markers, and follow the
-stable `latest.yml` feed to stable `3.3.0`. This row intentionally uses the
-stable channel because a 2.9.x client predates beta plumbing. It will upload
-`evidence-older-cohort-windows` after the workflow is registered and run.
+**Result: PASS-verified.** [Run 32775289667](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32775289667)
+installed the released 2.9.7 NSIS artifact, seeded the same markers, followed
+the stable feed to 3.3.0, and completed the bounded staged-NSIS handoff. The
+evidence JSON reports `to_version: 3.3.0`, version/order/printer persistence
+PASS, and the uploaded artifact is
+[`evidence-older-cohort-windows`](https://github.com/FreeOpenSourcePOS/FloCafe/actions/runs/32775289667/artifacts/9537742761).
 
 ## Linux managed gating
 
@@ -164,11 +174,23 @@ than incorrectly polling a default `up-to-date` value.
 2. **Updater fallback:** the real AppImage row encountered `EBADF` during the
    differential attempt and succeeded via full download. This is recorded as a
    product finding; no unrelated updater refactor was made.
-3. **Release pipeline:** the first real beta build exposed a pwsh argument
-   parsing failure, draft-release lookup failures, an over-strict Linux
-   manifest allow-list, and a Snap Store macaroon restricted to stable/edge.
-   The scoped fixes are in the release workflow/verifier; Snap restriction is
-   degraded to a loud warning while GitHub artifacts remain publishable. The
-   store credential still needs owner rotation to enable beta publishing.
+3. **Windows NSIS handoff:** the first hosted attempts stopped after the
+   updater handed off to the assisted NSIS installer, which waited for UI and
+   left the old process alive. The bounded helper now captures the staged
+   process, reruns that exact installer silently, checks exit status, and
+   relaunches with CDP. This is a scoped test-harness fix; SmartScreen trust
+   behavior remains separately NOT-RUN.
+4. **Release pipeline:** the first real beta build exposed pwsh argument
+   parsing, draft-release lookup, an over-strict Linux manifest allow-list, and
+   a Snap Store macaroon restricted to stable/edge. Scoped fixes are in the
+   release workflow/verifier; Snap restriction is a loud warning while GitHub
+   artifacts remain publishable. The store credential still needs owner
+   rotation to enable beta publishing.
+5. **CI log hygiene:** the initial Windows workflow exposed fixture
+   credential-like environment values through Actions' automatic step env dump.
+   The current workflow keeps those values as step-local shell variables so
+   future logs do not print a credential-like env block. The fixtures are
+   synthetic test values, not production credentials; no real secret was
+   entered or captured.
 
 No screenshots were captured, per the evidence-only/log-based test instruction.

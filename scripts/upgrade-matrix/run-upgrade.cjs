@@ -116,8 +116,12 @@ async function phaseVerify(args) {
   await waitForApi(Number(args['api-timeout'] || 300000));
   // Give the renderer a moment to expose its preload bridge after boot.
   await sleep(5000);
+  const skipBetaPreference = Boolean(args['pre-toggle-fixture'] || args['skip-beta-preference']);
   const { version: runningVersion, betaCheck } = await verifySeeds(seeds, expectedVersion, {
-    skipBetaPreference: Boolean(args['pre-toggle-fixture']),
+    skipBetaPreference,
+    skipBetaPreferenceReason: args['pre-toggle-fixture']
+      ? 'pre-toggle fixture; N predates beta preference'
+      : 'stable-channel row; beta preference not in scope',
   });
 
   const evidence = {

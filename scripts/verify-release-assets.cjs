@@ -34,8 +34,8 @@ function parseArgs(argv) {
   if (!/^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(result.tag)) {
     throw new Error(`invalid release tag ${result.tag}`);
   }
-  if (!['latest', 'beta', 'nightly'].includes(result.channel)) {
-    throw new Error(`unsupported release channel ${result.channel}`);
+  if (!['latest', 'beta'].includes(result.channel)) {
+    throw new Error(`unsupported release channel ${result.channel} (nightlies are rejected by #503)`);
   }
   return result;
 }
@@ -152,10 +152,10 @@ function assertManifestPlatformMapping(manifestName, version, files) {
   let allowed;
   let required;
 
-  if (/^(latest|beta|nightly)\.yml$/.test(manifestName)) {
+  if (/^(latest|beta)\.yml$/.test(manifestName)) {
     allowed = new Set([`${base}-win-x64.exe`]);
     required = [`${base}-win-x64.exe`];
-  } else if (/^(latest|beta|nightly)-mac\.yml$/.test(manifestName)) {
+  } else if (/^(latest|beta)-mac\.yml$/.test(manifestName)) {
     allowed = new Set([
       `${base}-mac-x64.dmg`,
       `${base}-mac-arm64.dmg`,
@@ -163,10 +163,10 @@ function assertManifestPlatformMapping(manifestName, version, files) {
       `${base}-mac-arm64.zip`,
     ]);
     required = [`${base}-mac-x64.zip`, `${base}-mac-arm64.zip`];
-  } else if (/^(latest|beta|nightly)-linux\.yml$/.test(manifestName)) {
+  } else if (/^(latest|beta)-linux\.yml$/.test(manifestName)) {
     allowed = new Set([`${base}-linux-x64.appimage`]);
     required = [`${base}-linux-x64.appimage`];
-  } else if (/^(latest|beta|nightly)-linux-arm64\.yml$/.test(manifestName)) {
+  } else if (/^(latest|beta)-linux-arm64\.yml$/.test(manifestName)) {
     allowed = new Set([`${base}-linux-arm64.appimage`]);
     required = [`${base}-linux-arm64.appimage`];
   } else {

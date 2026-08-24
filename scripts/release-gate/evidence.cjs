@@ -85,7 +85,31 @@ function createReleaseSummary({ manifest, candidateManifestBytes, matrix = null 
       sensitiveLogsExcluded: true,
     },
   };
-  return assertSanitized(summary);
+  return assertReleaseSummary(summary, { manifest, candidateManifestBytes });
+}
+
+function assertReleaseSummary(summary, { manifest, candidateManifestBytes } = {}) {
+  assertSanitized(summary);
+  if (!summary || summary.schemaVersion !== 1 || summary.type !== 'flocafe-release-summary') {
+    throw new Error('release summary schema is invalid');
+  }
+  if (!manifest || !manifest.release || !manifest.commit || !summary.release) {
+    throw new Error('release summary must bind a candidate manifest');
+  }
+  if (summary.release.tag !== manifest.release.tag || summary.release.channel !== manifest.release.channel || summary.release.commit !== manifest.commit.sha) {
+    throw new Error('release summary release binding does not match the candidate manifest');
+  }
+  if (!candidateManifestBytes || summary.release.candidateManifestSha256 !== sha256(candidateManifestBytes)) {
+    throw new Error('release summary candidate manifest digest does not match the published bytes');
+  }
+  if (summary.release.boundAssetCount !== (Array.isArray(manifest.assets) ? manifest.assets.length : -1)) {
+    throw new Error('release summary asset count does not match the candidate manifest');
+  }
+  if (summary.automated?.candidateManifest !== 'PASS' || summary.automated?.draftInventoryAndDownloads !== 'PASS') {
+    throw new Error('release summary does not record the required automated release checks');
+  }
+  assertRetentionPolicy(summary.retention);
+  return summary;
 }
 
 function writeJson(filePath, value) {
@@ -129,6 +153,7 @@ if (require.main === module) {
 module.exports = {
   RETENTION_DAYS,
   assertRetentionPolicy,
+  assertReleaseSummary,
   assertSanitized,
   createReleaseSummary,
   sha256,

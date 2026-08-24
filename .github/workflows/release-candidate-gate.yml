@@ -115,6 +115,9 @@ jobs:
         with:
           node-version: '22'
 
+      - name: Install release-gate dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
       - name: 'Require the #512 runtime-matrix integration contract'
         run: |
           set -euo pipefail

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 const { assertCandidateReadiness, assertPublishedRelease, assertStableLatestUnchanged } = require('./release-state.cjs');
-const { assertRetentionPolicy, assertSanitized } = require('./evidence.cjs');
-const { manifestSha256, verifyCandidateManifest } = require('./candidate-manifest.cjs');
+const { assertReleaseSummary } = require('./evidence.cjs');
+const { manifestSha256, resolveTagCommit, verifyCandidateManifest } = require('./candidate-manifest.cjs');
 
 const SEMVER = /^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/;
 
@@ -50,6 +50,8 @@ async function main() {
   if (!SEMVER.test(tag)) throw new Error(`invalid release tag ${tag}`);
 
   const apiBase = `https://api.github.com/repos/${repo}`;
+  const resolvedCommit = await resolveTagCommit(apiBase, tag);
+  if (resolvedCommit !== commit) throw new Error(`release tag ${tag} resolves to ${resolvedCommit}, not the supplied commit ${commit}`);
   const release = await json(`${apiBase}/releases/tags/${encodeURIComponent(tag)}`);
   assertPublishedRelease(release, { tag, channel });
   const candidateAsset = (release.assets || []).find((asset) => asset.name === 'candidate-manifest.json');
@@ -60,8 +62,7 @@ async function main() {
   const summaryBytes = await bytes(summaryAsset.url);
   const manifest = JSON.parse(candidateBytes.toString('utf8'));
   const summary = JSON.parse(summaryBytes.toString('utf8'));
-  assertSanitized(summary);
-  assertRetentionPolicy(summary.retention);
+  assertReleaseSummary(summary, { manifest, candidateManifestBytes: candidateBytes });
   let latest = { tag_name: '' };
   try {
     latest = await json(`${apiBase}/releases/latest`);
@@ -72,7 +73,7 @@ async function main() {
   await verifyCandidateManifest(manifest, release, {
     requestAsset: (asset) => request(asset.url, 'application/octet-stream'),
     tag,
-    commit,
+    commit: resolvedCommit,
     channel,
   });
   assertCandidateReadiness({

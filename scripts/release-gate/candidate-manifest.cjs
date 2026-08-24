@@ -98,6 +98,22 @@ async function githubJson(url) {
   return (await githubRequest(url)).json();
 }
 
+async function resolveTagCommit(apiBase, tag) {
+  let object = (await githubJson(`${apiBase}/git/ref/tags/${encodeURIComponent(tag)}`)).object;
+  for (let depth = 0; depth < 4; depth++) {
+    if (!isRecord(object) || typeof object.sha !== 'string' || typeof object.type !== 'string') {
+      throw new Error(`GitHub tag ${tag} did not resolve to a Git object`);
+    }
+    if (object.type === 'commit') {
+      if (!COMMIT.test(object.sha)) throw new Error(`GitHub tag ${tag} resolved to an invalid commit SHA`);
+      return object.sha.toLowerCase();
+    }
+    if (object.type !== 'tag') throw new Error(`GitHub tag ${tag} resolved to unsupported object type ${object.type}`);
+    object = (await githubJson(`${apiBase}/git/tags/${encodeURIComponent(object.sha)}`)).object;
+  }
+  throw new Error(`GitHub tag ${tag} has too many annotated-tag indirections`);
+}
+
 async function responseBytes(response, description) {
   if (Buffer.isBuffer(response)) return response;
   if (response instanceof Uint8Array) return Buffer.from(response);
@@ -173,9 +189,9 @@ function classifyAsset(name) {
     platform = match[1] === 'win' ? 'windows' : match[1];
     architecture = match[2];
     const extension = match[3];
-    if (extension === 'exe' || extension === 'dmg' || extension === 'appimage') kind = 'installer';
+    if (extension === 'blockmap' || extension.endsWith('.blockmap')) kind = 'blockmap';
+    else if (extension === 'exe' || extension === 'dmg' || extension === 'appimage') kind = 'installer';
     else if (extension === 'appx') kind = 'store-package';
-    else if (extension === 'blockmap') kind = 'blockmap';
     else if (extension === 'deb' || extension === 'rpm' || extension === 'snap') kind = 'package';
     else if (extension === 'zip') kind = 'archive';
   }
@@ -341,10 +357,14 @@ function manifestSha256(bytes) {
 
 async function createFromGitHub(options) {
   const apiBase = `https://api.github.com/repos/${options.repo}`;
+  const resolvedCommit = await resolveTagCommit(apiBase, options.tag);
+  if (resolvedCommit !== options.commit.toLowerCase()) {
+    throw new Error(`release tag ${options.tag} resolves to ${resolvedCommit}, not the supplied commit ${options.commit}`);
+  }
   const release = await githubJson(`${apiBase}/releases/tags/${encodeURIComponent(options.tag)}`);
   const manifest = await createCandidateManifest({
     release,
-    commit: options.commit,
+    commit: resolvedCommit,
     channel: options.channel,
     requestAsset: defaultAssetRequest,
     signingStatuses: {
@@ -362,6 +382,10 @@ async function createFromGitHub(options) {
 
 async function verifyFromGitHub(options) {
   const apiBase = `https://api.github.com/repos/${options.repo}`;
+  const resolvedCommit = await resolveTagCommit(apiBase, options.tag);
+  if (resolvedCommit !== options.commit.toLowerCase()) {
+    throw new Error(`release tag ${options.tag} resolves to ${resolvedCommit}, not the supplied commit ${options.commit}`);
+  }
   const release = await githubJson(`${apiBase}/releases/tags/${encodeURIComponent(options.tag)}`);
   const candidateAsset = (release.assets || []).find((asset) => asset.name === 'candidate-manifest.json');
   if (!candidateAsset) throw new Error(`release ${options.tag} is missing candidate-manifest.json`);
@@ -378,7 +402,7 @@ async function verifyFromGitHub(options) {
   await verifyCandidateManifest(manifest, release, {
     requestAsset: defaultAssetRequest,
     tag: options.tag,
-    commit: options.commit,
+    commit: resolvedCommit,
     channel: options.channel,
   });
   console.log(`candidate manifest ${options.tag}: immutable asset binding verified (${manifest.assets.length} assets)`);
@@ -403,5 +427,6 @@ module.exports = {
   createCandidateManifest,
   hashAsset,
   manifestSha256,
+  resolveTagCommit,
   verifyCandidateManifest,
 };

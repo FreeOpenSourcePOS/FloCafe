@@ -3,7 +3,9 @@ const crypto = require('node:crypto');
 
 const {
   assertCandidateManifest,
+  classifyAsset,
   createCandidateManifest,
+  resolveTagCommit,
   verifyCandidateManifest,
 } = require('../scripts/release-gate/candidate-manifest.cjs');
 const {
@@ -15,12 +17,14 @@ const {
 } = require('../scripts/release-gate/release-state.cjs');
 const {
   RETENTION_DAYS,
+  assertReleaseSummary,
   assertRetentionPolicy,
   assertSanitized,
   createReleaseSummary,
 } = require('../scripts/release-gate/evidence.cjs');
 const { createSnapEvidence } = require('../scripts/release-gate/snap-evidence.cjs');
-const { assertMatrixContract, buildDispatchInputs } = require('../scripts/release-gate/matrix-contract.cjs');
+const { assertMatrixContract, buildDispatchInputs, createDispatchId } = require('../scripts/release-gate/matrix-contract.cjs');
+const { assertCorrelatedRun } = require('../scripts/release-gate/matrix-dispatch.cjs');
 
 const payloads = new Map();
 function asset(name, id) {
@@ -37,11 +41,13 @@ const releaseAssets = [
   asset('uninstall-macos.sh', 105),
   asset('uninstall-windows.ps1', 106),
   asset('flocafe-3.3.1-beta.1-win-x64.exe', 107),
-  asset('flocafe-3.3.1-beta.1-mac-x64.zip', 108),
-  asset('flocafe-3.3.1-beta.1-linux-x64.appimage', 109),
-  asset('flocafe-3.3.1-beta.1-linux-arm64.appimage', 110),
-  asset('snap-publication-x64.json', 111),
-  asset('snap-publication-arm64.json', 112),
+  asset('flocafe-3.3.1-beta.1-win-x64.exe.blockmap', 108),
+  asset('flocafe-3.3.1-beta.1-mac-x64.zip', 109),
+  asset('flocafe-3.3.1-beta.1-mac-x64.zip.blockmap', 110),
+  asset('flocafe-3.3.1-beta.1-linux-x64.appimage', 111),
+  asset('flocafe-3.3.1-beta.1-linux-arm64.appimage', 112),
+  asset('snap-publication-x64.json', 113),
+  asset('snap-publication-arm64.json', 114),
 ];
 const release = { draft: true, tag_name: '3.3.1-beta.1', assets: releaseAssets };
 const requestAsset = async (entry) => payloads.get(entry.name);
@@ -61,6 +67,8 @@ const requestAsset = async (entry) => payloads.get(entry.name);
   const windowsAsset = manifest.assets.find((entry) => entry.platform === 'windows' && entry.kind === 'installer');
   assert.equal(windowsAsset.signing.status, 'unsigned');
   assert.equal(windowsAsset.signing.smartScreen, 'not-run');
+  assert.equal(classifyAsset('flocafe-3.3.1-beta.1-win-x64.exe.blockmap').kind, 'blockmap');
+  assert.equal(classifyAsset('flocafe-3.3.1-beta.1-mac-x64.zip.blockmap').kind, 'blockmap');
   assert.equal(windowsAsset.sha256, crypto.createHash('sha256').update(payloads.get(windowsAsset.name)).digest('hex'));
   assert.equal(windowsAsset.sha512.length, 128);
 
@@ -70,8 +78,8 @@ const requestAsset = async (entry) => payloads.get(entry.name);
     tag_name: release.tag_name,
     assets: [
       ...releaseAssets,
-      { name: 'candidate-manifest.json', id: 113, size: 1, url: 'https://assets.test/candidate-manifest.json' },
-      { name: 'release-summary.json', id: 114, size: 1, url: 'https://assets.test/release-summary.json' },
+      { name: 'candidate-manifest.json', id: 115, size: 1, url: 'https://assets.test/candidate-manifest.json' },
+      { name: 'release-summary.json', id: 116, size: 1, url: 'https://assets.test/release-summary.json' },
     ],
   };
   await assert.doesNotReject(() => verifyCandidateManifest(manifest, published, {
@@ -126,28 +134,98 @@ const requestAsset = async (entry) => payloads.get(entry.name);
   assert.throws(() => assertOrdering(['draft-verified', 'published', 'promoted-latest'], { channel: 'stable' }), /snap-published.*published/);
 
   const summary = createReleaseSummary({ manifest, candidateManifestBytes: Buffer.from('manifest') });
+  assertReleaseSummary(summary, { manifest, candidateManifestBytes: Buffer.from('manifest') });
+  assert.throws(() => assertReleaseSummary({
+    ...summary,
+    release: { ...summary.release, candidateManifestSha256: '0'.repeat(64) },
+  }, { manifest, candidateManifestBytes: Buffer.from('manifest') }), /candidate manifest digest/);
   assert.equal(summary.retention.sanitizedWorkflowArtifactsDays, RETENTION_DAYS);
   assert.equal(summary.automated.installedArtifactMatrix, 'NOT-RUN');
   assertRetentionPolicy(summary.retention);
   assert.throws(() => assertSanitized({ password: 'nope' }), /sensitive field/);
   assert.throws(() => assertSanitized({ note: 'Bearer abc123' }), /credential-like/);
 
-  const currentMatrix = 'on:\n  workflow_dispatch:\n    inputs:\n      from_version:\n        required: true\n';
+  const currentMatrix = `name: Runtime upgrade matrix
+run-name: Runtime upgrade matrix \${{ inputs.matrix_dispatch_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      from_version: { required: true, type: string }
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ready
+`;
   assert.throws(() => assertMatrixContract(currentMatrix), /#512.*candidate_tag/);
-  const integratedMatrix = `${currentMatrix}      candidate_tag:\n        required: true\n      candidate_manifest_asset_id:\n        required: true\n      candidate_manifest_sha256:\n        required: true\n# candidate_manifest_sha256 candidate_manifest_asset_id\n`;
+  const integratedMatrix = `name: Runtime upgrade matrix
+run-name: Runtime upgrade matrix \${{ inputs.matrix_dispatch_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      from_version: { required: true, type: string }
+      candidate_tag: { required: true, type: string }
+      candidate_manifest_asset_id: { required: true, type: string }
+      candidate_manifest_sha256: { required: true, type: string }
+      matrix_dispatch_id: { required: true, type: string }
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      TAG: \${{ inputs.candidate_tag }}
+      ASSET_ID: \${{ inputs.candidate_manifest_asset_id }}
+      MANIFEST_SHA: \${{ inputs.candidate_manifest_sha256 }}
+      DISPATCH_ID: \${{ inputs.matrix_dispatch_id }}
+    steps:
+      - name: Validate exact candidate binding
+        run: test -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"
+`;
   assert.doesNotThrow(() => assertMatrixContract(integratedMatrix));
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace('TAG: ${{ inputs.candidate_tag }}', 'TAG: candidate')), /exact candidate inputs/);
+  const dispatchId = createDispatchId();
+  assert.doesNotThrow(() => assertCorrelatedRun({
+    workflow_id: 12,
+    event: 'workflow_dispatch',
+    head_branch: 'main',
+    display_title: `Runtime upgrade matrix ${dispatchId}`,
+  }, { workflowId: 12, ref: 'main', dispatchId }));
+  assert.throws(() => assertCorrelatedRun({
+    workflow_id: 12,
+    event: 'workflow_dispatch',
+    head_branch: 'main',
+    display_title: 'Runtime upgrade matrix another-run',
+  }, { workflowId: 12, ref: 'main', dispatchId }), /correlation/);
   assert.deepEqual(buildDispatchInputs({
     fromVersion: '3.3.0',
     candidateTag: '3.3.1-beta.1',
-    candidateManifestAssetId: 113,
+    candidateManifestAssetId: 115,
     candidateManifestSha256: 'B'.repeat(64),
+    dispatchId,
   }), {
     from_version: '3.3.0',
     to_version: '3.3.1-beta.1',
     candidate_tag: '3.3.1-beta.1',
-    candidate_manifest_asset_id: '113',
+    candidate_manifest_asset_id: '115',
     candidate_manifest_sha256: 'b'.repeat(64),
+    matrix_dispatch_id: dispatchId,
   });
+
+  const originalFetch = global.fetch;
+  const originalGhToken = process.env.GH_TOKEN;
+  process.env.GH_TOKEN = 'test-token';
+  global.fetch = async (url) => {
+    const body = url.endsWith('/git/ref/tags/3.3.1-beta.1')
+      ? { object: { type: 'tag', sha: 'b'.repeat(40) } }
+      : { object: { type: 'commit', sha: 'a'.repeat(40) } };
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    assert.equal(await resolveTagCommit('https://api.github.test/repos/example/repo', '3.3.1-beta.1'), 'a'.repeat(40));
+  } finally {
+    global.fetch = originalFetch;
+    if (originalGhToken === undefined) delete process.env.GH_TOKEN;
+    else process.env.GH_TOKEN = originalGhToken;
+  }
 
   console.log('✅ Release candidate manifest, channel, stable-Snap, retention, ordering, and #512-boundary contracts passed');
 })().catch((error) => {

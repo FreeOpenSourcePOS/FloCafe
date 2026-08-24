@@ -59,8 +59,9 @@ recomputes the manifest SHA-512 values. Only the separate `publish-release` job
 can then publish it. Stable tag pushes publish without moving GitHub's `Latest`
 pointer. To promote an already verified stable release, dispatch the workflow
 from that exact tag with `release_tag` set to the same tag,
-`channel=stable`, and `promote_stable=true`; the promotion-only job checks that
-the release is already published before selecting it. Beta releases never move
+`channel=stable`, `promote_stable=true`, and the candidate manifest asset ID
+and SHA-256 from the verified release; the promotion-only job checks that the
+release is already published before selecting it. Beta releases never move
 that pointer: they stay prerelease-flagged with `make_latest=false`, which is
 what keeps them invisible to stable installs (electron-updater's stable path
 follows GitHub's Latest pointer and ignores prereleases entirely).
@@ -171,9 +172,11 @@ stable release:
    `make_latest=false` like every release.
 3. To make it the default update target, dispatch **Release** once more from
    that exact tag with `release_tag=X.Y.Z`, `channel=stable`,
-   `promote_stable=true`. The promotion-only job first requires the permanent
-   candidate manifest/summary and both stable Snap publication markers, then
-   refuses anything unpublished or prerelease-flagged before selecting it as
+   `promote_stable=true`, plus the candidate-manifest asset ID and SHA-256. The
+promotion-only job revalidates that immutable manifest against every current
+release asset and first requires the permanent candidate summary and both
+stable Snap publication markers, then refuses anything unpublished or
+prerelease-flagged before selecting it as
    GitHub Latest. Stable installs see it on their next update check.
 
 Betas also act as the N+1 update source for runtime upgrade matrix testing

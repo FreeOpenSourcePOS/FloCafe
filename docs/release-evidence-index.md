@@ -42,6 +42,7 @@ It dispatches and waits for the durable #468 workflow only after that workflow
 - `candidate_tag`
 - `candidate_manifest_asset_id`
 - `candidate_manifest_sha256`
+- `matrix_dispatch_id` (included in the matrix run name for correlation)
 
 Until #512 lands with that contract, installed-artifact rows remain
 **NOT-RUN** and the candidate gate must not be described as a complete runtime

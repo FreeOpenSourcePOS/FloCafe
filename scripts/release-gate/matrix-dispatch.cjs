@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const fs = require('node:fs');
-const { assertMatrixContract, buildDispatchInputs } = require('./matrix-contract.cjs');
+const { assertMatrixContract, buildDispatchInputs, createDispatchId } = require('./matrix-contract.cjs');
 
 function arg(argv, name, fallback = null) {
   const index = argv.indexOf(name);
@@ -28,8 +28,19 @@ async function api(url, options = {}) {
   return body;
 }
 
+function assertCorrelatedRun(run, { workflowId, ref, dispatchId }) {
+  if (!run || run.workflow_id !== workflowId || run.event !== 'workflow_dispatch' || run.head_branch !== ref) {
+    throw new Error('discovered matrix run does not match the dispatched workflow, event, or ref');
+  }
+  if (typeof run.display_title !== 'string' || !run.display_title.includes(dispatchId)) {
+    throw new Error('discovered matrix run is missing the unique dispatch correlation');
+  }
+}
+
 async function dispatchAndWait({ repo, workflow, ref = 'main', inputs, timeoutMs = 45 * 60 * 1000, pollMs = 15000 }) {
   const apiBase = `https://api.github.com/repos/${repo}`;
+  const dispatchId = inputs && inputs.matrix_dispatch_id;
+  if (!dispatchId) throw new Error('matrix dispatch inputs must include matrix_dispatch_id');
   const startedAt = Date.now();
   const workflowInfo = await api(`${apiBase}/actions/workflows/${encodeURIComponent(workflow)}`);
   await api(`${apiBase}/actions/workflows/${workflowInfo.id}/dispatches`, {
@@ -41,16 +52,20 @@ async function dispatchAndWait({ repo, workflow, ref = 'main', inputs, timeoutMs
   let run = null;
   while (!run && Date.now() < discoveryDeadline) {
     const runs = await api(`${apiBase}/actions/workflows/${workflowInfo.id}/runs?event=workflow_dispatch&per_page=20`);
-    run = (runs.workflow_runs || [])
+    const matches = (runs.workflow_runs || [])
       .filter((candidate) => candidate.head_branch === ref && Date.parse(candidate.created_at) >= startedAt - 5000)
-      .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))[0] || null;
+      .filter((candidate) => typeof candidate.display_title === 'string' && candidate.display_title.includes(dispatchId));
+    if (matches.length > 1) throw new Error(`multiple matrix runs matched dispatch correlation ${dispatchId}`);
+    run = matches[0] || null;
     if (!run) await new Promise((resolve) => setTimeout(resolve, pollMs));
   }
   if (!run) throw new Error(`dispatched ${workflow} but could not find its run on ${ref}`);
+  assertCorrelatedRun(run, { workflowId: workflowInfo.id, ref, dispatchId });
 
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     const current = await api(`${apiBase}/actions/runs/${run.id}`);
+    assertCorrelatedRun(current, { workflowId: workflowInfo.id, ref, dispatchId });
     if (current.status === 'completed') {
       if (current.conclusion !== 'success') throw new Error(`installed-artifact matrix run ${run.id} completed with ${current.conclusion}`);
       console.log(`installed-artifact matrix run ${run.id} passed for exact candidate inputs`);
@@ -73,6 +88,7 @@ async function main() {
     candidateTag: arg(argv, '--candidate-tag'),
     candidateManifestAssetId: arg(argv, '--candidate-manifest-asset-id'),
     candidateManifestSha256: arg(argv, '--candidate-manifest-sha256'),
+    dispatchId: createDispatchId(),
   });
   await dispatchAndWait({ repo, workflow, inputs });
 }
@@ -84,4 +100,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { dispatchAndWait };
+module.exports = { assertCorrelatedRun, dispatchAndWait };

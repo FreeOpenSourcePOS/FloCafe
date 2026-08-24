@@ -25,6 +25,14 @@ on:
         required: true
         default: false
         type: boolean
+      candidate_manifest_asset_id:
+        description: GitHub asset ID of the immutable candidate-manifest.json used for promotion
+        required: false
+        type: string
+      candidate_manifest_sha256:
+        description: SHA-256 of the immutable candidate-manifest.json used for promotion
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -898,7 +906,9 @@ jobs:
         run: |
           node scripts/release-gate/verify-stable-promotion.cjs \
             --repo "${{ github.repository }}" \
-            --tag "$RELEASE_TAG"
+            --tag "$RELEASE_TAG" \
+            --candidate-asset-id "${{ inputs.candidate_manifest_asset_id }}" \
+            --manifest-sha256 "${{ inputs.candidate_manifest_sha256 }}"
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ needs.create-release.outputs.version }}

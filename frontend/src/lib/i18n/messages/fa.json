@@ -115,6 +115,8 @@
     "loading": "در حال بارگذاری",
     "loadingScreen": "در حال بارگذاری",
     "logoAlt": "Flo Cafe",
+    "maximize": "بیشینه",
+    "minimize": "کمینه",
     "namePlaceholder": "نام",
     "no": "خیر",
     "notAvailable": "در دسترس نیست",
@@ -147,6 +149,7 @@
     "total": "جمع کل",
     "unknown": "ناشناخته",
     "update": "به‌روزرسانی",
+    "windowControls": "دکمه‌های پنجره",
     "yes": "بله"
   },
   "countries": {

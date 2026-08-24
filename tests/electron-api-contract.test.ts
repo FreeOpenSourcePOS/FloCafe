@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 const Module = require('module');
 const originalLoad = Module._load;
 const calls: { channel: string; args: unknown[] }[] = [];
+const syncCalls: { channel: string; args: unknown[] }[] = [];
 const eventHandlers = new Map<string, (...args: unknown[]) => void>();
 let exposedApi: Record<string, unknown> | undefined;
 
@@ -16,6 +17,10 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
         },
       },
       ipcRenderer: {
+        sendSync: (channel: string, ...args: unknown[]) => {
+          syncCalls.push({ channel, args });
+          return { success: true };
+        },
         invoke: (channel: string, ...args: unknown[]) => {
           calls.push({ channel, args });
           return Promise.resolve();
@@ -40,12 +45,19 @@ try {
 
 async function run(): Promise<void> {
   assert.ok(exposedApi, 'preload exposes electronAPI');
+  assert.equal(syncCalls.length, 1);
+  assert.equal(syncCalls[0].channel, 'window-document');
+  const documentNonce = syncCalls[0].args[0];
+  assert.match(
+    String(documentNonce),
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+  );
   assert.deepEqual(Object.keys(exposedApi!).sort(), [
     'backupDatabase', 'checkForUpdates', 'dbApplySafeFixes', 'dbHealthCheck',
     'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
     'onMenuAction', 'onUpdateStatus', 'openKdsWindow', 'platform', 'restartAndInstall',
-    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting',
+    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'windowAction', 'windowReady',
   ].sort());
 
   const call = (name: string, ...args: unknown[]) =>
@@ -59,6 +71,8 @@ async function run(): Promise<void> {
   await call('getDailySummary');
   await call('getBetaChannel');
   await call('setBetaChannel', true);
+  await call('windowReady', { epoch: 1 });
+  await call('windowAction', 'minimize');
 
   const receivedStatuses: unknown[] = [];
   const unsubscribe = (exposedApi!['onUpdateStatus'] as (callback: (status: unknown) => void) => () => void)(
@@ -83,6 +97,8 @@ async function run(): Promise<void> {
     { channel: 'get-daily-summary', args: [] },
     { channel: 'updates:get-beta-channel', args: [] },
     { channel: 'updates:set-beta-channel', args: [true] },
+    { channel: 'window-ready', args: [{ epoch: 1, documentNonce }] },
+    { channel: 'window-action', args: ['minimize'] },
   ]);
 
   console.log('Electron preload methods expose the expected narrow IPC channels.');

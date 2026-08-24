@@ -1,0 +1,110 @@
+'use client';
+
+import { Minus, Square, X } from 'lucide-react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { useTranslations } from 'use-intl';
+
+type TitleBarMode = 'native-overlay' | 'html-fallback';
+type WindowControlAction = 'minimize' | 'toggle-maximize' | 'close';
+
+const subscribeToElectronCapability = () => () => {};
+const getElectronCapability = () => typeof window !== 'undefined' && Boolean(window.electronAPI?.getStatus);
+const getServerElectronCapability = () => false;
+
+export default function WindowControls() {
+  const tCommon = useTranslations('common');
+  const isElectron = useSyncExternalStore(
+    subscribeToElectronCapability,
+    getElectronCapability,
+    getServerElectronCapability,
+  );
+  const [resolved, setResolved] = useState<{
+    mode: TitleBarMode;
+    epoch: number;
+    documentNonce: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!isElectron) return undefined;
+    let cancelled = false;
+
+    window.electronAPI
+      ?.getStatus()
+      .then((status) => {
+        if (cancelled) return;
+        // Resolve the mode and bind this document's readiness report to the
+        // epoch main issued for it. An unrecognized/missing mode keeps native-
+        // overlay behavior so an older main never gets duplicate controls.
+        setResolved({
+          mode: status?.titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay',
+          epoch: typeof status?.titleBarEpoch === 'number' ? status.titleBarEpoch : Number.NaN,
+          documentNonce: typeof status?.titleBarDocumentNonce === 'string'
+            ? status.titleBarDocumentNonce
+            : null,
+        });
+      })
+      .catch((error) => {
+        // Deliberately no readiness report on failure: main cannot trust a
+        // control-surface confirmation from a document whose status read
+        // failed. Main's bounded fail-safe shows the window instead.
+        console.error('[WindowControls] Unable to resolve title-bar mode:', error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isElectron]);
+
+  // Readiness report: fires only once this document knows its epoch AND the
+  // control surface it reports for actually exists. For native-overlay the
+  // caption buttons are always present; for html-fallback this effect runs
+  // after the commit that mounted the fallback buttons below. Stale or
+  // malformed epochs are rejected by main, so a reload can never inherit a
+  // previous document's confirmation.
+  useEffect(() => {
+    if (!isElectron || !resolved) return;
+    if (!Number.isInteger(resolved.epoch) || resolved.epoch < 1 || !resolved.documentNonce) return;
+    window.electronAPI
+      ?.windowReady({ epoch: resolved.epoch })
+      ?.catch((error) => {
+        console.error('[WindowControls] Unable to report renderer readiness:', error);
+      });
+  }, [isElectron, resolved]);
+
+  const runWindowAction = useCallback((action: WindowControlAction) => {
+    const windowAction = window.electronAPI?.windowAction;
+    if (typeof windowAction !== 'function') return;
+    windowAction(action).catch(() => {});
+  }, []);
+
+  if (!isElectron || resolved?.mode !== 'html-fallback') return null;
+
+  return (
+    <div className="flo-title-bar__fallback-controls" role="group" aria-label={tCommon('windowControls')}>
+      <button
+        type="button"
+        className="flo-title-bar__fallback-button"
+        aria-label={tCommon('minimize')}
+        onClick={() => runWindowAction('minimize')}
+      >
+        <Minus aria-hidden="true" className="size-3.5" />
+      </button>
+      <button
+        type="button"
+        className="flo-title-bar__fallback-button"
+        aria-label={tCommon('maximize')}
+        onClick={() => runWindowAction('toggle-maximize')}
+      >
+        <Square aria-hidden="true" className="size-3" />
+      </button>
+      <button
+        type="button"
+        className="flo-title-bar__fallback-button flo-title-bar__fallback-button--close"
+        aria-label={tCommon('close')}
+        onClick={() => runWindowAction('close')}
+      >
+        <X aria-hidden="true" className="size-4" />
+      </button>
+    </div>
+  );
+}

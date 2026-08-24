@@ -1,4 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
+const { randomUUID } = require('node:crypto');
+
+const documentNonce = randomUUID();
+ipcRenderer.sendSync('window-document', documentNonce);
 
 contextBridge.exposeInMainWorld('electronAPI', {
   backupDatabase: (pin?: string) => ipcRenderer.invoke('backup-database', pin),
@@ -17,6 +21,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
 
   getStatus: () => ipcRenderer.invoke('get-status'),
+
+  windowReady: (payload: { epoch: number }) => ipcRenderer.invoke('window-ready', { ...payload, documentNonce }),
+
+  // Narrow window-control surface for the renderer title bar's HTML fallback
+  // controls. Only ever called when main reports titleBarMode 'html-fallback'.
+  windowAction: (action: string) => ipcRenderer.invoke('window-action', action),
 
   getPrinters: () => ipcRenderer.invoke('get-printers'),
   savePrinter: (printer: unknown) => ipcRenderer.invoke('save-printer', printer),

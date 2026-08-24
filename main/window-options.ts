@@ -1,18 +1,60 @@
 import type { BrowserWindow, BrowserWindowConstructorOptions } from 'electron';
 import { resolveTitleBarOverlayColors, TITLE_BAR_HEIGHT } from './title-bar-theme';
 
+/** How the main window's caption controls are supplied. */
+export type TitleBarMode = 'native-overlay' | 'html-fallback';
+
+/** The single narrow window-control verb set exposed over IPC. */
+export type WindowControlAction = 'minimize' | 'toggle-maximize' | 'close';
+
 export type BrowserWindowConstructor = new (options: BrowserWindowConstructorOptions) => BrowserWindow;
 
 // macOS traffic-light buttons are 12px tall; y = (40 - 12) / 2 centers them in
 // the 40px title bar. x keeps the standard inset margin from the window edge.
 const MAC_TRAFFIC_LIGHT_POSITION = { x: 16, y: 14 } as const;
 
+/**
+ * Window Controls Overlay APIs became dependable across our supported
+ * platforms from Electron 33 onward; older builds can end up hidden-with-
+ * no-controls when the overlay silently fails, so they fall back.
+ */
+const MIN_OVERLAY_ELECTRON_MAJOR = 33;
+
+/**
+ * Decides whether the main window can rely on Electron's native
+ * titleBarOverlay caption buttons, or whether the renderer must draw HTML
+ * fallback controls.
+ *
+ * Deliberately defensive: an unknown platform, a pre-33 Electron, or a
+ * missing runtime overlay API all resolve to 'html-fallback' so the window
+ * never ends up frameless with no visible way to minimize/close it.
+ */
+export function resolveTitleBarMode(probe: {
+  platform: NodeJS.Platform;
+  electronVersion: string;
+  overlayApiPresent: boolean;
+}): TitleBarMode {
+  if (probe.platform !== 'darwin' && probe.platform !== 'win32' && probe.platform !== 'linux') {
+    return 'html-fallback';
+  }
+  const versionMatch = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.exec(
+    probe.electronVersion,
+  );
+  const major = versionMatch ? Number(versionMatch[1]) : Number.NaN;
+  if (!Number.isSafeInteger(major) || major < MIN_OVERLAY_ELECTRON_MAJOR) return 'html-fallback';
+  if (!probe.overlayApiPresent) return 'html-fallback';
+  return 'native-overlay';
+}
+
 export function createMainWindow(
   BrowserWindowConstructor: BrowserWindowConstructor,
   preload: string,
   platform: NodeJS.Platform = process.platform,
-  isDark = false,
+  isDarkOrTitleBarMode: boolean | TitleBarMode = false,
+  titleBarMode: TitleBarMode = typeof isDarkOrTitleBarMode === 'string' ? isDarkOrTitleBarMode : 'native-overlay',
 ): BrowserWindow {
+  const isDark = typeof isDarkOrTitleBarMode === 'boolean' ? isDarkOrTitleBarMode : false;
+  const resolvedTitleBarMode = typeof isDarkOrTitleBarMode === 'string' ? isDarkOrTitleBarMode : titleBarMode;
   return new BrowserWindowConstructor({
     width: 1400,
     height: 900,
@@ -20,10 +62,14 @@ export function createMainWindow(
     minHeight: 768,
     title: 'Flo',
     titleBarStyle: platform === 'darwin' ? 'hiddenInset' : 'hidden',
-    titleBarOverlay: {
-      ...resolveTitleBarOverlayColors(isDark),
-      height: TITLE_BAR_HEIGHT,
-    },
+    ...(resolvedTitleBarMode === 'native-overlay'
+      ? {
+          titleBarOverlay: {
+            ...resolveTitleBarOverlayColors(isDark),
+            height: TITLE_BAR_HEIGHT,
+          },
+        }
+      : {}),
     ...(platform === 'darwin' ? { trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION } : {}),
     webPreferences: {
       preload,
@@ -33,6 +79,39 @@ export function createMainWindow(
     },
     show: false,
   });
+}
+
+/** Minimal window surface needed to service a window-control action. */
+export type WindowControlTarget = Pick<
+  BrowserWindow,
+  'isDestroyed' | 'minimize' | 'isMaximized' | 'maximize' | 'unmaximize' | 'close'
+>;
+
+/**
+ * Applies one validated window-control action. 'close' intentionally goes
+ * through `win.close()` so it fires the same 'close' event as the native
+ * caption button, preserving close-to-tray semantics.
+ */
+export function applyWindowControlAction(
+  win: WindowControlTarget,
+  action: unknown,
+): { success: true } | { error: string } {
+  if (action !== 'minimize' && action !== 'toggle-maximize' && action !== 'close') {
+    return { error: 'Unsupported window action' };
+  }
+  switch (action) {
+    case 'minimize':
+      win.minimize();
+      break;
+    case 'toggle-maximize':
+      if (win.isMaximized()) win.unmaximize();
+      else win.maximize();
+      break;
+    case 'close':
+      win.close();
+      break;
+  }
+  return { success: true };
 }
 
 export function getPopupWindowOptions(isBlank: boolean): BrowserWindowConstructorOptions {

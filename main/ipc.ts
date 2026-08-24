@@ -10,7 +10,12 @@ import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus } from './services/whatsapp';
-import { createKdsWindow } from './window-options';
+import { createKdsWindow, applyWindowControlAction } from './window-options';
+import {
+  isCurrentRendererFrame,
+  markWindowRendererReady,
+  registerRendererDocument,
+} from './window-readiness';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -47,7 +52,7 @@ function maskSetting(key: string, value: string): string {
  * LAN-served HTTP content and must not reach these handlers, so non-PIN-gated
  * handlers verify the sender's origin before doing anything.
  */
-function isTrustedSender(event: Electron.IpcMainInvokeEvent): boolean {
+function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): boolean {
   try {
     const url = event.sender?.getURL?.() ?? '';
     return url.startsWith('http://localhost:') || url.startsWith('http://127.0.0.1:');
@@ -64,6 +69,27 @@ function handle(channel: string, listener: (...args: any[]) => any): void {
 }
 
 export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
+  ipcMain.on('window-document', (event, documentNonce: unknown) => {
+    if (!isTrustedSender(event)) {
+      event.returnValue = { error: 'Unauthorized sender' };
+      return;
+    }
+    let currentFrame: Electron.WebFrameMain | null = null;
+    try {
+      currentFrame = event.sender.mainFrame;
+    } catch {
+      event.returnValue = { success: false, error: 'Invalid document registration' };
+      return;
+    }
+    if (!isCurrentRendererFrame(event.senderFrame, currentFrame)) {
+      event.returnValue = { success: false, error: 'Invalid document registration' };
+      return;
+    }
+    event.returnValue = registerRendererDocument(documentNonce)
+      ? { success: true }
+      : { success: false, error: 'Invalid document nonce' };
+  });
+
   // Database backup/restore
   ipcMain.handle('backup-database', async (event, pin?: string) => {
     const auth = authorizeMasterPin(pin, 'ipc:backup');
@@ -230,6 +256,41 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
       console.error('[IPC] db-initialize: Error:', error);
       return { success: false, error: error.message };
     }
+  });
+
+  // Narrow window-control surface for the renderer title bar's HTML fallback
+  // controls (only mounted when main reports 'html-fallback'). The trusted-
+  // sender wrapper above already restricts this to the localhost-served POS
+  // renderer; KDS/print popups carry no preload bridge. 'close' routes through
+  // BrowserWindow.close() so it fires the same event as the native caption
+  // button and honors close-to-tray behavior.
+  handle('window-action', (event, action: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
+    return applyWindowControlAction(win, action);
+  });
+
+  handle('window-ready', (event, payload: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
+    let currentFrame: Electron.WebFrameMain | null = null;
+    try {
+      currentFrame = event.sender.mainFrame;
+    } catch {
+      return { success: false, error: 'Stale or invalid readiness report' };
+    }
+    if (!isCurrentRendererFrame(event.senderFrame, currentFrame)) {
+      return { success: false, error: 'Stale or invalid readiness report' };
+    }
+    // Reports are bound to the readiness epoch of the document that sent them
+    // (see main/window-readiness.ts). Stale or malformed reports are ignored:
+    // a previous document must never mark the current one ready.
+    const reported = payload as { epoch?: unknown; documentNonce?: unknown } | null | undefined;
+    if (!markWindowRendererReady(reported?.epoch, reported?.documentNonce)) {
+      return { success: false, error: 'Stale or invalid readiness report' };
+    }
+    win.show();
+    return { success: true };
   });
 
   // Settings

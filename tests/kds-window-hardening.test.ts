@@ -54,6 +54,7 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return {
       ipcMain: {
+        on: () => {},
         handle: (channel: string, listener: (...args: any[]) => any) => {
           registered.set(channel, listener);
         },

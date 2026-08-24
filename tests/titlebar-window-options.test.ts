@@ -9,9 +9,11 @@ import {
   TITLE_BAR_OVERLAY_COLORS,
 } from '../main/title-bar-theme';
 import {
+  applyWindowControlAction,
   createKdsWindow,
   createLocalWindowOpenHandler,
   createMainWindow,
+  resolveTitleBarMode,
 } from '../main/window-options';
 
 class FakeBrowserWindow {
@@ -52,6 +54,87 @@ const localWindowOpenHandler = createLocalWindowOpenHandler(
   () => 3001,
   () => '192.168.1.50',
 );
+
+// ── Title-bar mode resolution (Phase 2 fallback gating) ───────────────────────
+
+// Captain-verified configuration: Debian + GNOME on real hardware with a
+// modern Electron keeps native overlay controls.
+assert.equal(
+  resolveTitleBarMode({ platform: 'linux', electronVersion: '43.4.0', overlayApiPresent: true }),
+  'native-overlay',
+);
+assert.equal(
+  resolveTitleBarMode({ platform: 'darwin', electronVersion: '43.4.0', overlayApiPresent: true }),
+  'native-overlay',
+);
+assert.equal(
+  resolveTitleBarMode({ platform: 'win32', electronVersion: '33.0.0', overlayApiPresent: true }),
+  'native-overlay',
+);
+// Pre-33 Electron builds can end up hidden-with-no-controls when the overlay
+// silently fails; they must fall back instead.
+assert.equal(
+  resolveTitleBarMode({ platform: 'linux', electronVersion: '32.3.1', overlayApiPresent: true }),
+  'html-fallback',
+);
+// Missing runtime overlay API (defensive probe) forces the fallback.
+assert.equal(
+  resolveTitleBarMode({ platform: 'linux', electronVersion: '43.4.0', overlayApiPresent: false }),
+  'html-fallback',
+);
+assert.equal(
+  resolveTitleBarMode({ platform: 'freebsd', electronVersion: '43.4.0', overlayApiPresent: true }),
+  'html-fallback',
+);
+// Malformed version strings must fail closed.
+assert.equal(
+  resolveTitleBarMode({ platform: 'linux', electronVersion: '', overlayApiPresent: true }),
+  'html-fallback',
+);
+assert.equal(
+  resolveTitleBarMode({ platform: 'linux', electronVersion: '33oops', overlayApiPresent: true }),
+  'html-fallback',
+);
+
+const linuxFallbackMainWindow = createMainWindow(FakeBrowserWindow as any, '/tmp/preload.js', 'linux', 'html-fallback');
+assert.equal(linuxFallbackMainWindow.options.titleBarStyle, 'hidden');
+assert.equal(
+  'titleBarOverlay' in linuxFallbackMainWindow.options,
+  false,
+  'fallback mode must not ship hidden-with-no-controls: renderer draws the caption buttons',
+);
+assert.equal(linuxFallbackMainWindow.options.webPreferences.contextIsolation, true);
+
+// ── Window-control action application (IPC verb set) ─────────────────────────
+
+class FakeWindow {
+  calls: string[] = [];
+  maximized = false;
+  isDestroyed() { return false; }
+  minimize() { this.calls.push('minimize'); }
+  isMaximized() { return this.maximized; }
+  maximize() { this.maximized = true; this.calls.push('maximize'); }
+  unmaximize() { this.maximized = false; this.calls.push('unmaximize'); }
+  close() { this.calls.push('close'); }
+}
+
+const win = new FakeWindow();
+assert.deepEqual(applyWindowControlAction(win as any, 'minimize'), { success: true });
+assert.deepEqual(applyWindowControlAction(win as any, 'toggle-maximize'), { success: true });
+assert.equal(win.maximized, true, 'toggle-maximize maximizes a restored window');
+assert.deepEqual(applyWindowControlAction(win as any, 'toggle-maximize'), { success: true });
+assert.equal(win.maximized, false, 'toggle-maximize restores a maximized window');
+assert.deepEqual(applyWindowControlAction(win as any, 'close'), { success: true });
+assert.deepEqual(win.calls, ['minimize', 'maximize', 'unmaximize', 'close']);
+
+for (const bad of ['destroy', '', 'minimize ', 'MAXIMIZE', undefined, null, 42]) {
+  assert.deepEqual(
+    applyWindowControlAction(win as any, bad),
+    { error: 'Unsupported window action' },
+    `action ${String(bad)} must be rejected`,
+  );
+}
+assert.deepEqual(win.calls, ['minimize', 'maximize', 'unmaximize', 'close'], 'rejected actions must not touch the window');
 const printPopup = localWindowOpenHandler({ url: 'about:blank' });
 assert.equal(printPopup?.action, 'allow');
 assert.deepEqual(printPopup?.overrideBrowserWindowOptions, {
@@ -177,3 +260,4 @@ attachTitleBarThemeSync(missingWindowTheme, () => null, 'darwin');
 missingWindowTheme.emitUpdated(); // must not throw while the window is absent
 
 console.log('Title-bar dynamic theme overlay resolution and platform guards pass.');
+console.log('Title-bar main-window options, fallback gating, and popup/KDS exclusions are preserved.');

@@ -43,6 +43,7 @@
   /* Hoisted to :root so fixed app chrome can offset below the title bar;
    * consumed by both .flo-title-bar and the sidebar inset rules below. */
   --flo-titlebar-height: 40px;
+  --flo-titlebar-fallback-controls-width: 132px;
   --flo-sidebar-block-start: 0px;
 }
 
@@ -50,8 +51,9 @@ body {
   font-family: var(--font-sans);
 }
 
-/* Phase 1 desktop title bar: Electron supplies the native caption buttons.
- * The safe-area env values exclude those buttons and update on geometrychange;
+/* Desktop title bar: native-overlay mode supplies the caption buttons through
+ * Electron; html-fallback mode mounts equivalent controls in the renderer.
+ * The safe-area env values exclude native buttons and update on geometrychange;
  * physical positioning is intentional for WCO's physical x/width values while
  * content spacing and flow use logical properties for RTL locales. */
 .flo-title-bar {
@@ -71,7 +73,7 @@ body {
   position: absolute;
   inset-block-start: env(titlebar-area-y, 0px);
   left: env(titlebar-area-x, 0px);
-  inline-size: env(titlebar-area-width, 100%);
+  inline-size: env(titlebar-area-width, calc(100% - var(--flo-titlebar-fallback-controls-width)));
   block-size: env(titlebar-area-height, var(--flo-titlebar-height));
   max-inline-size: 100%;
   box-sizing: border-box;
@@ -81,12 +83,57 @@ body {
   padding-inline: 0.75rem;
 }
 
+body:has(.flo-title-bar__fallback-controls) .flo-title-bar__safe-area {
+  left: auto;
+  right: auto;
+  inset-inline-start: 0;
+  inset-inline-end: var(--flo-titlebar-fallback-controls-width);
+  inline-size: auto;
+}
+
 .flo-title-bar__interactive,
 .flo-title-bar button,
 .flo-title-bar a,
-.flo-title-bar [role='button'] {
+.flo-title-bar [role='button'],
+.flo-title-bar__fallback-controls,
+.flo-title-bar__fallback-controls button {
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+/* HTML fallback caption buttons: mounted only when main reports the native
+ * overlay is unavailable ('html-fallback'). Logical properties keep them on
+ * the trailing edge for RTL locales; sizes echo standard caption-button hit
+ * targets while staying consistent with the 40px bar height. */
+.flo-title-bar__fallback-controls {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  block-size: var(--flo-titlebar-height);
+  display: flex;
+  align-items: stretch;
+  z-index: 30;
+}
+
+.flo-title-bar__fallback-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.flo-title-bar__fallback-button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.flo-title-bar__fallback-button--close:hover {
+  background: #e81123;
+  color: #ffffff;
 }
 
 .flo-title-bar--root-drag {

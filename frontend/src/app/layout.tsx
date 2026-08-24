@@ -59,8 +59,8 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <DesktopDragSurface />
         <I18nProvider>
+          <DesktopDragSurface />
           <MenuActionHandler />
           <HtmlLangSync />
           <AuthGuard>{children}</AuthGuard>

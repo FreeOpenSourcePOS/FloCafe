@@ -33,8 +33,16 @@ import {
   type UpdateErrorPhase,
 } from './update-state';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
-import { createLocalWindowOpenHandler, createMainWindow } from './window-options';
+import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
 import { attachTitleBarThemeSync } from './title-bar-theme';
+import {
+  beginRendererDocument,
+  getRendererDocumentNonce,
+  getRendererReadinessEpoch,
+  initWindowReadiness,
+  isRendererReadinessFailSafeShown,
+  isWindowRendererReady,
+} from './window-readiness';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -348,8 +356,23 @@ async function checkTaxPackUpdatesOnStartup(): Promise<void> {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+
+// Title-bar capability reported to the renderer via get-status; updated each
+// time the main window is created.
+let resolvedTitleBarMode: TitleBarMode = 'native-overlay';
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
+
+function showMainWindow(): boolean {
+  if (
+    (!isWindowRendererReady() && !isRendererReadinessFailSafeShown())
+    || !mainWindow
+    || mainWindow.isDestroyed()
+  ) return false;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  return true;
+}
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -377,13 +400,13 @@ if (gotSingleInstanceLock) {
   // Focus the existing window if a second launch is attempted.
   app.on('second-instance', () => {
     if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-      if (process.platform === 'linux') {
-        mainWindow.setAlwaysOnTop(true);
-        mainWindow.setAlwaysOnTop(false);
-        app.focus();
+      if (showMainWindow()) {
+        mainWindow.focus();
+        if (process.platform === 'linux') {
+          mainWindow.setAlwaysOnTop(true);
+          mainWindow.setAlwaysOnTop(false);
+          app.focus();
+        }
       }
     }
   });
@@ -398,15 +421,32 @@ function createWindow(): void {
   // the same run instead of only on the next full relaunch.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
+  // Readiness lifecycle: register the fail-safe show path and begin the first
+  // document epoch before anything loads. Every subsequent navigation re-begins
+  // via the did-start-loading hook below.
+  initWindowReadiness(() => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
+  });
+  beginRendererDocument();
+
+  // Decide once per window whether the native titleBarOverlay can be relied
+  // on (platform + Electron >= 33 + the overlay API actually present). When
+  // it cannot, the window ships without overlay options and the renderer
+  // mounts HTML fallback controls so we never end up hidden-with-no-controls.
+  resolvedTitleBarMode = resolveTitleBarMode({
+    platform: process.platform,
+    electronVersion: process.versions.electron,
+    overlayApiPresent: typeof BrowserWindow.prototype?.setTitleBarOverlay === 'function',
+  });
   mainWindow = createMainWindow(
     BrowserWindow,
     path.join(__dirname, 'preload.js'),
     process.platform,
     nativeTheme.shouldUseDarkColors,
+    resolvedTitleBarMode,
   );
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
     if (isDev) {
       mainWindow?.webContents.openDevTools();
     }
@@ -415,6 +455,14 @@ function createWindow(): void {
   // Always load from the embedded Express server (serves static Next.js export).
   // This avoids file:// protocol issues and keeps dev/prod behaviour identical.
   mainWindow.loadURL(`http://localhost:${getServerPort()}`);
+
+  // Every navigation (initial load, manual reload, crash-recovery reload)
+  // starts a fresh readiness epoch: the previous document's reports become
+  // stale, and a bounded fail-safe covers this document failing to mount its
+  // control surface. See main/window-readiness.ts.
+  mainWindow.webContents.on('did-start-loading', () => {
+    beginRendererDocument();
+  });
 
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page)
   // and blank popup windows (e.g. browser print popups). External URLs are sent to the system browser.
@@ -505,9 +553,7 @@ function createTray(): void {
           label: 'Show',
           click: () => {
             if (mainWindow) {
-              if (mainWindow.isMinimized()) mainWindow.restore();
-              mainWindow.show();
-              mainWindow.focus();
+              if (showMainWindow()) mainWindow.focus();
             }
           },
         },
@@ -541,9 +587,7 @@ function createTray(): void {
       // Single-click also shows the window on Linux (no double-click standard).
       tray.on('click', () => {
         if (mainWindow) {
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.show();
-          mainWindow.focus();
+          if (showMainWindow()) mainWindow.focus();
         }
       });
 
@@ -564,14 +608,14 @@ function createTray(): void {
     tray = new Tray(icon.resize({ width: 16, height: 16 }));
 
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'Open Flo', click: () => mainWindow?.show() },
+      { label: 'Open Flo', click: () => { showMainWindow(); } },
       { type: 'separator' },
       { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
     ]);
 
     tray.setToolTip('Flo');
     tray.setContextMenu(contextMenu);
-    tray.on('double-click', () => mainWindow?.show());
+    tray.on('double-click', () => { showMainWindow(); });
   } catch {
     console.log('[Tray] Icon not found, skipping tray');
   }
@@ -706,7 +750,7 @@ function createMenu(): void {
     {
       label: 'Window',
       submenu: [
-        { label: 'Flo Cafe', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+        { label: 'Flo Cafe', click: () => { if (showMainWindow()) mainWindow?.focus(); } },
         { type: 'separator' },
         { role: 'minimize' },
         ...(process.platform === 'darwin' ? [
@@ -892,6 +936,9 @@ async function initialize(): Promise<void> {
         },
         uptime: process.uptime(),
         port: getServerPort(),
+        titleBarMode: resolvedTitleBarMode,
+        titleBarEpoch: getRendererReadinessEpoch(),
+        titleBarDocumentNonce: getRendererDocumentNonce() ?? undefined,
       };
     });
 
@@ -971,7 +1018,7 @@ app.on('activate', () => {
   if (mainWindow === null) {
     createWindow();
   } else {
-    mainWindow.show();
+    showMainWindow();
   }
 });
 

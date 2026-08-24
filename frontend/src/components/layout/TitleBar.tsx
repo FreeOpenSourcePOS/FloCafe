@@ -15,9 +15,9 @@ const getServerElectronCapability = () => false;
  * Native-controls title-bar content for the desktop POS window.
  *
  * The same frontend is served to LAN browsers, so this component must remain
- * absent unless the preload capability is present. Native caption buttons are
- * supplied by Electron's titleBarOverlay; this component only owns the useful
- * store/staff context and the existing update indicator.
+ * absent unless the preload capability is present. Electron supplies native
+ * caption buttons when available; the root desktop chrome owns the HTML
+ * fallback buttons so they remain available on every renderer route.
  */
 export default function TitleBar() {
   const { currentTenant, user } = useAuthStore();
@@ -28,7 +28,6 @@ export default function TitleBar() {
     getElectronCapability,
     getServerElectronCapability,
   );
-
   // Expose the desktop capability to CSS so fixed app chrome (the sidebar)
   // can offset below the title bar. Browsers/LAN never receive the flag and
   // keep today's viewport-top geometry.
@@ -75,6 +74,7 @@ export default function TitleBar() {
           <UpdateBadge />
         </div>
       </div>
+
     </header>
   );
 }

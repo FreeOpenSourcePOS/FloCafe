@@ -33,9 +33,10 @@ export function resolveTitleBarOverlayColors(isDark: boolean): TitleBarOverlayCo
 }
 
 /**
- * `BrowserWindow.setTitleBarOverlay` is supported on Windows and macOS. On
- * Linux the window controls are composited differently and older Electron
- * releases reject the call, so the dynamic overlay update no-ops there.
+ * Runtime theme updates are supported on Windows and macOS. Linux may expose
+ * `BrowserWindow.setTitleBarOverlay` for native-overlay window creation, but
+ * dynamic overlay updates intentionally no-op there because window-manager
+ * support is inconsistent across Linux environments.
  */
 export function supportsTitleBarOverlay(platform: NodeJS.Platform): boolean {
   return platform === 'darwin' || platform === 'win32';

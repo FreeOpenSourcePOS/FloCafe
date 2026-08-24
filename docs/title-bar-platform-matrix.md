@@ -55,11 +55,11 @@ The AppImage was built from this branch with `electron-builder --linux AppImage 
 
 ### 3. macOS local
 
-The local runtime is macOS with Electron 43.4.1. `npx electron tests/platform-titlebar-runtime-probe.cjs --fullscreen-check` completed **15/15** checks.
+The local runtime is macOS with Electron 43.4.1. `npx electron tests/platform-titlebar-runtime-probe.cjs --fullscreen-check` completed **14/14** checks.
 
 | Cell | Result | Evidence / reason |
 | --- | --- | --- |
-| `hiddenInset` and traffic-light centering in 40px bar | **PASS-verified (configuration)** | The probe's real `createMainWindow` option capture asserts `titleBarStyle=hiddenInset`; it also asserts `MAC_TRAFFIC_LIGHT_POSITION={x:16,y:14}`, where `(40-12)/2=14` centers the 12px traffic lights. Visible traffic-light pixels were not independently captured. macOS correctly resolves to HTML fallback because `setTitleBarOverlay` is not available on darwin. |
+| `hiddenInset` and traffic-light centering in 40px bar | **PASS-verified (runtime configuration)** | The probe constructs a real Electron `BrowserWindow` through an observing constructor and asserts `titleBarStyle=hiddenInset` plus `trafficLightPosition={x:16,y:14}`; `(40-12)/2=14` centers the 12px traffic lights. Pixel-level visual capture was not independently performed. macOS correctly resolves to HTML fallback because `setTitleBarOverlay` is not available on darwin. |
 | Fullscreen enter/exit | **PASS-verified** | The local `--fullscreen-check` probe entered and exited native fullscreen and asserted both states. |
 | Kiosk mode | **NOT-RUN** | No kiosk codepath or `setKiosk` usage exists in the current FloCafe source. This is a product-scope finding, not an unverified claim. |
 | RTL/Persian (`fa`) logical-property layout | **PASS-verified** | `tests/rtl-foundation.test.ts`, `tests/rtl-dashboard-pos-common.test.ts`, `tests/rtl-setup-auth-settings.test.ts`, and the corresponding existing Playwright coverage pass. Title-bar CSS uses logical inline/block properties; no physical left/right fallback-control placement was added. |

@@ -109,12 +109,29 @@ async function main() {
 
   if (platform === 'darwin') {
     // macOS has no WCO/setTitleBarOverlay API, so the real environment
-    // resolves to html-fallback; traffic lights come from hiddenInset.
-    record(
-      'overlay-config: darwin uses hiddenInset traffic lights centered in the 40px bar',
-      JSON.stringify(MAC_TRAFFIC_LIGHT_POSITION) === JSON.stringify({ x: 16, y: 14 }),
-      'trafficLightPosition={x:16,y:14} centers 12px lights in the 40px bar ((40-12)/2=14)',
+    // resolves to html-fallback; observe the options passed to a real
+    // BrowserWindow constructor rather than asserting a source constant only.
+    let observedMacOptions;
+    class ObservedMacWindow extends BrowserWindow {
+      constructor(options) {
+        observedMacOptions = options;
+        super(options);
+      }
+    }
+    const observedMacWindow = createMainWindow(
+      ObservedMacWindow,
+      path.join(__dirname, '_probe-preload-noop.js'),
+      platform,
+      resolved,
     );
+    const trafficLightPosition = observedMacOptions?.trafficLightPosition;
+    record(
+      'overlay-config: real macOS BrowserWindow receives hiddenInset and centered traffic lights',
+      observedMacOptions?.titleBarStyle === 'hiddenInset'
+        && JSON.stringify(trafficLightPosition) === JSON.stringify(MAC_TRAFFIC_LIGHT_POSITION),
+      `titleBarStyle=${observedMacOptions?.titleBarStyle} trafficLightPosition=${JSON.stringify(trafficLightPosition)}`,
+    );
+    observedMacWindow.destroy();
   } else if (resolved === 'native-overlay') {
     // Constructor-option truth holds on every overlay platform.
     const nativeCaptured = [];

@@ -91,7 +91,7 @@ test('sidebar offset regression (#504): expanded/collapsed states at md+ viewpor
     const routes = [
       { name: 'POS', url: `${BASE}/pos` },
       { name: 'settings', url: `${BASE}/settings` },
-      { name: 'KDS', url: `${BASE}/kds/index.html` },
+      { name: 'KDS', url: `${E2E_KDS_BASE_URL}/kds` },
     ];
     for (const route of routes) {
       await page.goto(route.url);

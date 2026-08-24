@@ -438,6 +438,15 @@ function createWindow(): void {
   // This avoids file:// protocol issues and keeps dev/prod behaviour identical.
   mainWindow.loadURL(`http://localhost:${getServerPort()}`);
 
+  // Every navigation (initial load, manual reload, crash-recovery reload)
+  // tears down the previous document and its caption controls, so readiness
+  // must re-evaluate for the new one. Without this, a reload that fails to
+  // re-mount WindowControls would leave a visible window whose stale ready
+  // flag no longer matches reality.
+  mainWindow.webContents.on('did-start-loading', () => {
+    resetWindowReadiness();
+  });
+
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page)
   // and blank popup windows (e.g. browser print popups). External URLs are sent to the system browser.
   const localWindowOpenHandler = createLocalWindowOpenHandler(isAllowedLocalWindowUrl, getServerPort, getLocalIP);

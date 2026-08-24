@@ -7,6 +7,9 @@ import { useTranslations } from 'use-intl';
 type TitleBarMode = 'native-overlay' | 'html-fallback';
 type WindowControlAction = 'minimize' | 'toggle-maximize' | 'close';
 
+/** Grace period before re-signal readiness if the first invoke hangs. */
+const WINDOW_READY_FAILSAFE_MS = 3000;
+
 const subscribeToElectronCapability = () => () => {};
 const getElectronCapability = () => typeof window !== 'undefined' && Boolean(window.electronAPI?.getStatus);
 const getServerElectronCapability = () => false;
@@ -18,35 +21,47 @@ export default function WindowControls() {
     getElectronCapability,
     getServerElectronCapability,
   );
-  const [titleBarMode, setTitleBarMode] = useState<TitleBarMode | null>(null);
+  // Fail-safe default: assume visible HTML fallback controls until main
+  // explicitly confirms the native overlay works, so mode-resolution failure
+  // can never leave a hidden bar without controls.
+  const [titleBarMode, setTitleBarMode] = useState<TitleBarMode>('html-fallback');
 
   useEffect(() => {
     if (!isElectron) return undefined;
     let cancelled = false;
+
+    // Readiness must not depend on mode resolution succeeding: signal it
+    // immediately and once more from a fail-safe timer so getStatus()
+    // rejecting, hanging, or returning an unknown shape can never leave the
+    // hidden BrowserWindow invisible indefinitely.
+    const signalReady = () => {
+      const windowReady = window.electronAPI?.windowReady;
+      if (typeof windowReady !== 'function') return;
+      windowReady().catch((error) => {
+        console.error('[WindowControls] Unable to show the main window:', error);
+      });
+    };
+    signalReady();
+    const failSafeTimer = setTimeout(signalReady, WINDOW_READY_FAILSAFE_MS);
+
     window.electronAPI
       ?.getStatus()
       .then((status) => {
-        const mode = status?.titleBarMode;
-        if (!cancelled && (mode === 'native-overlay' || mode === 'html-fallback')) {
-          setTitleBarMode(mode);
+        // Only upgrade away from the visible fallback when main explicitly
+        // confirms native overlay; missing/unrecognized values keep controls.
+        if (!cancelled && status?.titleBarMode === 'native-overlay') {
+          setTitleBarMode('native-overlay');
         }
       })
       .catch((error) => {
         console.error('[WindowControls] Unable to resolve title-bar mode:', error);
       });
+
     return () => {
       cancelled = true;
+      clearTimeout(failSafeTimer);
     };
   }, [isElectron]);
-
-  useEffect(() => {
-    if (!isElectron || !titleBarMode) return;
-    const windowReady = window.electronAPI?.windowReady;
-    if (typeof windowReady !== 'function') return;
-    windowReady().catch((error) => {
-      console.error('[WindowControls] Unable to show the main window:', error);
-    });
-  }, [isElectron, titleBarMode]);
 
   const runWindowAction = useCallback((action: WindowControlAction) => {
     const windowAction = window.electronAPI?.windowAction;

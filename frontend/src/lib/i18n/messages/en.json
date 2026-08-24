@@ -2120,7 +2120,24 @@
     "readyBadge": "Update ready",
     "restartNow": "Restart Now",
     "sectionLabel": "App Update",
-    "versionReady": "Version {version} is ready to install"
+    "versionReady": "Version {version} is ready to install",
+    "installGuardTitle": "Restart to install update?",
+    "installGuardDescription": "This requires manager or owner approval before the app restarts.",
+    "installWarnTitle": "Warning: everything goes offline during the update",
+    "installWarnSystemsDown": "All systems (POS, KDS, printing, reports) go down while the update installs.",
+    "installWarnAutoRestart": "Service comes back automatically once the app restarts with the new version.",
+    "installWarnBusinessHours": "Do not do this during business hours.",
+    "installPinLabel": "Manager or owner PIN",
+    "installConfirmButton": "Approve & restart",
+    "installCancelButton": "Cancel",
+    "installRestarting": "Restarting...",
+    "installGuardFailedGeneric": "Could not start the update. Try again.",
+    "betaTitle": "Beta updates (pre-releases)",
+    "betaDescription": "Get pre-release versions of Flo Desktop before they are broadly available. Beta builds may contain unfinished features.",
+    "betaUnavailable": "Beta channel switching is not available in this app build yet. Update the desktop app to opt in.",
+    "betaOn": "On",
+    "betaOff": "Off",
+    "betaToggleFailed": "Could not change the beta channel setting."
   },
   "whatsapp": {
     "active": {

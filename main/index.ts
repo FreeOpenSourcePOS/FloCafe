@@ -13,6 +13,7 @@ import { startKdsServer, stopKdsServer, getKdsPort, isKdsServerRunning } from '.
 import { startServerApp, stopServerApp, getServerAppPort, isServerAppRunning } from './server-app';
 import { initPrinter } from './printers/thermal';
 import { registerIpcHandlers } from './ipc';
+import { authorizeMasterPin } from './services/master-pin';
 import { initFromDb as initWhatsAppFromDb, requestShutdown as requestWhatsAppShutdown, shutdown as shutdownWhatsApp } from './services/whatsapp';
 import log from 'electron-log/main';
 import { autoUpdater } from 'electron-updater';
@@ -780,13 +781,24 @@ async function initialize(): Promise<void> {
       checkForUpdates();
     });
 
-    ipcMain.handle('restart-and-install', () => {
+    // #463: restarting to install takes the whole POS down (server, KDS,
+    // printing) until the app comes back up, so it is gated behind manager or
+    // owner PIN approval. The PIN check runs here in the main process — the
+    // same authorizeMasterPin used by every other master-PIN-gated IPC
+    // handler — so no renderer path can bypass the guard.
+    ipcMain.handle('restart-and-install', (_event, pin?: unknown) => {
       if (!isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
         log.warn('[Update] Ignoring install request before an update is downloaded');
-        return;
+        return { success: false, error: 'No downloaded update is ready to install.' };
+      }
+      const auth = authorizeMasterPin(typeof pin === 'string' ? pin : undefined, 'ipc:restart-and-install');
+      if (!auth.ok) {
+        log.warn(`[Update] Restart-to-install denied by Master PIN gate: ${auth.error}`);
+        return { success: false, error: auth.error };
       }
       isQuitting = true;
       autoUpdater.quitAndInstall();
+      return { success: true };
     });
 
     ipcMain.handle('get-status', () => {

@@ -163,6 +163,7 @@
     "test:country-localization": "ts-node --transpile-only -P tests/tsconfig.json tests/country-localization.test.ts",
     "test:currency": "ts-node --transpile-only -P tests/tsconfig.json tests/currency.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/country-profile.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/locale-iran.test.ts",
     "test:update-state": "ts-node --transpile-only -P tests/tsconfig.json tests/update-state.test.ts",
+    "test:update-ui": "ts-node --transpile-only -P tests/tsconfig.json tests/update-ui.test.ts",
     "test:tax-engine": "ts-node --transpile-only -P tests/tsconfig.json tests/tax-engine.test.ts",
     "test:tax-components": "ts-node --transpile-only -P tests/tsconfig.json tests/tax-components.test.ts",
     "test:tax-pack-catalog": "ts-node --transpile-only -P tests/tsconfig.json tests/tax-pack-catalog.test.ts",

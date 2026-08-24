@@ -2120,7 +2120,24 @@
     "readyBadge": "به‌روزرسانی آماده است",
     "restartNow": "راه‌اندازی دوباره",
     "sectionLabel": "به‌روزرسانی برنامه",
-    "versionReady": "نسخه {version} برای نصب آماده است"
+    "versionReady": "نسخه {version} برای نصب آماده است",
+    "installGuardTitle": "راه‌اندازی دوباره برای نصب به‌روزرسانی؟",
+    "installGuardDescription": "پیش از راه‌اندازی دوباره برنامه، تأیید مدیر یا مالک لازم است.",
+    "installWarnTitle": "هشدار: در طول به‌روزرسانی همه چیز آفلاین می‌شود",
+    "installWarnSystemsDown": "همه سامانه‌ها (POS، KDS، چاپ، گزارش‌ها) هنگام نصب به‌روزرسانی از کار می‌افتند.",
+    "installWarnAutoRestart": "سرویس به‌طور خودکار وقتی برنامه با نسخه جدید راه‌اندازی دوباره شود برمی‌گردد.",
+    "installWarnBusinessHours": "این کار را در ساعات کاری انجام ندهید.",
+    "installPinLabel": "پین مدیر یا مالک",
+    "installConfirmButton": "تأیید و راه‌اندازی دوباره",
+    "installCancelButton": "لغو",
+    "installRestarting": "در حال راه‌اندازی دوباره...",
+    "installGuardFailedGeneric": "شروع به‌روزرسانی ممکن نشد. دوباره تلاش کنید.",
+    "betaTitle": "به‌روزرسانی‌های بتا (پیش‌انتشار)",
+    "betaDescription": "نسخه‌های پیش‌انتشار Flo Desktop را پیش از عرضه عمومی دریافت کنید. نسخه‌های بتا ممکن است ویژگی‌های ناتمام داشته باشند.",
+    "betaUnavailable": "تغییر کانال بتا هنوز در این نسخه برنامه در دسترس نیست. برای عضویت، برنامه دسکتاپ را به‌روز کنید.",
+    "betaOn": "روشن",
+    "betaOff": "خاموش",
+    "betaToggleFailed": "تغییر تنظیمات کانال بتا ممکن نشد."
   },
   "whatsapp": {
     "active": {

@@ -2120,7 +2120,24 @@
     "readyBadge": "Atualização pronta",
     "restartNow": "Reiniciar agora",
     "sectionLabel": "Atualização do app",
-    "versionReady": "A versão {version} está pronta para instalar"
+    "versionReady": "A versão {version} está pronta para instalar",
+    "installGuardTitle": "Reiniciar para instalar a atualização?",
+    "installGuardDescription": "É necessária a aprovação do gerente ou proprietário antes de reiniciar o aplicativo.",
+    "installWarnTitle": "Atenção: tudo fica fora do ar durante a atualização",
+    "installWarnSystemsDown": "Todos os sistemas (POS, KDS, impressão, relatórios) ficam indisponíveis enquanto a atualização é instalada.",
+    "installWarnAutoRestart": "O serviço volta automaticamente quando o aplicativo reinicia com a nova versão.",
+    "installWarnBusinessHours": "Não faça isso durante o horário de funcionamento.",
+    "installPinLabel": "PIN do gerente ou proprietário",
+    "installConfirmButton": "Aprovar e reiniciar",
+    "installCancelButton": "Cancelar",
+    "installRestarting": "Reiniciando...",
+    "installGuardFailedGeneric": "Não foi possível iniciar a atualização. Tente novamente.",
+    "betaTitle": "Atualizações beta (pré-lançamentos)",
+    "betaDescription": "Receba versões de pré-lançamento do Flo Desktop antes da disponibilidade geral. Versões beta podem conter recursos inacabados.",
+    "betaUnavailable": "A mudança para o canal beta ainda não está disponível nesta versão do aplicativo. Atualize o aplicativo desktop para participar.",
+    "betaOn": "Ativado",
+    "betaOff": "Desativado",
+    "betaToggleFailed": "Não foi possível alterar a configuração do canal beta."
   },
   "whatsapp": {
     "active": {

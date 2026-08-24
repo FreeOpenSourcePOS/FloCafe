@@ -19,15 +19,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getStatus: () => ipcRenderer.invoke('get-status'),
 
   getPrinters: () => ipcRenderer.invoke('get-printers'),
-  savePrinter: (printer: any) => ipcRenderer.invoke('save-printer', printer),
+  savePrinter: (printer: unknown) => ipcRenderer.invoke('save-printer', printer),
 
   getDailySummary: () => ipcRenderer.invoke('get-daily-summary'),
 
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   restartAndInstall: (pin?: string) => ipcRenderer.invoke('restart-and-install', pin),
-  onUpdateStatus: (callback: (status: any) => void) => {
-    const handler = (_event: any, status: any) => callback(status);
+  onUpdateStatus: (callback: (status: unknown) => void) => {
+    const handler = (_event: unknown, status: unknown) => callback(status);
     ipcRenderer.on('update-status', handler);
     return () => { ipcRenderer.removeListener('update-status', handler); };
   },

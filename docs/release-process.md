@@ -24,6 +24,17 @@ Beta and nightly installations are intentionally isolated from stable: if their
 channel has no published release, electron-updater reports no channel update
 instead of silently falling back to stable.
 
+Desktop builds that expose the beta-channel IPC contract provide a beta
+pre-release toggle in **Settings > Updates**. The toggle reads and persists its
+state through the main process; older builds without that contract show the
+control as disabled with an explanation. When a downloaded update is ready,
+restarting from Settings or the update badge requires manager or owner Master
+PIN approval in the main process. The confirmation warns that POS, KDS,
+printing, and reports are unavailable while the update installs, that the
+service returns automatically after restart, and that installation should not
+be started during business hours. Cancelling or failing PIN approval leaves the
+app running.
+
 GitHub's `Latest` release pointer and electron-updater's channel manifests are
 separate concepts. Every release is created with `--draft --latest=false`.
 After all platform uploads have completed, CI downloads each manifest and every

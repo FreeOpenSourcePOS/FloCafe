@@ -367,8 +367,25 @@ async function verifyReleaseAssets(release, { channel, tag = release && release.
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const apiBase = `https://api.github.com/repos/${options.repo}`;
-  const release = await githubJson(`${apiBase}/releases/tags/${encodeURIComponent(options.tag)}`);
+  // GET /releases/tags/{tag} only resolves published releases; this verifier
+  // runs against a DRAFT before the publish job flips it, so look the release
+  // up through the releases list instead (drafts are included for tokens
+  // with push access). Found while cutting 3.3.1-beta.1 (#468): the first
+  // real run of this step 404'd because no release had ever been verified
+  // as a draft before.
+  const release = await findReleaseByTag(apiBase, options.tag);
   await verifyReleaseAssets(release, { channel: options.channel, tag: options.tag });
+}
+
+async function findReleaseByTag(apiBase, tag) {
+  const perPage = 100;
+  for (let page = 1; page <= 10; page++) {
+    const releases = await githubJson(`${apiBase}/releases?per_page=${perPage}&page=${page}`);
+    if (!Array.isArray(releases) || releases.length === 0) break;
+    const match = releases.find((release) => release.tag_name === tag);
+    if (match) return match;
+  }
+  throw new Error(`No draft or published release found for tag ${tag}`);
 }
 
 if (require.main === module) {

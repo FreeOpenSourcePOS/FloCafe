@@ -787,7 +787,16 @@ jobs:
         run: |
           VERSION="${{ needs.create-release.outputs.version }}"
           PRERELEASE="${{ needs.create-release.outputs.prerelease }}"
-          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases/tags/${VERSION}" --jq .id)
+          # Draft releases are not addressable via /releases/tags/{tag} (that
+          # endpoint only matches published releases), so resolve the draft's
+          # ID through the releases list. Same root cause as the draft-asset
+          # verifier fix in scripts/verify-release-assets.cjs (#468).
+          RELEASE_ID=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq ".[] | select(.tag_name==\"$VERSION\") | .id" | head -1)
+          if [ -z "$RELEASE_ID" ]; then
+            echo "::error::No release found for tag $VERSION"
+            exit 1
+          fi
           # Draft and prerelease state are changed only after verification. The
           # explicit false prevents an ordinary stable build from moving the
           # stable pointer; the promotion input is handled in the next call.

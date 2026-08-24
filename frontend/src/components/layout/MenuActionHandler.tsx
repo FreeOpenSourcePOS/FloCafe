@@ -68,7 +68,13 @@ export default function MenuActionHandler() {
     try {
       const status = await window.electronAPI?.getMasterPinStatus?.();
 
-      if (!status?.available) {
+      if (!status || 'error' in status) {
+        const message = tCommon('somethingWrong');
+        toast.error(action === 'backup' ? tBackup('failedWith', { error: message }) : tRestore('failedWith', { error: message }));
+        return;
+      }
+
+      if (!status.available) {
         // No OS-backed encryption on this machine — the gate is inert, proceed directly.
         if (action === 'backup') await runBackup('');
         else await runRestore('');

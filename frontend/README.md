@@ -101,6 +101,7 @@ src/
 │   └── usePrinter.ts       # Printer integration
 └── types/                  # Type declarations
     ├── electron.d.ts       # Electron API types
+    ├── electron-api-contract.ts # Compile-time Electron API contract checks
     └── receipt-printer-encoder.d.ts
 ```
 

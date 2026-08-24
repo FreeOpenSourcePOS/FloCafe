@@ -11,26 +11,30 @@ export interface ElectronAPI {
   backupDatabase: (pin?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   restoreBackup: (pin?: string, backupPath?: string) => Promise<{ success: boolean; error?: string }>;
   dbHealthCheck: () => Promise<HealthCheckReport | { error: string }>;
-  dbApplySafeFixes: (findingIds?: string[]) => Promise<{ applied: string[]; skipped: string[]; errors: { id: string; error: string }[] }>;
+  dbApplySafeFixes: (findingIds?: string[]) => Promise<ElectronDbSafeFixesResult | ElectronIpcError>;
   dbInitialize: (pin: string, confirmationPhrase: string) => Promise<{ success: boolean; backupPath?: string; error?: string }>;
-  getMasterPinStatus: () => Promise<{ available: boolean; isSet: boolean }>;
+  getMasterPinStatus: () => Promise<ElectronMasterPinStatus | ElectronIpcError>;
+
+  // Settings
+  getSettings: () => Promise<Record<string, string | null> | ElectronIpcError>;
+  setSetting: (key: string, value: string) => Promise<ElectronActionResult | ElectronIpcError>;
+
+  // KDS
+  getKdsInfo: () => Promise<KdsInfo | ElectronIpcError>;
+  openKdsWindow: () => Promise<void | ElectronIpcError>;
 
   // App info
-  getAppInfo: () => Promise<{
-    version: string;
-    name: string;
-    electron: string;
-    node: string;
-    platform: string;
-  }>;
+  getAppInfo: () => Promise<ElectronAppInfo | ElectronIpcError>;
+
+  // Printers
+  getPrinters: () => Promise<ElectronPrinter[] | ElectronIpcError>;
+  savePrinter: (printer: ElectronPrinterInput) => Promise<ElectronActionResult | ElectronIpcError>;
+
+  // Reports
+  getDailySummary: () => Promise<DailySummary | ElectronIpcError>;
 
   // Status
-  getStatus: () => Promise<{
-    server: string;
-    memory: { heapUsed: number; heapTotal: number; rss: number };
-    uptime: number;
-    port: number;
-  }>;
+  getStatus: () => Promise<ElectronStatus>;
 
   // Updates
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);
@@ -40,6 +44,83 @@ export interface ElectronAPI {
 
   // Platform
   platform: string;
+}
+
+export interface ElectronIpcError {
+  error: string;
+}
+
+export interface ElectronActionResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface ElectronDbSafeFixesResult {
+  applied: string[];
+  skipped: string[];
+  errors: { id: string; error: string }[];
+}
+
+export interface ElectronMasterPinStatus {
+  available: boolean;
+  isSet: boolean;
+}
+
+export interface ElectronAppInfo {
+  version: string;
+  name: string;
+  electron: string;
+  node: string;
+  platform: string;
+}
+
+export interface ElectronStatus {
+  server: string;
+  kdsServer: string;
+  serverApp: string;
+  memory: { heapUsed: number; heapTotal: number; rss: number };
+  uptime: number;
+  port: number;
+}
+
+export interface KdsInfo {
+  url: string;
+  wsUrl: string;
+  localIP: string;
+  port: number;
+}
+
+export type PrinterConnectionType = 'network' | 'usb' | 'webusb';
+
+/** Raw printer row returned by the legacy Electron IPC settings path. */
+export interface ElectronPrinter {
+  id: string;
+  name: string;
+  connection_type: PrinterConnectionType;
+  ip_address: string | null;
+  port: number | null;
+  is_default: number;
+  paper_width: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Input accepted by main/ipc.ts save-printer. */
+export interface ElectronPrinterInput {
+  id?: string;
+  name: string;
+  connection_type: PrinterConnectionType;
+  ip_address?: string | null;
+  port?: number | null;
+  is_default?: boolean | number;
+}
+
+export interface DailySummary {
+  date: string;
+  revenue: number;
+  bill_count: number;
+  covers: number;
+  pending_orders: number;
 }
 
 export type HealthFindingRisk = 'safe' | 'manual_review';
@@ -85,7 +166,7 @@ export interface UpdateStatus {
     | 'dev-mode';
   version?: string;
   releaseDate?: string;
-  releaseNotes?: string;
+  releaseNotes?: unknown;
   percent?: number;
   reason?: UpdateFailureReason;
   error?: string;

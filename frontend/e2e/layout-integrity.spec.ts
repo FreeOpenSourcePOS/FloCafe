@@ -28,16 +28,16 @@ test('POS product grid has no horizontal clipping and touchable product cards', 
   expect(card!.height, 'product card height').toBeGreaterThanOrEqual(44);
 });
 
-test('LAN/browser sidebar pins to the viewport top with zero title-bar markup', async ({ page }) => {
+test('LAN/browser sidebar pins to the viewport top with zero title-bar markup on every dashboard route', async ({ page }) => {
+  test.slow();
+
+  // Owner account: /dashboard redirects non-owner roles to /pos, and one
+  // login keeps the suite within the shared server's login rate limit.
   await page.goto(`${BASE}/auth/login`);
-  await page.locator('#email').fill('manager@flo.local');
+  await page.locator('#email').fill('owner@flo.local');
   await page.locator('#password').fill('E2ePass123!');
   await page.locator('button[type="submit"]').click();
-
-  // Capability absent: no Electron title-bar markup and no CSS desktop flag.
-  expect(await page.evaluate(() => Boolean(window.electronAPI))).toBe(false);
-  await expect(page.getByTestId('desktop-title-bar')).toHaveCount(0);
-  await expect(page.locator('html')).not.toHaveAttribute('data-flo-desktop-titlebar');
+  await page.waitForURL(/\/pos/, { timeout: 20000 });
 
   const sidebar = page.locator('[data-slot="sidebar-container"]');
   await expect(sidebar).toBeVisible();
@@ -54,8 +54,40 @@ test('LAN/browser sidebar pins to the viewport top with zero title-bar markup', 
     expect(top, `${label}: computed block-start inset`).toBe('0px');
   };
 
+  // Every dashboard layout route shares the same fixed-sidebar chrome, so the
+  // capability-absent contract must hold on each of them: zero Electron
+  // title-bar markup, no CSS desktop flag, viewport-top sidebar geometry.
+  const dashboardRoutes = [
+    '/pos',
+    '/dashboard',
+    '/orders',
+    '/products',
+    '/tables',
+    '/customers',
+    '/addon-groups',
+    '/staff',
+    '/settings',
+    '/support',
+    '/order-history-demo',
+    '/print-test',
+    '/whatsapp',
+  ];
+  for (const route of dashboardRoutes) {
+    await page.goto(`${BASE}${route}`);
+    await expect(sidebar, `${route}: sidebar renders`).toBeVisible();
+
+    expect(await page.evaluate(() => Boolean(window.electronAPI)), `${route}: capability absent`).toBe(false);
+    await expect(page.getByTestId('desktop-title-bar'), route).toHaveCount(0);
+    await expect(page.getByTestId('desktop-drag-surface'), route).toHaveCount(0);
+    await expect(page.locator('html'), route).not.toHaveAttribute('data-flo-desktop-titlebar');
+
+    await assertViewportTopGeometry(route);
+  }
+
   // Expanded and collapsed/rail variants must both keep viewport-top geometry.
+  await page.goto(`${BASE}/pos`);
   await assertViewportTopGeometry('expanded sidebar');
+  await expect(sidebar).toBeVisible();
   await page.keyboard.press('Control+b');
   await expect(sidebar).toBeVisible();
   await assertViewportTopGeometry('collapsed sidebar');

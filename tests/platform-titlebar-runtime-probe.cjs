@@ -150,6 +150,8 @@ async function main() {
   );
   if (!process.env.CI || platform === 'win32' || process.env.DISPLAY || process.env.WAYLAND_DISPLAY) {
     try {
+      win.show();
+      await waitFor(() => win.isVisible(), 5000, 'window visible');
       applyWindowControlAction(win, 'minimize');
       const minimizedInTime = await waitFor(() => win.isMinimized(), 3000, 'minimize').then(() => true).catch(() => false);
       if (!minimizedInTime && platform === 'linux' && (process.env.CI || process.env.MATRIX_PROBE_ALLOW_NO_WM)) {

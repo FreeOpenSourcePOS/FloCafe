@@ -6,9 +6,10 @@
  * fallback controls committed). Readiness is bound to an epoch token so the
  * lifecycle is coherent across reloads:
  *
- * - Every document load (`did-start-loading`, including the initial load)
- *   begins a new epoch, which invalidates any report from the previous
- *   document and re-arms a bounded fail-safe.
+ * - Every full-document main-frame navigation (`did-start-navigation`,
+ *   including the initial load) begins a new epoch, which invalidates any
+ *   report from the previous document and re-arms a bounded fail-safe. Same-
+ *   document Next.js route changes do not reset readiness.
  * - The renderer learns the current epoch from `get-status` and reports
  *   readiness bound to it; stale-epoch or malformed reports are ignored.
  * - If the current epoch's document never confirms (renderer crash before
@@ -47,8 +48,11 @@ function clearReadinessFailSafe(): void {
 
 /**
  * Begins a fresh readiness epoch for an incoming document. Called on window
- * creation and on every `did-start-loading`; invalidates prior documents'
- * readiness reports and arms the fail-safe for this one.
+ * creation and before each full-document main-frame navigation; invalidates
+ * prior documents' readiness reports and arms the fail-safe for this one.
+ * The epoch starts before the new preload runs, so clearing the nonce here
+ * cannot race the incoming document's synchronous registration. Same-document
+ * Next.js route changes never call this function.
  */
 export function beginRendererDocument(): number {
   rendererReadinessEpoch += 1;
@@ -79,6 +83,14 @@ export function beginRendererDocument(): number {
 
 export function getRendererReadinessEpoch(): number {
   return rendererReadinessEpoch;
+}
+
+/** True only for a main-frame navigation that creates a new document. */
+export function isFullDocumentMainFrameNavigation(details: {
+  isMainFrame: boolean;
+  isSameDocument: boolean;
+}): boolean {
+  return details.isMainFrame && !details.isSameDocument;
 }
 
 export function registerRendererDocument(documentNonce: unknown): boolean {

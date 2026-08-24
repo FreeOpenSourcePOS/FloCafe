@@ -41,25 +41,49 @@ function workflowTrigger(workflow) {
   return workflow.on || workflow.true;
 }
 
-function inputReferences(value, references) {
-  if (typeof value === 'string') {
-    for (const input of REQUIRED_INPUTS) {
-      if (value.includes(`inputs.${input}`)) references.add(input);
-    }
-    return;
-  }
-  if (Array.isArray(value)) return;
-  if (!isRecord(value)) return;
-  for (const entry of Object.values(value)) inputReferences(entry, references);
+function inputBinding(value) {
+  if (typeof value !== 'string') return null;
+  const match = value.match(/^\$\{\{\s*inputs\.([a-z0-9_]+)\s*\}\}$/);
+  return match ? match[1] : null;
 }
 
-function jobInputReferences(job) {
+function executableRun(run) {
+  if (typeof run !== 'string') return '';
+  return run.split(/\r?\n/).filter((line) => !line.trim().startsWith('#')).join('\n');
+}
+
+function usesEnvironment(run, name) {
+  return [
+    `$${name}`,
+    '${' + name + '}',
+    `$env:${name}`,
+    `%${name}%`,
+  ].some((reference) => run.includes(reference));
+}
+
+function executableInputReferences(job) {
+  const addBindings = (scope, bindings) => {
+    if (!isRecord(scope)) return;
+    for (const [name, value] of Object.entries(scope)) {
+      const input = inputBinding(value);
+      if (input) bindings.set(name, input);
+    }
+  };
+  const jobBindings = new Map();
+  addBindings(job.env, jobBindings);
   const references = new Set();
-  inputReferences(job.env, references);
   for (const step of job.steps) {
     if (!isRecord(step)) continue;
-    inputReferences(step.env, references);
-    inputReferences(step.with, references);
+    const bindings = new Map(jobBindings);
+    addBindings(step.env, bindings);
+    for (const value of Object.values(step.with || {})) {
+      const input = inputBinding(value);
+      if (input) references.add(input);
+    }
+    const run = executableRun(step.run);
+    for (const [name, input] of bindings.entries()) {
+      if (usesEnvironment(run, name)) references.add(input);
+    }
   }
   return references;
 }
@@ -83,7 +107,7 @@ function assertMatrixContract(workflowText) {
   const referencedJobs = [];
   for (const [jobId, job] of Object.entries(workflow.jobs)) {
     if (!isRecord(job) || !Array.isArray(job.steps)) continue;
-    const references = jobInputReferences(job);
+    const references = executableInputReferences(job);
     if (REQUIRED_INPUTS.every((input) => references.has(input))) referencedJobs.push(jobId);
   }
   if (referencedJobs.length === 0) {

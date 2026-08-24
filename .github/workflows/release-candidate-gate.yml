@@ -49,6 +49,13 @@ jobs:
     name: Verify immutable published beta candidate
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+      CANDIDATE_MANIFEST_SHA256: ${{ inputs.candidate_manifest_sha256 }}
+      CANDIDATE_MANIFEST_ASSET_ID: ${{ inputs.candidate_manifest_asset_id }}
+      STABLE_TAG: ${{ inputs.stable_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -60,30 +67,30 @@ jobs:
         run: |
           node scripts/release-gate/candidate-manifest.cjs \
             --verify \
-            --repo "${{ github.repository }}" \
-            --tag "${{ inputs.candidate_tag }}" \
-            --commit "${{ inputs.candidate_commit }}" \
+            --repo "$RELEASE_REPOSITORY" \
+            --tag "$CANDIDATE_TAG" \
+            --commit "$CANDIDATE_COMMIT" \
             --channel beta \
-            --candidate-asset-id "${{ inputs.candidate_manifest_asset_id }}" \
-            --manifest-sha256 "${{ inputs.candidate_manifest_sha256 }}"
+            --candidate-asset-id "$CANDIDATE_MANIFEST_ASSET_ID" \
+            --manifest-sha256 "$CANDIDATE_MANIFEST_SHA256"
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Verify beta propagation and Stable Latest immutability
         run: |
           node scripts/release-gate/published-readiness.cjs \
-            --repo "${{ github.repository }}" \
-            --tag "${{ inputs.candidate_tag }}" \
-            --commit "${{ inputs.candidate_commit }}" \
+            --repo "$RELEASE_REPOSITORY" \
+            --tag "$CANDIDATE_TAG" \
+            --commit "$CANDIDATE_COMMIT" \
             --channel beta \
-            --expected-latest "${{ inputs.stable_tag }}"
+            --expected-latest "$STABLE_TAG"
         env:
           GH_TOKEN: ${{ github.token }}
 
       - name: Build sanitized 90-day evidence bundle
         run: |
           set -euo pipefail
-          MANIFEST_URL=$(gh api "repos/${{ github.repository }}/releases/tags/${{ inputs.candidate_tag }}" \
+          MANIFEST_URL=$(gh api "repos/$RELEASE_REPOSITORY/releases/tags/$CANDIDATE_TAG" \
             --jq '.assets[] | select(.name == "candidate-manifest.json") | .url')
           gh api "$MANIFEST_URL" -H 'Accept: application/octet-stream' > "$RUNNER_TEMP/candidate-manifest.json"
           node scripts/release-gate/evidence.cjs \
@@ -108,6 +115,12 @@ jobs:
     if: inputs.run_installed_matrix == true
     runs-on: ubuntu-latest
     timeout-minutes: 50
+    env:
+      RELEASE_REPOSITORY: ${{ github.repository }}
+      CANDIDATE_TAG: ${{ inputs.candidate_tag }}
+      CANDIDATE_MANIFEST_SHA256: ${{ inputs.candidate_manifest_sha256 }}
+      CANDIDATE_MANIFEST_ASSET_ID: ${{ inputs.candidate_manifest_asset_id }}
+      FROM_VERSION: ${{ inputs.from_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -135,13 +148,13 @@ jobs:
       - name: 'Dispatch and wait for #512 matrix using exact candidate binding'
         run: |
           node scripts/release-gate/matrix-dispatch.cjs \
-            --repo "${{ github.repository }}" \
+            --repo "$RELEASE_REPOSITORY" \
             --workflow upgrade-matrix.yml \
             --workflow-file "$RUNNER_TEMP/upgrade-matrix.yml" \
-            --from-version "${{ inputs.from_version }}" \
-            --candidate-tag "${{ inputs.candidate_tag }}" \
-            --candidate-manifest-asset-id "${{ inputs.candidate_manifest_asset_id }}" \
-            --candidate-manifest-sha256 "${{ inputs.candidate_manifest_sha256 }}"
+            --from-version "$FROM_VERSION" \
+            --candidate-tag "$CANDIDATE_TAG" \
+            --candidate-manifest-asset-id "$CANDIDATE_MANIFEST_ASSET_ID" \
+            --candidate-manifest-sha256 "$CANDIDATE_MANIFEST_SHA256"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -153,5 +166,5 @@ jobs:
     steps:
       - name: Mark installed artifact rows NOT-RUN, never PASS
         run: |
-          echo "::notice::Installed-artifact upgrade rows are NOT-RUN. Enable run_installed_matrix only after PR #512 lands with candidate_tag, candidate_manifest_asset_id, and candidate_manifest_sha256 inputs."
+          echo "::notice::Installed-artifact upgrade rows are NOT-RUN. Enable run_installed_matrix only after PR #512 lands with the exact candidate binding inputs."
           echo "Hosted candidate integrity passed; this is not a complete runtime upgrade gate."

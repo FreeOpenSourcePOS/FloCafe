@@ -182,6 +182,7 @@ jobs:
 `;
   assert.doesNotThrow(() => assertMatrixContract(integratedMatrix));
   assert.throws(() => assertMatrixContract(integratedMatrix.replace('TAG: ${{ inputs.candidate_tag }}', 'TAG: candidate')), /exact candidate inputs/);
+  assert.throws(() => assertMatrixContract(integratedMatrix.replace('test -n "$TAG" -a -n "$ASSET_ID" -a -n "$MANIFEST_SHA" -a -n "$DISPATCH_ID"', 'test -n ready')), /exact candidate inputs/);
   const dispatchId = createDispatchId();
   assert.doesNotThrow(() => assertCorrelatedRun({
     workflow_id: 12,

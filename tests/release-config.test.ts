@@ -265,6 +265,20 @@ function run() {
   const candidateVerifyJob = candidateWorkflow.jobs['verify-candidate'];
   const candidateEvidenceUpload = findStep(candidateVerifyJob, 'Retain sanitized evidence for 90 days');
   assert.equal(candidateEvidenceUpload.with['retention-days'], 90);
+  const candidateVerifyStep = findStep(candidateVerifyJob, 'Verify exact candidate manifest, tag, commit, and bytes');
+  const shellInjection = 'safe"; echo injected >&2; #';
+  const safeCandidateVerification = executeWorkflowStep(candidateVerifyStep, {
+    env: {
+      RELEASE_REPOSITORY: 'FreeOpenSourcePOS/FloCafe',
+      CANDIDATE_TAG: shellInjection,
+      CANDIDATE_COMMIT: 'a'.repeat(40),
+      CANDIDATE_MANIFEST_SHA256: 'b'.repeat(64),
+      CANDIDATE_MANIFEST_ASSET_ID: '113',
+    },
+    fakeNodeVersion: '3.3.1-beta.1',
+  });
+  assert.equal(safeCandidateVerification.status, 0, safeCandidateVerification.stderr);
+  assert.doesNotMatch(safeCandidateVerification.stderr, /injected/);
   const candidateMatrixJob = candidateWorkflow.jobs['installed-artifact-matrix'];
   assert.equal(candidateMatrixJob.if, 'inputs.run_installed_matrix == true');
   assert.equal(candidateWorkflow.jobs['matrix-not-run-boundary'].if, 'inputs.run_installed_matrix != true');

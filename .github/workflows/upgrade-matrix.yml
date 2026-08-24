@@ -174,7 +174,7 @@ jobs:
             powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='Flo Cafe.exe'\" | Select-Object ProcessId,ParentProcessId,CommandLine | Format-List"
           } | tee "$RUNNER_TEMP/process-tree.txt"
           # Exactly one root Flo Cafe process (children carry --type=).
-          ROOTS=$(powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \"Name='Flo Cafe.exe'\" | Where-Object { \$_.CommandLine -notmatch '--type=' }).Count" | tr -d '\r')
+          ROOTS=$(powershell -NoProfile -Command "@(Get-CimInstance Win32_Process -Filter \"Name='Flo Cafe.exe'\" | Where-Object { \$_.CommandLine -notmatch '--type=' }).Count" | tr -d '\r')
           echo "root processes: ${ROOTS:-0}"
           [ "${ROOTS:-0}" = "1" ] || { echo "::error::expected exactly 1 root process after relaunch"; exit 1; }
 

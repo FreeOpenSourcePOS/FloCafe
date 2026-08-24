@@ -10,6 +10,12 @@ name: Runtime upgrade matrix
 # covers the GitHub-hosted-runner platforms.
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/upgrade-matrix.yml'
+      - 'scripts/upgrade-matrix/**'
+      - 'docs/upgrade-support-matrix.md'
   workflow_dispatch:
     inputs:
       from_version:

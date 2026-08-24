@@ -225,8 +225,15 @@ function Sidebar({
       />
       <div
         data-slot="sidebar-container"
+        style={{
+          // Under Electron the fixed sidebar starts below the custom title
+          // bar (see --flo-sidebar-block-start in globals.css); browsers/LAN
+          // resolve both to the viewport-top geometry.
+          insetBlockStart: 'var(--flo-sidebar-block-start, 0px)',
+          blockSize: 'calc(100svh - var(--flo-sidebar-block-start, 0px))',
+        }}
         className={cn(
-          "fixed inset-y-0 z-10 hidden h-svh w-(--sidebar-width) transition-[inset-inline-start,inset-inline-end,width] duration-200 ease-linear md:flex",
+          "fixed bottom-0 z-10 hidden w-(--sidebar-width) transition-[inset-inline-start,inset-inline-end,width] duration-200 ease-linear md:flex",
           // Logical inline positioning keeps the rail on the inline-start
           // side in both directions: `left` in LTR, `right` in RTL (Persian).
           side === "left"

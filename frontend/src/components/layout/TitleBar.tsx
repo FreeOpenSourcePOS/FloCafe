@@ -1,7 +1,7 @@
 'use client';
 
 import { Store, UserCircle } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
+import { useEffect, useSyncExternalStore } from 'react';
 import { useTranslations } from 'use-intl';
 import { useAuthStore } from '@/store/auth';
 import { Ltr } from './Ltr';
@@ -28,6 +28,17 @@ export default function TitleBar() {
     getElectronCapability,
     getServerElectronCapability,
   );
+
+  // Expose the desktop capability to CSS so fixed app chrome (the sidebar)
+  // can offset below the title bar. Browsers/LAN never receive the flag and
+  // keep today's viewport-top geometry.
+  useEffect(() => {
+    if (isElectron) {
+      document.documentElement.dataset.floDesktopTitlebar = 'true';
+    } else {
+      delete document.documentElement.dataset.floDesktopTitlebar;
+    }
+  }, [isElectron]);
 
   if (!isElectron) return null;
 

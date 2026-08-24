@@ -43,6 +43,7 @@
   /* Hoisted to :root so fixed app chrome can offset below the title bar;
    * consumed by both .flo-title-bar and the sidebar inset rules below. */
   --flo-titlebar-height: 40px;
+  --flo-titlebar-fallback-controls-width: 132px;
   --flo-sidebar-block-start: 0px;
 }
 
@@ -71,7 +72,7 @@ body {
   position: absolute;
   inset-block-start: env(titlebar-area-y, 0px);
   left: env(titlebar-area-x, 0px);
-  inline-size: env(titlebar-area-width, 100%);
+  inline-size: env(titlebar-area-width, calc(100% - var(--flo-titlebar-fallback-controls-width)));
   block-size: env(titlebar-area-height, var(--flo-titlebar-height));
   max-inline-size: 100%;
   box-sizing: border-box;
@@ -84,7 +85,9 @@ body {
 .flo-title-bar__interactive,
 .flo-title-bar button,
 .flo-title-bar a,
-.flo-title-bar [role='button'] {
+.flo-title-bar [role='button'],
+.flo-title-bar__fallback-controls,
+.flo-title-bar__fallback-controls button {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
@@ -94,12 +97,13 @@ body {
  * the trailing edge for RTL locales; sizes echo standard caption-button hit
  * targets while staying consistent with the 40px bar height. */
 .flo-title-bar__fallback-controls {
-  position: absolute;
+  position: fixed;
   inset-block-start: 0;
   inset-inline-end: 0;
   block-size: var(--flo-titlebar-height);
   display: flex;
   align-items: stretch;
+  z-index: 30;
 }
 
 .flo-title-bar__fallback-button {

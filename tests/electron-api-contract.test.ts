@@ -45,8 +45,9 @@ async function run(): Promise<void> {
     'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
     'onMenuAction', 'onUpdateStatus', 'openKdsWindow', 'platform', 'restartAndInstall',
-    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'windowAction',
+    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'titleBarMode', 'windowAction',
   ].sort());
+  assert.equal(exposedApi!['titleBarMode'], 'native-overlay');
 
   const call = (name: string, ...args: unknown[]) =>
     (exposedApi![name] as (...callArgs: unknown[]) => Promise<unknown>)(...args);

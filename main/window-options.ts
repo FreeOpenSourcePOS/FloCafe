@@ -70,6 +70,7 @@ export function createMainWindow(
     ...(platform === 'darwin' ? { trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION } : {}),
     webPreferences: {
       preload,
+      additionalArguments: [`--flo-title-bar-mode=${resolvedTitleBarMode}`],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,

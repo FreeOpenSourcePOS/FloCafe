@@ -1,6 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const titleBarMode = process.argv
+  .find((argument: string) => argument.startsWith('--flo-title-bar-mode='))
+  ?.split('=')[1];
+
 contextBridge.exposeInMainWorld('electronAPI', {
+  titleBarMode: titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay',
   backupDatabase: (pin?: string) => ipcRenderer.invoke('backup-database', pin),
   restoreBackup: (pin?: string, backupPath?: string) => ipcRenderer.invoke('restore-backup', pin, backupPath),
   dbHealthCheck: () => ipcRenderer.invoke('db-health-check'),

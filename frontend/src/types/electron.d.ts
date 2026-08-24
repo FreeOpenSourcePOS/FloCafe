@@ -4,6 +4,8 @@
  */
 
 export interface ElectronAPI {
+  titleBarMode: TitleBarMode;
+
   // Menu
   onMenuAction: (callback: (action: string) => void) => (() => void);
 

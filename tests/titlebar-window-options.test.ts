@@ -100,6 +100,12 @@ assert.equal(
   'fallback mode must not ship hidden-with-no-controls: renderer draws the caption buttons',
 );
 assert.equal(linuxFallbackMainWindow.options.webPreferences.contextIsolation, true);
+assert.deepEqual(linuxFallbackMainWindow.options.webPreferences.additionalArguments, [
+  '--flo-title-bar-mode=html-fallback',
+]);
+assert.deepEqual(macMainWindow.options.webPreferences.additionalArguments, [
+  '--flo-title-bar-mode=native-overlay',
+]);
 
 // ── Window-control action application (IPC verb set) ─────────────────────────
 

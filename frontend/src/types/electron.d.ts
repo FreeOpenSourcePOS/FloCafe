@@ -4,8 +4,6 @@
  */
 
 export interface ElectronAPI {
-  titleBarMode: TitleBarMode;
-
   // Menu
   onMenuAction: (callback: (action: string) => void) => (() => void);
 
@@ -41,6 +39,7 @@ export interface ElectronAPI {
 
   // Status
   getStatus: () => Promise<ElectronStatus>;
+  windowReady: () => Promise<ElectronActionResult | ElectronIpcError>;
 
   // Updates
   onUpdateStatus: (callback: (status: UpdateStatus) => void) => (() => void);

@@ -45,9 +45,8 @@ async function run(): Promise<void> {
     'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
     'onMenuAction', 'onUpdateStatus', 'openKdsWindow', 'platform', 'restartAndInstall',
-    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'titleBarMode', 'windowAction',
+    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'windowAction', 'windowReady',
   ].sort());
-  assert.equal(exposedApi!['titleBarMode'], 'native-overlay');
 
   const call = (name: string, ...args: unknown[]) =>
     (exposedApi![name] as (...callArgs: unknown[]) => Promise<unknown>)(...args);
@@ -60,6 +59,7 @@ async function run(): Promise<void> {
   await call('getDailySummary');
   await call('getBetaChannel');
   await call('setBetaChannel', true);
+  await call('windowReady');
   await call('windowAction', 'minimize');
 
   const receivedStatuses: unknown[] = [];
@@ -85,6 +85,7 @@ async function run(): Promise<void> {
     { channel: 'get-daily-summary', args: [] },
     { channel: 'updates:get-beta-channel', args: [] },
     { channel: 'updates:set-beta-channel', args: [true] },
+    { channel: 'window-ready', args: [] },
     { channel: 'window-action', args: ['minimize'] },
   ]);
 

@@ -1,11 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-const titleBarMode = process.argv
-  .find((argument: string) => argument.startsWith('--flo-title-bar-mode='))
-  ?.split('=')[1];
-
 contextBridge.exposeInMainWorld('electronAPI', {
-  titleBarMode: titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay',
   backupDatabase: (pin?: string) => ipcRenderer.invoke('backup-database', pin),
   restoreBackup: (pin?: string, backupPath?: string) => ipcRenderer.invoke('restore-backup', pin, backupPath),
   dbHealthCheck: () => ipcRenderer.invoke('db-health-check'),
@@ -22,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
 
   getStatus: () => ipcRenderer.invoke('get-status'),
+
+  windowReady: () => ipcRenderer.invoke('window-ready'),
 
   // Narrow window-control surface for the renderer title bar's HTML fallback
   // controls. Only ever called when main reports titleBarMode 'html-fallback'.

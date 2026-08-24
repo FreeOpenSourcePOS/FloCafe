@@ -82,6 +82,14 @@ body {
   padding-inline: 0.75rem;
 }
 
+body:has(.flo-title-bar__fallback-controls) .flo-title-bar__safe-area {
+  left: auto;
+  right: auto;
+  inset-inline-start: 0;
+  inset-inline-end: var(--flo-titlebar-fallback-controls-width);
+  inline-size: auto;
+}
+
 .flo-title-bar__interactive,
 .flo-title-bar button,
 .flo-title-bar a,

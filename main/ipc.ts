@@ -11,6 +11,7 @@ import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './serv
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus } from './services/whatsapp';
 import { createKdsWindow, applyWindowControlAction } from './window-options';
+import { markWindowRendererReady } from './window-readiness';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -242,6 +243,14 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
     return applyWindowControlAction(win, action);
+  });
+
+  handle('window-ready', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
+    markWindowRendererReady();
+    win.show();
+    return { success: true };
   });
 
   // Settings

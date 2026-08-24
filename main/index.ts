@@ -35,6 +35,7 @@ import {
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
 import { attachTitleBarThemeSync } from './title-bar-theme';
+import { isWindowRendererReady, resetWindowReadiness } from './window-readiness';
 import {
   createShutdownCoordinator,
   createShutdownEntrypoints,
@@ -350,11 +351,16 @@ let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 
 // Title-bar capability reported to the renderer via get-status; updated each
-// time the main window is created. Defaults to native-overlay so a renderer
-// that somehow reads it before window creation keeps Phase 1 behavior.
+// time the main window is created.
 let resolvedTitleBarMode: TitleBarMode = 'native-overlay';
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
+
+function showMainWindow(): boolean {
+  if (!isWindowRendererReady() || !mainWindow || mainWindow.isDestroyed()) return false;
+  mainWindow.show();
+  return true;
+}
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged;
 
@@ -383,12 +389,13 @@ if (gotSingleInstanceLock) {
   app.on('second-instance', () => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-      if (process.platform === 'linux') {
-        mainWindow.setAlwaysOnTop(true);
-        mainWindow.setAlwaysOnTop(false);
-        app.focus();
+      if (showMainWindow()) {
+        mainWindow.focus();
+        if (process.platform === 'linux') {
+          mainWindow.setAlwaysOnTop(true);
+          mainWindow.setAlwaysOnTop(false);
+          app.focus();
+        }
       }
     }
   });
@@ -402,6 +409,7 @@ function createWindow(): void {
   // transient lock), retrying here means the app can still self-heal within
   // the same run instead of only on the next full relaunch.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
+  resetWindowReadiness();
 
   // Decide once per window whether the native titleBarOverlay can be relied
   // on (platform + Electron >= 33 + the overlay API actually present). When
@@ -421,7 +429,6 @@ function createWindow(): void {
   );
 
   mainWindow.once('ready-to-show', () => {
-    mainWindow?.show();
     if (isDev) {
       mainWindow?.webContents.openDevTools();
     }
@@ -521,8 +528,7 @@ function createTray(): void {
           click: () => {
             if (mainWindow) {
               if (mainWindow.isMinimized()) mainWindow.restore();
-              mainWindow.show();
-              mainWindow.focus();
+              if (showMainWindow()) mainWindow.focus();
             }
           },
         },
@@ -557,8 +563,7 @@ function createTray(): void {
       tray.on('click', () => {
         if (mainWindow) {
           if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.show();
-          mainWindow.focus();
+          if (showMainWindow()) mainWindow.focus();
         }
       });
 
@@ -579,14 +584,14 @@ function createTray(): void {
     tray = new Tray(icon.resize({ width: 16, height: 16 }));
 
     const contextMenu = Menu.buildFromTemplate([
-      { label: 'Open Flo', click: () => mainWindow?.show() },
+      { label: 'Open Flo', click: () => { showMainWindow(); } },
       { type: 'separator' },
       { label: 'Quit', click: () => { isQuitting = true; app.quit(); } },
     ]);
 
     tray.setToolTip('Flo');
     tray.setContextMenu(contextMenu);
-    tray.on('double-click', () => mainWindow?.show());
+    tray.on('double-click', () => { showMainWindow(); });
   } catch {
     console.log('[Tray] Icon not found, skipping tray');
   }
@@ -721,7 +726,7 @@ function createMenu(): void {
     {
       label: 'Window',
       submenu: [
-        { label: 'Flo Cafe', click: () => { mainWindow?.show(); mainWindow?.focus(); } },
+        { label: 'Flo Cafe', click: () => { if (showMainWindow()) mainWindow?.focus(); } },
         { type: 'separator' },
         { role: 'minimize' },
         ...(process.platform === 'darwin' ? [
@@ -987,7 +992,7 @@ app.on('activate', () => {
   if (mainWindow === null) {
     createWindow();
   } else {
-    mainWindow.show();
+    showMainWindow();
   }
 });
 

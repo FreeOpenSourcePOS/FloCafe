@@ -10,10 +10,6 @@ type WindowControlAction = 'minimize' | 'toggle-maximize' | 'close';
 const subscribeToElectronCapability = () => () => {};
 const getElectronCapability = () => typeof window !== 'undefined' && Boolean(window.electronAPI?.getStatus);
 const getServerElectronCapability = () => false;
-const getInitialTitleBarMode = (): TitleBarMode => {
-  if (typeof window === 'undefined') return 'native-overlay';
-  return window.electronAPI?.titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay';
-};
 
 export default function WindowControls() {
   const tCommon = useTranslations('common');
@@ -22,7 +18,7 @@ export default function WindowControls() {
     getElectronCapability,
     getServerElectronCapability,
   );
-  const [titleBarMode, setTitleBarMode] = useState<TitleBarMode>(getInitialTitleBarMode);
+  const [titleBarMode, setTitleBarMode] = useState<TitleBarMode | null>(null);
 
   useEffect(() => {
     if (!isElectron) return undefined;
@@ -35,11 +31,22 @@ export default function WindowControls() {
           setTitleBarMode(mode);
         }
       })
-      .catch(() => {});
+      .catch((error) => {
+        console.error('[WindowControls] Unable to resolve title-bar mode:', error);
+      });
     return () => {
       cancelled = true;
     };
   }, [isElectron]);
+
+  useEffect(() => {
+    if (!isElectron || !titleBarMode) return;
+    const windowReady = window.electronAPI?.windowReady;
+    if (typeof windowReady !== 'function') return;
+    windowReady().catch((error) => {
+      console.error('[WindowControls] Unable to show the main window:', error);
+    });
+  }, [isElectron, titleBarMode]);
 
   const runWindowAction = useCallback((action: WindowControlAction) => {
     const windowAction = window.electronAPI?.windowAction;

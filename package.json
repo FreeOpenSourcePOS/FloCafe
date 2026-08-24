@@ -130,6 +130,7 @@
     "test:product-images": "node tests/run-electron-node-test.cjs tests/product-images.test.ts",
     "test:schema-health": "node tests/run-electron-node-test.cjs tests/schema-health.test.ts",
     "test:upgrade-path": "node tests/run-electron-node-test.cjs tests/upgrade-path.test.ts",
+    "test:upgrade-matrix-harness": "node tests/upgrade-matrix-harness.test.cjs && node tests/upgrade-matrix-offline-fixture.test.cjs",
     "test:upgrade-regression": "npm run test:upgrade-path",
     "test:migration-v56-v57": "node tests/run-electron-node-test.cjs tests/migration-v56-to-v57.test.ts",
     "test:migration-v71-repair": "node tests/run-electron-node-test.cjs tests/migration-v71-revoked-tokens-repair.test.ts",

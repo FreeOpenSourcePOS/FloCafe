@@ -28,12 +28,12 @@ reason; no unobserved behavior is inferred.
 
 | Row | N artifact / target | Result | Evidence / reason |
 |---|---|---|---|
-| Windows NSIS x64 | `flocafe-3.3.0-win-x64.exe` -> `3.3.1-beta.1` | **PASS-verified** | [GitHub-hosted runner evidence](#windows-nsis-x64) |
+| Windows NSIS x64 | `flocafe-3.3.0-win-x64.exe` -> `3.3.1-beta.1` | **PENDING** | Workflow is committed but cannot be dispatched until the new workflow is present on the default branch; see [execution blocker](#windows-nsis-x64). |
 | macOS DMG/ZIP arm64 | `flocafe-3.3.0-mac-arm64.dmg` -> `3.3.1-beta.1` | **NOT-RUN** | [Signed fixture limitation](#macos-arm64-dmgzip) |
 | macOS DMG/ZIP x64 | `flocafe-3.3.0-mac-x64.dmg` -> `3.3.1-beta.1` | **NOT-RUN** | No Intel Mac available locally; no remote macOS execution was used for this row. |
 | Linux AppImage x64 | `flocafe-3.3.0-x86_64.AppImage` -> `3.3.1-beta.1` | **PASS-verified** | [Real Debian 13 GNOME machine evidence](#linux-appimage-x64) |
 | Linux AppImage arm64 | `flocafe-3.3.0-arm64.AppImage` -> `3.3.1-beta.1` | **NOT-RUN** | The approved real Linux machine is x86_64; no arm64 Linux machine was available in this run. The arm64 beta artifact did build and publish. |
-| Older cohort Windows NSIS x64 | `Flo.Cafe.Setup.2.9.7.exe` -> stable `3.3.0` | **PASS-verified** | [GitHub-hosted runner evidence](#older-cohort) |
+| Older cohort Windows NSIS x64 | `Flo.Cafe.Setup.2.9.7.exe` -> stable `3.3.0` | **PENDING** | Same GitHub-hosted workflow registration blocker; see [execution blocker](#older-cohort). |
 | Linux managed: deb | `flocafe-3.3.0-amd64.deb` | **PASS-verified** | [Live `linux-managed` IPC event](#linux-managed-gating) |
 | Linux managed: rpm | `flocafe-3.3.0-x86_64.rpm` | **NOT-RUN** | No system package installation was permitted on the real Debian box; the same main-process gate is covered by the deb row. |
 | Linux managed: snap | `flocafe-3.3.0-amd64.snap` | **NOT-RUN** | No snapd/system mutation was permitted on the real Debian box. Beta Snap Store publishing was also blocked by the repository macaroon's `stable, edge` channel restriction; the `.snap` GitHub asset still published. |
@@ -41,25 +41,19 @@ reason; no unobserved behavior is inferred.
 
 ## Windows NSIS x64
 
-**Result: PASS-verified.** The workflow installed the released N installer
-silently on `windows-latest`, applied an isolated pre-toggle beta fixture to
-that test installation, and drove the real preload IPC/API path:
-
-1. first-run setup created an owner with Master PIN `4681`;
-2. a product, order (`survives the 468 upgrade` marker), and network printer
-   configuration were created through the local API;
-3. the updater staged `3.3.1-beta.1` from the beta feed;
-4. `restart-and-install` was invoked through `window.electronAPI`, not by
-   replacing the installed files externally;
-5. the relaunch verified the N+1 version, order, printer, and process tree.
+**Result: PENDING execution.** The row workflow is prepared to install the
+released N installer silently on `windows-latest`, apply an isolated pre-toggle
+beta fixture, seed an owner (Master PIN `4681`), product, order marker, and
+network printer, stage `3.3.1-beta.1`, invoke
+`window.electronAPI.restartAndInstall`, and check version, persistence,
+updater differential/full logs, and the root process tree. The fixture changes
+only the runner's installed copy, never a release asset.
 
 The row workflow is [`.github/workflows/upgrade-matrix.yml`](../.github/workflows/upgrade-matrix.yml).
-The attached CI artifact is named `evidence-windows-nsis-x64` in the linked run
-above. The workflow records updater status transitions, differential/full
-messages, and the root process tree. Because the released `3.3.0` client
-predates #507, the workflow's fixture patch sets only the updater's beta
-channel/prerelease flags in the runner's installed copy; it does not modify
-any release asset or repository file.
+GitHub will not expose a new `workflow_dispatch` workflow until its file is
+present on the default branch, so this isolated-branch run has no CI artifact
+to link yet. The workflow must be triggered from a PR/default-branch workflow
+registration before this cell can honestly become PASS.
 
 ## macOS arm64 DMG/ZIP
 
@@ -138,12 +132,11 @@ behavior.
 
 ## Older cohort
 
-**Result: PASS-verified.** The workflow installs the released 2.9.7 Windows
-NSIS installer, seeds the same order/settings/printer markers, and follows the
-stable `latest.yml` feed to the published stable `3.3.0`. This row intentionally
-uses the stable channel, because a 2.9.x client predates beta-channel plumbing.
-It verifies version after relaunch and all seeded records, and uploads the
-status/log evidence as `evidence-older-cohort-windows`.
+**Result: PENDING execution.** The workflow is prepared to install the
+released 2.9.7 Windows NSIS installer, seed the same markers, and follow the
+stable `latest.yml` feed to stable `3.3.0`. This row intentionally uses the
+stable channel because a 2.9.x client predates beta plumbing. It will upload
+`evidence-older-cohort-windows` after the workflow is registered and run.
 
 ## Linux managed gating
 

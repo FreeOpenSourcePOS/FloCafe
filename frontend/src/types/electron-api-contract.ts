@@ -10,6 +10,7 @@ import type {
   ElectronPrinterInput,
   ElectronStatus,
   KdsInfo,
+  UpdateStatus,
 } from './electron';
 
 type Equal<Actual, Expected> =
@@ -32,6 +33,7 @@ export type ElectronApiContractChecks = [
   Expect<Equal<ElectronAPI['savePrinter'], (printer: ElectronPrinterInput) => Promise<ElectronActionResult | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getDailySummary'], () => Promise<DailySummary | ElectronIpcError>>>,
   Expect<Equal<ElectronAPI['getStatus'], () => Promise<ElectronStatus>>>,
+  Expect<Equal<ElectronAPI['onUpdateStatus'], (callback: (status: UpdateStatus) => void) => (() => void)>>,
 ];
 
 // Ensure the named response models remain structurally usable by callers.
@@ -65,4 +67,5 @@ export type ElectronApiContractModels = [
   Expect<Equal<keyof DailySummary, 'date' | 'revenue' | 'bill_count' | 'covers' | 'pending_orders'>>,
   Expect<Equal<ElectronPrinter['connection_type'], 'network' | 'usb' | 'webusb'>>,
   Expect<Equal<ElectronPrinter['port'], number | null>>,
+  Expect<Equal<UpdateStatus['releaseNotes'], unknown>>,
 ];

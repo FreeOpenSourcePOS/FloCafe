@@ -166,7 +166,7 @@ export interface UpdateStatus {
     | 'dev-mode';
   version?: string;
   releaseDate?: string;
-  releaseNotes?: string;
+  releaseNotes?: unknown;
   percent?: number;
   reason?: UpdateFailureReason;
   error?: string;

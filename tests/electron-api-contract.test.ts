@@ -3,6 +3,7 @@ import * as assert from 'node:assert/strict';
 const Module = require('module');
 const originalLoad = Module._load;
 const calls: { channel: string; args: unknown[] }[] = [];
+const eventHandlers = new Map<string, (...args: unknown[]) => void>();
 let exposedApi: Record<string, unknown> | undefined;
 
 Module._load = function (request: string, parent: unknown, isMain: boolean) {
@@ -19,8 +20,12 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
           calls.push({ channel, args });
           return Promise.resolve();
         },
-        on: () => {},
-        removeListener: () => {},
+        on: (channel: string, handler: (...args: unknown[]) => void) => {
+          eventHandlers.set(channel, handler);
+        },
+        removeListener: (channel: string, handler: (...args: unknown[]) => void) => {
+          if (eventHandlers.get(channel) === handler) eventHandlers.delete(channel);
+        },
       },
     };
   }
@@ -52,6 +57,19 @@ async function run(): Promise<void> {
   await call('getPrinters');
   await call('savePrinter', { name: 'Kitchen Printer', connection_type: 'network' });
   await call('getDailySummary');
+
+  const receivedStatuses: unknown[] = [];
+  const unsubscribe = (exposedApi!['onUpdateStatus'] as (callback: (status: unknown) => void) => () => void)(
+    (status) => receivedStatuses.push(status),
+  );
+  const structuredReleaseNotes = {
+    status: 'available',
+    releaseNotes: [{ version: '3.4.0', note: 'Improved update delivery' }],
+  };
+  eventHandlers.get('update-status')?.({}, structuredReleaseNotes);
+  assert.deepEqual(receivedStatuses, [structuredReleaseNotes]);
+  unsubscribe();
+  assert.equal(eventHandlers.has('update-status'), false);
 
   assert.deepEqual(calls, [
     { channel: 'get-settings', args: [] },

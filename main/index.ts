@@ -3,7 +3,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { Bonjour } from 'bonjour-service';
-import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError } from './db';
+import { getDatabase, initDatabase, closeDatabase, waitForDatabaseRequests, beginDatabaseShutdown, SchemaVersionMismatchError, now } from './db';
+import { BETA_CHANNEL_SETTING_KEY, parseStoredBetaChannelEnabled, resolveUpdateChannel } from './update-channel';
 import { computeTaxPackUpdates, fetchRemoteTaxPackCatalog } from './tax-packs/catalog';
 import { startServer, stopServer, getLocalIP, isServerRunning, getServerPort } from './server';
 import { cloudSync } from './services/cloud-sync';
@@ -89,29 +90,50 @@ let updaterPhase: UpdateErrorPhase = 'check';
 let stagedUpdateReady = false;
 let startupFailure = false;
 
+// Beta-channel opt-in persistence (#463, decision #503). The preference lives
+// in the same SQLite settings store as the rest of the app configuration so it
+// survives restarts; failures degrade to "stable" (the safe default) instead
+// of breaking the updater.
+function readBetaChannelEnabled(): boolean {
+  try {
+    const row = getDatabase()
+      .prepare('SELECT value FROM settings WHERE key = ?')
+      .get(BETA_CHANNEL_SETTING_KEY) as { value: string | null } | undefined;
+    return parseStoredBetaChannelEnabled(row?.value);
+  } catch (error) {
+    log.warn('[Update] Could not read beta-channel preference; using stable:', error);
+    return false;
+  }
+}
+
+function writeBetaChannelEnabled(enabled: boolean): void {
+  getDatabase()
+    .prepare('INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES (?, ?, ?)')
+    .run(BETA_CHANNEL_SETTING_KEY, enabled ? 'true' : 'false', now());
+}
+
 function configureAutoUpdaterChannel(): void {
   const prerelease = autoUpdater.currentVersion.prerelease[0];
-  const channel = typeof prerelease === 'string' ? prerelease : null;
+  const versionChannel = typeof prerelease === 'string' ? prerelease : null;
+  const resolved = resolveUpdateChannel({
+    versionPrereleaseChannel: versionChannel,
+    betaOptIn: readBetaChannelEnabled(),
+  });
 
-  // Stable installs intentionally leave channel unset. GitHub's stable
-  // provider then follows the repository's explicitly selected latest release.
-  // Beta/nightly builds opt in through their semver channel and use the
-  // corresponding beta.yml/nightly.yml manifest instead.
-  if (channel === 'beta' || channel === 'nightly') {
-    autoUpdater.channel = channel;
-    autoUpdater.allowPrerelease = true;
-    // Switching between a prerelease channel and stable can legitimately move
-    // to a lower semver value, so electron-updater must be allowed to do that.
-    autoUpdater.allowDowngrade = true;
-    log.info(`[Update] Opted into ${channel} release channel`);
-    return;
+  autoUpdater.channel = resolved.channel;
+  autoUpdater.allowPrerelease = resolved.allowPrerelease;
+  // Switching between a prerelease channel and stable can legitimately move
+  // to a lower semver value, so leaving beta must be allowed to downgrade.
+  autoUpdater.allowDowngrade = resolved.allowDowngrade;
+
+  if (resolved.channel) {
+    log.info(`[Update] Opted into ${resolved.channel} release channel`);
+  } else if (versionChannel) {
+    // Do not let an unsupported prerelease (nightly stamp, local alpha, ...)
+    // accidentally subscribe an installation to an untracked channel (#503:
+    // nightly releases are rejected; such installs get stable updates).
+    log.warn(`[Update] Unsupported prerelease channel ${versionChannel}; using stable updates only`);
   }
-
-  // Do not let an unsupported prerelease (for example, a local alpha build)
-  // accidentally subscribe an installation to an untracked channel.
-  autoUpdater.allowPrerelease = false;
-  autoUpdater.allowDowngrade = false;
-  if (channel) log.warn(`[Update] Unsupported prerelease channel ${channel}; using stable updates only`);
 }
 
 function setUpdateStatus(next: StoredUpdateStatus): void {
@@ -786,6 +808,43 @@ async function initialize(): Promise<void> {
     // owner PIN approval. The PIN check runs here in the main process — the
     // same authorizeMasterPin used by every other master-PIN-gated IPC
     // handler — so no renderer path can bypass the guard.
+    ipcMain.handle('restart-and-install', (_event, pin?: unknown) => {
+    ipcMain.handle('updates:get-beta-channel', () =>
+      // Persisted preference only — whether beta releases are *offered* is
+      // decided by resolveUpdateChannel at check time, so this stays honest
+      // even if the running version forces a specific channel.
+      readBetaChannelEnabled()
+    );
+
+    ipcMain.handle('updates:set-beta-channel', (_event, enabled: unknown) => {
+      if (typeof enabled !== 'boolean') {
+        return { success: false, error: 'enabled must be a boolean' };
+      }
+      // #467 honest-state model: never swap feeds underneath an in-flight or
+      // staged update. The renderer surfaces the refusal as a real state
+      // instead of silently masking what the updater is doing.
+      if (isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
+        return { success: false, error: 'A downloaded update is waiting to be installed — install it before switching channels' };
+      }
+      if (isUpdateCheckInFlight(storedUpdateStatus, updaterPhase)) {
+        return { success: false, error: 'An update check or download is in progress — try again once it finishes' };
+      }
+      try {
+        writeBetaChannelEnabled(enabled);
+      } catch (error) {
+        log.error('[Update] Failed to persist beta-channel preference:', error);
+        return { success: false, error: 'Could not save the channel preference' };
+      }
+      log.info(`[Update] Beta channel ${enabled ? 'enabled' : 'disabled'} by user`);
+      // Re-derive allowPrerelease/channel for the running install, then reset
+      // to the real pre-check state and immediately re-check against the new
+      // feed — the renderer sees genuine states, not a fabricated answer.
+      configureAutoUpdaterChannel();
+      setUpdateStatus(initialUpdateState());
+      checkForUpdates();
+      return { success: true };
+    });
+
     ipcMain.handle('restart-and-install', (_event, pin?: unknown) => {
       if (!isInstallReady(storedUpdateStatus, stagedUpdateReady)) {
         log.warn('[Update] Ignoring install request before an update is downloaded');

@@ -42,10 +42,10 @@ async function run(): Promise<void> {
   assert.ok(exposedApi, 'preload exposes electronAPI');
   assert.deepEqual(Object.keys(exposedApi!).sort(), [
     'backupDatabase', 'checkForUpdates', 'dbApplySafeFixes', 'dbHealthCheck',
-    'dbInitialize', 'getAppInfo', 'getDailySummary', 'getKdsInfo', 'getMasterPinStatus',
-    'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus', 'onMenuAction',
-    'onUpdateStatus', 'openKdsWindow', 'platform', 'restartAndInstall', 'restoreBackup',
-    'savePrinter', 'setSetting',
+    'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
+    'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
+    'onMenuAction', 'onUpdateStatus', 'openKdsWindow', 'platform', 'restartAndInstall',
+    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting',
   ].sort());
 
   const call = (name: string, ...args: unknown[]) =>
@@ -57,6 +57,8 @@ async function run(): Promise<void> {
   await call('getPrinters');
   await call('savePrinter', { name: 'Kitchen Printer', connection_type: 'network' });
   await call('getDailySummary');
+  await call('getBetaChannel');
+  await call('setBetaChannel', true);
 
   const receivedStatuses: unknown[] = [];
   const unsubscribe = (exposedApi!['onUpdateStatus'] as (callback: (status: unknown) => void) => () => void)(
@@ -79,6 +81,8 @@ async function run(): Promise<void> {
     { channel: 'get-printers', args: [] },
     { channel: 'save-printer', args: [{ name: 'Kitchen Printer', connection_type: 'network' }] },
     { channel: 'get-daily-summary', args: [] },
+    { channel: 'updates:get-beta-channel', args: [] },
+    { channel: 'updates:set-beta-channel', args: [true] },
   ]);
 
   console.log('Electron preload methods expose the expected narrow IPC channels.');

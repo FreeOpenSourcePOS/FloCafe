@@ -14,7 +14,8 @@ on:
         options:
           - stable
           - beta
-          - nightly
+          # Nightly releases are explicitly rejected (#503): beta is the only
+          # prerelease distribution channel.
       release_tag:
         description: Existing release tag to build or promote
         required: true
@@ -76,8 +77,8 @@ jobs:
           REQUESTED_CHANNEL="${{ inputs.channel }}"
           CHANNEL="${REQUESTED_CHANNEL:-$VERSION_CHANNEL}"
           case "$CHANNEL" in
-            stable|beta|nightly) ;;
-            *) echo "::error::Unsupported release channel '$CHANNEL' (expected stable, beta, or nightly)."; exit 1 ;;
+            stable|beta) ;;
+            *) echo "::error::Unsupported release channel '$CHANNEL' (expected stable or beta; nightlies are rejected by #503)."; exit 1 ;;
           esac
           if [ "$CHANNEL" = "stable" ] && [ "$VERSION_CHANNEL" != "stable" ]; then
             echo "::error::A stable channel release must use a stable package version, got '$VERSION'."
@@ -124,7 +125,7 @@ jobs:
           TAG="$RELEASE_TAG"
           VERSION="$RELEASE_VERSION"
           if ! [[ "$TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
-            echo "::error::Tag '${TAG}' is not a valid release version (expected X.Y.Z or a beta/nightly prerelease)."
+            echo "::error::Tag '${TAG}' is not a valid release version (expected X.Y.Z or an X.Y.Z-beta.N prerelease)."
             exit 1
           fi
           if [ "$TAG" != "$VERSION" ]; then
@@ -323,8 +324,8 @@ jobs:
       - name: Publish snap to the matching Snap Store channel
         # Both matrix entries publish their snap, each tagged with its arch.
         # Snap Store keeps multiple per-arch revisions under one snap name.
-        # Stable/beta/nightly map to stable/beta/edge respectively; this keeps
-        # a prerelease out of the stable package-manager channel.
+        # Stable/beta map to stable/beta respectively; this keeps a
+        # prerelease out of the stable package-manager channel.
         # The credentials check is at runtime, not in `if:` — GitHub Actions
         # rejects `secrets` in `if:` expressions (unrecognized named-value).
         # A missing credential is a release failure, not a skipped channel:
@@ -340,7 +341,6 @@ jobs:
           SNAP=$(find release -maxdepth 1 -type f -name '*.snap' -print -quit)
           [ -n "$SNAP" ] || { echo "::error::No .snap produced by electron-builder for ${{ matrix.arch }}"; exit 1; }
           SNAP_CHANNEL="${{ needs.create-release.outputs.channel }}"
-          [ "$SNAP_CHANNEL" = "nightly" ] && SNAP_CHANNEL=edge
           snapcraft register "$SNAP_NAME" || echo "::warning::register skipped/failed; continuing"
           snapcraft upload "$SNAP" --release="$SNAP_CHANNEL"
 
@@ -738,9 +738,9 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Download and verify every release manifest and referenced artifact
-        # Stable verification covers latest.yml, latest-mac.yml, latest-linux.yml,
-        # and latest-linux-arm64.yml. Beta
-        # and nightly substitute their explicit channel prefix.
+        # Stable verification covers latest.yml, latest-mac.yml,
+        # latest-linux.yml, and latest-linux-arm64.yml. Beta substitutes its
+        # explicit channel prefix.
         run: |
           node scripts/verify-release-assets.cjs \
             --repo "${{ github.repository }}" \

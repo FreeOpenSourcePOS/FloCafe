@@ -55,7 +55,7 @@ from the Snap Store.
 
 If an AppImage update is unavailable, download the replacement from [GitHub
 Releases](https://github.com/FreeOpenSourcePOS/FloCafe/releases). See [Desktop
-release process](release-process.md) for stable, beta, and nightly channel
+release process](release-process.md) for stable and beta channel
 behavior.
 
 ---

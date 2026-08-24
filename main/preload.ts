@@ -24,6 +24,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDailySummary: () => ipcRenderer.invoke('get-daily-summary'),
 
   getUpdateStatus: () => ipcRenderer.invoke('get-update-status'),
+  getBetaChannel: () => ipcRenderer.invoke('updates:get-beta-channel'),
+  setBetaChannel: (enabled: boolean) => ipcRenderer.invoke('updates:set-beta-channel', enabled),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   restartAndInstall: (pin?: string) => ipcRenderer.invoke('restart-and-install', pin),
   onUpdateStatus: (callback: (status: unknown) => void) => {

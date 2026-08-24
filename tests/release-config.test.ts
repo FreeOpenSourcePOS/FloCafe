@@ -103,7 +103,8 @@ function run() {
   assert.equal(metadata.env.RELEASE_REF_NAME, '${{ github.ref_name }}');
   assert.equal(validateTag.env.RELEASE_TAG, '${{ steps.release-metadata.outputs.tag }}');
   assert.deepEqual(Object.keys(createRelease.outputs).sort(), ['channel', 'make_latest', 'manifest_prefix', 'prerelease', 'promotion_only', 'version']);
-  assert.deepEqual(triggers.workflow_dispatch.inputs.channel.options, ['stable', 'beta', 'nightly']);
+  assert.deepEqual(triggers.workflow_dispatch.inputs.channel.options, ['stable', 'beta'],
+    'nightly releases are rejected (#503): stable and beta are the only channels');
   assert.equal(triggers.workflow_dispatch.inputs.channel.type, 'choice');
   assert.equal(triggers.workflow_dispatch.inputs.release_tag.required, true);
   assert.equal(triggers.workflow_dispatch.inputs.release_tag.type, 'string');
@@ -154,6 +155,62 @@ function run() {
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
+
+  // ── Stable feed isolation (#463 / decision #503) ─────────────────────────
+  // The stable release path must be structurally incapable of emitting a
+  // prerelease-flagged release or a beta-channel manifest:
+  //   - stable channel forces PRERELEASE=false and MANIFEST_PREFIX=latest;
+  //   - prerelease flagging and non-latest manifest prefixes are gated on
+  //     `$CHANNEL != stable` in every step that touches them;
+  //   - GitHub's Latest pointer only moves through an explicit human action
+  //     (promote_stable=true), which is rejected for any non-stable channel;
+  //   - nightlies are rejected outright, so no third feed can appear.
+  const metadataRun = metadata.run as string;
+  assert.ok(metadataRun.includes('PRERELEASE=false'), 'release metadata must default PRERELEASE to false for stable');
+  assert.ok(
+    metadataRun.includes('[ "$CHANNEL" != "stable" ] && PRERELEASE=true'),
+    'prerelease flagging must be gated on a non-stable channel'
+  );
+  assert.ok(metadataRun.includes('MANIFEST_PREFIX=latest'), 'stable releases must use the latest manifest prefix');
+  assert.ok(
+    metadataRun.includes('[ "$CHANNEL" != "stable" ] && MANIFEST_PREFIX="$CHANNEL"'),
+    'beta-channel manifests must be gated on a non-stable channel'
+  );
+  assert.ok(
+    metadataRun.includes('[ "$CHANNEL" = "stable" ] && [ "$VERSION_CHANNEL" != "stable" ]'),
+    'a stable-channel release must require a stable package version'
+  );
+
+  const draftReleaseStep = findStep(createRelease, 'Create GitHub draft release (if not exists)');
+  const draftReleaseRun = draftReleaseStep.run as string;
+  assert.ok(draftReleaseRun.includes('--latest=false'), 'creating a draft release must never move GitHub Latest by itself');
+  assert.ok(
+    draftReleaseRun.includes('[ "$CHANNEL" != "stable" ] && RELEASE_ARGS+=(--prerelease)'),
+    'draft releases may only be flagged prerelease for non-stable channels'
+  );
+
+  const publishRun = findStep(publishJob, 'Publish draft without changing GitHub Latest by default').run as string;
+  assert.ok(publishRun.includes('-F make_latest=false'), 'ordinary publishing must never move GitHub Latest');
+  assert.ok(
+    publishRun.includes('-F prerelease="${PRERELEASE}"') || publishRun.includes('-F prerelease="${{ needs.create-release.outputs.prerelease }}"'),
+    'publishing must carry the per-channel prerelease flag from release metadata'
+  );
+  const promoteRun = findStep(promoteJob, 'Promote published stable release to GitHub Latest').run as string;
+  assert.ok(promoteRun.includes('Only a stable release can be promoted to GitHub Latest.'), 'promotion must refuse non-stable channels');
+  assert.ok(promoteRun.includes('must not be prerelease'), 'promotion must refuse prerelease-flagged releases');
+  assert.ok(
+    metadataRun.includes('[ "$PROMOTE" = "true" ] && [ "$CHANNEL" != "stable" ]'),
+    'promote_stable must be refused for non-stable channels'
+  );
+
+  const releaseWorkflowText = fs.readFileSync(path.join(__dirname, '../.github/workflows/release.yml'), 'utf8');
+  assert.ok(!releaseWorkflowText.includes('nightly'), '#503: release.yml must not contain any nightly publish path');
+  const verifierText = fs.readFileSync(path.join(__dirname, '../scripts/verify-release-assets.cjs'), 'utf8');
+  assert.ok(!verifierText.includes('nightly'), '#503: the draft-release verifier must not accept nightly manifests');
+  assert.deepEqual(releaseVerifier.expectedManifestNames('beta'),
+    ['beta.yml', 'beta-mac.yml', 'beta-linux.yml', 'beta-linux-arm64.yml'],
+    'beta drafts must be verified against the beta-prefixed updater manifests');
+
 
   const macArtifact = build?.mac?.artifactName;
   assert.ok(typeof macArtifact === 'string' && macArtifact.includes('${arch}') && macArtifact.includes('mac') && !/\s/.test(macArtifact.replace(/\$\{[^}]+\}/g, '')), `mac artifact template must be safe: ${JSON.stringify(macArtifact)}`);

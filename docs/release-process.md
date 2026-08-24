@@ -104,11 +104,33 @@ not publish a second expected SHA-512 for them.
 5. The dedicated publish job changes `draft` to false. It sets `make_latest`
    false for every normal release. A separate explicit stable-promotion dispatch
    is the only path that changes GitHub's `Latest` pointer.
+6. After all platform uploads, `candidate-manifest.json` is created from bytes
+   fetched back from the draft. It binds the release tag, exact commit, GitHub
+   asset IDs/names/sizes, platform/architecture, SHA-256, SHA-512, and explicit
+   signing status. Windows direct-download assets are currently recorded as
+   `UNSIGNED`; SmartScreen is always `NOT-RUN`, never inferred from a signature.
+   A rerun refuses to overwrite different manifest or summary bytes.
+7. Each Linux job uploads a sanitized `snap-publication-x64.json` or
+   `snap-publication-arm64.json` marker only after `snapcraft upload` succeeds.
+   Draft verification requires both markers, and stable promotion refuses to
+   select Latest if either stable marker is absent or not `status=published`.
+8. `release-candidate-gate.yml` consumes only a published beta with the exact
+   candidate manifest asset ID and SHA-256. It verifies propagation and that
+   Stable Latest is unchanged, then retains only sanitized JSON evidence for 90
+   days. It does not publish or promote a release.
 
 For a beta release, use the exact `X.Y.Z-beta.N` prerelease tag, set
 `release_tag` to that tag, and choose `channel=beta`. For a stable build, leave
 `promote_stable=false`; use a second dispatch with `promote_stable=true` only
 when the already verified release should become the default update target.
+
+## Branch and tag lifecycle
+
+Beta-prep branches are temporary working branches; release tags and GitHub
+Releases are the authoritative history. Cut each future beta from `main` with
+an exact `X.Y.Z-beta.N` tag. Stable promotion creates a new `X.Y.Z` stable
+release and uses the explicit `promote_stable` step. A beta is never moved
+directly to GitHub `Latest`.
 
 ## Cutting a beta release
 
@@ -121,11 +143,20 @@ when the already verified release should become the default update target.
    `release_tag=X.Y.Z-beta.N`, `channel=beta`, `promote_stable=false`.
 4. The workflow builds all platforms against the beta manifest prefix,
    verifies the draft (`beta.yml`, `beta-mac.yml`, `beta-linux.yml`,
-   `beta-linux-arm64.yml` plus referenced artifacts), publishes it as a
-   **prerelease**, and leaves GitHub's Latest pointer untouched. Snap Store
+   `beta-linux-arm64.yml` plus referenced artifacts), creates the immutable
+   candidate manifest and permanent sanitized summary, then publishes it as a
+   **prerelease** with `make_latest=false`. A propagation check confirms every
+   bound asset is downloadable and Stable Latest is unchanged. Snap Store
    packages go to the snap `beta` channel when credentials permit it; a
    channel-permission warning does not block GitHub release publication.
-5. Sanity-check from a beta-enabled install (or an opted-in stable one):
+5. Run **Actions > Release candidate confidence gate** with the exact published
+   beta tag, commit, candidate-manifest asset ID/SHA-256, and Stable Latest tag.
+   Set `run_installed_matrix=false` until PR #512's runtime-matrix workflow lands
+   with the candidate-manifest inputs. The gate then records the installed rows
+   as explicit **NOT-RUN** rather than claiming a pass. Once #512 lands, the
+   gate dispatches that existing matrix and waits for its result; it never
+   starts a competing upgrade harness.
+6. Sanity-check from a beta-enabled install (or an opted-in stable one):
    Check for Updates should offer `X.Y.Z-beta.N` via `beta.yml`.
 
 ## Promoting a beta (or any verified release) to stable
@@ -140,9 +171,10 @@ stable release:
    `make_latest=false` like every release.
 3. To make it the default update target, dispatch **Release** once more from
    that exact tag with `release_tag=X.Y.Z`, `channel=stable`,
-   `promote_stable=true`. The promotion-only job refuses anything unpublished
-   or prerelease-flagged, then selects it as GitHub Latest. Stable installs
-   see it on their next update check.
+   `promote_stable=true`. The promotion-only job first requires the permanent
+   candidate manifest/summary and both stable Snap publication markers, then
+   refuses anything unpublished or prerelease-flagged before selecting it as
+   GitHub Latest. Stable installs see it on their next update check.
 
 Betas also act as the N+1 update source for runtime upgrade matrix testing
 (#468): a client pinned to a given Electron runtime validates the next

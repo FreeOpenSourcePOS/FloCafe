@@ -362,6 +362,19 @@ jobs:
             exit 1
           fi
           printf '%s\n' "$UPLOAD_OUT"
+          # A sanitized, per-architecture marker is uploaded to the draft only
+          # after Snap Store publication succeeds. Stable promotion checks these
+          # markers, so a missing/failed stable Snap can never be mistaken for
+          # a published stable release. No snapcraft output or credentials are
+          # retained in the evidence.
+          SNAP_EVIDENCE="$RUNNER_TEMP/snap-publication-${{ matrix.arch }}.json"
+          node scripts/release-gate/snap-evidence.cjs \
+            --tag "$(node -p "require('./package.json').version")" \
+            --channel "$SNAP_CHANNEL" \
+            --arch "${{ matrix.arch }}" \
+            --output "$SNAP_EVIDENCE"
+          gh release upload "$(node -p "require('./package.json').version")" "$SNAP_EVIDENCE" \
+            --repo "${{ github.repository }}" --clobber
 
   release-mac:
     runs-on: macos-latest
@@ -762,15 +775,61 @@ jobs:
       - name: Install verifier dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      - name: Create immutable candidate manifest from uploaded draft bytes
+        # This is deliberately after every platform upload and before any feed
+        # pointer changes. The manifest binds GitHub asset IDs, names, sizes,
+        # platform/architecture, SHA-256/SHA-512, and explicit signing status.
+        run: |
+          node scripts/release-gate/candidate-manifest.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "${{ needs.create-release.outputs.version }}" \
+            --commit "${{ github.sha }}" \
+            --channel "${{ needs.create-release.outputs.channel }}" \
+            --output "$RUNNER_TEMP/candidate-manifest.json"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Attach immutable candidate manifest and permanent sanitized summary
+        # Never overwrite a candidate manifest on a rerun. A rerun must prove
+        # that the bytes are identical, otherwise the release remains blocked.
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.create-release.outputs.version }}"
+          for NAME in candidate-manifest.json release-summary.json; do
+            LOCAL="$RUNNER_TEMP/$NAME"
+            if [ "$NAME" = "release-summary.json" ]; then
+              node scripts/release-gate/evidence.cjs \
+                --manifest "$RUNNER_TEMP/candidate-manifest.json" \
+                --output "$LOCAL"
+            fi
+            EXISTING_URL=$(gh api "repos/${{ github.repository }}/releases/tags/${TAG}" \
+              --jq ".assets[] | select(.name == \"$NAME\") | .url" || true)
+            if [ -n "$EXISTING_URL" ]; then
+              EXISTING="$RUNNER_TEMP/existing-$NAME"
+              gh api "$EXISTING_URL" -H 'Accept: application/octet-stream' > "$EXISTING"
+              cmp -s "$LOCAL" "$EXISTING" || {
+                echo "::error::$NAME already exists with different bytes; refusing to mutate an immutable release binding"
+                exit 1
+              }
+            else
+              gh release upload "$TAG" "$LOCAL" --repo "${{ github.repository }}"
+            fi
+          done
+        env:
+          GH_TOKEN: ${{ github.token }}
+
       - name: Download and verify every release manifest and referenced artifact
-        # Stable verification covers latest.yml, latest-mac.yml,
-        # latest-linux.yml, and latest-linux-arm64.yml. Beta substitutes its
-        # explicit channel prefix.
+        # Verification includes the immutable candidate binding, per-arch Snap
+        # publication markers, and the permanent sanitized summary before the
+        # draft can become a public feed.
         run: |
           node scripts/verify-release-assets.cjs \
             --repo "${{ github.repository }}" \
             --tag "${{ needs.create-release.outputs.version }}" \
-            --channel "${{ needs.create-release.outputs.manifest_prefix }}"
+            --channel "${{ needs.create-release.outputs.manifest_prefix }}" \
+            --require-candidate-manifest \
+            --require-release-summary \
+            --require-snap-evidence
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -783,8 +842,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
       - name: Publish draft without changing GitHub Latest by default
         run: |
+          set -euo pipefail
           VERSION="${{ needs.create-release.outputs.version }}"
           PRERELEASE="${{ needs.create-release.outputs.prerelease }}"
           # Draft releases are not addressable via /releases/tags/{tag} (that
@@ -797,18 +863,21 @@ jobs:
             echo "::error::No release found for tag $VERSION"
             exit 1
           fi
+          LATEST_BEFORE=$(gh api "repos/${{ github.repository }}/releases/latest" --jq .tag_name 2>/dev/null || true)
           # Draft and prerelease state are changed only after verification. The
-          # explicit false prevents an ordinary stable build from moving the
-          # stable pointer; the promotion input is handled in the next call.
+          # explicit false prevents an ordinary stable or beta build from
+          # moving the stable pointer. Promotion remains a separate job.
           gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
             -F draft=false \
             -F prerelease="${PRERELEASE}" \
             -F make_latest=false
-          if [ "${{ needs.create-release.outputs.make_latest }}" = "true" ]; then
-            gh api --method PATCH "repos/${{ github.repository }}/releases/${RELEASE_ID}" \
-              -F make_latest=true
-          fi
-          echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }})"
+          node scripts/release-gate/published-readiness.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$VERSION" \
+            --commit "${{ github.sha }}" \
+            --channel "${{ needs.create-release.outputs.channel }}" \
+            --expected-latest "$LATEST_BEFORE"
+          echo "Published ${VERSION} (${{ needs.create-release.outputs.channel }}); Stable Latest remained ${LATEST_BEFORE:-'(none)'}"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -819,6 +888,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+
+      - name: Verify stable Snap publication and permanent evidence
+        run: |
+          node scripts/release-gate/verify-stable-promotion.cjs \
+            --repo "${{ github.repository }}" \
+            --tag "$RELEASE_TAG"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.create-release.outputs.version }}
+
       - name: Promote published stable release to GitHub Latest
         run: |
           if [ "$RELEASE_CHANNEL" != "stable" ]; then

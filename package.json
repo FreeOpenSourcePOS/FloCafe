@@ -61,7 +61,7 @@
     "test:titlebar-window-options": "ts-node --transpile-only -P tests/tsconfig.json tests/titlebar-window-options.test.ts",
     "test:window-readiness": "ts-node --transpile-only -P tests/tsconfig.json tests/window-readiness.test.ts",
     "test:e2e": "npm run build && npm run build:frontend && cd frontend && npx playwright install chromium && npx playwright test",
-    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts && node tests/release-asset-verifier.test.cjs",
+    "test:release-config": "ts-node --transpile-only -P tests/tsconfig.json tests/release-config.test.ts && ts-node --transpile-only -P tests/tsconfig.json tests/verify-electron-runtime-xattr.test.ts && node tests/release-asset-verifier.test.cjs && node tests/release-gate.test.cjs",
     "test:windows-uninstaller": "node tests/run-windows-uninstaller-tests.cjs",
     "test:telemetry": "node tests/run-electron-node-test.cjs tests/telemetry-delivery.test.ts",
     "test:country-provenance": "node tests/run-electron-node-test.cjs tests/country-provenance.test.ts",

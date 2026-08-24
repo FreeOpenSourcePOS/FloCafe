@@ -11,6 +11,13 @@
 
 const crypto = require('node:crypto');
 const YAML = require('js-yaml');
+const {
+  assertSnapEvidence,
+} = require('./release-gate/release-state.cjs');
+const {
+  assertRetentionPolicy,
+  assertSanitized,
+} = require('./release-gate/evidence.cjs');
 
 function requiredArg(args, name) {
   const index = args.indexOf(name);
@@ -26,6 +33,9 @@ function parseArgs(argv) {
     repo: requiredArg(args, '--repo'),
     tag: requiredArg(args, '--tag'),
     channel: requiredArg(args, '--channel'),
+    requireCandidateManifest: args.includes('--require-candidate-manifest'),
+    requireReleaseSummary: args.includes('--require-release-summary'),
+    requireSnapEvidence: args.includes('--require-snap-evidence'),
   };
   const repositoryParts = result.repo.split('/');
   if (repositoryParts.length !== 2 || repositoryParts.some((part) => !/^[a-zA-Z0-9.-]+$/.test(part))) {
@@ -230,16 +240,27 @@ function expectedArtifactNames(version) {
   ];
 }
 
-function assertReleaseAssetInventory(assets, manifestNames, version) {
+function assertReleaseAssetInventory(assets, manifestNames, version, { requiredEvidence = [] } = {}) {
   if (!version) throw new Error('release asset inventory requires an expected release version');
   const names = assets.map((asset) => asset.name);
+  const optionalEvidence = new Set([
+    'candidate-manifest.json',
+    'release-summary.json',
+    'snap-publication-x64.json',
+    'snap-publication-arm64.json',
+  ]);
+  const requiredEvidenceSet = new Set(requiredEvidence);
+  for (const name of requiredEvidenceSet) {
+    if (!optionalEvidence.has(name)) throw new Error(`unsupported required release evidence asset ${name}`);
+  }
   if (new Set(names).size !== names.length) {
     throw new Error('release asset inventory contains duplicate asset names');
   }
 
   const manifestSet = new Set(manifestNames);
-  const expected = new Set([...manifestNames, ...expectedArtifactNames(version)]);
-  const unexpected = names.filter((name) => !expected.has(name));
+  const expected = new Set([...manifestNames, ...expectedArtifactNames(version), ...requiredEvidenceSet]);
+  const allowed = new Set([...expected, ...optionalEvidence]);
+  const unexpected = names.filter((name) => !allowed.has(name));
   if (unexpected.length > 0) {
     throw new Error(`release asset inventory contains unexpected assets: ${unexpected.join(', ')}`);
   }
@@ -334,7 +355,14 @@ async function verifyArtifact(asset, expectedSha512, requestAsset) {
   return bytes;
 }
 
-async function verifyReleaseAssets(release, { channel, tag = release && release.tag_name, requestAsset = defaultAssetRequest } = {}) {
+async function verifyReleaseAssets(release, {
+  channel,
+  tag = release && release.tag_name,
+  requestAsset = defaultAssetRequest,
+  requireCandidateManifest = false,
+  requireReleaseSummary = false,
+  requireSnapEvidence = false,
+} = {}) {
   if (!release || release.draft !== true) {
     throw new Error(`release ${tag || '(unknown)'} is not a draft; refusing to verify a mutable published release`);
   }
@@ -346,10 +374,14 @@ async function verifyReleaseAssets(release, { channel, tag = release && release.
   const assets = Array.isArray(release.assets) ? release.assets : [];
   const assetsByName = new Map(assets.map((asset) => [asset.name, asset]));
   const manifestNames = expectedManifestNames(channel);
+  const requiredEvidence = [];
+  if (requireCandidateManifest) requiredEvidence.push('candidate-manifest.json');
+  if (requireReleaseSummary) requiredEvidence.push('release-summary.json');
+  if (requireSnapEvidence) requiredEvidence.push('snap-publication-x64.json', 'snap-publication-arm64.json');
   for (const name of manifestNames) {
     if (!assetsByName.has(name)) throw new Error(`release ${tag} is missing ${name}`);
   }
-  assertReleaseAssetInventory(assets, manifestNames, tag);
+  assertReleaseAssetInventory(assets, manifestNames, tag, { requiredEvidence });
 
   // Inventory-only assets (store packages, blockmaps, and uninstall helpers)
   // still have to be reachable from the uploaded draft, but do not have an
@@ -357,6 +389,28 @@ async function verifyReleaseAssets(release, { channel, tag = release && release.
   // fully and hash-checked.
   for (const asset of assets) {
     if (!manifestNames.includes(asset.name)) await verifyAssetAvailability(asset, requestAsset);
+  }
+
+  const releaseChannel = channel === 'latest' ? 'stable' : channel;
+  if (requireSnapEvidence) {
+    for (const architecture of ['x64', 'arm64']) {
+      const evidenceAsset = assetsByName.get(`snap-publication-${architecture}.json`);
+      const evidenceBytes = await readAsset(evidenceAsset, requestAsset);
+      let evidence;
+      try { evidence = JSON.parse(evidenceBytes.toString('utf8')); } catch (error) {
+        throw new Error(`snap-publication-${architecture}.json is not valid JSON: ${error.message}`);
+      }
+      assertSnapEvidence(evidence, { tag, channel: releaseChannel });
+    }
+  }
+  if (requireReleaseSummary) {
+    const summaryBytes = await readAsset(assetsByName.get('release-summary.json'), requestAsset);
+    let summary;
+    try { summary = JSON.parse(summaryBytes.toString('utf8')); } catch (error) {
+      throw new Error(`release-summary.json is not valid JSON: ${error.message}`);
+    }
+    assertSanitized(summary);
+    assertRetentionPolicy(summary.retention);
   }
 
   for (const manifestName of manifestNames) {
@@ -395,7 +449,13 @@ async function main() {
   // real run of this step 404'd because no release had ever been verified
   // as a draft before.
   const release = await findReleaseByTag(apiBase, options.tag);
-  await verifyReleaseAssets(release, { channel: options.channel, tag: options.tag });
+  await verifyReleaseAssets(release, {
+    channel: options.channel,
+    tag: options.tag,
+    requireCandidateManifest: options.requireCandidateManifest,
+    requireReleaseSummary: options.requireReleaseSummary,
+    requireSnapEvidence: options.requireSnapEvidence,
+  });
 }
 
 async function findReleaseByTag(apiBase, tag) {

@@ -240,11 +240,34 @@ function run() {
   assert.deepEqual(verifyJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows']);
   assert.deepEqual(publishJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release']);
   assertShellStep(verifyJob, 'Download and verify every release manifest and referenced artifact');
+  assert.match(findStep(verifyJob, 'Download and verify every release manifest and referenced artifact').run, /require-candidate-manifest/);
+  assert.match(findStep(verifyJob, 'Download and verify every release manifest and referenced artifact').run, /require-snap-evidence/);
   assertShellStep(publishJob, 'Publish draft without changing GitHub Latest by default');
+  assert.match(findStep(publishJob, 'Publish draft without changing GitHub Latest by default').run, /published-readiness\.cjs/);
   const promoteJob = jobs['promote-release'];
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
+  assertShellStep(promoteJob, 'Verify stable Snap publication and permanent evidence');
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
+  assert.match(findStep(linuxJob, 'Publish snap to the matching Snap Store channel').run, /snap-evidence\.cjs/);
+
+  const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');
+  const candidateTriggers = candidateWorkflow.on || candidateWorkflow['true'];
+  assert.ok(candidateTriggers.workflow_dispatch, 'candidate gate must be manual and must not publish on pushes');
+  assert.equal(candidateTriggers.push, undefined);
+  const candidateInputs = candidateTriggers.workflow_dispatch.inputs;
+  for (const input of ['candidate_tag', 'candidate_commit', 'candidate_manifest_sha256', 'candidate_manifest_asset_id', 'stable_tag', 'from_version']) {
+    assert.equal(candidateInputs[input].required, true, `${input} must be exact and required`);
+  }
+  assert.equal(candidateInputs.run_installed_matrix.type, 'boolean');
+  const candidateVerifyJob = candidateWorkflow.jobs['verify-candidate'];
+  assert.match(findStep(candidateVerifyJob, 'Verify exact candidate manifest, tag, commit, and bytes').run, /candidate-manifest\.cjs/);
+  const candidateEvidenceUpload = findStep(candidateVerifyJob, 'Retain sanitized evidence for 90 days');
+  assert.equal(candidateEvidenceUpload.with['retention-days'], 90);
+  const candidateMatrixJob = candidateWorkflow.jobs['installed-artifact-matrix'];
+  assert.match(findStep(candidateMatrixJob, 'Dispatch and wait for #512 matrix using exact candidate binding').run, /matrix-dispatch\.cjs/);
+  assert.match(findStep(candidateMatrixJob, 'Require the #512 runtime-matrix integration contract').run, /assertMatrixContract/);
+  assert.match(findStep(candidateWorkflow.jobs['matrix-not-run-boundary'], 'Mark installed artifact rows NOT-RUN, never PASS').run, /NOT-RUN/);
 
   const metadataStable = executeWorkflowStep(metadata, {
     env: {
@@ -349,7 +372,9 @@ function run() {
       'needs.create-release.outputs.make_latest': 'false',
       'needs.create-release.outputs.channel': 'stable',
       'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'github.sha': 'a'.repeat(40),
     },
+    fakeNodeVersion: '3.3.0',
     fakeCommands: { gh: fakeGh },
   });
   assert.equal(publishStable.status, 0, publishStable.stderr);
@@ -363,7 +388,9 @@ function run() {
       'needs.create-release.outputs.make_latest': 'false',
       'needs.create-release.outputs.channel': 'beta',
       'github.repository': 'FreeOpenSourcePOS/FloCafe',
+      'github.sha': 'a'.repeat(40),
     },
+    fakeNodeVersion: '3.3.1-beta.1',
     fakeCommands: { gh: fakeGh },
   });
   assert.equal(publishBeta.status, 0, publishBeta.stderr);

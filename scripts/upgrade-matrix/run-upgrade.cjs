@@ -117,7 +117,7 @@ async function phaseVerify(args) {
   // Give the renderer a moment to expose its preload bridge after boot.
   await sleep(5000);
   const { version: runningVersion, betaCheck } = await verifySeeds(seeds, expectedVersion, {
-    skipBetaPreference: Boolean(args['pre-toggle-fixture']),
+    skipBetaPreference: Boolean(args['pre-toggle-fixture'] || args['skip-beta-preference']),
   });
 
   const evidence = {

@@ -176,7 +176,10 @@ jobs:
               exit 1
             fi
 
-            PREV_TAG=$(git tag --list --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | grep -Ev "^(v)?${BASE_VERSION}\$" | head -1)
+            # A fresh checkout may not have any tags yet. With pipefail, grep
+            # returns 1 for that valid empty result, so keep the release step
+            # successful and omit the optional comparison link.
+            PREV_TAG=$(git tag --list --sort=-v:refname | grep -E '^v?[0-9]+\.[0-9]+\.[0-9]+$' | grep -Ev "^(v)?${BASE_VERSION}\$" | head -1 || true)
             if [ -n "$PREV_TAG" ]; then
               echo "" >> /tmp/release-notes.md
               echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${VERSION}" >> /tmp/release-notes.md

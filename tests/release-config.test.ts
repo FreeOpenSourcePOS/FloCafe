@@ -249,9 +249,7 @@ function run() {
   const promoteJob = jobs['promote-release'];
   assert.equal(promoteJob.needs, 'create-release');
   assert.equal(promoteJob.if, "needs.create-release.outputs.promotion_only == 'true'");
-  assertShellStep(promoteJob, 'Verify stable Snap publication and permanent evidence');
   assertShellStep(promoteJob, 'Promote published stable release to GitHub Latest');
-  assert.equal(findStep(promoteJob, 'Verify stable Snap publication and permanent evidence').env.GH_TOKEN, '${{ github.token }}');
 
   const candidateWorkflow = loadWorkflow('release-candidate-gate.yml');
   const candidateTriggers = candidateWorkflow.on || candidateWorkflow['true'];

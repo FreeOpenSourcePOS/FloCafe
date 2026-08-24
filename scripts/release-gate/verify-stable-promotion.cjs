@@ -41,19 +41,13 @@ function parseJson(bytes, description) {
   catch (error) { throw new Error(`${description} is malformed: ${error.message}`); }
 }
 
-async function main() {
-  const argv = process.argv.slice(2);
-  const repo = arg(argv, '--repo');
-  const tag = arg(argv, '--tag');
-  const expectedManifestAssetId = optionalArg(argv, '--candidate-asset-id');
-  const expectedManifestSha256 = optionalArg(argv, '--manifest-sha256');
+async function verifyStablePromotion({ release, tag, expectedManifestAssetId, expectedManifestSha256, resolveCommit, fetchAssetBytes }) {
   if (!expectedManifestAssetId || !expectedManifestSha256) {
     throw new Error('stable promotion requires the immutable candidate manifest asset ID and SHA-256');
   }
-  if (!/^\d+$/.test(expectedManifestAssetId)) throw new Error('candidate manifest asset ID must be a positive integer');
+  if (!/^\d+$/.test(String(expectedManifestAssetId))) throw new Error('candidate manifest asset ID must be a positive integer');
   if (!/^[0-9a-f]{64}$/i.test(expectedManifestSha256)) throw new Error('candidate manifest SHA-256 must be a 64-character hexadecimal digest');
-  const apiBase = `https://api.github.com/repos/${repo}`;
-  const release = await (await request(`${apiBase}/releases/tags/${encodeURIComponent(tag)}`)).json();
+  if (typeof resolveCommit !== 'function' || typeof fetchAssetBytes !== 'function') throw new Error('stable promotion verification requires release-boundary resolvers');
   assertPublishedRelease(release, { tag, channel: 'stable' });
 
   const candidateAsset = (release.assets || []).find((entry) => entry.name === 'candidate-manifest.json');
@@ -64,33 +58,52 @@ async function main() {
     throw new Error(`candidate manifest asset ID ${candidateAsset.id} does not match expected ${expectedManifestAssetId}`);
   }
 
-  const candidateBytes = await assetBytes(candidateAsset, 'candidate-manifest.json');
+  const candidateBytes = await fetchAssetBytes(candidateAsset, 'candidate-manifest.json');
   const actualManifestSha256 = manifestSha256(candidateBytes);
   if (actualManifestSha256 !== expectedManifestSha256.toLowerCase()) {
     throw new Error(`candidate manifest SHA-256 mismatch: expected ${expectedManifestSha256}, got ${actualManifestSha256}`);
   }
   const manifest = parseJson(candidateBytes, 'candidate-manifest.json');
-  const resolvedCommit = await resolveTagCommit(apiBase, tag);
+  const resolvedCommit = await resolveCommit(tag);
   if (manifest.commit?.sha !== resolvedCommit) {
     throw new Error(`candidate manifest commit does not match stable tag ${tag}: expected ${resolvedCommit}`);
   }
   await verifyCandidateManifest(manifest, release, {
-    requestAsset: (asset) => request(asset.url, 'application/octet-stream'),
+    requestAsset: (asset) => fetchAssetBytes(asset, asset.name),
     tag,
     commit: resolvedCommit,
     channel: 'stable',
   });
 
-  const summary = parseJson(await assetBytes(summaryAsset, 'release-summary.json'), 'release-summary.json');
+  const summary = parseJson(await fetchAssetBytes(summaryAsset, 'release-summary.json'), 'release-summary.json');
   assertReleaseSummary(summary, { manifest, candidateManifestBytes: candidateBytes });
 
   const evidenceByArch = {};
   for (const architecture of ['x64', 'arm64']) {
     const asset = (release.assets || []).find((entry) => entry.name === `snap-publication-${architecture}.json`);
     if (!asset) throw new Error(`stable release ${tag} is missing Snap publication evidence for ${architecture}; refusing Latest promotion`);
-    evidenceByArch[architecture] = parseJson(await assetBytes(asset, `Snap publication evidence for ${architecture}`), `Snap publication evidence for ${architecture}`);
+    evidenceByArch[architecture] = parseJson(await fetchAssetBytes(asset, `Snap publication evidence for ${architecture}`), `Snap publication evidence for ${architecture}`);
   }
   assertStableSnapEvidence(evidenceByArch, tag);
+  return { tag, commit: resolvedCommit, assetCount: manifest.assets.length };
+}
+
+async function main() {
+  const argv = process.argv.slice(2);
+  const repo = arg(argv, '--repo');
+  const tag = arg(argv, '--tag');
+  const expectedManifestAssetId = optionalArg(argv, '--candidate-asset-id');
+  const expectedManifestSha256 = optionalArg(argv, '--manifest-sha256');
+  const apiBase = `https://api.github.com/repos/${repo}`;
+  const release = await (await request(`${apiBase}/releases/tags/${encodeURIComponent(tag)}`)).json();
+  await verifyStablePromotion({
+    release,
+    tag,
+    expectedManifestAssetId,
+    expectedManifestSha256,
+    resolveCommit: (candidateTag) => resolveTagCommit(apiBase, candidateTag),
+    fetchAssetBytes: assetBytes,
+  });
   console.log(`stable release ${tag} passed immutable manifest, asset, Snap publication, and permanent-evidence promotion checks`);
 }
 
@@ -101,4 +114,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main };
+module.exports = { main, verifyStablePromotion };

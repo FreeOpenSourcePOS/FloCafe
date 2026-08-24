@@ -5,6 +5,7 @@ const {
   assertCandidateManifest,
   classifyAsset,
   createCandidateManifest,
+  manifestSha256,
   resolveTagCommit,
   verifyCandidateManifest,
 } = require('../scripts/release-gate/candidate-manifest.cjs');
@@ -25,6 +26,7 @@ const {
 const { createSnapEvidence } = require('../scripts/release-gate/snap-evidence.cjs');
 const { assertMatrixContract, buildDispatchInputs, createDispatchId } = require('../scripts/release-gate/matrix-contract.cjs');
 const { assertCorrelatedRun } = require('../scripts/release-gate/matrix-dispatch.cjs');
+const { verifyStablePromotion } = require('../scripts/release-gate/verify-stable-promotion.cjs');
 
 const payloads = new Map();
 function asset(name, id) {
@@ -144,6 +146,63 @@ const requestAsset = async (entry) => payloads.get(entry.name);
   assertRetentionPolicy(summary.retention);
   assert.throws(() => assertSanitized({ password: 'nope' }), /sensitive field/);
   assert.throws(() => assertSanitized({ note: 'Bearer abc123' }), /credential-like/);
+
+  const stablePayloads = new Map();
+  const stableAssets = releaseAssets.map((entry) => {
+    let bytes = payloads.get(entry.name);
+    if (entry.name === 'snap-publication-x64.json') {
+      bytes = Buffer.from(JSON.stringify(createSnapEvidence({ tag: '3.3.0', channel: 'stable', architecture: 'x64' })));
+    } else if (entry.name === 'snap-publication-arm64.json') {
+      bytes = Buffer.from(JSON.stringify(createSnapEvidence({ tag: '3.3.0', channel: 'stable', architecture: 'arm64' })));
+    }
+    stablePayloads.set(entry.name, bytes);
+    return { ...entry, size: bytes.length };
+  });
+  const stableDraft = { draft: true, tag_name: '3.3.0', assets: stableAssets };
+  const stableManifest = await createCandidateManifest({
+    release: stableDraft,
+    commit: 'b'.repeat(40),
+    channel: 'stable',
+    requestAsset: async (entry) => stablePayloads.get(entry.name),
+    signingStatuses: { windows: 'unsigned', mac: 'signed', linux: 'not-applicable' },
+  });
+  const stableCandidateBytes = Buffer.from(`${JSON.stringify(stableManifest, null, 2)}\n`);
+  const stableSummary = createReleaseSummary({
+    manifest: stableManifest,
+    candidateManifestBytes: stableCandidateBytes,
+  });
+  stablePayloads.set('candidate-manifest.json', stableCandidateBytes);
+  const stableSummaryBytes = Buffer.from(`${JSON.stringify(stableSummary, null, 2)}\n`);
+  stablePayloads.set('release-summary.json', stableSummaryBytes);
+  const stablePublished = {
+    draft: false,
+    prerelease: false,
+    tag_name: '3.3.0',
+    assets: [
+      ...stableAssets,
+      { name: 'candidate-manifest.json', id: 115, size: stableCandidateBytes.length, url: 'https://assets.test/stable-candidate-manifest.json' },
+      { name: 'release-summary.json', id: 116, size: stableSummaryBytes.length, url: 'https://assets.test/stable-release-summary.json' },
+    ],
+  };
+  const stablePromotionArgs = {
+    release: stablePublished,
+    tag: '3.3.0',
+    expectedManifestAssetId: 115,
+    expectedManifestSha256: manifestSha256(stableCandidateBytes),
+    resolveCommit: async () => 'b'.repeat(40),
+    fetchAssetBytes: async (entry) => stablePayloads.get(entry.name),
+  };
+  await assert.doesNotReject(() => verifyStablePromotion(stablePromotionArgs));
+  await assert.rejects(
+    () => verifyStablePromotion({
+      ...stablePromotionArgs,
+      release: {
+        ...stablePublished,
+        assets: stablePublished.assets.filter((entry) => entry.name !== 'snap-publication-arm64.json'),
+      },
+    }),
+    /asset set changed|missing Snap publication evidence/,
+  );
 
   const currentMatrix = `name: Runtime upgrade matrix
 run-name: Runtime upgrade matrix \${{ inputs.matrix_dispatch_id }}

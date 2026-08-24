@@ -14,8 +14,35 @@ Phase 1 gives the main POS Electron window a small native-controls title-bar fou
 - The bar displays the current store and staff context and reuses the existing update badge. Its layout uses Window Controls Overlay safe-area environment variables, logical spacing, and explicit drag/no-drag regions for interactive content.
 - The existing `StatusBar` remains the dashboard footer because its server, port, memory, and uptime metrics are a wider footer contract; the title bar does not duplicate it. `UpdateBadge` is reused because its compact native update action fits the bar. The POS-only `PrinterStatus` toolbar component is not mounted here: it owns WebUSB/API printer state rather than a title-bar capability, so Phase 1 adds no printer polling or new printer IPC.
 
+## Phase 2: Linux verification and HTML fallback controls
+
+### Native overlay verification evidence (2026-08-24)
+
+The captain verified the native `titleBarOverlay` on Debian + GNOME on real hardware with Electron 43.4.0: the window renders with native caption buttons, no control-less hidden bar, and the renderer bar's safe-area spacing correctly excludes the button strip.
+
+Two GNOME-specific behaviors are worth recording:
+
+- **Close-only default layout.** GNOME's default `button-layout` for decorations is close-only (`:minimize,maximize,close` applies only to app-drawn headers; the default is effectively just close on the right). Electron 43+ respects the desktop environment's button layout when drawing overlay caption buttons, so on stock GNOME the overlay shows only a close button. This is correct platform behavior, not a bug; users who customize `button-layout` via gnome-tweaks get their configured buttons in the overlay.
+- **Safe-area behavior.** Chromium reports the WCO safe-area environment variables (`titlebar-area-*`) consumed by `.flo-title-bar__safe-area`; they exclude the overlay button strip and update on `geometrychange`. On GNOME the strip width reflects the DE-configured button set, so content padding adapts automatically.
+
+### Runtime fallback gating
+
+Phase 2 adds a defensive runtime decision so no platform can end up hidden-with-no-controls if the overlay is unavailable or broken:
+
+1. `main/window-options.ts` exports `resolveTitleBarMode({ platform, electronVersion, overlayApiPresent })`. It resolves to `'native-overlay'` only when the platform is darwin/win32/linux, the Electron major version is >= 33 (the point where WCO-style overlays became dependable across supported platforms), and a runtime probe confirms `BrowserWindow.prototype.setTitleBarOverlay` exists. Anything else resolves to `'html-fallback'` - unknown platforms, old runtimes, and missing APIs all fail closed.
+2. `createWindow()` in `main/index.ts` resolves the mode once per window creation using `process.platform`, `process.versions.electron`, and the live prototype probe, then builds the window without `titleBarOverlay` options in fallback mode (the frame stays intact with `titleBarStyle: 'hidden'`; only the overlay is dropped).
+3. Main reports the resolved mode to the renderer through the existing `get-status` payload as `titleBarMode` ('native-overlay' by default, so an older main keeps Phase 1 behavior for a newer renderer).
+4. When the renderer `TitleBar` reads `'html-fallback'` from `getStatus()`, it mounts minimal min/max/close buttons pinned to the trailing edge of the bar. They are styled with logical CSS properties (RTL-safe) consistent with the `flo-title-bar` classes and invoke one narrow IPC verb: `windowAction('minimize' | 'toggle-maximize' | 'close')` exposed via `main/preload.ts`. Context isolation is unchanged.
+5. Fallback `close` routes through `BrowserWindow.close()`, firing the same `close` event as the native caption button, so close-to-tray behavior in `main/index.ts` is identical in both modes.
+
+Contract coverage lives in `tests/titlebar-window-options.test.ts` (mode resolution matrix, fallback window options, window-action verb validation) and `tests/electron-api-contract.test.ts` (preload surface includes `windowAction`).
+
+### Follow-up (not implemented)
+
+A manually-triggered `workflow_dispatch` CI job that launches the packaged Linux AppImage under xvfb on ubuntu-latest and captures screenshots of both overlay and fallback modes as artifacts remains follow-up work; it needs a packaged-build runner and xvfb setup that does not fit this slice.
+
 The renderer `ElectronAPI` declaration stays in parity with the existing preload surface, including settings, KDS, printer, and daily-summary methods; no new bridge methods are added. The KDS window, print receipt/local popup windows, native dialogs, and browser/LAN layouts remain on their existing paths. Context isolation, disabled Node integration, and the preload API are unchanged.
 
-## Explicit Phase 2 exclusions
+## Explicit exclusions
 
-Phase 1 does not add HTML window-control buttons or broad window-control IPC, Linux HTML fallback controls, clock/cloud-sync indicators, title-bar printer/server polling, vibrancy/transparency, or cross-platform manual validation. Those remain bounded follow-up work if platform testing identifies a need.
+Phase 1 did not add HTML window-control buttons or broad window-control IPC, clock/cloud-sync indicators, title-bar printer/server polling, vibrancy/transparency, dynamic theme synchronization, or cross-platform manual validation. Phase 2 delivered the HTML fallback controls over one narrow `windowAction` IPC channel; broad window-control IPC, cloud-sync indicators, printer/server polling, vibrancy/transparency, and dynamic theme synchronization remain bounded follow-up work if platform testing identifies a need.

@@ -115,6 +115,8 @@
     "loading": "Loading...",
     "loadingScreen": "Loading...",
     "logoAlt": "Flo Cafe",
+    "maximize": "Maximize",
+    "minimize": "Minimize",
     "namePlaceholder": "Name",
     "no": "No",
     "notAvailable": "Not available",
@@ -147,6 +149,7 @@
     "total": "Total",
     "unknown": "Unknown",
     "update": "Update",
+    "windowControls": "Window controls",
     "yes": "Yes"
   },
   "countries": {

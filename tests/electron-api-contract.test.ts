@@ -45,7 +45,7 @@ async function run(): Promise<void> {
     'dbInitialize', 'getAppInfo', 'getBetaChannel', 'getDailySummary', 'getKdsInfo',
     'getMasterPinStatus', 'getPrinters', 'getSettings', 'getStatus', 'getUpdateStatus',
     'onMenuAction', 'onUpdateStatus', 'openKdsWindow', 'platform', 'restartAndInstall',
-    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting',
+    'restoreBackup', 'savePrinter', 'setBetaChannel', 'setSetting', 'windowAction',
   ].sort());
 
   const call = (name: string, ...args: unknown[]) =>
@@ -59,6 +59,7 @@ async function run(): Promise<void> {
   await call('getDailySummary');
   await call('getBetaChannel');
   await call('setBetaChannel', true);
+  await call('windowAction', 'minimize');
 
   const receivedStatuses: unknown[] = [];
   const unsubscribe = (exposedApi!['onUpdateStatus'] as (callback: (status: unknown) => void) => () => void)(
@@ -83,6 +84,7 @@ async function run(): Promise<void> {
     { channel: 'get-daily-summary', args: [] },
     { channel: 'updates:get-beta-channel', args: [] },
     { channel: 'updates:set-beta-channel', args: [true] },
+    { channel: 'window-action', args: ['minimize'] },
   ]);
 
   console.log('Electron preload methods expose the expected narrow IPC channels.');

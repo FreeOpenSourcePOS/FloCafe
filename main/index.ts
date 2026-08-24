@@ -33,7 +33,7 @@ import {
   type UpdateErrorPhase,
 } from './update-state';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
-import { createLocalWindowOpenHandler, createMainWindow } from './window-options';
+import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
 import { attachTitleBarThemeSync } from './title-bar-theme';
 import {
   createShutdownCoordinator,
@@ -348,6 +348,11 @@ async function checkTaxPackUpdatesOnStartup(): Promise<void> {
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
+
+// Title-bar capability reported to the renderer via get-status; updated each
+// time the main window is created. Defaults to native-overlay so a renderer
+// that somehow reads it before window creation keeps Phase 1 behavior.
+let resolvedTitleBarMode: TitleBarMode = 'native-overlay';
 let bonjour: InstanceType<typeof Bonjour> | null = null;
 let isQuitting = false;
 
@@ -398,11 +403,21 @@ function createWindow(): void {
   // the same run instead of only on the next full relaunch.
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
+  // Decide once per window whether the native titleBarOverlay can be relied
+  // on (platform + Electron >= 33 + the overlay API actually present). When
+  // it cannot, the window ships without overlay options and the renderer
+  // mounts HTML fallback controls so we never end up hidden-with-no-controls.
+  resolvedTitleBarMode = resolveTitleBarMode({
+    platform: process.platform,
+    electronVersion: process.versions.electron,
+    overlayApiPresent: typeof BrowserWindow.prototype?.setTitleBarOverlay === 'function',
+  });
   mainWindow = createMainWindow(
     BrowserWindow,
     path.join(__dirname, 'preload.js'),
     process.platform,
     nativeTheme.shouldUseDarkColors,
+    resolvedTitleBarMode,
   );
 
   mainWindow.once('ready-to-show', () => {
@@ -892,6 +907,7 @@ async function initialize(): Promise<void> {
         },
         uptime: process.uptime(),
         port: getServerPort(),
+        titleBarMode: resolvedTitleBarMode,
       };
     });
 

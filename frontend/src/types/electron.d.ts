@@ -7,6 +7,10 @@ export interface ElectronAPI {
   // Menu
   onMenuAction: (callback: (action: string) => void) => (() => void);
 
+  // Window controls (HTML title-bar fallback; only invoked when getStatus()
+  // reports titleBarMode 'html-fallback')
+  windowAction: (action: WindowControlAction) => Promise<ElectronActionResult | ElectronIpcError>;
+
   // Database
   backupDatabase: (pin?: string) => Promise<{ success: boolean; path?: string; error?: string }>;
   restoreBackup: (pin?: string, backupPath?: string) => Promise<{ success: boolean; error?: string }>;
@@ -87,7 +91,14 @@ export interface ElectronStatus {
   memory: { heapUsed: number; heapTotal: number; rss: number };
   uptime: number;
   port: number;
+  /** How main supplies the window caption controls. Optional so a newer
+   * renderer against an older main keeps native-overlay Phase 1 behavior. */
+  titleBarMode?: TitleBarMode;
 }
+
+export type TitleBarMode = 'native-overlay' | 'html-fallback';
+
+export type WindowControlAction = 'minimize' | 'toggle-maximize' | 'close';
 
 export interface KdsInfo {
   url: string;

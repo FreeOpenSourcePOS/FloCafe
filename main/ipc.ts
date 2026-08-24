@@ -10,7 +10,7 @@ import { getKdsPort } from './kds-server';
 import { authorizeMasterPin, isMasterPinAvailable, isMasterPinSet } from './services/master-pin';
 import { runHealthCheck, applySafeFixes } from './services/schema-health';
 import { getStatus as getWhatsAppStatus } from './services/whatsapp';
-import { createKdsWindow } from './window-options';
+import { createKdsWindow, applyWindowControlAction } from './window-options';
 
 // Settings keys the renderer is allowed to write via IPC.
 // Must stay in sync with routes/settings.ts ALLOWED_WILDCARD_KEYS.
@@ -230,6 +230,18 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
       console.error('[IPC] db-initialize: Error:', error);
       return { success: false, error: error.message };
     }
+  });
+
+  // Narrow window-control surface for the renderer title bar's HTML fallback
+  // controls (only mounted when main reports 'html-fallback'). The trusted-
+  // sender wrapper above already restricts this to the localhost-served POS
+  // renderer; KDS/print popups carry no preload bridge. 'close' routes through
+  // BrowserWindow.close() so it fires the same event as the native caption
+  // button and honors close-to-tray behavior.
+  handle('window-action', (event, action: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return { error: 'Window unavailable' };
+    return applyWindowControlAction(win, action);
   });
 
   // Settings

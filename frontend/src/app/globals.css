@@ -89,6 +89,40 @@ body {
   app-region: no-drag;
 }
 
+/* HTML fallback caption buttons: mounted only when main reports the native
+ * overlay is unavailable ('html-fallback'). Logical properties keep them on
+ * the trailing edge for RTL locales; sizes echo standard caption-button hit
+ * targets while staying consistent with the 40px bar height. */
+.flo-title-bar__fallback-controls {
+  position: absolute;
+  inset-block-start: 0;
+  inset-inline-end: 0;
+  block-size: var(--flo-titlebar-height);
+  display: flex;
+  align-items: stretch;
+}
+
+.flo-title-bar__fallback-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 44px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+
+.flo-title-bar__fallback-button:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+.flo-title-bar__fallback-button--close:hover {
+  background: #e81123;
+  color: #ffffff;
+}
+
 .flo-title-bar--root-drag {
   position: fixed;
   inset-block-start: 0;

@@ -18,6 +18,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   getStatus: () => ipcRenderer.invoke('get-status'),
 
+  // Narrow window-control surface for the renderer title bar's HTML fallback
+  // controls. Only ever called when main reports titleBarMode 'html-fallback'.
+  windowAction: (action: string) => ipcRenderer.invoke('window-action', action),
+
   getPrinters: () => ipcRenderer.invoke('get-printers'),
   savePrinter: (printer: unknown) => ipcRenderer.invoke('save-printer', printer),
 

@@ -12,7 +12,7 @@
  *
  * Optional flags:
  *   --fullscreen-check   macOS only: visibly enters/exits fullscreen and records
- *                        kiosk-codepath availability (interactive session required).
+ *                        fullscreen transitions (interactive session required).
  */
 
 const assert = require('node:assert/strict');
@@ -192,12 +192,6 @@ async function main() {
         win.setFullScreen(false);
         await waitFor(() => !win.isFullScreen(), 8000, 'fullscreen exit');
         record('fullscreen: exits native fullscreen cleanly', true, 'isFullScreen()=false');
-        // Kiosk: no codepath exists in FloCafe today; assert that honestly.
-        record(
-          'kiosk: no kiosk codepath exists (documented finding)',
-          !BrowserWindow.prototype.setKiosk || !win.isKiosk?.(),
-          'FloCafe never calls setKiosk(); matrix documents this row as NOT-RUN/no-codepath',
-        );
       } catch (err) {
         record('fullscreen-check', false, String(err.message || err));
       }

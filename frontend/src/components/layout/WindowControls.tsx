@@ -18,7 +18,11 @@ export default function WindowControls() {
     getElectronCapability,
     getServerElectronCapability,
   );
-  const [resolved, setResolved] = useState<{ mode: TitleBarMode; epoch: number } | null>(null);
+  const [resolved, setResolved] = useState<{
+    mode: TitleBarMode;
+    epoch: number;
+    documentNonce: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!isElectron) return undefined;
@@ -34,6 +38,9 @@ export default function WindowControls() {
         setResolved({
           mode: status?.titleBarMode === 'html-fallback' ? 'html-fallback' : 'native-overlay',
           epoch: typeof status?.titleBarEpoch === 'number' ? status.titleBarEpoch : Number.NaN,
+          documentNonce: typeof status?.titleBarDocumentNonce === 'string'
+            ? status.titleBarDocumentNonce
+            : null,
         });
       })
       .catch((error) => {
@@ -56,7 +63,7 @@ export default function WindowControls() {
   // previous document's confirmation.
   useEffect(() => {
     if (!isElectron || !resolved) return;
-    if (!Number.isInteger(resolved.epoch) || resolved.epoch < 1) return;
+    if (!Number.isInteger(resolved.epoch) || resolved.epoch < 1 || !resolved.documentNonce) return;
     window.electronAPI
       ?.windowReady({ epoch: resolved.epoch })
       ?.catch((error) => {

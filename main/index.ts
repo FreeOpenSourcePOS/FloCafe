@@ -37,6 +37,7 @@ import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, ty
 import { attachTitleBarThemeSync } from './title-bar-theme';
 import {
   beginRendererDocument,
+  getRendererDocumentNonce,
   getRendererReadinessEpoch,
   initWindowReadiness,
   isRendererReadinessFailSafeShown,
@@ -368,6 +369,7 @@ function showMainWindow(): boolean {
     || !mainWindow
     || mainWindow.isDestroyed()
   ) return false;
+  if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   return true;
 }
@@ -398,7 +400,6 @@ if (gotSingleInstanceLock) {
   // Focus the existing window if a second launch is attempted.
   app.on('second-instance', () => {
     if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
       if (showMainWindow()) {
         mainWindow.focus();
         if (process.platform === 'linux') {
@@ -552,7 +553,6 @@ function createTray(): void {
           label: 'Show',
           click: () => {
             if (mainWindow) {
-              if (mainWindow.isMinimized()) mainWindow.restore();
               if (showMainWindow()) mainWindow.focus();
             }
           },
@@ -587,7 +587,6 @@ function createTray(): void {
       // Single-click also shows the window on Linux (no double-click standard).
       tray.on('click', () => {
         if (mainWindow) {
-          if (mainWindow.isMinimized()) mainWindow.restore();
           if (showMainWindow()) mainWindow.focus();
         }
       });
@@ -939,6 +938,7 @@ async function initialize(): Promise<void> {
         port: getServerPort(),
         titleBarMode: resolvedTitleBarMode,
         titleBarEpoch: getRendererReadinessEpoch(),
+        titleBarDocumentNonce: getRendererDocumentNonce() ?? undefined,
       };
     });
 

@@ -18,9 +18,12 @@
  */
 
 const RENDERER_READINESS_FAILSAFE_MS = 10_000;
+const DOCUMENT_NONCE_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let rendererReadinessEpoch = 0;
 let readyEpoch: number | null = null;
+let rendererDocumentNonce: string | null = null;
 let rendererReadinessFailSafeShown = false;
 let showWindowFn: (() => void) | null = null;
 let failsafeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -50,6 +53,7 @@ function clearReadinessFailSafe(): void {
 export function beginRendererDocument(): number {
   rendererReadinessEpoch += 1;
   readyEpoch = null;
+  rendererDocumentNonce = null;
   rendererReadinessFailSafeShown = false;
   clearReadinessFailSafe();
 
@@ -77,14 +81,25 @@ export function getRendererReadinessEpoch(): number {
   return rendererReadinessEpoch;
 }
 
+export function registerRendererDocument(documentNonce: unknown): boolean {
+  if (typeof documentNonce !== 'string' || !DOCUMENT_NONCE_PATTERN.test(documentNonce)) return false;
+  rendererDocumentNonce = documentNonce;
+  return true;
+}
+
+export function getRendererDocumentNonce(): string | null {
+  return rendererDocumentNonce;
+}
+
 /**
  * Records a readiness report bound to an epoch. Returns true only when the
  * report is well-formed and matches the current epoch; stale documents'
  * reports are rejected so a reload can never inherit readiness.
  */
-export function markWindowRendererReady(epoch: unknown): boolean {
+export function markWindowRendererReady(epoch: unknown, documentNonce: unknown): boolean {
   if (typeof epoch !== 'number' || !Number.isInteger(epoch) || epoch < 1) return false;
   if (epoch !== rendererReadinessEpoch) return false;
+  if (documentNonce !== rendererDocumentNonce) return false;
   readyEpoch = epoch;
   clearReadinessFailSafe();
   return true;

@@ -101,6 +101,8 @@ export interface ElectronStatus {
   /** Current readiness epoch of the loaded document; bind windowReady reports
    * to it. Optional for the same older-main compatibility reason. */
   titleBarEpoch?: number;
+  /** Opaque document-scoped readiness nonce, paired with titleBarEpoch. */
+  titleBarDocumentNonce?: string;
 }
 
 export type TitleBarMode = 'native-overlay' | 'html-fallback';

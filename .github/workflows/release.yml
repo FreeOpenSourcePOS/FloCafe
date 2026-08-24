@@ -563,8 +563,14 @@ jobs:
         # packages, and electron-builder's Store target is still named appx. The
         # package.json target list keeps NSIS x64-only while building AppX for
         # x64 and arm64, so Windows on Arm devices keep native Store coverage.
+        # bash, not pwsh: pwsh mangles the -c.publish.channel="..." electron-builder
+        # CLI override (splits it into a bare `-c` flag plus a positional that
+        # electron-builder then tries to open as a config file), which failed the
+        # 3.3.1-beta.1 release build. The mac/linux jobs already run this exact
+        # invocation under bash successfully.
+        shell: bash
         run: |
-          npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false `
+          npm run build:frontend && npm run build && npx electron-builder --win --publish never --config.npmRebuild=false \
             -c.publish.channel="${{ needs.create-release.outputs.manifest_prefix }}"
           node scripts/assert-release-artifact-names.cjs release
         env:

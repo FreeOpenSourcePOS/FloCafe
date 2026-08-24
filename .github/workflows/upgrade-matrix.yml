@@ -63,6 +63,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
       - name: Install release N (silent NSIS)
         run: |
           mkdir -p "$RUNNER_TEMP/matrix" && cd "$RUNNER_TEMP/matrix"
@@ -183,14 +187,19 @@ jobs:
         include:
           - arch: x64
             runs-on: ubuntu-latest
-            asset: flocafe-3.3.0-x86_64.AppImage
+            asset_suffix: x86_64.AppImage
           - arch: arm64
             runs-on: ubuntu-24.04-arm
-            asset: flocafe-3.3.0-arm64.AppImage
+            asset_suffix: arm64.AppImage
     env:
+      FROM_VERSION: ${{ inputs.from_version || '3.3.0' }}
       TO_VERSION: ${{ inputs.to_version || '3.3.1-beta.1' }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
 
       - name: Install FUSE, Xvfb, keyring daemon
         run: |
@@ -205,7 +214,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/matrix" && cd "$RUNNER_TEMP/matrix"
           curl -sSL -o flocafe.AppImage \
-            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${{ inputs.from_version || '3.3.0' }}/${{ matrix.asset }}"
+            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.asset_suffix }}"
           chmod +x flocafe.AppImage
           echo "FLO_APPIMAGE=$RUNNER_TEMP/matrix/flocafe.AppImage" >> "$GITHUB_ENV"
 
@@ -289,16 +298,20 @@ jobs:
       matrix:
         include:
           - pkg: deb
-            asset: flocafe-3.3.0-amd64.deb
+            asset_suffix: amd64.deb
             experimental: false
           - pkg: snap
-            asset: flocafe-3.3.0-amd64.snap
+            asset_suffix: amd64.snap
             experimental: true
     continue-on-error: ${{ matrix.experimental }}
     env:
       FROM_VERSION: ${{ inputs.from_version || '3.3.0' }}
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
 
       - name: Install Xvfb
         run: |
@@ -309,7 +322,7 @@ jobs:
         run: |
           cd "$RUNNER_TEMP"
           curl -sSL -o pkg.${{ matrix.pkg }} \
-            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/${{ matrix.asset }}"
+            "https://github.com/FreeOpenSourcePOS/FloCafe/releases/download/${FROM_VERSION}/flocafe-${FROM_VERSION}-${{ matrix.asset_suffix }}"
           if [ "${{ matrix.pkg }}" = deb ]; then
             sudo dpkg -i pkg.deb || sudo apt-get install -y -f -qq
             dpkg -l | grep -i flo
@@ -366,6 +379,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: '22'
+
       - name: Install older cohort release N (silent NSIS)
         run: |
           mkdir -p "$RUNNER_TEMP/matrix" && cd "$RUNNER_TEMP/matrix"
@@ -396,7 +413,7 @@ jobs:
           node scripts/upgrade-matrix/run-upgrade.cjs seed \
             --row older-cohort-windows \
             --channel stable \
-            --email "$MATRIX_EMAIL" --password "$MATRIX_PASSWORD" \
+            --email "$MATRIX_EMAIL" --password "$MATRIX_PASSWORD" --pin "$MATRIX_PIN" \
             --seed-file "$RUNNER_TEMP/seeds.json"
 
       - name: Wait for the upgraded build to come back up
@@ -422,6 +439,7 @@ jobs:
           echo "latest stable target: $TARGET"
           node scripts/upgrade-matrix/run-upgrade.cjs verify \
             --row older-cohort-windows \
+            --skip-beta-preference \
             --expected-version "$TARGET" \
             --seed-file "$RUNNER_TEMP/seeds.json" \
             | tee "$RUNNER_TEMP/evidence.json"

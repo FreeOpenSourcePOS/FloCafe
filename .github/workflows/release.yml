@@ -216,11 +216,12 @@ jobs:
     if: needs.create-release.outputs.promotion_only != 'true'
     timeout-minutes: 60
     # Each matrix entry builds AppImage + deb + rpm + snap for its host
-    # architecture.electron-builder doesn't cross-compile, so x64 hosts
+    # architecture. electron-builder does not cross-compile, so x64 hosts
     # produce x86_64 / amd64 artifacts and arm64 hosts produce arm64 ones.
-    # Both upload to the same GitHub release (filename suffixes uniquely
-    # identify arch, no collision) and both publish their snap to Snap
-    # Store under one snap name with multi-arch revisions.
+    # The release command pins safe x64/arm64 matrix labels into every Linux
+    # filename, so both upload to the same GitHub release without collisions.
+    # Both publish their snap to Snap Store under one snap name with multi-arch
+    # revisions.
     strategy:
       fail-fast: false
       matrix:
@@ -274,9 +275,11 @@ jobs:
         run: node scripts/update-metainfo.js
 
       - name: Build Linux artifacts
-        # Builds AppImage + deb + rpm + snap for the host arch. The snap is built
-        # via `snapcraft pack --use-lxd` in the LXD container, with the gnome
-        # extension and default stage-packages (libnspr4, libnss3, libxss1,
+        # Builds AppImage + deb + rpm + snap for the host arch. The release
+        # overrides below use the safe x64/arm64 matrix label rather than
+        # electron-builder's target-specific x86_64/amd64/aarch64 spellings;
+        # the snap is built via `snapcraft pack --use-lxd` in the LXD container,
+        # with the gnome extension and default stage-packages (libnspr4, libnss3, libxss1,
         # libappindicator3-1, libsecret-1-0). SNAPCRAFT_BUILD_ENVIRONMENT=lxd
         # selects the LXD provider explicitly.
         run: |
@@ -288,6 +291,17 @@ jobs:
         env:
           SNAPCRAFT_BUILD_ENVIRONMENT: lxd
           FLO_LINUX_ARCH: ${{ matrix.arch }}
+
+      - name: Verify Linux release assets
+        run: |
+          MANIFEST_PREFIX="${{ needs.create-release.outputs.manifest_prefix }}"
+          MANIFEST_NAME="${MANIFEST_PREFIX}-linux.yml"
+          if [ "${{ matrix.arch }}" = "arm64" ]; then MANIFEST_NAME="${MANIFEST_PREFIX}-linux-arm64.yml"; fi
+          test -f "release/${MANIFEST_NAME}" || { echo "::error::release/${MANIFEST_NAME} is missing — Linux auto-update would be broken for this release"; exit 1; }
+          find release -maxdepth 1 -type f -name "*linux-${{ matrix.arch }}.appimage" -print -quit | grep -q . || {
+            echo "::error::no Linux AppImage for ${{ matrix.arch }} — Linux auto-update would be broken for this release"
+            exit 1
+          }
 
       - name: Upload Linux assets to GitHub release
         # Each matrix entry uploads its own arch-tagged artifacts. The release
@@ -719,6 +733,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '22'
+
+      - name: Install verifier dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
 
       - name: Download and verify every release manifest and referenced artifact
         # Stable verification covers latest.yml, latest-mac.yml, latest-linux.yml,

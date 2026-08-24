@@ -3,6 +3,10 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 const YAML = require('js-yaml') as { load: (text: string) => unknown };
+const builderUtil = require('builder-util') as {
+  Arch: { x64: number; arm64: number };
+  getArtifactArchName: (arch: number, ext: string) => string;
+};
 
 function loadWorkflow(fileName: string): any {
   const workflow = YAML.load(fs.readFileSync(path.join(__dirname, '../.github/workflows', fileName), 'utf8')) as any;
@@ -67,10 +71,13 @@ function run() {
   assert.equal(build?.snapcraft?.core24?.environment?.TMPDIR, '$XDG_RUNTIME_DIR', 'snapcraft must use a writable runtime temp directory');
   assert.ok(typeof build?.linux?.synopsis === 'string' && build.linux.synopsis.length > 0 && build.linux.synopsis.length <= 78, 'linux synopsis must be present and short');
 
+  assert.equal(build?.linux?.artifactName, 'flocafe-${version}-linux.${ext}', 'Linux package artifact template must remain deterministic');
+  assert.equal(build?.appImage?.artifactName, 'flocafe-${version}-linux.appimage', 'AppImage artifact extension must be lowercase');
+  assert.equal(builderUtil.getArtifactArchName(builderUtil.Arch.x64, 'AppImage'), 'x86_64', 'electron-builder AppImage x64 macro spelling must be documented');
+  assert.equal(builderUtil.getArtifactArchName(builderUtil.Arch.arm64, 'AppImage'), 'arm64', 'electron-builder AppImage arm64 macro spelling must be documented');
   for (const artifact of [build?.linux?.artifactName, build?.appImage?.artifactName]) {
     assert.ok(typeof artifact === 'string' && artifact.includes('${version}') && !artifact.includes('${arch}') && !/\s/.test(artifact.replace(/\$\{[^}]+\}/g, '')), `Linux artifact template must be safe: ${JSON.stringify(artifact)}`);
   }
-  assert.ok(build?.appImage?.artifactName.endsWith('.appimage'), 'AppImage artifact extension must be lowercase');
 
   const linuxTargets = build?.linux?.target || [];
   for (const targetName of ['AppImage', 'deb', 'rpm', 'snap']) {
@@ -107,7 +114,10 @@ function run() {
   }
 
   const linuxJob = jobs['release-linux'];
+  const linuxBuild = findStep(linuxJob, 'Build Linux artifacts');
   assertShellStep(linuxJob, 'Build Linux artifacts');
+  assert.equal(linuxBuild.env.FLO_LINUX_ARCH, '${{ matrix.arch }}', 'Linux release names must use the safe matrix architecture labels');
+  assertShellStep(linuxJob, 'Verify Linux release assets');
   assertShellStep(linuxJob, 'Upload Linux assets to GitHub release');
   assertShellStep(linuxJob, 'Prepend AppStream release entry');
   const snapPublish = findStep(linuxJob, 'Publish snap to the matching Snap Store channel');
@@ -133,6 +143,8 @@ function run() {
   assert.equal(storePublish.env.RELEASE_CHANNEL, undefined);
 
   const verifyJob = jobs['verify-release'];
+  const verifierDependencies = findStep(verifyJob, 'Install verifier dependencies');
+  assert.equal(verifierDependencies.run, 'npm ci --ignore-scripts --no-audit --no-fund');
   const publishJob = jobs['publish-release'];
   assert.deepEqual(verifyJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows']);
   assert.deepEqual(publishJob.needs, ['create-release', 'release-linux', 'release-mac', 'release-windows', 'verify-release']);

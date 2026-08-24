@@ -39,9 +39,9 @@ Download the latest installer from [GitHub Releases](https://github.com/FreeOpen
 </p>
 
 Releases include Windows installers, macOS DMGs, and Linux AppImage, `.deb`,
-`.rpm`, and Snap packages. For Linux package-specific install commands, updates,
-FUSE setup, printing permissions, and tray behavior, see [Linux installation and
-support](docs/linux.md).
+`.rpm`, and Snap packages. For Linux package-specific installation and update
+behavior, FUSE setup, printing permissions, and tray behavior, see [Linux
+installation and support](docs/linux.md).
 
 ### System requirements
 

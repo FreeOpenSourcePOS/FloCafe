@@ -54,7 +54,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 | Integrations | Manage cloud and Google Drive settings | ✓ | ✓ | — | — | — |
 | Integrations | Manage cloud account and data controls | ✓ | — | — | — | — |
 | System | Use database tools and backups | ✓ | — | — | — | — |
-| Orders | Use the standalone Server App | — | — | — | ✓ | — |
+| Orders | Use the standalone Server App | ✓ | ✓ | — | ✓ | — |
 | Support | Contact support and view diagnostics | ✓ | ✓ | ✓ | ✓ | ✓ |
 
 ## Important scope notes
@@ -62,7 +62,7 @@ A check means the role is allowed to use the capability. A dash means it is not 
 - **Read-only display:** The in-app table does not offer role editing, permission toggles, or IAM configuration. These permissions are currently fixed by role. Role configuration/IAM is not available yet.
 - **Owner and manager visibility:** The matrix is rendered only for an authenticated owner or manager on the Staff page. The API continues to enforce authorization independently; hiding a UI control is not a security boundary.
 - **KDS scope:** Chef access is further narrowed by assigned `category_ids` and kitchen stations. Owner and manager KDS access is unrestricted by category, subject to the KDS being enabled.
-- **Server App:** The standalone Server App is intentionally restricted to the `server` role. It is separate from the dashboard navigation.
+- **Server App:** The standalone Server App is intentionally restricted to `server`, `manager`, and `owner` roles. It is separate from the dashboard navigation.
 - **Staff management:** Managers can manage operational staff, but cannot modify or deactivate owner/manager accounts. Only owners can change roles for an existing account, and the last active owner cannot be demoted.
 - **Conditional surfaces:** Business type, feature settings (such as KDS or WhatsApp), and account state can hide or disable a surface without changing the fixed role boundary.
 

@@ -10,9 +10,7 @@
  */
 
 const crypto = require('node:crypto');
-const fs = require('node:fs');
-const os = require('node:os');
-const path = require('node:path');
+const YAML = require('js-yaml');
 
 function requiredArg(args, name) {
   const index = args.indexOf(name);
@@ -65,63 +63,78 @@ async function githubJson(url) {
   return (await githubRequest(url)).json();
 }
 
-function unquoteYamlScalar(value) {
-  const trimmed = value.trim();
-  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
-    return trimmed.slice(1, -1);
-  }
-  return trimmed;
+function isRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeSha512(value) {
+  return value.replace(/\s+/g, '');
+}
+
+function isSha512(value) {
+  const normalized = normalizeSha512(value);
+  return normalized.length % 4 === 0
+    && /^[A-Za-z0-9+/]+={0,2}$/.test(normalized)
+    && Buffer.from(normalized, 'base64').length === 64;
 }
 
 function parseManifest(text, name) {
-  const files = [];
-  let version = null;
-  let current = null;
-  let topLevelPath = null;
-  let topLevelSha512 = null;
-
-  for (const line of text.split(/\r?\n/)) {
-    const versionValue = line.match(/^version:\s*(.+?)\s*$/);
-    if (versionValue) {
-      version = unquoteYamlScalar(versionValue[1]);
-      continue;
-    }
-
-    const listUrl = line.match(/^\s*-\s+url:\s*(.+?)\s*$/);
-    const scalarUrl = line.match(/^\s+url:\s*(.+?)\s*$/);
-    if (listUrl || scalarUrl) {
-      current = { url: unquoteYamlScalar((listUrl || scalarUrl)[1]), sha512: null };
-      files.push(current);
-      continue;
-    }
-
-    const nestedSha = line.match(/^\s+sha512:\s*(.+?)\s*$/);
-    if (nestedSha && current) {
-      current.sha512 = unquoteYamlScalar(nestedSha[1]);
-      continue;
-    }
-
-    const pathValue = line.match(/^path:\s*(.+?)\s*$/);
-    if (pathValue) {
-      topLevelPath = unquoteYamlScalar(pathValue[1]);
-      continue;
-    }
-
-    const topSha = line.match(/^sha512:\s*(.+?)\s*$/);
-    if (topSha) topLevelSha512 = unquoteYamlScalar(topSha[1]);
+  let document;
+  try {
+    document = YAML.load(text, { json: false });
+  } catch (error) {
+    throw new Error(`${name} is not valid YAML: ${error instanceof Error ? error.message : String(error)}`);
   }
 
-  if (!version) throw new Error(`${name} does not declare a release version`);
-  if (topLevelPath && !files.some((file) => file.url === topLevelPath)) {
-    files.push({ url: topLevelPath, sha512: topLevelSha512 });
+  if (!isRecord(document)) throw new Error(`${name} must contain a YAML mapping`);
+  if (typeof document.version !== 'string' || document.version.trim() === '') {
+    throw new Error(`${name} does not declare a release version`);
   }
-  if (files.length === 0) throw new Error(`${name} does not reference any update artifact`);
-  for (const file of files) {
-    if (!file.url || !file.sha512) {
-      throw new Error(`${name} has an update artifact without both url and sha512`);
+  if (!Array.isArray(document.files) || document.files.length === 0) {
+    throw new Error(`${name} does not reference any update artifact`);
+  }
+
+  const files = document.files.map((file, index) => {
+    if (!isRecord(file)) throw new Error(`${name} has an invalid files[${index}] entry`);
+    if (typeof file.url !== 'string' || file.url.trim() === '') {
+      throw new Error(`${name} has an update artifact without a url`);
+    }
+    if (typeof file.sha512 !== 'string' || !isSha512(file.sha512)) {
+      throw new Error(`${name} has an update artifact without a valid SHA-512`);
+    }
+    return { url: file.url.trim(), sha512: normalizeSha512(file.sha512) };
+  });
+
+  const duplicateUrls = files
+    .map((file) => file.url)
+    .filter((url, index, urls) => urls.indexOf(url) !== index);
+  if (duplicateUrls.length > 0) {
+    throw new Error(`${name} references the same update artifact more than once: ${duplicateUrls.join(', ')}`);
+  }
+
+  // electron-builder repeats the preferred update artifact as top-level
+  // path/sha512. Keep that contract checked too: a disagreement here would
+  // make the updater use a different checksum than the files entry we verify.
+  if (document.path !== undefined || document.sha512 !== undefined) {
+    if (typeof document.path !== 'string' || document.path.trim() === '') {
+      throw new Error(`${name} has a top-level sha512 without a valid path`);
+    }
+    if (typeof document.sha512 !== 'string' || !isSha512(document.sha512)) {
+      throw new Error(`${name} has a top-level path without a valid SHA-512`);
+    }
+    const topLevelPath = document.path.trim();
+    const topLevelSha512 = normalizeSha512(document.sha512);
+    const matchingFile = files.find((file) => file.url === topLevelPath);
+    if (matchingFile) {
+      if (matchingFile.sha512 !== topLevelSha512) {
+        throw new Error(`${name} has different SHA-512 values for ${topLevelPath}`);
+      }
+    } else {
+      files.push({ url: topLevelPath, sha512: topLevelSha512 });
     }
   }
-  return { version, files };
+
+  return { version: document.version.trim(), files };
 }
 
 function expectedManifestNames(channel) {
@@ -225,88 +238,137 @@ function assertReleaseAssetInventory(assets, manifestNames, version) {
   }
 }
 
-async function verifyAssetAvailability(asset) {
-  const response = await githubRequest(asset.url, 'application/octet-stream');
-  if (!response.body) throw new Error(`GitHub returned no body for ${asset.name}`);
-  const reader = response.body.getReader();
-  await reader.read();
-  await reader.cancel();
+function defaultAssetRequest(asset) {
+  if (typeof asset.url !== 'string' || asset.url.trim() === '') {
+    throw new Error(`release asset ${asset.name} has no GitHub download URL`);
+  }
+  return githubRequest(asset.url, 'application/octet-stream');
 }
 
-async function readAsset(asset) {
-  const response = await githubRequest(asset.url, 'application/octet-stream');
-  return response.arrayBuffer();
+function assertHttp200(response, asset) {
+  if (Buffer.isBuffer(response) || response instanceof Uint8Array) return;
+  if (!response || response.status !== 200) {
+    const status = response && Number.isInteger(response.status) ? response.status : 'unknown';
+    throw new Error(`release asset ${asset.name} was not available at HTTP 200 (got ${status})`);
+  }
 }
 
-async function verifyArtifact(asset, expectedSha512) {
-  const response = await githubRequest(asset.url, 'application/octet-stream');
-  if (!response.body) throw new Error(`GitHub returned no body for ${asset.name}`);
+async function responseToBuffer(response, asset) {
+  assertHttp200(response, asset);
+  if (Buffer.isBuffer(response)) return response;
+  if (response instanceof Uint8Array) return Buffer.from(response);
+  if (typeof response.arrayBuffer !== 'function') {
+    throw new Error(`release asset ${asset.name} response has no readable body`);
+  }
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length === 0) throw new Error(`release asset ${asset.name} returned an empty body`);
+  return bytes;
+}
+
+async function verifyAssetAvailability(asset, requestAsset) {
+  const response = await requestAsset(asset);
+  assertHttp200(response, asset);
+  if (Buffer.isBuffer(response) || response instanceof Uint8Array) {
+    if (response.length === 0) throw new Error(`release asset ${asset.name} returned an empty body`);
+    return;
+  }
+  if (response.body) {
+    const reader = response.body.getReader();
+    const firstChunk = await reader.read();
+    await reader.cancel();
+    if (firstChunk.done) throw new Error(`release asset ${asset.name} returned an empty body`);
+    return;
+  }
+  await responseToBuffer(response, asset);
+}
+
+async function readAsset(asset, requestAsset) {
+  return responseToBuffer(await requestAsset(asset), asset);
+}
+
+async function verifyArtifact(asset, expectedSha512, requestAsset) {
+  const response = await requestAsset(asset);
+  assertHttp200(response, asset);
   const hash = crypto.createHash('sha512');
   let bytes = 0;
-  for await (const chunk of response.body) {
-    hash.update(chunk);
-    bytes += chunk.length;
+  if (Buffer.isBuffer(response) || response instanceof Uint8Array) {
+    const buffer = Buffer.from(response);
+    hash.update(buffer);
+    bytes = buffer.length;
+  } else if (response.body) {
+    for await (const chunk of response.body) {
+      hash.update(chunk);
+      bytes += chunk.length;
+    }
+  } else {
+    const buffer = await responseToBuffer(response, asset);
+    hash.update(buffer);
+    bytes = buffer.length;
   }
+  if (bytes === 0) throw new Error(`release asset ${asset.name} returned an empty body`);
   const actual = hash.digest('base64');
-  if (actual !== expectedSha512.replace(/\s+/g, '')) {
+  if (actual !== normalizeSha512(expectedSha512)) {
     throw new Error(`SHA-512 mismatch for ${asset.name}: expected ${expectedSha512}, got ${actual}`);
   }
   return bytes;
+}
+
+async function verifyReleaseAssets(release, { channel, tag = release && release.tag_name, requestAsset = defaultAssetRequest } = {}) {
+  if (!release || release.draft !== true) {
+    throw new Error(`release ${tag || '(unknown)'} is not a draft; refusing to verify a mutable published release`);
+  }
+  if (typeof tag !== 'string' || tag === '') throw new Error('release verification requires a release tag');
+  if (release.tag_name && release.tag_name !== tag) {
+    throw new Error(`release metadata tag ${release.tag_name} does not match expected ${tag}`);
+  }
+
+  const assets = Array.isArray(release.assets) ? release.assets : [];
+  const assetsByName = new Map(assets.map((asset) => [asset.name, asset]));
+  const manifestNames = expectedManifestNames(channel);
+  for (const name of manifestNames) {
+    if (!assetsByName.has(name)) throw new Error(`release ${tag} is missing ${name}`);
+  }
+  assertReleaseAssetInventory(assets, manifestNames, tag);
+
+  // Inventory-only assets (store packages, blockmaps, and uninstall helpers)
+  // still have to be reachable from the uploaded draft, but do not have an
+  // independent checksum contract. Manifest references below are always read
+  // fully and hash-checked.
+  for (const asset of assets) {
+    if (!manifestNames.includes(asset.name)) await verifyAssetAvailability(asset, requestAsset);
+  }
+
+  for (const manifestName of manifestNames) {
+    const manifestAsset = assetsByName.get(manifestName);
+    const manifestBytes = await readAsset(manifestAsset, requestAsset);
+    const manifest = parseManifest(manifestBytes.toString('utf8'), manifestName);
+    if (manifest.version !== tag) {
+      throw new Error(`${manifestName} declares version ${manifest.version}, expected ${tag}`);
+    }
+    assertManifestPlatformMapping(manifestName, tag, manifest.files);
+
+    for (const file of manifest.files) {
+      if (file.url !== file.url.split('/').pop() || !/^[a-z0-9.-]+$/.test(file.url)) {
+        throw new Error(`${manifestName} references unsafe artifact URL ${file.url}`);
+      }
+      const artifact = assetsByName.get(file.url);
+      if (!artifact) {
+        throw new Error(`${manifestName} references ${file.url}, which is not an asset in release ${tag}`);
+      }
+      const bytes = await verifyArtifact(artifact, file.sha512, requestAsset);
+      console.log(`verified ${manifestName}: ${file.url} (${bytes} bytes, SHA-512 ok)`);
+    }
+  }
+
+  console.log(`release ${tag} channel ${channel} passed draft asset verification`);
+  return { tag, channel, manifests: manifestNames };
 }
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const apiBase = `https://api.github.com/repos/${options.repo}`;
   const release = await githubJson(`${apiBase}/releases/tags/${encodeURIComponent(options.tag)}`);
-  if (release.draft !== true) {
-    throw new Error(`release ${options.tag} is not a draft; refusing to verify a mutable published release`);
-  }
-
-  const assets = Array.isArray(release.assets) ? release.assets : [];
-  const assetsByName = new Map(assets.map((asset) => [asset.name, asset]));
-  const manifestNames = expectedManifestNames(options.channel);
-  for (const name of manifestNames) {
-    if (!assetsByName.has(name)) throw new Error(`release ${options.tag} is missing ${name}`);
-  }
-  assertReleaseAssetInventory(assets, manifestNames, options.tag);
-
-  for (const asset of assets) {
-    if (!manifestNames.includes(asset.name)) await verifyAssetAvailability(asset);
-  }
-
-  const verifyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'flocafe-release-verify-'));
-  try {
-    for (const manifestName of manifestNames) {
-      const manifestAsset = assetsByName.get(manifestName);
-      const manifestBytes = Buffer.from(await readAsset(manifestAsset));
-      const manifestPath = path.join(verifyDir, manifestName);
-      fs.writeFileSync(manifestPath, manifestBytes);
-      const manifest = parseManifest(manifestBytes.toString('utf8'), manifestName);
-      if (manifest.version !== options.tag) {
-        throw new Error(`${manifestName} declares version ${manifest.version}, expected ${options.tag}`);
-      }
-      assertManifestPlatformMapping(manifestName, options.tag, manifest.files);
-
-      for (const file of manifest.files) {
-        if (path.basename(file.url) !== file.url || !/^[a-z0-9.-]+$/.test(file.url)) {
-          throw new Error(`${manifestName} references unsafe artifact URL ${file.url}`);
-        }
-        if (!file.url.includes(options.tag)) {
-          throw new Error(`${manifestName} references ${file.url}, which is not part of release ${options.tag}`);
-        }
-        const artifact = assetsByName.get(file.url);
-        if (!artifact) {
-          throw new Error(`${manifestName} references ${file.url}, which is not an asset in release ${options.tag}`);
-        }
-        const bytes = await verifyArtifact(artifact, file.sha512);
-        console.log(`verified ${manifestName}: ${file.url} (${bytes} bytes, SHA-512 ok)`);
-      }
-    }
-  } finally {
-    fs.rmSync(verifyDir, { recursive: true, force: true });
-  }
-
-  console.log(`release ${options.tag} channel ${options.channel} passed draft asset verification`);
+  await verifyReleaseAssets(release, { channel: options.channel, tag: options.tag });
 }
 
 if (require.main === module) {
@@ -322,4 +384,5 @@ module.exports = {
   expectedArtifactNames,
   expectedManifestNames,
   parseManifest,
+  verifyReleaseAssets,
 };

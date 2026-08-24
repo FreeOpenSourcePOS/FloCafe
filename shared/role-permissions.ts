@@ -30,7 +30,7 @@ const CASHIER_SERVER = ['cashier', 'server'] as const satisfies readonly Role[];
 const KITCHEN = ['owner', 'manager', 'chef'] as const satisfies readonly Role[];
 const ORDER_STATUS = ['owner', 'manager', 'cashier', 'server', 'chef'] as const satisfies readonly Role[];
 const ALL_STAFF = ['owner', 'manager', 'cashier', 'server', 'chef'] as const satisfies readonly Role[];
-const SERVER_APP = ['server'] as const satisfies readonly Role[];
+const SERVER_APP = ['server', 'manager', 'owner'] as const satisfies readonly Role[];
 export const OPERATIONAL_ROLES = ['cashier', 'server', 'chef'] as const satisfies readonly Role[];
 
 /** Named role groups used by backend middleware and frontend surface gates. */

@@ -2,6 +2,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import type { BrowserWindow } from 'electron';
 
 const Module = require('module');
 const originalLoad = Module._load;
@@ -154,7 +155,7 @@ async function run(): Promise<void> {
   log('=== GHSA-jmmq-fjg5-g6px KDS Window & IPC Hardening Verification ===');
 
   const mainPosWindow = new FakeBrowserWindow({ webPreferences: {} });
-  registerIpcHandlers(undefined, () => mainPosWindow);
+  registerIpcHandlers(undefined, () => mainPosWindow as unknown as BrowserWindow);
 
   // The preload's synchronous registration is allowed before Chromium exposes
   // the localhost URL only for the expected POS window and its current main

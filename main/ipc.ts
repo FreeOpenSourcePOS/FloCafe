@@ -70,10 +70,14 @@ function handle(channel: string, listener: (...args: any[]) => any): void {
 
 export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
   ipcMain.on('window-document', (event, documentNonce: unknown) => {
-    if (!isTrustedSender(event)) {
-      event.returnValue = { error: 'Unauthorized sender' };
-      return;
-    }
+    // NOTE: isTrustedSender() is intentionally skipped here.
+    // The preload fires ipcRenderer.sendSync('window-document', ...) at the
+    // very start of document creation — before the page has navigated to its
+    // URL. At that point event.sender.getURL() returns '' or 'about:blank', so
+    // a URL-based origin check would always reject this legitimate message.
+    // The mainFrame identity check below is the correct security boundary: it
+    // ensures the message comes from the top-level frame of the expected
+    // BrowserWindow, not from a sub-frame or a detached/stale renderer.
     let currentFrame: Electron.WebFrameMain | null = null;
     try {
       currentFrame = event.sender.mainFrame;

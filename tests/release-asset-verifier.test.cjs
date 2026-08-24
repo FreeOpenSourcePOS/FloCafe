@@ -135,9 +135,13 @@ assert.doesNotThrow(() => assertManifestPlatformMapping('latest-mac.yml', VERSIO
 ]));
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux.yml', VERSION, [
   { url: `flocafe-${VERSION}-linux-x64.appimage` },
+  // electron-builder lists every Linux target from the same invocation (#468).
+  { url: `flocafe-${VERSION}-linux-x64.deb` },
+  { url: `flocafe-${VERSION}-linux-x64.rpm` },
 ]));
 assert.doesNotThrow(() => assertManifestPlatformMapping('latest-linux-arm64.yml', VERSION, [
   { url: `flocafe-${VERSION}-linux-arm64.appimage` },
+  { url: `flocafe-${VERSION}-linux-arm64.deb` },
 ]));
 assert.throws(
   () => assertManifestPlatformMapping('latest.yml', VERSION, [

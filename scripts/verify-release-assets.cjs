@@ -164,10 +164,24 @@ function assertManifestPlatformMapping(manifestName, version, files) {
     ]);
     required = [`${base}-mac-x64.zip`, `${base}-mac-arm64.zip`];
   } else if (/^(latest|beta)-linux\.yml$/.test(manifestName)) {
-    allowed = new Set([`${base}-linux-x64.appimage`]);
+    // electron-builder lists every Linux target from the same build
+    // invocation in this manifest; electron-updater ignores those extra
+    // `files` entries and downloads the one named by `path`. Observed on a
+    // real draft in #468: beta-linux.yml carries the x64 deb and rpm.
+    allowed = new Set([
+      `${base}-linux-x64.appimage`,
+      `${base}-linux-x64.deb`,
+      `${base}-linux-x64.rpm`,
+      `${base}-linux-x64.snap`,
+    ]);
     required = [`${base}-linux-x64.appimage`];
   } else if (/^(latest|beta)-linux-arm64\.yml$/.test(manifestName)) {
-    allowed = new Set([`${base}-linux-arm64.appimage`]);
+    allowed = new Set([
+      `${base}-linux-arm64.appimage`,
+      `${base}-linux-arm64.deb`,
+      `${base}-linux-arm64.rpm`,
+      `${base}-linux-arm64.snap`,
+    ]);
     required = [`${base}-linux-arm64.appimage`];
   } else {
     throw new Error(`unsupported release manifest ${manifestName}`);

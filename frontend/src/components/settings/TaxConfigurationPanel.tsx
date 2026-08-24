@@ -90,6 +90,7 @@ type PackDetail = {
   active_version: (PackVersion & {
     definition: {
       currency: string;
+      sourceType?: 'official' | 'community';
       taxRounding: { method: string; scope: string; decimalPlaces: number };
       payableRounding: { method: string; increment: string };
     };
@@ -288,6 +289,7 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const [installingUpdate, setInstallingUpdate] = useState(false);
   const [reinstallingPlugin, setReinstallingPlugin] = useState(false);
+  const [reportingIssue, setReportingIssue] = useState(false);
 
   const [manualStarter] = useState(() => {
     const category = newManualCategory('Standard');
@@ -548,9 +550,17 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
         version: update.latestVersion,
       });
       const installed = installResponse.data.installed as { packId: string; versionId: string };
-      await api.post(
-        `/tax-packs/${encodeURIComponent(installed.packId)}/versions/${encodeURIComponent(installed.versionId)}/activate`,
-      );
+      const activateUrl = `/tax-packs/${encodeURIComponent(installed.packId)}/versions/${encodeURIComponent(installed.versionId)}/activate`;
+      let activateResponse = await api.post(activateUrl);
+      if (activateResponse.data?.requires_disclaimer) {
+        const accepted = window.confirm(t('communityPackDisclaimer', {
+          country: update.country,
+          version: activateResponse.data.version,
+        }));
+        if (!accepted) return;
+        activateResponse = await api.post(activateUrl, { acknowledge_community_disclaimer: true });
+        if (activateResponse.data?.requires_disclaimer) return;
+      }
       toast.success(t('updatedTo', { version: update.latestVersion }));
       setPackUpdate(null);
       // installed.packId can differ from the pack that was active before
@@ -591,6 +601,30 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
       toast.error(apiMessage(error, t('reinstallFailed')));
     } finally {
       setReinstallingPlugin(false);
+    }
+  }
+
+  // Gives the community-pack disclaimer's "report any issue immediately" an
+  // actual in-app path, reusing the same support-ticket outbox already used
+  // for country-plugin-unavailable requests above.
+  async function reportCommunityPackIssue() {
+    const pack = detail?.pack;
+    const version = detail?.active_version;
+    if (!pack || !version) return;
+    setReportingIssue(true);
+    try {
+      await api.post('/support-ticket', {
+        client_ticket_id: crypto.randomUUID(),
+        subject: `Issue with community tax pack ${pack.id}`,
+        event_code: 'tax.community_pack_issue',
+        message: `The merchant reported an issue with the community-sourced tax pack ${pack.id} (v${version.version}, ${pack.country}).`,
+        diagnostics: { pack_id: pack.id, version: version.version, country: pack.country },
+      });
+      toast.success(t('reportIssueSent'));
+    } catch (error) {
+      toast.error(apiMessage(error, t('reportIssueFailed')));
+    } finally {
+      setReportingIssue(false);
     }
   }
 
@@ -703,7 +737,19 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
     setEnablingTaxes(true);
     setCountryPackUnavailable(false);
     try {
-      await api.post('/tax-packs/ensure-country', { country: storeCountry });
+      let response = await api.post('/tax-packs/ensure-country', { country: storeCountry });
+      if (response.data?.requires_disclaimer) {
+        const accepted = window.confirm(t('communityPackDisclaimer', {
+          country: storeCountry,
+          version: response.data.version,
+        }));
+        if (!accepted) return;
+        response = await api.post('/tax-packs/ensure-country', {
+          country: storeCountry,
+          acknowledge_community_disclaimer: true,
+        });
+        if (response.data?.requires_disclaimer) return;
+      }
       setTaxesEnabled(true);
       setCountryPackUnavailable(false);
       setPluginRequested(false);
@@ -947,6 +993,17 @@ export function TaxConfigurationPanel({ isOwner }: { isOwner: boolean }) {
               <span className="ms-1 text-gray-400">({detail.pack.trust_status})</span>
             </span>
             <span className="ms-auto flex items-center gap-3">
+              {detail.active_version.definition.sourceType === 'community' && (
+                <button
+                  type="button"
+                  onClick={() => void reportCommunityPackIssue()}
+                  disabled={reportingIssue}
+                  className="flex items-center gap-1 font-medium text-amber-700 hover:text-amber-900 disabled:opacity-50"
+                >
+                  <AlertTriangle size={13} />
+                  {t('reportIssue')}
+                </button>
+              )}
               {isOwner && (
                 <button
                   type="button"

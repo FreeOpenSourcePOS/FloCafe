@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "community-indonesia",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "ID",
+  "jurisdiction": "*",
+  "currency": "IDR",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": false,
+  "registrationNumberLabel": "NPWP",
+  "registrationNumberFormat": {
+    "pattern": "^\\d{16}$",
+    "description": "16-digit Nomor Pokok Wajib Pajak (unified individual/business format since July 2024)"
+  },
+  "categories": [
+    { "id": "standard", "label": "Restaurant Tax / PBJT (~10%, local — verify rate for your city/regency)", "ruleIds": ["pbjt"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["pbjt"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["pbjt"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["pbjt"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["pbjt"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["pbjt"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "pbjt",
+      "label": "PBJT (restaurant tax)",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "10"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 0,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "1",
+    "method": "half_up"
+  }
+}

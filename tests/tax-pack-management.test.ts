@@ -108,7 +108,7 @@ async function main() {
     assertEqual(detailRes.status, 200, 'manager can view active pack details');
     assert(detailRes.data.categories.length > 0, 'categories are available for reference');
     assert(detailRes.data.rules.length > 0, 'rules are available for reference');
-    assertEqual(detailRes.data.active_version.validation.checks.length, 25, 'all 25 activation checks are reported');
+    assertEqual(detailRes.data.active_version.validation.checks.length, 26, 'all 26 activation checks are reported');
     assertEqual(detailRes.data.active_version.validation.valid, true,
       'an exact legacy unsigned artifact remains trusted after upgrade');
     for (const packId of ['test-legacy-th-pack', 'local-generic']) {
@@ -116,8 +116,8 @@ async function main() {
       assertEqual(packDetail.status, 200, `${packId} details are readable`);
       assertEqual(
         packDetail.data.active_version.validation.checks.length,
-        25,
-        `${packId} reports all 25 activation checks`,
+        26,
+        `${packId} reports all 26 activation checks`,
       );
       const failedCheckIds = packDetail.data.active_version.validation.checks
         .filter((check: any) => !check.passed)
@@ -484,7 +484,7 @@ async function main() {
       publicKey,
     });
     assertEqual(installed.version, '1.1.0', 'verified downloaded version is installed');
-    assertEqual(installed.validation.checks.length, 25, 'download uses the existing 25-check validation');
+    assertEqual(installed.validation.checks.length, 26, 'download uses the existing 26-check validation');
     assertEqual(installed.validation.valid, true, 'signed download passes all activation validation');
 
     const storedVersion = db.prepare(
@@ -1402,6 +1402,120 @@ async function main() {
       'resolveTaxIdFormat never enforces a pattern while the taxes_enabled toggle is off',
     );
     db.prepare("UPDATE settings SET value = 'true' WHERE key = 'taxes_enabled'").run();
+
+    console.log('\n10. Community-sourced packs require a no-liability disclaimer before activation');
+    assertEqual(
+      validationChecklist({
+        ...(db.prepare('SELECT * FROM country_pack_versions LIMIT 1').get() as any),
+        pack_json: JSON.stringify({ ...flatRatePackData, publisher: 'local', sourceType: 'community' }),
+      }).checks.find((check: any) => check.id === 26)?.passed,
+      false,
+      'check 26 rejects a local/manual pack that declares a community sourceType',
+    );
+
+    // Installed-but-not-yet-active, matching the real download path's DB
+    // state (see installCatalogEntry), without needing a real Ed25519
+    // signature — the HTTP activate/ensure-country routes always validate
+    // against the real TRUSTED_TAX_PACK_SIGNING_PUBLIC_KEY (unlike
+    // installCatalogEntry, which tests can call directly with a throwaway
+    // key), so this reuses the same LEGACY_TRUSTED_PACK_DIGESTS fallback
+    // check 6 already grants testIndiaPack/testThailandPack above.
+    function installCommunityPackVersion(pack: any) {
+      const packJson = JSON.stringify(pack);
+      const digest = taxPackSha256(packJson);
+      LEGACY_TRUSTED_PACK_DIGESTS[pack.id] = digest;
+      const versionId = `${pack.id}@${pack.version}`;
+      const installedAt = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO country_packs (
+          id, publisher, country, jurisdiction, active_version_id, status, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, NULL, 'installed', ?, ?)
+        ON CONFLICT(id) DO NOTHING
+      `).run(pack.id, pack.publisher, pack.country, pack.jurisdiction, installedAt, installedAt);
+      db.prepare(`
+        INSERT INTO country_pack_versions (
+          id, pack_id, version, schema_version, manifest_json, pack_json, digest, signature,
+          effective_from, effective_to, min_flo_version, published_at, status, created_at
+        ) VALUES (?, ?, ?, ?, '{}', ?, ?, NULL, ?, ?, ?, ?, 'installed', ?)
+      `).run(
+        versionId, pack.id, pack.version, pack.schemaVersion, packJson, digest,
+        pack.effectiveFrom, pack.effectiveTo || null, pack.minFloVersion, pack.publishedAt, installedAt,
+      );
+      return { packId: pack.id, versionId };
+    }
+
+    const communityPack = {
+      ...flatRatePackData,
+      id: 'test-community-pack',
+      country: 'XX',
+      currency: 'XXX',
+      publisher: 'Community Contributor',
+      version: '0.0.1',
+      sourceType: 'community',
+    };
+    const communityInstalled = installCommunityPackVersion(communityPack);
+    assertEqual(
+      validationChecklist(db.prepare('SELECT * FROM country_pack_versions WHERE id = ?').get(communityInstalled.versionId)).valid,
+      true,
+      'community pack passes activation validation once trusted',
+    );
+
+    const gatedActivate = await api(
+      baseUrl,
+      `/api/tax-packs/${encodeURIComponent(communityInstalled.packId)}/versions/${encodeURIComponent(communityInstalled.versionId)}/activate`,
+      { method: 'POST', headers: owner.authHeader },
+    );
+    assertEqual(gatedActivate.status, 200, 'activation attempt without acknowledgment does not error');
+    assertEqual(gatedActivate.data.changed, false, 'activation is refused without disclaimer acknowledgment');
+    assertEqual(gatedActivate.data.requires_disclaimer, true, 'response flags that the disclaimer is required');
+    assertEqual(gatedActivate.data.source_type, 'community', 'response identifies the pack as community-sourced');
+    const stillInstalled = db.prepare('SELECT status, active_version_id, disclaimer_acknowledged_at FROM country_packs WHERE id = ?')
+      .get(communityInstalled.packId) as any;
+    assertEqual(stillInstalled.status, 'installed', 'pack remains installed, not active, when the disclaimer is unacknowledged');
+    assertEqual(stillInstalled.active_version_id, null, 'no version is activated when the disclaimer is unacknowledged');
+    assertEqual(stillInstalled.disclaimer_acknowledged_at, null, 'no acknowledgment is recorded when activation is refused');
+
+    const ensureCountryGated = await api(baseUrl, '/api/tax-packs/ensure-country', {
+      method: 'POST',
+      body: { country: 'XX' },
+      headers: owner.authHeader,
+    });
+    assertEqual(ensureCountryGated.status, 200, 'ensure-country without acknowledgment does not error');
+    assertEqual(ensureCountryGated.data.enabled, false, 'ensure-country does not enable taxes without acknowledgment');
+    assertEqual(ensureCountryGated.data.requires_disclaimer, true, 'ensure-country flags that the disclaimer is required');
+
+    const acknowledgedActivate = await api(
+      baseUrl,
+      `/api/tax-packs/${encodeURIComponent(communityInstalled.packId)}/versions/${encodeURIComponent(communityInstalled.versionId)}/activate`,
+      { method: 'POST', body: { acknowledge_community_disclaimer: true }, headers: owner.authHeader },
+    );
+    assertEqual(acknowledgedActivate.status, 200, 'activation succeeds once the disclaimer is acknowledged');
+    assertEqual(acknowledgedActivate.data.changed, true, 'the pack version is activated');
+    const acknowledgedRow = db.prepare('SELECT status, active_version_id, disclaimer_acknowledged_at, disclaimer_acknowledged_by FROM country_packs WHERE id = ?')
+      .get(communityInstalled.packId) as any;
+    assertEqual(acknowledgedRow.status, 'active', 'pack is active after acknowledgment');
+    assertEqual(acknowledgedRow.active_version_id, communityInstalled.versionId, 'the acknowledged version is active');
+    assert(!!acknowledgedRow.disclaimer_acknowledged_at, 'acknowledgment timestamp is recorded');
+    assertEqual(acknowledgedRow.disclaimer_acknowledged_by, owner.userId, 'acknowledging user is recorded');
+
+    const communityAudit = db.prepare(`
+      SELECT details_json FROM tax_config_audit
+      WHERE action = 'activate_pack' AND pack_id = ? ORDER BY id DESC LIMIT 1
+    `).get(communityInstalled.packId) as any;
+    const communityAuditDetails = JSON.parse(communityAudit.details_json);
+    assertEqual(communityAuditDetails.disclaimerAcknowledged, true, 'audit record notes the disclaimer was acknowledged');
+    assertEqual(communityAuditDetails.sourceType, 'community', 'audit record notes the community source type');
+
+    const communityPackV2 = { ...communityPack, version: '0.0.2', publishedAt: '2026-08-01' };
+    const communityInstalledV2 = installCommunityPackVersion(communityPackV2);
+    const reactivateWithoutFlag = await api(
+      baseUrl,
+      `/api/tax-packs/${encodeURIComponent(communityInstalledV2.packId)}/versions/${encodeURIComponent(communityInstalledV2.versionId)}/activate`,
+      { method: 'POST', headers: owner.authHeader },
+    );
+    assertEqual(reactivateWithoutFlag.status, 200, 'activating a newer version of an already-acknowledged pack succeeds');
+    assertEqual(reactivateWithoutFlag.data.changed, true, 'the newer version is activated without re-prompting');
+    assert(!reactivateWithoutFlag.data.requires_disclaimer, 'an already-acknowledged pack id does not require the disclaimer again');
   } finally {
     server.close();
     closeDatabase();

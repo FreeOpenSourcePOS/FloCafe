@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "community-south-africa",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "ZA",
+  "jurisdiction": "*",
+  "currency": "ZAR",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": true,
+  "registrationNumberLabel": "VAT Registration Number",
+  "registrationNumberFormat": {
+    "pattern": "^4\\d{9}$",
+    "description": "10-digit SARS VAT registration number, starting with 4"
+  },
+  "categories": [
+    { "id": "standard", "label": "Standard (VAT 15%)", "ruleIds": ["vat"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["vat"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["vat"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["vat"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["vat"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["vat"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "vat",
+      "label": "VAT",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "15"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

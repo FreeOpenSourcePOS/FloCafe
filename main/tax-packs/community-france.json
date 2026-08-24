@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "id": "community-france",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "FR",
+  "jurisdiction": "*",
+  "currency": "EUR",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": true,
+  "registrationNumberLabel": "TVA intracommunautaire",
+  "registrationNumberFormat": {
+    "pattern": "^FR[0-9A-Z]{2}\\d{9}$",
+    "description": "French intra-community VAT number: \"FR\" + 2-character key + 9-digit SIREN"
+  },
+  "categories": [
+    { "id": "standard", "label": "Food & non-alcoholic drinks (TVA 10%)", "ruleIds": ["tva-food"] },
+    { "id": "alcohol", "label": "Alcoholic beverages (TVA 20%)", "ruleIds": ["tva-standard"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["tva-food"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["tva-food"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["tva-food"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["tva-food"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["tva-food"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "tva-food",
+      "label": "TVA (taux intermédiaire)",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "10"
+    },
+    {
+      "id": "tva-standard",
+      "label": "TVA (taux normal, alcool)",
+      "type": "percent",
+      "categoryIds": ["alcohol"],
+      "rate": "20"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

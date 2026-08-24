@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "id": "community-mexico",
+  "publisher": "FloCafe Community",
+  "sourceType": "community",
+  "version": "0.0.1",
+  "country": "MX",
+  "jurisdiction": "*",
+  "currency": "MXN",
+  "effectiveFrom": "2026-01-01",
+  "publishedAt": "2026-08-24",
+  "minFloVersion": "2.4.0",
+  "taxPoint": "finalized_at",
+  "inclusivePricingDefault": true,
+  "registrationNumberLabel": "RFC",
+  "registrationNumberFormat": {
+    "pattern": "^[A-ZÑ&]{3,4}\\d{6}[A-Z0-9]{3}$",
+    "description": "Registro Federal de Contribuyentes: 12 characters (persona moral) or 13 characters (persona física)"
+  },
+  "categories": [
+    { "id": "standard", "label": "Standard (IVA 16%)", "ruleIds": ["iva"] },
+    { "id": "packaging", "label": "Packaging", "ruleIds": ["iva"] },
+    { "id": "delivery", "label": "Delivery", "ruleIds": ["iva"] },
+    { "id": "service_charge", "label": "Service charge", "ruleIds": ["iva"] },
+    { "id": "addon", "label": "Add-on", "ruleIds": ["iva"] },
+    { "id": "unclassified", "label": "Unclassified", "ruleIds": ["iva"] }
+  ],
+  "defaultCategories": {
+    "product": "standard",
+    "packaging": "packaging",
+    "delivery": "delivery",
+    "service_charge": "service_charge",
+    "addon": "addon"
+  },
+  "unclassifiedCategoryId": "unclassified",
+  "rules": [
+    {
+      "id": "iva",
+      "label": "IVA",
+      "type": "percent",
+      "categoryIds": ["standard", "packaging", "delivery", "service_charge", "addon", "unclassified"],
+      "rate": "16"
+    }
+  ],
+  "taxRounding": {
+    "scope": "document",
+    "method": "half_up",
+    "decimalPlaces": 2,
+    "remainderAllocation": "largest_remainder"
+  },
+  "payableRounding": {
+    "increment": "0.01",
+    "method": "half_up"
+  }
+}

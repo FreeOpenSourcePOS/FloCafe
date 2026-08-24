@@ -187,10 +187,10 @@ jobs:
         include:
           - arch: x64
             runs-on: ubuntu-latest
-            asset_suffix: x86_64.AppImage
+            asset_suffix: linux-x64.appimage
           - arch: arm64
             runs-on: ubuntu-24.04-arm
-            asset_suffix: arm64.AppImage
+            asset_suffix: linux-arm64.appimage
     env:
       FROM_VERSION: ${{ inputs.from_version || '3.3.0' }}
       TO_VERSION: ${{ inputs.to_version || '3.3.1-beta.1' }}
@@ -245,18 +245,41 @@ jobs:
         run: |
           # AppImageUpdater swaps the file in place; wait for the old process
           # to exit before starting the new one.
+          APP_PID=$(cat app.pid)
           for _ in $(seq 1 60); do
-            kill -0 "$(cat app.pid)" 2>/dev/null || break
+            kill -0 "$APP_PID" 2>/dev/null || break
             sleep 2
           done
+          if kill -0 "$APP_PID" 2>/dev/null; then
+            echo "::error::release N process did not exit before relaunch"
+            exit 1
+          fi
           export $(dbus-launch)
           echo -n ci | gnome-keyring-daemon --unlock >/dev/null
           eval "$(echo -n ci | gnome-keyring-daemon --start --components=secrets)"
           xvfb-run -a "$FLO_APPIMAGE" --remote-debugging-port=9222 > app-nplus1.log 2>&1 &
+          NEW_APP_PID=$!
+          echo "$NEW_APP_PID" > app-nplus1.pid
+          NEW_APP_READY=false
           for _ in $(seq 1 90); do
-            curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1 && break
+            kill -0 "$NEW_APP_PID" 2>/dev/null || {
+              echo "::error::N+1 process exited before the API became ready"
+              exit 1
+            }
+            if curl -sf http://127.0.0.1:3001/api/health >/dev/null 2>&1; then
+              NEW_APP_READY=true
+              break
+            fi
             sleep 2
           done
+          [ "$NEW_APP_READY" = true ] || {
+            echo "::error::N+1 app did not become ready after relaunch"
+            exit 1
+          }
+          kill -0 "$NEW_APP_PID" 2>/dev/null || {
+            echo "::error::N+1 process exited after becoming ready"
+            exit 1
+          }
 
       - name: Verify version + persistence after relaunch
         run: |
@@ -298,10 +321,10 @@ jobs:
       matrix:
         include:
           - pkg: deb
-            asset_suffix: amd64.deb
+            asset_suffix: linux-x64.deb
             experimental: false
           - pkg: snap
-            asset_suffix: amd64.snap
+            asset_suffix: linux-x64.snap
             experimental: true
     continue-on-error: ${{ matrix.experimental }}
     env:

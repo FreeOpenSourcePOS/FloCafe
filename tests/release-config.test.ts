@@ -58,8 +58,13 @@ function executeWorkflowStep(step: any, options: {
       fs.chmodSync(commandPath, 0o755);
     }
 
+    // GitHub Actions runs these steps under bash on every OS, including the
+    // windows-latest matrix lane. Resolve bash from PATH there (Git Bash is
+    // installed and already on PATH for the repo's own run-test.sh wrapper);
+    // a hardcoded /bin/bash only exists on POSIX systems.
+    const bashExecutable = process.platform === 'win32' ? 'bash' : '/bin/bash';
     const result = childProcess.spawnSync(
-      '/bin/bash',
+      bashExecutable,
       ['-e', '-u', '-o', 'pipefail', '-c', renderWorkflowScript(step.run as string, options.expressions || {})],
       {
         cwd: path.join(__dirname, '..'),
@@ -68,7 +73,7 @@ function executeWorkflowStep(step: any, options: {
           ...options.env,
           GITHUB_OUTPUT: outputPath,
           RELEASE_TEST_LOG: logPath,
-          PATH: `${binDir}:${process.env.PATH || ''}`,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
         },
         encoding: 'utf8',
       }
@@ -83,7 +88,9 @@ function executeWorkflowStep(step: any, options: {
     return {
       status: result.status,
       stdout: result.stdout || '',
-      stderr: result.stderr || '',
+      // When the process cannot be spawned at all (e.g. ENOENT), stderr is
+      // null; surface the spawn error so assertion messages stay diagnostic.
+      stderr: result.stderr || String(result.error || ''),
       outputs,
       log: fs.existsSync(logPath) ? fs.readFileSync(logPath, 'utf8') : '',
     };

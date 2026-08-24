@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, nativeTheme, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, Menu, Tray, nativeImage, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -34,13 +34,13 @@ import {
 } from './update-state';
 import { clearStaleRenderCachesOnVersionChange } from './startup-cache';
 import { createLocalWindowOpenHandler, createMainWindow, resolveTitleBarMode, type TitleBarMode } from './window-options';
-import { attachTitleBarThemeSync } from './title-bar-theme';
 import {
   beginRendererDocument,
   getRendererDocumentNonce,
   getRendererReadinessEpoch,
   initWindowReadiness,
   isRendererReadinessFailSafeShown,
+  isFullDocumentMainFrameNavigation,
   isWindowRendererReady,
 } from './window-readiness';
 import {
@@ -422,8 +422,8 @@ function createWindow(): void {
   clearStaleRenderCachesOnVersionChange(app.getPath('userData'), process.versions.electron, log);
 
   // Readiness lifecycle: register the fail-safe show path and begin the first
-  // document epoch before anything loads. Every subsequent navigation re-begins
-  // via the did-start-loading hook below.
+  // document epoch before anything loads. Every subsequent full-document
+  // navigation re-begins via the did-start-navigation hook below.
   initWindowReadiness(() => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.show();
   });
@@ -457,23 +457,19 @@ function createWindow(): void {
     }
   });
 
-  // Always load from the embedded Express server (serves static Next.js export).
-  // This avoids file:// protocol issues and keeps dev/prod behaviour identical.
-  mainWindow.loadURL(`http://localhost:${getServerPort()}`);
-
-  // A new readiness epoch begins only when a real, cross-document navigation
-  // loads a new renderer document — not on Next.js client-side route changes.
-  // did-start-loading fires on every pushState navigation, which would create
-  // a new failing epoch on every page switch. did-navigate fires only on
-  // full-document navigations (initial load, manual reload, crash recovery).
-  mainWindow.webContents.on('did-navigate', (_event, _url, httpResponseCode, _httpStatusText) => {
-    // Only reset for the main frame; ignore sub-frame loads.
-    // Also skip same-document navigations (hash changes, pushState) by checking
-    // that the response code indicates a real server round-trip (not 0).
-    if (httpResponseCode !== 0) {
+  // Begin epochs before the new document's preload runs. Unlike
+  // did-start-loading, did-start-navigation exposes whether a navigation is
+  // same-document, so Next.js pushState route changes keep the current
+  // readiness report while reloads and full navigations invalidate it.
+  mainWindow.webContents.on('did-start-navigation', (details) => {
+    if (isFullDocumentMainFrameNavigation(details)) {
       beginRendererDocument();
     }
   });
+
+  // Always load from the embedded Express server (serves static Next.js export).
+  // This avoids file:// protocol issues and keeps dev/prod behaviour identical.
+  mainWindow.loadURL(`http://localhost:${getServerPort()}`);
 
   // Allow target="_blank" links to open new windows for local URLs (e.g. the KDS page)
   // and blank popup windows (e.g. browser print popups). External URLs are sent to the system browser.
@@ -859,14 +855,11 @@ async function initialize(): Promise<void> {
     if (isShutdownRequested()) return;
 
     console.log('[Flo] Registering IPC handlers...');
-    registerIpcHandlers(shutdownSignal);
+    registerIpcHandlers(shutdownSignal, () => mainWindow);
 
-    // NOTE: attachTitleBarThemeSync is intentionally not called here.
-    // The app has no dark mode (only light CSS variables, .dark class never
-    // applied), so the overlay stays pinned to the light palette set at window
-    // creation. Syncing with nativeTheme would make the caption controls go
-    // dark when the OS switches to dark mode while the app content stays light.
-    // Re-enable this when the app ships a dark theme.
+    // The app currently presents its light palette regardless of OS theme.
+    // Keep the native overlay pinned to that palette until the renderer ships
+    // the separate dark-theme behavior tracked in issue #513.
 
     ipcMain.handle('get-update-status', () =>
       // #467: return the real persisted state (including not-checked-yet and

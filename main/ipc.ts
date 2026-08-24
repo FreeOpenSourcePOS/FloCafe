@@ -61,6 +61,34 @@ function isTrustedSender(event: Pick<Electron.IpcMainInvokeEvent, 'sender'>): bo
   }
 }
 
+type MainWindowGetter = () => BrowserWindow | null;
+
+/**
+ * The preload can run before Chromium has committed the localhost URL. In
+ * that narrow interval origin is unavailable, so accept only the expected
+ * POS BrowserWindow (and still require the current top-level frame below).
+ * Every other pre-navigation sender fails closed; once a URL exists the
+ * normal localhost origin check remains mandatory.
+ */
+function isEarlyMainWindowSender(
+  event: Pick<Electron.IpcMainEvent, 'sender'>,
+  getMainWindow?: MainWindowGetter,
+): boolean {
+  if (!getMainWindow) return false;
+  try {
+    const url = event.sender?.getURL?.() ?? '';
+    if (url !== '' && url !== 'about:blank') return false;
+    const expectedWindow = getMainWindow();
+    return Boolean(
+      expectedWindow
+      && !expectedWindow.isDestroyed()
+      && BrowserWindow.fromWebContents(event.sender) === expectedWindow,
+    );
+  } catch {
+    return false;
+  }
+}
+
 function handle(channel: string, listener: (...args: any[]) => any): void {
   ipcMain.handle(channel, (event: Electron.IpcMainInvokeEvent, ...args: any[]) => {
     if (!isTrustedSender(event)) return { error: 'Unauthorized sender' };
@@ -68,16 +96,11 @@ function handle(channel: string, listener: (...args: any[]) => any): void {
   });
 }
 
-export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
+export function registerIpcHandlers(
+  shutdownSignal?: AbortSignal,
+  getMainWindow?: MainWindowGetter,
+): void {
   ipcMain.on('window-document', (event, documentNonce: unknown) => {
-    // NOTE: isTrustedSender() is intentionally skipped here.
-    // The preload fires ipcRenderer.sendSync('window-document', ...) at the
-    // very start of document creation — before the page has navigated to its
-    // URL. At that point event.sender.getURL() returns '' or 'about:blank', so
-    // a URL-based origin check would always reject this legitimate message.
-    // The mainFrame identity check below is the correct security boundary: it
-    // ensures the message comes from the top-level frame of the expected
-    // BrowserWindow, not from a sub-frame or a detached/stale renderer.
     let currentFrame: Electron.WebFrameMain | null = null;
     try {
       currentFrame = event.sender.mainFrame;
@@ -87,6 +110,10 @@ export function registerIpcHandlers(shutdownSignal?: AbortSignal): void {
     }
     if (!isCurrentRendererFrame(event.senderFrame, currentFrame)) {
       event.returnValue = { success: false, error: 'Invalid document registration' };
+      return;
+    }
+    if (!isTrustedSender(event) && !isEarlyMainWindowSender(event, getMainWindow)) {
+      event.returnValue = { error: 'Unauthorized sender' };
       return;
     }
     event.returnValue = registerRendererDocument(documentNonce)

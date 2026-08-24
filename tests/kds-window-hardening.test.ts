@@ -7,11 +7,24 @@ const Module = require('module');
 const originalLoad = Module._load;
 
 const registered = new Map<string, (...args: any[]) => any>();
+const registeredSync = new Map<string, (...args: any[]) => any>();
 const windows: any[] = [];
 
 class FakeWebContents {
   handlers = new Map<string, Function[]>();
   windowOpenHandler: ((...args: any[]) => any) | null = null;
+  frame = { frameToken: `frame-${Math.random()}`, detached: false };
+
+  constructor(public readonly ownerWindow: FakeBrowserWindow) {}
+
+  getURL() {
+    return this.ownerWindow.loadedUrl;
+  }
+
+  get mainFrame() {
+    return this.frame;
+  }
+
   on(event: string, cb: Function) {
     const list = this.handlers.get(event) ?? [];
     list.push(cb);
@@ -24,14 +37,21 @@ class FakeWebContents {
 
 class FakeBrowserWindow {
   webPreferences: any;
-  webContents = new FakeWebContents();
+  webContents: FakeWebContents;
   loadedUrl = '';
-  destroyed = false;
-  closeHandlers: Function[] = [];
+
+  static fromWebContents(sender: FakeWebContents) {
+    return sender.ownerWindow;
+  }
+
   constructor(opts: any) {
     this.webPreferences = opts.webPreferences;
+    this.webContents = new FakeWebContents(this);
     windows.push(this);
   }
+
+  destroyed = false;
+  closeHandlers: Function[] = [];
   on(event: string, cb: Function) {
     if (event === 'closed') {
       this.closeHandlers.push(cb);
@@ -54,7 +74,9 @@ Module._load = function (request: string, parent: unknown, isMain: boolean) {
   if (request === 'electron') {
     return {
       ipcMain: {
-        on: () => {},
+        on: (channel: string, listener: (...args: any[]) => any) => {
+          registeredSync.set(channel, listener);
+        },
         handle: (channel: string, listener: (...args: any[]) => any) => {
           registered.set(channel, listener);
         },
@@ -131,7 +153,44 @@ async function run(): Promise<void> {
 
   log('=== GHSA-jmmq-fjg5-g6px KDS Window & IPC Hardening Verification ===');
 
-  registerIpcHandlers();
+  const mainPosWindow = new FakeBrowserWindow({ webPreferences: {} });
+  registerIpcHandlers(undefined, () => mainPosWindow);
+
+  // The preload's synchronous registration is allowed before Chromium exposes
+  // the localhost URL only for the expected POS window and its current main
+  // frame. Other windows and remote origins remain unauthorized.
+  const documentHandler = registeredSync.get('window-document');
+  assert.ok(documentHandler, 'window-document IPC handler is registered');
+  const earlyDocumentEvent: any = {
+    sender: mainPosWindow.webContents,
+    senderFrame: mainPosWindow.webContents.mainFrame,
+  };
+  documentHandler(earlyDocumentEvent, '123e4567-e89b-42d3-a456-426614174003');
+  assert.deepEqual(earlyDocumentEvent.returnValue, { success: true });
+
+  const otherWindow = new FakeBrowserWindow({ webPreferences: {} });
+  const otherDocumentEvent: any = {
+    sender: otherWindow.webContents,
+    senderFrame: otherWindow.webContents.mainFrame,
+  };
+  documentHandler(otherDocumentEvent, '123e4567-e89b-42d3-a456-426614174004');
+  assert.deepEqual(otherDocumentEvent.returnValue, { error: 'Unauthorized sender' });
+
+  const staleFrameEvent: any = {
+    sender: mainPosWindow.webContents,
+    senderFrame: { frameToken: 'stale-frame', detached: false },
+  };
+  documentHandler(staleFrameEvent, '123e4567-e89b-42d3-a456-426614174005');
+  assert.deepEqual(staleFrameEvent.returnValue, { success: false, error: 'Invalid document registration' });
+
+  mainPosWindow.loadedUrl = 'http://evil.example.com/';
+  const remoteDocumentEvent: any = {
+    sender: mainPosWindow.webContents,
+    senderFrame: mainPosWindow.webContents.mainFrame,
+  };
+  documentHandler(remoteDocumentEvent, '123e4567-e89b-42d3-a456-426614174006');
+  assert.deepEqual(remoteDocumentEvent.returnValue, { error: 'Unauthorized sender' });
+  mainPosWindow.loadedUrl = 'http://localhost:3001/';
 
   const trustedLocalhost = { sender: { getURL: () => 'http://localhost:3001/' } };
   const trusted127 = { sender: { getURL: () => 'http://127.0.0.1:3001/pos' } };

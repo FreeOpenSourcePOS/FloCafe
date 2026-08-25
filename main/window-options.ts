@@ -24,12 +24,13 @@ const MIN_OVERLAY_ELECTRON_MAJOR = 33;
 
 /**
  * Decides whether the main window can rely on Electron's native
- * titleBarOverlay caption buttons, or whether the renderer must draw HTML
- * fallback controls.
+ * titleBarOverlay caption buttons (or macOS hiddenInset traffic lights), or
+ * whether the renderer must draw HTML fallback controls.
  *
- * Deliberately defensive: an unknown platform, a pre-33 Electron, or a
- * missing runtime overlay API all resolve to 'html-fallback' so the window
- * never ends up frameless with no visible way to minimize/close it.
+ * Deliberately defensive: macOS always resolves to 'native-overlay'; on Windows
+ * and Linux, an unknown platform, a pre-33 Electron, or a missing runtime
+ * overlay API all resolve to 'html-fallback' so the window never ends up
+ * frameless with no visible way to minimize/close it.
  */
 export function resolveTitleBarMode(probe: {
   platform: NodeJS.Platform;

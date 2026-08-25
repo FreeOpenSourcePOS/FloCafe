@@ -41,6 +41,9 @@ function validatePrinterFields(body: any, existing?: any): string | null {
   if (body.is_default !== undefined && typeof body.is_default !== 'boolean') {
     return 'is_default must be a boolean';
   }
+  if (body.cash_drawer_pulse_enabled !== undefined && typeof body.cash_drawer_pulse_enabled !== 'boolean') {
+    return 'cash_drawer_pulse_enabled must be a boolean';
+  }
   if (body.paper_width !== undefined && !PRINTER_COLUMN_WIDTHS.includes(body.paper_width)) {
     return 'paper_width must be cols-32, cols-36, cols-40, cols-42, cols-44, or cols-48';
   }
@@ -71,6 +74,7 @@ function printerShape(printer: any) {
     ip_address: printer.ip_address,
     port: printer.port,
     is_default: printer.is_default,
+    cash_drawer_pulse_enabled: printer.cash_drawer_pulse_enabled,
     paper_width: printer.paper_width,
     created_at: printer.created_at,
     updated_at: printer.updated_at,
@@ -140,7 +144,7 @@ router.get('/:id', (req: Request, res: Response) => {
 // POST /api/printers — create
 router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: Response) => {
   try {
-    const { name, connection_type, ip_address, port, paper_width, is_default } = req.body;
+    const { name, connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled } = req.body;
 
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (typeof name !== 'string' || !PRINTER_NAME_REGEX.test(name)) {
@@ -168,14 +172,15 @@ router.post('/', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res: R
       const shouldBeDefault = Boolean(is_default) || isFirstPrinter;
       if (shouldBeDefault) db.prepare('UPDATE printers SET is_default = 0').run();
       db.prepare(`
-        INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, is_default, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO printers (id, name, connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         id, name, connection_type,
         ip_address ?? null,
         port ?? 9100,
         paper_width ?? 'cols-42',
         shouldBeDefault ? 1 : 0,
+        cash_drawer_pulse_enabled === true ? 1 : 0,
         now(), now()
       );
       ensureDefaultPrinter(db);
@@ -196,7 +201,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
     const existing = db.prepare('SELECT * FROM printers WHERE id = ?').get(req.params.id) as any;
     if (!existing) return res.status(404).json({ error: 'Printer not found' });
 
-    const { name, connection_type, ip_address, port, paper_width, is_default } = req.body;
+    const { name, connection_type, ip_address, port, paper_width, is_default, cash_drawer_pulse_enabled } = req.body;
 
     const fieldError = validatePrinterFields(req.body, existing);
     if (fieldError) return res.status(400).json({ error: fieldError });
@@ -208,7 +213,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
       db.prepare(`
         UPDATE printers SET
           name = ?, connection_type = ?, ip_address = ?, port = ?,
-          paper_width = ?, is_default = ?, updated_at = ?
+          paper_width = ?, is_default = ?, cash_drawer_pulse_enabled = ?, updated_at = ?
         WHERE id = ?
       `).run(
         name !== undefined ? name : existing.name,
@@ -217,6 +222,7 @@ router.put('/:id', requireRole(...ROLE_ACCESS.ownerManager), (req: Request, res:
         port !== undefined ? port : existing.port,
         paper_width !== undefined ? paper_width : existing.paper_width,
         becameDefault ? 1 : (is_default === false ? 0 : existing.is_default),
+        cash_drawer_pulse_enabled !== undefined ? (cash_drawer_pulse_enabled ? 1 : 0) : existing.cash_drawer_pulse_enabled,
         now(), req.params.id
       );
       if (becameDefault) db.prepare('UPDATE printers SET is_default = 0 WHERE id != ?').run(req.params.id);

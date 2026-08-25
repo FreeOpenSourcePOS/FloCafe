@@ -951,6 +951,7 @@ Create a printer. `connection_type` must be `network`, `usb`, or `webusb`. Netwo
   "ip_address": "192.168.1.100",
   "port": 9100,
   "paper_width": "80mm",
+  "cash_drawer_pulse_enabled": false,
   "is_default": true
 }
 ```

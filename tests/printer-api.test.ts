@@ -92,15 +92,17 @@ async function runTests() {
     const res = await request(app).post('/api/printers').send({ name: 'Kitchen Printer', connection_type: 'usb' });
     assert(res.status === 201, `creating the first printer returns 201 (got ${res.status})`);
     assert(res.body.printer?.is_default === 1, 'the first printer is automatically the default');
+    assert(res.body.printer?.cash_drawer_pulse_enabled === 0, 'cash drawer pulse defaults off');
     assert(defaultCount() === 1, 'exactly one default printer exists');
   }
 
   // ── Test 2: creating a second default clears the previous default ───────
   console.log('\nTest 2: a second default replaces the first');
   {
-    const res = await request(app).post('/api/printers').send({ name: 'Receipt Printer', connection_type: 'usb', is_default: true });
+    const res = await request(app).post('/api/printers').send({ name: 'Receipt Printer', connection_type: 'usb', is_default: true, cash_drawer_pulse_enabled: true });
     assert(res.status === 201, `creating a second printer returns 201 (got ${res.status})`);
     assert(res.body.printer?.is_default === 1, 'the explicitly-default printer is default');
+    assert(res.body.printer?.cash_drawer_pulse_enabled === 1, 'cash drawer pulse can be enabled on create');
     assert(defaultCount() === 1, 'exactly one default printer remains after a new default is created');
   }
 
@@ -128,12 +130,16 @@ async function runTests() {
 
     const badDefault = await request(app).put(`/api/printers/${printerId}`).send({ is_default: 'yes' });
     assert(badDefault.status === 400, `non-boolean is_default returns 400 (got ${badDefault.status})`);
+
+    const badDrawerPulse = await request(app).put(`/api/printers/${printerId}`).send({ cash_drawer_pulse_enabled: 'yes' });
+    assert(badDrawerPulse.status === 400, `non-boolean cash_drawer_pulse_enabled returns 400 (got ${badDrawerPulse.status})`);
   }
 
   // ── Test 4: PUT keeps omitted fields, applies explicit values ───────────
   console.log('\nTest 4: PUT distinguishes omitted from explicit fields');
   {
     const printerId = defaultId();
+    await request(app).put(`/api/printers/${printerId}`).send({ cash_drawer_pulse_enabled: true });
     const before = db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId) as any;
     const res = await request(app).put(`/api/printers/${printerId}`).send({ name: 'Renamed Printer' });
     assert(res.status === 200, `updating only the name returns 200 (got ${res.status})`);
@@ -141,11 +147,17 @@ async function runTests() {
     assert(after.name === 'Renamed Printer', 'the explicit name is applied');
     assert(after.connection_type === before.connection_type, 'omitted connection_type keeps the existing value');
     assert(after.port === before.port, 'omitted port keeps the existing value');
+    assert(after.cash_drawer_pulse_enabled === 1, 'omitted cash drawer pulse keeps the existing value');
 
     const clearIp = await request(app).put(`/api/printers/${printerId}`).send({ ip_address: null });
     assert(clearIp.status === 200, `explicit null ip_address is accepted (got ${clearIp.status})`);
     const afterClear = db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId) as any;
     assert(afterClear.ip_address === null, 'explicit null ip_address clears the stored value');
+
+    const disablePulse = await request(app).put(`/api/printers/${printerId}`).send({ cash_drawer_pulse_enabled: false });
+    assert(disablePulse.status === 200, `explicit false cash drawer pulse is accepted (got ${disablePulse.status})`);
+    const afterDisable = db.prepare('SELECT * FROM printers WHERE id = ?').get(printerId) as any;
+    assert(afterDisable.cash_drawer_pulse_enabled === 0, 'explicit false disables cash drawer pulse');
   }
 
   // ── Test 5: unsetting the default picks a replacement ───────────────────

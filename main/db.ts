@@ -4074,6 +4074,15 @@ export const MIGRATIONS: { version: number; name: string; up: () => void }[] = [
       }
     },
   },
+  {
+    version: 75,
+    name: 'add_printer_cash_drawer_pulse',
+    up: () => {
+      if (!getColumns(db, 'printers').includes('cash_drawer_pulse_enabled')) {
+        db.exec(`ALTER TABLE printers ADD COLUMN cash_drawer_pulse_enabled INTEGER NOT NULL DEFAULT 0`);
+      }
+    },
+  },
 ];
 
 function syncBackupBeforeMigration(fromVersion: number, toVersion: number): void {
@@ -4490,6 +4499,7 @@ function createSchema(): void {
       ip_address TEXT,
       port INTEGER DEFAULT 9100,
       is_default INTEGER DEFAULT 0,
+      cash_drawer_pulse_enabled INTEGER NOT NULL DEFAULT 0,
       paper_width TEXT DEFAULT '80mm',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP

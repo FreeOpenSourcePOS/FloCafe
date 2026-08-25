@@ -484,6 +484,7 @@ printf '%s\n' "$*" >> "$RELEASE_TEST_LOG"
 if [ "$1" = "release" ] && [ "$2" = "view" ]; then
   case "$*" in
     *--json*isDraft*) printf 'true\n'; exit 0 ;;
+    *--json*body*) printf 'Existing draft release notes for 3.3.0\n'; exit 0 ;;
     *) exit 0 ;;
   esac
 fi
@@ -495,12 +496,12 @@ exit 1
     fakeCommands: { gh: fakeGhExistingDraft, git: fakeGit },
   });
   assert.equal(draftExisting.status, 0, draftExisting.stderr);
-  assert.match(draftExisting.stdout, /Draft release 3\.3\.0 already exists, reusing it/);
+  assert.match(draftExisting.stdout, /Draft release 3\.3\.0 already exists, extracting existing release notes/);
   assert.doesNotMatch(draftExisting.log, /release create/);
   assert.ok(
     fs.existsSync('/tmp/release-notes.md') &&
-      fs.readFileSync('/tmp/release-notes.md', 'utf8').includes('compare/3.2.3...3.3.0'),
-    'existing draft rerun must still generate /tmp/release-notes.md for downstream jobs'
+      fs.readFileSync('/tmp/release-notes.md', 'utf8').includes('Existing draft release notes for 3.3.0'),
+    'existing draft rerun must extract existing release notes directly from GitHub release body'
   );
 
   const publishStep = findStep(publishJob, 'Publish draft without changing GitHub Latest by default');

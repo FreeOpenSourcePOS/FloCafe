@@ -155,14 +155,14 @@ jobs:
           RELEASE_EVENT_NAME: ${{ github.event_name }}
 
       - name: Create GitHub draft release (if not exists)
-        # Release notes come from CHANGELOG.md, not --generate-notes: this repo
-        # pushes straight to main instead of merging PRs, so GitHub's PR-based
-        # auto-generated notes come back empty (see git history around
-        # v2.0.0/v2.0.3 for what that looked like). A CHANGELOG.md entry is
-        # mandatory for every release — this step fails loudly instead of
-        # publishing a release with no notes if one is missing. The release is
-        # deliberately kept as a draft until all platform assets pass the
-        # post-upload verification job.
+        # Release notes are extracted from an existing draft release body if present,
+        # or generated via git-cliff (falling back to changelog-notes.sh / CHANGELOG.md),
+        # not --generate-notes: this repo pushes straight to main instead of merging PRs,
+        # so GitHub's PR-based auto-generated notes come back empty (see git history around
+        # v2.0.0/v2.0.3 for what that looked like). Valid non-empty release notes are
+        # mandatory for every release — this step fails loudly instead of publishing a
+        # release with empty notes. The release is deliberately kept as a draft until all
+        # platform assets pass the post-upload verification job.
         if: steps.release-metadata.outputs.promotion_only != 'true'
         run: |
           TAG="$RELEASE_TAG"

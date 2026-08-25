@@ -261,6 +261,7 @@ jobs:
           name: release-notes
           path: /tmp/release-notes.md
           retention-days: 30
+          overwrite: true
 
       - name: Upload standalone uninstaller scripts
         # Independent utility scripts, not part of the app bundle — for

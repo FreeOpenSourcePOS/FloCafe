@@ -220,6 +220,7 @@ function run() {
   assert.equal(uploadNotes.with?.name, 'release-notes');
   assert.equal(uploadNotes.with?.path, '/tmp/release-notes.md');
   assert.equal(uploadNotes.with?.['retention-days'], 30);
+  assert.equal(uploadNotes.with?.overwrite, true);
   assert.equal(uploadNotes.if, "steps.release-metadata.outputs.promotion_only != 'true'");
 
   const linuxJob = jobs['release-linux'];
